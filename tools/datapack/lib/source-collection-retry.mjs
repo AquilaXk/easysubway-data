@@ -57,28 +57,34 @@ export class RetryAfterExceedsCapError extends Error {
 //   - 30: data.go.kr는 게이트웨이 노드 사이 키 동기화 지연으로 간헐 발생해 일시로 본다(같은 키로 여러 run이 통과). KRIC는 미신청 operation이라 재시도해도 풀리지 않는다고 보고 즉시 실패시킨다.
 //     이는 실측 근거가 있는 선택이지 KRIC 공식 문서의 정의가 아니다. 방금 승인된 operation의 전파 지연이 관측되면 재검토한다.
 const RESULT_CODE_TABLE = Object.freeze([
-  { code: "01", name: "APPLICATION_ERROR", dataGoKr: "transient", kric: "transient" },
-  { code: "02", name: "DB_ERROR", dataGoKr: "transient", kric: "transient" },
-  { code: "04", name: "HTTP_ERROR", dataGoKr: "transient", kric: "transient" },
-  { code: "05", name: "SERVICETIMEOUT_ERROR", dataGoKr: "transient", kric: "transient" },
-  { code: "10", name: "INVALID_REQUEST_PARAMETER_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "11", name: "NO_MANDATORY_REQUEST_PARAMETERS_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "12", name: "NO_OPENAPI_SERVICE_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "20", name: "SERVICE_ACCESS_DENIED_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "21", name: "TEMPORARILY_DISABLE_THE_SERVICEKEY_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "22", name: "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "30", name: "SERVICE_KEY_IS_NOT_REGISTERED_ERROR", dataGoKr: "transient", kric: "fatal" },
-  { code: "31", name: "DEADLINE_HAS_EXPIRED_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "32", name: "UNREGISTERED_IP_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "33", name: "UNSIGNED_CALL_ERROR", dataGoKr: "fatal", kric: "fatal" },
-  { code: "99", name: "UNKNOWN_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "01", name: "APPLICATION_ERROR", dataGoKr: "transient", kric: "transient", humetro: "fatal" },
+  { code: "02", name: "DB_ERROR", dataGoKr: "transient", kric: "transient", humetro: "fatal" },
+  { code: "04", name: "HTTP_ERROR", dataGoKr: "transient", kric: "transient", humetro: "fatal" },
+  { code: "05", name: "SERVICETIMEOUT_ERROR", dataGoKr: "transient", kric: "transient", humetro: "fatal" },
+  { code: "10", name: "INVALID_REQUEST_PARAMETER_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "11", name: "NO_MANDATORY_REQUEST_PARAMETERS_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "12", name: "NO_OPENAPI_SERVICE_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "20", name: "SERVICE_ACCESS_DENIED_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "21", name: "TEMPORARILY_DISABLE_THE_SERVICEKEY_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "22", name: "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "30", name: "SERVICE_KEY_IS_NOT_REGISTERED_ERROR", dataGoKr: "transient", kric: "fatal", humetro: "fatal" },
+  { code: "31", name: "DEADLINE_HAS_EXPIRED_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "32", name: "UNREGISTERED_IP_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "33", name: "UNSIGNED_CALL_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
+  { code: "99", name: "UNKNOWN_ERROR", dataGoKr: "transient", kric: "transient", humetro: "transient" },
 ]);
+//   - humetro: 부산교통공사 OpenAPI(data.humetro.busan.kr). data.go.kr 게이트웨이가 아니라 위 코드표를 적용할 근거가 없다. 공식 오류코드 문서를 찾지 못해
+//     (저장소 조사, 2026-10-18) 응답이 envelope로 내려주는 99(UNKNOWN_ERROR)만 일시로 보고 나머지는 즉시 실패시킨다. 문서나 실측 근거가 생기면 이 열을 고친다.
 const transientCodesOf = (origin) => new Set(RESULT_CODE_TABLE.filter((row) => row[origin] === "transient").map(({ code }) => code));
 const TRANSIENT_DATA_GO_KR_RESULT_CODES = transientCodesOf("dataGoKr");
 const TRANSIENT_KRIC_RESULT_CODES = transientCodesOf("kric");
+const TRANSIENT_HUMETRO_RESULT_CODES = transientCodesOf("humetro");
 
 /** 공공데이터포털 envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientDataGoKrResultCode = (resultCode) => TRANSIENT_DATA_GO_KR_RESULT_CODES.has(resultCode);
+
+/** 부산교통공사 OpenAPI envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가(99만 일시). */
+export const isTransientBusanHumetroResultCode = (resultCode) => TRANSIENT_HUMETRO_RESULT_CODES.has(resultCode);
 
 /** KRIC OpenAPI 응답의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientKricResultCode = (resultCode) => TRANSIENT_KRIC_RESULT_CODES.has(resultCode);
@@ -155,6 +161,17 @@ export function withSourceCollectionRetry(attempt, {
   });
 }
 
+const SAFE_ERROR_CODE = /^[A-Za-z0-9._-]{1,32}$/u;
+
+/**
+ * fetchBytesWithSourceRetry의 transportFailure용: 소진했거나 일시 아닌 전송 오류를 `<label> transport failure; code=<오류 코드>`로 바꾼다.
+ * 원본 오류(URL·Response가 실릴 수 있다)는 싣지 않고, 형식이 안전한 오류 코드만 남긴다.
+ */
+export const transportFailureWithCode = (label) => (failure) => {
+  const code = String(failure?.code ?? failure?.cause?.code ?? "UNKNOWN");
+  return new Error(`${label} transport failure; code=${SAFE_ERROR_CODE.test(code) ? code : "UNKNOWN"}`);
+};
+
 /**
  * 요청과 본문 바이트 읽기를 한 번의 시도로 묶어 표준 정책으로 재시도하는 HTTP GET 수집 공용 함수.
  * @param {object} options
@@ -164,14 +181,15 @@ export function withSourceCollectionRetry(attempt, {
  * @param {string} options.label 오류 메시지의 원천 이름.
  * @param {(failure: unknown) => Error} options.transportFailure 재시도를 소진했거나 일시 아닌 전송 오류를 수집기의 기존 오류로 바꾼다.
  * @param {(result: { response: Response, bytes: Buffer }) => boolean} [options.isTransientResult] 상태 코드 말고 본문으로 판정하는 일시 상태(예: 공공데이터포털 resultCode).
+ * @param {Record<string, string>} [options.headers] accept 말고 더 붙일 요청 헤더(User-Agent·Referer 등).
  * @returns {Promise<{ response: Response, bytes: Buffer }>}
  */
 export async function fetchBytesWithSourceRetry({
-  url, fetchImpl, accept, label, transportFailure, isTransientResult, sleep, budget, random, timeoutMs = 15_000,
+  url, fetchImpl, accept, label, transportFailure, isTransientResult, sleep, budget, random, timeoutMs = 15_000, headers = {},
 }) {
   try {
     return await withSourceCollectionRetry(async () => {
-      const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(timeoutMs), headers: { accept } });
+      const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(timeoutMs), headers: { accept, ...headers } });
       return { response, bytes: Buffer.from(await response.arrayBuffer()) };
     }, { label, isTransientResult, sleep, budget, random });
   } catch (error) {

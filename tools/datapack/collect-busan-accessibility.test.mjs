@@ -4,6 +4,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  assertErrorOmitsSecrets,
+  defineBusanHumetroResultCodeRetryTests,
+  defineSourceCollectionRetryTests,
+} from "./lib/source-collection-retry-test-support.mjs";
+import {
   collectBusanAccessibility,
   observedBusanAccessibilityRows,
   replayBusanAccessibility,
@@ -159,6 +164,7 @@ test("부산 accessibility collector는 credential 없는 provider·transport �
   await assert.rejects(collectBusanAccessibility({
     serviceKey: secret,
     stationScopes: topology.scope,
+    sleepImpl: async () => {},
     fetchImpl: async () => new Response(`<?xml version="1.0"?><response>
       <header><resultCode>30</resultCode><resultMsg>${providerDetail}</resultMsg></header></response>`, {
       headers: { "content-type": "application/xml" },
@@ -180,4 +186,66 @@ test("부산 accessibility collector는 credential 없는 provider·transport �
     assert.doesNotMatch(error.message, new RegExp(secret));
     return true;
   });
+});
+
+const stationResponse = (url) => response(topology.scope.find(({ stationCode }) => stationCode === new URL(url).searchParams.get("scode")).stationName);
+const collectWith = ({ fetchImpl, sleepImpl = async () => {}, serviceKey = "fixture-key" }) => collectBusanAccessibility({
+  serviceKey,
+  concurrency: 1,
+  stationScopes: topology.scope,
+  now: new Date("2026-07-20T10:30:00.000Z"),
+  fetchImpl,
+  sleepImpl,
+  randomImpl: () => 0,
+});
+
+defineSourceCollectionRetryTests({
+  name: "부산 accessibility collector",
+  httpError: /Busan accessibility HTTP 403/,
+  delegate: stationResponse,
+  headers: { "content-type": "application/xml" },
+  run: ({ fetchImpl, sleepImpl }) => collectWith({ fetchImpl, sleepImpl }),
+});
+
+const envelopeResponse = (code) => new Response(
+  `<?xml version="1.0"?><response><header><resultCode>${code}</resultCode><resultMsg>x</resultMsg></header></response>`,
+  { headers: { "content-type": "application/xml" } },
+);
+
+// 부산교통공사 게이트웨이는 data.go.kr가 아니라 resultCode 99만 일시로 본다.
+defineBusanHumetroResultCodeRetryTests({
+  name: "부산 accessibility collector",
+  delegate: stationResponse,
+  rejectedResponse: envelopeResponse,
+  run: ({ fetchImpl }) => collectWith({ fetchImpl }),
+  assertRecovered: (snapshot) => assert.equal(snapshot.requestCount, 114),
+  assertFinal: (outcome, resultCode) => assert.rejects(outcome, new RegExp(`provider resultCode ${resultCode}; rawSha256=[a-f0-9]{64}`)),
+});
+
+test("부산 accessibility collector는 HTTP 429를 Retry-After 유무로 가른다: 힌트가 없으면 1회만, cap(20초) 초과면 기다리지 않고 실패한다", async () => {
+  let unhinted = 0;
+  await assert.rejects(collectWith({ fetchImpl: async () => { unhinted += 1; return new Response("slow", { status: 429 }); } }), /Busan accessibility HTTP 429/);
+  assert.equal(unhinted, 2);
+
+  const waits = [];
+  let hinted = 0;
+  await assert.rejects(collectWith({
+    sleepImpl: async (milliseconds) => { waits.push(milliseconds); },
+    fetchImpl: async () => { hinted += 1; return new Response("slow", { status: 429, headers: { "retry-after": "21" } }); },
+  }), /RETRY_AFTER_EXCEEDS_CAP/);
+  assert.equal(hinted, 1);
+  assert.deepEqual(waits, []);
+});
+
+test("부산 accessibility collector는 소진된 재시도 오류에 인증키·URL을 싣지 않는다", async () => {
+  const serviceKey = "SECRETKEY0123456789abcdef";
+  const echoed = (url) => new Response(`busy ${url}`, { status: 503 });
+  const exhaustedStatus = await collectWith({ serviceKey, fetchImpl: async (url) => echoed(url) }).catch((error) => error);
+  assert.match(exhaustedStatus.message, /Busan accessibility HTTP 503; rawBytes=\d+; rawSha256=[a-f0-9]{64}/);
+  assertErrorOmitsSecrets(exhaustedStatus, [serviceKey, "humetro"]);
+
+  const leaky = async (url) => { throw Object.assign(new Error(`connect failed ${url}`), { code: "ECONNRESET", cause: { url: String(url) } }); };
+  const exhaustedTransport = await collectWith({ serviceKey, fetchImpl: leaky }).catch((error) => error);
+  assert.match(exhaustedTransport.message, /transport failure; code=ECONNRESET/);
+  assertErrorOmitsSecrets(exhaustedTransport, [serviceKey, "humetro"]);
 });

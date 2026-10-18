@@ -2,11 +2,12 @@
 // detail 페이지의 다운로드 버튼 → /tcs/dss/selectFileDataDownload.do → /cmm/cmm/fileDownload.do.
 // 어느 단계든 기대한 형태가 아니면 명시적으로 실패하며 이전·추정 URL이나 본문으로 대체하지 않는다.
 
-import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./transient-retry.mjs";
+import { withSourceCollectionRetry } from "./source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./transient-retry.mjs";
 import { sha256 } from "../../lib/hash.mjs";
 
 const ORIGIN = "https://www.data.go.kr";
-const USER_AGENT = "easysubway-datapack-collector/1.0";
+export const USER_AGENT = "easysubway-datapack-collector/1.0";
 // #997: 헤더 대기(연결·TLS·응답 헤더)와 본문 전체 수신 시간을 분리한다.
 // 헤더가 도착하면 헤더 타이머를 끄고, 본문은 관측 최대 파일 크기(1,663,202B)와 하한 처리량(15,000B/s)에서 유도한 별도 시간 안에 읽는다.
 export const HEADER_TIMEOUT_MS = 60_000;
@@ -116,17 +117,18 @@ async function readWithBodyDeadline(response, label, bodyTimeout, read) {
   }
 }
 
-// 요청과 본문 읽기(read)를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·헤더 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
-// 본문 수신 시간 초과(TIMEOUT)·인증·쿼터·내용 오류(HTTP 4xx, 허용 밖 content-type 등)는 재시도하지 않는다. 한도를 다 쓰면 마지막 HTTP 오류나 전송 오류를 그대로 던진다.
+// 요청과 본문 읽기(read)를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·500·502·503·504와
+// 연결·헤더 timeout·소켓 끊김)으로 같은 요청을 다시 보낸다(#1099, #1334).
+// 본문 수신 시간 초과(TIMEOUT)·인증·내용 오류(HTTP 408·4xx, 허용 밖 content-type 등)는 재시도하지 않는다. 한도를 다 쓰면 마지막 HTTP 오류나 전송 오류를 그대로 던진다.
 async function requestGet(
   fetchImpl, url, headers, label, read,
-  { sleepImpl, retryBudget, headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS } = {},
+  { sleepImpl, retryBudget, randomImpl, headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS } = {},
 ) {
   const headerTimeout = requireTimeoutMs(headerTimeoutMs, "headerTimeoutMs");
   const bodyTimeout = requireTimeoutMs(bodyTimeoutMs, "bodyTimeoutMs");
   let outcome;
   try {
-    outcome = await withTransientRetry(async () => {
+    outcome = await withSourceCollectionRetry(async () => {
       const controller = new AbortController();
       const headerTimer = setTimeout(() => controller.abort(), headerTimeout);
       headerTimer.unref?.();
@@ -146,7 +148,7 @@ async function requestGet(
         return { response };
       }
       return { response, value: await readWithBodyDeadline(response, label, bodyTimeout, read) };
-    }, { isTransientResult: ({ response }) => isTransientStatus(response.status), sleep: sleepImpl, budget: retryBudget });
+    }, { label: `data.go.kr ${label}`, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
   }

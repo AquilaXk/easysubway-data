@@ -10,6 +10,7 @@ import {
   runDaeguSourceCollector, writeDaeguSourceSnapshot,
 } from "./collect-daegu-datapack-sources.mjs";
 import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { ledgerRow, prepareDaeguSourceRegistration } from "./register-daegu-datapack-sources.mjs";
 import {
   daeguDependentRebindOutputPlan,
@@ -472,6 +473,7 @@ test("대구 collector --download는 한 파일이라도 실패하면 아무 sna
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-download-fail-"));
   t.after(() => rm(outputDirectory, { recursive: true, force: true }));
   await assert.rejects(runDaeguSourceCollector(["--download", "--output-dir", outputDirectory], {
+    sleepImpl: async () => {},
     fetchImpl: createDataGoPortalFetch(files, { failFile: new Set(["15138734"]) }),
   }), /15138734 file HTTP 503/);
   const { 15065526: _omitted, ...withoutLine1Up } = files;
@@ -532,4 +534,24 @@ test("대구 collector는 이미 같은 이름의 snapshot이 있으면 그대�
   assert.deepEqual(await readFile(path.join(second, lastName)), await readFile(outputs[5]));
   // 아무것도 없던 디렉터리에는 여섯 개가 모두 생기고 staging 흔적이 없다.
   assert.equal((await readdir(first)).length, 6);
+});
+
+// 공용 data.go.kr 파일 다운로드(lib/data-go-file-download.mjs)의 표준 재시도가 이 수집기의 --download 경로에 연결돼 있는지 확인한다.
+const daeguRetryFiles = await retainedDaeguRawFiles();
+defineSourceCollectionRetryTests({
+  name: "대구 datapack collector --download",
+  httpError: /data\.go\.kr \d+ detail HTTP 403/,
+  delegate: createDataGoPortalFetch(daeguRetryFiles),
+  headers: { "content-type": "text/html" },
+  run: async ({ fetchImpl, sleepImpl }) => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-download-retry-"));
+    try {
+      const outputs = await runDaeguSourceCollector(["--download", "--output-dir", outputDirectory], {
+        fetchImpl, sleepImpl, randomImpl: () => 0, now: () => new Date("2026-10-06T03:00:00.000Z"),
+      });
+      return await Promise.all(outputs.map((output) => readFile(output, "utf8")));
+    } finally {
+      await rm(outputDirectory, { recursive: true, force: true });
+    }
+  },
 });

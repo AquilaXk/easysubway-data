@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { projectRegionalFixtureSourceBindings } from "./materialize-test-fixture.mjs";
 import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 
 import {
   collectGwangjuAccessibility,
@@ -274,6 +275,7 @@ test("광주 accessibility collector --download 실패·인자 오류·provenanc
   const common = ["--inventory", inventory, "--output", path.join(dir, "out.json")];
   try {
     await assert.rejects(runGwangjuAccessibilityCollector(["--download", ...common], {
+      sleepImpl: async () => {},
       fetchImpl: createDataGoPortalFetch(files, { failFile: new Set(["15041385"]) }),
     }), /15041385 file HTTP 503/);
     await assert.rejects(runGwangjuAccessibilityCollector(["--download", ...common], {
@@ -333,4 +335,29 @@ test("광주 accessibility collector는 출력을 임시 파일로 쓴 뒤 교�
     process.chdir(cwd);
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// 공용 data.go.kr 파일 다운로드(lib/data-go-file-download.mjs)의 표준 재시도가 이 수집기의 --download 경로에 연결돼 있는지 확인한다.
+const gwangjuRetryFiles = { 15041385: await readFile(ELEVATOR_CSV), 15041362: await readFile(ESCALATOR_CSV) };
+defineSourceCollectionRetryTests({
+  name: "광주 accessibility collector --download",
+  httpError: /data\.go\.kr \d+ detail HTTP 403/,
+  delegate: createDataGoPortalFetch(gwangjuRetryFiles),
+  headers: { "content-type": "text/html" },
+  run: async ({ fetchImpl, sleepImpl }) => {
+    const dir = await mkdtemp(path.join(tmpdir(), "gwangju-accessibility-retry-"));
+    const cwd = process.cwd();
+    try {
+      // 광주 collector는 inventory의 상대 snapshotPath를 현재 작업 디렉터리 기준으로 읽는다.
+      process.chdir(root);
+      return await runGwangjuAccessibilityCollector([
+        "--download",
+        "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
+        "--output", path.join(dir, "gwangju-accessibility.json"),
+      ], { fetchImpl, sleepImpl, randomImpl: () => 0, now: () => new Date("2026-10-06T03:00:00.000Z") });
+    } finally {
+      process.chdir(cwd);
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
 });

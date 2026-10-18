@@ -412,13 +412,14 @@ export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
   return (await writeDaeguSourceSnapshots(outputDirectory, [snapshot]))[0];
 }
 
-async function readLineRawFiles(config, args, fetchImpl) {
+async function readLineRawFiles(config, args, fetchImpl, retry) {
   const datasetIds = [config.intervalDatasetId, config.upDatasetId, config.downDatasetId];
   const { bytes, downloadProvenance } = await loadDataGoInputs({
     args,
     fetchImpl,
     datasetIds,
     inputPaths: datasetIds.map((datasetId) => path.join(args["input-dir"] ?? "", `data-go-${datasetId}.csv`)),
+    retry,
   });
   return {
     bytesByDatasetId: Object.fromEntries(datasetIds.map((datasetId, index) => [datasetId, bytes[index]])),
@@ -427,10 +428,10 @@ async function readLineRawFiles(config, args, fetchImpl) {
   };
 }
 
-export async function runDaeguSourceCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
+export async function runDaeguSourceCollector(argv, { fetchImpl = fetch, now = () => new Date(), sleepImpl, randomImpl } = {}) {
   const args = parseDownloadModeArgs(argv, ARG_SPEC);
   // 선택한 노선의 공식 FILE이 모두 있어야 capture가 성립하므로 받기·파싱을 끝낸 뒤에만 쓴다.
-  const raws = await Promise.all(DAEGU_LINES.map((config) => readLineRawFiles(config, args, fetchImpl)));
+  const raws = await Promise.all(DAEGU_LINES.map((config) => readLineRawFiles(config, args, fetchImpl, { sleepImpl, randomImpl })));
   const capturedAt = resolveCapturedAt(args, now).toISOString();
   const prepared = DAEGU_LINES.map((config, index) => {
     const { bytesByDatasetId, provenanceByDatasetId } = raws[index];

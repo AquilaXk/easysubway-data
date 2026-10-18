@@ -9,6 +9,7 @@ import {
   collectDaejeonRouteTopology,
 } from "./collect-daejeon-route-topology.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   prepareDaejeonTopologyRegistration,
@@ -488,3 +489,17 @@ async function fullMolitProjection() {
   }
   return rows;
 }
+
+const adjacentOdXml = "<response><header><resultCode>00</resultCode></header><body><items><item>"
+  + "<distfloat>1.2</distfloat><fee>1400</fee><min>2</min><sec>30</sec>"
+  + "</item></items></body></response>";
+
+defineSourceCollectionRetryTests({
+  name: "대전 topology collector",
+  httpError: /Daejeon coverage API HTTP 403/,
+  delegate: async () => new Response(adjacentOdXml, { headers: { "content-type": "application/xml" } }),
+  headers: { "content-type": "application/xml" },
+  run: ({ fetchImpl, sleepImpl }) => collectDaejeonRouteTopology({
+    serviceKey: "fixture-key", fetchImpl, sleepImpl, randomImpl: () => 0, now: new Date("2026-07-25T00:00:00.000Z"),
+  }),
+});

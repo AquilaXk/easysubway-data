@@ -46,8 +46,9 @@ export function resolveCapturedAt(args, now = () => new Date()) {
 }
 
 // 파일 모드의 inputPaths는 datasetIds와 같은 순서이며, 다운로드 모드에서는 쓰지 않는다.
-export async function loadDataGoInputs({ args, fetchImpl, datasetIds, inputPaths }) {
-  if (args.download) return downloadDataGoFiles(fetchImpl, datasetIds);
+// retry는 다운로드 재시도의 대기·난수 주입(테스트용)이다. 기본은 실제 대기와 난수다.
+export async function loadDataGoInputs({ args, fetchImpl, datasetIds, inputPaths, retry }) {
+  if (args.download) return downloadDataGoFiles(fetchImpl, datasetIds, retry);
   return {
     bytes: await Promise.all(inputPaths.map((inputPath) => readFile(inputPath))),
     downloadProvenance: undefined,

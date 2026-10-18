@@ -2,7 +2,8 @@
 //   1. 요청이 timeout으로 한 번 실패한 뒤 성공하면 재시도 없던 수집과 같은 결과를 낸다.
 //   2. 본문 수신 중 timeout으로 한 번 실패한 뒤 성공해도 같다(재시도 단위가 요청 + 본문 읽기여야 한다).
 //   3. 비일시 오류(HTTP 403)는 재시도하지 않고 즉시 실패한다.
-// defineKricResultCodeRetryTests는 KRIC resultCode 표(일시 01·02·04·05·99, 그 밖은 즉시 실패)를 수집기들이 함께 쓰게 한다.
+// defineResultCodeRetryTests는 resultCode 표 기반 재시도 계약을 한 곳에 두고, defineKricResultCodeRetryTests(KRIC: 일시 01·02·04·05·99)와
+// defineDataGoKrResultCodeRetryTests(공공데이터포털: 일시 01·02·04·05·30·99), defineBusanHumetroResultCodeRetryTests(부산교통공사: 일시 99만)가 원천별 행만 넘겨 수집기들이 함께 쓰게 한다.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { inspect } from "node:util";
@@ -36,7 +37,7 @@ export function fetchWithFirstFailure(delegate, failureKind, headers) {
 /**
  * @param {object} options
  * @param {string} options.name 수집기 이름(테스트 제목).
- * @param {(io: { fetchImpl: Function, sleepImpl: Function }) => Promise<unknown>} options.run 수집기를 실행하고 비교할 결과를 돌려준다. now·난수 같은 비결정 입력은 고정한다.
+ * @param {(io: { fetchImpl: Function, sleepImpl: Function }) => Promise<unknown>} options.run 수집기를 실행하고 비교할 결과를 돌려준다. 결과를 deepEqual로 비교하므로 now(observedAt 등)·난수 같은 비결정 입력은 반드시 고정한다. 고정하지 않으면 간헐 실패한다(#1341 F1).
  * @param {Function} options.delegate 성공 응답을 만드는 fetch.
  * @param {Record<string, string>} [options.headers] 본문 timeout 응답에 붙일 헤더.
  * @param {RegExp} options.httpError 이 수집기가 HTTP 403에 던지는 오류의 메시지 matcher.
@@ -71,6 +72,16 @@ export const KRIC_RESULT_CODE_ROWS = Object.freeze([
   ["01", true], ["02", true], ["04", true], ["05", true], ["99", true],
   ["10", false], ["11", false], ["12", false], ["20", false], ["21", false], ["22", false], ["30", false], ["31", false], ["32", false], ["33", false], ["41", false],
 ]);
+// 공공데이터포털 OpenAPI 게이트웨이: 30(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)은 키 동기화 지연으로 간헐 발생해 일시로 본다. 23은 표에 없는 코드라 즉시 실패한다.
+export const DATA_GO_KR_RESULT_CODE_ROWS = Object.freeze([
+  ["01", true], ["02", true], ["04", true], ["05", true], ["30", true], ["99", true],
+  ["10", false], ["11", false], ["12", false], ["20", false], ["21", false], ["22", false], ["23", false], ["31", false], ["32", false], ["33", false],
+]);
+// 부산교통공사 OpenAPI(data.humetro.busan.kr): data.go.kr 게이트웨이가 아니라 99만 일시, 나머지는 즉시 실패한다.
+export const BUSAN_HUMETRO_RESULT_CODE_ROWS = Object.freeze([
+  ["99", true],
+  ["01", false], ["02", false], ["04", false], ["05", false], ["10", false], ["20", false], ["22", false], ["30", false], ["31", false],
+]);
 const EXHAUSTED_TRANSIENT_RESULT_CODE = "99";
 
 /** 첫 요청(URL)을 보낸 횟수를 세는 fetch. respond(callNumber, url)이 응답을 만든다. */
@@ -86,20 +97,21 @@ function countingFetch(respond) {
 }
 
 /**
- * KRIC resultCode 재시도 계약을 수집기들이 한 표로 검증한다.
+ * resultCode 재시도 계약을 수집기들이 한 표로 검증한다.
  *   - 일시 코드: 첫 요청이 코드를 받은 뒤 성공하면 assertRecovered, 첫 요청은 정확히 2번 보낸다.
  *   - 일시 코드 소진: 계속 99를 받으면 3번만 보내고 assertFinal에 맡긴다(수집기의 명시 실패 또는 호출자에게 넘기는 응답).
  *   - 그 밖의 코드: 한 번만 보내고 assertFinal에 맡긴다.
  * @param {object} options
  * @param {string} options.name 수집기 이름(테스트 제목).
+ * @param {ReadonlyArray<[string, boolean]>} options.rows [resultCode, 일시 여부]. 원천의 코드표 행이다.
  * @param {(resultCode: string) => Response} options.rejectedResponse 해당 resultCode를 담은 응답.
  * @param {Function} options.delegate 성공 응답을 만드는 fetch.
  * @param {(io: { fetchImpl: Function }) => Promise<unknown>} options.run 수집기를 실행한다(대기는 즉시 지나가게 주입).
  * @param {(result: unknown) => void} options.assertRecovered 재시도 뒤 성공한 결과를 확인한다.
  * @param {(outcome: Promise<unknown>, resultCode: string) => Promise<void>} options.assertFinal 재시도를 더 하지 않고 끝난 결과를 확인한다.
  */
-export function defineKricResultCodeRetryTests({ name, rejectedResponse, delegate, run, assertRecovered, assertFinal }) {
-  for (const [resultCode, transient] of KRIC_RESULT_CODE_ROWS) {
+export function defineResultCodeRetryTests({ name, rows, rejectedResponse, delegate, run, assertRecovered, assertFinal }) {
+  for (const [resultCode, transient] of rows) {
     test(`${name}: resultCode ${resultCode}는 ${transient ? "재시도 뒤 성공한다" : "재시도 없이 끝난다"}`, async () => {
       const { fetchImpl, state } = countingFetch((call, args) => (call === 1 ? rejectedResponse(resultCode) : delegate(...args)));
       if (transient) {
@@ -117,3 +129,12 @@ export function defineKricResultCodeRetryTests({ name, rejectedResponse, delegat
     assert.equal(state.firstUrlCalls, 3);
   });
 }
+
+/** KRIC 코드표(KRIC_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
+export const defineKricResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: KRIC_RESULT_CODE_ROWS, ...options });
+
+/** 공공데이터포털 코드표(DATA_GO_KR_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
+export const defineDataGoKrResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: DATA_GO_KR_RESULT_CODE_ROWS, ...options });
+
+/** 부산교통공사 코드표(BUSAN_HUMETRO_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
+export const defineBusanHumetroResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: BUSAN_HUMETRO_RESULT_CODE_ROWS, ...options });

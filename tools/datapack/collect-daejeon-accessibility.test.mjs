@@ -12,6 +12,7 @@ import {
   runDaejeonAccessibilityCollector,
 } from "./collect-daejeon-accessibility.mjs";
 import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -301,4 +302,24 @@ test("대전 accessibility collector는 출력을 임시 파일로 쓴 뒤 교�
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// 공용 data.go.kr 파일 다운로드(lib/data-go-file-download.mjs)의 표준 재시도가 이 수집기의 --download 경로에 연결돼 있는지 확인한다.
+const daejeonRetryFiles = { 15041384: await readFile(ELEVATOR_CSV), 15041361: await readFile(ESCALATOR_CSV) };
+defineSourceCollectionRetryTests({
+  name: "대전 accessibility collector --download",
+  httpError: /data\.go\.kr \d+ detail HTTP 403/,
+  delegate: createDataGoPortalFetch(daejeonRetryFiles),
+  headers: { "content-type": "text/html" },
+  run: async ({ fetchImpl, sleepImpl }) => {
+    const dir = await mkdtemp(path.join(tmpdir(), "daejeon-accessibility-retry-"));
+    try {
+      return await runDaejeonAccessibilityCollector(
+        ["--download", ...await downloadCliArgs(path.join(dir, "daejeon-accessibility.json"))],
+        { fetchImpl, sleepImpl, randomImpl: () => 0, now: () => new Date("2026-10-06T03:00:00.000Z") },
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
 });

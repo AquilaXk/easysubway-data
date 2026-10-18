@@ -17,11 +17,13 @@ import {
   resolveDataGoFileDownload,
   verifyDataGoDownloadProvenance,
 } from "./data-go-file-download.mjs";
+import { defineSourceCollectionRetryTests } from "./source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./transient-retry.mjs";
 import { sha256 } from "../../lib/hash.mjs";
 
-// #1099: 일시 오류는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
-const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
+// #1099·#1334: 일시 오류는 원천 수집 표준 정책(최대 3회 시도, full jitter)으로 같은 요청을 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
+// 난수 0.5는 상한(base·2^n)의 절반이라 대기가 1·2초로 고정된다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
 
 const fixtureDir = path.resolve(import.meta.dirname, "../fixtures/data-go-file-download");
 const read = (name) => readFile(path.join(fixtureDir, name), "utf8");
@@ -356,26 +358,26 @@ test("detail·lookup·FILE 요청이 HTTP 5xx·연결 timeout·본문 수신 오
   assert.deepEqual(waits, [1_000, 2_000, 1_000, 1_000, 2_000]);
 });
 
-test("일시 오류가 한도(5번)를 넘으면 기존 오류로 끝난다", async () => {
+test("일시 오류가 한도(3회 시도)를 넘으면 기존 오류로 끝난다", async () => {
   const { fetchImpl } = await realPortal();
   const waits = [];
   const always = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 10 }, () => () => new Response("busy", { status: 503 })) });
   await assert.rejects(downloadDataGoFile(always.fetchImpl, "15065526", retryFast(waits)), /15065526 file HTTP 503/);
-  assert.equal(always.counts.total, 6);
-  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+  assert.equal(always.counts.total, 3);
+  assert.deepEqual(waits, [1_000, 2_000]);
 
   const transport = flaky(fetchImpl, { match: (url) => url.pathname.endsWith("/fileData.do"), failures: Array.from({ length: 10 }, () => () => { throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); }) });
   await assert.rejects(resolveDataGoFileDownload(transport.fetchImpl, "15065526", retryFast()), (error) => error.code === "ECONNRESET");
-  assert.equal(transport.counts.total, 6);
+  assert.equal(transport.counts.total, 3);
 
   const budgeted = flaky(fetchImpl, { match: (url) => url.pathname.endsWith("/fileData.do"), failures: Array.from({ length: 10 }, () => () => { throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); }) });
-  await assert.rejects(resolveDataGoFileDownload(budgeted.fetchImpl, "15065526", { sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500) }), (error) => error.code === "ECONNRESET");
+  await assert.rejects(resolveDataGoFileDownload(budgeted.fetchImpl, "15065526", { sleepImpl: async () => {}, randomImpl: () => 0.5, retryBudget: createTransientRetryBudget(2_500) }), (error) => error.code === "ECONNRESET");
   assert.equal(budgeted.counts.total, 2);
 });
 
-test("인증·쿼터·내용 오류(HTTP 401·403·404·429, 허용 밖 content-type, 빈 본문)는 재시도하지 않는다", async () => {
+test("인증·내용 오류(HTTP 401·403·404·408, 허용 밖 content-type)는 재시도하지 않는다", async () => {
   const { fetchImpl } = await realPortal();
-  for (const status of [401, 403, 404, 429]) {
+  for (const status of [401, 403, 404, 408]) {
     const denied = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: [() => new Response("denied", { status })] });
     const waits = [];
     await assert.rejects(downloadDataGoFile(denied.fetchImpl, "15065526", retryFast(waits)), new RegExp(`15065526 file HTTP ${status}`));
@@ -387,10 +389,34 @@ test("인증·쿼터·내용 오류(HTTP 401·403·404·429, 허용 밖 content-
   assert.equal(html.counts.total, 1);
 });
 
+test("HTTP 429는 Retry-After가 없으면 1회만 다시 보내고, 힌트가 cap(20초)을 넘으면 기다리지 않고 실패한다", async () => {
+  const { fetchImpl } = await realPortal();
+  const unhinted = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 5 }, () => () => new Response("slow", { status: 429 })) });
+  await assert.rejects(downloadDataGoFile(unhinted.fetchImpl, "15065526", retryFast()), /15065526 file HTTP 429/);
+  assert.equal(unhinted.counts.total, 2);
+
+  const waits = [];
+  const hinted = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: [() => new Response("slow", { status: 429, headers: { "retry-after": "21" } })] });
+  await assert.rejects(downloadDataGoFile(hinted.fetchImpl, "15065526", retryFast(waits)), /RETRY_AFTER_EXCEEDS_CAP/);
+  assert.equal(hinted.counts.total, 1);
+  assert.deepEqual(waits, []);
+});
+
+defineSourceCollectionRetryTests({
+  name: "data.go.kr 파일 다운로드",
+  httpError: /15065526 (detail|file) HTTP 403/,
+  delegate: (await realPortal()).fetchImpl,
+  headers: { "content-type": "application/octet-stream" },
+  run: async ({ fetchImpl, sleepImpl }) => {
+    const { bytes, rawSha256 } = await downloadDataGoFile(fetchImpl, "15065526", { sleepImpl, randomImpl: () => 0 });
+    return { text: Buffer.from(bytes).toString("utf8"), rawSha256 };
+  },
+});
+
 test("FILE 요청이 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
   const { fetchImpl } = await realPortal();
   const busy = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 10 }, () => () => new Response("busy", { status: 503 })) });
-  await assert.rejects(downloadDataGoFile(busy.fetchImpl, "15065526", { sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500) }), /15065526 file HTTP 503/);
+  await assert.rejects(downloadDataGoFile(busy.fetchImpl, "15065526", { sleepImpl: async () => {}, randomImpl: () => 0.5, retryBudget: createTransientRetryBudget(2_500) }), /15065526 file HTTP 503/);
   assert.equal(busy.counts.total, 2);
 });
 

@@ -11,6 +11,7 @@ import {
   normalizedIncheonTimetableStationName,
   runIncheonTimetableCollector,
 } from "./collect-incheon-timetable.mjs";
+import { assertErrorOmitsSecrets, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const RAW_DIR = path.join(root, "tools/datapack/fixtures/incheon-timetable-raw");
@@ -335,4 +336,77 @@ test("인천 timetable download mode는 malformed FILE link·restamp·stale topo
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+// 원천 수집 표준 재시도(lib/source-collection-retry.mjs): detail·FILE 요청이 일시 오류를 만나면 같은 GET을 다시 보낸다.
+const retryDownloadUrls = new Map();
+for (const dayCode of ["WEEK", "HOLI"]) {
+  for (const direction of ["up", "dn"]) {
+    const datasetId = INCHEON_TIMETABLE_LINES[0].datasets[dayCode][direction];
+    retryDownloadUrls.set(datasetId, `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_0000000037${datasetId}&fileDetailSn=1&insertDataPrcus=N`);
+  }
+}
+const incheonTimetablePortalFetch = async (url) => {
+  const value = String(url);
+  const detail = /^https:\/\/www\.data\.go\.kr\/data\/(\d+)\/fileData\.do$/u.exec(value);
+  if (detail) return new Response(`<a href="${retryDownloadUrls.get(detail[1])}">download</a>`, { status: 200 });
+  const datasetId = [...retryDownloadUrls.entries()].find(([, downloadUrl]) => downloadUrl === value)?.[0];
+  return datasetId ? new Response(await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`)), { status: 200 }) : new Response("unexpected", { status: 404 });
+};
+
+async function collectIncheonTimetableVia(fetchImpl, sleepImpl = async () => {}) {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-timetable-retry-"));
+  try {
+    const outputs = await runIncheonTimetableCollector([
+      "--download",
+      "--topology-snapshot", path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json"),
+      "--output-dir", directory,
+      "--line", "1",
+    ], { fetchImpl, sleepImpl, randomImpl: () => 0, now: () => NOW });
+    return await Promise.all(outputs.map((output) => readFile(output, "utf8")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+defineSourceCollectionRetryTests({
+  name: "인천 timetable collector",
+  httpError: /Incheon \d+ detail HTTP 403/,
+  delegate: incheonTimetablePortalFetch,
+  headers: { "content-type": "text/html" },
+  run: ({ fetchImpl, sleepImpl }) => collectIncheonTimetableVia(fetchImpl, sleepImpl),
+});
+
+test("인천 timetable collector는 FILE 요청이 HTTP 503을 만나면 같은 요청을 다시 보내고, 소진하면 기존 HTTP 오류로 끝난다", async () => {
+  const [firstFileUrl] = retryDownloadUrls.values();
+  let recoveredCalls = 0;
+  await collectIncheonTimetableVia(async (url) => {
+    if (String(url) !== firstFileUrl) return incheonTimetablePortalFetch(url);
+    recoveredCalls += 1;
+    return recoveredCalls === 1 ? new Response("busy", { status: 503 }) : incheonTimetablePortalFetch(url);
+  });
+  assert.equal(recoveredCalls, 2);
+
+  let exhaustedCalls = 0;
+  await assert.rejects(collectIncheonTimetableVia(async (url) => {
+    if (String(url) !== firstFileUrl) return incheonTimetablePortalFetch(url);
+    exhaustedCalls += 1;
+    return new Response("busy", { status: 503 });
+  }), /Incheon \d+ CSV HTTP 503/);
+  assert.equal(exhaustedCalls, 3);
+});
+
+test("인천 timetable collector는 HTTP 429를 Retry-After 유무로 가르고, 소진된 전송 오류에 URL을 싣지 않는다", async () => {
+  let unhinted = 0;
+  await assert.rejects(collectIncheonTimetableVia(async () => { unhinted += 1; return new Response("slow", { status: 429 }); }), /detail HTTP 429/);
+  assert.equal(unhinted, 2);
+
+  let hinted = 0;
+  await assert.rejects(collectIncheonTimetableVia(async () => { hinted += 1; return new Response("slow", { status: 429, headers: { "retry-after": "21" } }); }), /RETRY_AFTER_EXCEEDS_CAP/);
+  assert.equal(hinted, 1);
+
+  const leaky = async (url) => { throw Object.assign(new Error(`connect failed ${url}`), { code: "ECONNRESET", cause: { url: String(url) } }); };
+  const failure = await collectIncheonTimetableVia(leaky).catch((error) => error);
+  assert.match(failure.message, /detail transport failure; code=ECONNRESET/);
+  assertErrorOmitsSecrets(failure, ["www.data.go.kr", "fileData.do"]);
 });

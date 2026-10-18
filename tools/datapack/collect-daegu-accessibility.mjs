@@ -234,11 +234,12 @@ const ARG_SPEC = Object.freeze({
   absolute: ["output"],
 });
 
-export async function runDaeguAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
+export async function runDaeguAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date(), sleepImpl, randomImpl } = {}) {
   const args = parseDownloadModeArgs(argv, ARG_SPEC);
   const inventory = await readFile(args.inventory, "utf8").then(JSON.parse);
   const { bytes: [facilitiesBytes], downloadProvenance } = await loadDataGoInputs({
     args, fetchImpl, datasetIds: [DATASET_ID], inputPaths: [args.input],
+    retry: { sleepImpl, randomImpl },
   });
   const topologySnapshots = await loadAdmittedDaeguTopologySnapshots(args["sources-dir"], inventory);
   const snapshot = collectDaeguAccessibility({

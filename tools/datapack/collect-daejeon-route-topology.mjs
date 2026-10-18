@@ -18,6 +18,7 @@ export async function collectDaejeonRouteTopology({
   fetchImpl = fetch,
   sleepImpl,
   retryBudget,
+  randomImpl,
   now = new Date(),
 } = {}) {
   normalizeDataGoKrServiceKey(serviceKey);
@@ -35,6 +36,7 @@ export async function collectDaejeonRouteTopology({
         fetchImpl,
         sleepImpl,
         retryBudget,
+        randomImpl,
         now,
       });
       if (evidence.rowCount !== 1 || evidence.rows.length !== 1) {

@@ -73,7 +73,7 @@ test("rejects a non-official URL before making a network call", async () => {
   });
 });
 
-// #1099: 일시 오류(HTTP 408·5xx, 연결·본문 timeout)는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
+// #1099·#1340: 일시 오류(HTTP 429·500·502·503·504, 연결·본문 timeout)는 표준 정책(최대 3회 시도, full jitter)으로 같은 요청을 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
 // 난수 0.5로 full jitter 대기(base 2초·cap 20초)는 1·2초다.
 const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
 const XLSX_HEADERS = { "content-type": "application/octet-stream" };
