@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // KRIC OpenAPI trainUseInfo/subwayTimetable(카탈로그 provider:kric-subway-timetable) 역별 수집기.
 // 고정 바인딩의 역 × 요일코드(7 토요일, 8 평일, 9 휴일)마다 한 번 요청하고 원본 응답 바이트와 sha256을 보존한다.
-// 재시도·대체 응답 없음: HTTP 실패, 거부 결과코드(00·03 외), JSON이 아닌 응답은 즉시 실패한다.
+// 같은 요청(멱등 GET)만 원천 수집 표준 정책(lib/source-collection-retry.mjs)으로 최대 3회 시도한다: 연결·헤더 timeout, 본문 수신 중 소켓 끊김,
+// HTTP 429·500·502·503·504, KRIC 일시 resultCode(01·02·04·05·99). #997 조항은 그대로다: 본문 수신 데드라인(처리량 하한) 초과는 재시도하지 않고 즉시 KRIC_TIMEOUT으로 실패한다. 대체 응답은 없고, 소진하거나 결정적인 실패(HTTP 403, 그 밖의 결과코드, JSON이 아닌 응답)는 기존 오류로 실패한다.
+// 요청 하나의 최악 시간은 3 × (헤더 30초 + 본문 60초) + 2 × 20초이고, 한 실행의 재시도 시간은 transient-retry의 프로세스 예산(5분)으로 막힌다.
 // serviceKey는 요청 URL에만 쓰고 산출물·로그에 남기지 않는다.
 //
 // 실행: KRIC_SERVICE_KEY=... node tools/datapack/collect-kric-station-timetables.mjs --output <absolute new file>
@@ -10,6 +12,8 @@ import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, assertExpectedApiObservation, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { isRetryAfterExceedsCap, isTransientKricResultCode, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { isTransientTransportError, unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 
 export const KRIC_SUBWAY_TIMETABLE_ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable";
 const DAY_CDS = Object.freeze(["7", "8", "9"]);
@@ -34,6 +38,14 @@ export function formatCollectionError(error, env = process.env) {
   if (typeof key === "string" && key !== "") for (const form of credentialForms(key)) text = text.split(form).join("[REDACTED]");
   return text;
 }
+
+// 전송 오류 문구에는 요청 URL(키 포함)이 들어갈 수 있어 원문을 버리고 식별자만 남긴다. transient는 재시도 여부 판정용이다.
+const kricFailure = (code, label, transient) => Object.assign(new Error(`${code}: ${label}`), { kricTransient: transient });
+const isTimeoutFailure = (error) => error?.name === "TimeoutError" || error?.name === "AbortError";
+// 본문 데드라인 초과(kricTimeout, 처리량 하한 #997의 계약)는 재시도하지 않는다. 같은 하한으로 다시 받아도 같은 결과이고, 형제 수집기(KORAIL·KRIC 전국)도 같은 규칙이다.
+const transportFailure = (error, label) => (error?.kricTimeout === true ? kricFailure("KRIC_TIMEOUT", label, false) : isTimeoutFailure(error)
+  ? kricFailure("KRIC_TIMEOUT", label, true)
+  : kricFailure("KRIC_FETCH_FAILED", label, isTransientTransportError(error)));
 
 async function readResponseBytes(response, label, bodyTimeoutMs) {
   let bodyTimer = null;
@@ -65,18 +77,56 @@ async function readResponseBytes(response, label, bodyTimeoutMs) {
       }),
     ]);
   } catch (error) {
-    if (error?.kricTimeout === true || error?.name === "TimeoutError" || error?.name === "AbortError") {
-      throw new Error(`KRIC_TIMEOUT: ${label}`);
-    }
-    throw new Error(`KRIC_FETCH_FAILED: ${label}`);
+    throw transportFailure(error, label);
   } finally {
     clearTimeout(bodyTimer);
+  }
+}
+
+async function requestHeaders({ url, label, fetchImpl, headerTimeoutMs }) {
+  const controller = new AbortController();
+  let headerTimedOut = false;
+  const headerTimer = setTimeout(() => {
+    headerTimedOut = true;
+    controller.abort();
+  }, headerTimeoutMs);
+  headerTimer.unref?.();
+  try {
+    return await fetchImpl(url, { redirect: "error", signal: controller.signal });
+  } catch (error) {
+    throw headerTimedOut ? kricFailure("KRIC_TIMEOUT", label, true) : transportFailure(error, label);
+  } finally {
+    clearTimeout(headerTimer);
+  }
+}
+
+const parseResultCode = (bytes) => {
+  try { return JSON.parse(bytes.toString("utf8"))?.header?.resultCode; } catch { return undefined; }
+};
+
+// 요청과 본문 읽기를 한 시도로 묶어 표준 정책으로 재시도한다. 200이 아닌 응답은 본문을 읽지 않고 상태로 판정한다.
+async function fetchTimetableWithRetry({ url, label, fetchImpl, headerTimeoutMs, bodyTimeoutMs, retry }) {
+  try {
+    const { response, bytes } = await withSourceCollectionRetry(async () => {
+      const received = await requestHeaders({ url, label, fetchImpl, headerTimeoutMs });
+      return received.status === 200 ? { response: received, bytes: await readResponseBytes(received, label, bodyTimeoutMs) } : { response: received };
+    }, {
+      label: `KRIC subwayTimetable ${label}`,
+      isTransientError: (error) => error?.kricTransient === true,
+      isTransientResult: ({ bytes }) => bytes !== undefined && isTransientKricResultCode(parseResultCode(bytes)),
+      sleep: retry.sleep, budget: retry.budget, random: retry.random,
+    });
+    if (response.status !== 200) throw new Error(`KRIC_HTTP_FAILED: ${label} status=${response.status}`);
+    return bytes;
+  } catch (error) {
+    throw isRetryAfterExceedsCap(error) ? error : unwrapTransientRetryFailure(error);
   }
 }
 
 export async function collectKricStationTimetables({
   bindings = KRIC_API_STATION_TIMETABLE_BINDINGS, serviceKey, fetchImpl = fetch, now = () => new Date(),
   headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
+  retrySleepImpl, retryBudget, retryRandomImpl,
 } = {}) {
   if (typeof serviceKey !== "string" || serviceKey.trim() === "") throw new Error("KRIC_SERVICE_KEY_REQUIRED");
   if (!Number.isSafeInteger(headerTimeoutMs) || headerTimeoutMs < 1
@@ -95,27 +145,8 @@ export async function collectKricStationTimetables({
         url.searchParams.set("serviceKey", serviceKey);
         for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
         capturedAt ??= now().toISOString();
-        // 전송 오류 문구에는 요청 URL(키 포함)이 들어갈 수 있어 원문을 버리고 식별자만 남긴다.
-        const controller = new AbortController();
-        let headerTimedOut = false;
-        const headerTimer = setTimeout(() => {
-          headerTimedOut = true;
-          controller.abort();
-        }, headerTimeoutMs);
-        headerTimer.unref?.();
-        let response;
-        try {
-          response = await fetchImpl(url.href, { redirect: "error", signal: controller.signal });
-        } catch (error) {
-          if (headerTimedOut || error?.name === "TimeoutError" || error?.name === "AbortError") {
-            throw new Error(`KRIC_TIMEOUT: ${label}`);
-          }
-          throw new Error(`KRIC_FETCH_FAILED: ${label}`);
-        } finally {
-          clearTimeout(headerTimer);
-        }
-        if (response.status !== 200) throw new Error(`KRIC_HTTP_FAILED: ${label} status=${response.status}`);
-        const bytes = await readResponseBytes(response, label, bodyTimeoutMs);
+        const bytes = await fetchTimetableWithRetry({ url: url.href, label, fetchImpl, headerTimeoutMs, bodyTimeoutMs,
+          retry: { sleep: retrySleepImpl, budget: retryBudget, random: retryRandomImpl } });
         if (forms.some((form) => bytes.includes(Buffer.from(form)))) throw new Error(`CREDENTIAL_LEAK: ${label}`);
         let parsed;
         try { parsed = JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`KRIC_RESPONSE_NOT_JSON: ${label}`); }
@@ -123,7 +154,7 @@ export async function collectKricStationTimetables({
         if (!ACCEPTED_RESULT_CODES.has(resultCode)) throw new Error(`KRIC_RESULT_REJECTED: ${label} code=${resultCode}`);
         const rows = Array.isArray(parsed.body) ? parsed.body : [];
         responses.push({ requestKey: `subwayTimetable|${railOprIsttCd}|${binding.lnCd}|${stinCd}|${dayCd}`, params,
-          httpStatus: response.status, resultCode, rowCount: rows.length, bodySha256: sha256(bytes), bodyBase64: bytes.toString("base64") });
+          httpStatus: 200, resultCode, rowCount: rows.length, bodySha256: sha256(bytes), bodyBase64: bytes.toString("base64") });
       }
     }
   }

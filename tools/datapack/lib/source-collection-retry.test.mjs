@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { inspect } from "node:util";
 
 import {
   RETRY_AFTER_EXCEEDS_CAP,
@@ -7,6 +8,7 @@ import {
   fetchBytesWithSourceRetry,
   isRetryAfterExceedsCap,
   isTransientDataGoKrResultCode,
+  isTransientKricResultCode,
   withSourceCollectionRetry,
 } from "./source-collection-retry.mjs";
 import { createTransientRetryBudget } from "./transient-retry.mjs";
@@ -160,4 +162,40 @@ test("fetchBytesWithSourceRetry는 Retry-After cap 초과로 버린 응답의 �
     assert.match(error.message, /^Sample HTTP 429: RETRY_AFTER_EXCEEDS_CAP retryAfterSeconds=300 capSeconds=20; rawBytes=4; rawSha256=[a-f0-9]{64}$/);
     return true;
   });
+});
+
+// KRIC OpenAPI resultCode 분류(Refs #870): 게이트웨이 표준 코드 중 같은 요청을 다시 보내면 풀릴 수 있는 오류만 일시로 본다.
+// 30(미등록 서비스키·operation)과 12(없거나 폐기된 서비스)는 결정적이므로 data.go.kr 분류와 달리 즉시 실패한다.
+const KRIC_RESULT_CODE_CASES = [
+  ["01", true, "APPLICATION_ERROR"], ["02", true, "DB_ERROR"], ["04", true, "HTTP_ERROR"], ["05", true, "SERVICETIMEOUT_ERROR"], ["99", true, "UNKNOWN_ERROR"],
+  ["00", false, "정상"], ["03", false, "데이터 없음"], ["10", false, "잘못된 요청 파라미터"], ["11", false, "필수 파라미터 없음"],
+  ["12", false, "서비스 없음·폐기"], ["20", false, "접근 거부"], ["21", false, "사용할 수 없는 서비스키"], ["22", false, "요청 한도 초과"],
+  ["30", false, "미등록"], ["31", false, "기한 만료"], ["32", false, "미등록 IP"], ["41", false, "승인 대기"], [undefined, false, "코드 없음"],
+];
+for (const [code, transient, meaning] of KRIC_RESULT_CODE_CASES) {
+  test(`KRIC resultCode ${code} (${meaning})는 ${transient ? "일시 오류로 재시도한다" : "재시도하지 않는다"}`, () => {
+    assert.equal(isTransientKricResultCode(code), transient);
+  });
+}
+
+// 프리셋이 던지는 Retry-After 초과 오류는 버린 Response(URL에 serviceKey가 실릴 수 있음)를 들고 나가지 않고 안전한 필드만 남긴다.
+test("Retry-After 초과 오류는 Response를 담지 않고 status·대기·원본 증거만 남긴다", async () => {
+  const secretUrl = "https://example.test/api?serviceKey=SECRET-KEY-9";
+  const withUrl = (status, headers) => Object.defineProperty(response(status, headers), "url", { value: secretUrl });
+  const error = await withSourceCollectionRetry(
+    () => ({ response: withUrl(429, { "Retry-After": "300" }), bytes: Buffer.from("body") }),
+    { label: "Sample", sleep: async () => {}, budget: createTransientRetryBudget() },
+  ).catch((caught) => caught);
+  assert.equal(isRetryAfterExceedsCap(error), true);
+  assert.equal(error.status, 429);
+  assert.equal(error.retryAfterMilliseconds, 300_000);
+  assert.deepEqual({ ...error.rawEvidence }, { byteLength: 4, sha256: error.rawEvidence.sha256 });
+  assert.equal(error.result, undefined);
+  assert.equal(inspect(error, { depth: 8, showHidden: true }).includes("SECRET-KEY-9"), false);
+});
+
+// 코드별 분류 행: 두 원천이 다르게 다루는 코드(30)를 명시한다.
+test("resultCode 30은 data.go.kr에서는 일시, KRIC에서는 결정적이다", () => {
+  assert.equal(isTransientDataGoKrResultCode("30"), true);
+  assert.equal(isTransientKricResultCode("30"), false);
 });
