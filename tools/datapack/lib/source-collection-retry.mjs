@@ -57,34 +57,31 @@ export class RetryAfterExceedsCapError extends Error {
 //   - 30: data.go.kr는 게이트웨이 노드 사이 키 동기화 지연으로 간헐 발생해 일시로 본다(같은 키로 여러 run이 통과). KRIC는 미신청 operation이라 재시도해도 풀리지 않는다고 보고 즉시 실패시킨다.
 //     이는 실측 근거가 있는 선택이지 KRIC 공식 문서의 정의가 아니다. 방금 승인된 operation의 전파 지연이 관측되면 재검토한다.
 const RESULT_CODE_TABLE = Object.freeze([
-  { code: "01", name: "APPLICATION_ERROR", dataGoKr: "transient", kric: "transient", humetro: "fatal" },
-  { code: "02", name: "DB_ERROR", dataGoKr: "transient", kric: "transient", humetro: "fatal" },
-  { code: "04", name: "HTTP_ERROR", dataGoKr: "transient", kric: "transient", humetro: "fatal" },
-  { code: "05", name: "SERVICETIMEOUT_ERROR", dataGoKr: "transient", kric: "transient", humetro: "fatal" },
-  { code: "10", name: "INVALID_REQUEST_PARAMETER_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "11", name: "NO_MANDATORY_REQUEST_PARAMETERS_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "12", name: "NO_OPENAPI_SERVICE_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "20", name: "SERVICE_ACCESS_DENIED_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "21", name: "TEMPORARILY_DISABLE_THE_SERVICEKEY_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "22", name: "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "30", name: "SERVICE_KEY_IS_NOT_REGISTERED_ERROR", dataGoKr: "transient", kric: "fatal", humetro: "fatal" },
-  { code: "31", name: "DEADLINE_HAS_EXPIRED_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "32", name: "UNREGISTERED_IP_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "33", name: "UNSIGNED_CALL_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "99", name: "UNKNOWN_ERROR", dataGoKr: "transient", kric: "transient", humetro: "transient" },
+  { code: "01", name: "APPLICATION_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "02", name: "DB_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "04", name: "HTTP_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "05", name: "SERVICETIMEOUT_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "10", name: "INVALID_REQUEST_PARAMETER_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "11", name: "NO_MANDATORY_REQUEST_PARAMETERS_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "12", name: "NO_OPENAPI_SERVICE_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "20", name: "SERVICE_ACCESS_DENIED_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "21", name: "TEMPORARILY_DISABLE_THE_SERVICEKEY_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "22", name: "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "30", name: "SERVICE_KEY_IS_NOT_REGISTERED_ERROR", dataGoKr: "transient", kric: "fatal" },
+  { code: "31", name: "DEADLINE_HAS_EXPIRED_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "32", name: "UNREGISTERED_IP_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "33", name: "UNSIGNED_CALL_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "99", name: "UNKNOWN_ERROR", dataGoKr: "transient", kric: "transient" },
 ]);
-//   - humetro: 부산교통공사 OpenAPI(data.humetro.busan.kr). data.go.kr 게이트웨이가 아니라 위 코드표를 적용할 근거가 없다. 공식 오류코드 문서를 찾지 못해
-//     (저장소 조사, 2026-10-18) 응답이 envelope로 내려주는 99(UNKNOWN_ERROR)만 일시로 보고 나머지는 즉시 실패시킨다. 문서나 실측 근거가 생기면 이 열을 고친다.
+//   - 부산교통공사 OpenAPI(data.humetro.busan.kr)도 dataGoKr 열을 쓴다. 별도 오류코드 문서는 없지만 실패 응답이 data.go.kr 표준 이름(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)으로
+//     resultCode 30을 내려 같은 코드 체계로 본다(근거: source-reverification run 39119028493, 2026-10-18T10:23Z, https://github.com/AquilaXk/easysubway-data/issues/1333 코멘트).
+//     같은 key로 02:23·04:47·06:23 run은 통과했다. 간헐 30 관측은 1건뿐이므로 추가 표본이 생기면 재검토한다. 키가 실제 미등록이면 3회 모두 30이라 소진 뒤 resultCode 30으로 실패한다.
 const transientCodesOf = (origin) => new Set(RESULT_CODE_TABLE.filter((row) => row[origin] === "transient").map(({ code }) => code));
 const TRANSIENT_DATA_GO_KR_RESULT_CODES = transientCodesOf("dataGoKr");
 const TRANSIENT_KRIC_RESULT_CODES = transientCodesOf("kric");
-const TRANSIENT_HUMETRO_RESULT_CODES = transientCodesOf("humetro");
 
 /** 공공데이터포털 envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientDataGoKrResultCode = (resultCode) => TRANSIENT_DATA_GO_KR_RESULT_CODES.has(resultCode);
-
-/** 부산교통공사 OpenAPI envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가(99만 일시). */
-export const isTransientBusanHumetroResultCode = (resultCode) => TRANSIENT_HUMETRO_RESULT_CODES.has(resultCode);
 
 /** KRIC OpenAPI 응답의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientKricResultCode = (resultCode) => TRANSIENT_KRIC_RESULT_CODES.has(resultCode);

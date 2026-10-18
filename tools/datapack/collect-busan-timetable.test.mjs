@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { busanTimetableCounts, collectBusanTimetable } from "./collect-busan-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineDataGoKrResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   prepareBusanTimetableRegistration,
@@ -424,7 +424,7 @@ defineSourceCollectionRetryTests({
   }),
 });
 
-// 공공데이터포털 envelope resultCode 분류(공용 isTransientDataGoKrResultCode): 일시 코드는 재시도하고, 결정적 코드는 즉시 실패한다.
+// 부산교통공사 envelope resultCode 분류(공용 isTransientDataGoKrResultCode): 일시 코드(01·02·04·05·30·99)는 재시도하고, 그 밖은 즉시 실패한다.
 const envelopeResponse = (code) => new Response(
   `<?xml version="1.0"?><response><header><resultCode>${code}</resultCode><resultMsg>x</resultMsg></header></response>`,
   { headers: { "content-type": "application/xml" } },
@@ -446,21 +446,22 @@ const collectWithEnvelopes = async (codes) => {
   return { collection, calls: () => calls };
 };
 
-for (const code of ["99", "30", "01", "02", "04", "05"]) {
-  test(`부산 timetable collector는 일시 resultCode ${code} 뒤 같은 요청이 성공하면 정상 수집한다`, async () => {
-    const { collection, calls } = await collectWithEnvelopes([code]);
-    assert.equal((await collection).requestCount, 342);
-    assert.equal(calls(), 343);
-  });
-}
-
-for (const code of ["22", "20", "31", "10", "12"]) {
-  test(`부산 timetable collector는 결정적 resultCode ${code}를 재시도하지 않고 코드와 함께 실패한다`, async () => {
-    const { collection, calls } = await collectWithEnvelopes([code]);
-    await assert.rejects(collection, new RegExp(`provider resultCode ${code}; rawSha256=[a-f0-9]{64}`));
-    assert.equal(calls(), 1);
-  });
-}
+defineDataGoKrResultCodeRetryTests({
+  name: "부산 timetable collector",
+  delegate: stationTimetableFetch,
+  rejectedResponse: envelopeResponse,
+  run: ({ fetchImpl }) => collectBusanTimetable({
+    serviceKey: "fixture-key",
+    stationScopes: topology.scope,
+    concurrency: 1,
+    now: new Date("2026-07-20T09:00:00.000Z"),
+    sleepImpl: async () => {},
+    randomImpl: () => 0,
+    fetchImpl,
+  }),
+  assertRecovered: (snapshot) => assert.equal(snapshot.requestCount, 342),
+  assertFinal: (outcome, resultCode) => assert.rejects(outcome, new RegExp(`provider resultCode ${resultCode}; rawSha256=[a-f0-9]{64}`)),
+});
 
 test("부산 timetable collector는 resultCode 30이 3회 이어지면(키 미등록) 소진 뒤 resultCode 30을 담아 실패한다", async () => {
   const { collection, calls } = await collectWithEnvelopes(["30", "30", "30", "30"]);

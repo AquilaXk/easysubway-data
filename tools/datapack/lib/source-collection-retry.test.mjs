@@ -12,6 +12,7 @@ import {
   transportFailureWithCode,
   withSourceCollectionRetry,
 } from "./source-collection-retry.mjs";
+import { assertErrorOmitsSecrets } from "./source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./transient-retry.mjs";
 
 // 원천 수집 표준 정책(data #1334): 최대 3회 시도, full jitter base 2s·cap 20s, Retry-After 우선(cap 초과는 fail-closed), 429는 힌트 없으면 1회만.
@@ -239,4 +240,16 @@ test("transportFailureWithCode는 안전한 형식의 오류 코드만 남기고
   assert.equal(toFailure({ cause: { code: "UND_ERR_SOCKET" } }).message, "Sample transport failure; code=UND_ERR_SOCKET");
   assert.equal(toFailure({ code: "has space&key=SECRET" }).message, "Sample transport failure; code=UNKNOWN");
   assert.equal(toFailure(undefined).message, "Sample transport failure; code=UNKNOWN");
+});
+
+// 공용 비밀 노출 검사 헬퍼의 자기 검증: 비밀이 어디에 있든(메시지·cause·열거 속성) 잡고, 없으면 통과한다.
+test("assertErrorOmitsSecrets는 비밀이 메시지·cause 체인·열거 속성에 있으면 실패하고 없으면 통과한다", () => {
+  const secret = "SECRET-KEY-42";
+  const leaks = [
+    new Error(`failed ${secret}`),
+    new Error("failed", { cause: new Error("inner", { cause: { url: `http://host/?serviceKey=${secret}` } }) }),
+    Object.assign(new Error("failed"), { requestUrl: `http://host/?serviceKey=${secret}` }),
+  ];
+  for (const leak of leaks) assert.throws(() => assertErrorOmitsSecrets(leak, [secret]), assert.AssertionError);
+  assert.doesNotThrow(() => assertErrorOmitsSecrets(new Error("failed", { cause: new Error("inner") }), [secret]));
 });

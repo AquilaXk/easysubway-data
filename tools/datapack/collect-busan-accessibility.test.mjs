@@ -5,7 +5,7 @@ import test from "node:test";
 
 import {
   assertErrorOmitsSecrets,
-  defineBusanHumetroResultCodeRetryTests,
+  defineDataGoKrResultCodeRetryTests,
   defineSourceCollectionRetryTests,
 } from "./lib/source-collection-retry-test-support.mjs";
 import {
@@ -212,8 +212,8 @@ const envelopeResponse = (code) => new Response(
   { headers: { "content-type": "application/xml" } },
 );
 
-// 부산교통공사 게이트웨이는 data.go.kr가 아니라 resultCode 99만 일시로 본다.
-defineBusanHumetroResultCodeRetryTests({
+// 부산교통공사 게이트웨이도 data.go.kr 코드 체계라 resultCode 01·02·04·05·30·99를 일시로 본다.
+defineDataGoKrResultCodeRetryTests({
   name: "부산 accessibility collector",
   delegate: stationResponse,
   rejectedResponse: envelopeResponse,
@@ -242,10 +242,10 @@ test("부산 accessibility collector는 소진된 재시도 오류에 인증키�
   const echoed = (url) => new Response(`busy ${url}`, { status: 503 });
   const exhaustedStatus = await collectWith({ serviceKey, fetchImpl: async (url) => echoed(url) }).catch((error) => error);
   assert.match(exhaustedStatus.message, /Busan accessibility HTTP 503; rawBytes=\d+; rawSha256=[a-f0-9]{64}/);
-  assertErrorOmitsSecrets(exhaustedStatus, [serviceKey, "humetro"]);
+  assertErrorOmitsSecrets(exhaustedStatus, [serviceKey, encodeURIComponent(serviceKey), "data.humetro.busan.kr"]);
 
   const leaky = async (url) => { throw Object.assign(new Error(`connect failed ${url}`), { code: "ECONNRESET", cause: { url: String(url) } }); };
   const exhaustedTransport = await collectWith({ serviceKey, fetchImpl: leaky }).catch((error) => error);
   assert.match(exhaustedTransport.message, /transport failure; code=ECONNRESET/);
-  assertErrorOmitsSecrets(exhaustedTransport, [serviceKey, "humetro"]);
+  assertErrorOmitsSecrets(exhaustedTransport, [serviceKey, encodeURIComponent(serviceKey), "data.humetro.busan.kr"]);
 });
