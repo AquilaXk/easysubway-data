@@ -6,7 +6,7 @@ import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode } from "./lib/source-collection-retry.mjs";
+import { fetchBytesWithSourceRetry, isTransientBusanHumetroResultCode } from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
@@ -526,17 +526,17 @@ function validateNormalizedEdges(edges) {
   return edges;
 }
 
-// data.go.kr 공통 오류 envelope의 resultCode 99(UNKNOWN_ERROR)는 TAGO와 같은 일시 오류다. 다른 resultCode(22·23 쿼터, 30 인증 등)는 재시도하지 않는다.
+// 부산교통공사 envelope의 resultCode 30·99는 일시 오류다. 다른 resultCode(22·23 쿼터 등)는 재시도하지 않는다.
 function isTransientProviderBody(rawBytes) {
   try {
-    return isTransientDataGoKrResultCode(parseXmlEnvelope(decodeXmlBytes(rawBytes).raw).resultCode);
+    return isTransientBusanHumetroResultCode(parseXmlEnvelope(decodeXmlBytes(rawBytes).raw).resultCode);
   } catch {
     return false;
   }
 }
 
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs, #1099, #1334).
-// 200 응답이어도 공공데이터포털 envelope resultCode가 일시 오류 코드(99·30 등)면 다시 보낸다.
+// 200 응답이어도 부산교통공사 envelope resultCode가 일시 오류 코드(30·99)면 다시 보낸다.
 // 인증·형식 오류는 재시도하지 않는다. 한도를 다 쓰면 마지막 응답(HTTP 오류·provider 오류)이나 전송 오류를 기존 오류와 원본 증거로 드러낸다.
 function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
   return fetchBytesWithSourceRetry({

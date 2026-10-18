@@ -242,10 +242,10 @@ test("부산 accessibility collector는 소진된 재시도 오류에 인증키�
   const echoed = (url) => new Response(`busy ${url}`, { status: 503 });
   const exhaustedStatus = await collectWith({ serviceKey, fetchImpl: async (url) => echoed(url) }).catch((error) => error);
   assert.match(exhaustedStatus.message, /Busan accessibility HTTP 503; rawBytes=\d+; rawSha256=[a-f0-9]{64}/);
-  assertErrorOmitsSecrets(exhaustedStatus, [serviceKey, "humetro"]);
+  assertErrorOmitsSecrets(exhaustedStatus, [serviceKey, encodeURIComponent(serviceKey), "data.humetro.busan.kr"]);
 
   const leaky = async (url) => { throw Object.assign(new Error(`connect failed ${url}`), { code: "ECONNRESET", cause: { url: String(url) } }); };
   const exhaustedTransport = await collectWith({ serviceKey, fetchImpl: leaky }).catch((error) => error);
   assert.match(exhaustedTransport.message, /transport failure; code=ECONNRESET/);
-  assertErrorOmitsSecrets(exhaustedTransport, [serviceKey, "humetro"]);
+  assertErrorOmitsSecrets(exhaustedTransport, [serviceKey, encodeURIComponent(serviceKey), "data.humetro.busan.kr"]);
 });

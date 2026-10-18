@@ -59,9 +59,10 @@ export function defineSourceCollectionRetryTests({ name, run, delegate, headers,
   });
 }
 
-/** 오류의 메시지와 inspect 출력(cause·속성 포함)에 비밀 값이 없는지 확인한다. */
+/** 오류의 메시지와 inspect 출력(cause·속성 포함)에 비밀 값이 없는지 확인한다. stack 프레임("at ..." 줄)은 실행 경로일 뿐이라 검사에서 뺀다. */
 export function assertErrorOmitsSecrets(error, secrets) {
-  const surfaces = [String(error?.message), inspect(error, { depth: 6, showHidden: true })];
+  const withoutStackFrames = inspect(error, { depth: 6, showHidden: true }).split("\n").filter((line) => !/^\s+at /.test(line)).join("\n");
+  const surfaces = [String(error?.message), withoutStackFrames];
   for (const secret of secrets) {
     for (const surface of surfaces) assert.equal(surface.includes(secret), false, `오류에 비밀 값이 실리면 안 된다: ${secret.slice(0, 3)}...`);
   }

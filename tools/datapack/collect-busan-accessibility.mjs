@@ -236,7 +236,7 @@ function validateScope(scope) {
 }
 
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·500·502·503·504와 전송 오류)으로 같은 GET을 다시 보낸다.
-// 200 응답이어도 부산교통공사 envelope resultCode가 일시 오류 코드(99)면 다시 보낸다. 소진하면 마지막 응답이 parseBusanAccessibilityResponse에서 resultCode와 함께 실패한다.
+// 200 응답이어도 부산교통공사 envelope resultCode가 일시 오류 코드(30·99)면 다시 보낸다. 소진하면 마지막 응답이 parseBusanAccessibilityResponse에서 resultCode와 함께 실패한다.
 function fetchWithRetry(url, fetchImpl, { sleepImpl, randomImpl }) {
   return fetchBytesWithSourceRetry({
     url,
