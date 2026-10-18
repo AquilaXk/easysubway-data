@@ -1090,7 +1090,7 @@ test("일시 오류 재시도 표: 성공·소진·즉시 실패·Retry-After가
     { name: "연결 reset 두 번 뒤 성공", script: [resetError(), resetError(), okPage], calls: 3, sleeps: [1_000, 2_000], ok: true },
     { name: "timeout 3회는 소진 실패", script: [timeoutError()], calls: 3, sleeps: [1_000, 2_000], message: "Seoul accessibility API request failed: NETWORK_TIMEOUT" },
     { name: "503 뒤 성공", script: [() => failedPage(503), okPage], calls: 2, sleeps: [1_000], ok: true },
-    { name: "429·502·504도 일시", script: [() => failedPage(429), () => failedPage(502), () => failedPage(504)], calls: 3, sleeps: [1_000, 2_000], message: "Seoul accessibility API HTTP 504" },
+    { name: "429·502·504가 이어지면 시도 3에서 소진", script: [() => failedPage(429), () => failedPage(502), () => failedPage(504)], calls: 3, sleeps: [1_000, 2_000], message: "Seoul accessibility API HTTP 504" },
     { name: "503 3회는 소진 실패", script: [() => failedPage(503)], calls: 3, sleeps: [1_000, 2_000], message: "Seoul accessibility API HTTP 503" },
     { name: "401은 즉시 실패", script: [() => failedPage(401), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 401" },
     { name: "403은 즉시 실패", script: [() => failedPage(403), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 403" },
@@ -1099,7 +1099,17 @@ test("일시 오류 재시도 표: 성공·소진·즉시 실패·Retry-After가
     { name: "알 수 없는 전송 오류는 즉시 실패", script: [new Error("boom"), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API request failed: NETWORK_UNKNOWN" },
     { name: "TLS 오류는 즉시 실패", script: [Object.assign(new Error("tls"), { code: "ERR_TLS_CERT_ALTNAME_INVALID" }), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API request failed: NETWORK_TLS" },
     { name: "503 Retry-After 초 값을 따른다", script: [() => failedPage(503, { "Retry-After": "7" }), okPage], calls: 2, sleeps: [7_000], ok: true },
-    { name: "429 Retry-After는 cap 20초로 자른다", script: [() => failedPage(429, { "Retry-After": "300" }), () => failedPage(503, { "Retry-After": "3" }), okPage], calls: 3, sleeps: [20_000, 3_000], ok: true },
+    { name: "429 Retry-After가 cap 20초를 넘으면 기다리지 않고 즉시 실패", script: [() => failedPage(429, { "Retry-After": "300" }), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 429: RETRY_AFTER_EXCEEDS_CAP retryAfterSeconds=300 capSeconds=20" },
+    { name: "503 Retry-After가 cap을 넘어도 즉시 실패(날짜 형식)", script: [() => failedPage(503, { "Retry-After": new Date(Date.now() + 600_000).toUTCString() }), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 503: RETRY_AFTER_EXCEEDS_CAP retryAfterSeconds=" },
+    { name: "429 Retry-After가 cap 안이면 따르고 두 번째 429도 따른다", script: [() => failedPage(429, { "Retry-After": "20" }), () => failedPage(429, { "Retry-After": "3" }), okPage], calls: 3, sleeps: [20_000, 3_000], ok: true },
+    { name: "429 Retry-After 없음은 jitter 대기로 한 번만 재시도", script: [() => failedPage(429), okPage], calls: 2, sleeps: [1_000], ok: true },
+    { name: "429가 Retry-After 없이 두 번이면 두 번째에서 실패", script: [() => failedPage(429)], calls: 2, sleeps: [1_000], message: "Seoul accessibility API HTTP 429" },
+    { name: "429 Retry-After 없음 뒤 503은 남은 시도 안에서 재시도", script: [() => failedPage(429), () => failedPage(503), okPage], calls: 3, sleeps: [1_000, 2_000], ok: true },
+    { name: "502 뒤 성공", script: [() => failedPage(502), okPage], calls: 2, sleeps: [1_000], ok: true },
+    { name: "504 뒤 성공", script: [() => failedPage(504), okPage], calls: 2, sleeps: [1_000], ok: true },
+    { name: "408은 일시 집합 밖이라 즉시 실패", script: [() => failedPage(408), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 408" },
+    { name: "501은 즉시 실패", script: [() => failedPage(501), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 501" },
+    { name: "505는 즉시 실패", script: [() => failedPage(505), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 505" },
     { name: "읽을 수 없는 Retry-After는 jitter 대기", script: [() => failedPage(503, { "Retry-After": "soon" }), okPage], calls: 2, sleeps: [1_000], ok: true },
   ];
   for (const expected of cases) {
@@ -1171,4 +1181,14 @@ test("재시도는 페이지마다 따로 센다: 둘째 page의 일시 오류�
   assert.equal(result.calls, 3);
   assert.equal(result.error, undefined);
   assert.equal(result.value.rows.length, 2);
+});
+
+test("재시도하려고 버리는 비-OK 응답의 본문은 취소한다. 마지막 응답은 건드리지 않는다", async () => {
+  const cancelled = [];
+  const failedWithBody = (status, label) => () => ({ ...failedPage(status), body: { cancel: async () => { cancelled.push(label); } } });
+  const result = await collectWithScript([failedWithBody(503, "first"), failedWithBody(503, "second"), failedWithBody(503, "last")]);
+  assert.equal(result.calls, 3);
+  assert.deepEqual(cancelled, ["first", "second"]);
+  const rejecting = await collectWithScript([() => ({ ...failedPage(503), body: { cancel: async () => { throw new Error("already closed"); } } }), okPage]);
+  assert.equal(rejecting.error, undefined, "취소 실패가 수집을 막지 않는다");
 });

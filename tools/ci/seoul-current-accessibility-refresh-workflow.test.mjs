@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { MAX_REQUEST_ATTEMPTS } from "../datapack/collect-seoul-accessibility-evidence.mjs";
+import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_ATTEMPTS, RETRY_CAP_DELAY_MS } from "../datapack/collect-seoul-accessibility-evidence.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.."); const workflowPath = path.join(root, ".github/workflows/seoul-current-accessibility-refresh.yml");
 test("Seoul refresh workflow is due-only, main-only, collector-retry, OCI registration with one draft PR", () => { assert.ok(existsSync(workflowPath)); const yml = readFileSync(workflowPath, "utf8"); assert.match(yml, /cron: "31 \*\/2 \* \* \*"/); assert.match(yml, /github\.ref == 'refs\/heads\/main'/); assert.match(yml, /cancel-in-progress: false/); assert.match(yml, /mkdir -p "\$\{RUNNER_TEMP\}\/seoul-current-accessibility-refresh\/\$\{GITHUB_RUN_ID\}"/); assert.match(yml, /decide-current-seoul-accessibility-refresh\.mjs/); assert.match(yml, /RECOVER_CLAIM/); assert.match(yml, /automation\/639-seoul-accessibility-refresh-\$\{GITHUB_RUN_ID\}/); assert.match(yml, /run-current-seoul-accessibility-registration\.mjs[^\n]+--phase collect/); assert.match(yml, /git config user\.name "github-actions\[bot\]"[\s\S]*git config user\.email "41898282\+github-actions\[bot\]@users\.noreply\.github\.com"[\s\S]*git commit --allow-empty -m "Claim Seoul accessibility refresh"/); assert.match(yml, /Finalize claimed refresh branch[\s\S]*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*git add -A[\s\S]*git diff --cached --name-only --diff-filter=ACMR[\s\S]*git push origin "\$\{SEOUL_REFRESH_BRANCH\}"/); assert.match(yml, /git rev-list --count HEAD\.\."origin\/\$\{branch\}"/); assert.match(yml, /--draft/); assert.match(yml, /Refresh Seoul accessibility snapshot/); assert.match(yml, /source-inventory\.json/); assert.match(yml, /source-snapshots\.json/); assert.match(yml, /capital-pilot-production-source-input\.json/); assert.doesNotMatch(yml, /aws|s3:|fallback|automerge|git push origin main|gh workflow run/i); });
 
@@ -90,15 +90,16 @@ test("Seoul collection and publication are separate steps that share the observa
   assert.equal(yml.includes("Collect and bind current snapshot"), false);
 });
 
+const WORST_CASE_PAGES = 10;
+
 // #1326 (Refs #870): 일시 오류 재시도는 수집기 안에서만, 최대 3번 시도로 한정한다. workflow는 재시도를 늘리거나 감싸지 않는다.
 test("Seoul refresh retries only inside the collector: attempt cap 3, no unbounded shell retry, worst case fits the job timeout", () => {
   const yml = readFileSync(workflowPath, "utf8");
   assert.equal(MAX_REQUEST_ATTEMPTS, 3);
   assert.doesNotMatch(yml, /--request-attempts/, "workflow must not override the collector attempt cap");
   assert.doesNotMatch(yml, /\bretry\b|--retries|\buntil\b|while true|for attempt|nick-fields\/retry/i, "no workflow-level retry or loop around the collector");
-  // 요청 하나의 최악 시간 = 시도 수 × 요청 timeout 30초 + 대기 (시도 수 - 1) × Retry-After cap 20초. page 10개(현재 행 865개의 10배 이상)까지 job timeout에 들어와야 한다.
-  const worstCaseRequestMs = MAX_REQUEST_ATTEMPTS * 30_000 + (MAX_REQUEST_ATTEMPTS - 1) * 20_000;
+  // 요청 하나의 최악 시간 = 시도 수 × 요청 timeout + (시도 수 - 1) × Retry-After cap. page 10개(현재 행 865개의 10배 이상)까지 job timeout의 절반 안에 들어와야 한다.
+  const worstCaseRequestMs = MAX_REQUEST_ATTEMPTS * DEFAULT_REQUEST_TIMEOUT_MS + (MAX_REQUEST_ATTEMPTS - 1) * RETRY_CAP_DELAY_MS;
   const timeoutMs = Number(/timeout-minutes: (\d+)/.exec(yml)[1]) * 60_000;
-  assert.equal(worstCaseRequestMs, 130_000);
-  assert.ok(10 * worstCaseRequestMs < timeoutMs / 2, `${10 * worstCaseRequestMs} ms must stay under half of the ${timeoutMs} ms job timeout`);
+  assert.ok(WORST_CASE_PAGES * worstCaseRequestMs < timeoutMs / 2, `${WORST_CASE_PAGES * worstCaseRequestMs} ms must stay under half of the ${timeoutMs} ms job timeout`);
 });

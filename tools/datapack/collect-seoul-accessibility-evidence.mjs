@@ -11,7 +11,7 @@ import {
   createTransientRetryBudget,
   fullJitterBackoffMs,
   isTransientTransportError,
-  retryAfterMs,
+  parseRetryAfterMs,
   unwrapTransientRetryFailure,
   withTransientRetry,
 } from "./lib/transient-retry.mjs";
@@ -30,13 +30,17 @@ const SOURCES = {
     schemaFields: ["dtlPstn", "lineNm", "oprtngSitu", "stnCd", "stnNm"],
   },
 };
-const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-// 일시 오류 재시도(#1326, Refs #870): 멱등 GET만, 최초 1회 + 재시도 2회. 대기는 full jitter random(0, min(cap, base·2^n))이고 Retry-After는 cap 안에서 따른다.
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+// 일시 오류 재시도(#1326, Refs #870): 멱등 GET만, 최초 1회 + 재시도 2회. 대기는 full jitter random(0, min(cap, base·2^n))이고 Retry-After는 cap 안에서 따르고 cap을 넘으면 기다리지 않고 실패한다.
 // 요청 하나의 최악 시간은 3 × 요청 timeout + 2 × cap = 130초다(workflow timeout 45분 안, 요청은 page마다 하나).
 export const MAX_REQUEST_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 2_000;
-const RETRY_CAP_DELAY_MS = 20_000;
-const TRANSIENT_HTTP_STATUSES = new Set([429, 502, 503, 504]);
+export const RETRY_CAP_DELAY_MS = 20_000;
+const RATE_LIMITED_STATUS = 429;
+const TRANSIENT_HTTP_STATUSES = new Set([RATE_LIMITED_STATUS, 502, 503, 504]);
+const RETRY_AFTER_EXCEEDS_CAP = "RETRY_AFTER_EXCEEDS_CAP";
+// 429는 쿼터 신호다: Retry-After가 있으면 cap 안에서 그 값을 기다려 재시도하고, 없으면 jitter 대기로 한 번만 재시도한다.
+const MAX_UNHINTED_RATE_LIMIT_RETRIES = 1;
 const INVALID_RESPONSE = "Seoul accessibility API response invalid";
 const INVALID_OUTPUT_PATH = "output path must stay within allowed root";
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -226,28 +230,57 @@ async function readBodyOrTransportError(response) {
   }
 }
 
+const retryAfterOf = (response) => parseRetryAfterMs(response.headers?.get("retry-after"));
+
+// 서버가 정한 대기보다 일찍 다시 요청하면 안 된다: cap을 넘는 Retry-After는 잘라서 재시도하지 않고 실패한다(fail-closed).
+class RetryAfterExceedsCapError extends Error {
+  constructor(status, retryAfterMilliseconds) {
+    super(`Seoul accessibility API HTTP ${status}: ${RETRY_AFTER_EXCEEDS_CAP} retryAfterSeconds=${Math.ceil(retryAfterMilliseconds / 1_000)} capSeconds=${RETRY_CAP_DELAY_MS / 1_000}`);
+    this.code = RETRY_AFTER_EXCEEDS_CAP;
+  }
+}
+
+// 재시도하려고 버리는 응답의 본문은 읽지 않으므로 취소해 연결이 남지 않게 한다. 취소 실패는 수집을 막지 않는다.
+const discardBody = (response) => { response.body?.cancel?.().catch(() => {}); };
+
+function retryDelayMs({ retryIndex, result, random }) {
+  const retryAfter = result === undefined ? undefined : retryAfterOf(result.response);
+  if (retryAfter === undefined) return fullJitterBackoffMs(retryIndex, { baseMs: RETRY_BASE_DELAY_MS, capMs: RETRY_CAP_DELAY_MS, random });
+  if (retryAfter > RETRY_CAP_DELAY_MS) throw new RetryAfterExceedsCapError(result.response.status, retryAfter);
+  return retryAfter;
+}
+
 // 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(timeout·연결 reset·HTTP 429/502/503/504)면 같은 GET을 다시 보낸다.
-// 4xx(429 제외)·인증·스키마·원천 오류 코드는 재시도하지 않는다. 소진하면 기존 오류 분류로 그대로 실패한다(대체 데이터 없음).
+// 그 밖의 4xx·408·500·501·505·인증·스키마·원천 오류 코드는 재시도하지 않는다. 소진하면 기존 오류 분류로 그대로 실패한다(대체 데이터 없음).
 // 로그에는 시도 번호·오류 종류·대기 ms만 남기고 URL·키·쿼리 값은 쓰지 않는다.
 async function fetchSeoulPage({ url, fetchImpl, requestTimeoutMs, requestAttempts, sleepImpl, randomImpl, logImpl }) {
   let attempts = 0;
+  let unhintedRateLimits = 0;
   let outcome;
   try {
     outcome = await withTransientRetry(async () => {
       attempts += 1;
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
+      if (response.status === RATE_LIMITED_STATUS && retryAfterOf(response) === undefined) unhintedRateLimits += 1;
       return response.ok ? { response, raw: await readBodyOrTransportError(response) } : { response };
     }, {
-      isTransientResult: ({ response }) => TRANSIENT_HTTP_STATUSES.has(response.status),
+      isTransientResult: ({ response }) => TRANSIENT_HTTP_STATUSES.has(response.status)
+        && (response.status !== RATE_LIMITED_STATUS || retryAfterOf(response) !== undefined || unhintedRateLimits <= MAX_UNHINTED_RATE_LIMIT_RETRIES),
       isTransientError: isTransientTransportError,
       retryLimit: requestAttempts - 1,
       budget: createTransientRetryBudget(),
       sleep: sleepImpl,
-      delayMs: ({ retryIndex, result }) => retryAfterMs(result?.response.headers?.get("retry-after"), { capMs: RETRY_CAP_DELAY_MS })
-        ?? fullJitterBackoffMs(retryIndex, { baseMs: RETRY_BASE_DELAY_MS, capMs: RETRY_CAP_DELAY_MS, random: randomImpl }),
-      onRetry: (event) => logImpl(`Seoul accessibility retry attempt=${event.retryIndex + 1}/${requestAttempts} kind=${attemptFailureKind(event)} delayMs=${event.delayMs}`),
+      delayMs: ({ retryIndex, result }) => retryDelayMs({ retryIndex, result, random: randomImpl }),
+      onRetry: (event) => {
+        if (event.result !== undefined) discardBody(event.result.response);
+        logImpl(`Seoul accessibility retry attempt=${event.retryIndex + 1}/${requestAttempts} kind=${attemptFailureKind(event)} delayMs=${event.delayMs}`);
+      },
     });
   } catch (error) {
+    if (error.code === RETRY_AFTER_EXCEEDS_CAP) {
+      logImpl(`Seoul accessibility request failed after ${attempts} attempts: ${RETRY_AFTER_EXCEEDS_CAP}`);
+      throw error;
+    }
     const cause = unwrapTransientRetryFailure(error);
     if (attempts > 1) logImpl(`Seoul accessibility request failed after ${attempts} attempts: ${failureKind(cause)}`);
     throw new Error(`Seoul accessibility API request failed: ${failureKind(cause)}`);

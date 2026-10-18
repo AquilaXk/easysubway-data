@@ -9,7 +9,7 @@ import {
   isTransientStatus,
   isTransientTransportError,
   fullJitterBackoffMs,
-  retryAfterMs,
+  parseRetryAfterMs,
   transientBackoffMs,
   unwrapTransientRetryFailure,
   withTransientRetry,
@@ -233,16 +233,20 @@ test("fullJitterBackoffMs는 0 이상 min(cap, base·2^n) 미만이고 random이
   }
 });
 
-test("retryAfterMs는 초 단위와 HTTP 날짜를 읽고 cap으로 자른다. 읽을 수 없으면 undefined다", () => {
+test("parseRetryAfterMs는 RFC 9110의 세 날짜 형식(IMF-fixdate·RFC 850·asctime)과 초를 읽고 상한은 두지 않는다", () => {
   const now = () => Date.parse("2026-10-18T00:00:00Z");
-  const options = { capMs: 20_000, now };
-  assert.equal(retryAfterMs("5", options), 5_000);
-  assert.equal(retryAfterMs("0", options), 0);
-  assert.equal(retryAfterMs("120", options), 20_000);
-  assert.equal(retryAfterMs("Sun, 18 Oct 2026 00:00:07 GMT", options), 7_000);
-  assert.equal(retryAfterMs("Sun, 18 Oct 2026 00:10:00 GMT", options), 20_000);
-  assert.equal(retryAfterMs("Sat, 17 Oct 2026 23:59:00 GMT", options), 0);
-  for (const value of [null, undefined, "", "soon", "-3", "1.5", "5s"]) assert.equal(retryAfterMs(value, options), undefined, String(value));
+  const options = { now };
+  assert.equal(parseRetryAfterMs("5", options), 5_000);
+  assert.equal(parseRetryAfterMs(" 5 ", options), 5_000);
+  assert.equal(parseRetryAfterMs("0", options), 0);
+  assert.equal(parseRetryAfterMs("300", options), 300_000);
+  assert.equal(parseRetryAfterMs("Sun, 18 Oct 2026 00:00:07 GMT", options), 7_000);
+  assert.equal(parseRetryAfterMs("Sunday, 18-Oct-26 00:00:07 GMT", options), 7_000);
+  assert.equal(parseRetryAfterMs("Sun Oct 18 00:00:07 2026", options), 7_000);
+  assert.equal(parseRetryAfterMs("Sun Nov  1 00:00:00 2026", options), 14 * 86_400_000);
+  assert.equal(parseRetryAfterMs("Sat, 17 Oct 2026 23:59:00 GMT", options), 0);
+  assert.equal(parseRetryAfterMs("Sunday, 18-Oct-99 00:00:00 GMT", options), 0, "두 자리 해가 50년보다 먼 미래면 지난 세기다(RFC 9110)");
+  for (const value of [null, undefined, "", "soon", "-3", "1.5", "5s", "18 Oct 2026", "Sun, 31 Feb 2026 00:00:00 GMT", "Sun, 18 Oct 2026 00:00:07 PST"]) assert.equal(parseRetryAfterMs(value, options), undefined, String(value));
 });
 
 test("retryLimit과 delayMs는 호출자가 정한다: 한도 2번 재시도, 대기는 delayMs가 돌려준 값", async () => {

@@ -6,7 +6,7 @@ import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { isTransientStatus, parseRetryAfterMs, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
@@ -571,9 +571,9 @@ async function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget) {
 }
 
 function retryDelayMillis(response) {
-  const retryAfter = response.headers.get("retry-after")?.trim() ?? "";
-  if (!/^\d+$/.test(retryAfter)) return RETRY_FALLBACK_DELAY_MILLIS;
-  return Math.max(RETRY_FALLBACK_DELAY_MILLIS, Math.min(Number(retryAfter) * 1_000, RETRY_MAX_DELAY_MILLIS));
+  const retryAfterMillis = parseRetryAfterMs(response.headers.get("retry-after"));
+  if (retryAfterMillis === undefined) return RETRY_FALLBACK_DELAY_MILLIS;
+  return Math.max(RETRY_FALLBACK_DELAY_MILLIS, Math.min(retryAfterMillis, RETRY_MAX_DELAY_MILLIS));
 }
 
 function sleep(delayMillis) {
