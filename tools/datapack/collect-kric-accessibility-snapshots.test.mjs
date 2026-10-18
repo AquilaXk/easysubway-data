@@ -700,11 +700,11 @@ test("DNS 일시 실패·502·본문 timeout 뒤 같은 요청이 성공하면 �
   }
 });
 
-test("인증·형식 오류는 재시도하지 않는다(HTTP 401·403·500, 잘못된 JSON, provider resultCode)", async () => {
+test("인증·형식 오류는 재시도하지 않는다(HTTP 401·403·501, 잘못된 JSON, provider resultCode)", async () => {
   const cases = [
     [() => response(401, []), /KRIC accessibility HTTP 401/],
     [() => response(403, []), /KRIC accessibility HTTP 403/],
-    [() => response(500, []), /KRIC accessibility HTTP 500/],
+    [() => response(501, []), /KRIC accessibility HTTP 501/],
     [() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError("malformed provider JSON"); } }), /KRIC accessibility schema invalid/],
     [() => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "99" }, body: [] }) }), /provider result invalid: kric-station-elevator\/S1\/2\/202\/99/],
     [() => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "22" }, body: [] }) }), /provider result invalid: kric-station-elevator\/S1\/2\/202\/22/],
@@ -923,6 +923,7 @@ const kricRetryRow = Object.fromEntries(operation.responseFields.map((field) => 
 defineSourceCollectionRetryTests({
   name: "KRIC 접근성 수집기",
   // 수집기가 fetch 결과에서 ok·status·json()만 읽으므로 같은 모양의 객체를 돌려준다. 본문 timeout 응답(ReadableStream 기반)의 json()도 같은 계약이다.
+  httpError: /KRIC accessibility HTTP 403/,
   delegate: async () => response(200, [kricRetryRow]),
   run: ({ fetchImpl, sleepImpl }) => collectKricAccessibilitySnapshots({
     roster: roster.slice(0, 1), operations: [operation], serviceKey: "key", now: new Date("2026-07-20T09:00:00.000Z"),

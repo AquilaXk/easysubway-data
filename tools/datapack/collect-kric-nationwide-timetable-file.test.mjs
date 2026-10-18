@@ -283,8 +283,8 @@ test("#1099 본문 한도(처리량 하한)를 넘긴 TIMEOUT은 재시도하지
   });
 });
 
-test("#1099 인증·내용 오류(HTTP 401·403·500)는 재시도하지 않고, 현재 역-노선 파일도 같은 정책이다", async () => {
-  for (const status of [401, 403, 500]) {
+test("#1099 인증·내용 오류(HTTP 401·403·501)는 재시도하지 않고, 현재 역-노선 파일도 같은 정책이다", async () => {
+  for (const status of [401, 403, 501]) {
     await withOutput(async ({ root }) => {
       let calls = 0;
       await assert.rejects(collectKricCurrentStationLineFile({
@@ -437,6 +437,7 @@ test("#1099 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 
 
 defineSourceCollectionRetryTests({
   name: "KRIC 전국 시간표 파일 수집기",
+  httpError: /KRIC_TIMETABLE_FILE_HTTP/,
   delegate: async () => new Response(ZIP, { status: 200, headers: HEADERS }),
   headers: HEADERS,
   run: ({ fetchImpl, sleepImpl }) => withOutput(async ({ output }) => {

@@ -3,8 +3,7 @@ import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { isRetryAfterExceedsCap, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
-import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
+import { fetchBytesWithSourceRetry } from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "gwangju-transportation-route-topology";
@@ -180,25 +179,22 @@ function validDate(value, label) {
 }
 function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
-// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
-// 연결·요청·본문 timeout·소켓 끊김)으로 같은 요청을 다시 보낸다(#1099, #1334). 인증·형식 오류는 재시도하지 않는다.
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs, #1099, #1334).
 // 한도를 다 쓰면 마지막 응답(HTTP 오류)이나 전송 오류를 기존 오류로 드러낸다.
-async function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
-  try {
-    return await withSourceCollectionRetry(async () => {
-      const response = await fetchImpl(url, {
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-        headers: { accept: "application/json" },
-      });
-      return { response, bytes: Buffer.from(await response.arrayBuffer()) };
-    }, { label: "Gwangju route topology", sleep: sleepImpl, budget: retryBudget, random: randomImpl });
-  } catch (error) {
-    if (isRetryAfterExceedsCap(error)) throw error;
-    const failure = unwrapTransientRetryFailure(error);
-    const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";
-    throw new Error(`Gwangju route topology transport failure; code=${safeToken(String(code))}`);
-  }
+function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
+  return fetchBytesWithSourceRetry({
+    url,
+    fetchImpl,
+    accept: "application/json",
+    label: "Gwangju route topology",
+    transportFailure: (failure) => {
+      const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";
+      return new Error(`Gwangju route topology transport failure; code=${safeToken(String(code))}`);
+    },
+    sleep: sleepImpl,
+    budget: retryBudget,
+    random: randomImpl,
+  });
 }
 
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }

@@ -1,5 +1,5 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
-import { isRetryAfterExceedsCap, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { isRetryAfterExceedsCap, isTransientDataGoKrResultCode, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 import { request as httpsRequest } from "node:https";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -173,11 +173,10 @@ function readKasiMonthResponse({ response, raw, attemptCount }, { year, month })
     return { raw, xml, dates };
 }
 
-// data.go.kr 공통 오류 envelope의 resultCode 99(UNKNOWN_ERROR)는 TAGO와 같은 일시 오류다. 다른 resultCode(22·23 쿼터, 30 인증 등)는 재시도하지 않는다.
-const TRANSIENT_PROVIDER_RESULT_CODE = "99";
+// data.go.kr 공통 오류 envelope의 resultCode 중 일시 오류 코드(isTransientDataGoKrResultCode: 99·30 등)는 다시 요청한다. 쿼터(22)·권한(20)·기한(31) 등은 재시도하지 않는다.
 function isTransientProviderBody(raw) {
   try {
-    return scalar(singleElement(new TextDecoder("utf-8", { fatal: true }).decode(raw), "header"), "resultCode") === TRANSIENT_PROVIDER_RESULT_CODE;
+    return isTransientDataGoKrResultCode(scalar(singleElement(new TextDecoder("utf-8", { fatal: true }).decode(raw), "header"), "resultCode"));
   } catch {
     return false;
   }

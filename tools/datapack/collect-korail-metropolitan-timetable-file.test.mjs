@@ -128,11 +128,11 @@ test("일시 오류가 한도(2번 재시도)를 넘어 이어지면 기존 오�
   }
 });
 
-test("인증·내용 오류(HTTP 403·404·500, 형식, SHA, 리다이렉트)는 재시도하지 않는다", async () => {
+test("인증·내용 오류(HTTP 403·404·501, 형식, SHA, 리다이렉트)는 재시도하지 않는다", async () => {
   const cases = [
     [() => new Response("denied", { status: 403 }), /_HTTP$/],
     [() => new Response("missing", { status: 404 }), /_HTTP$/],
-    [() => new Response("boom", { status: 500 }), /_HTTP$/],
+    [() => new Response("boom", { status: 501 }), /_HTTP$/],
     [() => new Response(XLSX, { status: 200, headers: { "content-type": "text/html" } }), /_CONTENT_TYPE$/],
     [() => new Response(Buffer.from("not an xlsx"), { status: 200, headers: XLSX_HEADERS }), /_XLSX$/],
     [() => xlsxResponse(), /_SHA256$/],
@@ -266,6 +266,7 @@ test("#997 헤더 timeout과 본문 수신 한도를 분리하고 본문 데드�
 
 defineSourceCollectionRetryTests({
   name: "KORAIL 수도권 시간표 파일 수집기",
+  httpError: /KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP$/,
   delegate: async () => xlsxResponse(),
   headers: XLSX_HEADERS,
   run: ({ fetchImpl, sleepImpl }) => withDirectory(async (outputDirectory) => {

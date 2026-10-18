@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   RETRY_AFTER_EXCEEDS_CAP,
   SOURCE_COLLECTION_RETRY_POLICY,
+  fetchBytesWithSourceRetry,
   isRetryAfterExceedsCap,
+  isTransientDataGoKrResultCode,
   withSourceCollectionRetry,
 } from "./source-collection-retry.mjs";
 import { createTransientRetryBudget } from "./transient-retry.mjs";
@@ -43,9 +45,9 @@ async function run(script, options = {}) {
   return { ...outcome, calls, sleeps, results };
 }
 
-test("정책 상수: 3회 시도, base 2초, cap 20초, 429·502·503·504만 일시 상태", () => {
+test("정책 상수: 3회 시도, base 2초, cap 20초, 429·500·502·503·504만 일시 상태", () => {
   assert.deepEqual({ ...SOURCE_COLLECTION_RETRY_POLICY, transientStatuses: [...SOURCE_COLLECTION_RETRY_POLICY.transientStatuses] }, {
-    maxAttempts: 3, baseDelayMs: 2_000, capDelayMs: 20_000, transientStatuses: [429, 502, 503, 504], maxUnhintedRateLimitRetries: 1,
+    maxAttempts: 3, baseDelayMs: 2_000, capDelayMs: 20_000, transientStatuses: [429, 500, 502, 503, 504], maxUnhintedRateLimitRetries: 1,
   });
 });
 
@@ -54,14 +56,14 @@ const CASES = [
   { name: "timeout 두 번 뒤 성공: 두 번째 대기 상한은 4초", script: [failure(timeoutError()), failure(timeoutError()), ok], calls: 3, sleeps: [1_000, 2_000], succeeds: true },
   { name: "timeout이 3번 이어지면 마지막 오류로 실패(시도 3회)", script: [failure(timeoutError()), failure(timeoutError()), failure(timeoutError()), ok], calls: 3, sleeps: [1_000, 2_000], error: /aborted due to timeout/ },
   { name: "connection reset은 재시도", script: [failure(Object.assign(new Error("reset"), { code: "ECONNRESET" })), ok], calls: 2, sleeps: [1_000], succeeds: true },
-  ...[502, 503, 504].map((status) => ({ name: `HTTP ${status} 1회 뒤 성공`, script: [http(status), ok], calls: 2, sleeps: [1_000], succeeds: true })),
+  ...[500, 502, 503, 504].map((status) => ({ name: `HTTP ${status} 1회 뒤 성공`, script: [http(status), ok], calls: 2, sleeps: [1_000], succeeds: true })),
   { name: "429 Retry-After 3초는 그 값을 따른다", script: [http(429, { "Retry-After": "3" }), ok], calls: 2, sleeps: [3_000], succeeds: true },
   { name: "429 Retry-After가 cap(20초) 이하면 재시도", script: [http(429, { "Retry-After": "20" }), ok], calls: 2, sleeps: [20_000], succeeds: true },
   { name: "429 Retry-After가 cap을 넘으면 기다리지 않고 fail-closed", script: [http(429, { "Retry-After": "21" }), ok], calls: 1, sleeps: [], error: new RegExp(RETRY_AFTER_EXCEEDS_CAP) },
   { name: "503 Retry-After가 cap을 넘어도 fail-closed", script: [http(503, { "Retry-After": "300" }), ok], calls: 1, sleeps: [], error: new RegExp(RETRY_AFTER_EXCEEDS_CAP) },
   { name: "429 힌트 없으면 1회만 재시도하고 두 번째 429는 그대로 돌려준다", script: [http(429), http(429), ok], calls: 2, sleeps: [1_000], status: 429 },
   { name: "429 힌트가 있으면 두 번 재시도할 수 있다", script: [http(429, { "Retry-After": "1" }), http(429, { "Retry-After": "1" }), ok], calls: 3, sleeps: [1_000, 1_000], succeeds: true },
-  ...[400, 401, 403, 404, 408, 500, 501].map((status) => ({ name: `HTTP ${status}는 즉시 반환(재시도 없음)`, script: [http(status), ok], calls: 1, sleeps: [], status })),
+  ...[400, 401, 403, 404, 408, 501].map((status) => ({ name: `HTTP ${status}는 즉시 반환(재시도 없음)`, script: [http(status), ok], calls: 1, sleeps: [], status })),
   { name: "비일시 오류는 즉시 던진다", script: [failure(new Error("schema mismatch")), ok], calls: 1, sleeps: [], error: /schema mismatch/ },
   { name: "503이 3번 이어지면 마지막 응답을 돌려준다", script: [http(503), http(503), http(503), ok], calls: 3, sleeps: [1_000, 2_000], status: 503 },
 ];
@@ -116,4 +118,46 @@ test("isTransientError를 바꾸면 그 오류만 재시도한다", async () => 
 test("대기 합계가 시간 예산을 넘으면 TRANSIENT_RETRY_BUDGET_EXHAUSTED로 멈춘다", async () => {
   const outcome = await run([failure(timeoutError()), ok], { budget: createTransientRetryBudget(500) });
   assert.equal(outcome.error.code, "TRANSIENT_RETRY_BUDGET_EXHAUSTED");
+});
+
+// 공공데이터포털 오류코드 표: https://www.data.go.kr/data/15029183/openapi.do
+test("공공데이터포털 resultCode 분류: 일시(01·02·04·05·30·99)만 재시도하고 쿼터·권한·기한·요청 오류는 즉시 실패한다", () => {
+  for (const code of ["01", "02", "04", "05", "30", "99"]) assert.equal(isTransientDataGoKrResultCode(code), true, code);
+  for (const code of ["00", "03", "10", "11", "12", "20", "21", "22", "23", "31", "32", "33", "", null, undefined, 99]) assert.equal(isTransientDataGoKrResultCode(code), false, String(code));
+});
+
+test("maxAttempts는 1부터 정책 상한(3)까지의 정수만 받는다", async () => {
+  for (const maxAttempts of [0, 4, 1.5, "3", Number.NaN]) {
+    assert.throws(() => withSourceCollectionRetry(async () => ok(), { maxAttempts }), /SOURCE_COLLECTION_RETRY_ARGUMENTS/, String(maxAttempts));
+  }
+  for (const maxAttempts of [1, 2, 3]) assert.equal((await run([ok], { maxAttempts })).calls, 1);
+});
+
+const bytesFetch = (...responses) => async () => responses.shift();
+const failTransport = (failure) => new Error(`wrapped ${failure.message}`);
+
+test("fetchBytesWithSourceRetry는 본문까지 한 시도로 묶고, 소진한 전송 오류를 호출자의 오류로 바꾼다", async () => {
+  const fetchImpl = bytesFetch(
+    { arrayBuffer: async () => { throw timeoutError(); } },
+    new Response("payload"),
+  );
+  const { bytes } = await fetchBytesWithSourceRetry({
+    url: "https://example.invalid/", fetchImpl, accept: "text/plain", label: "Sample", transportFailure: failTransport, sleep: async () => {}, random: () => 0,
+  });
+  assert.equal(bytes.toString(), "payload");
+  await assert.rejects(fetchBytesWithSourceRetry({
+    url: "https://example.invalid/", fetchImpl: async () => { throw new Error("reset"); }, accept: "text/plain", label: "Sample", transportFailure: failTransport,
+    isTransientError: undefined, sleep: async () => {}, random: () => 0,
+  }), /wrapped reset/);
+});
+
+test("fetchBytesWithSourceRetry는 Retry-After cap 초과로 버린 응답의 바이트 수와 해시를 오류에 남긴다", async () => {
+  const fetchImpl = bytesFetch(new Response("busy", { status: 429, headers: { "retry-after": "300" } }));
+  await assert.rejects(fetchBytesWithSourceRetry({
+    url: "https://example.invalid/", fetchImpl, accept: "text/plain", label: "Sample", transportFailure: failTransport, sleep: async () => {},
+  }), (error) => {
+    assert.equal(isRetryAfterExceedsCap(error), true);
+    assert.match(error.message, /^Sample HTTP 429: RETRY_AFTER_EXCEEDS_CAP retryAfterSeconds=300 capSeconds=20; rawBytes=4; rawSha256=[a-f0-9]{64}$/);
+    return true;
+  });
 });

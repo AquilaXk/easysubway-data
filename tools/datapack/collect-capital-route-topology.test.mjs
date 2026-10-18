@@ -259,7 +259,7 @@ test("Capital topology는 일시 오류가 한도(2번 재시도)를 넘으면 �
   await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(waits), fetchImpl: exhausted.fetchImpl }), /MOLIT full-route CSV HTTP 503/);
   assert.equal(exhausted.requests.file, 3);
   assert.deepEqual(waits, [1_000, 2_000]);
-  for (const status of [401, 403, 404, 500]) {
+  for (const status of [401, 403, 404, 501]) {
     const denied = respondWith(status);
     await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: denied.fetchImpl }), new RegExp(`MOLIT full-route CSV HTTP ${status}`));
     assert.equal(denied.requests.file, 1, String(status));
@@ -882,6 +882,7 @@ test("Capital topology는 HTTP 503에서 재시도 예산이 소진되면 마지
 
 defineSourceCollectionRetryTests({
   name: "수도권 topology collector(MOLIT 전체노선 CSV)",
+  httpError: /MOLIT full-route detail HTTP 403/,
   delegate: async (url) => (new URL(url).pathname.endsWith("fileData.do")
     ? new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>')
     : new Response("노선,역\n1,a\n")),

@@ -567,15 +567,15 @@ test("KASI calendar는 connect timeout이 끝까지 이어지면 세 번째 시�
   assert.equal(calls, 3);
 });
 
-test("KASI calendar는 권한·형식 오류를 재시도하지 않는다(HTTP 401·403·500, resultCode 22·23·30·31, XML 형식)", async () => {
+test("KASI calendar는 권한·형식 오류를 재시도하지 않는다(HTTP 401·403·501, resultCode 20·22·23·31, XML 형식)", async () => {
   const envelope = (code) => new Response(`<response><header><resultCode>${code}</resultCode></header></response>`);
   const cases = [
     [async () => new Response("denied", { status: 401 }), /HTTP_401/],
     [async () => new Response("denied", { status: 403 }), /HTTP_403/],
-    [async () => new Response("boom", { status: 500 }), /HTTP_500/],
+    [async () => new Response("boom", { status: 501 }), /HTTP_501/],
     [async () => envelope("22"), /provider resultCode 22/],
     [async () => envelope("23"), /provider resultCode 23/],
-    [async () => envelope("30"), /provider resultCode 30/],
+    [async () => envelope("20"), /provider resultCode 20/],
     [async () => envelope("31"), /provider resultCode 31/],
     [async () => new Response("not xml"), /response schema is invalid/],
   ];
@@ -717,7 +717,7 @@ test("KASI 공휴일 달력은 권한·HTTP·XML·resultCode·월 범위 불일�
     fetchImpl: async () => response,
   });
   await assert.rejects(run(new Response("denied", { status: 403 })), /KASI public holiday request failed: HTTP_403/);
-  await assert.rejects(run(new Response("<response><header><resultCode>30</resultCode></header></response>")), /KASI public holiday provider resultCode 30/);
+  await assert.rejects(run(new Response("<response><header><resultCode>20</resultCode></header></response>")), /KASI public holiday provider resultCode 20/);
   await assert.rejects(run(new Response("not xml")), /KASI public holiday response schema is invalid/);
   await assert.rejects(run(new Response(holidayXml([{ date: "20260801", holiday: "Y" }]))), /KASI public holiday response month coverage is invalid/);
   await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(), serviceKey: "", year: 2026, months: [7] }), /DATA_GO_KR_SERVICE_KEY/);
@@ -827,6 +827,7 @@ test("KASI XML 디코더는 엔티티를 한 번만 풀고 이중 인코딩된 �
 
 defineSourceCollectionRetryTests({
   name: "KASI 공휴일 수집기",
+  httpError: /HTTP_403/,
   delegate: async () => new Response(holidayXml([{ date: "20260717", holiday: "Y" }])),
   run: async ({ fetchImpl, sleepImpl }) => [...await fetchKasiPublicHolidayCalendar({
     serviceKey: "test-key", year: 2026, months: [7], fetchImpl, sleepImpl, randomImpl: () => 0,

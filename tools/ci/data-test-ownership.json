@@ -275,7 +275,7 @@
     },
     "data1099": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1099",
-      "title": "[Fix] 수집기가 공급자 일시 오류(408·5xx·전송 오류·본문 timeout)를 재시도하지 않아 run 전체가 실패"
+      "title": "[Fix] 수집기가 공급자 일시 오류(429·500·502·503·504·전송 오류·본문 timeout)를 재시도하지 않아 run 전체가 실패"
     },
     "data1102": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1102",

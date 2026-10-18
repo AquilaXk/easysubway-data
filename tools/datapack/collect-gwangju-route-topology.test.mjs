@@ -308,7 +308,7 @@ test("광주 topology collector는 일시 오류가 한도(2번 재시도)를 �
   assert.equal(budgetCalls, 2);
 });
 
-test("광주 topology collector는 힌트 없는 429를 한 번만 다시 요청하고 인증·형식 오류(401·403·404·500)는 재시도하지 않는다", async () => {
+test("광주 topology collector는 힌트 없는 429를 한 번만 다시 요청하고 인증·형식 오류(401·403·404·501)는 재시도하지 않는다", async () => {
   let calls = 0;
   const waits = [];
   const snapshot = await collectGwangjuRouteTopology({
@@ -319,7 +319,7 @@ test("광주 topology collector는 힌트 없는 429를 한 번만 다시 요청
   assert.deepEqual(waits, [1_000]);
   assert.equal(snapshot.odRowCount, 380);
 
-  for (const status of [401, 403, 404, 500, 429]) {
+  for (const status of [401, 403, 404, 501, 429]) {
     let rejectedCalls = 0;
     await assert.rejects(collectGwangjuRouteTopology({
       stationScope, ...retryFast(),
@@ -340,6 +340,7 @@ test("광주 topology collector는 HTTP 503에서 재시도 예산이 소진되�
 
 defineSourceCollectionRetryTests({
   name: "광주 topology collector",
+  httpError: /HTTP 403/,
   delegate: async (url) => odResponse(stationIdOf(url)),
   run: ({ fetchImpl, sleepImpl }) => collectGwangjuRouteTopology({
     stationScope, now: new Date("2026-10-04T00:00:00.000Z"), fetchImpl, sleepImpl, randomImpl: () => 0,

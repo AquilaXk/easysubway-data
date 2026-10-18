@@ -389,7 +389,7 @@ test("부산 topology collector는 HTTP/content-type/transport failure를 bounde
   await context.test("provider error", async () => {
     const body = "<?xml version=\"1.0\"?><response><header><resultCode>30</resultCode><resultMsg>인증 정보가 없습니다</resultMsg></header></response>";
     await assert.rejects(
-      collect({ fetchImpl: async () => response(body) }),
+      collect({ ...retryFast(), fetchImpl: async () => response(body) }),
       /provider resultCode 30; classification=authorization.*rawSha256=[a-f0-9]{64}/,
     );
   });
@@ -536,8 +536,8 @@ test("부산 topology collector는 일시 오류가 한도(2번 재시도)를 �
   assert.equal(budgetCalls, 2);
 });
 
-test("부산 topology collector는 인증·형식 오류(401·403·404·500)를 재시도하지 않고 힌트 없는 429만 한 번 다시 요청한다", async () => {
-  for (const [status, expectedCalls] of [[401, 1], [403, 1], [404, 1], [500, 1], [429, 2]]) {
+test("부산 topology collector는 인증·형식 오류(401·403·404·501)를 재시도하지 않고 힌트 없는 429만 한 번 다시 요청한다", async () => {
+  for (const [status, expectedCalls] of [[401, 1], [403, 1], [404, 1], [501, 1], [429, 2]]) {
     let calls = 0;
     const delays = [];
     await assert.rejects(collect({
@@ -547,7 +547,7 @@ test("부산 topology collector는 인증·형식 오류(401·403·404·500)를 
     assert.equal(calls, expectedCalls, String(status));
     assert.equal(delays.length, expectedCalls - 1);
   }
-  for (const code of ["22", "23", "30", "31"]) {
+  for (const code of ["20", "22", "23", "31"]) {
     let calls = 0;
     const body = `<?xml version="1.0"?><response><header><resultCode>${code}</resultCode><resultMsg>x</resultMsg></header></response>`;
     await assert.rejects(collect({ ...retryFast(), fetchImpl: async () => { calls += 1; return response(body); } }), new RegExp(`provider resultCode ${code}`));
@@ -566,7 +566,25 @@ test("부산 topology collector는 HTTP 503에서 재시도 예산이 소진되�
 
 defineSourceCollectionRetryTests({
   name: "부산 topology collector",
+  httpError: /HTTP 403/,
   delegate: async () => response(),
   headers: { "content-type": "application/xml" },
   run: ({ fetchImpl, sleepImpl }) => collect({ now: new Date("2026-07-20T00:00:00.000Z"), fetchImpl, sleepImpl, randomImpl: () => 0 }),
+});
+
+test("부산 topology collector는 Retry-After가 cap(20초)을 넘으면 기다리지 않고 fail-closed하며 버린 응답의 raw 증거를 남긴다", async () => {
+  let calls = 0;
+  await assert.rejects(collect({
+    ...retryFast(),
+    fetchImpl: async () => { calls += 1; return response("busy", { status: 429, contentType: "text/plain", headers: { "retry-after": "300" } }); },
+  }), /RETRY_AFTER_EXCEEDS_CAP retryAfterSeconds=300 capSeconds=20; rawBytes=4; rawSha256=[a-f0-9]{64}$/);
+  assert.equal(calls, 1);
+});
+
+test("부산 topology collector는 resultCode 30(간헐 키 동기화 지연)을 같은 요청으로 다시 보내 성공하면 쓴다", async () => {
+  let calls = 0;
+  const unregistered = "<?xml version=\"1.0\"?><response><header><resultCode>30</resultCode><resultMsg>x</resultMsg></header></response>";
+  const snapshot = await collect({ ...retryFast(), fetchImpl: async () => { calls += 1; return calls === 1 ? response(unregistered) : response(); } });
+  assert.equal(calls, 2);
+  assert.equal(snapshot.edgeCount, 4);
 });

@@ -19,11 +19,13 @@ const FIRST_FAILURES = Object.freeze({
   forbidden: () => new Response("forbidden", { status: 403 }),
 });
 
-/** 첫 호출만 failure로 바꾸고 나머지는 delegate에 넘긴다. */
+/** 첫 호출만 failure로 바꾸고 나머지는 delegate에 넘긴다. state.failedRequestCalls는 실패시킨 요청(URL)을 보낸 횟수다. */
 export function fetchWithFirstFailure(delegate, failureKind, headers) {
-  const state = { calls: 0 };
+  const state = { calls: 0, failedRequest: undefined, failedRequestCalls: 0 };
   const fetchImpl = async (...args) => {
     state.calls += 1;
+    if (state.calls === 1) state.failedRequest = String(args[0]);
+    if (String(args[0]) === state.failedRequest) state.failedRequestCalls += 1;
     return state.calls === 1 ? FIRST_FAILURES[failureKind](headers) : delegate(...args);
   };
   return { fetchImpl, state };
@@ -35,19 +37,21 @@ export function fetchWithFirstFailure(delegate, failureKind, headers) {
  * @param {(io: { fetchImpl: Function, sleepImpl: Function }) => Promise<unknown>} options.run 수집기를 실행하고 비교할 결과를 돌려준다. now·난수 같은 비결정 입력은 고정한다.
  * @param {Function} options.delegate 성공 응답을 만드는 fetch.
  * @param {Record<string, string>} [options.headers] 본문 timeout 응답에 붙일 헤더.
+ * @param {RegExp} options.httpError 이 수집기가 HTTP 403에 던지는 오류의 메시지 matcher.
  */
-export function defineSourceCollectionRetryTests({ name, run, delegate, headers }) {
+export function defineSourceCollectionRetryTests({ name, run, delegate, headers, httpError }) {
   const noSleep = async () => {};
   for (const [failureKind, label] of [["requestTimeout", "요청 timeout"], ["bodyTimeout", "본문 수신 timeout"]]) {
     test(`${name}: ${label} 1회 뒤 성공하면 정상 수집한다`, async () => {
       const expected = await run({ fetchImpl: delegate, sleepImpl: noSleep });
       const { fetchImpl, state } = fetchWithFirstFailure(delegate, failureKind, headers);
       assert.deepEqual(await run({ fetchImpl, sleepImpl: noSleep }), expected);
-      assert.ok(state.calls >= 2, "첫 호출 실패 뒤 같은 요청을 다시 보내야 한다");
+      assert.equal(state.failedRequestCalls, 2, "첫 호출 실패 뒤 같은 요청을 한 번 다시 보내야 한다");
     });
   }
   test(`${name}: 비일시 오류(HTTP 403)는 재시도 없이 즉시 실패한다`, async () => {
-    const { fetchImpl } = fetchWithFirstFailure(delegate, "forbidden", headers);
-    await assert.rejects(run({ fetchImpl, sleepImpl: noSleep }));
+    const { fetchImpl, state } = fetchWithFirstFailure(delegate, "forbidden", headers);
+    await assert.rejects(run({ fetchImpl, sleepImpl: noSleep }), httpError);
+    assert.equal(state.failedRequestCalls, 1, "403을 받은 요청은 다시 보내지 않는다");
   });
 }
