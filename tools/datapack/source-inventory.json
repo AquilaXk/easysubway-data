@@ -4426,7 +4426,7 @@
           "productionUseAllowed": true,
           "unlockStatus": "not_required"
         },
-        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20261018T021736394Z registration verified.",
+        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20261018T221733462Z registration verified.",
         "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
       },
       "accessibilityAdmissionEvidence": {
@@ -4434,15 +4434,15 @@
         "decision": "APPROVED",
         "productionUseAllowed": true,
         "licenseEvidenceHash": "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
-        "snapshotId": "kric-station-convenience-standard-20261018T021736394Z",
-        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20261018T021736394Z.json",
-        "capturedAt": "2026-10-18T02:17:36.394Z",
-        "observedAt": "2026-10-18T02:17:36.394Z",
-        "freshUntil": "2026-10-19T02:17:36.394Z",
+        "snapshotId": "kric-station-convenience-standard-20261018T221733462Z",
+        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20261018T221733462Z.json",
+        "capturedAt": "2026-10-18T22:17:33.462Z",
+        "observedAt": "2026-10-18T22:17:33.462Z",
+        "freshUntil": "2026-10-19T22:17:33.462Z",
         "rawSha256": "51d72d972269e48554975669b24b0b8ce67c063f45ca5804969af5dd36f2df25",
         "contentSha256": "712c23d11287e26b01952879c0161f6d20ab5637392885e18c7f1ac465edaf26",
         "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-        "snapshotFileSha256": "f14a05551417be8e8bbbe938511808ab3a39a41a7a2f8f9179d07c70f42f566d",
+        "snapshotFileSha256": "2e81b662cca1d749392d02f3b11c7ec6c57c1a689e11293ea6e0d8a1d6d1229c",
         "absenceEvidenceMode": "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED"
       }
     },
