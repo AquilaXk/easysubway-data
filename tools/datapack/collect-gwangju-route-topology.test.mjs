@@ -10,10 +10,12 @@ import {
   collectGwangjuRouteTopology,
   runGwangjuRouteTopologyCollector,
 } from "./collect-gwangju-route-topology.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 // #1099: 일시 오류는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
-const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
+// 난수 0.5로 full jitter 대기(base 2초·cap 20초)는 1·2초다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
 
 const stationNames = [
   "평동역", "도산역", "광주/송정역", "송정/공원역", "공항역", "김대중컨벤션센터역",
@@ -264,48 +266,49 @@ const odResponse = (stationId) => Response.json(Array.from({ length: 20 }, (_, i
   })));
 const stationIdOf = (url) => Number(new URL(url).searchParams.get("station_id"));
 
-test("광주 topology collector는 HTTP 5xx·연결 timeout·본문 수신 오류 뒤 같은 역 요청이 성공하면 그 응답을 쓴다", async () => {
+test("광주 topology collector는 HTTP 503·연결 timeout·본문 수신 오류 뒤 같은 역 요청이 성공하면 그 응답을 쓴다", async () => {
   const outcomes = [
     () => new Response("down", { status: 503 }),
     () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
     () => ({ ok: true, status: 200, arrayBuffer: async () => { throw Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }); } }),
   ];
-  const calls = [];
-  const waits = [];
-  const snapshot = await collectGwangjuRouteTopology({
-    stationScope, ...retryFast(waits), now: new Date("2026-10-04T00:00:00.000Z"),
-    fetchImpl: async (url) => {
-      const stationId = stationIdOf(url);
-      calls.push(stationId);
-      const next = stationId === 3 ? outcomes.shift() : undefined;
-      return next === undefined ? odResponse(stationId) : next();
-    },
-  });
-  assert.equal(snapshot.requestCount, 20);
-  assert.equal(snapshot.odRowCount, 380);
-  assert.deepEqual(calls.filter((id) => id === 3), [3, 3, 3, 3], "역 3은 세 번 실패하고 네 번째에 성공한다");
-  assert.deepEqual(waits, [1_000, 2_000, 4_000]);
+  for (const failure of outcomes) {
+    const calls = [];
+    const waits = [];
+    const snapshot = await collectGwangjuRouteTopology({
+      stationScope, ...retryFast(waits), now: new Date("2026-10-04T00:00:00.000Z"),
+      fetchImpl: async (url) => {
+        const stationId = stationIdOf(url);
+        calls.push(stationId);
+        return stationId === 3 && calls.filter((id) => id === 3).length === 1 ? failure() : odResponse(stationId);
+      },
+    });
+    assert.equal(snapshot.requestCount, 20);
+    assert.equal(snapshot.odRowCount, 380);
+    assert.deepEqual(calls.filter((id) => id === 3), [3, 3], "역 3은 한 번 실패하고 두 번째에 성공한다");
+    assert.deepEqual(waits, [1_000]);
+  }
 });
 
-test("광주 topology collector는 일시 오류가 한도(5번)를 넘으면 기존 오류로 끝난다", async () => {
+test("광주 topology collector는 일시 오류가 한도(2번 재시도)를 넘으면 기존 오류로 끝난다", async () => {
   const waits = [];
   let calls = 0;
   await assert.rejects(collectGwangjuRouteTopology({
     stationScope, ...retryFast(waits),
     fetchImpl: async () => { calls += 1; throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }); },
   }), /Gwangju route topology transport failure; code=UND_ERR_CONNECT_TIMEOUT/);
-  assert.equal(calls, 6);
-  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [1_000, 2_000]);
 
   let budgetCalls = 0;
   await assert.rejects(collectGwangjuRouteTopology({
-    stationScope, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    stationScope, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
     fetchImpl: async () => { budgetCalls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
   }), /Gwangju route topology transport failure; code=ECONNRESET/);
   assert.equal(budgetCalls, 2);
 });
 
-test("광주 topology collector는 429를 기존처럼 한 번만 다시 요청하고 인증·형식 오류는 재시도하지 않는다", async () => {
+test("광주 topology collector는 힌트 없는 429를 한 번만 다시 요청하고 인증·형식 오류(401·403·404·500)는 재시도하지 않는다", async () => {
   let calls = 0;
   const waits = [];
   const snapshot = await collectGwangjuRouteTopology({
@@ -313,10 +316,10 @@ test("광주 topology collector는 429를 기존처럼 한 번만 다시 요청�
     fetchImpl: async (url) => { calls += 1; const stationId = stationIdOf(url); return calls === 1 ? new Response("slow", { status: 429 }) : odResponse(stationId); },
   });
   assert.equal(calls, 21);
-  assert.deepEqual(waits, [250]);
+  assert.deepEqual(waits, [1_000]);
   assert.equal(snapshot.odRowCount, 380);
 
-  for (const status of [401, 403, 404, 429]) {
+  for (const status of [401, 403, 404, 500, 429]) {
     let rejectedCalls = 0;
     await assert.rejects(collectGwangjuRouteTopology({
       stationScope, ...retryFast(),
@@ -329,8 +332,16 @@ test("광주 topology collector는 429를 기존처럼 한 번만 다시 요청�
 test("광주 topology collector는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
   let calls = 0;
   await assert.rejects(collectGwangjuRouteTopology({
-    stationScope, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    stationScope, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
     fetchImpl: async () => { calls += 1; return new Response("down", { status: 503 }); },
   }), /Gwangju route topology HTTP 503/);
   assert.equal(calls, 2);
+});
+
+defineSourceCollectionRetryTests({
+  name: "광주 topology collector",
+  delegate: async (url) => odResponse(stationIdOf(url)),
+  run: ({ fetchImpl, sleepImpl }) => collectGwangjuRouteTopology({
+    stationScope, now: new Date("2026-10-04T00:00:00.000Z"), fetchImpl, sleepImpl, randomImpl: () => 0,
+  }),
 });

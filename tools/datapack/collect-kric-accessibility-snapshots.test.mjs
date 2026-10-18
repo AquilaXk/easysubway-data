@@ -20,10 +20,15 @@ import {
   validateKricAccessibilityProviderGapEvidence,
   writeKricStandardAccessibilityObservation,
 } from "./collect-kric-accessibility-snapshots.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
-// 재시도 대기와 예산을 테스트마다 격리한다(실제 1·2·4·8·16초를 기다리지 않고, 프로세스 공용 예산을 소모하지 않는다).
-const retryFast = (waits = []) => ({ retrySleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
+// 재시도 대기와 예산을 테스트마다 격리한다(실제 대기 없이, 프로세스 공용 예산을 소모하지 않는다). 난수 0.5로 full jitter 대기는 1·2초(base 2초·cap 20초)가 된다.
+const retryFast = (waits = []) => ({
+  retrySleepImpl: async (milliseconds) => { waits.push(milliseconds); },
+  retryBudget: createTransientRetryBudget(),
+  retryRandomImpl: () => 0.5,
+});
 
 const operation = {
   sourceId: "kric-station-elevator",
@@ -641,7 +646,7 @@ test("provider resultCode 00 body array envelope는 표준 rows로 검증한다"
   assert.equal(snapshots[0].queries[0].status, "PRESENT");
 });
 
-test("일시 오류(전송 오류·5xx)가 끝까지 이어지면 첫 시도 + 5번 재시도 뒤 fail closed한다", async () => {
+test("일시 오류(전송 오류·503)가 끝까지 이어지면 첫 시도 + 2번 재시도 뒤 fail closed한다", async () => {
   for (const failure of [Object.assign(new Error("timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }), response(503, [])]) {
     let calls = 0;
     const delays = [];
@@ -659,47 +664,47 @@ test("일시 오류(전송 오류·5xx)가 끝까지 이어지면 첫 시도 + 5
         return failure;
       },
     }), /KRIC accessibility (request failed: NETWORK_TIMEOUT|HTTP 503): kric-station-elevator\/S1\/2\/202/);
-    assert.equal(calls, 6);
+    assert.equal(calls, 3);
     assert.deepEqual(delays, [], "요청 간격 pacing은 논리 요청 하나에 한 번이다");
-    assert.deepEqual(retryWaits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+    assert.deepEqual(retryWaits, [1_000, 2_000]);
   }
 });
 
 // #1099: 2026-10-09T14:17Z kric-current-facility-refresh run 37943008782가 요청 한 건의 DNS 일시 실패로 시설 갱신 전체를 실패시켰다.
-test("DNS 일시 실패·5xx·본문 timeout 뒤 같은 요청이 성공하면 그 응답으로 수집한다(run 37943008782 재현)", async () => {
+test("DNS 일시 실패·502·본문 timeout 뒤 같은 요청이 성공하면 그 응답으로 수집한다(run 37943008782 재현)", async () => {
   const failures = [
     () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("getaddrinfo EAI_AGAIN openapi.kric.go.kr"), { code: "EAI_AGAIN" }) }); },
     () => response(502, []),
     () => ({ ok: true, status: 200, json: async () => { throw Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }); } }),
   ];
   const row = Object.fromEntries(operation.responseFields.map((field) => [field, field === "railOprIsttCd" ? "S1" : field === "lnCd" ? "2" : field === "stinCd" ? "202" : "대합실"]));
-  let calls = 0;
-  const waits = [];
-  const budget = createTransientRetryBudget();
-  const snapshots = await collectKricAccessibilitySnapshots({
-    roster: roster.slice(0, 1),
-    operations: [operation],
-    serviceKey: "key",
-    retrySleepImpl: async (milliseconds) => { waits.push(milliseconds); },
-    retryBudget: budget,
-    fetchImpl: async () => {
-      calls += 1;
-      const next = failures.shift();
-      return next === undefined ? response(200, [row]) : next();
-    },
-  });
-  assert.equal(calls, 4);
-  assert.deepEqual(waits, [1_000, 2_000, 4_000]);
-  assert.ok(budget.spentMs >= 7_000 && budget.spentMs < 7_500, "대기 합계 7초 + 시도 경과(테스트에서는 ~0ms)");
-  assert.equal(snapshots.length, 1);
-  assert.equal(snapshots[0].queries[0].rows.length, 1);
+  for (const failure of failures) {
+    let calls = 0;
+    const waits = [];
+    const retry = retryFast(waits);
+    const snapshots = await collectKricAccessibilitySnapshots({
+      roster: roster.slice(0, 1),
+      operations: [operation],
+      serviceKey: "key",
+      ...retry,
+      fetchImpl: async () => {
+        calls += 1;
+        return calls === 1 ? failure() : response(200, [row]);
+      },
+    });
+    assert.equal(calls, 2);
+    assert.deepEqual(waits, [1_000]);
+    assert.equal(retry.retryBudget.spentMs >= 1_000 && retry.retryBudget.spentMs < 1_500, true, "대기 1초 + 시도 경과(테스트에서는 ~0ms)");
+    assert.equal(snapshots.length, 1);
+    assert.equal(snapshots[0].queries[0].rows.length, 1);
+  }
 });
 
-test("인증·쿼터·형식 오류는 재시도하지 않는다(HTTP 401·403·429, 잘못된 JSON, provider resultCode)", async () => {
+test("인증·형식 오류는 재시도하지 않는다(HTTP 401·403·500, 잘못된 JSON, provider resultCode)", async () => {
   const cases = [
     [() => response(401, []), /KRIC accessibility HTTP 401/],
     [() => response(403, []), /KRIC accessibility HTTP 403/],
-    [() => response(429, []), /KRIC accessibility HTTP 429/],
+    [() => response(500, []), /KRIC accessibility HTTP 500/],
     [() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError("malformed provider JSON"); } }), /KRIC accessibility schema invalid/],
     [() => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "99" }, body: [] }) }), /provider result invalid: kric-station-elevator\/S1\/2\/202\/99/],
     [() => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "22" }, body: [] }) }), /provider result invalid: kric-station-elevator\/S1\/2\/202\/22/],
@@ -723,6 +728,7 @@ test("재시도 대기 예산을 넘기면 마지막 전송 오류 분류로 실
     roster: roster.slice(0, 1), operations: [operation], serviceKey: "key",
     retrySleepImpl: async (milliseconds) => { waits.push(milliseconds); },
     retryBudget: createTransientRetryBudget(2_500),
+    retryRandomImpl: () => 0.5,
     fetchImpl: async () => { calls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
   }), { message: "KRIC accessibility request failed: NETWORK_SOCKET: kric-station-elevator/S1/2/202" });
   assert.equal(calls, 2);
@@ -746,16 +752,16 @@ test("transport 실패는 한 번 요청 후 fail closed다", async () => {
 test("transport 실패는 bounded cause에서 비밀 없는 closed 원인만 분류한다", async () => {
   const secret = "must-not-reflect-provider-credential";
   const cases = [
-    [new Error(secret, { cause: { code: "ENOTFOUND" } }), "NETWORK_DNS", 6],
+    [new Error(secret, { cause: { code: "ENOTFOUND" } }), "NETWORK_DNS", 3],
     [Object.assign(new Error(secret), { code: "ERR_TLS_CERT_ALTNAME_INVALID" }), "NETWORK_TLS", 1],
     [Object.assign(new Error(secret), { code: "UNABLE_TO_GET_ISSUER_CERT_LOCALLY" }), "NETWORK_TLS", 1],
     [Object.assign(new Error(secret), { code: "ERR_SSL_WRONG_VERSION_NUMBER" }), "NETWORK_TLS", 1],
-    [new Error(secret, { cause: { name: "TimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" } }), "NETWORK_TIMEOUT", 6],
-    [new Error(secret, { cause: new Error(secret, { cause: { code: "ECONNRESET" } }) }), "NETWORK_SOCKET", 6],
+    [new Error(secret, { cause: { name: "TimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" } }), "NETWORK_TIMEOUT", 3],
+    [new Error(secret, { cause: new Error(secret, { cause: { code: "ECONNRESET" } }) }), "NETWORK_SOCKET", 3],
     [new Error(secret), "NETWORK_UNKNOWN", 1],
   ];
 
-  // 일시 오류(DNS·timeout·소켓)는 같은 요청을 5번 다시 보낸 뒤, 인증서·알 수 없는 오류는 바로 같은 closed 원인으로 실패한다.
+  // 일시 오류(DNS·timeout·소켓)는 같은 요청을 2번 다시 보낸 뒤, 인증서·알 수 없는 오류는 바로 같은 closed 원인으로 실패한다.
   for (const [failure, classification, expectedCalls] of cases) {
     let calls = 0;
     await assert.rejects(() => collectKricAccessibilitySnapshots({
@@ -907,8 +913,19 @@ test("HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP �
   let calls = 0;
   await assert.rejects(collectKricAccessibilitySnapshots({
     roster: roster.slice(0, 1), operations: [operation], serviceKey: "key",
-    retrySleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    retrySleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), retryRandomImpl: () => 0.5,
     fetchImpl: async () => { calls += 1; return response(503, []); },
   }), { message: "KRIC accessibility HTTP 503: kric-station-elevator/S1/2/202" });
   assert.equal(calls, 2);
+});
+
+const kricRetryRow = Object.fromEntries(operation.responseFields.map((field) => [field, field === "railOprIsttCd" ? "S1" : field === "lnCd" ? "2" : field === "stinCd" ? "202" : "대합실"]));
+defineSourceCollectionRetryTests({
+  name: "KRIC 접근성 수집기",
+  // 수집기가 fetch 결과에서 ok·status·json()만 읽으므로 같은 모양의 객체를 돌려준다. 본문 timeout 응답(ReadableStream 기반)의 json()도 같은 계약이다.
+  delegate: async () => response(200, [kricRetryRow]),
+  run: ({ fetchImpl, sleepImpl }) => collectKricAccessibilitySnapshots({
+    roster: roster.slice(0, 1), operations: [operation], serviceKey: "key", now: new Date("2026-07-20T09:00:00.000Z"),
+    fetchImpl, retrySleepImpl: sleepImpl, retryBudget: createTransientRetryBudget(), retryRandomImpl: () => 0,
+  }),
 });

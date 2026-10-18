@@ -4,6 +4,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { isRetryAfterExceedsCap, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_process.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15000522/openapi.do";
@@ -34,6 +36,7 @@ export async function collectBusanTimetable({
   now = new Date(),
   concurrency = 4,
   sleepImpl = sleep,
+  randomImpl,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
@@ -48,7 +51,7 @@ export async function collectBusanTimetable({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl });
+        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl, randomImpl });
       } catch (error) {
         failure = error;
       }
@@ -101,7 +104,7 @@ export async function collectBusanTimetable({
   };
 }
 
-async function collectResponse({ station, day, key, fetchImpl, sleepImpl }) {
+async function collectResponse({ station, day, key, fetchImpl, sleepImpl, randomImpl }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("act", "xml");
@@ -109,8 +112,7 @@ async function collectResponse({ station, day, key, fetchImpl, sleepImpl }) {
   url.searchParams.set("day", day);
   url.searchParams.set("pageNo", "1");
   url.searchParams.set("numOfRows", "999");
-  const response = await fetchWithRetry(url, fetchImpl, sleepImpl);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl);
   const rawSha256 = sha256(bytes);
   if (!response.ok) throw new Error(`Busan timetable HTTP ${response.status}; rawBytes=${bytes.length}; rawSha256=${rawSha256}`);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
@@ -197,27 +199,24 @@ export function normalizeBusanTimetableScope(scope) {
   return normalized;
 }
 
-async function fetchWithRetry(url, fetchImpl, sleepImpl) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs)으로 재시도한다.
+// 본문 수신 중 timeout도 같은 GET을 다시 보낸다(#1333: 본문 timeout 한 번이 부산 그룹 3개 recipe를 롤백했다). 소진하면 기존 transport 오류로 실패한다.
+async function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl) {
+  try {
+    return await withSourceCollectionRetry(async () => {
       const response = await fetchImpl(url, {
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
         headers: { accept: "application/xml,text/xml" },
       });
-      if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
-        await sleepImpl(250);
-        continue;
-      }
-      return response;
-    } catch (error) {
-      if (attempt === 1) {
-        const code = error?.code ?? error?.cause?.code ?? "UNKNOWN";
-        throw new Error(`Busan timetable transport failure; code=${safeToken(String(code))}`);
-      }
-    }
+      return { response, bytes: Buffer.from(await response.arrayBuffer()) };
+    }, { label: "Busan timetable", sleep: sleepImpl, random: randomImpl });
+  } catch (error) {
+    if (isRetryAfterExceedsCap(error)) throw error;
+    const failure = unwrapTransientRetryFailure(error);
+    const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";
+    throw new Error(`Busan timetable transport failure; code=${safeToken(String(code))}`);
   }
-  throw new Error("Busan timetable transport failure");
 }
 
 function decodeXml(bytes) {

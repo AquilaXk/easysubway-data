@@ -6,7 +6,8 @@ import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { isTransientStatus, parseRetryAfterMs, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { isRetryAfterExceedsCap, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
@@ -32,8 +33,6 @@ const LINE_IDS = Object.freeze(Object.fromEntries(
 ));
 const EXPECTED_LINE_IDS = Object.values(LINE_IDS).sort((left, right) => left.localeCompare(right, "en"));
 const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
-const RETRY_FALLBACK_DELAY_MILLIS = 250;
-const RETRY_MAX_DELAY_MILLIS = 2_000;
 
 export async function collectBusanRouteTopology({
   serviceKey,
@@ -44,6 +43,7 @@ export async function collectBusanRouteTopology({
   concurrency = 4,
   sleepImpl = sleep,
   retryBudget,
+  randomImpl,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
@@ -60,7 +60,7 @@ export async function collectBusanRouteTopology({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl, sleepImpl, retryBudget });
+        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl, sleepImpl, retryBudget, randomImpl });
       } catch (error) {
         aborted = true;
         failures.push(error);
@@ -119,7 +119,7 @@ export async function collectBusanRouteTopology({
   };
 }
 
-async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBudget }) {
+async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBudget, randomImpl }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("act", "xml");
@@ -127,7 +127,7 @@ async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBu
     if (!lineIdForStationCode(stationCode)) throw new Error("stationCode must be an admitted Busan station code");
     url.searchParams.set("scode", stationCode);
   }
-  const { response, rawBytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget);
+  const { response, rawBytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl);
   const rawEvidence = `rawBytes=${rawBytes.length}; rawSha256=${sha256(rawBytes)}`;
   if (!response.ok) throw new Error(`Busan route topology HTTP ${response.status}; ${rawEvidence}`);
   validateResponseContentType(response, rawEvidence);
@@ -538,42 +538,29 @@ function isTransientProviderBody(rawBytes) {
   }
 }
 
-// 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, resultCode 99, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
-// 429는 기존처럼 Retry-After를 지켜 한 번만 다시 요청한다(쿼터 신호라 반복하지 않는다). 인증·형식 오류는 재시도하지 않는다.
-// 한도를 다 쓰면 마지막 응답(HTTP 오류·provider 오류)이나 전송 오류를 기존 오류와 원본 증거로 드러낸다.
-async function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget) {
-  let rateLimitRetried = false;
-  while (true) {
-    let outcome;
-    try {
-      outcome = await withTransientRetry(async () => {
-        const response = await fetchImpl(url, {
-          redirect: "error",
-          signal: AbortSignal.timeout(15_000),
-          headers: { accept: "application/xml,text/xml" },
-        });
-        return { response, rawBytes: Buffer.from(await response.arrayBuffer()) };
-      }, {
-        isTransientResult: ({ response, rawBytes }) => isTransientStatus(response.status) || (response.ok && isTransientProviderBody(rawBytes)),
-        sleep: sleepImpl,
-        budget: retryBudget,
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
+// 연결·요청·본문 timeout·소켓 끊김)으로 같은 요청을 다시 보낸다(#1099, #1334). provider resultCode 99(UNKNOWN_ERROR)도 일시 오류로 본다.
+// 인증·형식 오류는 재시도하지 않는다. 한도를 다 쓰면 마지막 응답(HTTP 오류·provider 오류)이나 전송 오류를 기존 오류와 원본 증거로 드러낸다.
+async function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
+  try {
+    return await withSourceCollectionRetry(async () => {
+      const response = await fetchImpl(url, {
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+        headers: { accept: "application/xml,text/xml" },
       });
-    } catch (error) {
-      throw new Error("Busan route topology transport failure", { cause: unwrapTransientRetryFailure(error) });
-    }
-    if (outcome.response.status === 429 && !rateLimitRetried) {
-      rateLimitRetried = true;
-      await sleepImpl(retryDelayMillis(outcome.response));
-      continue;
-    }
-    return outcome;
+      return { response, rawBytes: Buffer.from(await response.arrayBuffer()) };
+    }, {
+      label: "Busan route topology",
+      isTransientResult: ({ response, rawBytes }) => response.ok && isTransientProviderBody(rawBytes),
+      sleep: sleepImpl,
+      budget: retryBudget,
+      random: randomImpl,
+    });
+  } catch (error) {
+    if (isRetryAfterExceedsCap(error)) throw error;
+    throw new Error("Busan route topology transport failure", { cause: unwrapTransientRetryFailure(error) });
   }
-}
-
-function retryDelayMillis(response) {
-  const retryAfterMillis = parseRetryAfterMs(response.headers.get("retry-after"));
-  if (retryAfterMillis === undefined) return RETRY_FALLBACK_DELAY_MILLIS;
-  return Math.max(RETRY_FALLBACK_DELAY_MILLIS, Math.min(retryAfterMillis, RETRY_MAX_DELAY_MILLIS));
 }
 
 function sleep(delayMillis) {

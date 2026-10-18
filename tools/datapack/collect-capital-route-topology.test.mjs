@@ -24,12 +24,13 @@ import {
   requireCurrentSourceSeparatedCapitalTopology,
   resolveDataGoDownloadUrl,
 } from "./collect-capital-route-topology.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 const execFileAsync = promisify(execFile);
 
-// #1099: 일시 오류는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
-const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
+// #1099·#1334: 일시 오류는 같은 요청을 full jitter(base 2초·cap 20초)로 최대 2번 다시 보낸다. 난수 0.5로 대기는 1·2초다. 재시도 대기와 예산은 테스트마다 격리한다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
 
 function topologyLine(lineId, scope, edges) {
   return {
@@ -123,8 +124,8 @@ test("Capital topology rejected fetch exposes only closed source transport ident
       return true;
     },
   );
-  // ENOTFOUND는 고정된 공식 호스트의 DNS 일시 실패라 같은 요청을 첫 시도 + 5번 보낸 뒤에야 닫힌 식별자로 실패한다(#1099).
-  assert.equal(calls, 6);
+  // ENOTFOUND는 고정된 공식 호스트의 DNS 일시 실패라 같은 요청을 첫 시도 + 2번 보낸 뒤에야 닫힌 식별자로 실패한다(#1099).
+  assert.equal(calls, 3);
 });
 
 test("Capital topology native HTTPS drains redirects with closed identity-encoded failures", async () => {
@@ -162,7 +163,7 @@ test("Capital topology native HTTPS drains redirects with closed identity-encode
       return true;
     },
   );
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0].options.headers["Accept-Encoding"], "identity");
   assert.ok(calls[0].options.signal instanceof AbortSignal);
 });
@@ -211,33 +212,36 @@ test("Capital topology secondary MOLIT fetch uses the same closed transport iden
       return true;
     },
   );
-  assert.equal(calls, 7, "primary 1회 + secondary 첫 시도와 5번 재시도");
+  assert.equal(calls, 4, "primary 1회 + secondary 첫 시도와 2번 재시도");
 });
 
-test("Capital topology는 HTTP 5xx·연결 timeout·본문 수신 오류 뒤 같은 요청이 성공하면 그 CSV로 수집한다(#1099)", async () => {
-  const waits = [];
+test("Capital topology는 HTTP 503·연결 timeout·본문 수신 오류 뒤 같은 요청이 성공하면 그 CSV로 수집한다(#1099)", async () => {
   const outcomes = [
     () => new Response("busy", { status: 503 }),
     () => { throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
     () => ({ ok: true, status: 200, arrayBuffer: async () => { throw Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }); } }),
   ];
-  let calls = 0;
   const csv = Buffer.from("노선,역\n1,a\n");
-  const result = await collectMolitFullRouteCsv({
-    ...retryFast(waits),
-    fetchImpl: async (url) => {
-      calls += 1;
-      if (new URL(url).pathname.endsWith("fileData.do")) return new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>');
-      const next = outcomes.shift();
-      return next === undefined ? new Response(csv) : next();
-    },
-  });
-  assert.equal(result.toString("utf8"), csv.toString("utf8"));
-  assert.equal(calls, 5);
-  assert.deepEqual(waits, [1_000, 2_000, 4_000]);
+  for (const failure of outcomes) {
+    const waits = [];
+    let calls = 0;
+    let fileCalls = 0;
+    const result = await collectMolitFullRouteCsv({
+      ...retryFast(waits),
+      fetchImpl: async (url) => {
+        calls += 1;
+        if (new URL(url).pathname.endsWith("fileData.do")) return new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>');
+        fileCalls += 1;
+        return fileCalls === 1 ? failure() : new Response(csv);
+      },
+    });
+    assert.equal(result.toString("utf8"), csv.toString("utf8"));
+    assert.equal(calls, 3);
+    assert.deepEqual(waits, [1_000]);
+  }
 });
 
-test("Capital topology는 일시 오류가 한도(5번)를 넘으면 기존 HTTP 오류로 끝나고 인증·내용 오류는 재시도하지 않는다(#1099)", async () => {
+test("Capital topology는 일시 오류가 한도(2번 재시도)를 넘으면 기존 HTTP 오류로 끝나고 인증·내용 오류는 재시도하지 않는다(#1099)", async () => {
   const html = '<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>';
   const respondWith = (status) => {
     const requests = { detail: 0, file: 0 };
@@ -253,13 +257,16 @@ test("Capital topology는 일시 오류가 한도(5번)를 넘으면 기존 HTTP
   const waits = [];
   const exhausted = respondWith(503);
   await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(waits), fetchImpl: exhausted.fetchImpl }), /MOLIT full-route CSV HTTP 503/);
-  assert.equal(exhausted.requests.file, 6);
-  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
-  for (const status of [401, 403, 404, 429]) {
+  assert.equal(exhausted.requests.file, 3);
+  assert.deepEqual(waits, [1_000, 2_000]);
+  for (const status of [401, 403, 404, 500]) {
     const denied = respondWith(status);
     await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: denied.fetchImpl }), new RegExp(`MOLIT full-route CSV HTTP ${status}`));
     assert.equal(denied.requests.file, 1, String(status));
   }
+  const rateLimited = respondWith(429);
+  await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: rateLimited.fetchImpl }), /MOLIT full-route CSV HTTP 429/);
+  assert.equal(rateLimited.requests.file, 2, "힌트 없는 429는 한 번만 다시 요청한다");
 });
 
 test("Capital topology의 data.go.kr 상세→FILE 다운로드도 각 요청을 일시 오류에서 다시 보낸다(#1099)", async () => {
@@ -867,8 +874,16 @@ test("서해선 splice endpoint가 각 공식 입력에 없으면 거부한다",
 test("Capital topology는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
   let calls = 0;
   await assert.rejects(collectMolitFullRouteCsv({
-    sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
     fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
   }), /MOLIT full-route detail HTTP 503/);
   assert.equal(calls, 2);
+});
+
+defineSourceCollectionRetryTests({
+  name: "수도권 topology collector(MOLIT 전체노선 CSV)",
+  delegate: async (url) => (new URL(url).pathname.endsWith("fileData.do")
+    ? new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>')
+    : new Response("노선,역\n1,a\n")),
+  run: async ({ fetchImpl, sleepImpl }) => (await collectMolitFullRouteCsv({ fetchImpl, sleepImpl, randomImpl: () => 0 })).toString("utf8"),
 });

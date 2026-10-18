@@ -5,7 +5,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
 
-import { isTransientStatus, isTransientTransportError, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { isTransientTransportError, unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 
 export const KRIC_NATIONWIDE_TIMETABLE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=900&operation=1";
 export const KRIC_CURRENT_STATION_LINE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1";
@@ -62,24 +63,24 @@ export function parseKricCurrentStationLineWorkbook(bytes, { maximumInflatedByte
 
 export async function collectKricNationwideTimetableFile({
   outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
-  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS, sleepImpl, retryBudget,
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS, sleepImpl, retryBudget, randomImpl,
 } = {}) {
   return collectKricFile({
-    profile: TIMETABLE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget,
+    profile: TIMETABLE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget, randomImpl,
   });
 }
 
 export async function collectKricCurrentStationLineFile({
   outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
-  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS, sleepImpl, retryBudget,
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS, sleepImpl, retryBudget, randomImpl,
 } = {}) {
   return collectKricFile({
-    profile: CURRENT_STATION_LINE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget,
+    profile: CURRENT_STATION_LINE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget, randomImpl,
   });
 }
 
 async function collectKricFile({
-  profile, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget,
+  profile, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget, randomImpl,
 }) {
   const maximum = positiveSafeInteger(maximumBytes, "maximumBytes");
   const headerTimeout = positiveSafeInteger(headerTimeoutMs, "headerTimeoutMs");
@@ -90,7 +91,7 @@ async function collectKricFile({
   await assertAbsent(output);
 
   const { bytes, declaredLength } = await downloadWithTransientRetry({
-    fetchImpl, profile, maximum, headerTimeout, bodyTimeout, sleepImpl, retryBudget,
+    fetchImpl, profile, maximum, headerTimeout, bodyTimeout, sleepImpl, retryBudget, randomImpl,
   });
   validateXlsxBytes(bytes, declaredLength);
 
@@ -114,20 +115,18 @@ function isTransientKricFailure(error) {
   return isTransientTransportError(error);
 }
 
-// 요청(헤더)과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·헤더 timeout, 소켓 끊김, 본문 수신 중 연결 끊김)면 같은 요청을 다시 보낸다(#1099).
-// 인증·형식·내용 오류는 재시도하지 않는다. 한도를 다 쓰면 기존 오류 코드(HTTP·TRANSPORT·TIMEOUT·BODY)로 실패한다.
-async function downloadWithTransientRetry({ fetchImpl, profile, maximum, headerTimeout, bodyTimeout, sleepImpl, retryBudget }) {
+// 요청(헤더)과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
+// 연결·헤더 timeout·소켓 끊김·본문 수신 중 연결 끊김)으로 같은 요청을 다시 보낸다(#1099, #1334). 인증·형식·내용 오류는 재시도하지 않는다. 한도를 다 쓰면 기존 오류 코드(HTTP·TRANSPORT·TIMEOUT·BODY)로 실패한다.
+async function downloadWithTransientRetry({ fetchImpl, profile, maximum, headerTimeout, bodyTimeout, sleepImpl, retryBudget, randomImpl }) {
   let outcome;
   try {
-    outcome = await withTransientRetry(async () => {
+    outcome = await withSourceCollectionRetry(async () => {
       const response = await fetchResponseHeaders(fetchImpl, profile.url, headerTimeout);
-      if (isTransientStatus(response?.status)) {
-        try { await response.body?.cancel(); } catch { /* best effort */ }
-        return { response, bytes: null };
-      }
+      // 200이 아닌 응답은 본문을 읽지 않는다. 재시도하지 않을 응답은 아래에서 validateResponse가 HTTP 오류로 실패시킨다.
+      if (response?.status !== 200) return { response, bytes: null };
       const declaredLength = validateResponse(response, maximum, profile.url);
       return { response, declaredLength, bytes: await readBoundedBody(response.body, maximum, bodyTimeout) };
-    }, { isTransientResult: ({ bytes }) => bytes === null, isTransientError: isTransientKricFailure, sleep: sleepImpl, budget: retryBudget });
+    }, { label: "KRIC timetable file", isTransientError: isTransientKricFailure, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
   }

@@ -57,7 +57,8 @@ import {
   parseCapitalLine1RouteTopology,
 } from "./collect-capital-line1-route-topology.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 export { decodeOfficialCsv, normalizeStationName };
@@ -1146,8 +1147,8 @@ const MOLIT_FULL_ROUTE_HEADER = Object.freeze([
   "역명",
 ]);
 
-export async function collectMolitFullRouteCsv({ fetchImpl = fetch, sleepImpl, retryBudget } = {}) {
-  const retry = { sleepImpl, retryBudget };
+export async function collectMolitFullRouteCsv({ fetchImpl = fetch, sleepImpl, retryBudget, randomImpl } = {}) {
+  const retry = { sleepImpl, retryBudget, randomImpl };
   const { response: page, value: html } = await getWithTransientRetry(
     () => fetchImpl(MOLIT_FULL_ROUTE_DETAIL_URL, { headers: { "User-Agent": "easysubway-datapack-collector/1.0" } }),
     (response) => response.text(),
@@ -1180,18 +1181,18 @@ export async function collectMolitFullRouteCsv({ fetchImpl = fetch, sleepImpl, r
   return value;
 }
 
-// 요청과 본문 읽기(read)를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
-// 인증·쿼터·내용 오류(HTTP 4xx)는 재시도하지 않는다. 한도를 다 쓰면 마지막 응답(호출자가 기존 HTTP 오류로 던진다)이나 마지막 전송 오류를 돌려준다.
-async function getWithTransientRetry(request, read, { sleepImpl, retryBudget } = {}) {
+// 요청과 본문 읽기(read)를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
+// 연결·요청·본문 timeout·소켓 끊김)으로 같은 요청을 다시 보낸다(#1099, #1334). 인증·내용 오류(그 밖의 HTTP 4xx·5xx)는 재시도하지 않는다. 한도를 다 쓰면 마지막 응답(호출자가 기존 HTTP 오류로 던진다)이나 마지막 전송 오류를 돌려준다.
+async function getWithTransientRetry(request, read, { sleepImpl, retryBudget, randomImpl } = {}) {
   try {
-    return await withTransientRetry(async () => {
+    return await withSourceCollectionRetry(async () => {
       const response = await request();
       if (!response.ok) {
         try { await response.body?.cancel(); } catch { /* best effort */ }
         return { response };
       }
       return { response, value: await read(response) };
-    }, { isTransientResult: ({ response }) => isTransientStatus(response.status), sleep: sleepImpl, budget: retryBudget });
+    }, { label: "Capital route topology", sleep: sleepImpl, budget: retryBudget, random: randomImpl });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
   }
@@ -1689,8 +1690,9 @@ export async function collectCapitalRouteTopology({
   requestTimeoutMs = CAPITAL_TOPOLOGY_REQUEST_TIMEOUT_MS,
   sleepImpl,
   retryBudget,
+  randomImpl,
 } = {}) {
-  const retry = { sleepImpl, retryBudget };
+  const retry = { sleepImpl, retryBudget, randomImpl };
   const captured = validDate(now, "now");
   requireCapitalTopologyRequestTimeout(requestTimeoutMs);
   const lines = [];

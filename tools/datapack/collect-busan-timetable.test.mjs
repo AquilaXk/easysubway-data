@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { busanTimetableCounts, collectBusanTimetable } from "./collect-busan-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   prepareBusanTimetableRegistration,
@@ -390,3 +391,34 @@ function receiptFor(prepared, now) {
     contentType: "application/json",
   };
 }
+
+// 계기: source-reverification run 39111228495(#1333)에서 collect 한 번의 timeout이 부산 그룹 3개 recipe를 함께 롤백했다.
+const stationTimetableFetch = async (url) => {
+  const request = new URL(url);
+  const station = topology.scope.find(({ stationCode }) => stationCode === request.searchParams.get("scode"));
+  const line = lineCode(station.lineId);
+  const day = request.searchParams.get("day");
+  return response({
+    stationName: station.stationName,
+    stationCode: station.stationCode,
+    line,
+    items: ["0", "1"].map((updown) => [
+      `<trainno>${line}${day}${updown}</trainno><hour>05</hour><time>01</time>`,
+      `<day>${day}</day><updown>${updown}</updown><endcode>${station.stationCode}</endcode>`,
+    ].join("")),
+  });
+};
+
+defineSourceCollectionRetryTests({
+  name: "부산 timetable collector",
+  delegate: stationTimetableFetch,
+  headers: { "content-type": "application/xml" },
+  run: ({ fetchImpl, sleepImpl }) => collectBusanTimetable({
+    serviceKey: "fixture-key",
+    stationScopes: topology.scope,
+    now: new Date("2026-07-20T09:00:00.000Z"),
+    fetchImpl,
+    sleepImpl,
+    randomImpl: () => 0,
+  }),
+});
