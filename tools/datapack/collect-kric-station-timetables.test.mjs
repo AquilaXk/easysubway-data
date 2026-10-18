@@ -16,6 +16,8 @@ import {
   runKricStationTimetableCollection,
 } from "./collect-kric-station-timetables.mjs";
 import { buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 const KEY = "SECRET-KRIC-KEY-123";
 const BINDING = Object.freeze({
@@ -161,18 +163,18 @@ test("#997 헤더 timeout과 본문 수신 한도를 분리하고 시간 초과 
   });
   assert.equal(slowArtifact.responses.length, 6);
 
-  // (2) 헤더 timeout은 KRIC_TIMEOUT으로 실패하고 키를 노출하지 않는다.
+  // (2) 헤더 timeout은 재시도를 소진한 뒤 KRIC_TIMEOUT으로 실패하고 키를 노출하지 않는다.
   const headerErr = await collectKricStationTimetables({
-    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 25, bodyTimeoutMs: 1_000,
+    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 25, bodyTimeoutMs: 1_000, ...retryOptions(),
     fetchImpl: (url, init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error(`timeout ${url}`)))),
   }).catch((caught) => caught);
   assert.match(headerErr.message, /^KRIC_TIMEOUT: T1 T01 dayCd=7$/u);
   assert.equal(headerErr.message.includes(KEY), false);
 
-  // (3) 본문 수신 데드라인 초과는 reader를 취소하고 KRIC_TIMEOUT으로 실패한다.
+  // (3) 본문 수신 데드라인 초과는 reader를 취소하고 재시도를 소진한 뒤 KRIC_TIMEOUT으로 실패한다.
   let cancelled = false;
   const bodyErr = await collectKricStationTimetables({
-    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 500, bodyTimeoutMs: 35,
+    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 500, bodyTimeoutMs: 35, ...retryOptions(),
     fetchImpl: async () => new Response(new ReadableStream({
       pull() { return new Promise(() => {}); },
       cancel() { cancelled = true; },
@@ -188,3 +190,72 @@ test("#997 헤더 timeout과 본문 수신 한도를 분리하고 시간 초과 
     await assert.rejects(collectKricStationTimetables({ bindings: [BINDING], serviceKey: KEY, bodyTimeoutMs: bad, fetchImpl: baseFetch, now: clock() }), /KRIC_TIMEOUT_INVALID/u);
   }
 });
+
+// 원천 수집 표준 재시도(Refs #870, 계기: source-reverification run 39123145848의 KRIC_FETCH_FAILED: B1 0121 dayCd=7).
+const retryOptions = (sleepImpl = async () => {}) => ({
+  retrySleepImpl: sleepImpl, retryBudget: createTransientRetryBudget(), retryRandomImpl: () => 0,
+});
+const collectWithRetry = (fetchImpl, sleepImpl) => collectKricStationTimetables({
+  bindings: [BINDING], serviceKey: KEY, fetchImpl, now: clock(), ...retryOptions(sleepImpl),
+});
+
+defineSourceCollectionRetryTests({
+  name: "KRIC 역별 시간표 수집기",
+  httpError: /KRIC_HTTP_FAILED: T1 T01 dayCd=7 status=403/u,
+  delegate: fakeFetch().impl,
+  run: ({ fetchImpl, sleepImpl }) => collectWithRetry(fetchImpl, sleepImpl),
+});
+
+const connectionReset = () => Object.assign(new TypeError(`fetch failed ${KEY}`), { cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }) });
+
+test("계기: 첫 요청이 연결 끊김(timeout 아님)으로 실패해도 같은 요청을 다시 보내 정상 수집하고, 소진하면 키 없이 KRIC_FETCH_FAILED로 실패한다", async () => {
+  const { impl } = fakeFetch();
+  const expected = await collectWithRetry(impl);
+  let calls = 0;
+  const flaky = async (...args) => { calls += 1; if (calls === 1) throw connectionReset(); return impl(...args); };
+  assert.deepEqual(await collectWithRetry(flaky), expected);
+  assert.equal(calls, 1 + 6);
+
+  let exhausted = 0;
+  const error = await collectWithRetry(async () => { exhausted += 1; throw connectionReset(); }).catch((caught) => caught);
+  assert.equal(exhausted, 3);
+  assert.equal(error.message, "KRIC_FETCH_FAILED: T1 T01 dayCd=7");
+});
+
+test("일시가 아닌 전송 오류는 재시도 없이 KRIC_FETCH_FAILED로 즉시 실패한다", async () => {
+  let calls = 0;
+  await assert.rejects(collectWithRetry(async () => { calls += 1; throw new Error(`boom ${KEY}`); }), /^Error: KRIC_FETCH_FAILED: T1 T01 dayCd=7$/u);
+  assert.equal(calls, 1);
+});
+
+test("HTTP 503은 재시도해 성공하고 소진하면 KRIC_HTTP_FAILED로 실패한다", async () => {
+  const { impl } = fakeFetch();
+  let calls = 0;
+  const once503 = async (...args) => (++calls === 1 ? new Response("x", { status: 503 }) : impl(...args));
+  assert.equal((await collectWithRetry(once503)).responses.length, 6);
+  await assert.rejects(collectWithRetry(async () => new Response("x", { status: 503 })), /KRIC_HTTP_FAILED: T1 T01 dayCd=7 status=503/u);
+});
+
+// 표 기반: [resultCode, 일시 여부]. 일시 코드는 한 번 실패한 뒤 성공하면 정상 수집하고, 그 밖의 코드는 한 번만 요청하고 KRIC_RESULT_REJECTED로 실패한다.
+const RESULT_CODE_ROWS = [
+  ["01", true], ["02", true], ["04", true], ["05", true], ["99", true],
+  ["10", false], ["11", false], ["12", false], ["20", false], ["21", false], ["22", false], ["30", false], ["31", false], ["32", false], ["41", false],
+];
+for (const [rejectedCode, transient] of RESULT_CODE_ROWS) {
+  test(`KRIC resultCode ${rejectedCode}는 ${transient ? "재시도 뒤 성공한다" : "재시도 없이 KRIC_RESULT_REJECTED로 실패한다"}`, async () => {
+    const goodFetch = fakeFetch().impl;
+    let calls = 0;
+    const firstRejected = async (...args) => {
+      calls += 1;
+      if (calls > 1) return goodFetch(...args);
+      return new Response(JSON.stringify({ header: { resultCode: rejectedCode, resultMsg: "x" }, body: [] }), { status: 200 });
+    };
+    if (transient) {
+      assert.equal((await collectWithRetry(firstRejected)).responses.length, 6);
+      assert.equal(calls, 7);
+    } else {
+      await assert.rejects(collectWithRetry(firstRejected), new RegExp(`KRIC_RESULT_REJECTED: T1 T01 dayCd=7 code=${rejectedCode}`, "u"));
+      assert.equal(calls, 1);
+    }
+  });
+}

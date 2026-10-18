@@ -7,6 +7,7 @@ import {
   fetchBytesWithSourceRetry,
   isRetryAfterExceedsCap,
   isTransientDataGoKrResultCode,
+  isTransientKricResultCode,
   withSourceCollectionRetry,
 } from "./source-collection-retry.mjs";
 import { createTransientRetryBudget } from "./transient-retry.mjs";
@@ -161,3 +162,17 @@ test("fetchBytesWithSourceRetry는 Retry-After cap 초과로 버린 응답의 �
     return true;
   });
 });
+
+// KRIC OpenAPI resultCode 분류(Refs #870): 게이트웨이 표준 코드 중 같은 요청을 다시 보내면 풀릴 수 있는 오류만 일시로 본다.
+// 30(미등록 서비스키·operation)과 12(없거나 폐기된 서비스)는 결정적이므로 data.go.kr 분류와 달리 즉시 실패한다.
+const KRIC_RESULT_CODE_CASES = [
+  ["01", true, "APPLICATION_ERROR"], ["02", true, "DB_ERROR"], ["04", true, "HTTP_ERROR"], ["05", true, "SERVICETIMEOUT_ERROR"], ["99", true, "UNKNOWN_ERROR"],
+  ["00", false, "정상"], ["03", false, "데이터 없음"], ["10", false, "잘못된 요청 파라미터"], ["11", false, "필수 파라미터 없음"],
+  ["12", false, "서비스 없음·폐기"], ["20", false, "접근 거부"], ["21", false, "사용할 수 없는 서비스키"], ["22", false, "요청 한도 초과"],
+  ["30", false, "미등록"], ["31", false, "기한 만료"], ["32", false, "미등록 IP"], ["41", false, "승인 대기"], [undefined, false, "코드 없음"],
+];
+for (const [code, transient, meaning] of KRIC_RESULT_CODE_CASES) {
+  test(`KRIC resultCode ${code} (${meaning})는 ${transient ? "일시 오류로 재시도한다" : "재시도하지 않는다"}`, () => {
+    assert.equal(isTransientKricResultCode(code), transient);
+  });
+}

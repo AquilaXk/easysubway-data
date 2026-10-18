@@ -50,6 +50,15 @@ const TRANSIENT_DATA_GO_KR_RESULT_CODES = new Set(["01", "02", "04", "05", "30",
 /** 공공데이터포털 envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientDataGoKrResultCode = (resultCode) => TRANSIENT_DATA_GO_KR_RESULT_CODES.has(resultCode);
 
+// KRIC OpenAPI(openapi.kric.go.kr) resultCode: 공공데이터 게이트웨이 표준 코드 체계를 쓴다. 저장소 실측으로 03 데이터 없음, 12 폐기 operation,
+// 30 미등록 operation, 41 승인 대기를 확인했다. KRIC가 공개한 별도 오류코드 표는 찾지 못했다(2026-10-18 검색). 그래서 위 표준 코드 표를 근거로 하되,
+// 30은 일시로 보지 않는다: KRIC는 operation별 활용신청이라 30이 미신청 operation을 뜻하고(재시도해도 풀리지 않음) 즉시 실패해야 신호가 빨리 드러난다.
+// 일시: 01·02·04·05·99. 그 밖의 코드(10·11·12·20·21·22·30·31·32·41)는 결정적이라 즉시 실패한다.
+const TRANSIENT_KRIC_RESULT_CODES = new Set([...TRANSIENT_DATA_GO_KR_RESULT_CODES].filter((code) => code !== "30"));
+
+/** KRIC OpenAPI 응답의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
+export const isTransientKricResultCode = (resultCode) => TRANSIENT_KRIC_RESULT_CODES.has(resultCode);
+
 export const isRetryAfterExceedsCap = (error) => error?.code === RETRY_AFTER_EXCEEDS_CAP;
 
 const retryAfterOf = (response) => parseRetryAfterMs(response?.headers?.get?.("retry-after"));
