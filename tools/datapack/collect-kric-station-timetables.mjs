@@ -12,7 +12,7 @@ import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, assertExpectedApiObservation, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
 import { sha256 } from "../lib/hash.mjs";
-import { isRetryAfterExceedsCap, isTransientKricResultCode, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { isRetryAfterExceedsCap, isTransientKricResultCode, kricJsonResultCodeOf, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 import { isTransientTransportError, unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 
 export const KRIC_SUBWAY_TIMETABLE_ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable";
@@ -100,10 +100,6 @@ async function requestHeaders({ url, label, fetchImpl, headerTimeoutMs }) {
   }
 }
 
-const parseResultCode = (bytes) => {
-  try { return JSON.parse(bytes.toString("utf8"))?.header?.resultCode; } catch { return undefined; }
-};
-
 // 요청과 본문 읽기를 한 시도로 묶어 표준 정책으로 재시도한다. 200이 아닌 응답은 본문을 읽지 않고 상태로 판정한다.
 async function fetchTimetableWithRetry({ url, label, fetchImpl, headerTimeoutMs, bodyTimeoutMs, retry }) {
   try {
@@ -113,7 +109,7 @@ async function fetchTimetableWithRetry({ url, label, fetchImpl, headerTimeoutMs,
     }, {
       label: `KRIC subwayTimetable ${label}`,
       isTransientError: (error) => error?.kricTransient === true,
-      isTransientResult: ({ bytes }) => bytes !== undefined && isTransientKricResultCode(parseResultCode(bytes)),
+      isTransientResult: ({ bytes }) => bytes !== undefined && isTransientKricResultCode(kricJsonResultCodeOf(bytes)),
       sleep: retry.sleep, budget: retry.budget, random: retry.random,
     });
     if (response.status !== 200) throw new Error(`KRIC_HTTP_FAILED: ${label} status=${response.status}`);

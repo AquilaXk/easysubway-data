@@ -17,6 +17,8 @@ import { normalizeKricSubwayTimetable } from "./normalize-kric-timetable.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 import { cleanupPackDir, openPack } from "../route-map/pack-io.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { classifyKricTransportFailure } from "./collect-kric-accessibility-snapshots.mjs";
+import { fetchBytesWithSourceRetry, isTransientKricResultCode, kricJsonResultCodeOf } from "./lib/source-collection-retry.mjs";
 
 const SERVICE_ID_BY_DAY_CD = { "8": "weekday-kric", "7": "saturday-kric", "9": "holiday-kric" };
 
@@ -1181,41 +1183,32 @@ function parseArgs(argv) {
   return args;
 }
 
-// transient 네트워크 오류(DNS ENOTFOUND 등)에만 bounded retry를 적용한다.
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs, Refs #870)으로 재시도하고 본문 텍스트를 돌려준다.
+// 일시 오류는 HTTP 429·500·502·503·504, 전송 오류, KRIC 일시 resultCode(01·02·04·05·99)다. 그 밖의 HTTP 상태는 즉시 실패하고, 소진해도 원문 없이 분류된 코드만 남긴다.
 export async function fetchWithRetry(url, {
-  attempts = 2,
   timeoutMs = 3_000,
   fetchImpl = fetch,
-  sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  sleep,
+  budget,
+  random,
 } = {}) {
-  if (!Number.isInteger(attempts) || attempts < 1
-    || !Number.isInteger(timeoutMs) || timeoutMs < 1
-    || typeof fetchImpl !== "function" || typeof sleep !== "function") {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || typeof fetchImpl !== "function") {
     throw new TypeError("KRIC timetable retry options are invalid");
   }
-  let lastError;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetchImpl(url, { signal: controller.signal });
-      if (!response.ok) {
-        const error = new Error(`KRIC timetable HTTP ${response.status}`);
-        error.nonRetryable = true;
-        throw error;
-      }
-      return await response.text();
-    } catch (error) {
-      if (error.nonRetryable === true) throw error;
-      lastError = controller.signal.aborted
-        ? new Error("KRIC timetable request timed out")
-        : error;
-      if (attempt < attempts) await sleep(500 * attempt);
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-  throw lastError;
+  const { response, bytes } = await fetchBytesWithSourceRetry({
+    url,
+    fetchImpl,
+    accept: "application/json",
+    label: "KRIC timetable",
+    timeoutMs,
+    isTransientResult: ({ bytes: body }) => isTransientKricResultCode(kricJsonResultCodeOf(body)),
+    transportFailure: (failure) => new Error(`KRIC timetable transport failure: ${classifyKricTransportFailure(failure) ?? "NETWORK_UNKNOWN"}`),
+    sleep,
+    budget,
+    random,
+  });
+  if (!response.ok) throw new Error(`KRIC timetable HTTP ${response.status}`);
+  return bytes.toString("utf8");
 }
 
 if (isMainModule(import.meta.url)) {

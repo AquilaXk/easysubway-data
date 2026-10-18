@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { classifyKricTransportFailure } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { isRetryAfterExceedsCap, isTransientKricResultCode, kricJsonResultCodeOf, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 
 const QUERY_KEYS = [
   "queryId", "routeEdgeId", "providerOperatorId", "providerLineId",
@@ -56,6 +57,9 @@ export async function collectKricExitPathProviderSnapshot({
   requestIntervalMs = 0,
   delayImpl = delay,
   onRawResponse,
+  retrySleepImpl,
+  retryBudget,
+  retryRandomImpl,
 } = {}) {
   const source = KRIC_EXIT_PATH_SOURCES[sourceId];
   if (!source) throw new Error(`unsupported KRIC EXIT source: ${sourceId ?? "[missing]"}`);
@@ -73,6 +77,7 @@ export async function collectKricExitPathProviderSnapshot({
     throw new TypeError("KRIC EXIT collector dependencies are invalid");
   }
 
+  const retry = { sleep: retrySleepImpl, budget: retryBudget, random: retryRandomImpl };
   const results = [];
   for (let index = 0; index < queryPlan.length; index += 1) {
     if (index > 0 && requestIntervalMs > 0) await delayImpl(requestIntervalMs);
@@ -81,6 +86,7 @@ export async function collectKricExitPathProviderSnapshot({
       onRawResponse,
       query: queryPlan[index],
       requestTimeoutMs,
+      retry,
       serviceKey,
       source,
     }));
@@ -347,9 +353,9 @@ function validateCollectionPlan(plan) {
   return queries;
 }
 
-async function collectQuery({ fetchImpl, onRawResponse, query, requestTimeoutMs, serviceKey, source }) {
+async function collectQuery({ fetchImpl, onRawResponse, query, requestTimeoutMs, retry, serviceKey, source }) {
   const url = buildProviderUrl(source.endpoint, query, serviceKey);
-  const bytes = await requestProviderBytes({ fetchImpl, queryId: query.queryId, requestTimeoutMs, url });
+  const bytes = await requestProviderBytes({ fetchImpl, queryId: query.queryId, requestTimeoutMs, retry, url });
   const { providerResultCode, providerRows, resultState } = parseProviderResult({
     bytes,
     queryId: query.queryId,
@@ -380,26 +386,31 @@ function buildProviderUrl(endpoint, query, serviceKey) {
   return url;
 }
 
-async function requestProviderBytes({ fetchImpl, queryId, requestTimeoutMs, url }) {
-  let response;
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs, Refs #870)으로 재시도한다.
+// 일시 오류가 아닌 HTTP 상태와 resultCode는 즉시 기존 오류로 실패하고, 소진해도 원문 없이 분류된 코드만 남긴다.
+async function requestProviderBytes({ fetchImpl, queryId, requestTimeoutMs, retry = {}, url }) {
+  let outcome;
   try {
-    response = await fetchImpl(url, {
-      redirect: "error",
-      signal: AbortSignal.timeout(requestTimeoutMs),
-      headers: { accept: "application/json" },
+    outcome = await withSourceCollectionRetry(async () => {
+      const response = await fetchImpl(url, {
+        redirect: "error",
+        signal: AbortSignal.timeout(requestTimeoutMs),
+        headers: { accept: "application/json" },
+      });
+      return response?.ok ? { response, bytes: Buffer.from(await response.arrayBuffer()) } : { response };
+    }, {
+      label: `KRIC EXIT ${queryId}`,
+      isTransientResult: ({ bytes }) => bytes !== undefined && isTransientKricResultCode(kricJsonResultCodeOf(bytes)),
+      ...retry,
     });
   } catch (error) {
+    if (isRetryAfterExceedsCap(error)) throw error;
     throw new Error(`KRIC EXIT request failed: ${classifyKricTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${queryId}`);
   }
+  const { response, bytes } = outcome;
   if (!response?.ok) {
     const status = Number.isInteger(response?.status) ? response.status : "unknown";
     throw new Error(`KRIC EXIT HTTP ${status}: ${queryId}`);
-  }
-  let bytes;
-  try {
-    bytes = Buffer.from(await response.arrayBuffer());
-  } catch (error) {
-    throw new Error(`KRIC EXIT request failed: ${classifyKricTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${queryId}`);
   }
   if (bytes.length === 0 || bytes.length > MAX_RESPONSE_BYTES) {
     throw new Error(`KRIC EXIT response size invalid: ${queryId}`);

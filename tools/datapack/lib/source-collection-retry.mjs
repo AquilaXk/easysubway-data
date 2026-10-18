@@ -83,6 +83,11 @@ export const isTransientDataGoKrResultCode = (resultCode) => TRANSIENT_DATA_GO_K
 /** KRIC OpenAPI 응답의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientKricResultCode = (resultCode) => TRANSIENT_KRIC_RESULT_CODES.has(resultCode);
 
+/** KRIC JSON 응답 본문(바이트)의 header.resultCode. 본문이 JSON이 아니면 undefined다. */
+export const kricJsonResultCodeOf = (bytes) => {
+  try { return JSON.parse(bytes.toString("utf8"))?.header?.resultCode; } catch { return undefined; }
+};
+
 export const isRetryAfterExceedsCap = (error) => error?.code === RETRY_AFTER_EXCEEDS_CAP;
 
 const retryAfterOf = (response) => parseRetryAfterMs(response?.headers?.get?.("retry-after"));
