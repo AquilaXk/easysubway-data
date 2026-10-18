@@ -146,10 +146,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit --allow-empty -m "Claim retained Gwangju timetable refresh"
+          claim_head="$(git rev-parse HEAD)"
           gh auth setup-git
           git push origin "${branch}"
           git switch --detach "${main_sha}"
           printf 'RETAINED_GWANGJU_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'RETAINED_GWANGJU_CLAIM_SHA=%s\n' "${claim_head}" >> "${GITHUB_ENV}"
           printf 'RETAINED_GWANGJU_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
       - name: Collect due retained Gwangju timetable
         if: ${{ steps.decision.outputs.state == 'DUE' }}
@@ -162,6 +164,7 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its claimed main" >&2; exit 1; }
           node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation" --phase collect
       - name: Publish and register retained Gwangju timetable
+        id: publish
         if: ${{ steps.decision.outputs.state == 'DUE' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
@@ -209,6 +212,17 @@ jobs:
         run: |
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
           GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${RETAINED_GWANGJU_BRANCH}" --title "Refresh retained Gwangju timetable" --body-file "${RETAINED_GWANGJU_STATE_ROOT}/pull-request-body.md"
+      - name: Release this failed run's claim
+        if: ${{ failure() && env.RETAINED_GWANGJU_BRANCH != '' && env.RETAINED_GWANGJU_CLAIM_SHA != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLICATION_OUTCOME: ${{ steps.publish.outcome }}
+        run: |
+          set -euo pipefail
+          # #1326: 수집 단계에서 실패한 run이 빈 claim을 남기면 원장을 쓰는 다른 자동화가 소유 workflow의 다음 정기 실행까지 모두 기다린다.
+          # 게시 step이 건너뛰어졌을 때만(게시된 것이 없을 때만) 같은 run에서 푼다. 도구가 보고(#926)를 먼저 하고 빈 claim·PR 없음·기록한 sha가 모두 맞을 때만 지운다.
+          gh auth setup-git
+          node tools/ci/release-own-claim.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${RETAINED_GWANGJU_BRANCH}" --claim-sha "${RETAINED_GWANGJU_CLAIM_SHA}" --publication-outcome "${PUBLICATION_OUTCOME}"
       - name: Report refresh failure as an issue
         if: ${{ failure() }}
         env:

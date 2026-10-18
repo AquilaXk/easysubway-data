@@ -279,7 +279,7 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   assert.doesNotMatch(yml, /\n  (push|pull_request|workflow_run):/u);
   // #939: 후보 갱신 PR은 App 토큰으로 열고 CI를 dispatch하지 않는다. 그래서 actions 권한이 없다.
   // #969: 권한은 job에만 주고(issues 쓰기는 실패 보고용) workflow dispatch 권한(actions: write)은 여전히 없다.
-  assert.match(yml, /\n    permissions:\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
+  assert.match(yml, /\n    permissions:\n      actions: read\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
   assert.doesNotMatch(yml, /actions: write/u);
   // #1032, #1040: 정기 실행과 스케줄러 App의 dispatch는 저장소 변수가 true이고 actor와 triggering_actor가 모두 App일 때만 돈다. 사람 dispatch는 두 값 모두 App이 아닐 때만 돈다.
   assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.actor != 'easysubway-release-chain\[bot\]' && github\.triggering_actor != 'easysubway-release-chain\[bot\]'\) \|\| \(vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true' && \(github\.event_name != 'workflow_dispatch' \|\| \(github\.actor == 'easysubway-release-chain\[bot\]' && github\.triggering_actor == 'easysubway-release-chain\[bot\]'\)\)\)\) \}\}/u);

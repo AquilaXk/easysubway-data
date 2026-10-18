@@ -144,10 +144,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${branch}"
           git commit --allow-empty -m "Claim Seoul accessibility refresh"
+          claim_head="$(git rev-parse HEAD)"
           gh auth setup-git
           git push origin "${branch}"
           git switch --detach "${main_sha}"
           printf 'SEOUL_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'SEOUL_REFRESH_CLAIM_SHA=%s\n' "${claim_head}" >> "${GITHUB_ENV}"
           printf 'SEOUL_REFRESH_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
       - name: Validate provider configuration
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -169,6 +171,7 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${SEOUL_REFRESH_MAIN_SHA}" ]] || { echo "Seoul refresh operation is not running from its claimed main" >&2; exit 1; }
           node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --request-attempts 1 --phase collect
       - name: Publish and register Seoul accessibility snapshot
+        id: publish
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
@@ -223,6 +226,17 @@ jobs:
           path: ${{ runner.temp }}/seoul-current-accessibility-refresh/decision.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: Release this failed run's claim
+        if: ${{ failure() && env.SEOUL_REFRESH_BRANCH != '' && env.SEOUL_REFRESH_CLAIM_SHA != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLICATION_OUTCOME: ${{ steps.publish.outcome }}
+        run: |
+          set -euo pipefail
+          # #1326: 수집 단계에서 실패한 run이 빈 claim을 남기면 원장을 쓰는 다른 자동화가 소유 workflow의 다음 정기 실행까지 모두 기다린다.
+          # 게시 step이 건너뛰어졌을 때만(게시된 것이 없을 때만) 같은 run에서 푼다. 도구가 보고(#926)를 먼저 하고 빈 claim·PR 없음·기록한 sha가 모두 맞을 때만 지운다.
+          gh auth setup-git
+          node tools/ci/release-own-claim.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${SEOUL_REFRESH_BRANCH}" --claim-sha "${SEOUL_REFRESH_CLAIM_SHA}" --publication-outcome "${PUBLICATION_OUTCOME}"
       - name: Report refresh failure as an issue
         if: ${{ failure() }}
         env:
