@@ -90,6 +90,7 @@ function isOfficial(value, pathname) {
   }
 }
 
+// 후보 계약(operation.maxRetries 0, validateCandidate가 강제)이 재시도를 금지하므로 원천 수집 표준 재시도를 붙이지 않는다.
 async function fetchCatalog(endpoint, fetchImpl) {
   try {
     return await fetchWithBoundedRedirect(endpoint, fetchImpl);

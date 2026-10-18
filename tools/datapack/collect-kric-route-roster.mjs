@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { fetchBytesWithSourceRetry, isTransientKricResultCode } from "./lib/source-collection-retry.mjs";
 
 const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo";
 const FIELDS = ["lnCd", "mreaWideCd", "railOprIsttCd", "routCd", "routNm", "stinCd", "stinConsOrdr", "stinNm"];
@@ -12,19 +13,21 @@ const TRANSPORT_CODES = new Set([
   "EHOSTUNREACH", "ENETUNREACH", "ENOTFOUND", "ETIMEDOUT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
 ]);
 
-export async function collectKricRouteRoster({ mreaWideCd, lnCd, serviceKey, fetchImpl = fetch, now = new Date() } = {}) {
+export async function collectKricRouteRoster({
+  mreaWideCd, lnCd, serviceKey, fetchImpl = fetch, now = new Date(), retrySleepImpl, retryBudget, retryRandomImpl,
+} = {}) {
   const key = requiredString(serviceKey, "KRIC_SERVICE_KEY");
   const url = new URL(ENDPOINT);
   for (const [name, value] of Object.entries({ serviceKey: key, format: "xml", mreaWideCd, lnCd })) {
     url.searchParams.set(name, requiredString(value, name));
   }
-  const response = await fetchWithRetry(url, fetchImpl);
+  const { response, bytes } = await fetchRosterWithRetry(url, fetchImpl, { sleep: retrySleepImpl, budget: retryBudget, random: retryRandomImpl });
   if (!response.ok) throw new Error(`KRIC route roster HTTP ${response.status}`);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
   if (!new Set(["application/xml", "text/xml"]).has(contentType)) {
     throw new Error(`KRIC route roster schema mismatch: content-type ${contentType ?? "missing"}`);
   }
-  const raw = await response.text();
+  const raw = bytes.toString("utf8");
   const resultCode = scalar(raw, "resultCode");
   if (resultCode !== "00") {
     const safeCode = /^[A-Za-z0-9._-]{1,32}$/.test(resultCode ?? "") ? resultCode : "UNKNOWN";
@@ -70,15 +73,18 @@ export async function collectKricRouteRoster({ mreaWideCd, lnCd, serviceKey, fet
   };
 }
 
-async function fetchWithRetry(url, fetchImpl) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml,text/xml" } });
-    } catch (error) {
-      if (attempt === 1) throw new Error(`KRIC route roster transport failure; code=${transportCode(error)}`, { cause: error });
-    }
-  }
-  throw new Error("KRIC route roster transport failure");
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs, Refs #870).
+// 소진한 전송 오류는 원문(요청 URL·키가 실릴 수 있음)을 버리고 분류된 코드만 남긴다.
+function fetchRosterWithRetry(url, fetchImpl, retry) {
+  return fetchBytesWithSourceRetry({
+    url,
+    fetchImpl,
+    accept: "application/xml,text/xml",
+    label: "KRIC route roster",
+    isTransientResult: ({ bytes }) => isTransientKricResultCode(scalar(bytes.toString("utf8"), "resultCode")),
+    transportFailure: (failure) => new Error(`KRIC route roster transport failure; code=${transportCode(failure)}`),
+    ...retry,
+  });
 }
 
 function transportCode(error) {

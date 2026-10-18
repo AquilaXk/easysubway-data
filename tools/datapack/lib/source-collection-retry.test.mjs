@@ -128,6 +128,25 @@ test("공공데이터포털 resultCode 분류: 일시(01·02·04·05·30·99)만
   for (const code of ["00", "03", "10", "11", "12", "20", "21", "22", "23", "31", "32", "33", "", null, undefined, 99]) assert.equal(isTransientDataGoKrResultCode(code), false, String(code));
 });
 
+test("minDelayMs는 재시도 대기의 하한이고, 백오프·Retry-After가 더 길면 그대로 따른다", async () => {
+  assert.deepEqual((await run([http(503), http(503), ok], { minDelayMs: 5_000 })).sleeps, [5_000, 5_000]);
+  assert.deepEqual((await run([http(503), http(503), ok], { minDelayMs: 1_500 })).sleeps, [1_500, 2_000]);
+  assert.deepEqual((await run([http(503, { "retry-after": "3" }), ok], { minDelayMs: 1_000 })).sleeps, [3_000]);
+  assert.deepEqual((await run([http(503, { "retry-after": "1" }), ok], { minDelayMs: 5_000 })).sleeps, [5_000]);
+});
+
+test("Retry-After가 cap을 넘으면 minDelayMs와 무관하게 기다리지 않고 실패한다", async () => {
+  const outcome = await run([http(503, { "retry-after": "21" }), ok], { minDelayMs: 5_000 });
+  assert.equal(outcome.error.code, RETRY_AFTER_EXCEEDS_CAP);
+  assert.deepEqual(outcome.sleeps, []);
+});
+
+test("minDelayMs는 0 이상의 정수만 받는다", () => {
+  for (const minDelayMs of [-1, 1.5, "5", Number.NaN]) {
+    assert.throws(() => withSourceCollectionRetry(async () => ok(), { minDelayMs }), /SOURCE_COLLECTION_RETRY_ARGUMENTS/, String(minDelayMs));
+  }
+});
+
 test("maxAttempts는 1부터 정책 상한(3)까지의 정수만 받는다", async () => {
   for (const maxAttempts of [0, 4, 1.5, "3", Number.NaN]) {
     assert.throws(() => withSourceCollectionRetry(async () => ok(), { maxAttempts }), /SOURCE_COLLECTION_RETRY_ARGUMENTS/, String(maxAttempts));

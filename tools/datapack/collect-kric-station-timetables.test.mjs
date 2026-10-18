@@ -18,7 +18,7 @@ import {
   runKricStationTimetableCollection,
 } from "./collect-kric-station-timetables.mjs";
 import { buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
-import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineKricResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 const KEY = "SECRET-KRIC-KEY-123";
@@ -248,29 +248,14 @@ test("HTTP 503은 재시도해 성공하고 소진하면 KRIC_HTTP_FAILED로 실
   await assert.rejects(collectWithRetry(async () => new Response("x", { status: 503 })), /KRIC_HTTP_FAILED: T1 T01 dayCd=7 status=503/u);
 });
 
-// 표 기반: [resultCode, 일시 여부]. 일시 코드는 한 번 실패한 뒤 성공하면 정상 수집하고, 그 밖의 코드는 한 번만 요청하고 KRIC_RESULT_REJECTED로 실패한다.
-const RESULT_CODE_ROWS = [
-  ["01", true], ["02", true], ["04", true], ["05", true], ["99", true],
-  ["10", false], ["11", false], ["12", false], ["20", false], ["21", false], ["22", false], ["30", false], ["31", false], ["32", false], ["41", false],
-];
-for (const [rejectedCode, transient] of RESULT_CODE_ROWS) {
-  test(`KRIC resultCode ${rejectedCode}는 ${transient ? "재시도 뒤 성공한다" : "재시도 없이 KRIC_RESULT_REJECTED로 실패한다"}`, async () => {
-    const goodFetch = fakeFetch().impl;
-    let calls = 0;
-    const firstRejected = async (...args) => {
-      calls += 1;
-      if (calls > 1) return goodFetch(...args);
-      return new Response(JSON.stringify({ header: { resultCode: rejectedCode, resultMsg: "x" }, body: [] }), { status: 200 });
-    };
-    if (transient) {
-      assert.equal((await collectWithRetry(firstRejected)).responses.length, 6);
-      assert.equal(calls, 7);
-    } else {
-      await assert.rejects(collectWithRetry(firstRejected), new RegExp(`KRIC_RESULT_REJECTED: T1 T01 dayCd=7 code=${rejectedCode}`, "u"));
-      assert.equal(calls, 1);
-    }
-  });
-}
+defineKricResultCodeRetryTests({
+  name: "KRIC 역별 시간표 수집기",
+  rejectedResponse: (resultCode) => new Response(JSON.stringify({ header: { resultCode, resultMsg: "x" }, body: [] }), { status: 200 }),
+  delegate: fakeFetch().impl,
+  run: ({ fetchImpl }) => collectWithRetry(fetchImpl),
+  assertRecovered: (artifact) => assert.equal(artifact.responses.length, 6),
+  assertFinal: (outcome, resultCode) => assert.rejects(outcome, new RegExp(`KRIC_RESULT_REJECTED: T1 T01 dayCd=7 code=${resultCode}`, "u")),
+});
 
 test("재시도 시간 예산이 소진되면 다음 요청은 재시도 없이 원래 오류로 실패한다", async () => {
   const { impl } = fakeFetch();

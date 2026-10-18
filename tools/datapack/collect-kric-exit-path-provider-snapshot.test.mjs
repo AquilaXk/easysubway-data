@@ -11,11 +11,14 @@ import {
 } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { defineKricResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 const CAPTURED_AT = "2026-08-11T00:00:00.000Z";
 const SERVICE_KEY = "test-kric-secret-never-output";
+const retryOptions = (sleepImpl = async () => {}) => ({ retrySleepImpl: sleepImpl, retryBudget: createTransientRetryBudget(), retryRandomImpl: () => 0 });
 
-test("exact query plan을 one-attempt KRIC provider snapshot으로 정규화한다", async () => {
+test("exact query plan을 KRIC provider snapshot으로 정규화한다", async () => {
   const collectionPlan = validPlan();
   const original = JSON.stringify(collectionPlan);
   const calls = [];
@@ -351,8 +354,8 @@ test("plan/source/time/request 경계는 첫 provider call 전에 fail closed한
 test("provider transport·envelope·strict JSON·row drift는 partial snapshot을 만들지 않는다", async () => {
   const invalidResponses = [{
     label: "http",
-    response: new Response("unavailable", { status: 503 }),
-    expected: /KRIC EXIT HTTP 503/,
+    response: new Response("forbidden", { status: 403 }),
+    expected: /KRIC EXIT HTTP 403/,
   }, {
     label: "invalid utf8",
     response: new Response(new Uint8Array([0xff, 0xfe]), { status: 200 }),
@@ -377,8 +380,8 @@ test("provider transport·envelope·strict JSON·row drift는 partial snapshot�
     })),
     expected: /KRIC EXIT response size invalid/,
   }, {
-    label: "unknown provider code",
-    response: jsonResponse(JSON.stringify({ header: { resultCode: "99" }, body: [] })),
+    label: "unregistered provider code",
+    response: jsonResponse(JSON.stringify({ header: { resultCode: "30" }, body: [] })),
     expected: /KRIC EXIT provider result invalid/,
   }, {
     label: "header-only success",
@@ -425,37 +428,44 @@ test("provider transport·envelope·strict JSON·row drift는 partial snapshot�
         return calls === 1 ? entry.response : jsonResponse(providerSuccess([]));
       },
       now: new Date(CAPTURED_AT),
+      ...retryOptions(),
     }), entry.expected, entry.label);
     assert.equal(calls, 1, entry.label);
   }
 
   const transportCases = [{
     label: "dns fetch",
+    transient: true,
     phase: "fetch",
     failure: new Error(SERVICE_KEY, { cause: { code: "ENOTFOUND" } }),
     category: "NETWORK_DNS",
   }, {
     label: "tls fetch",
+    transient: false,
     phase: "fetch",
     failure: Object.assign(new Error(SERVICE_KEY), { code: "ERR_TLS_CERT_ALTNAME_INVALID" }),
     category: "NETWORK_TLS",
   }, {
     label: "timeout fetch",
+    transient: true,
     phase: "fetch",
     failure: new Error(SERVICE_KEY, { cause: { name: "TimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" } }),
     category: "NETWORK_TIMEOUT",
   }, {
     label: "nested socket fetch",
+    transient: true,
     phase: "fetch",
     failure: new Error(SERVICE_KEY, { cause: new Error(SERVICE_KEY, { cause: { code: "ECONNRESET" } }) }),
     category: "NETWORK_SOCKET",
   }, {
     label: "unknown fetch",
+    transient: false,
     phase: "fetch",
     failure: new Error(SERVICE_KEY),
     category: "NETWORK_UNKNOWN",
   }, {
     label: "socket body",
+    transient: true,
     phase: "body",
     failure: Object.assign(new Error(SERVICE_KEY), { code: "UND_ERR_SOCKET" }),
     category: "NETWORK_SOCKET",
@@ -473,13 +483,50 @@ test("provider transport·envelope·strict JSON·row drift는 partial snapshot�
         return { ok: true, arrayBuffer: async () => { throw entry.failure; } };
       },
       now: new Date(CAPTURED_AT),
+      ...retryOptions(),
     }), (error) => {
       assert.equal(error.message, `KRIC EXIT request failed: ${entry.category}: ${queryId}`);
       assert.doesNotMatch(error.message, new RegExp(SERVICE_KEY));
       return true;
     }, entry.label);
-    assert.equal(attempts, 1, entry.label);
+    assert.equal(attempts, entry.transient ? 3 : 1, entry.label);
   }
+});
+
+const retryPlan = validPlan();
+const retryDelegate = async (url) => jsonResponse(providerSuccess([providerRow(`path-${new URL(url).searchParams.get("stinCd")}`, "1")]));
+const collectWithRetry = (fetchImpl, sleepImpl) => collectKricExitPathProviderSnapshot({
+  collectionPlan: retryPlan, sourceId: "kric-station-movement-standard", serviceKey: SERVICE_KEY, fetchImpl, now: new Date(CAPTURED_AT), ...retryOptions(sleepImpl),
+});
+
+defineSourceCollectionRetryTests({
+  name: "KRIC EXIT 경로 수집기",
+  httpError: /KRIC EXIT HTTP 403/u,
+  delegate: retryDelegate,
+  run: ({ fetchImpl, sleepImpl }) => collectWithRetry(fetchImpl, sleepImpl),
+});
+
+defineKricResultCodeRetryTests({
+  name: "KRIC EXIT 경로 수집기",
+  rejectedResponse: (resultCode) => jsonResponse(JSON.stringify({ header: { resultCode }, body: [] })),
+  delegate: retryDelegate,
+  run: ({ fetchImpl }) => collectWithRetry(fetchImpl),
+  assertRecovered: (snapshot) => assert.equal(snapshot.results.length, 2),
+  assertFinal: (outcome, resultCode) => assert.rejects(outcome, new RegExp(`KRIC EXIT provider result invalid: .*/${resultCode}`, "u")),
+});
+
+test("KRIC EXIT 경로 수집기: 재시도 대기도 요청 간격 아래로 내려가지 않는다", async () => {
+  const intervalMs = 5_000;
+  const events = [];
+  let calls = 0;
+  await collectKricExitPathProviderSnapshot({
+    collectionPlan: retryPlan, sourceId: "kric-station-movement-standard", serviceKey: SERVICE_KEY, now: new Date(CAPTURED_AT),
+    requestIntervalMs: intervalMs, delayImpl: async (ms) => { events.push(["interval", ms]); },
+    retrySleepImpl: async (ms) => { events.push(["retry", ms]); }, retryBudget: createTransientRetryBudget(), retryRandomImpl: () => 0,
+    fetchImpl: async (...args) => { calls += 1; return calls <= 2 ? new Response("down", { status: 503 }) : retryDelegate(...args); },
+  });
+  // 백오프(난수 0)는 0이지만 재시도 대기는 간격 이상이다. 두 번 실패 → 재시도 2번 → 다음 질의 전 간격 1번.
+  assert.deepEqual(events, [["retry", intervalMs], ["retry", intervalMs], ["interval", intervalMs]]);
 });
 
 function validPlan() {

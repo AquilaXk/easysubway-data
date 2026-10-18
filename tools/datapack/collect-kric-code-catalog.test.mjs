@@ -176,3 +176,13 @@ test("KRIC transport 실패는 비밀 없는 원인 코드만 노출한다", asy
   });
   assert.equal(attempts, 1);
 });
+
+// 후보 계약(operation.maxRetries 0)이 재시도를 금지하므로 일시 오류도 한 번만 요청하고 바로 실패한다.
+test("KRIC 코드 정본은 계약(maxRetries 0)대로 일시 오류도 재시도하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(download({ fetchImpl: async () => { calls += 1; return new Response("down", { status: 503 }); } }), /HTTP 503/);
+  assert.equal(calls, 1);
+  calls = 0;
+  await assert.rejects(download({ fetchImpl: async () => { calls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); } }), /transport failure \(ECONNRESET\)/);
+  assert.equal(calls, 1);
+});
