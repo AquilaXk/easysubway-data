@@ -3,7 +3,7 @@
 //   2. 본문 수신 중 timeout으로 한 번 실패한 뒤 성공해도 같다(재시도 단위가 요청 + 본문 읽기여야 한다).
 //   3. 비일시 오류(HTTP 403)는 재시도하지 않고 즉시 실패한다.
 // defineResultCodeRetryTests는 resultCode 표 기반 재시도 계약을 한 곳에 두고, defineKricResultCodeRetryTests(KRIC: 일시 01·02·04·05·99)와
-// defineDataGoKrResultCodeRetryTests(공공데이터포털: 일시 01·02·04·05·30·99), defineBusanHumetroResultCodeRetryTests(부산교통공사: 일시 30·99)가 원천별 행만 넘겨 수집기들이 함께 쓰게 한다.
+// defineDataGoKrResultCodeRetryTests(공공데이터포털: 일시 01·02·04·05·30·99)가 원천별 행만 넘겨 수집기들이 함께 쓰게 한다.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { inspect } from "node:util";
@@ -59,10 +59,9 @@ export function defineSourceCollectionRetryTests({ name, run, delegate, headers,
   });
 }
 
-/** 오류의 메시지와 inspect 출력(cause·속성 포함)에 비밀 값이 없는지 확인한다. stack 프레임("at ..." 줄)은 실행 경로일 뿐이라 검사에서 뺀다. */
+/** 오류의 메시지와 inspect 출력(cause·속성 포함)에 비밀 값이 없는지 확인한다. */
 export function assertErrorOmitsSecrets(error, secrets) {
-  const withoutStackFrames = inspect(error, { depth: 6, showHidden: true }).split("\n").filter((line) => !/^\s+at /.test(line)).join("\n");
-  const surfaces = [String(error?.message), withoutStackFrames];
+  const surfaces = [String(error?.message), inspect(error, { depth: 6, showHidden: true })];
   for (const secret of secrets) {
     for (const surface of surfaces) assert.equal(surface.includes(secret), false, `오류에 비밀 값이 실리면 안 된다: ${secret.slice(0, 3)}...`);
   }
@@ -77,11 +76,6 @@ export const KRIC_RESULT_CODE_ROWS = Object.freeze([
 export const DATA_GO_KR_RESULT_CODE_ROWS = Object.freeze([
   ["01", true], ["02", true], ["04", true], ["05", true], ["30", true], ["99", true],
   ["10", false], ["11", false], ["12", false], ["20", false], ["21", false], ["22", false], ["23", false], ["31", false], ["32", false], ["33", false],
-]);
-// 부산교통공사 OpenAPI(data.humetro.busan.kr): data.go.kr 게이트웨이가 아니라 30·99만 일시, 나머지는 즉시 실패한다.
-export const BUSAN_HUMETRO_RESULT_CODE_ROWS = Object.freeze([
-  ["99", true], ["30", true],
-  ["01", false], ["02", false], ["04", false], ["05", false], ["10", false], ["20", false], ["22", false], ["31", false],
 ]);
 const EXHAUSTED_TRANSIENT_RESULT_CODE = "99";
 
@@ -136,6 +130,3 @@ export const defineKricResultCodeRetryTests = (options) => defineResultCodeRetry
 
 /** 공공데이터포털 코드표(DATA_GO_KR_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
 export const defineDataGoKrResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: DATA_GO_KR_RESULT_CODE_ROWS, ...options });
-
-/** 부산교통공사 코드표(BUSAN_HUMETRO_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
-export const defineBusanHumetroResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: BUSAN_HUMETRO_RESULT_CODE_ROWS, ...options });

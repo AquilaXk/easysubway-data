@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
-import { fetchBytesWithSourceRetry, isTransientBusanHumetroResultCode, transportFailureWithCode } from "./lib/source-collection-retry.mjs";
+import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode, transportFailureWithCode } from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn"; // NOSONAR -- provider contract is HTTP-only
@@ -236,14 +236,14 @@ function validateScope(scope) {
 }
 
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·500·502·503·504와 전송 오류)으로 같은 GET을 다시 보낸다.
-// 200 응답이어도 부산교통공사 envelope resultCode가 일시 오류 코드(30·99)면 다시 보낸다. 소진하면 마지막 응답이 parseBusanAccessibilityResponse에서 resultCode와 함께 실패한다.
+// 200 응답이어도 data.go.kr 코드 체계(부산교통공사 게이트웨이도 같은 이름을 쓴다)의 envelope resultCode가 일시 오류 코드(01·02·04·05·30·99)면 다시 보낸다. 소진하면 마지막 응답이 parseBusanAccessibilityResponse에서 resultCode와 함께 실패한다.
 function fetchWithRetry(url, fetchImpl, { sleepImpl, randomImpl }) {
   return fetchBytesWithSourceRetry({
     url,
     fetchImpl,
     accept: "application/xml,text/xml",
     label: "Busan accessibility",
-    isTransientResult: ({ response, bytes }) => response.ok && isTransientBusanHumetroResultCode(providerResultCode(bytes)),
+    isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
     transportFailure: transportFailureWithCode("Busan accessibility"),
     sleep: sleepImpl,
     random: randomImpl,

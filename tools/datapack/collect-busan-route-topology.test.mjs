@@ -10,7 +10,7 @@ import {
   parseBusanRouteTopologyScope,
   validateBusanRouteTopologySnapshot,
 } from "./collect-busan-route-topology.mjs";
-import { defineBusanHumetroResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineDataGoKrResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 // #1099·#1334: 일시 오류는 같은 요청을 full jitter(base 2초·cap 20초)로 최대 2번 다시 보낸다. 난수 0.5로 대기는 1·2초다. 재시도 대기와 예산은 테스트마다 격리한다.
@@ -581,8 +581,8 @@ test("부산 topology collector는 Retry-After가 cap(20초)을 넘으면 기다
   assert.equal(calls, 1);
 });
 
-// 부산교통공사 게이트웨이의 resultCode 분류(공용 isTransientBusanHumetroResultCode): 30·99는 재시도하고 그 밖은 즉시 실패한다.
-defineBusanHumetroResultCodeRetryTests({
+// 부산교통공사 게이트웨이의 resultCode 분류(공용 isTransientDataGoKrResultCode): 01·02·04·05·30·99는 재시도하고 그 밖은 즉시 실패한다.
+defineDataGoKrResultCodeRetryTests({
   name: "부산 topology collector",
   delegate: async () => response(),
   rejectedResponse: (code) => response(`<?xml version="1.0"?><response><header><resultCode>${code}</resultCode><resultMsg>x</resultMsg></header></response>`),

@@ -5,7 +5,7 @@ import test from "node:test";
 
 import {
   assertErrorOmitsSecrets,
-  defineBusanHumetroResultCodeRetryTests,
+  defineDataGoKrResultCodeRetryTests,
   defineSourceCollectionRetryTests,
 } from "./lib/source-collection-retry-test-support.mjs";
 import {
@@ -212,8 +212,8 @@ const envelopeResponse = (code) => new Response(
   { headers: { "content-type": "application/xml" } },
 );
 
-// 부산교통공사 게이트웨이는 data.go.kr가 아니라 resultCode 30·99만 일시로 본다.
-defineBusanHumetroResultCodeRetryTests({
+// 부산교통공사 게이트웨이도 data.go.kr 코드 체계라 resultCode 01·02·04·05·30·99를 일시로 본다.
+defineDataGoKrResultCodeRetryTests({
   name: "부산 accessibility collector",
   delegate: stationResponse,
   rejectedResponse: envelopeResponse,

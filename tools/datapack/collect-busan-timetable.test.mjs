@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { busanTimetableCounts, collectBusanTimetable } from "./collect-busan-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { defineBusanHumetroResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineDataGoKrResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   prepareBusanTimetableRegistration,
@@ -424,7 +424,7 @@ defineSourceCollectionRetryTests({
   }),
 });
 
-// 부산교통공사 envelope resultCode 분류(공용 isTransientBusanHumetroResultCode): 일시 코드(30·99)는 재시도하고, 그 밖은 즉시 실패한다.
+// 부산교통공사 envelope resultCode 분류(공용 isTransientDataGoKrResultCode): 일시 코드(01·02·04·05·30·99)는 재시도하고, 그 밖은 즉시 실패한다.
 const envelopeResponse = (code) => new Response(
   `<?xml version="1.0"?><response><header><resultCode>${code}</resultCode><resultMsg>x</resultMsg></header></response>`,
   { headers: { "content-type": "application/xml" } },
@@ -446,7 +446,7 @@ const collectWithEnvelopes = async (codes) => {
   return { collection, calls: () => calls };
 };
 
-defineBusanHumetroResultCodeRetryTests({
+defineDataGoKrResultCodeRetryTests({
   name: "부산 timetable collector",
   delegate: stationTimetableFetch,
   rejectedResponse: envelopeResponse,
