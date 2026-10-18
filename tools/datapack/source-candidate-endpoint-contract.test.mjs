@@ -619,7 +619,7 @@ test("4개 DATA_GO runner는 malformed credential을 URL·cache·fetch·delegate
       runner: "tools/datapack/collect-seoul-accessibility-evidence.mjs",
       test: "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
       functionName: "collectSeoulAccessibility",
-      before: ["new URL(endpoint)", "fetchImpl("],
+      before: ["new URL(endpoint)", "fetchSeoulPage("],
     },
     {
       runner: "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",

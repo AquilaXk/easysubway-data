@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import {
+  MAX_REQUEST_ATTEMPTS,
   collectSeoulAccessibilityObservation,
   seoulObservationOutputRoot,
   validateSeoulAccessibilitySnapshotIdentity,
@@ -104,7 +105,7 @@ const PHASES = Object.freeze(["all", "collect", "publish"]);
 export async function runCurrentSeoulAccessibilityRegistration({
   observationName,
   receiptPath,
-  requestAttempts = 2,
+  requestAttempts = MAX_REQUEST_ATTEMPTS,
   repositoryRoot = ROOT,
   env = process.env,
   deps = {},
@@ -120,7 +121,7 @@ export async function runCurrentSeoulAccessibilityRegistration({
     snapshotId = (await operations.readObservationManifest(outputRoot)).snapshotId;
   } else {
     const previousSnapshot = await readCurrentSeoulSnapshot(operations, root);
-    if (!Number.isSafeInteger(requestAttempts) || ![1, 2].includes(requestAttempts)) throw new Error("Seoul accessibility request attempts are invalid");
+    if (!Number.isSafeInteger(requestAttempts) || requestAttempts < 1 || requestAttempts > MAX_REQUEST_ATTEMPTS) throw new Error("Seoul accessibility request attempts are invalid");
     const observation = await operations.collect({ serviceKey, previousSnapshot, requestAttempts });
     if (observation?.snapshot?.sourceId !== SOURCE_ID || typeof observation.snapshot.snapshotId !== "string") throw new Error("current Seoul accessibility observation is invalid");
     outputRoot = await operations.observationRoot(name);
@@ -135,14 +136,20 @@ export async function runCurrentSeoulAccessibilityRegistration({
   return { status: "PASS", snapshotId, outputs: registration.outputs };
 }
 
-async function main(argv) {
-  const usage = "usage: --observation-name <safe> --receipt <absolute external path> [--request-attempts 1] [--phase collect|publish]";
-  if (argv[0] !== "--observation-name" || argv[2] !== "--receipt") throw new Error(usage);
+const USAGE = `usage: --observation-name <safe> --receipt <absolute external path> [--request-attempts 1..${MAX_REQUEST_ATTEMPTS}] [--phase collect|publish]`;
+
+export function parseRegistrationArguments(argv) {
+  if (argv[0] !== "--observation-name" || argv[2] !== "--receipt") throw new Error(USAGE);
   const options = { observationName: argv[1], receiptPath: argv[3] };
   let rest = argv.slice(4);
-  if (rest[0] === "--request-attempts" && rest[1] === "1") { options.requestAttempts = 1; rest = rest.slice(2); }
+  if (rest[0] === "--request-attempts" && /^[1-9]$/u.test(rest[1] ?? "") && Number(rest[1]) <= MAX_REQUEST_ATTEMPTS) { options.requestAttempts = Number(rest[1]); rest = rest.slice(2); }
   if (rest[0] === "--phase" && ["collect", "publish"].includes(rest[1])) { options.phase = rest[1]; rest = rest.slice(2); }
-  if (rest.length !== 0) throw new Error(usage);
+  if (rest.length !== 0) throw new Error(USAGE);
+  return options;
+}
+
+async function main(argv) {
+  const options = parseRegistrationArguments(argv);
   const result = await runCurrentSeoulAccessibilityRegistration(options);
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

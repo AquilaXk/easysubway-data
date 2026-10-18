@@ -154,6 +154,8 @@ test("collector aborts stalled provider requests after the configured timeout", 
       endpoint: "https://apis.data.go.kr/example",
       serviceKey: "secret",
       requestTimeoutMs: 1,
+      sleepImpl: async () => {},
+      logImpl: () => {},
       fetchImpl: async (_url, options) => {
         const signal = options?.signal;
         observedAbortSignal = signal instanceof AbortSignal;
@@ -1043,4 +1045,150 @@ test("seoul-metro-accessibility is admitted while sibling facility-location stay
     await readFile(new URL("../../.env.example", import.meta.url), "utf8"),
     /^DATA_GO_KR_SERVICE_KEY=/m,
   );
+});
+
+// 일시 오류 재시도(#1326, Refs #870): 멱등 GET만, 최대 3번 시도, full jitter(base 2s·cap 20s), Retry-After 존중.
+const RETRY_ENDPOINT = "https://apis.data.go.kr/example";
+const RETRY_KEY = "retry-secret-key";
+const okPage = () => ({
+  ok: true,
+  status: 200,
+  headers: new Headers(),
+  text: async () => JSON.stringify({ response: { header: { resultCode: "00" }, body: { totalCount: 1, items: { item: [
+    { lineNm: "1호선", stnNm: "서울역", oprtngSitu: "M", dtlPstn: "대합실-승강장" },
+  ] } } } }),
+});
+const failedPage = (status, headers = {}) => ({ ok: false, status, headers: new Headers(headers), text: async () => "unavailable" });
+const timeoutError = () => Object.assign(new Error("signal timed out"), { name: "TimeoutError" });
+const resetError = () => new TypeError("fetch failed", { cause: Object.assign(new Error("reset"), { code: "ECONNRESET" }) });
+
+async function collectWithScript(script, { random = () => 0.5, requestAttempts } = {}) {
+  const sleeps = [];
+  const logs = [];
+  let calls = 0;
+  const fetchImpl = async () => {
+    const step = script[Math.min(calls, script.length - 1)];
+    calls += 1;
+    if (step instanceof Error) throw step;
+    return step();
+  };
+  const outcome = await collectSeoulAccessibility({
+    endpoint: RETRY_ENDPOINT,
+    serviceKey: RETRY_KEY,
+    fetchImpl,
+    sleepImpl: async (ms) => { sleeps.push(ms); },
+    randomImpl: random,
+    logImpl: (line) => logs.push(line),
+    ...(requestAttempts === undefined ? {} : { requestAttempts }),
+  }).then((value) => ({ value }), (error) => ({ error }));
+  return { ...outcome, calls, sleeps, logs };
+}
+
+test("일시 오류 재시도 표: 성공·소진·즉시 실패·Retry-After가 시도 수와 대기를 정한다", async () => {
+  const cases = [
+    { name: "timeout 한 번 뒤 성공", script: [timeoutError(), okPage], calls: 2, sleeps: [1_000], ok: true },
+    { name: "연결 reset 두 번 뒤 성공", script: [resetError(), resetError(), okPage], calls: 3, sleeps: [1_000, 2_000], ok: true },
+    { name: "timeout 3회는 소진 실패", script: [timeoutError()], calls: 3, sleeps: [1_000, 2_000], message: "Seoul accessibility API request failed: NETWORK_TIMEOUT" },
+    { name: "503 뒤 성공", script: [() => failedPage(503), okPage], calls: 2, sleeps: [1_000], ok: true },
+    { name: "429·502·504가 이어지면 시도 3에서 소진", script: [() => failedPage(429), () => failedPage(502), () => failedPage(504)], calls: 3, sleeps: [1_000, 2_000], message: "Seoul accessibility API HTTP 504" },
+    { name: "503 3회는 소진 실패", script: [() => failedPage(503)], calls: 3, sleeps: [1_000, 2_000], message: "Seoul accessibility API HTTP 503" },
+    { name: "401은 즉시 실패", script: [() => failedPage(401), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 401" },
+    { name: "403은 즉시 실패", script: [() => failedPage(403), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 403" },
+    { name: "404는 즉시 실패", script: [() => failedPage(404), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 404" },
+    { name: "500은 일시 목록에 없다", script: [() => failedPage(500), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 500" },
+    { name: "알 수 없는 전송 오류는 즉시 실패", script: [new Error("boom"), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API request failed: NETWORK_UNKNOWN" },
+    { name: "TLS 오류는 즉시 실패", script: [Object.assign(new Error("tls"), { code: "ERR_TLS_CERT_ALTNAME_INVALID" }), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API request failed: NETWORK_TLS" },
+    { name: "503 Retry-After 초 값을 따른다", script: [() => failedPage(503, { "Retry-After": "7" }), okPage], calls: 2, sleeps: [7_000], ok: true },
+    { name: "429 Retry-After가 cap 20초를 넘으면 기다리지 않고 즉시 실패", script: [() => failedPage(429, { "Retry-After": "300" }), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 429: RETRY_AFTER_EXCEEDS_CAP retryAfterSeconds=300 capSeconds=20" },
+    { name: "503 Retry-After가 cap을 넘어도 즉시 실패(날짜 형식)", script: [() => failedPage(503, { "Retry-After": new Date(Date.now() + 600_000).toUTCString() }), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 503: RETRY_AFTER_EXCEEDS_CAP retryAfterSeconds=" },
+    { name: "429 Retry-After가 cap 안이면 따르고 두 번째 429도 따른다", script: [() => failedPage(429, { "Retry-After": "20" }), () => failedPage(429, { "Retry-After": "3" }), okPage], calls: 3, sleeps: [20_000, 3_000], ok: true },
+    { name: "429 Retry-After 없음은 jitter 대기로 한 번만 재시도", script: [() => failedPage(429), okPage], calls: 2, sleeps: [1_000], ok: true },
+    { name: "429가 Retry-After 없이 두 번이면 두 번째에서 실패", script: [() => failedPage(429)], calls: 2, sleeps: [1_000], message: "Seoul accessibility API HTTP 429" },
+    { name: "429 Retry-After 없음 뒤 503은 남은 시도 안에서 재시도", script: [() => failedPage(429), () => failedPage(503), okPage], calls: 3, sleeps: [1_000, 2_000], ok: true },
+    { name: "502 뒤 성공", script: [() => failedPage(502), okPage], calls: 2, sleeps: [1_000], ok: true },
+    { name: "504 뒤 성공", script: [() => failedPage(504), okPage], calls: 2, sleeps: [1_000], ok: true },
+    { name: "408은 일시 집합 밖이라 즉시 실패", script: [() => failedPage(408), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 408" },
+    { name: "501은 즉시 실패", script: [() => failedPage(501), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 501" },
+    { name: "505는 즉시 실패", script: [() => failedPage(505), okPage], calls: 1, sleeps: [], message: "Seoul accessibility API HTTP 505" },
+    { name: "읽을 수 없는 Retry-After는 jitter 대기", script: [() => failedPage(503, { "Retry-After": "soon" }), okPage], calls: 2, sleeps: [1_000], ok: true },
+  ];
+  for (const expected of cases) {
+    const result = await collectWithScript(expected.script);
+    assert.equal(result.calls, expected.calls, `${expected.name}: 시도 수`);
+    assert.deepEqual(result.sleeps, expected.sleeps, `${expected.name}: 대기`);
+    if (expected.ok) {
+      assert.equal(result.error, undefined, `${expected.name}: ${result.error?.message}`);
+      assert.equal(result.value.rows.length, 1);
+    } else {
+      assert.ok(result.error?.message.startsWith(expected.message), `${expected.name}: ${result.error?.message}`);
+    }
+  }
+});
+
+test("재시도 대기는 full jitter다: random(0, min(20초, 2초·2^n)) 범위", async () => {
+  for (const [random, expectedSleeps] of [[() => 0, [0, 0]], [() => 0.999999, [1_999, 3_999]]]) {
+    const result = await collectWithScript([timeoutError()], { random });
+    assert.deepEqual(result.sleeps, expectedSleeps);
+  }
+});
+
+test("시도마다 로그 한 줄: 시도 번호·오류 종류·대기 ms. 키와 쿼리 값은 없다", async () => {
+  const result = await collectWithScript([timeoutError(), () => failedPage(503), okPage]);
+  assert.deepEqual(result.logs, [
+    "Seoul accessibility retry attempt=1/3 kind=NETWORK_TIMEOUT delayMs=1000",
+    "Seoul accessibility retry attempt=2/3 kind=HTTP_503 delayMs=2000",
+  ]);
+  const exhausted = await collectWithScript([timeoutError()]);
+  assert.equal(exhausted.logs.at(-1), "Seoul accessibility request failed after 3 attempts: NETWORK_TIMEOUT");
+  const httpExhausted = await collectWithScript([() => failedPage(503)]);
+  assert.equal(httpExhausted.logs.at(-1), "Seoul accessibility request failed after 3 attempts: HTTP_503");
+  for (const line of [...result.logs, ...exhausted.logs]) assert.doesNotMatch(line, new RegExp(`${RETRY_KEY}|https?://|serviceKey`));
+});
+
+test("본문 수신 중 timeout도 같은 요청을 다시 보낸다", async () => {
+  const bodyTimeout = () => ({ ok: true, status: 200, headers: new Headers(), text: async () => { throw timeoutError(); } });
+  const result = await collectWithScript([bodyTimeout, okPage]);
+  assert.equal(result.calls, 2);
+  assert.equal(result.error, undefined);
+});
+
+test("스키마·원천 오류 코드는 재시도하지 않고 즉시 실패한다", async () => {
+  const providerError = () => ({ ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ response: { header: { resultCode: "30" } } }) });
+  const notJson = () => ({ ok: true, status: 200, headers: new Headers(), text: async () => "<html>" });
+  for (const [script, message] of [[[providerError, okPage], "Seoul accessibility API response invalid: envelope"], [[notJson, okPage], "Seoul accessibility API response invalid"]]) {
+    const result = await collectWithScript(script);
+    assert.equal(result.calls, 1);
+    assert.equal(result.error?.message, message);
+  }
+});
+
+test("requestAttempts는 1~3이고 시도 수 상한이 된다. facility-location은 계속 1이다", async () => {
+  const one = await collectWithScript([timeoutError()], { requestAttempts: 1 });
+  assert.equal(one.calls, 1);
+  const two = await collectWithScript([timeoutError()], { requestAttempts: 2 });
+  assert.equal(two.calls, 2);
+  for (const requestAttempts of [0, 4, 1.5, "3"]) {
+    const invalid = await collectWithScript([okPage], { requestAttempts });
+    assert.equal(invalid.calls, 0);
+    assert.equal(invalid.error?.message, "Seoul accessibility API response invalid: requestAttempts");
+  }
+});
+
+test("재시도는 페이지마다 따로 센다: 둘째 page의 일시 오류도 최대 3번까지 시도한다", async () => {
+  const row = (name) => ({ lineNm: "1호선", stnNm: name, oprtngSitu: "M", dtlPstn: "대합실-승강장" });
+  const pageOf = (items) => () => ({ ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ response: { header: { resultCode: "00" }, body: { totalCount: 2, items: { item: items } } } }) });
+  const result = await collectWithScript([pageOf([row("가")]), timeoutError(), pageOf([row("나")])]);
+  assert.equal(result.calls, 3);
+  assert.equal(result.error, undefined);
+  assert.equal(result.value.rows.length, 2);
+});
+
+test("재시도하려고 버리는 비-OK 응답의 본문은 취소한다. 마지막 응답은 건드리지 않는다", async () => {
+  const cancelled = [];
+  const failedWithBody = (status, label) => () => ({ ...failedPage(status), body: { cancel: async () => { cancelled.push(label); } } });
+  const result = await collectWithScript([failedWithBody(503, "first"), failedWithBody(503, "second"), failedWithBody(503, "last")]);
+  assert.equal(result.calls, 3);
+  assert.deepEqual(cancelled, ["first", "second"]);
+  const rejecting = await collectWithScript([() => ({ ...failedPage(503), body: { cancel: async () => { throw new Error("already closed"); } } }), okPage]);
+  assert.equal(rejecting.error, undefined, "취소 실패가 수집을 막지 않는다");
 });

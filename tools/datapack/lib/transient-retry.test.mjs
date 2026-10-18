@@ -8,6 +8,8 @@ import {
   createTransientRetryBudget,
   isTransientStatus,
   isTransientTransportError,
+  fullJitterBackoffMs,
+  parseRetryAfterMs,
   transientBackoffMs,
   unwrapTransientRetryFailure,
   withTransientRetry,
@@ -215,4 +217,60 @@ test("unwrapTransientRetryFailure는 예산 소진 오류만 마지막 시도의
   const plain = new Error("plain");
   assert.equal(unwrapTransientRetryFailure(plain), plain);
   assert.equal(unwrapTransientRetryFailure(undefined), undefined);
+});
+
+// Full jitter 정책: 대기 = random(0, min(cap, base·2^n)). 한도와 대기 계산을 호출자가 정한다.
+test("fullJitterBackoffMs는 0 이상 min(cap, base·2^n) 미만이고 random이 범위를 정한다", () => {
+  const policy = { baseMs: 2_000, capMs: 20_000 };
+  const bound = (retryIndex) => Math.min(policy.capMs, policy.baseMs * 2 ** retryIndex);
+  assert.deepEqual([0, 1, 2, 3, 4, 10].map(bound), [2_000, 4_000, 8_000, 16_000, 20_000, 20_000]);
+  for (const retryIndex of [0, 1, 2, 3, 4, 10]) {
+    assert.equal(fullJitterBackoffMs(retryIndex, { ...policy, random: () => 0 }), 0);
+    assert.equal(fullJitterBackoffMs(retryIndex, { ...policy, random: () => 0.5 }), bound(retryIndex) / 2);
+    const nearOne = fullJitterBackoffMs(retryIndex, { ...policy, random: () => 0.999999 });
+    assert.ok(nearOne >= 0 && nearOne < bound(retryIndex), `${retryIndex}: ${nearOne}`);
+    assert.ok(Number.isInteger(nearOne));
+  }
+});
+
+test("parseRetryAfterMs는 RFC 9110의 세 날짜 형식(IMF-fixdate·RFC 850·asctime)과 초를 읽고 상한은 두지 않는다", () => {
+  const now = () => Date.parse("2026-10-18T00:00:00Z");
+  const options = { now };
+  assert.equal(parseRetryAfterMs("5", options), 5_000);
+  assert.equal(parseRetryAfterMs(" 5 ", options), 5_000);
+  assert.equal(parseRetryAfterMs("0", options), 0);
+  assert.equal(parseRetryAfterMs("300", options), 300_000);
+  assert.equal(parseRetryAfterMs("Sun, 18 Oct 2026 00:00:07 GMT", options), 7_000);
+  assert.equal(parseRetryAfterMs("Sunday, 18-Oct-26 00:00:07 GMT", options), 7_000);
+  assert.equal(parseRetryAfterMs("Sun Oct 18 00:00:07 2026", options), 7_000);
+  assert.equal(parseRetryAfterMs("Sun Nov  1 00:00:00 2026", options), 14 * 86_400_000);
+  assert.equal(parseRetryAfterMs("Sat, 17 Oct 2026 23:59:00 GMT", options), 0);
+  assert.equal(parseRetryAfterMs("Sunday, 18-Oct-99 00:00:00 GMT", options), 0, "두 자리 해가 50년보다 먼 미래면 지난 세기다(RFC 9110)");
+  for (const value of [null, undefined, "", "soon", "-3", "1.5", "5s", "18 Oct 2026", "Sun, 31 Feb 2026 00:00:00 GMT", "Sun, 18 Oct 2026 00:00:07 PST"]) assert.equal(parseRetryAfterMs(value, options), undefined, String(value));
+});
+
+test("retryLimit과 delayMs는 호출자가 정한다: 한도 2번 재시도, 대기는 delayMs가 돌려준 값", async () => {
+  const delays = [];
+  let calls = 0;
+  await assert.rejects(withTransientRetry(async () => { calls += 1; throw withCode("ETIMEDOUT"); }, {
+    retryLimit: 2, delayMs: ({ retryIndex }) => 100 * (retryIndex + 1), sleep: async (ms) => { delays.push(ms); },
+  }), /ETIMEDOUT/);
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [100, 200]);
+});
+
+test("delayMs는 일시 상태 결과를 받아 Retry-After 같은 응답 정보를 쓸 수 있고, onRetry는 그 결과를 알려준다", async () => {
+  const seen = [];
+  const outcomes = [{ status: 503 }, { status: 200 }];
+  const result = await withTransientRetry(async () => outcomes.shift(), {
+    isTransientResult: ({ status }) => status === 503, delayMs: ({ result: last }) => last.status * 2, sleep: async () => {}, onRetry: (event) => seen.push(event),
+  });
+  assert.deepEqual(result, { status: 200 });
+  assert.deepEqual(seen, [{ retryIndex: 0, delayMs: 1_006, result: { status: 503 } }]);
+});
+
+test("retryLimit과 delayMs의 인자가 잘못되면 거부한다", async () => {
+  for (const options of [{ retryLimit: -1 }, { retryLimit: 1.5 }, { retryLimit: 6 }, { delayMs: "1" }]) {
+    await assert.rejects(withTransientRetry(async () => 1, options), /TRANSIENT_RETRY_ARGUMENTS/, JSON.stringify(options));
+  }
 });

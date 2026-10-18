@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { runCurrentSeoulAccessibilityRegistration } from "./run-current-seoul-accessibility-registration.mjs";
+import { parseRegistrationArguments, runCurrentSeoulAccessibilityRegistration } from "./run-current-seoul-accessibility-registration.mjs";
 
 const SOURCE_ID = "seoul-metro-accessibility";
 const HEAD = "seoul-metro-accessibility-20260813T213842955Z";
@@ -64,7 +64,12 @@ test("runner passes the scheduled single-attempt contract only when requested", 
   assert.equal(events[2][3], 1);
   const direct = await fixture(t); const directEvents = [];
   await runCurrentSeoulAccessibilityRegistration(options(direct, dependencies(directEvents)));
-  assert.equal(directEvents[2][3], 2);
+  assert.equal(directEvents[2][3], 3);
+  for (const requestAttempts of [0, 4, 1.5]) {
+    const invalid = await fixture(t); const invalidEvents = [];
+    await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(invalid, dependencies(invalidEvents)), requestAttempts }), /request attempts are invalid/);
+    assert.equal(invalidEvents.some(([name]) => name === "collect"), false);
+  }
 });
 
 test("malformed DATA_GO_KR_SERVICE_KEY stops every delegate before the current head read", async (t) => {
@@ -136,4 +141,12 @@ test("publish phase stops when the collected observation is missing, and an unkn
   await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(values, deps), phase: "publish" }), /observation manifest is missing/);
   assert.equal(events.some(([name]) => name === "publish" || name === "register"), false);
   await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies([])), phase: "both" }), /phase is invalid/);
+});
+
+test("CLI는 --request-attempts 1~3만 받고 --phase와 함께 쓸 수 있다", () => {
+  const base = ["--observation-name", "refresh-1", "--receipt", "/tmp/receipt.json"];
+  for (const attempts of [1, 2, 3]) assert.equal(parseRegistrationArguments([...base, "--request-attempts", String(attempts)]).requestAttempts, attempts);
+  assert.deepEqual(parseRegistrationArguments([...base, "--request-attempts", "2", "--phase", "collect"]), { observationName: "refresh-1", receiptPath: "/tmp/receipt.json", requestAttempts: 2, phase: "collect" });
+  assert.equal("requestAttempts" in parseRegistrationArguments(base), false);
+  for (const attempts of ["0", "4", "9", "10", "1.5", "x"]) assert.throws(() => parseRegistrationArguments([...base, "--request-attempts", attempts]), /usage: .*--request-attempts 1\.\.3/);
 });

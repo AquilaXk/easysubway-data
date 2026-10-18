@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { parseRetryAfterMs } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const BASE = "https://apis.data.go.kr/1613000/TrainInfo";
@@ -765,9 +766,10 @@ function tagoRateLimitState(requestBudget) {
 }
 
 function retryAfterDeltaSeconds(value) {
-  if (!/^(?:[1-9]|[1-5]\d|60)$/.test(value ?? "")) return null;
-  const seconds = Number(value);
-  return seconds <= TAGO_MAX_RETRY_AFTER_SECONDS ? seconds : null;
+  const retryAfterMillis = parseRetryAfterMs(value);
+  if (retryAfterMillis === undefined) return null;
+  const seconds = Math.ceil(retryAfterMillis / 1_000);
+  return seconds >= 1 && seconds <= TAGO_MAX_RETRY_AFTER_SECONDS ? seconds : null;
 }
 
 function rateLimitError(state) {
