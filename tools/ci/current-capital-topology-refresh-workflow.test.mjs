@@ -186,7 +186,7 @@ test("a failed run removes its own empty claim before the final failure report",
   assert.ok(yml.indexOf("Remove this failed run's empty topology claim") < yml.indexOf("Report refresh failure as an issue"), "정리 step의 실패도 마지막 실패 보고가 덮는다");
   assert.equal(yml.trimEnd().lastIndexOf("\n      - name: "), yml.lastIndexOf("\n      - name: Report refresh failure as an issue"), "실패 보고가 마지막 step이다");
   assert.match(release, /GH_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.match(release, /gh auth setup-git/);
+  assert.doesNotMatch(release, /gh auth setup-git/, "git 인증 준비는 release-own-claim이 한다");
   assert.match(release, /node tools\/ci\/release-own-claim\.mjs --workflow current-capital-topology-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --run-id "\$\{GITHUB_RUN_ID\}" --branch "\$\{TOPOLOGY_BRANCH\}" --claim-sha "\$\{TOPOLOGY_CLAIM_SHA\}"/);
 });
 test("the self-run claim release leaves deletion rules to the tool", () => {

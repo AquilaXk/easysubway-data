@@ -8,10 +8,10 @@
 // 이 도구가 실패하거나 runner가 죽어 claim이 남아도 reclaim-stale-claims가 다음 대기 판정에서 회수한다.
 //
 // 사용: node tools/ci/release-own-claim.mjs --workflow <file> --repository <owner/repo> --run-id <GITHUB_RUN_ID> --branch <claim 브랜치> --claim-sha <claim 커밋 sha> [--publication-outcome <step outcome>]
-// git push 인증은 호출하는 step이 먼저 `gh auth setup-git`으로 준비한다.
+// git push 인증은 이 도구가 `gh auth setup-git`으로 준비한다.
 import { pathToFileURL } from "node:url";
 
-import { defaultRunGit, removeOrphanClaims } from "./remove-orphan-claims.mjs";
+import { defaultRunGit, removeOrphanClaims, setupGitAuth } from "./remove-orphan-claims.mjs";
 
 const REQUIRED = Object.freeze({ "--workflow": "workflowFile", "--repository": "repository", "--run-id": "runId", "--branch": "branch", "--claim-sha": "claimSha" });
 const OPTIONAL = Object.freeze({ "--publication-outcome": "publicationOutcome" });
@@ -43,7 +43,9 @@ function parseArgs(argv) {
 }
 
 export async function main(argv, dependencies = {}) {
-  return releaseOwnClaim({ ...parseArgs(argv), ...dependencies });
+  const input = parseArgs(argv);
+  await setupGitAuth(dependencies.runGh);
+  return releaseOwnClaim({ ...input, ...dependencies });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

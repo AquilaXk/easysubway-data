@@ -13,11 +13,12 @@ const BRANCH = `${CLAIM_OWNERS[SEOUL].prefix}${RUN_ID}`;
 const SHA = "b".repeat(40);
 
 function harness({ remote = `${SHA}\trefs/heads/${BRANCH}\n` } = {}) {
-  const calls = { git: [], removed: [] };
-  const runGit = async (args) => { calls.git.push(args); return remote; };
+  const calls = { git: [], removed: [], order: [] };
+  const runGit = async (args) => { calls.git.push(args); calls.order.push("git"); return remote; };
+  const runGh = async (args) => { assert.deepEqual(args, ["auth", "setup-git"]); calls.order.push("auth"); return ""; };
   const removeClaims = async (input) => { calls.removed.push(input); return [{ branch: input.claims[0], action: "removed_orphan", reported: "skip" }]; };
   const logs = [];
-  return { calls, runGit, removeClaims, logs, log: (line) => logs.push(line) };
+  return { calls, runGit, runGh, removeClaims, logs, log: (line) => logs.push(line) };
 }
 const input = (h, overrides = {}) => ({
   workflowFile: SEOUL, repository: REPOSITORY, runId: RUN_ID, branch: BRANCH, claimSha: SHA, publicationOutcome: "skipped", runGit: h.runGit, removeClaims: h.removeClaims, log: h.log, ...overrides,
@@ -55,7 +56,7 @@ test("게시 step 결과를 주지 않으면 그대로 넘겨 도구가 거부�
 test("CLI는 필수 인자가 빠지거나 중복이면 아무것도 하지 않고 실패한다", async () => {
   const h = harness();
   const full = ["--workflow", SEOUL, "--repository", REPOSITORY, "--run-id", RUN_ID, "--branch", BRANCH, "--claim-sha", SHA, "--publication-outcome", "skipped"];
-  const dependencies = { runGit: h.runGit, removeClaims: h.removeClaims, log: h.log };
+  const dependencies = { runGit: h.runGit, runGh: h.runGh, removeClaims: h.removeClaims, log: h.log };
   assert.equal((await main(full, dependencies))[0].action, "removed_orphan");
   for (const drop of ["--workflow", "--repository", "--run-id", "--branch", "--claim-sha"]) {
     const index = full.indexOf(drop);
@@ -65,11 +66,12 @@ test("CLI는 필수 인자가 빠지거나 중복이면 아무것도 하지 않�
   await assert.rejects(main([...full, "--branch", BRANCH], dependencies), /CLAIM_ORPHAN_INPUT_INVALID/u);
   await assert.rejects(main([...full, "--unknown", "x"], dependencies), /CLAIM_ORPHAN_INPUT_INVALID/u);
   assert.equal(h.calls.removed.length, 1, "잘못된 호출은 도구에 닿지 않는다");
+  assert.deepEqual(h.calls.order, ["auth", "git"], "삭제 push 인증을 먼저 준비한다(workflow가 따로 gh auth setup-git을 부르지 않는다)");
 });
 
 test("게시 step 결과 없이 CLI를 불러도 통과시킨다(게시하지 않는 workflow의 호출)", async () => {
   const h = harness();
   const base = ["--workflow", SEOUL, "--repository", REPOSITORY, "--run-id", RUN_ID, "--branch", BRANCH, "--claim-sha", SHA];
-  await main(base, { runGit: h.runGit, removeClaims: h.removeClaims, log: h.log });
+  await main(base, { runGit: h.runGit, runGh: h.runGh, removeClaims: h.removeClaims, log: h.log });
   assert.equal(h.calls.removed[0].publicationOutcome, undefined);
 });

@@ -13,16 +13,15 @@
 // 지울 때는 remove-orphan-claims를 그대로 쓴다: 소유 workflow의 실패 이슈에 보고(#926)한 뒤 지우고, push 직전에 run 상태·claim 모양·PR을 다시 확인하고 lease로 지운다.
 // claim마다 독립이다. 하나가 판정 불가여도 다른 stale claim은 회수한다. 판정 근거를 모으는 목록 조회(PR)가 실패하면 실패한다(collect-automation-prs와 같다).
 //
-// 사용: node tools/ci/reclaim-stale-claims.mjs --repository <owner/repo> [--except-workflow <workflow 파일>]
-// git push 인증은 호출하는 step이 먼저 `gh auth setup-git`으로 준비한다. gh run view에는 actions: read 권한이 필요하다.
+// 사용: node tools/ci/reclaim-stale-claims.mjs --repository <owner/repo>
+// git push 인증은 이 도구가 `gh auth setup-git`으로 준비한다. gh run view에는 actions: read, 삭제 push에는 contents: write 권한이 필요하다.
 import { pathToFileURL } from "node:url";
 
 import { parseAutomationBranches, validRepository } from "./automation-pr-state.mjs";
 import { CLAIM_OWNERS, classifyUnboundClaim, collectClaimEvidence } from "./claim-orphans.mjs";
 import { collectAutomationPullRequests } from "./collect-automation-prs.mjs";
-import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { defaultRunGh } from "./report-refresh-failure.mjs";
-import { defaultRunGit, removeOrphanClaims } from "./remove-orphan-claims.mjs";
+import { defaultRunGit, removeOrphanClaims, setupGitAuth } from "./remove-orphan-claims.mjs";
 
 const AUTOMATION_REFS = "refs/heads/automation/*";
 // 열린 PR 목록 상한. 판정 step들과 같다(--pr-limit 1000).
@@ -34,10 +33,9 @@ function fail(code, detail) {
 
 const errorMessage = (error) => (error instanceof Error ? error.message : String(error));
 
-// 판정에 쓰는 claim: 회수 대상 소유 workflow(CLAIM_OWNERS)의 접두어이고 제외한 workflow가 아닌 것. 다른 소유자의 claim은 여기서 다루지 않는다.
-function ownedClaims(branches, exceptWorkflow) {
+// 판정에 쓰는 claim: 소유 workflow(CLAIM_OWNERS)의 접두어인 것. 다른 소유자의 claim은 여기서 다루지 않는다.
+function ownedClaims(branches) {
   return Object.entries(CLAIM_OWNERS)
-    .filter(([workflowFile]) => workflowFile !== exceptWorkflow)
     .flatMap(([workflowFile, { prefix }]) => branches.filter((branch) => branch.startsWith(prefix)).map((branch) => ({ workflowFile, branch })));
 }
 
@@ -54,10 +52,10 @@ async function keptReason({ workflowFile, branch, repository, pullRequests, runG
  * PR 없이 남은 stale claim을 회수한다.
  * @returns {{ reclaimed: string[], kept: { branch: string, reason: string }[] }} 지운 claim과, 판정 결과 차단을 유지한 claim(이유 포함)
  */
-export async function reclaimStaleClaims({ repository, exceptWorkflow = null, runGh = defaultRunGh, runGit = defaultRunGit, log = console.log, ...removeDependencies } = {}) {
+export async function reclaimStaleClaims({ repository, runGh = defaultRunGh, runGit = defaultRunGit, log = console.log, ...removeDependencies } = {}) {
   if (!validRepository(repository)) fail("CLAIM_ORPHAN_INPUT_INVALID", "repository");
   const refsText = await runGit(["ls-remote", "--heads", "origin", AUTOMATION_REFS]);
-  const claims = ownedClaims(parseAutomationBranches(refsText), exceptWorkflow);
+  const claims = ownedClaims(parseAutomationBranches(refsText));
   const result = { reclaimed: [], kept: [] };
   if (claims.length === 0) return result;
   const refLines = new Map(refsText.split("\n").filter(Boolean).map((line) => [line.split("\trefs/heads/")[1], `${line}\n`]));
@@ -85,20 +83,19 @@ export async function reclaimStaleClaims({ repository, exceptWorkflow = null, ru
 }
 
 function parseArgs(argv) {
-  const keys = new Map([["--repository", "repository"], ["--except-workflow", "exceptWorkflow"]]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
-    const key = keys.get(argv[index]);
-    if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("CLAIM_ORPHAN_INPUT_INVALID", `argument ${String(argv[index])}`);
-    values[key] = argv[index + 1];
+    if (argv[index] !== "--repository" || Object.hasOwn(values, "repository") || typeof argv[index + 1] !== "string") fail("CLAIM_ORPHAN_INPUT_INVALID", `argument ${String(argv[index])}`);
+    values.repository = argv[index + 1];
   }
   if (!Object.hasOwn(values, "repository")) fail("CLAIM_ORPHAN_INPUT_INVALID", "missing --repository");
-  if (Object.hasOwn(values, "exceptWorkflow") && !Object.hasOwn(REFRESH_CLAIM_PREFIXES, values.exceptWorkflow)) fail("CLAIM_ORPHAN_INPUT_INVALID", `workflow ${values.exceptWorkflow}`);
   return values;
 }
 
 export async function main(argv, dependencies = {}) {
-  const result = await reclaimStaleClaims({ ...parseArgs(argv), ...dependencies });
+  const input = parseArgs(argv);
+  await setupGitAuth(dependencies.runGh);
+  const result = await reclaimStaleClaims({ ...input, ...dependencies });
   (dependencies.log ?? console.log)(`stale claims: reclaimed=${result.reclaimed.length} kept=${result.kept.length}`);
   return result;
 }

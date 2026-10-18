@@ -542,3 +542,31 @@ test("#1326 CLI는 --publication-outcome을 받고 알 수 없는 값은 거부�
   assert.equal((await main([...base, "--publication-outcome", "skipped"], dependencies))[0].action, "removed_orphan");
   await rm(directory, { recursive: true, force: true });
 });
+
+// #1328 리뷰 F5: 기다리는 workflow 4곳과 소유 workflow가 같은 claim을 동시에 지울 수 있다. 졌다면(원격 브랜치가 사라졌다면) 이미 정리된 것이다.
+// sha가 움직여서 lease가 거부된 경우는 여전히 실패다.
+test("#1328 F5 삭제 push가 실패했을 때 원격 브랜치가 이미 없으면 absent로 끝난다(경쟁에서 진 삭제)", async () => {
+  const branch = branchOf(6101);
+  const h = harness({ runs: { 6101: finishedRun() }, remote: { [branch]: SHA } });
+  let deleted = false;
+  const runGit = async (args) => {
+    if (args[0] === "push") { deleted = true; throw new Error("error: failed to push some refs (stale info)"); }
+    return deleted ? "" : h.runGit(args);
+  };
+  const result = await removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit, report: h.report, log: h.log });
+  assert.deepEqual(result, [{ branch, action: "absent", reported: "skip" }]);
+  assert.equal(h.logs.some((line) => line.includes("Orphan claim removed")), false, "지우지 않았으므로 삭제 notice를 남기지 않는다");
+});
+
+test("#1328 F5 삭제 push가 실패했고 원격 sha가 움직였거나 그대로면 실패다(lease 거부는 구분한다)", async () => {
+  const branch = branchOf(6102);
+  for (const sha of [SHA, "f".repeat(40)]) {
+    const h = harness({ runs: { 6102: finishedRun() }, remote: { [branch]: SHA } });
+    let pushed = false;
+    const runGit = async (args) => {
+      if (args[0] === "push") { pushed = true; throw new Error("error: failed to push some refs (stale info)"); }
+      return pushed ? `${sha}\trefs/heads/${branch}\n` : h.runGit(args);
+    };
+    await assert.rejects(removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit, report: h.report, log: h.log }), /stale info/u, sha);
+  }
+});

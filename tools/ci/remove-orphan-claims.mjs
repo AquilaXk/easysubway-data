@@ -50,6 +50,11 @@ export async function defaultRunGit(args) {
   return stdout;
 }
 
+/** git push 인증을 준비한다. 삭제 push를 하는 CLI(release-own-claim·reclaim-stale-claims)가 첫 호출로 부른다. 각 workflow step이 따로 준비하지 않게 한다. */
+export function setupGitAuth(runGh = defaultRunGh) {
+  return runGh(["auth", "setup-git"]);
+}
+
 function defaultReport({ workflowFile, repository, runId, orphan }, runGh) {
   return reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", runId], runGh, orphan });
 }
@@ -138,7 +143,14 @@ async function removeOne({ workflowFile, repository, branch, runId, classifiedSh
     reported = (await report({ workflowFile, repository, runId, ...(ownRun ? {} : { orphan: { branch, conclusion: removal.conclusion ?? "unknown", reason: removal.reason } }) }))?.action ?? null;
     await assertStillRemovable({ workflowFile, repository, branch, runId, runGh, selfRunId, publicationOutcome });
   }
-  await runGit(["push", `--force-with-lease=refs/heads/${branch}:${classifiedSha}`, "origin", `:refs/heads/${branch}`]);
+  try {
+    await runGit(["push", `--force-with-lease=refs/heads/${branch}:${classifiedSha}`, "origin", `:refs/heads/${branch}`]);
+  } catch (error) {
+    // 대기하는 workflow와 소유 workflow가 같은 claim을 동시에 지울 수 있다. 진 쪽은 이미 정리된 것이다(원격 브랜치 없음).
+    // 브랜치가 남아 있으면 sha가 움직여 lease가 거부된 것이므로 그대로 실패한다.
+    if (await remoteSha(runGit, branch) === null) return { branch, action: "absent", reported };
+    throw error;
+  }
   await recordRemoval({ log, summaryFile, workflowFile, branch, runId, conclusion: removal.conclusion, reason: removal.reason, reported });
   return { branch, action: merged ? "removed_merged" : "removed_orphan", reported };
 }

@@ -501,15 +501,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: KRIC current facility refresh / Release this failed run's claim
-        if: ${{ failure() && env.KRIC_REFRESH_BRANCH != '' && env.KRIC_REFRESH_CLAIM_SHA != '' }}
+        if: ${{ failure() && env.KRIC_REFRESH_BRANCH != '' && env.KRIC_REFRESH_CLAIM_SHA != '' && steps.publish.outcome == 'skipped' }}
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLICATION_OUTCOME: ${{ steps.publish.outcome }}
         run: |
           set -euo pipefail
-          # #1326: 수집 단계에서 실패한 run이 빈 claim을 남기면 원장을 쓰는 다른 자동화가 소유 workflow의 다음 정기 실행까지 모두 기다린다.
-          # 게시 step이 건너뛰어졌을 때만(게시된 것이 없을 때만) 같은 run에서 푼다. 도구가 보고(#926)를 먼저 하고 빈 claim·PR 없음·기록한 sha가 모두 맞을 때만 지운다.
-          gh auth setup-git
+          # #1326: 게시 step이 건너뛰어진(게시된 것이 없는) 실패 run은 자기 빈 claim을 같은 run에서 푼다. 삭제 규칙은 도구가 정한다.
           node tools/ci/release-own-claim.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${KRIC_REFRESH_BRANCH}" --claim-sha "${KRIC_REFRESH_CLAIM_SHA}" --publication-outcome "${PUBLICATION_OUTCOME}"
 
       - name: KRIC current facility refresh / Report refresh failure as an issue
