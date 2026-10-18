@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
-import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 
 // #997: 헤더 대기(연결·TLS·응답 헤더)와 본문 전체 수신 시간을 분리한다.
 // 헤더가 도착하면 헤더 타이머를 끄고, 본문은 관측 크기(51,799B)와 하한 처리량(1,000B/s)에서 유도한 별도 시간 안에 읽는다.
@@ -33,7 +34,7 @@ export function validateKorailTimetableFileReceipt(receipt, { rawSha256, rawByte
 }
 
 export async function collectKorailMetropolitanTimetableFile({
-  url, expectedSha256, outputDirectory, fetchImpl = fetch, sleepImpl, retryBudget,
+  url, expectedSha256, outputDirectory, fetchImpl = fetch, sleepImpl, retryBudget, randomImpl,
   headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   const officialUrl = officialKorailUrl(url);
@@ -43,7 +44,7 @@ export async function collectKorailMetropolitanTimetableFile({
   const bodyTimeout = timeoutMs(bodyTimeoutMs);
   try { await mkdir(output); } catch { fail("OUTPUT_DIRECTORY"); }
   const bytes = await downloadWithTransientRetry(fetchImpl, officialUrl, {
-    sleepImpl, retryBudget, headerTimeoutMs: headerTimeout, bodyTimeoutMs: bodyTimeout,
+    sleepImpl, retryBudget, randomImpl, headerTimeoutMs: headerTimeout, bodyTimeoutMs: bodyTimeout,
   });
   if (bytes.length < 4 || !bytes.subarray(0, 4).equals(XLSX_SIGNATURE)) fail("XLSX");
   const digest = createHash("sha256").update(bytes).digest("hex");
@@ -66,12 +67,13 @@ export async function collectKorailMetropolitanTimetableFile({
   return receipt;
 }
 
-// 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·헤더 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
-// 본문 수신 시간 초과(TIMEOUT)·인증·형식·내용 오류는 재시도하지 않는다. 한도를 다 쓰면 기존 오류 코드(HTTP·TRANSPORT·BODY)로 실패한다.
-async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, retryBudget, headerTimeoutMs, bodyTimeoutMs }) {
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
+// 연결·헤더 timeout·소켓 끊김·본문 수신 중 연결 끊김)으로 같은 요청을 다시 보낸다(#1099, #1334).
+// 본문 수신 데드라인 초과(TIMEOUT, #997의 계약)·인증·형식·내용 오류는 재시도하지 않는다. 한도를 다 쓰면 기존 오류 코드(HTTP·TRANSPORT·BODY)로 실패한다.
+async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, retryBudget, randomImpl, headerTimeoutMs, bodyTimeoutMs }) {
   let outcome;
   try {
-    outcome = await withTransientRetry(async () => {
+    outcome = await withSourceCollectionRetry(async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), headerTimeoutMs);
       timer.unref?.();
@@ -83,13 +85,11 @@ async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, r
       } finally {
         clearTimeout(timer);
       }
-      if (isTransientStatus(response?.status)) {
-        try { await response.body?.cancel(); } catch { /* best effort */ }
-        return { response, bytes: null };
-      }
+      // 200이 아닌 응답은 본문을 읽지 않는다. 재시도하지 않을 응답은 아래에서 HTTP 오류 코드로 실패한다.
+      if (response?.status !== 200) return { response, bytes: null };
       validateResponse(response);
       return { response, bytes: await readBounded(response.body, bodyTimeoutMs) };
-    }, { isTransientResult: ({ bytes }) => bytes === null, sleep: sleepImpl, budget: retryBudget });
+    }, { label: "KORAIL metropolitan timetable file", sleep: sleepImpl, budget: retryBudget, random: randomImpl });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
   }

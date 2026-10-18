@@ -6,7 +6,7 @@ import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { isTransientStatus, parseRetryAfterMs, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode } from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
@@ -32,8 +32,6 @@ const LINE_IDS = Object.freeze(Object.fromEntries(
 ));
 const EXPECTED_LINE_IDS = Object.values(LINE_IDS).sort((left, right) => left.localeCompare(right, "en"));
 const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
-const RETRY_FALLBACK_DELAY_MILLIS = 250;
-const RETRY_MAX_DELAY_MILLIS = 2_000;
 
 export async function collectBusanRouteTopology({
   serviceKey,
@@ -44,6 +42,7 @@ export async function collectBusanRouteTopology({
   concurrency = 4,
   sleepImpl = sleep,
   retryBudget,
+  randomImpl,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
@@ -60,7 +59,7 @@ export async function collectBusanRouteTopology({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl, sleepImpl, retryBudget });
+        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl, sleepImpl, retryBudget, randomImpl });
       } catch (error) {
         aborted = true;
         failures.push(error);
@@ -119,7 +118,7 @@ export async function collectBusanRouteTopology({
   };
 }
 
-async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBudget }) {
+async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBudget, randomImpl }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("act", "xml");
@@ -127,7 +126,7 @@ async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBu
     if (!lineIdForStationCode(stationCode)) throw new Error("stationCode must be an admitted Busan station code");
     url.searchParams.set("scode", stationCode);
   }
-  const { response, rawBytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget);
+  const { response, bytes: rawBytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl);
   const rawEvidence = `rawBytes=${rawBytes.length}; rawSha256=${sha256(rawBytes)}`;
   if (!response.ok) throw new Error(`Busan route topology HTTP ${response.status}; ${rawEvidence}`);
   validateResponseContentType(response, rawEvidence);
@@ -528,52 +527,29 @@ function validateNormalizedEdges(edges) {
 }
 
 // data.go.kr 공통 오류 envelope의 resultCode 99(UNKNOWN_ERROR)는 TAGO와 같은 일시 오류다. 다른 resultCode(22·23 쿼터, 30 인증 등)는 재시도하지 않는다.
-const TRANSIENT_PROVIDER_RESULT_CODE = "99";
-
 function isTransientProviderBody(rawBytes) {
   try {
-    return parseXmlEnvelope(decodeXmlBytes(rawBytes).raw).resultCode === TRANSIENT_PROVIDER_RESULT_CODE;
+    return isTransientDataGoKrResultCode(parseXmlEnvelope(decodeXmlBytes(rawBytes).raw).resultCode);
   } catch {
     return false;
   }
 }
 
-// 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, resultCode 99, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
-// 429는 기존처럼 Retry-After를 지켜 한 번만 다시 요청한다(쿼터 신호라 반복하지 않는다). 인증·형식 오류는 재시도하지 않는다.
-// 한도를 다 쓰면 마지막 응답(HTTP 오류·provider 오류)이나 전송 오류를 기존 오류와 원본 증거로 드러낸다.
-async function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget) {
-  let rateLimitRetried = false;
-  while (true) {
-    let outcome;
-    try {
-      outcome = await withTransientRetry(async () => {
-        const response = await fetchImpl(url, {
-          redirect: "error",
-          signal: AbortSignal.timeout(15_000),
-          headers: { accept: "application/xml,text/xml" },
-        });
-        return { response, rawBytes: Buffer.from(await response.arrayBuffer()) };
-      }, {
-        isTransientResult: ({ response, rawBytes }) => isTransientStatus(response.status) || (response.ok && isTransientProviderBody(rawBytes)),
-        sleep: sleepImpl,
-        budget: retryBudget,
-      });
-    } catch (error) {
-      throw new Error("Busan route topology transport failure", { cause: unwrapTransientRetryFailure(error) });
-    }
-    if (outcome.response.status === 429 && !rateLimitRetried) {
-      rateLimitRetried = true;
-      await sleepImpl(retryDelayMillis(outcome.response));
-      continue;
-    }
-    return outcome;
-  }
-}
-
-function retryDelayMillis(response) {
-  const retryAfterMillis = parseRetryAfterMs(response.headers.get("retry-after"));
-  if (retryAfterMillis === undefined) return RETRY_FALLBACK_DELAY_MILLIS;
-  return Math.max(RETRY_FALLBACK_DELAY_MILLIS, Math.min(retryAfterMillis, RETRY_MAX_DELAY_MILLIS));
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs, #1099, #1334).
+// 200 응답이어도 공공데이터포털 envelope resultCode가 일시 오류 코드(99·30 등)면 다시 보낸다.
+// 인증·형식 오류는 재시도하지 않는다. 한도를 다 쓰면 마지막 응답(HTTP 오류·provider 오류)이나 전송 오류를 기존 오류와 원본 증거로 드러낸다.
+function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
+  return fetchBytesWithSourceRetry({
+    url,
+    fetchImpl,
+    accept: "application/xml,text/xml",
+    label: "Busan route topology",
+    isTransientResult: ({ response, bytes }) => response.ok && isTransientProviderBody(bytes),
+    transportFailure: (failure) => new Error("Busan route topology transport failure", { cause: failure }),
+    sleep: sleepImpl,
+    budget: retryBudget,
+    random: randomImpl,
+  });
 }
 
 function sleep(delayMillis) {

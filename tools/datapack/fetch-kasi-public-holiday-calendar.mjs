@@ -1,5 +1,5 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
-import { isTransientStatus, withTransientRetry } from "./lib/transient-retry.mjs";
+import { isRetryAfterExceedsCap, isTransientDataGoKrResultCode, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 import { request as httpsRequest } from "node:https";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -130,6 +130,7 @@ export async function fetchKasiPublicHolidayCalendarObservation({
   httpsRequestImpl = httpsRequest,
   sleepImpl,
   retryBudget,
+  randomImpl,
 } = {}) {
   const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey, { label: "DATA_GO_KR_SERVICE_KEY" });
   if (!Number.isInteger(year) || year < 2000 || year > 9999) throw new Error("KASI public holiday year is invalid");
@@ -149,7 +150,7 @@ export async function fetchKasiPublicHolidayCalendarObservation({
     const request = fetchImpl
       ? (options) => fetchImpl(url, options)
       : (options) => nativeHttpsGet(url, options, httpsRequestImpl);
-    const fetched = await fetchKasiMonth(request, { sleepImpl, retryBudget });
+    const fetched = await fetchKasiMonth(request, { sleepImpl, retryBudget, randomImpl });
     const { raw, xml, dates } = readKasiMonthResponse(fetched, { year, month });
     for (const date of dates) holidays.add(date);
     observations.push({ year, month, raw, xml, sha256: createHash("sha256").update(raw).digest("hex"),
@@ -172,26 +173,26 @@ function readKasiMonthResponse({ response, raw, attemptCount }, { year, month })
     return { raw, xml, dates };
 }
 
-// data.go.kr 공통 오류 envelope의 resultCode 99(UNKNOWN_ERROR)는 TAGO와 같은 일시 오류다. 다른 resultCode(22·23 쿼터, 30 인증 등)는 재시도하지 않는다.
-const TRANSIENT_PROVIDER_RESULT_CODE = "99";
+// data.go.kr 공통 오류 envelope의 resultCode 중 일시 오류 코드(isTransientDataGoKrResultCode: 99·30 등)는 다시 요청한다. 쿼터(22)·권한(20)·기한(31) 등은 재시도하지 않는다.
 function isTransientProviderBody(raw) {
   try {
-    return scalar(singleElement(new TextDecoder("utf-8", { fatal: true }).decode(raw), "header"), "resultCode") === TRANSIENT_PROVIDER_RESULT_CODE;
+    return isTransientDataGoKrResultCode(scalar(singleElement(new TextDecoder("utf-8", { fatal: true }).decode(raw), "header"), "resultCode"));
   } catch {
     return false;
   }
 }
 
 /**
- * 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, resultCode 99, 연결·요청·본문 timeout 등 전송 오류)면 같은 요청을 다시 보낸다(#1099).
- * 쿼터·인증·형식 오류는 재시도하지 않는다. 한도(5번)를 다 쓰면 마지막 응답/오류를 기존 분류(KASI_HTTP·KASI_SCHEMA·NETWORK_*)로 드러낸다.
+ * 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
+ * 연결·요청·본문 timeout 등 전송 오류)으로 같은 요청을 다시 보낸다(#1099, #1334). resultCode 99(UNKNOWN_ERROR)도 일시 오류로 본다.
+ * 인증·형식 오류는 재시도하지 않는다. 한도(2번 재시도)를 다 쓰면 마지막 응답/오류를 기존 분류(KASI_HTTP·KASI_SCHEMA·NETWORK_*)로 드러낸다.
  */
-async function fetchKasiMonth(request, { sleepImpl, retryBudget }) {
+async function fetchKasiMonth(request, { sleepImpl, retryBudget, randomImpl }) {
   const transportAttempts = [];
   let attemptCount = 0;
   let outcome;
   try {
-    outcome = await withTransientRetry(async ({ attemptNumber }) => {
+    outcome = await withSourceCollectionRetry(async ({ attemptNumber }) => {
       attemptCount = attemptNumber;
       try {
         const options = { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml, text/xml" } };
@@ -204,11 +205,14 @@ async function fetchKasiMonth(request, { sleepImpl, retryBudget }) {
         throw error;
       }
     }, {
-      isTransientResult: ({ response, raw }) => isTransientStatus(response?.status) || (raw !== null && isTransientProviderBody(raw)),
+      label: "KASI public holiday",
+      isTransientResult: ({ raw }) => raw !== null && isTransientProviderBody(raw),
       sleep: sleepImpl,
       budget: retryBudget,
+      random: randomImpl,
     });
   } catch (error) {
+    if (isRetryAfterExceedsCap(error)) throw error;
     throw transportFailure(error, attemptCount, transportAttempts);
   }
   return { ...outcome, attemptCount };

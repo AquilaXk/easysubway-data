@@ -8,7 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { isTransientStatus, withTransientRetry } from "./lib/transient-retry.mjs";
+import { isRetryAfterExceedsCap, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 
 export const KRIC_APPROVED_ACCESSIBILITY_OPERATIONS = Object.freeze([
   {
@@ -110,6 +110,7 @@ async function collectKricAccessibilitySnapshotResults({
   delayImpl = delay,
   retrySleepImpl,
   retryBudget,
+  retryRandomImpl,
   retainRawResponses = false,
   allowTerminalResult03 = false,
 } = {}) {
@@ -137,7 +138,7 @@ async function collectKricAccessibilitySnapshotResults({
       const providerKey = [tuple.railOprIsttCd, tuple.lnCd, tuple.stinCd].join("\0");
       if (!responsesByProviderTuple.has(providerKey)) {
         const requested = await requestRows({
-          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget,
+          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget, retryRandomImpl,
         });
         responsesByProviderTuple.set(providerKey, requested);
         if (retainRawResponses) rawResponses.push(requested.rawResponse);
@@ -348,6 +349,7 @@ export async function collectKricAccessibilityProviderTupleEvidence({
   delayImpl = delay,
   retrySleepImpl,
   retryBudget,
+  retryRandomImpl,
 } = {}) {
   if (typeof serviceKey !== "string" || serviceKey === "") throw new Error("KRIC_SERVICE_KEY is required");
   if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > 60_000) {
@@ -370,7 +372,7 @@ export async function collectKricAccessibilityProviderTupleEvidence({
     const queries = [];
     for (const tuple of providerTuples) {
       const response = await requestRows({
-        operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget,
+        operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget, retryRandomImpl,
       });
       if (response.rows.length === 0) {
         throw new Error(`KRIC provider tuple probe empty response: ${operation.sourceId}/${providerTuple(tuple)}`);
@@ -727,9 +729,9 @@ function validateOperation(operation) {
   }
 }
 
-// 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김, DNS 일시 실패)면 같은 요청을 다시 보낸다(#1099).
-// 인증·쿼터·형식 오류와 공급자 resultCode는 재시도하지 않는다. 한도를 다 쓰면 기존 분류(NETWORK_*·HTTP·schema)로 실패한다.
-async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget }) {
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
+// 연결·요청·본문 timeout·소켓 끊김·DNS 일시 실패)으로 같은 요청을 다시 보낸다(#1099, #1334). 인증·형식 오류와 공급자 resultCode는 재시도하지 않는다. 한도를 다 쓰면 기존 분류(NETWORK_*·HTTP·schema)로 실패한다.
+async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget, retryRandomImpl }) {
   const requestIdentity = `${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}`;
   const url = new URL(operation.endpoint);
   url.searchParams.set("serviceKey", serviceKey);
@@ -738,7 +740,7 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   await paceRequest();
   let outcome;
   try {
-    outcome = await withTransientRetry(async () => {
+    outcome = await withSourceCollectionRetry(async () => {
       const received = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
       if (!received?.ok) return { response: received };
       try {
@@ -747,12 +749,9 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
         if (classifyKricTransportFailure(error) != null) throw error;
         return { response: received, schemaInvalid: true };
       }
-    }, {
-      isTransientResult: ({ response: received, schemaInvalid }) => schemaInvalid !== true && isTransientStatus(received?.status),
-      sleep: retrySleepImpl,
-      budget: retryBudget,
-    });
+    }, { label: `KRIC accessibility ${requestIdentity}`, sleep: retrySleepImpl, budget: retryBudget, random: retryRandomImpl });
   } catch (error) {
+    if (isRetryAfterExceedsCap(error)) throw error;
     throw new Error(`KRIC accessibility request failed: ${classifyKricTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${requestIdentity}`);
   }
   const { response } = outcome;

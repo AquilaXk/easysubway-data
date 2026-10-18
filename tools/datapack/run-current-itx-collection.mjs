@@ -10,6 +10,7 @@ import { ITX_ADMISSION_LOOKAHEAD_DAYS } from "./collect-tago-itx-cheongchun-od.m
 import { runKorailItxCompletenessCli } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { fetchKasiPublicHolidayCalendar } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { SOURCE_COLLECTION_RETRY_POLICY } from "./lib/source-collection-retry.mjs";
 import { createProviderResponseRecorder, providerResponseCaptureBytes } from "./provider-response-capture.mjs";
 
 const PROVIDER_CAPTURE_BASENAME = "provider-response-capture.json";
@@ -273,8 +274,8 @@ function safeFailureCategory(value) {
   return categories.has(value) ? value : "KASI_FAILURE";
 }
 
-// #1099: KASI는 일시 오류를 첫 시도 뒤 최대 5번 다시 보내므로 시도는 1~6번이다.
-const KASI_MAX_ATTEMPTS = 6;
+// #1099·#1334: KASI는 원천 수집 표준 정책으로 일시 오류를 첫 시도 뒤 최대 2번 다시 보내므로 시도는 1~3번이다.
+const KASI_MAX_ATTEMPTS = SOURCE_COLLECTION_RETRY_POLICY.maxAttempts;
 
 function safeAttemptCount(value) {
   return Number.isSafeInteger(value) && value >= 1 && value <= KASI_MAX_ATTEMPTS ? value : 1;

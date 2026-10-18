@@ -17,10 +17,11 @@ import {
   OBSERVED_FILE_BYTES,
   parseKricCurrentStationLineWorkbook,
 } from "./collect-kric-nationwide-timetable-file.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
-// #1099: 일시 오류는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
-const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
+// #1099·#1334: 일시 오류는 같은 요청을 full jitter(base 2초·cap 20초)로 최대 2번 다시 보낸다. 난수 0.5로 대기는 1·2초다. 재시도 대기와 예산은 테스트마다 격리한다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
 
 const ZIP = minimalXlsxZip();
 const HEADERS = {
@@ -221,30 +222,32 @@ const streamBroken = (code) => {
   return { status: 200, ok: true, redirected: false, url: "", headers: new Headers({ ...HEADERS }), body };
 };
 
-test("#1099 HTTP 5xx·연결 timeout·헤더 한도·본문 중 연결 끊김 뒤 같은 요청이 성공하면 그 파일을 쓴다", { timeout: 5000 }, async () => {
-  await withOutput(async ({ output, root }) => {
-    const outcomes = [
-      () => new Response("busy", { status: 503 }),
-      () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
-      (init) => new Promise((resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason))),
-      () => streamBroken("ECONNRESET"),
-      () => new Response("bad gateway", { status: 502 }),
-    ];
-    let calls = 0;
-    const waits = [];
-    const receipt = await collectKricNationwideTimetableFile({
-      outputFile: output, headerTimeoutMs: 30, ...retryFast(waits),
-      fetchImpl: async (url, init) => { calls += 1; const next = outcomes.shift(); return next === undefined ? new Response(ZIP, { status: 200, headers: HEADERS }) : next(init); },
+test("#1099 HTTP 503·연결 timeout·헤더 한도·본문 중 연결 끊김 뒤 같은 요청이 성공하면 그 파일을 쓴다", { timeout: 5000 }, async () => {
+  const outcomes = [
+    () => new Response("busy", { status: 503 }),
+    () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
+    (init) => new Promise((resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason))),
+    () => streamBroken("ECONNRESET"),
+    () => new Response("bad gateway", { status: 502 }),
+  ];
+  for (const failure of outcomes) {
+    await withOutput(async ({ output, root }) => {
+      let calls = 0;
+      const waits = [];
+      const receipt = await collectKricNationwideTimetableFile({
+        outputFile: output, headerTimeoutMs: 30, ...retryFast(waits),
+        fetchImpl: async (url, init) => { calls += 1; return calls === 1 ? failure(init) : new Response(ZIP, { status: 200, headers: HEADERS }); },
+      });
+      assert.equal(calls, 2);
+      assert.deepEqual(waits, [1_000]);
+      assert.deepEqual(await readFile(output), ZIP);
+      assert.equal(receipt.byteLength, ZIP.length);
+      assert.equal((await readdir(root)).sort().join(","), path.basename(output), "실패한 시도의 부분 본문을 남기지 않는다");
     });
-    assert.equal(calls, 6);
-    assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
-    assert.deepEqual(await readFile(output), ZIP);
-    assert.equal(receipt.byteLength, ZIP.length);
-    assert.equal((await readdir(root)).sort().join(","), path.basename(output), "실패한 시도의 부분 본문을 남기지 않는다");
-  });
+  }
 });
 
-test("#1099 일시 오류가 한도(5번)를 넘어 이어지면 기존 오류 코드로 실패하고 아무것도 쓰지 않는다", { timeout: 5000 }, async () => {
+test("#1099 일시 오류가 한도(2번 재시도)를 넘어 이어지면 기존 오류 코드로 실패하고 아무것도 쓰지 않는다", { timeout: 5000 }, async () => {
   const cases = [
     [() => new Response("busy", { status: 503 }), /KRIC_TIMETABLE_FILE_HTTP/],
     [() => { throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }); }, /KRIC_TIMETABLE_FILE_TRANSPORT/],
@@ -259,8 +262,8 @@ test("#1099 일시 오류가 한도(5번)를 넘어 이어지면 기존 오류 �
         outputFile: output, headerTimeoutMs: 30, ...retryFast(waits),
         fetchImpl: async (url, init) => { calls += 1; return respond(init); },
       }), expectation);
-      assert.equal(calls, 6, String(expectation));
-      assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+      assert.equal(calls, 3, String(expectation));
+      assert.deepEqual(waits, [1_000, 2_000]);
       assert.deepEqual(await readdir(root), []);
     });
   }
@@ -280,8 +283,8 @@ test("#1099 본문 한도(처리량 하한)를 넘긴 TIMEOUT은 재시도하지
   });
 });
 
-test("#1099 인증·쿼터·내용 오류(HTTP 401·403·429)는 재시도하지 않고, 현재 역-노선 파일도 같은 정책이다", async () => {
-  for (const status of [401, 403, 429]) {
+test("#1099 인증·내용 오류(HTTP 401·403·501)는 재시도하지 않고, 현재 역-노선 파일도 같은 정책이다", async () => {
+  for (const status of [401, 403, 501]) {
     await withOutput(async ({ root }) => {
       let calls = 0;
       await assert.rejects(collectKricCurrentStationLineFile({
@@ -307,7 +310,7 @@ test("#1099 재시도 대기 예산을 넘기면 마지막 시도의 오류 코�
   await withOutput(async ({ output }) => {
     let calls = 0;
     await assert.rejects(collectKricNationwideTimetableFile({
-      outputFile: output, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+      outputFile: output, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
       fetchImpl: async () => { calls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
     }), /KRIC_TIMETABLE_FILE_TRANSPORT/);
     assert.equal(calls, 2);
@@ -418,16 +421,29 @@ function minimalXlsxZip(names = ["[Content_Types].xml", "xl/workbook.xml"]) {
 
 async function withOutput(run) {
   const root = await mkdtemp(path.join(os.tmpdir(), "kric-file-test-"));
-  try { await run({ root, output: path.join(root, "kric-nationwide-timetable-file-test.xlsx") }); } finally { await rm(root, { recursive: true, force: true }); }
+  try { return await run({ root, output: path.join(root, "kric-nationwide-timetable-file-test.xlsx") }); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
 test("#1099 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류 코드로 실패한다", async () => {
   await withOutput(async ({ output }) => {
     let calls = 0;
     await assert.rejects(collectKricNationwideTimetableFile({
-      outputFile: output, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+      outputFile: output, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
       fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
     }), /KRIC_TIMETABLE_FILE_HTTP/);
     assert.equal(calls, 2);
   });
+});
+
+defineSourceCollectionRetryTests({
+  name: "KRIC 전국 시간표 파일 수집기",
+  httpError: /KRIC_TIMETABLE_FILE_HTTP/,
+  delegate: async () => new Response(ZIP, { status: 200, headers: HEADERS }),
+  headers: HEADERS,
+  run: ({ fetchImpl, sleepImpl }) => withOutput(async ({ output }) => {
+    const { byteLength, sha256 } = await collectKricNationwideTimetableFile({
+      outputFile: output, now: new Date("2026-08-27T00:00:00.000Z"), fetchImpl, sleepImpl, randomImpl: () => 0,
+    });
+    return { byteLength, sha256, bytes: await readFile(output) };
+  }),
 });

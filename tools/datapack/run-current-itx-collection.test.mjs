@@ -371,21 +371,21 @@ test("KASI 실패 receipt는 재시도한 최대 여섯 번의 시도 번호와 
     return JSON.parse(await readFile(freshnessOutput, "utf8"));
   };
   const phase = (attemptCount, failurePhase = "DNS_LOOKUP") => ({ attemptCount, failurePhase, ipv4AttemptCount: 0, ipv6AttemptCount: 0, address: "198.51.100.7" });
-  const sixAttempts = await run(Object.assign(new Error("KASI connect timeout secret-key"), {
-    failureCategory: "NETWORK_CONNECT_TIMEOUT", attemptCount: 6, transportAttempts: [1, 2, 3, 4, 5, 6].map((count) => phase(count)),
+  const threeAttempts = await run(Object.assign(new Error("KASI connect timeout secret-key"), {
+    failureCategory: "NETWORK_CONNECT_TIMEOUT", attemptCount: 3, transportAttempts: [1, 2, 3].map((count) => phase(count)),
   }));
-  assert.equal(sixAttempts.attemptCount, 6);
-  assert.deepEqual(sixAttempts.transportAttempts, [1, 2, 3, 4, 5, 6].map((attemptCount) => ({ attemptCount, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 })));
-  // 진단은 전송 오류로 끝난 시도만 담으므로 번호가 연속이 아닐 수 있다(1번은 HTTP 5xx, 3번과 5번만 전송 오류).
-  const sparse = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 5, transportAttempts: [phase(3, "TLS_HANDSHAKE"), phase(5, "RESPONSE_HEADERS")] }));
-  assert.deepEqual(sparse.transportAttempts.map(({ attemptCount }) => attemptCount), [3, 5]);
-  // 순서가 거꾸로이거나 범위(1~6) 밖이면 자리 번호로 닫고, 시도는 6번을 넘을 수 없다.
-  const disordered = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 7, transportAttempts: [phase(4), phase(2), phase(9)] }));
+  assert.equal(threeAttempts.attemptCount, 3);
+  assert.deepEqual(threeAttempts.transportAttempts, [1, 2, 3].map((attemptCount) => ({ attemptCount, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 })));
+  // 진단은 전송 오류로 끝난 시도만 담으므로 번호가 연속이 아닐 수 있다(1번은 HTTP 503, 2번과 3번만 전송 오류).
+  const sparse = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 3, transportAttempts: [phase(2, "TLS_HANDSHAKE"), phase(3, "RESPONSE_HEADERS")] }));
+  assert.deepEqual(sparse.transportAttempts.map(({ attemptCount }) => attemptCount), [2, 3]);
+  // 순서가 거꾸로이거나 범위(1~3) 밖이면 자리 번호로 닫고, 시도는 3번을 넘을 수 없다.
+  const disordered = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 7, transportAttempts: [phase(3), phase(2), phase(9)] }));
   assert.equal(disordered.attemptCount, 1);
-  assert.deepEqual(disordered.transportAttempts.map(({ attemptCount }) => attemptCount), [4, 5, 6]);
-  const tooMany = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 6, transportAttempts: [1, 2, 3, 4, 5, 6, 7].map((count) => phase(count)) }));
+  assert.deepEqual(disordered.transportAttempts.map(({ attemptCount }) => attemptCount), [3, 3, 3]);
+  const tooMany = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 3, transportAttempts: [1, 2, 3, 4].map((count) => phase(count)) }));
   assert.equal(Object.hasOwn(tooMany, "transportAttempts"), false);
-  assert.doesNotMatch(JSON.stringify([sixAttempts, sparse, disordered, tooMany]), /198\.51\.100|secret-key|address/);
+  assert.doesNotMatch(JSON.stringify([threeAttempts, sparse, disordered, tooMany]), /198\.51\.100|secret-key|address/);
 });
 
 test("14일 bounded 창의 모든 토요일이 공휴일이면 day7 evidence 없이 collector 전에 fail closed한다", async () => {

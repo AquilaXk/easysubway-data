@@ -14,6 +14,7 @@ import {
   collectKorailMetropolitanTimetableFile,
   validateKorailTimetableFileReceipt,
 } from "./collect-korail-metropolitan-timetable-file.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 const URL = "https://www.korail.com/file/cubedata/COMMON/jfile/metropolitan-timetable.xlsx";
@@ -73,37 +74,40 @@ test("rejects a non-official URL before making a network call", async () => {
 });
 
 // #1099: 일시 오류(HTTP 408·5xx, 연결·본문 timeout)는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
-const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
+// 난수 0.5로 full jitter 대기(base 2초·cap 20초)는 1·2초다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
 const XLSX_HEADERS = { "content-type": "application/octet-stream" };
 const xlsxResponse = () => new Response(XLSX, { status: 200, headers: XLSX_HEADERS });
 const brokenBody = (code) => new Response(new ReadableStream({
   start(controller) { controller.error(Object.assign(new TypeError("terminated"), { cause: Object.assign(new Error("transport"), { code }) })); },
 }), { status: 200, headers: XLSX_HEADERS });
 
-test("HTTP 5xx·연결 timeout·본문 수신 오류 뒤 같은 요청이 성공하면 그 파일로 수집한다", async () => {
-  await withDirectory(async (outputDirectory) => {
-    const outcomes = [
-      () => new Response("busy", { status: 503 }),
-      () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
-      () => brokenBody("UND_ERR_BODY_TIMEOUT"),
-      () => brokenBody("ECONNRESET"),
-      () => new Response("gateway", { status: 502 }),
-    ];
-    let calls = 0;
-    const waits = [];
-    const receipt = await collectKorailMetropolitanTimetableFile({
-      url: URL, expectedSha256: SHA256, outputDirectory, ...retryFast(waits),
-      fetchImpl: async () => { calls += 1; const next = outcomes.shift(); return next === undefined ? xlsxResponse() : next(); },
+test("HTTP 503·연결 timeout·본문 수신 오류 뒤 같은 요청이 성공하면 그 파일로 수집한다", async () => {
+  const outcomes = [
+    () => new Response("busy", { status: 503 }),
+    () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
+    () => brokenBody("UND_ERR_BODY_TIMEOUT"),
+    () => brokenBody("ECONNRESET"),
+    () => new Response("gateway", { status: 502 }),
+  ];
+  for (const failure of outcomes) {
+    await withDirectory(async (outputDirectory) => {
+      let calls = 0;
+      const waits = [];
+      const receipt = await collectKorailMetropolitanTimetableFile({
+        url: URL, expectedSha256: SHA256, outputDirectory, ...retryFast(waits),
+        fetchImpl: async () => { calls += 1; return calls === 1 ? failure() : xlsxResponse(); },
+      });
+      assert.equal(calls, 2);
+      assert.deepEqual(waits, [1_000]);
+      assert.deepEqual(await readdir(outputDirectory), ["receipt.json", "timetable.xlsx"]);
+      assert.deepEqual(await readFile(path.join(outputDirectory, "timetable.xlsx")), XLSX);
+      assert.equal(receipt.sha256, SHA256);
     });
-    assert.equal(calls, 6);
-    assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
-    assert.deepEqual(await readdir(outputDirectory), ["receipt.json", "timetable.xlsx"]);
-    assert.deepEqual(await readFile(path.join(outputDirectory, "timetable.xlsx")), XLSX);
-    assert.equal(receipt.sha256, SHA256);
-  });
+  }
 });
 
-test("일시 오류가 한도(5번)를 넘어 이어지면 기존 오류 코드로 실패하고 receipt를 남기지 않는다", async () => {
+test("일시 오류가 한도(2번 재시도)를 넘어 이어지면 기존 오류 코드로 실패하고 receipt를 남기지 않는다", async () => {
   const cases = [
     [() => new Response("busy", { status: 503 }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP$/],
     [() => { throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }); }, /KORAIL_METROPOLITAN_TIMETABLE_FILE_TRANSPORT$/],
@@ -117,18 +121,18 @@ test("일시 오류가 한도(5번)를 넘어 이어지면 기존 오류 코드�
         url: URL, expectedSha256: SHA256, outputDirectory, ...retryFast(waits),
         fetchImpl: async () => { calls += 1; return respond(); },
       }), expectation);
-      assert.equal(calls, 6);
-      assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+      assert.equal(calls, 3);
+      assert.deepEqual(waits, [1_000, 2_000]);
       assert.deepEqual(await readdir(outputDirectory), []);
     });
   }
 });
 
-test("인증·내용 오류(HTTP 403·404·429, 형식, SHA, 리다이렉트)는 재시도하지 않는다", async () => {
+test("인증·내용 오류(HTTP 403·404·501, 형식, SHA, 리다이렉트)는 재시도하지 않는다", async () => {
   const cases = [
     [() => new Response("denied", { status: 403 }), /_HTTP$/],
     [() => new Response("missing", { status: 404 }), /_HTTP$/],
-    [() => new Response("slow", { status: 429 }), /_HTTP$/],
+    [() => new Response("boom", { status: 501 }), /_HTTP$/],
     [() => new Response(XLSX, { status: 200, headers: { "content-type": "text/html" } }), /_CONTENT_TYPE$/],
     [() => new Response(Buffer.from("not an xlsx"), { status: 200, headers: XLSX_HEADERS }), /_XLSX$/],
     [() => xlsxResponse(), /_SHA256$/],
@@ -151,7 +155,7 @@ test("재시도 대기 예산을 넘기면 마지막 시도의 오류 코드로 
   await withDirectory(async (outputDirectory) => {
     let calls = 0;
     await assert.rejects(collectKorailMetropolitanTimetableFile({
-      url: URL, expectedSha256: SHA256, outputDirectory, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+      url: URL, expectedSha256: SHA256, outputDirectory, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
       fetchImpl: async () => { calls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
     }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_TRANSPORT$/);
     assert.equal(calls, 2);
@@ -159,19 +163,19 @@ test("재시도 대기 예산을 넘기면 마지막 시도의 오류 코드로 
 });
 
 async function withDirectory(run) {
-  await withParent(async (parent) => run(path.join(parent, "capture")));
+  return withParent(async (parent) => run(path.join(parent, "capture")));
 }
 
 async function withParent(run) {
   const parent = await mkdtemp(path.join(os.tmpdir(), "korail-file-test-"));
-  try { await run(parent); } finally { await rm(parent, { recursive: true, force: true }); }
+  try { return await run(parent); } finally { await rm(parent, { recursive: true, force: true }); }
 }
 
 test("HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류 코드로 실패한다(#1099 리뷰 F1)", async () => {
   await withDirectory(async (outputDirectory) => {
     let calls = 0;
     await assert.rejects(collectKorailMetropolitanTimetableFile({
-      url: URL, expectedSha256: SHA256, outputDirectory, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+      url: URL, expectedSha256: SHA256, outputDirectory, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
       fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
     }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP$/);
     assert.equal(calls, 2);
@@ -258,4 +262,17 @@ test("#997 헤더 timeout과 본문 수신 한도를 분리하고 본문 데드�
       }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_TIMEOUT/);
     });
   }
+});
+
+defineSourceCollectionRetryTests({
+  name: "KORAIL 수도권 시간표 파일 수집기",
+  httpError: /KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP$/,
+  delegate: async () => xlsxResponse(),
+  headers: XLSX_HEADERS,
+  run: ({ fetchImpl, sleepImpl }) => withDirectory(async (outputDirectory) => {
+    const { sha256, byteLength } = await collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory, fetchImpl, sleepImpl, randomImpl: () => 0,
+    });
+    return { sha256, byteLength, bytes: await readFile(path.join(outputDirectory, "timetable.xlsx")) };
+  }),
 });
