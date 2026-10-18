@@ -660,6 +660,7 @@ test("대전 coverage probe는 HTTP 429를 Retry-After 유무로 가른다: 힌�
 
 const daejeonProbeRun = (fetchImpl) => probeDaejeonCoverageApi({
   sourceId: "daejeon-station-distance-fare", serviceKey: "key", fetchImpl, ...retryFast(),
+  now: new Date("2026-07-14T07:00:00.000Z"),
 });
 const daejeonEnvelope = (code) => xmlResponse(`<response><header><resultCode>${code}</resultCode><resultMsg>x</resultMsg></header><body/></response>`);
 

@@ -3,7 +3,7 @@
 //   2. 본문 수신 중 timeout으로 한 번 실패한 뒤 성공해도 같다(재시도 단위가 요청 + 본문 읽기여야 한다).
 //   3. 비일시 오류(HTTP 403)는 재시도하지 않고 즉시 실패한다.
 // defineResultCodeRetryTests는 resultCode 표 기반 재시도 계약을 한 곳에 두고, defineKricResultCodeRetryTests(KRIC: 일시 01·02·04·05·99)와
-// defineDataGoKrResultCodeRetryTests(공공데이터포털: 일시 01·02·04·05·30·99)가 원천별 행만 넘겨 수집기들이 함께 쓰게 한다.
+// defineDataGoKrResultCodeRetryTests(공공데이터포털: 일시 01·02·04·05·30·99), defineBusanHumetroResultCodeRetryTests(부산교통공사: 일시 99만)가 원천별 행만 넘겨 수집기들이 함께 쓰게 한다.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { inspect } from "node:util";
@@ -37,7 +37,7 @@ export function fetchWithFirstFailure(delegate, failureKind, headers) {
 /**
  * @param {object} options
  * @param {string} options.name 수집기 이름(테스트 제목).
- * @param {(io: { fetchImpl: Function, sleepImpl: Function }) => Promise<unknown>} options.run 수집기를 실행하고 비교할 결과를 돌려준다. now·난수 같은 비결정 입력은 고정한다.
+ * @param {(io: { fetchImpl: Function, sleepImpl: Function }) => Promise<unknown>} options.run 수집기를 실행하고 비교할 결과를 돌려준다. 결과를 deepEqual로 비교하므로 now(observedAt 등)·난수 같은 비결정 입력은 반드시 고정한다. 고정하지 않으면 간헐 실패한다(#1341 F1).
  * @param {Function} options.delegate 성공 응답을 만드는 fetch.
  * @param {Record<string, string>} [options.headers] 본문 timeout 응답에 붙일 헤더.
  * @param {RegExp} options.httpError 이 수집기가 HTTP 403에 던지는 오류의 메시지 matcher.
@@ -76,6 +76,11 @@ export const KRIC_RESULT_CODE_ROWS = Object.freeze([
 export const DATA_GO_KR_RESULT_CODE_ROWS = Object.freeze([
   ["01", true], ["02", true], ["04", true], ["05", true], ["30", true], ["99", true],
   ["10", false], ["11", false], ["12", false], ["20", false], ["21", false], ["22", false], ["23", false], ["31", false], ["32", false], ["33", false],
+]);
+// 부산교통공사 OpenAPI(data.humetro.busan.kr): data.go.kr 게이트웨이가 아니라 99만 일시, 나머지는 즉시 실패한다.
+export const BUSAN_HUMETRO_RESULT_CODE_ROWS = Object.freeze([
+  ["99", true],
+  ["01", false], ["02", false], ["04", false], ["05", false], ["10", false], ["20", false], ["22", false], ["30", false], ["31", false],
 ]);
 const EXHAUSTED_TRANSIENT_RESULT_CODE = "99";
 
@@ -130,3 +135,6 @@ export const defineKricResultCodeRetryTests = (options) => defineResultCodeRetry
 
 /** 공공데이터포털 코드표(DATA_GO_KR_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
 export const defineDataGoKrResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: DATA_GO_KR_RESULT_CODE_ROWS, ...options });
+
+/** 부산교통공사 코드표(BUSAN_HUMETRO_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
+export const defineBusanHumetroResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: BUSAN_HUMETRO_RESULT_CODE_ROWS, ...options });

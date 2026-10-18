@@ -7,7 +7,7 @@ import { unwrapTransientRetryFailure } from "./transient-retry.mjs";
 import { sha256 } from "../../lib/hash.mjs";
 
 const ORIGIN = "https://www.data.go.kr";
-const USER_AGENT = "easysubway-datapack-collector/1.0";
+export const USER_AGENT = "easysubway-datapack-collector/1.0";
 // #997: 헤더 대기(연결·TLS·응답 헤더)와 본문 전체 수신 시간을 분리한다.
 // 헤더가 도착하면 헤더 타이머를 끄고, 본문은 관측 최대 파일 크기(1,663,202B)와 하한 처리량(15,000B/s)에서 유도한 별도 시간 안에 읽는다.
 export const HEADER_TIMEOUT_MS = 60_000;
