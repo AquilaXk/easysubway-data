@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,6 +12,7 @@ import {
   OBSERVED_RESPONSE_BYTES,
   REQUEST_TIMEOUT_MS,
   collectKricStationTimetables,
+  credentialForms,
   formatCollectionError,
   responsesFromCollection,
   runKricStationTimetableCollection,
@@ -163,26 +165,36 @@ test("#997 헤더 timeout과 본문 수신 한도를 분리하고 시간 초과 
   });
   assert.equal(slowArtifact.responses.length, 6);
 
-  // (2) 헤더 timeout은 재시도를 소진한 뒤 KRIC_TIMEOUT으로 실패하고 키를 노출하지 않는다.
+  // (2) 헤더 timeout은 일시 오류라 3회 시도(재시도 2회)를 소진한 뒤 KRIC_TIMEOUT으로 실패하고 키를 노출하지 않는다.
+  let headerCalls = 0;
   const headerErr = await collectKricStationTimetables({
     bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 25, bodyTimeoutMs: 1_000, ...retryOptions(),
-    fetchImpl: (url, init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error(`timeout ${url}`)))),
+    fetchImpl: (url, init) => new Promise((_, reject) => {
+      headerCalls += 1;
+      init.signal.addEventListener("abort", () => reject(new Error(`timeout ${url}`)));
+    }),
   }).catch((caught) => caught);
   assert.match(headerErr.message, /^KRIC_TIMEOUT: T1 T01 dayCd=7$/u);
   assert.equal(headerErr.message.includes(KEY), false);
+  assert.equal(headerCalls, 3);
 
-  // (3) 본문 수신 데드라인 초과는 reader를 취소하고 재시도를 소진한 뒤 KRIC_TIMEOUT으로 실패한다.
+  // (3) 본문 수신 데드라인 초과(처리량 하한)는 재시도하지 않는다. reader를 취소하고 KRIC_TIMEOUT으로 실패한다.
   let cancelled = false;
+  let bodyCalls = 0;
   const bodyErr = await collectKricStationTimetables({
-    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 500, bodyTimeoutMs: 35, ...retryOptions(),
-    fetchImpl: async () => new Response(new ReadableStream({
-      pull() { return new Promise(() => {}); },
-      cancel() { cancelled = true; },
-    }), { status: 200, headers: { "content-type": "application/json" } }),
+    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 500, bodyTimeoutMs: 35,
+    fetchImpl: async () => {
+      bodyCalls += 1;
+      return new Response(new ReadableStream({
+        pull() { return new Promise(() => {}); },
+        cancel() { cancelled = true; },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
   }).catch((caught) => caught);
   assert.match(bodyErr.message, /^KRIC_TIMEOUT: T1 T01 dayCd=7$/u);
   assert.equal(bodyErr.message.includes(KEY), false);
   assert.equal(cancelled, true);
+  assert.equal(bodyCalls, 1);
 
   // (4) 잘못된 timeout 인자는 거부한다.
   for (const bad of [0, -1, 1.5, "30"]) {
@@ -259,3 +271,34 @@ for (const [rejectedCode, transient] of RESULT_CODE_ROWS) {
     }
   });
 }
+
+test("재시도 시간 예산이 소진되면 다음 요청은 재시도 없이 원래 오류로 실패한다", async () => {
+  const { impl } = fakeFetch();
+  let calls = 0;
+  // random 0.5 → 첫 재시도 대기 1,000ms, 두 번째 2,000ms. 예산 1,500ms는 첫 재시도만 허용한다.
+  const failOnCalls = new Set([1, 3]);
+  const fetchImpl = async (...args) => { calls += 1; if (failOnCalls.has(calls)) throw connectionReset(); return impl(...args); };
+  const error = await collectKricStationTimetables({
+    bindings: [BINDING], serviceKey: KEY, fetchImpl, now: clock(),
+    retrySleepImpl: async () => {}, retryBudget: createTransientRetryBudget(1_500), retryRandomImpl: () => 0.5,
+  }).catch((caught) => caught);
+  assert.equal(error.message, "KRIC_FETCH_FAILED: T1 T01 dayCd=8");
+  assert.equal(calls, 3, "T01 dayCd=7은 1회 재시도로 성공, 다음 요청은 예산이 없어 재시도하지 않는다");
+});
+
+test("Retry-After가 cap(20초)을 넘으면 기다리지 않고 실패하고, 던진 오류는 키가 든 Response를 들고 나가지 않는다", async () => {
+  let calls = 0;
+  const sleeps = [];
+  const fetchImpl = async (url) => {
+    calls += 1;
+    return Object.defineProperty(new Response("busy", { status: 429, headers: { "retry-after": "300" } }), "url", { value: String(url) });
+  };
+  const error = await collectKricStationTimetables({
+    bindings: [BINDING], serviceKey: KEY, fetchImpl, now: clock(),
+    retrySleepImpl: async (ms) => { sleeps.push(ms); }, retryBudget: createTransientRetryBudget(), retryRandomImpl: () => 0,
+  }).catch((caught) => caught);
+  assert.equal(error.code, "RETRY_AFTER_EXCEEDS_CAP");
+  assert.match(error.message, /^KRIC subwayTimetable T1 T01 dayCd=7 HTTP 429: RETRY_AFTER_EXCEEDS_CAP retryAfterSeconds=300 capSeconds=20/u);
+  assert.deepEqual([calls, sleeps], [1, []]);
+  for (const form of credentialForms(KEY)) assert.equal(inspect(error, { depth: 8, showHidden: true }).includes(form), false);
+});

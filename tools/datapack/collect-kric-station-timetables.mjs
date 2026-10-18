@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // KRIC OpenAPI trainUseInfo/subwayTimetable(카탈로그 provider:kric-subway-timetable) 역별 수집기.
 // 고정 바인딩의 역 × 요일코드(7 토요일, 8 평일, 9 휴일)마다 한 번 요청하고 원본 응답 바이트와 sha256을 보존한다.
-// 같은 요청(멱등 GET)만 원천 수집 표준 정책(lib/source-collection-retry.mjs)으로 최대 3회 시도한다: 연결·헤더·본문 timeout, 소켓 끊김,
-// HTTP 429·500·502·503·504, KRIC 일시 resultCode(01·02·04·05·99). 대체 응답은 없고, 소진하거나 결정적인 실패(HTTP 403, 그 밖의 결과코드, JSON이 아닌 응답)는 기존 오류로 실패한다.
+// 같은 요청(멱등 GET)만 원천 수집 표준 정책(lib/source-collection-retry.mjs)으로 최대 3회 시도한다: 연결·헤더 timeout, 본문 수신 중 소켓 끊김,
+// HTTP 429·500·502·503·504, KRIC 일시 resultCode(01·02·04·05·99). #997 조항은 그대로다: 본문 수신 데드라인(처리량 하한) 초과는 재시도하지 않고 즉시 KRIC_TIMEOUT으로 실패한다. 대체 응답은 없고, 소진하거나 결정적인 실패(HTTP 403, 그 밖의 결과코드, JSON이 아닌 응답)는 기존 오류로 실패한다.
 // 요청 하나의 최악 시간은 3 × (헤더 30초 + 본문 60초) + 2 × 20초이고, 한 실행의 재시도 시간은 transient-retry의 프로세스 예산(5분)으로 막힌다.
 // serviceKey는 요청 URL에만 쓰고 산출물·로그에 남기지 않는다.
 //
@@ -41,8 +41,9 @@ export function formatCollectionError(error, env = process.env) {
 
 // 전송 오류 문구에는 요청 URL(키 포함)이 들어갈 수 있어 원문을 버리고 식별자만 남긴다. transient는 재시도 여부 판정용이다.
 const kricFailure = (code, label, transient) => Object.assign(new Error(`${code}: ${label}`), { kricTransient: transient });
-const isTimeoutFailure = (error) => error?.kricTimeout === true || error?.name === "TimeoutError" || error?.name === "AbortError";
-const transportFailure = (error, label) => (isTimeoutFailure(error)
+const isTimeoutFailure = (error) => error?.name === "TimeoutError" || error?.name === "AbortError";
+// 본문 데드라인 초과(kricTimeout, 처리량 하한 #997의 계약)는 재시도하지 않는다. 같은 하한으로 다시 받아도 같은 결과이고, 형제 수집기(KORAIL·KRIC 전국)도 같은 규칙이다.
+const transportFailure = (error, label) => (error?.kricTimeout === true ? kricFailure("KRIC_TIMEOUT", label, false) : isTimeoutFailure(error)
   ? kricFailure("KRIC_TIMEOUT", label, true)
   : kricFailure("KRIC_FETCH_FAILED", label, isTransientTransportError(error)));
 

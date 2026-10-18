@@ -31,30 +31,54 @@ export const RETRY_AFTER_EXCEEDS_CAP = "RETRY_AFTER_EXCEEDS_CAP";
 const RATE_LIMITED_STATUS = 429;
 const TRANSIENT_STATUSES = new Set(SOURCE_COLLECTION_RETRY_POLICY.transientStatuses);
 
-/** 서버가 정한 대기가 cap을 넘으면 일찍 다시 요청하지 않고 실패한다. */
+/**
+ * 서버가 정한 대기가 cap을 넘으면 일찍 다시 요청하지 않고 실패한다.
+ * 버린 응답(Response)은 URL에 serviceKey가 실릴 수 있어 오류에 싣지 않는다. 안전한 필드(status, 대기 시간, 원본 증거 바이트 수·해시)만 남긴다.
+ */
 export class RetryAfterExceedsCapError extends Error {
   constructor(label, status, retryAfterMilliseconds, capMilliseconds, result) {
     super(`${label} HTTP ${status}: ${RETRY_AFTER_EXCEEDS_CAP} retryAfterSeconds=${Math.ceil(retryAfterMilliseconds / 1_000)} capSeconds=${capMilliseconds / 1_000}`);
     this.code = RETRY_AFTER_EXCEEDS_CAP;
-    this.result = result; // 재시도하지 않고 버린 응답의 시도 결과(원본 증거 해시를 남기려는 호출자용)
+    this.status = status;
+    this.retryAfterMilliseconds = retryAfterMilliseconds;
+    const { bytes } = result ?? {};
+    // 재시도하지 않고 버린 응답의 원본 증거(바이트 수·해시)를 남기려는 호출자용.
+    this.rawEvidence = bytes === undefined ? undefined : Object.freeze({ byteLength: bytes.length, sha256: sha256(bytes) });
   }
 }
 
-// 공공데이터포털 OpenAPI 게이트웨이 오류 코드(공공데이터 제공 표준 오류코드 표: https://www.data.go.kr/data/15029183/openapi.do).
-// 일시: 01 APPLICATION_ERROR(게이트웨이 내부 오류), 02 DB_ERROR, 04 HTTP_ERROR, 05 SERVICETIMEOUT_ERROR, 99 UNKNOWN_ERROR(기타).
-// 30 SERVICE_KEY_IS_NOT_REGISTERED_ERROR도 일시로 본다: 같은 키로 여러 run이 통과했고 게이트웨이 노드 사이 키 동기화 지연으로 간헐 발생한다.
-// 키가 실제로 미등록이면 모든 시도가 30으로 실패하므로 소진 뒤 resultCode 30으로 실패해 신호가 사라지지 않는다.
-// 결정적(즉시 실패): 10·11·12 요청 파라미터·서비스 없음, 20·21 키 없음·권한·접근 거부, 22 일일 요청 한도(쿼터), 31·32·33 기한·IP·서명.
-const TRANSIENT_DATA_GO_KR_RESULT_CODES = new Set(["01", "02", "04", "05", "30", "99"]);
+// resultCode 분류표: 코드마다 원천별 처리를 한 행에 둔다. 두 원천이 다르게 다루는 코드(30)가 행에서 바로 보인다.
+//   - dataGoKr: 공공데이터포털 OpenAPI 게이트웨이 오류 코드(공공데이터 제공 표준 오류코드 표: https://www.data.go.kr/data/15029183/openapi.do)
+//   - kric: 철도통합데이터 KRIC OpenAPI(openapi.kric.go.kr). KRIC가 공개한 별도 오류코드 표는 찾지 못했다(2026-10-18 웹 검색).
+//     그래서 같은 게이트웨이 표준 코드 체계로 보고 data.go.kr 표를 따르되, 아래 실측과 어긋나는 30만 달리 정했다.
+//     실측 기록: 03 데이터 없음 = tools/datapack/kric-subway-timetable-no-data-evidence.json, 41 승인 대기 = source-candidates.json의
+//     liveSampleNote(2026-09-30T01:23Z 호출), 30 미등록 operation = nationwide-coverage-targets.json의 productionClaimImpactKo(#2609: resultCode=30인 KRIC 상세 위치 operation 3종).
+//     KRIC 키는 operation별 활용신청이 필수이고 미신청이면 30이 돌아온다.
+//   - 30: data.go.kr는 게이트웨이 노드 사이 키 동기화 지연으로 간헐 발생해 일시로 본다(같은 키로 여러 run이 통과). KRIC는 미신청 operation이라 재시도해도 풀리지 않는다고 보고 즉시 실패시킨다.
+//     이는 실측 근거가 있는 선택이지 KRIC 공식 문서의 정의가 아니다. 방금 승인된 operation의 전파 지연이 관측되면 재검토한다.
+const RESULT_CODE_TABLE = Object.freeze([
+  { code: "01", name: "APPLICATION_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "02", name: "DB_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "04", name: "HTTP_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "05", name: "SERVICETIMEOUT_ERROR", dataGoKr: "transient", kric: "transient" },
+  { code: "10", name: "INVALID_REQUEST_PARAMETER_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "11", name: "NO_MANDATORY_REQUEST_PARAMETERS_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "12", name: "NO_OPENAPI_SERVICE_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "20", name: "SERVICE_ACCESS_DENIED_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "21", name: "TEMPORARILY_DISABLE_THE_SERVICEKEY_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "22", name: "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "30", name: "SERVICE_KEY_IS_NOT_REGISTERED_ERROR", dataGoKr: "transient", kric: "fatal" },
+  { code: "31", name: "DEADLINE_HAS_EXPIRED_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "32", name: "UNREGISTERED_IP_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "33", name: "UNSIGNED_CALL_ERROR", dataGoKr: "fatal", kric: "fatal" },
+  { code: "99", name: "UNKNOWN_ERROR", dataGoKr: "transient", kric: "transient" },
+]);
+const transientCodesOf = (origin) => new Set(RESULT_CODE_TABLE.filter((row) => row[origin] === "transient").map(({ code }) => code));
+const TRANSIENT_DATA_GO_KR_RESULT_CODES = transientCodesOf("dataGoKr");
+const TRANSIENT_KRIC_RESULT_CODES = transientCodesOf("kric");
 
 /** 공공데이터포털 envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientDataGoKrResultCode = (resultCode) => TRANSIENT_DATA_GO_KR_RESULT_CODES.has(resultCode);
-
-// KRIC OpenAPI(openapi.kric.go.kr) resultCode: 공공데이터 게이트웨이 표준 코드 체계를 쓴다. 저장소 실측으로 03 데이터 없음, 12 폐기 operation,
-// 30 미등록 operation, 41 승인 대기를 확인했다. KRIC가 공개한 별도 오류코드 표는 찾지 못했다(2026-10-18 검색). 그래서 위 표준 코드 표를 근거로 하되,
-// 30은 일시로 보지 않는다: KRIC는 operation별 활용신청이라 30이 미신청 operation을 뜻하고(재시도해도 풀리지 않음) 즉시 실패해야 신호가 빨리 드러난다.
-// 일시: 01·02·04·05·99. 그 밖의 코드(10·11·12·20·21·22·30·31·32·41)는 결정적이라 즉시 실패한다.
-const TRANSIENT_KRIC_RESULT_CODES = new Set([...TRANSIENT_DATA_GO_KR_RESULT_CODES].filter((code) => code !== "30"));
 
 /** KRIC OpenAPI 응답의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientKricResultCode = (resultCode) => TRANSIENT_KRIC_RESULT_CODES.has(resultCode);
@@ -142,9 +166,9 @@ export async function fetchBytesWithSourceRetry({
     }, { label, isTransientResult, sleep, budget, random });
   } catch (error) {
     if (!isRetryAfterExceedsCap(error)) throw transportFailure(unwrapTransientRetryFailure(error));
-    const bytes = error.result?.bytes;
-    if (bytes === undefined) throw error;
+    const { rawEvidence } = error;
+    if (rawEvidence === undefined) throw error;
     // 기다리지 않고 버린 응답도 원본 증거(바이트 수·해시)를 남긴다.
-    throw Object.assign(new Error(`${error.message}; rawBytes=${bytes.length}; rawSha256=${sha256(bytes)}`), { code: error.code });
+    throw Object.assign(new Error(`${error.message}; rawBytes=${rawEvidence.byteLength}; rawSha256=${rawEvidence.sha256}`), { code: error.code });
   }
 }

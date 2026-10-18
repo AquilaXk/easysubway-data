@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { inspect } from "node:util";
 
 import {
   RETRY_AFTER_EXCEEDS_CAP,
@@ -176,3 +177,25 @@ for (const [code, transient, meaning] of KRIC_RESULT_CODE_CASES) {
     assert.equal(isTransientKricResultCode(code), transient);
   });
 }
+
+// 프리셋이 던지는 Retry-After 초과 오류는 버린 Response(URL에 serviceKey가 실릴 수 있음)를 들고 나가지 않고 안전한 필드만 남긴다.
+test("Retry-After 초과 오류는 Response를 담지 않고 status·대기·원본 증거만 남긴다", async () => {
+  const secretUrl = "https://example.test/api?serviceKey=SECRET-KEY-9";
+  const withUrl = (status, headers) => Object.defineProperty(response(status, headers), "url", { value: secretUrl });
+  const error = await withSourceCollectionRetry(
+    () => ({ response: withUrl(429, { "Retry-After": "300" }), bytes: Buffer.from("body") }),
+    { label: "Sample", sleep: async () => {}, budget: createTransientRetryBudget() },
+  ).catch((caught) => caught);
+  assert.equal(isRetryAfterExceedsCap(error), true);
+  assert.equal(error.status, 429);
+  assert.equal(error.retryAfterMilliseconds, 300_000);
+  assert.deepEqual({ ...error.rawEvidence }, { byteLength: 4, sha256: error.rawEvidence.sha256 });
+  assert.equal(error.result, undefined);
+  assert.equal(inspect(error, { depth: 8, showHidden: true }).includes("SECRET-KEY-9"), false);
+});
+
+// 코드별 분류 행: 두 원천이 다르게 다루는 코드(30)를 명시한다.
+test("resultCode 30은 data.go.kr에서는 일시, KRIC에서는 결정적이다", () => {
+  assert.equal(isTransientDataGoKrResultCode("30"), true);
+  assert.equal(isTransientKricResultCode("30"), false);
+});
