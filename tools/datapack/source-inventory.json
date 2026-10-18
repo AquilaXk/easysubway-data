@@ -1795,8 +1795,8 @@
         "issue": 2479,
         "materializer": "tools/datapack/materialize-gwangju-accessibility.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-accessibility.test.mjs",
-        "snapshotId": "gwangju-transportation-accessibility-964eeb215a3e7d199d4fb1720d4c047024896d19a6321b1f0ac854f0d4815f54-20261017",
-        "snapshotPath": "tools/datapack/sources/gwangju-transportation-accessibility-964eeb215a3e7d199d4fb1720d4c047024896d19a6321b1f0ac854f0d4815f54-20261017.json",
+        "snapshotId": "gwangju-transportation-accessibility-0339e016ac4e8702cf0c8089c5fccb7200bd0bd266169d6b73dae9dd90e1021e-20261017",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-accessibility-0339e016ac4e8702cf0c8089c5fccb7200bd0bd266169d6b73dae9dd90e1021e-20261017.json",
         "capturedAt": "2026-10-17T06:45:33.157Z",
         "freshUntil": "2026-10-18T06:45:33.157Z",
         "stationCount": 20,
@@ -1809,12 +1809,12 @@
           "15041362"
         ],
         "topologySourceId": "gwangju-transportation-route-topology",
-        "topologySnapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
+        "topologySnapshotId": "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
         "topologyContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
         "topologyLineages": [
           {
             "sourceId": "gwangju-transportation-route-topology",
-            "snapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
+            "snapshotId": "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
             "contentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
             "lineId": "line-e57a361e8892"
           }
@@ -1897,9 +1897,9 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-gwangju-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-route-map-positions.test.mjs",
-        "snapshotId": "gwangju-transportation-route-map-positions-4e45c41391094d1daed6e2747076d38a6599db0c9e56234278daf71d227e555d",
-        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-map-positions-4e45c41391094d1daed6e2747076d38a6599db0c9e56234278daf71d227e555d.json",
-        "snapshotSha256": "4e45c41391094d1daed6e2747076d38a6599db0c9e56234278daf71d227e555d",
+        "snapshotId": "gwangju-transportation-route-map-positions-17714e53c6b0c335c0eab34531001225676b7ca9c91dfb32bec175327ea5b399",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-map-positions-17714e53c6b0c335c0eab34531001225676b7ca9c91dfb32bec175327ea5b399.json",
+        "snapshotSha256": "17714e53c6b0c335c0eab34531001225676b7ca9c91dfb32bec175327ea5b399",
         "capturedAt": "2026-07-25T02:00:00.000Z",
         "stationCount": 20,
         "rawStationCount": 20,
@@ -1918,12 +1918,12 @@
         },
         "observedDataUpdatedAt": "2022-12-02",
         "topologySourceId": "gwangju-transportation-route-topology",
-        "topologySnapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
+        "topologySnapshotId": "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
         "topologyContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
         "topologyLineages": [
           {
             "sourceId": "gwangju-transportation-route-topology",
-            "snapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
+            "snapshotId": "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
             "contentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
             "lineId": "line-e57a361e8892"
           }
@@ -1960,8 +1960,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
-      "observedDataUpdatedAt": "2026-10-17",
-      "retrievedAt": "2026-10-17",
+      "observedDataUpdatedAt": "2026-10-18",
+      "retrievedAt": "2026-10-18",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -2006,10 +2006,10 @@
         "issue": 2383,
         "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
-        "snapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
-        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c.json",
-        "capturedAt": "2026-10-17T06:45:15.138Z",
-        "freshUntil": "2026-10-24T06:45:15.138Z",
+        "snapshotId": "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf.json",
+        "capturedAt": "2026-10-18T08:24:39.965Z",
+        "freshUntil": "2026-10-25T08:24:39.965Z",
         "stationCount": 20,
         "edgeCount": 38,
         "excludedTransferCount": 0,
@@ -2032,7 +2032,7 @@
         "mappingSha256": "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
         "stationCodesSha256": "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
         "stationCodeSourceId": "gwangju-transportation-route-topology",
-        "stationCodeSnapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
+        "stationCodeSnapshotId": "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
         "stationCodeContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a"
       },
       "admissionEvidence": {
@@ -7198,7 +7198,7 @@
         "mappingSha256": "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
         "stationCodesSha256": "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
         "stationCodeSourceId": "gwangju-transportation-route-topology",
-        "stationCodeSnapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
+        "stationCodeSnapshotId": "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
         "stationCodeContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a"
       }
     },
@@ -8825,7 +8825,7 @@
         "observedAt": "2026-10-17T14:43:33.671Z",
         "retainedContractSha256": "bf46c7438f0e7dc6bda2b41cb2123caf305a4af9d071bd66a5e2b229c47be82f",
         "topologySourceId": "gwangju-transportation-route-topology",
-        "topologySnapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
+        "topologySnapshotId": "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
         "topologyContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a"
       },
       "admissionEvidence": {
