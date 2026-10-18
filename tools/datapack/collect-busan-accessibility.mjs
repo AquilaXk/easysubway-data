@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode, transportFailureWithCode } from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn"; // NOSONAR -- provider contract is HTTP-only
@@ -23,7 +24,8 @@ export async function collectBusanAccessibility({
   fetchImpl = fetch,
   now = new Date(),
   concurrency = 4,
-  sleepImpl = sleep,
+  sleepImpl,
+  randomImpl,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
@@ -37,7 +39,7 @@ export async function collectBusanAccessibility({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ station: scope[index], key, fetchImpl, sleepImpl });
+        responses[index] = await collectResponse({ station: scope[index], key, fetchImpl, retry: { sleepImpl, randomImpl } });
       } catch (error) {
         failure = error;
       }
@@ -115,13 +117,12 @@ function buildBusanAccessibilitySnapshot({ scope, responses, capturedAt }) {
   };
 }
 
-async function collectResponse({ station, key, fetchImpl, sleepImpl }) {
+async function collectResponse({ station, key, fetchImpl, retry }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("act", "xml");
   url.searchParams.set("scode", station.stationCode);
-  const response = await fetchWithRetry(url, fetchImpl, sleepImpl);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const { response, bytes } = await fetchWithRetry(url, fetchImpl, retry);
   const rawSha256 = sha256(bytes);
   if (!response.ok) {
     throw new Error(`Busan accessibility HTTP ${response.status}; rawBytes=${bytes.length}; rawSha256=${rawSha256}`);
@@ -234,27 +235,27 @@ function validateScope(scope) {
   return normalized;
 }
 
-async function fetchWithRetry(url, fetchImpl, sleepImpl) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetchImpl(url, {
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-        headers: { accept: "application/xml,text/xml" },
-      });
-      if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
-        await sleepImpl(250);
-        continue;
-      }
-      return response;
-    } catch (error) {
-      if (attempt === 1) {
-        const code = error?.code ?? error?.cause?.code ?? "UNKNOWN";
-        throw new Error(`Busan accessibility transport failure; code=${safeToken(String(code))}`);
-      }
-    }
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·500·502·503·504와 전송 오류)으로 같은 GET을 다시 보낸다.
+// 200 응답이어도 공공데이터포털 envelope resultCode가 일시 오류 코드(01·02·04·05·30·99)면 다시 보낸다. 소진하면 마지막 응답이 parseBusanAccessibilityResponse에서 resultCode와 함께 실패한다.
+function fetchWithRetry(url, fetchImpl, { sleepImpl, randomImpl }) {
+  return fetchBytesWithSourceRetry({
+    url,
+    fetchImpl,
+    accept: "application/xml,text/xml",
+    label: "Busan accessibility",
+    isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
+    transportFailure: transportFailureWithCode("Busan accessibility"),
+    sleep: sleepImpl,
+    random: randomImpl,
+  });
+}
+
+function providerResultCode(bytes) {
+  try {
+    return scalar(decodeXml(bytes).raw, "resultCode");
+  } catch {
+    return null;
   }
-  throw new Error("Busan accessibility transport failure");
 }
 
 function decodeXml(bytes) {
@@ -288,7 +289,6 @@ function requiredText(value, label) {
 }
 
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }
-function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
 async function main(args = process.argv.slice(2)) {
   const expected = ["--scope-snapshot", "--output"];

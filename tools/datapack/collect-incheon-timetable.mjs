@@ -18,6 +18,7 @@ import {
   I210_SEOHAE_GU_OFFICE_RENAME,
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
+import { getDataGoPortalBytes } from "./lib/data-go-portal-get.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
@@ -480,27 +481,21 @@ function isCanonicalDataGoDownloadUrl(value) {
   }
 }
 
-async function downloadDataGoFile(fetchImpl, datasetId) {
+async function downloadDataGoFile(fetchImpl, datasetId, retry) {
   const detailUrl = `https://www.data.go.kr/data/${datasetId}/fileData.do`;
-  const detailResponse = await fetchImpl(detailUrl, {
-    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
-  });
-  if (!detailResponse.ok) throw new Error(`Incheon ${datasetId} detail HTTP ${detailResponse.status}`);
-  const downloadUrl = resolveDataGoDownloadUrl(await detailResponse.text(), detailUrl);
+  const detail = await getDataGoPortalBytes({ url: detailUrl, fetchImpl, label: `Incheon ${datasetId} detail`, retry });
+  if (!detail.response.ok) throw new Error(`Incheon ${datasetId} detail HTTP ${detail.response.status}`);
+  const downloadUrl = resolveDataGoDownloadUrl(detail.bytes.toString("utf8"), detailUrl);
   if (!isCanonicalDataGoDownloadUrl(downloadUrl)) throw new Error(`Incheon ${datasetId} download URL is invalid`);
-  const fileResponse = await fetchImpl(downloadUrl, {
-    headers: {
-      "User-Agent": "easysubway-datapack-collector/1.0",
-      Referer: detailUrl,
-    },
+  const { response: fileResponse, bytes } = await getDataGoPortalBytes({
+    url: downloadUrl, fetchImpl, label: `Incheon ${datasetId} CSV`, referer: detailUrl, retry,
   });
   if (!fileResponse.ok) throw new Error(`Incheon ${datasetId} CSV HTTP ${fileResponse.status}`);
-  const bytes = Buffer.from(await fileResponse.arrayBuffer());
   if (bytes.byteLength === 0) throw new Error(`Incheon ${datasetId} CSV is empty`);
   return { bytes, detailUrl, downloadUrl, rawSha256: sha256(bytes) };
 }
 
-export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
+export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, now = () => new Date(), sleepImpl, randomImpl } = {}) {
   const args = parseArgs(argv);
   const stamp = args["date-stamp"];
   const topologyPath = args["topology-snapshot"];
@@ -525,7 +520,7 @@ export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, no
       for (const direction of DIRECTIONS) {
         const datasetId = config.datasets[dayCode][direction];
         if (args.download) {
-          const downloaded = await downloadDataGoFile(fetchImpl, datasetId);
+          const downloaded = await downloadDataGoFile(fetchImpl, datasetId, { sleepImpl, randomImpl });
           files[`${dayCode}:${direction}`] = downloaded.bytes;
           downloadProvenance.push({ dayCode, direction, datasetId, ...downloaded });
         } else {

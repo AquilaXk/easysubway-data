@@ -346,7 +346,7 @@ const ARG_SPEC = Object.freeze({
   absolute: ["output"],
 });
 
-export async function runDaejeonAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
+export async function runDaejeonAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date(), sleepImpl, randomImpl } = {}) {
   const args = parseDownloadModeArgs(argv, ARG_SPEC);
   const [topologySnapshot, inventory, molitBytes] = await Promise.all([
     readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
@@ -355,6 +355,7 @@ export async function runDaejeonAccessibilityCollector(argv, { fetchImpl = fetch
   ]);
   const { bytes: [elevatorBytes, escalatorBytes], downloadProvenance } = await loadDataGoInputs({
     args, fetchImpl, datasetIds: DATASET_IDS, inputPaths: [args["elevator-input"], args["escalator-input"]],
+    retry: { sleepImpl, randomImpl },
   });
   const topologySource = selectTopologySource(inventory);
   assertTopologyInputPath(args, topologySource);

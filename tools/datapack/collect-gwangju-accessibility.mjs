@@ -298,11 +298,12 @@ const ARG_SPEC = Object.freeze({
   absolute: ["output"],
 });
 
-export async function runGwangjuAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
+export async function runGwangjuAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date(), sleepImpl, randomImpl } = {}) {
   const args = parseDownloadModeArgs(argv, ARG_SPEC);
   const inventory = await readFile(args.inventory, "utf8").then(JSON.parse);
   const { bytes: [elevatorBytes, escalatorBytes], downloadProvenance } = await loadDataGoInputs({
     args, fetchImpl, datasetIds: DATASET_IDS, inputPaths: [args["elevator-input"], args["escalator-input"]],
+    retry: { sleepImpl, randomImpl },
   });
   const selected = inventory.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
   if (selected.length !== 1) throw new Error("Gwangju topology source selection mismatch");

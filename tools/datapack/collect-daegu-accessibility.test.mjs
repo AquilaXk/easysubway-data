@@ -12,6 +12,7 @@ import {
   runDaeguAccessibilityCollector,
 } from "./collect-daegu-accessibility.mjs";
 import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const FIXTURE_CSV = path.join(root, "tools/datapack/fixtures/daegu-accessibility-raw/data-go-15149872.csv");
@@ -177,6 +178,7 @@ test("대구 accessibility collector --download 실패·인자 오류·provenanc
   ];
   try {
     await assert.rejects(runDaeguAccessibilityCollector(["--download", ...common], {
+      sleepImpl: async () => {},
       fetchImpl: createDataGoPortalFetch({ 15149872: bytes }, { failFile: new Set(["15149872"]) }),
     }), /15149872 file HTTP 503/);
     await assert.rejects(runDaeguAccessibilityCollector(["--download", ...common], {
@@ -230,4 +232,26 @@ test("대구 accessibility collector는 출력을 임시 파일로 쓴 뒤 교�
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// 공용 data.go.kr 파일 다운로드(lib/data-go-file-download.mjs)의 표준 재시도가 이 수집기의 --download 경로에 연결돼 있는지 확인한다.
+const daeguRetryBytes = await readFile(FIXTURE_CSV);
+defineSourceCollectionRetryTests({
+  name: "대구 accessibility collector --download",
+  httpError: /data\.go\.kr 15149872 detail HTTP 403/,
+  delegate: createDataGoPortalFetch({ 15149872: daeguRetryBytes }),
+  headers: { "content-type": "text/html" },
+  run: async ({ fetchImpl, sleepImpl }) => {
+    const dir = await mkdtemp(path.join(tmpdir(), "daegu-accessibility-retry-"));
+    try {
+      return await runDaeguAccessibilityCollector([
+        "--download",
+        "--sources-dir", path.join(root, "tools/datapack/sources"),
+        "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
+        "--output", path.join(dir, "daegu-accessibility.json"),
+      ], { fetchImpl, sleepImpl, randomImpl: () => 0, now: () => new Date("2026-10-06T03:00:00.000Z") });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
 });

@@ -155,6 +155,17 @@ export function withSourceCollectionRetry(attempt, {
   });
 }
 
+const SAFE_ERROR_CODE = /^[A-Za-z0-9._-]{1,32}$/u;
+
+/**
+ * fetchBytesWithSourceRetry의 transportFailure용: 소진했거나 일시 아닌 전송 오류를 `<label> transport failure; code=<오류 코드>`로 바꾼다.
+ * 원본 오류(URL·Response가 실릴 수 있다)는 싣지 않고, 형식이 안전한 오류 코드만 남긴다.
+ */
+export const transportFailureWithCode = (label) => (failure) => {
+  const code = String(failure?.code ?? failure?.cause?.code ?? "UNKNOWN");
+  return new Error(`${label} transport failure; code=${SAFE_ERROR_CODE.test(code) ? code : "UNKNOWN"}`);
+};
+
 /**
  * 요청과 본문 바이트 읽기를 한 번의 시도로 묶어 표준 정책으로 재시도하는 HTTP GET 수집 공용 함수.
  * @param {object} options
@@ -164,14 +175,15 @@ export function withSourceCollectionRetry(attempt, {
  * @param {string} options.label 오류 메시지의 원천 이름.
  * @param {(failure: unknown) => Error} options.transportFailure 재시도를 소진했거나 일시 아닌 전송 오류를 수집기의 기존 오류로 바꾼다.
  * @param {(result: { response: Response, bytes: Buffer }) => boolean} [options.isTransientResult] 상태 코드 말고 본문으로 판정하는 일시 상태(예: 공공데이터포털 resultCode).
+ * @param {Record<string, string>} [options.headers] accept 말고 더 붙일 요청 헤더(User-Agent·Referer 등).
  * @returns {Promise<{ response: Response, bytes: Buffer }>}
  */
 export async function fetchBytesWithSourceRetry({
-  url, fetchImpl, accept, label, transportFailure, isTransientResult, sleep, budget, random, timeoutMs = 15_000,
+  url, fetchImpl, accept, label, transportFailure, isTransientResult, sleep, budget, random, timeoutMs = 15_000, headers = {},
 }) {
   try {
     return await withSourceCollectionRetry(async () => {
-      const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(timeoutMs), headers: { accept } });
+      const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(timeoutMs), headers: { accept, ...headers } });
       return { response, bytes: Buffer.from(await response.arrayBuffer()) };
     }, { label, isTransientResult, sleep, budget, random });
   } catch (error) {

@@ -9,6 +9,7 @@ import {
   isRetryAfterExceedsCap,
   isTransientDataGoKrResultCode,
   isTransientKricResultCode,
+  transportFailureWithCode,
   withSourceCollectionRetry,
 } from "./source-collection-retry.mjs";
 import { createTransientRetryBudget } from "./transient-retry.mjs";
@@ -217,4 +218,25 @@ test("Retry-After 초과 오류는 Response를 담지 않고 status·대기·원
 test("resultCode 30은 data.go.kr에서는 일시, KRIC에서는 결정적이다", () => {
   assert.equal(isTransientDataGoKrResultCode("30"), true);
   assert.equal(isTransientKricResultCode("30"), false);
+});
+
+test("fetchBytesWithSourceRetry는 accept 말고 호출자의 요청 헤더도 보낸다", async () => {
+  let sent;
+  await fetchBytesWithSourceRetry({
+    url: "https://example.test/file", accept: "*/*", label: "Sample", headers: { Referer: "https://example.test/detail" },
+    fetchImpl: async (_url, init) => { sent = init.headers; return new Response("ok"); },
+    transportFailure: (failure) => failure,
+  });
+  assert.deepEqual(sent, { accept: "*/*", Referer: "https://example.test/detail" });
+});
+
+test("transportFailureWithCode는 안전한 형식의 오류 코드만 남기고 원본 오류(URL)는 싣지 않는다", () => {
+  const toFailure = transportFailureWithCode("Sample");
+  const leaky = Object.assign(new Error("connect failed https://example.test/api?serviceKey=SECRET-KEY-9"), { code: "ECONNRESET" });
+  const error = toFailure(leaky);
+  assert.equal(error.message, "Sample transport failure; code=ECONNRESET");
+  assert.equal(error.cause, undefined);
+  assert.equal(toFailure({ cause: { code: "UND_ERR_SOCKET" } }).message, "Sample transport failure; code=UND_ERR_SOCKET");
+  assert.equal(toFailure({ code: "has space&key=SECRET" }).message, "Sample transport failure; code=UNKNOWN");
+  assert.equal(toFailure(undefined).message, "Sample transport failure; code=UNKNOWN");
 });

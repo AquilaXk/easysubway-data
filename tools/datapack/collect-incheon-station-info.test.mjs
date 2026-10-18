@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
+import { assertErrorOmitsSecrets, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 import {
@@ -466,4 +467,66 @@ test("current Incheon public attachment는 bounded download와 strict EUC-KR dec
     /output.*exists|EEXIST/,
   );
   assert.deepEqual(await readFile(output), original);
+});
+
+// 원천 수집 표준 재시도(lib/source-collection-retry.mjs): detail·FILE 요청이 일시 오류를 만나면 같은 GET을 다시 보낸다.
+const INCHEON_DETAIL_URL = "https://www.data.go.kr/data/15083751/fileData.do";
+const INCHEON_FILE_URL = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700002&fileDetailSn=1&insertDataPrcus=N";
+const incheonCsvBytes = await loadCurrentCsv();
+const incheonPortalFetch = async (url) => (String(url) === INCHEON_DETAIL_URL
+  ? new Response(`<a href="${INCHEON_FILE_URL}">download</a>`, { status: 200 })
+  : new Response(incheonCsvBytes, { status: 200 }));
+
+async function collectIncheonStationInfoVia(fetchImpl, sleepImpl = async () => {}) {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-retry-"));
+  try {
+    return await runIncheonStationInfoCollector([
+      "--download", "--output", path.join(outputDir, "snapshot.json"), "--captured-at", "2026-10-05T00:00:00.000Z",
+    ], { fetchImpl, sleepImpl, randomImpl: () => 0 });
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+}
+
+defineSourceCollectionRetryTests({
+  name: "인천 station-info collector",
+  httpError: /Incheon station info detail HTTP 403/,
+  delegate: incheonPortalFetch,
+  headers: { "content-type": "text/html" },
+  run: ({ fetchImpl, sleepImpl }) => collectIncheonStationInfoVia(fetchImpl, sleepImpl),
+});
+
+test("인천 station-info collector는 FILE 요청이 HTTP 503을 만나면 같은 요청을 다시 보내고, 소진하면 기존 HTTP 오류로 끝난다", async () => {
+  const fileCalls = [];
+  const recovered = await collectIncheonStationInfoVia(async (url) => {
+    if (String(url) === INCHEON_FILE_URL) fileCalls.push(url);
+    return String(url) === INCHEON_FILE_URL && fileCalls.length === 1 ? new Response("busy", { status: 503 }) : incheonPortalFetch(url);
+  });
+  assert.equal(fileCalls.length, 2);
+  assert.equal(recovered.stationCount, 71);
+
+  let exhaustedCalls = 0;
+  await assert.rejects(collectIncheonStationInfoVia(async (url) => {
+    if (String(url) !== INCHEON_FILE_URL) return incheonPortalFetch(url);
+    exhaustedCalls += 1;
+    return new Response("busy", { status: 503 });
+  }), /Incheon station info CSV HTTP 503/);
+  assert.equal(exhaustedCalls, 3);
+});
+
+test("인천 station-info collector는 HTTP 429를 Retry-After 유무로 가르고, 소진된 전송 오류에 URL을 싣지 않는다", async () => {
+  let unhinted = 0;
+  await assert.rejects(collectIncheonStationInfoVia(async () => { unhinted += 1; return new Response("slow", { status: 429 }); }), /detail HTTP 429/);
+  assert.equal(unhinted, 2);
+
+  let hinted = 0;
+  await assert.rejects(collectIncheonStationInfoVia(async () => { hinted += 1; return new Response("slow", { status: 429, headers: { "retry-after": "21" } }); }), /RETRY_AFTER_EXCEEDS_CAP/);
+  assert.equal(hinted, 1);
+
+  const leaky = async (url) => { throw Object.assign(new Error(`connect failed ${url}`), { code: "ECONNRESET", cause: { url: String(url) } }); };
+  const failure = await collectIncheonStationInfoVia(leaky).catch((error) => error);
+  assert.match(failure.message, /Incheon station info detail transport failure; code=ECONNRESET/);
+  assertErrorOmitsSecrets(failure, ["www.data.go.kr", "15083751"]);
 });
