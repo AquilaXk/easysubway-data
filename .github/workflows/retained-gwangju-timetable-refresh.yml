@@ -150,9 +150,11 @@ jobs:
           gh auth setup-git
           git push origin "${branch}"
           git switch --detach "${main_sha}"
-          printf 'RETAINED_GWANGJU_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
-          printf 'RETAINED_GWANGJU_CLAIM_SHA=%s\n' "${claim_head}" >> "${GITHUB_ENV}"
-          printf 'RETAINED_GWANGJU_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
+          {
+            printf 'RETAINED_GWANGJU_BRANCH=%s\n' "${branch}"
+            printf 'RETAINED_GWANGJU_CLAIM_SHA=%s\n' "${claim_head}"
+            printf 'RETAINED_GWANGJU_MAIN_SHA=%s\n' "${main_sha}"
+          } >> "${GITHUB_ENV}"
       - name: Collect due retained Gwangju timetable
         if: ${{ steps.decision.outputs.state == 'DUE' }}
         env:

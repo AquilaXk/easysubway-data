@@ -372,9 +372,11 @@ jobs:
           gh auth setup-git
           git push origin "${branch}"
           git switch --detach "${main_sha}"
-          printf 'KRIC_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
-          printf 'KRIC_REFRESH_CLAIM_SHA=%s\n' "${claim_head}" >> "${GITHUB_ENV}"
-          printf 'KRIC_REFRESH_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
+          {
+            printf 'KRIC_REFRESH_BRANCH=%s\n' "${branch}"
+            printf 'KRIC_REFRESH_CLAIM_SHA=%s\n' "${claim_head}"
+            printf 'KRIC_REFRESH_MAIN_SHA=%s\n' "${main_sha}"
+          } >> "${GITHUB_ENV}"
 
       - name: KRIC current facility refresh / Validate provider configuration
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
