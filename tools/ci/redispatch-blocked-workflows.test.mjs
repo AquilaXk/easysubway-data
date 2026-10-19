@@ -494,8 +494,8 @@ test("해소 증명: push run은 push로 도는 workflow(registration·rebinding
       runs: { [workflow]: [run(39185256501, LATER, { event: "push", actor: "AquilaXk" }), run(39182039810, BLOCKED_AT)] },
       jobs: { 39182039810: blockedAfter(workflow), 39185256501: stepsJob(proofsOf(workflow)[0]) },
     });
-    const action = (await runRedispatch(input)).find((item) => item.workflow === workflow).action;
-    assert.equal(action, pushTriggered ? "SKIP" : "DISPATCH", workflow);
+    const outcome = (await runRedispatch(input)).find((item) => item.workflow === workflow).action;
+    assert.equal(outcome, pushTriggered ? "SKIP" : "DISPATCH", workflow);
   }
 });
 
