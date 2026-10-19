@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261019-seq160",
-  "candidateBuildSpecSha256": "4e2552ba9468116bcaff59b5db897242c7ae563e401486b20d084e48774fad4c",
-  "preparationSha256": "2289bfd9b0d9df10baa3dc7a04a01a77cf7774aada7a5d00900c486c830db9b1",
-  "fanInSha256": "7cbf882e465163a6e77578c7a21747572a1c2a707c4aaa06e8eee38878a2ce2a",
+  "candidateId": "nationwide-candidate-20261019-seq161",
+  "candidateBuildSpecSha256": "c5ad73243b033a07b6324f789d95df70c2454fd5ef91f82079c613cf54ecaa99",
+  "preparationSha256": "d3706b3ae0bb6d088848378f0da9d0b60fecf6f487600fd7094a306390432077",
+  "fanInSha256": "22c9f85e34242f589c33e44120d974b70cf16f41159716c91250e6ae67771fbb",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "7cbf882e465163a6e77578c7a21747572a1c2a707c4aaa06e8eee38878a2ce2a",
+      "sha256": "22c9f85e34242f589c33e44120d974b70cf16f41159716c91250e6ae67771fbb",
       "byteSize": 36442
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "3f7fb06ebf3adee61ff8f853fc0b45eecf76cfa30d10e9d9b6a5fe23a02341a2",
-      "byteSize": 4694495
+      "sha256": "5d84324a162bc4644bcc7822b70d611a7ceb6591d981890166b9f069ea19734d",
+      "byteSize": 4716881
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "5f58b6ac5c6c4fff0e43e9cd09f4bc8f2831aed6b5a4027b78668a144b67cb09",
+      "sha256": "cb8ce4bced4c7b0fffbd4ac468f61bd7e58ece0eb9d403dff88e7f3a9a2c2b06",
       "byteSize": 404395
     },
     {
