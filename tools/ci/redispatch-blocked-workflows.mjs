@@ -8,7 +8,11 @@
 // 이 도구는 대상 workflow마다 main의 가장 최근 정기·dispatch run을 보고 아래를 모두 만족할 때만 `github.token`으로 dispatch한다.
 //   1. 그 run이 끝났고 success이며, job의 note step이 실행됐다(= 그 run이 쓰지 않고 끝났다): BLOCKED_BY_PENDING_PR의 "waiting" note,
 //      그리고 재확인·재결속이 push 직전 재확인에서 새 원장 쓰기 자동화를 만나거나 main이 움직여 올리지 않고 끝난 "superseded" note(같은 슬롯 손실이다).
-//   2. 지금 차단 대상이 없다. 판정 도구와 같은 함수(pendingLedgerWriters·pendingLedgerWriterPullRequests)로 다시 계산하므로
+//   2. 그 run 뒤에 같은 workflow가 main에서 일을 마쳤다는 긍정 증거가 없다: 증거는 workflow별 증명 step이 success인 run이다(RECOVERY_PROOF의 전달 step 또는
+//      "할 일 없음"을 증명하는 noWorkSteps). 있으면 막힘은 이미 해소됐다(SUPERSEDED_BY_SUCCESS). note step이 없다는 사실은 증거가 아니다:
+//      claim 대기(CLAIM_IN_PROGRESS)나 열린 PR(OPEN_PR)도 note 없이 success로 끝난다. 증명 step이 표에 없으면 해소로 보지 않는다.
+//      일시적 API 오류로 읽지 못하면 resolution: UNDETERMINED로 남기고 대상에서 빼지 않는다. 계약 위반은 그대로 실패한다.
+//   3. 지금 차단 대상이 없다. 판정 도구와 같은 함수(pendingLedgerWriters·pendingLedgerWriterPullRequests)로 다시 계산하므로
 //      "차단 PR이 병합되거나 닫힘"은 "차단 대상이 비었음"과 같다. 또 막히면 재dispatch된 run이 다시 막힌 run이 되어 같은 절차를 탄다.
 // 직렬화는 바꾸지 않는다: 재dispatch된 workflow는 자기 decision 단계에서 다시 판정한다.
 //
@@ -29,6 +33,7 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { parseAutomationBranches, pendingLedgerWriterPullRequests, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
+import { RECOVERY_PROOF } from "./close-recovered-failure-issues.mjs";
 import { defaultRunGh } from "./report-refresh-failure.mjs";
 
 /** 이 경로로 다시 깨운 run의 시작자. 스케줄러 App(heartbeat가 세는 dispatch)·사람과 구분된다. */
@@ -40,6 +45,8 @@ const RUN_LIST_LIMIT = 100;
 const OBSERVE_POLLS = 5;
 const OBSERVE_INTERVAL_MS = 3_000;
 const SCHEDULED_EVENTS = new Set(["schedule", "workflow_dispatch"]);
+// 일시적 API 오류: gh가 5xx·429·네트워크 오류로 끝난 경우. 계약 위반(형식 어긋남)과 코딩 오류는 이 패턴에 걸리지 않아 그대로 실패한다.
+const TRANSIENT_API_ERROR = /\bHTTP (?:5\d\d|429)\b|timed out|ECONN(?:RESET|REFUSED)|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/iu;
 
 /**
  * 재dispatch 대상. 순서가 우선순위다(만료 위험이 큰 순서):
@@ -47,12 +54,20 @@ const SCHEDULED_EVENTS = new Set(["schedule", "workflow_dispatch"]);
  *   2. 원천 재확인: P7D 원천 만료를 막는 유일한 경로다. 주기는 2시간이지만 recipe 수집이 길다.
  *   3. 수도권 topology 등록: 2시간 주기. 등록이 끝나야 재결속·후보가 새 입력을 쓴다.
  *   4. 파생 재결속: 6시간 주기이지만 입력이 바뀌면 나머지 대상이 끝난 뒤에 다시 만들어도 늦지 않는 하류 단계다.
+ * pushTriggered는 그 workflow가 main push로도 도는지다(workflow 파일의 on: push와 계약 테스트가 대조한다). push run도 막힌 run 뒤에 일을 마칠 수 있어 해소 판정에서만 본다.
+ * noWorkSteps는 "할 일이 없음"을 증명하는 step이다(전달 step은 RECOVERY_PROOF가 정본이다). 둘 다 없는 workflow는 해소로 인정하지 않는다.
  * noteSteps는 각 workflow에서 "쓰지 않고 success로 끝난" 경우에만 도는 step 이름이다. waiting(BLOCKED_BY_PENDING_PR) 하나가 정본이고
  * 나머지는 push 직전 재확인에서 새 원장 쓰기 자동화를 만났거나 main이 움직여 올리지 않은 superseded note다. blockers는 decide 도구가 차단을 정하는 방식이다.
  * 계약 테스트가 표를 workflow 파일·decide 도구와 대조한다.
  */
 export const REDISPATCH_TARGETS = Object.freeze([
-  { workflow: "itx-current-promotion.yml", noteSteps: ["Note ITX promotion waiting on another pending automation pull request"], blockers: "pull-requests" },
+  {
+    workflow: "itx-current-promotion.yml",
+    noteSteps: ["Note ITX promotion waiting on another pending automation pull request"],
+    blockers: "pull-requests",
+    pushTriggered: false,
+    noWorkSteps: ["Note ITX promotion is not due"],
+  },
   {
     workflow: "source-reverification.yml",
     noteSteps: [
@@ -61,8 +76,16 @@ export const REDISPATCH_TARGETS = Object.freeze([
       "Note reverification superseded by a newer main",
     ],
     blockers: "pull-requests-and-claims",
+    pushTriggered: false,
+    noWorkSteps: ["Note no P7D source is due"],
   },
-  { workflow: "current-capital-topology-registration.yml", noteSteps: ["Note registration waiting on another pending automation pull request"], blockers: "pull-requests" },
+  {
+    workflow: "current-capital-topology-registration.yml",
+    noteSteps: ["Note registration waiting on another pending automation pull request"],
+    blockers: "pull-requests",
+    pushTriggered: true,
+    noWorkSteps: [],
+  },
   {
     workflow: "source-derivative-rebinding.yml",
     noteSteps: [
@@ -71,6 +94,8 @@ export const REDISPATCH_TARGETS = Object.freeze([
       "Note rebinding superseded by a newer main",
     ],
     blockers: "pull-requests-and-claims",
+    pushTriggered: true,
+    noWorkSteps: ["Note derivative bindings are already current"],
   },
 ]);
 
@@ -89,11 +114,11 @@ function pendingFor({ workflow, blockers }, { pullRequests, automationBranches, 
   return [...pending.pullRequests, ...pending.branches];
 }
 
-async function listRuns(api, repository, workflow) {
+async function listRuns(api, repository, workflow, events = SCHEDULED_EVENTS) {
   const listing = await api(`repos/${repository}/actions/workflows/${workflow}/runs?branch=${MAIN}&per_page=${RUN_LIST_LIMIT}`);
   if (!Array.isArray(listing?.workflow_runs)) fail("REDISPATCH_RUNS_INVALID", workflow);
   return listing.workflow_runs
-    .filter((item) => item?.head_branch === MAIN && SCHEDULED_EVENTS.has(item.event))
+    .filter((item) => item?.head_branch === MAIN && events.has(item.event))
     .map((item) => {
       if (!Number.isSafeInteger(item.id) || typeof item.status !== "string") fail("REDISPATCH_RUNS_INVALID", `${workflow} run ${String(item.id)}`);
       return { id: item.id, event: item.event, status: item.status, conclusion: item.conclusion ?? null, actor: item.actor?.login ?? null, createdAt: instant(item.created_at, "REDISPATCH_RUNS_INVALID") };
@@ -101,11 +126,44 @@ async function listRuns(api, repository, workflow) {
     .sort((left, right) => right.createdAt - left.createdAt || right.id - left.id);
 }
 
-/** run이 쓰지 않고 끝났는가(BLOCKED_BY_PENDING_PR 또는 superseded): 그 workflow의 note step이 실행(success)됐다. */
-async function endedBlocked(api, repository, runId, noteSteps) {
+async function runJobs(api, repository, runId) {
   const listing = await api(`repos/${repository}/actions/runs/${runId}/jobs?per_page=100`);
   if (!Array.isArray(listing?.jobs)) fail("REDISPATCH_JOBS_INVALID", `run ${runId}`);
-  return listing.jobs.some((job) => Array.isArray(job?.steps) && job.steps.some((step) => noteSteps.includes(step?.name) && step.conclusion === "success"));
+  return listing.jobs.filter((job) => Array.isArray(job?.steps));
+}
+
+/** run이 쓰지 않고 끝났는가(BLOCKED_BY_PENDING_PR 또는 superseded): 그 workflow의 note step이 실행(success)됐다. */
+async function endedBlocked(api, repository, runId, noteSteps) {
+  const jobs = await runJobs(api, repository, runId);
+  return jobs.some((job) => job.steps.some((step) => noteSteps.includes(step?.name) && step.conclusion === "success"));
+}
+
+/** 해소 증명: 한 job 안에서 증명 대안 하나의 모든 step이 success이다. */
+function provenWork(jobs, proofs) {
+  const succeeded = jobs.map((job) => new Set(job.steps.filter(({ conclusion }) => conclusion === "success").map(({ name }) => name)));
+  return proofs.some((steps) => succeeded.some((names) => steps.every((name) => names.has(name))));
+}
+
+const workProofs = ({ workflow, noWorkSteps }) => [...(RECOVERY_PROOF[workflow] ?? []), ...noWorkSteps.map((name) => [name])];
+
+/**
+ * 막힌 run(blockedAt) 뒤에 같은 workflow가 main에서 일을 마친 run을 찾는다. 증명 step이 success인 run만 인정하는 긍정 증거 방식이다.
+ * 일시적 API 오류는 판정 불가로 돌려주고(대상에서 빼지 않는다), 계약 위반과 코딩 오류는 그대로 던진다.
+ */
+async function findResolvingRun(api, repository, target, blockedAt) {
+  const events = target.pushTriggered ? new Set([...SCHEDULED_EVENTS, "push"]) : SCHEDULED_EVENTS;
+  const proofs = workProofs(target);
+  try {
+    const runs = await listRuns(api, repository, target.workflow, events);
+    const later = runs.filter(({ status, conclusion, createdAt }) => status === "completed" && conclusion === "success" && createdAt > blockedAt);
+    for (const candidate of later) {
+      if (provenWork(await runJobs(api, repository, candidate.id), proofs)) return { resolvedBy: candidate.id }; // NOSONAR -- 새 run부터 순서대로 읽는다
+    }
+  } catch (error) {
+    if (!(error instanceof Error) || !TRANSIENT_API_ERROR.test(error.message)) throw error;
+    return { undetermined: error.message };
+  }
+  return {};
 }
 
 async function dispatchAndObserve({ workflow, before, repository, api, dispatchWorkflow, sleep, log }) {
@@ -156,10 +214,20 @@ export async function runRedispatch({
       results.push({ workflow, action: "SKIP", reason: "LATEST_NOT_BLOCKED" });
       continue;
     }
+    const { resolvedBy, undetermined } = await findResolvingRun(api, repository, target, latest.createdAt); // NOSONAR -- 위와 같다
+    if (resolvedBy !== undefined) {
+      log(`${workflow}: run ${latest.id} ended blocked but run ${resolvedBy} finished after it without being blocked`);
+      results.push({ workflow, action: "SKIP", reason: "SUPERSEDED_BY_SUCCESS", supersededBy: resolvedBy });
+      continue;
+    }
+    const resolution = undetermined === undefined ? {} : { resolution: "UNDETERMINED" };
+    if (undetermined !== undefined) {
+      log(`::warning title=Blocked redispatch::${workflow}: could not tell whether a later run resolved blocked run ${latest.id} (${undetermined})`);
+    }
     const blockedBy = pendingFor(target, { pullRequests, automationBranches, repository });
     if (blockedBy.length > 0) {
       log(`${workflow}: run ${latest.id} ended without writing and is still waiting for ${blockedBy.join(", ")}`);
-      results.push({ workflow, action: "WAIT", blockedBy });
+      results.push({ workflow, action: "WAIT", blockedBy, ...resolution });
       continue;
     }
     // 상한: 막힌 run 바로 뒤에 github-actions[bot]이 dispatch한 run만 센다(막힘 -> 재dispatch -> 막힘 루프).
@@ -171,10 +239,10 @@ export async function runRedispatch({
     }
     if (recent >= REDISPATCH_DAILY_LIMIT) {
       limited.push(`${workflow} was already redispatched ${recent} time(s) after a blocked run in the last 24h (limit ${REDISPATCH_DAILY_LIMIT}) and run ${latest.id} ended blocked again`);
-      results.push({ workflow, action: "LIMIT", count: recent });
+      results.push({ workflow, action: "LIMIT", count: recent, ...resolution });
       continue;
     }
-    results.push({ workflow, action: "DISPATCH", blockedRunId: latest.id, runs });
+    results.push({ workflow, action: "DISPATCH", blockedRunId: latest.id, ...resolution, runs });
     candidates.push(workflow);
   }
   // 한 sweep에 쓰기 workflow는 최대 하나만 깨운다. 진행 중인 대상 run이 있으면 아무것도 깨우지 않는다.
