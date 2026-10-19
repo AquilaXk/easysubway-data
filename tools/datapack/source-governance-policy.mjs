@@ -155,9 +155,20 @@ function registrationLineage(policy) {
   return lineage;
 }
 
+// 직전 lineage 사슬 전체에서 퇴역한 id. 퇴역은 되돌릴 수 없으므로 이후 등록 단계가 같은 id를 다시 추가할 수 없다.
+function retiredSourceIdsIn(lineage) {
+  const retired = new Set();
+  for (let step = lineage; isPlainObject(step); step = step.predecessorLineage) {
+    if (Array.isArray(step.retiredSourceIds)) step.retiredSourceIds.forEach((sourceId) => retired.add(sourceId));
+  }
+  return retired;
+}
+
 function sourcesBeforeRegistration(sources, lineage) {
   const ids = sources.map(({ sourceId }) => sourceId);
   const { addedSourceIds } = lineage;
+  const retired = retiredSourceIdsIn(lineage.predecessorLineage);
+  if (addedSourceIds.some((sourceId) => retired.has(sourceId))) governanceBindingError();
   if (ids.length <= addedSourceIds.length
     || JSON.stringify(ids.slice(-addedSourceIds.length)) !== JSON.stringify(addedSourceIds)
     || ids.slice(0, -addedSourceIds.length).some((sourceId) => addedSourceIds.includes(sourceId))) {
@@ -175,8 +186,7 @@ function sourcesBeforeRetirement(sources, lineage) {
   for (const [index, record] of retiredSources.entries()) {
     if (!isPlainObject(record) || !hasExactKeys(record, RETIRED_RECORD_KEYS)
       || !Number.isSafeInteger(record.position) || record.position <= previousPosition || record.position > restored.length
-      || !isPlainObject(record.source) || record.source.sourceId !== retiredSourceIds[index]
-      || sources.some(({ sourceId }) => sourceId === retiredSourceIds[index])) governanceBindingError();
+      || !isPlainObject(record.source) || record.source.sourceId !== retiredSourceIds[index]) governanceBindingError();
     restored.splice(record.position, 0, record.source);
     previousPosition = record.position;
   }

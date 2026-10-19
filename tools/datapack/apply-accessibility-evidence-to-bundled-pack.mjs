@@ -9,6 +9,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS } from "./lib/retired-sources.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
 import { sha256 } from "../lib/hash.mjs";
@@ -30,17 +31,8 @@ function getTargetStationIds(pack) {
 }
 const facilityTypes = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT", "ACCESSIBILITY_STATUS_PROBE"];
 const accessibilityRouteSourceId = "seoul-metro-accessibility";
-// 내부 경로 접근성 상태의 근거로 허용하는 원천. 현재 이 근거를 만드는 원천이 없으므로 비어 있고, 이 목록 밖의 상태는 UNKNOWN으로 되돌린다.
-const directRouteEvidenceSourceIds = new Set();
-// 현재 수집하지 않는 퇴역 원천 id. 옛 데이터팩 잔재 차단 전용이다.
-const replacedSourceIds = new Set([
-  "kric-station-elevator",
-  "kric-station-escalator",
-  "kric-wheelchair-lift-location",
-  "kric-station-elevator-movement",
-  "kric-wheelchair-lift-movement",
-  "seoul-metro-accessibility",
-]);
+// 데이터팩에서 걷어내는 원천: 퇴역한 KRIC 접근성 원천과 서울교통공사 접근성 원천(현행 근거로 다시 채운다).
+const replacedSourceIds = new Set([...RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS, "seoul-metro-accessibility"]);
 const CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
@@ -344,8 +336,8 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
     .filter(({ id }) => !replacedSourceIds.has(id) && !freshSourceIds.has(id))
     .concat(freshSources);
   const sourceInventoryIds = new Set(pack.sourceInventory.map(({ id }) => id));
-  pack.internalRouteEdges = (pack.internalRouteEdges ?? []).filter((edge) =>
-    sourceInventoryIds.has(edge.sourceId) && completeInternalRouteEdgeProvenance(edge));
+  // 내부 경로 접근성의 근거를 만드는 원천이 없으므로 내부 경로 간선은 모두 비운다.
+  pack.internalRouteEdges = [];
   pack.movementPathCandidates = (reviewedPack.movementPathCandidates ?? [])
     .filter(({ sourceId }) => sourceInventoryIds.has(sourceId));
   if (pack.movementPathCandidates.length === 0) {
@@ -543,19 +535,17 @@ export function stripLegacyCoreClaims(database, { check }) {
   const outsideTransferColumns = new Set(
     database.prepare("PRAGMA table_info(out_of_station_transfer_links)").all().map(({ name }) => name),
   );
-  const pathwayIncomplete = incompleteRouteProvenanceSql(pathwayColumns);
-  const outsideTransferIncomplete = incompleteRouteProvenanceSql(outsideTransferColumns);
   const stalePathwayCount = pathwayColumns.has("requires_facility_id")
     ? database.prepare(`
         SELECT count(*) AS count FROM station_pathway_edges
         WHERE requires_facility_id IS NOT NULL
-          OR (accessibility_status <> 'UNKNOWN' AND (${pathwayIncomplete}))
+          OR accessibility_status <> 'UNKNOWN'
       `).get().count
     : 0;
   const staleOutsideTransferCount = outsideTransferColumns.has("accessibility_status")
     ? database.prepare(`
         SELECT count(*) AS count FROM out_of_station_transfer_links
-        WHERE accessibility_status <> 'UNKNOWN' AND (${outsideTransferIncomplete})
+        WHERE accessibility_status <> 'UNKNOWN'
       `).get().count
     : 0;
   const staleExit = normalizeUnprovenStationExitElevatorClaims(database, { check });
@@ -568,16 +558,13 @@ export function stripLegacyCoreClaims(database, { check }) {
   if (!check && stale) {
     const pathwayCleanup = pathwayColumns.has("requires_facility_id") ? `
       UPDATE station_pathway_edges
-      SET accessibility_status = CASE
-            WHEN requires_facility_id IS NOT NULL OR (${pathwayIncomplete}) THEN 'UNKNOWN'
-            ELSE accessibility_status
-          END,
+      SET accessibility_status = 'UNKNOWN',
           requires_facility_id = NULL;
     ` : "";
     const outsideTransferCleanup = outsideTransferColumns.has("accessibility_status") ? `
       UPDATE out_of_station_transfer_links
       SET accessibility_status = 'UNKNOWN'
-      WHERE accessibility_status <> 'UNKNOWN' AND (${outsideTransferIncomplete});
+      WHERE accessibility_status <> 'UNKNOWN';
     ` : "";
     database.exec(`
       ${pathwayCleanup}
@@ -611,13 +598,6 @@ export function normalizeUnprovenStationExitElevatorClaims(database, { check }) 
   return stale;
 }
 
-function incompleteRouteProvenanceSql(columns) {
-  const incomplete = incompleteProvenanceSql(columns);
-  if (incomplete === "1") return incomplete;
-  const allowedSources = [...directRouteEvidenceSourceIds].map((sourceId) => `'${sourceId}'`).join(",");
-  return `(${incomplete}) OR source_id NOT IN (${allowedSources})`;
-}
-
 function incompleteProvenanceSql(columns) {
   if (!["source_id", "source_snapshot_id", "provider_record_hash", "evidence_hash"]
     .every((name) => columns.has(name))) return "1";
@@ -629,19 +609,8 @@ function incompleteProvenanceSql(columns) {
 }
 
 export function normalizeUnprovenInternalRouteEdges(database, { check }) {
-  const columns = new Set(database.prepare("PRAGMA table_info(internal_route_edges)").all().map(({ name }) => name));
-  const hasProvenance = ["source_id", "source_snapshot_id", "provider_record_hash", "evidence_hash"]
-    .every((name) => columns.has(name));
-  const stale = database.prepare(hasProvenance ? `
-      SELECT id, source_id AS sourceId, source_snapshot_id AS sourceSnapshotId,
-             provider_record_hash AS providerRecordHash, evidence_hash AS evidenceHash
-      FROM internal_route_edges
-      WHERE accessibility_status <> 'UNKNOWN'
-    ` : `
-      SELECT id, '' AS sourceId, '' AS sourceSnapshotId, '' AS providerRecordHash, '' AS evidenceHash
-      FROM internal_route_edges
-      WHERE accessibility_status <> 'UNKNOWN'
-    `).all().filter((row) => !completeInternalRouteEdgeProvenance(row));
+  // 근거를 만드는 원천이 없으므로 UNKNOWN이 아닌 내부 경로 간선은 모두 근거 없는 주장이다.
+  const stale = database.prepare("SELECT id FROM internal_route_edges WHERE accessibility_status <> 'UNKNOWN'").all();
   if (check && stale.length > 0) {
     throw new StaleAccessibilityEvidenceError("bundled internal route accessibility evidence is stale");
   }
@@ -650,13 +619,6 @@ export function normalizeUnprovenInternalRouteEdges(database, { check }) {
     for (const { id } of stale) update.run(id);
   }
   return stale.length > 0;
-}
-
-function completeInternalRouteEdgeProvenance(edge) {
-  return directRouteEvidenceSourceIds.has(edge.sourceId)
-    && Boolean(edge.sourceSnapshotId)
-    && /^[0-9a-f]{64}$/.test(edge.providerRecordHash ?? "")
-    && /^[0-9a-f]{64}$/.test(edge.evidenceHash ?? "");
 }
 
 async function stripLegacyCore({ check }) {

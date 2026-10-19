@@ -10,15 +10,17 @@ import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { RETIRED_KRIC_MOVEMENT_SOURCE_IDS } from "./lib/retired-sources.mjs";
 
 const execFileAsync = promisify(execFile);
+const [RETIRED_ELEVATOR_MOVEMENT, RETIRED_LIFT_MOVEMENT] = RETIRED_KRIC_MOVEMENT_SOURCE_IDS;
 
 test("fresh KRIC codes와 Seoul status만 production source input으로 materialize한다", () => {
   const input = {
-    sourceIds: ["kric-station-elevator-movement", "kric-wheelchair-lift-movement"],
+    sourceIds: RETIRED_KRIC_MOVEMENT_SOURCE_IDS,
     movementPathCandidates: [
-      { sourceId: "kric-station-elevator-movement" },
-      { sourceId: "kric-wheelchair-lift-movement" },
+      { sourceId: RETIRED_ELEVATOR_MOVEMENT },
+      { sourceId: RETIRED_LIFT_MOVEMENT },
       { sourceId: "seoul-metro-accessibility", id: "seoul-status-candidate" },
     ],
     stationMappings: [{ sourceId: "molit-urban-rail-full-route", sourceStationCode: "MOLIT-L-1", lineId: "line-1", stationId: "station-a" }],
@@ -34,7 +36,7 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
     minimumProductionCoverage: { facilities: 1 },
     coverageEvidence: [{
       sourceDomain: "accessibility_facilities",
-      sourceIds: ["kric-station-elevator-movement", "kric-wheelchair-lift-movement"],
+      sourceIds: RETIRED_KRIC_MOVEMENT_SOURCE_IDS,
     }],
   };
   const kricSnapshot = {

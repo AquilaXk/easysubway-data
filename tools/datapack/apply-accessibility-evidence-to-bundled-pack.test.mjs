@@ -24,6 +24,10 @@ import {
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS, RETIRED_KRIC_MOVEMENT_SOURCE_IDS } from "./lib/retired-sources.mjs";
+
+const [RETIRED_ELEVATOR] = RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS;
+const [RETIRED_ELEVATOR_MOVEMENT, RETIRED_LIFT_MOVEMENT] = RETIRED_KRIC_MOVEMENT_SOURCE_IDS;
 
 const execFileAsync = promisify(execFile);
 
@@ -201,8 +205,8 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
   const reviewedPack = {
     networkEdges: [reviewedEdge],
     movementPathCandidates: [
-      { id: "retired-elevator", sourceId: "kric-station-elevator-movement" },
-      { id: "retired-lift", sourceId: "kric-wheelchair-lift-movement" },
+      { id: "retired-elevator", sourceId: RETIRED_ELEVATOR_MOVEMENT },
+      { id: "retired-lift", sourceId: RETIRED_LIFT_MOVEMENT },
       { id: "active-seoul", sourceId: "seoul-metro-accessibility" },
       { id: "active-unrelated", sourceId: "seoulmetro-station-line-info" },
       { id: "missing-unrelated", sourceId: "unregistered-source" },
@@ -210,7 +214,7 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
     metadata: { productionCoverageEvidence: JSON.stringify([
       {
         sourceDomain: "accessibility_facilities",
-        sourceIds: ["kric-station-elevator-movement", "kric-wheelchair-lift-movement", "seoul-metro-accessibility"],
+        sourceIds: [...RETIRED_KRIC_MOVEMENT_SOURCE_IDS, "seoul-metro-accessibility"],
       },
       { sourceDomain: "station_line_membership", sourceIds: ["seoulmetro-station-line-info"] },
     ]) },
@@ -224,7 +228,7 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
   const canonical = { packs: [{
     id: "capital",
     facilities: [
-      { id: "legacy-elevator", stationId: "station-sadang", type: "ELEVATOR", sourceId: "kric-station-elevator" },
+      { id: "legacy-elevator", stationId: "station-sadang", type: "ELEVATOR", sourceId: RETIRED_ELEVATOR },
       { id: "surviving-toilet", stationId: "station-sadang", type: "ACCESSIBLE_TOILET", sourceId: "other" },
     ],
     dataQualityRecords: [
@@ -250,8 +254,8 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
     sourceInventory: [
       { id: "seoulmetro-station-line-info" },
       { id: "unrelated-official-fares" },
-      { id: "kric-station-elevator-movement" },
-      { id: "kric-wheelchair-lift-movement" },
+      { id: RETIRED_ELEVATOR_MOVEMENT },
+      { id: RETIRED_LIFT_MOVEMENT },
     ],
     officialOdFareQuotes,
     routeServiceArtifactEvidence,

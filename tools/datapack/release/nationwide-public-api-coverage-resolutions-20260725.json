@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "nationwide-coverage-resolutions",
   "targetVersion": "2026-07-13",
-  "searchPlanSha256": "875f7bd765bbd90897b5ed979b3f803bee69934bd3d37c272151d2ee01582a28",
+  "searchPlanSha256": "70727554d8b049b622a0e376cd7b9bb7b964cc49a4c92877af1c0d4c0bc7ea6d",
   "generatedAt": "2026-07-25T09:12:39.105Z",
   "entries": [
     {
@@ -1981,11 +1981,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -12483,11 +12478,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -13518,11 +13508,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -13611,11 +13596,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -13735,11 +13715,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -14684,11 +14659,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -15633,11 +15603,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -15741,11 +15706,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -16690,11 +16650,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -17221,11 +17176,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -17329,11 +17279,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -18278,11 +18223,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -18387,11 +18327,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -18525,11 +18460,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
@@ -18779,11 +18709,6 @@
       "reasonCode": "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
       "providerCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ]
