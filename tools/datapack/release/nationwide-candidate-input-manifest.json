@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261018-seq157",
-  "candidateBuildSpecSha256": "719daf87dddce92f1c655e69f3923cb57535c247906fa512c49fbc411f11ec2e",
-  "preparationSha256": "ca7169be792476a0037d91f5817c3071ba0cd4d6a0d5c70a09b434aa3dcfd4f7",
-  "fanInSha256": "a78bfaff928d5e54c0981e80cda073446d41598192950f5820be5bc46d238546",
+  "candidateId": "nationwide-candidate-20261019-seq158",
+  "candidateBuildSpecSha256": "1644a7b39275e337949478beb298f36a8895076ce78b39f4a45f0d07a025d288",
+  "preparationSha256": "e537504e61d24f86d5c88fa7232522d829c68024e78b2db1c4cd21d99c73d59e",
+  "fanInSha256": "cf6b01df829b92dc307bd6b8c7ff733bd991b2bf663296a15f4349a633ebc517",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -39,32 +39,32 @@
     },
     {
       "path": "tools/datapack/release/capital-production-canonical-pack.json",
-      "sha256": "4564e0da6112ca0292411e6aee2fae0eb86b9be8d581c46f534539f0f6441f1d",
+      "sha256": "681a11c024cc2a76383b4d9402b2fe7132f82410a11e166b65de971af6a052b5",
       "byteSize": 27516869
     },
     {
-      "path": "tools/datapack/release/capital-topology-reverification-20261018.json",
-      "sha256": "eee1973aaf310b375c168facdcea8d84d58855489cbc403a19d8448d7146790e",
+      "path": "tools/datapack/release/capital-topology-reverification-20261019.json",
+      "sha256": "4f27a4ff0cf2530dd9dc65414667290bd24a5a2bcd92c2f8f441eedc94092279",
       "byteSize": 6809
     },
     {
       "path": "tools/datapack/release/current-busan-transfer-metrics.json",
-      "sha256": "a0f4fa5239d58f64772d289237933c5b070cdaf50b22395ebd131686a16d4974",
+      "sha256": "1fab8f6de722bb08ca7fc1a4ec3027d9d121b416685a3a32bbfe66eb82cb797e",
       "byteSize": 6452
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "a78bfaff928d5e54c0981e80cda073446d41598192950f5820be5bc46d238546",
+      "sha256": "cf6b01df829b92dc307bd6b8c7ff733bd991b2bf663296a15f4349a633ebc517",
       "byteSize": 36442
     },
     {
       "path": "tools/datapack/release/current-seoul-measured-transfer-metrics.json",
-      "sha256": "100da5cda04c0d3a4b427130e9ff48128bb4a3345ffa320b82b574ec1e73b093",
+      "sha256": "65e534db8ea1441fae51267ae1558752a2b6f63b1f10dfb6fd30020807d9c2a9",
       "byteSize": 181620
     },
     {
       "path": "tools/datapack/release/current-transfer-topology-metrics.json",
-      "sha256": "146c05689beb31c19701ff76226830d2089e161ea02e9df31bc83bc53cefbd90",
+      "sha256": "3d2a750eb2a667ce0cf090e1047e54c1a7abf6992d2cc0e4bb4049dabfca6af4",
       "byteSize": 86578
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "f5489779ac388d0b183116c16f1e0cbf1fe59bd91169596e41514f0d16afb013",
-      "byteSize": 4621636
+      "sha256": "b649611c4dc80c4361714f9c20a433a9c90ce8f49c63714fce09e162389e2107",
+      "byteSize": 4647844
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "0e78854f887a13a356317d0b9ba8f676ad30b334e09b95ee6291261760a1eaa7",
+      "sha256": "1135ded5f09393e7eb7c07d2515b9d9356c7dd4e8492ffcc3162a0b843b0c040",
       "byteSize": 429014
     },
     {
@@ -113,8 +113,8 @@
       "byteSize": 278264
     },
     {
-      "path": "tools/datapack/sources/capital-route-topology-20261018.json",
-      "sha256": "c2f765bdac378ac4679a8d861b83545c47cd1216189f4b46509b820e3d119eff",
+      "path": "tools/datapack/sources/capital-route-topology-20261019.json",
+      "sha256": "abcf196bf4ba730152844d758614b28d6bd63f6e3e0acaa76e66c635f2a4e934",
       "byteSize": 260470
     },
     {
@@ -158,18 +158,18 @@
       "byteSize": 94606
     },
     {
-      "path": "tools/datapack/sources/incheon-line1-train-timetable-20261018.json",
-      "sha256": "f26cdc23f7780c5bebd577295cdd7156423e0517e31e412ba0a65e424259d343",
+      "path": "tools/datapack/sources/incheon-line1-train-timetable-20261019.json",
+      "sha256": "d7a42ca235ee77ef6c8d580b696267a3c7e512c01e43048752e155e31615ddc5",
       "byteSize": 748699
     },
     {
-      "path": "tools/datapack/sources/incheon-line2-train-timetable-20261018.json",
-      "sha256": "747f0271bc28144835bca7c8b07f036827e8d4d3e77c6c7da9e39bd46bf8966f",
+      "path": "tools/datapack/sources/incheon-line2-train-timetable-20261019.json",
+      "sha256": "9aae8d9626e1f2ef366cd0d26ea3900684b293e18843910e51856539cebbb9c9",
       "byteSize": 926710
     },
     {
-      "path": "tools/datapack/sources/incheon-transit-station-info-20261018.json",
-      "sha256": "01f014f5a866329175db48e128ecb9dbf31d12e04ccca15f5bc2a8e0f1bd2707",
+      "path": "tools/datapack/sources/incheon-transit-station-info-20261019.json",
+      "sha256": "f137f56c5057fe504eda5258375c5e8d074dbfe8a8a52cf1fe72436f83932b6e",
       "byteSize": 65917
     },
     {
