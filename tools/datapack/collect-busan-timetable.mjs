@@ -207,6 +207,7 @@ function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl) {
     fetchImpl,
     accept: "application/xml,text/xml",
     label: "Busan timetable",
+    sourceId: "busan-timetable",
     isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
     transportFailure: (failure) => {
       const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";

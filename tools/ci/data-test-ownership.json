@@ -468,6 +468,8 @@
     {"path":"tools/ci/automation-pr-ci-rerun-workflow.test.mjs","semanticOwner":"data1115","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/lib/transient-retry.test.mjs","semanticOwner":"data1099","classes":["required-pr"],"durationMs":60},
     {"path":"tools/datapack/lib/source-collection-retry.test.mjs","semanticOwner":"data1099","classes":["required-pr"],"durationMs":60},
+    {"path":"tools/datapack/lib/source-fetch-telemetry.test.mjs","semanticOwner":"data1099","classes":["required-pr"],"durationMs":60},
+    {"path":"tools/ci/summarize-source-fetch-telemetry.test.mjs","semanticOwner":"data1099","classes":["required-pr"],"durationMs":80},
     {"path":"tools/ci/source-reverification-failures.test.mjs","semanticOwner":"data1102","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/data-test-discovery.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":31},
     {"path":"tools/ci/decide-current-capital-topology-refresh.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":178},

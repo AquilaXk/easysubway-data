@@ -18,6 +18,7 @@ import {
   unwrapTransientRetryFailure,
   withTransientRetry,
 } from "./transient-retry.mjs";
+import { buildAttemptRecord, emitAttemptRecord, sourceIdFromLabel } from "./source-fetch-telemetry.mjs";
 
 export const SOURCE_COLLECTION_RETRY_POLICY = Object.freeze({
   maxAttempts: 3,
@@ -109,6 +110,8 @@ const discardBody = (response) => { Promise.resolve(response?.body?.cancel?.()).
  * @param {number} [options.maxAttempts] 최대 시도 수(1~SOURCE_COLLECTION_RETRY_POLICY.maxAttempts, 기본은 그 값). 범위 밖이면 거부한다. 요청 수 × 최악 대기가 job timeout을 넘는 수집기만 줄인다.
  * @param {number} [options.minDelayMs] 재시도 대기의 하한(기본 0). 수집기가 요청 사이 간격을 정해 두었다면 재시도도 그 간격 아래로 내려가지 않게 한다. Retry-After가 cap을 넘으면 하한과 무관하게 fail-closed다.
  * @param {string} [options.label] Retry-After 초과 오류 메시지의 원천 이름.
+ * @param {string} [options.sourceId] 시도별 계측(source-fetch-telemetry)의 원천 식별자. 기본은 label에서 만든다.
+ * @param {string | URL} [options.url] 계측에 호스트만 싣는 요청 URL. 경로·쿼리는 기록하지 않는다. 없으면 응답의 url에서 호스트를 읽는다.
  * @param {() => number} [options.random] [0, 1)을 돌려주는 난수(테스트용 주입).
  * @param {(event: object) => void} [options.onRetry] 재시도 직전 알림(응답 본문은 이미 취소했다).
  */
@@ -119,6 +122,8 @@ export function withSourceCollectionRetry(attempt, {
   maxAttempts = SOURCE_COLLECTION_RETRY_POLICY.maxAttempts,
   minDelayMs = 0,
   label = "source collection",
+  sourceId = sourceIdFromLabel(label),
+  url,
   random,
   sleep,
   budget,
@@ -145,7 +150,27 @@ export function withSourceCollectionRetry(attempt, {
     if (retryAfter > capDelayMs) throw new RetryAfterExceedsCapError(label, response.status, retryAfter, capDelayMs, result);
     return Math.max(minDelayMs, retryAfter);
   };
-  return withTransientRetry(attempt, {
+  // 시도마다 한 줄을 남긴다. 다음 대기는 재시도가 정해진 뒤에야 알 수 있어, 기록은 보류했다가 onRetry(대기 있음)나 끝(대기 없음)에서 내보낸다.
+  let pending;
+  const flushAttempt = (nextDelayMs) => {
+    if (pending === undefined) return;
+    emitAttemptRecord(buildAttemptRecord({ sourceId, ...pending, nextDelayMs }));
+    pending = undefined;
+  };
+  const measuredAttempt = async (context) => {
+    const startedAt = performance.now();
+    const settle = (observed) => { pending = { attempt: context.attemptNumber, durationMs: performance.now() - startedAt, ...observed }; };
+    try {
+      const result = await attempt(context);
+      const response = responseOf(result);
+      settle({ url: url ?? response?.url, response });
+      return result;
+    } catch (error) {
+      settle({ url, error });
+      throw error;
+    }
+  };
+  return withTransientRetry(measuredAttempt, {
     isTransientResult: (result) => isTransientResponse(responseOf(result)) || isTransientResult(result),
     isTransientError,
     retryLimit: maxAttempts - 1,
@@ -153,10 +178,11 @@ export function withSourceCollectionRetry(attempt, {
     budget,
     delayMs,
     onRetry: (event) => {
+      flushAttempt(event.delayMs);
       if (event.result !== undefined) discardBody(responseOf(event.result));
       onRetry(event);
     },
-  });
+  }).finally(() => flushAttempt(null));
 }
 
 const SAFE_ERROR_CODE = /^[A-Za-z0-9._-]{1,32}$/u;
@@ -177,19 +203,20 @@ export const transportFailureWithCode = (label) => (failure) => {
  * @param {Function} options.fetchImpl
  * @param {string} options.accept Accept 헤더.
  * @param {string} options.label 오류 메시지의 원천 이름.
+ * @param {string} [options.sourceId] 시도별 계측의 원천 식별자(기본은 label에서 만든다).
  * @param {(failure: unknown) => Error} options.transportFailure 재시도를 소진했거나 일시 아닌 전송 오류를 수집기의 기존 오류로 바꾼다.
  * @param {(result: { response: Response, bytes: Buffer }) => boolean} [options.isTransientResult] 상태 코드 말고 본문으로 판정하는 일시 상태(예: 공공데이터포털 resultCode).
  * @param {Record<string, string>} [options.headers] accept 말고 더 붙일 요청 헤더(User-Agent·Referer 등).
  * @returns {Promise<{ response: Response, bytes: Buffer }>}
  */
 export async function fetchBytesWithSourceRetry({
-  url, fetchImpl, accept, label, transportFailure, isTransientResult, sleep, budget, random, timeoutMs = 15_000, headers = {},
+  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, sleep, budget, random, timeoutMs = 15_000, headers = {},
 }) {
   try {
     return await withSourceCollectionRetry(async () => {
       const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(timeoutMs), headers: { accept, ...headers } });
       return { response, bytes: Buffer.from(await response.arrayBuffer()) };
-    }, { label, isTransientResult, sleep, budget, random });
+    }, { label, sourceId, url, isTransientResult, sleep, budget, random });
   } catch (error) {
     if (!isRetryAfterExceedsCap(error)) throw transportFailure(unwrapTransientRetryFailure(error));
     const { rawEvidence } = error;
