@@ -376,14 +376,13 @@ test("#834 원천 교체: stationMovement 표준·getFcElvtr만 운영 사용 �
     assert.equal(typeof admission.relationToExistingSources, "string", id);
     assert.ok(Object.keys(admission.fieldMapping).length > 0, id);
   }
-  for (const id of ["kric-station-elevator", "kric-station-elevator-movement", "kric-station-movement-detailed"]) {
-    assert.equal(byId.get(id).capabilities.facility.productionUseAllowed, false, id);
-    assert.equal(byId.get(id).evidence.productionUseAdmission, undefined, id);
-  }
+  const detailed = byId.get("kric-station-movement-detailed");
+  assert.equal(detailed.capabilities.facility.productionUseAllowed, false);
+  assert.equal(detailed.evidence.productionUseAdmission, undefined);
 });
 
 test("#834 커밋된 stationMovement·getFcElvtr snapshot은 수집기 raw 보관본·manifest로 재검증된다", async () => {
-  const { readFile, access } = await import("node:fs/promises");
+  const { readFile } = await import("node:fs/promises");
   const { createHash } = await import("node:crypto");
   const { validateKricExitPathObservation } = await import("./collect-kric-exit-path-provider-snapshot.mjs");
   const { validateSeoulAccessibilityObservation } = await import("./collect-seoul-accessibility-evidence.mjs");
@@ -440,13 +439,6 @@ test("#834 커밋된 stationMovement·getFcElvtr snapshot은 수집기 raw 보�
     previousSnapshotId: "seoul-metro-facility-location-20260730T214010816Z",
   });
   await pinned(manifest.canonicalMapping.snapshotPath, manifest.canonicalMapping.snapshotSha256);
-
-  for (const retired of [
-    "tools/datapack/sources/kric-station-elevator-20260930T000000000Z.json",
-    "tools/datapack/sources/kric-station-elevator-movement-20260930T000000000Z.json",
-  ]) {
-    await assert.rejects(access(new URL(retired, repository)), { code: "ENOENT" }, retired);
-  }
 });
 
 test("F6: 번들 빌드 입력 loader는 커밋된 원천에서 시청 2호선 시설·경로를 만들고 입력이 없거나 어긋나면 실패한다", async (t) => {

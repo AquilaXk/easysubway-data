@@ -454,49 +454,9 @@ test("producer-neutral full registration requires a lowercase admin review recor
   await assert.rejects(readFile(input.target), { code: "ENOENT" });
 });
 
-test("producer-neutral full registration rejects another approved KRIC operation and re-bound pack membership drift", async (t) => {
+test("producer-neutral full registration rejects re-bound pack membership drift", async (t) => {
   const values = await fixture(t);
   const input = await fullRegistrationInputs(values);
-  const elevatorOperation = {
-    sourceId: "kric-station-elevator",
-    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
-    responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "rglnPsno", "rglnWgt", "runStinFlorFr", "runStinFlorTo", "stinCd"],
-    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
-  };
-  const [otherSnapshot] = await collectKricAccessibilitySnapshots({
-    roster: input.planRoster,
-    operations: [elevatorOperation],
-    serviceKey: "fixture-only-key",
-    now: input.fixtureNow,
-    fetchImpl: async (url) => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ header: { resultCode: "00" }, body: [{
-        dtlLoc: "fixture", exitNo: "1", grndDvNmFr: "1", grndDvNmTo: "2",
-        lnCd: url.searchParams.get("lnCd"), railOprIsttCd: url.searchParams.get("railOprIsttCd"),
-        rglnPsno: "1", rglnWgt: "1", runStinFlorFr: "1", runStinFlorTo: "2", stinCd: url.searchParams.get("stinCd"),
-      }] }),
-    }),
-  });
-  const otherBytes = Buffer.from(`${JSON.stringify(otherSnapshot, null, 2)}\n`);
-  const otherPath = path.join(path.dirname(input.snapshotPath), "other-operation.json");
-  await writeFile(otherPath, otherBytes);
-  const otherReceipt = {
-    ...input.rawReceipt,
-    sourceId: otherSnapshot.sourceId,
-    snapshotId: otherSnapshot.snapshotId,
-    snapshotRawSha256: otherSnapshot.rawSha256,
-    capturedAt: otherSnapshot.capturedAt,
-    snapshotFileSha256: sha256(otherBytes),
-  };
-  await assert.rejects(registerFull(values, input, {
-    snapshotFilePath: otherPath,
-    snapshotFileSha256: sha256(otherBytes),
-    snapshotTargetPath: path.join(input.repositoryRoot, "tools/datapack/sources", `${otherSnapshot.snapshotId}.json`),
-    rawReceipt: otherReceipt,
-  }));
-  await assertUnchanged(values);
-
   const alteredPack = JSON.parse(await readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8"));
   const missingMembership = input.plan.stationLineProviderMappings[0];
   alteredPack.packs[0].stationLines = alteredPack.packs[0].stationLines.filter(({ stationId, lineId }) =>

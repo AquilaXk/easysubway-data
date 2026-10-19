@@ -1075,17 +1075,17 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "436ec57921776b678b0b4476045b57cee650b482957764339b828ab8e14f0c69"
+      "sha256": "2dee42ae9d3cedb2a4d9334ac1ae51ed7a2fe15feb5036472defcb3d830a7b91"
     },
     "resolutions": {
       "entryCount": 4,
       "generatedAt": "2026-07-25T09:12:39.105Z",
       "path": "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
-      "sha256": "c71318595eac2c9f478f06ad4b1901d2602d8b5952d5e94c0718209d80dc555a"
+      "sha256": "22b3e2a09a4855a593ef70491f2f9797a69a27407a1d3782fc41792341c88e14"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
-      "sha256": "8f9caee0c2149a8cb40483fa0fa598086ba365d378b7acc1171a1f50f18e4122",
+      "sha256": "33ad00894592652f1fed7c02e8070d4c612d49f17de56bcb6b8565ceb35bea5e",
       "targetVersion": "2026-07-13"
     }
   },

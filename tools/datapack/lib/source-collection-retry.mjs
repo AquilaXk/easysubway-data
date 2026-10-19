@@ -52,7 +52,8 @@ export class RetryAfterExceedsCapError extends Error {
 //   - kric: 철도통합데이터 KRIC OpenAPI(openapi.kric.go.kr). KRIC가 공개한 별도 오류코드 표는 찾지 못했다(2026-10-18 웹 검색).
 //     그래서 같은 게이트웨이 표준 코드 체계로 보고 data.go.kr 표를 따르되, 아래 실측과 어긋나는 30만 달리 정했다.
 //     실측 기록: 03 데이터 없음 = tools/datapack/kric-subway-timetable-no-data-evidence.json, 41 승인 대기 = source-candidates.json의
-//     liveSampleNote(2026-09-30T01:23Z 호출), 30 미등록 operation = nationwide-coverage-targets.json의 productionClaimImpactKo(#2609: resultCode=30인 KRIC 상세 위치 operation 3종).
+//     liveSampleNote(2026-09-30T01:23Z 호출), 30 미등록 operation = 2026-07-28 KRIC 상세 위치·이동동선 operation의 resultCode=30 실측(#2609).
+//     해당 candidate는 퇴역해 source-candidates.json에서 삭제했고 기록은 커밋 1f907b220의 evidence.operationLiveValidation에서 열람한다.
 //     KRIC 키는 operation별 활용신청이 필수이고 미신청이면 30이 돌아온다.
 //   - 30: data.go.kr는 게이트웨이 노드 사이 키 동기화 지연으로 간헐 발생해 일시로 본다(같은 키로 여러 run이 통과). KRIC는 미신청 operation이라 재시도해도 풀리지 않는다고 보고 즉시 실패시킨다.
 //     이는 실측 근거가 있는 선택이지 KRIC 공식 문서의 정의가 아니다. 방금 승인된 operation의 전파 지연이 관측되면 재검토한다.

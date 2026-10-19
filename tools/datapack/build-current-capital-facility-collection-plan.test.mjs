@@ -225,7 +225,6 @@ test("FACILITY·EXIT·시간표 계획 도구는 roster 경로를 고정하지 �
   for (const tool of [
     "build-current-capital-facility-collection-plan.mjs",
     "run-current-capital-facility-operation.mjs",
-    "probe-kric-facility-provider-tuples.mjs",
     "build-current-kric-exit-collection-plan.mjs",
     "plan-kric-nationwide-timetable-collection.mjs",
   ]) {

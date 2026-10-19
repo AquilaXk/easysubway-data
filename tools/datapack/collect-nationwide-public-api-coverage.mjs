@@ -51,7 +51,7 @@ const LINE_NAME_ALIASES = new Map([
 // topology/positions 도메인의 실발행처(국가철도공단·국토교통부)를 built-in known-provider 후보로 배선한다.
 // source-candidates.json의 해당 도메인 후보는 대부분 allowlist 밖 endpoint라 indexKnownProviderCandidates가
 // 걸러내 knownProviderCandidateIds:[]가 되므로, 전국 단위 실발행처를 코드에 고정해 오탐(공식 미지원) 확정을 막는다.
-const BUILTIN_KNOWN_PROVIDER_CANDIDATES = Object.freeze({
+export const BUILTIN_KNOWN_PROVIDER_CANDIDATES = Object.freeze({
   route_graph_topology: [{ id: "kric-nationwide-station-interval-distance" }],
   route_map_positions: [
     { id: "kric-nationwide-station-coordinates" },

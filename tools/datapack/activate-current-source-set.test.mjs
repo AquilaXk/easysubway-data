@@ -46,6 +46,7 @@ import {
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { capitalRouteTopologySnapshotIdMatchesCapturedAt, capitalRouteTopologySnapshotVersion, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { RETIRED_KRIC_MOVEMENT_SOURCE_IDS } from "./lib/retired-sources.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -2849,7 +2850,7 @@ test("canonical sync는 current source와 Seoul OD만 교체하고 legacy route 
         stationExits: [],
         sourceInventory: [
           { id: "kric-subway-timetable", updatedAt: "old" },
-          { id: "kric-station-elevator-movement", updatedAt: "retired" },
+          { id: RETIRED_KRIC_MOVEMENT_SOURCE_IDS[0], updatedAt: "retired" },
           { id: "regional-unrelated-source", updatedAt: "preserved" },
         ],
         officialOdFareQuotes: [
@@ -2858,7 +2859,7 @@ test("canonical sync는 current source와 Seoul OD만 교체하고 legacy route 
           { sourceId: "busan-transportation-official-od-fares", snapshotId: "busan" },
         ],
         routeServiceArtifactEvidence: [{ sourceId: "legacy-route-service" }],
-        movementPathCandidates: [{ sourceId: "kric-station-elevator-movement" }],
+        movementPathCandidates: [{ sourceId: RETIRED_KRIC_MOVEMENT_SOURCE_IDS[0] }],
         requiredTables: ["catalog_metadata"],
         minimumTableRows: { facilities: 0, station_facility_evidence: 0 },
         metadata: { productionCoverageEvidence: "[]" },

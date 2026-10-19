@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS, RETIRED_KRIC_MOVEMENT_SOURCE_IDS } from "./lib/retired-sources.mjs";
 
 const KRIC_SOURCE_ID = "kric-station-convenience-standard";
 const SEOUL_SOURCE_ID = "seoul-metro-accessibility";
@@ -209,25 +210,14 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
     };
   });
 
-  // #834 QA 결정(2026-09-30): 엘리베이터 이동경로는 kric-station-movement-standard(서버 번들 전용)로 교체했다.
-  // kric-station-elevator·kric-station-elevator-movement는 구조화된 엘리베이터 참조가 없어 계속 차단한다.
-  const replacedSourceIds = new Set([
-    "kric-station-elevator",
-    "kric-station-escalator",
-    "kric-wheelchair-lift-location",
-    "kric-station-elevator-movement",
-    "kric-wheelchair-lift-movement",
-  ]);
+  const replacedSourceIds = new Set(RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS);
   const sourceIds = [...new Set([
     ...input.sourceIds.filter((sourceId) => !replacedSourceIds.has(sourceId)), KRIC_SOURCE_ID, SEOUL_SOURCE_ID,
   ])];
   const coverageEvidence = input.coverageEvidence.map((entry) => entry.sourceDomain !== "accessibility_facilities"
     ? entry
     : { ...entry, sourceIds: [KRIC_SOURCE_ID, SEOUL_SOURCE_ID] });
-  const blockedMovementSourceIds = new Set([
-    "kric-station-elevator-movement",
-    "kric-wheelchair-lift-movement",
-  ]);
+  const blockedMovementSourceIds = new Set(RETIRED_KRIC_MOVEMENT_SOURCE_IDS);
   const statusByStation = new Map(seoulRows.map((row) => [row.stationId, row]));
   const routeEdges = (input.routeEdges ?? []).map((edge) => {
     if (edge.sourceId !== SEOUL_SOURCE_ID || !["ENTRY", "EXIT"].includes(edge.edgeType)) return edge;

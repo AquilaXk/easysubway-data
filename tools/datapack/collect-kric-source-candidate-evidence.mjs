@@ -27,11 +27,6 @@ export const KRIC_SOURCE_CANDIDATE_IDS = Object.freeze([
   "kric-transfer-movement-standard",
   "kric-transfer-movement-detailed",
   "kric-station-convenience-standard",
-  "kric-station-elevator",
-  "kric-station-elevator-movement",
-  "kric-station-escalator",
-  "kric-wheelchair-lift-location",
-  "kric-wheelchair-lift-movement",
 ]);
 
 const KRIC_ORIGIN = "https://openapi.kric.go.kr";

@@ -11,9 +11,7 @@ import {
   buildKricAccessibilityRoster,
   collectKricStandardAccessibilityObservation,
   collectKricAccessibilitySnapshots,
-  collectKricAccessibilityProviderTupleEvidence,
   KRIC_ACCESSIBILITY_OPERATIONS,
-  KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
   loadCanonicalStationLinesFromBundledIndex,
   validateKricAccessibilityRawCollection,
   validateKricAccessibilitySnapshotIdentity,
@@ -31,8 +29,8 @@ const retryFast = (waits = []) => ({
 });
 
 const operation = {
-  sourceId: "kric-station-elevator",
-  endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+  sourceId: "kric-station-convenience-standard",
+  endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
   responseFields: ["railOprIsttCd", "lnCd", "stinCd", "dtlLoc"],
 };
 const roster = [
@@ -63,105 +61,6 @@ test("production 기본 KRIC 접근성 수집은 historical standard operation�
   assert.equal(snapshots[0].sourceId, standardOperation.sourceId);
   assert.deepEqual(validateKricAccessibilitySnapshotIdentity(snapshots[0]), snapshots[0]);
   assert.doesNotMatch(JSON.stringify(snapshots), /super-secret|serviceKey/);
-});
-
-test("승인된 KRIC 접근성 profile은 표준 편의정보 없이 exact 다섯 operation을 한 tuple에 한 번씩 수집한다", async () => {
-  const expectedOperations = [
-    {
-      sourceId: "kric-station-elevator",
-      endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
-      responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "rglnPsno", "rglnWgt", "runStinFlorFr", "runStinFlorTo", "stinCd"],
-    },
-    {
-      sourceId: "kric-station-escalator",
-      endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
-      responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "updnDvNm"],
-    },
-    {
-      sourceId: "kric-wheelchair-lift-location",
-      endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftLocation",
-      responseFields: ["bndWgt", "dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "len", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "wd"],
-    },
-    {
-      sourceId: "kric-station-elevator-movement",
-      endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationElevatorMovement",
-      responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
-    },
-    {
-      sourceId: "kric-wheelchair-lift-movement",
-      endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftMovement",
-      responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
-    },
-  ];
-  const tuple = roster[0];
-  const seen = [];
-  const snapshots = await collectKricAccessibilitySnapshots({
-    roster: [tuple],
-    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
-    serviceKey: "super-secret",
-    now: new Date("2026-08-04T00:00:00.000Z"),
-    fetchImpl: async (url) => {
-      seen.push(`${url.pathname}/${url.searchParams.get("railOprIsttCd")}/${url.searchParams.get("lnCd")}/${url.searchParams.get("stinCd")}`);
-      const expected = expectedOperations.find(({ endpoint }) => new URL(endpoint).pathname === url.pathname);
-      return response(200, [Object.fromEntries(expected.responseFields.map((field) => [field, tuple[field] ?? field]))]);
-    },
-  });
-
-  assert.deepEqual(KRIC_APPROVED_ACCESSIBILITY_OPERATIONS, expectedOperations.map((operation) => ({
-    ...operation,
-    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
-  })));
-  assert.deepEqual(snapshots.map(({ sourceId, capturedAt }) => ({ sourceId, capturedAt })), expectedOperations.map(({ sourceId }) => ({
-    sourceId,
-    capturedAt: "2026-08-04T00:00:00.000Z",
-  })));
-  assert.deepEqual(seen, expectedOperations.map(({ endpoint }) => `${new URL(endpoint).pathname}/S1/2/202`));
-  assert.doesNotMatch(JSON.stringify(snapshots), /super-secret|serviceKey/);
-});
-
-test("승인 profile snapshot은 row tuple이 query와 다르면 내부 hash가 일치해도 거부한다", async () => {
-  const tuple = {
-    ...roster[0],
-    canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b", lineId: "line-2" }],
-  };
-  const [snapshot] = await collectKricAccessibilitySnapshots({
-    roster: [tuple],
-    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.slice(0, 1),
-    serviceKey: "super-secret",
-    fetchImpl: async () => response(200, [Object.fromEntries(
-      KRIC_APPROVED_ACCESSIBILITY_OPERATIONS[0].responseFields.map((field) => [field, tuple[field] ?? field]),
-    )]),
-  });
-  const tampered = structuredClone(snapshot);
-  tampered.queries[0].rows[0].stinCd = "999";
-  tampered.queries[0].providerRecordHash = hashForTest(tampered.queries[0].rows);
-  tampered.contentSha256 = hashForTest(tampered.queries.map(({ rawResponseSha256: _, ...query }) => query));
-
-  assert.throws(
-    () => validateKricAccessibilitySnapshotIdentity(tampered),
-    /KRIC accessibility snapshot identity is invalid/,
-  );
-});
-
-test("기본 다섯 operation 중간 실패는 부분 snapshot 없이 즉시 거부한다", async () => {
-  const tuple = roster[0];
-  const seen = [];
-  await assert.rejects(() => collectKricAccessibilitySnapshots({
-    roster: [tuple],
-    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
-    serviceKey: "super-secret",
-    fetchImpl: async (url) => {
-      const sourceId = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ endpoint }) => new URL(endpoint).pathname === url.pathname).sourceId;
-      seen.push(sourceId);
-      if (sourceId === "kric-station-escalator") throw new Error("timeout");
-      const operationForRequest = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ sourceId: id }) => id === sourceId);
-      return response(200, [Object.fromEntries(operationForRequest.responseFields.map((field) => [field, tuple[field] ?? field]))]);
-    },
-  }), /KRIC accessibility request failed: NETWORK_UNKNOWN: kric-station-escalator\/S1\/2\/202/);
-  assert.deepEqual(seen, [
-    "kric-station-elevator",
-    "kric-station-escalator",
-  ]);
 });
 
 test("canonical fixture와 official route roster를 station-line tuple로 결속한다", () => {
@@ -396,7 +295,7 @@ test("KRIC accessibility snapshot은 tuple을 정렬하고 present/explicit-zero
   ]);
   assert.equal(snapshots[0].capturedAt, "2026-07-28T00:00:00.000Z");
   assert.equal(snapshots[0].observedAt, "2026-07-28T00:00:00.000Z");
-  assert.equal(snapshots[0].snapshotId, "kric-station-elevator-20260728T000000000Z");
+  assert.equal(snapshots[0].snapshotId, "kric-station-convenience-standard-20260728T000000000Z");
   assert.match(snapshots[0].schemaFingerprint, /^[0-9a-f]{64}$/);
   assert.equal(snapshots[0].freshUntil, "2026-07-29T00:00:00.000Z");
   assert.doesNotMatch(JSON.stringify(snapshots), /super-secret|serviceKey/);
@@ -492,7 +391,7 @@ test("provider result 실패는 exact tuple만 진단한다", async () => {
     }),
   }), {
     name: "Error",
-    message: "KRIC accessibility provider gaps: count=1; tuples=kric-station-elevator/S1/2/202/03",
+    message: "KRIC accessibility provider gaps: count=1; tuples=kric-station-convenience-standard/S1/2/202/03",
   });
 });
 
@@ -512,25 +411,9 @@ test("provider 03은 전체 safe tuple을 모은 뒤 fail closed한다", async (
     },
   }), {
     name: "Error",
-    message: "KRIC accessibility provider gaps: count=2; tuples=kric-station-elevator/S1/1/101/03,kric-station-elevator/S1/2/202/03",
+    message: "KRIC accessibility provider gaps: count=2; tuples=kric-station-convenience-standard/S1/1/101/03,kric-station-convenience-standard/S1/2/202/03",
   });
   assert.equal(calls, 2);
-});
-
-test("provider tuple probe는 resultCode 03에서 controlled empty response로 실패한다", async () => {
-  await assert.rejects(() => collectKricAccessibilityProviderTupleEvidence({
-    tuples: [{ ...roster[0], stationName: "테스트역" }],
-    operations: [operation],
-    serviceKey: "key",
-    fetchImpl: async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ header: { resultCode: "03" } }),
-    }),
-  }), {
-    name: "Error",
-    message: "KRIC provider tuple probe empty response: kric-station-elevator/S1/2/202",
-  });
 });
 
 test("standard observation은 exact S1/2/234-4의 단일 03을 raw와 함께 terminal mixed snapshot으로 보존한다", async () => {
@@ -663,7 +546,7 @@ test("일시 오류(전송 오류·503)가 끝까지 이어지면 첫 시도 + 2
         if (failure instanceof Error) throw failure;
         return failure;
       },
-    }), /KRIC accessibility (request failed: NETWORK_TIMEOUT|HTTP 503): kric-station-elevator\/S1\/2\/202/);
+    }), /KRIC accessibility (request failed: NETWORK_TIMEOUT|HTTP 503): kric-station-convenience-standard\/S1\/2\/202/);
     assert.equal(calls, 3);
     assert.deepEqual(delays, [], "요청 간격 pacing은 논리 요청 하나에 한 번이다");
     assert.deepEqual(retryWaits, [1_000, 2_000]);
@@ -706,8 +589,8 @@ test("인증·형식 오류는 재시도하지 않는다(HTTP 401·403·501, 잘
     [() => response(403, []), /KRIC accessibility HTTP 403/],
     [() => response(501, []), /KRIC accessibility HTTP 501/],
     [() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError("malformed provider JSON"); } }), /KRIC accessibility schema invalid/],
-    [() => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "99" }, body: [] }) }), /provider result invalid: kric-station-elevator\/S1\/2\/202\/99/],
-    [() => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "22" }, body: [] }) }), /provider result invalid: kric-station-elevator\/S1\/2\/202\/22/],
+    [() => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "99" }, body: [] }) }), /provider result invalid: kric-station-convenience-standard\/S1\/2\/202\/99/],
+    [() => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "22" }, body: [] }) }), /provider result invalid: kric-station-convenience-standard\/S1\/2\/202\/22/],
   ];
   for (const [respond, expectation] of cases) {
     let calls = 0;
@@ -730,7 +613,7 @@ test("재시도 대기 예산을 넘기면 마지막 전송 오류 분류로 실
     retryBudget: createTransientRetryBudget(2_500),
     retryRandomImpl: () => 0.5,
     fetchImpl: async () => { calls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
-  }), { message: "KRIC accessibility request failed: NETWORK_SOCKET: kric-station-elevator/S1/2/202" });
+  }), { message: "KRIC accessibility request failed: NETWORK_SOCKET: kric-station-convenience-standard/S1/2/202" });
   assert.equal(calls, 2);
   assert.deepEqual(waits, [1_000]);
 });
@@ -744,7 +627,7 @@ test("transport 실패는 한 번 요청 후 fail closed다", async () => {
     fetchImpl: async () => { calls += 1; throw new Error("timeout"); },
   }), {
     name: "Error",
-    message: "KRIC accessibility request failed: NETWORK_UNKNOWN: kric-station-elevator/S1/2/202",
+    message: "KRIC accessibility request failed: NETWORK_UNKNOWN: kric-station-convenience-standard/S1/2/202",
   });
   assert.equal(calls, 1);
 });
@@ -773,7 +656,7 @@ test("transport 실패는 bounded cause에서 비밀 없는 closed 원인만 분
     }), (error) => {
       assert.equal(
         error.message,
-        `KRIC accessibility request failed: ${classification}: kric-station-elevator/S1/2/202`,
+        `KRIC accessibility request failed: ${classification}: kric-station-convenience-standard/S1/2/202`,
       );
       assert.doesNotMatch(error.message, new RegExp(secret));
       return true;
@@ -795,7 +678,7 @@ test("response body transport 실패만 closed network 원인으로 분류한다
     }),
   }), {
     name: "Error",
-    message: "KRIC accessibility request failed: NETWORK_TIMEOUT: kric-station-elevator/S1/2/202",
+    message: "KRIC accessibility request failed: NETWORK_TIMEOUT: kric-station-convenience-standard/S1/2/202",
   });
 
   await assert.rejects(() => collectKricAccessibilitySnapshots({
@@ -807,7 +690,7 @@ test("response body transport 실패만 closed network 원인으로 분류한다
       status: 200,
       json: async () => { throw new SyntaxError("malformed provider JSON"); },
     }),
-  }), /KRIC accessibility schema invalid: kric-station-elevator\/S1\/2\/202/);
+  }), /KRIC accessibility schema invalid: kric-station-convenience-standard\/S1\/2\/202/);
 });
 
 test("standard observation은 snapshot과 canonical raw inventory를 absent directory에 함께 게시한다", async (t) => {
@@ -915,7 +798,7 @@ test("HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP �
     roster: roster.slice(0, 1), operations: [operation], serviceKey: "key",
     retrySleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), retryRandomImpl: () => 0.5,
     fetchImpl: async () => { calls += 1; return response(503, []); },
-  }), { message: "KRIC accessibility HTTP 503: kric-station-elevator/S1/2/202" });
+  }), { message: "KRIC accessibility HTTP 503: kric-station-convenience-standard/S1/2/202" });
   assert.equal(calls, 2);
 });
 

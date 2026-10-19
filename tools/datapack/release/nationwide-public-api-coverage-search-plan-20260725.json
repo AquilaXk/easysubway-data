@@ -1625,11 +1625,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -3390,11 +3385,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -5911,11 +5901,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -7221,11 +7206,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -8909,11 +8889,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -10525,11 +10500,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -11949,11 +11919,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -13370,11 +13335,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -14791,11 +14751,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -16295,11 +16250,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -18143,11 +18093,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -19679,11 +19624,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -20989,11 +20929,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -22493,11 +22428,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -24114,11 +24044,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -25573,11 +25498,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -26883,11 +26803,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -28225,11 +28140,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -29618,11 +29528,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -31077,11 +30982,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -32308,11 +32208,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -33618,11 +33513,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -34960,11 +34850,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -36658,11 +36543,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -38507,11 +38387,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -39739,11 +39614,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -40971,11 +40841,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -42282,11 +42147,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -43625,11 +43485,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -44857,11 +44712,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -46089,11 +45939,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -47483,11 +47328,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],
@@ -49597,11 +49437,6 @@
       "userMessageKo": "공공기관 API에서 교통약자 시설 정보를 제공하지 않습니다.",
       "knownProviderCandidateIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator",
-        "kric-station-elevator-movement",
-        "kric-station-escalator",
-        "kric-wheelchair-lift-location",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "seoul-metro-facility-location"
       ],

@@ -3,33 +3,79 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
-import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
+import { buildAppendOnlyGovernancePolicyRegistration, buildGovernancePolicyRetirement, deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { requiredUtcInstant } from "../lib/utc-instant.mjs";
 import { sha256 } from "../../lib/hash.mjs";
 
-// 실제 이력 결속을 유지하면서 테스트 대상 source만 아직 등록되지 않은 상태로 만든다.
-export function governanceBeforeSource(current, sourceId) {
-  const batches = [];
+// 최신 lineage 단계 직전의 정책과 원문 bytes다. 등록 단계는 추가분(additions)을, 퇴역 단계는 퇴역 id(retiredSourceIds)를 돌려준다.
+// 퇴역 단계는 기록된 위치에 퇴역 원문을 되돌려 재구성한다.
+export function governanceBeforeLatestStep(policy) {
+  const lineage = policy.registrationLineage;
+  assert.ok(lineage, "test policy must belong to append-only registration lineage");
+  const retiredSourceIds = lineage.retiredSourceIds ?? [];
+  const additions = retiredSourceIds.length > 0 ? [] : policy.sources.filter(row => lineage.addedSourceIds.includes(row.sourceId));
+  const sources = policy.sources.filter(row => !additions.includes(row));
+  for (const { position, source } of lineage.retiredSources ?? []) sources.splice(position, 0, source);
+  const predecessor = { ...policy, sources };
+  if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
+  else predecessor.registrationLineage = lineage.predecessorLineage;
+  const bytes = lineage.predecessorPolicyText === null
+    ? Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`) : Buffer.from(lineage.predecessorPolicyText);
+  assert.equal(sha256(bytes), lineage.predecessorPolicySha256);
+  return { policy: JSON.parse(bytes), bytes, additions, retiredSourceIds };
+}
+
+// 퇴역 단계 위에 쌓인 정책을 퇴역 직전 정책으로 되돌린다. 등록 단계 자체를 검증하는 테스트가 쓴다.
+export function governanceBeforeRetirements(current) {
   let policy = structuredClone(current);
-  while (policy.sources.some(row => row.sourceId === sourceId)) {
-    const lineage = policy.registrationLineage;
-    assert.ok(lineage, "test source must belong to append-only registration lineage");
-    const additions = policy.sources.filter(row => lineage.addedSourceIds.includes(row.sourceId));
-    batches.unshift(additions.filter(row => row.sourceId !== sourceId));
-    const predecessor = { ...policy, sources: policy.sources.filter(row => !lineage.addedSourceIds.includes(row.sourceId)) };
-    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
-    else predecessor.registrationLineage = lineage.predecessorLineage;
-    const bytes = lineage.predecessorPolicyText === null
-      ? Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`) : Buffer.from(lineage.predecessorPolicyText);
-    assert.equal(sha256(bytes), lineage.predecessorPolicySha256);
-    policy = JSON.parse(bytes);
-  }
-  for (const addedSources of batches.filter(rows => rows.length > 0)) {
-    policy = buildAppendOnlyGovernancePolicyRegistration({
-      predecessorPolicyBytes: Buffer.from(`${JSON.stringify(policy, null, 2)}\n`), addedSources,
-    }).policy;
-  }
+  while (policy.registrationLineage?.retiredSourceIds !== undefined) policy = governanceBeforeLatestStep(policy).policy;
   return policy;
+}
+
+// 대상 source가 사라질 때까지 최신 단계부터 되감는다. steps는 오래된 단계가 앞에 오는 시간순이고,
+// base는 되감은 정책과 그 원문 bytes다(닫힌 epoch 루트는 원문 bytes가 곧 증거다).
+function rewindUntilSourceAbsent(current, sourceId) {
+  const steps = [];
+  let base = { policy: structuredClone(current), bytes: Buffer.from(`${JSON.stringify(current, null, 2)}\n`) };
+  while (base.policy.sources.some(row => row.sourceId === sourceId)) {
+    const step = governanceBeforeLatestStep(base.policy);
+    steps.unshift(step);
+    base = { policy: step.policy, bytes: step.bytes };
+  }
+  return { base, steps };
+}
+
+function applyStep({ bytes: predecessorPolicyBytes }, { additions, retiredSourceIds }) {
+  if (retiredSourceIds.length > 0) return buildGovernancePolicyRetirement({ predecessorPolicyBytes, retiredSourceIds });
+  return buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes, addedSources: additions });
+}
+
+// 실제 이력 결속을 유지하면서 테스트 대상 source만 아직 등록되지 않은 상태로 만든다.
+// 대상 등록 이후의 등록과 퇴역은 같은 순서로 다시 적용해 현재 정책의 활성 원천 집합을 보존한다.
+export function governanceBeforeSource(current, sourceId) {
+  const { base, steps } = rewindUntilSourceAbsent(current, sourceId);
+  return steps.reduce((rewound, step) => {
+    const additions = step.additions.filter(row => row.sourceId !== sourceId);
+    return additions.length === 0 && step.retiredSourceIds.length === 0 ? rewound : applyStep(rewound, { ...step, additions });
+  }, base).policy;
+}
+
+// 대상 source의 등록과 그 이후 등록을 모두 되감고, 이후 퇴역만 남은 활성 원천에 다시 적용한다.
+// targetStepSourceIds는 대상과 같은 단계에 등록된 id, registeredSourceIds는 되감은 모든 등록 id다.
+export function governanceBeforeRegistration(current, sourceId) {
+  const { base, steps } = rewindUntilSourceAbsent(current, sourceId);
+  const rewound = steps.reduce((state, step) => {
+    const active = new Set(state.policy.sources.map(row => row.sourceId));
+    const retiredSourceIds = step.retiredSourceIds.filter(id => active.has(id));
+    return retiredSourceIds.length === 0 ? state : applyStep(state, { additions: [], retiredSourceIds });
+  }, base);
+  const registered = steps.map(step => step.additions.map(row => row.sourceId));
+  return {
+    policy: rewound.policy,
+    bytes: Buffer.from(rewound.bytes),
+    registeredSourceIds: registered.flat(),
+    targetStepSourceIds: registered[0],
+  };
 }
 
 const REQUIRED_PROVENANCE_FIELDS = [

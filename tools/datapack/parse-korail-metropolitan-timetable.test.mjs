@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { collectKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { collectKorailMetropolitanTimetableFile } from "./collect-korail-metropolitan-timetable-file.mjs";
+import { governanceBeforeRegistration } from "./test-fixtures/independent-source-governance.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { buildKorailTopologyRegistrationOutputs, commitKorailTopologyRegistrationOutputs } from "./register-korail-route-topology.mjs";
 import { runKorailTopologyRegistration } from "./run-korail-route-topology-registration.mjs";
@@ -87,25 +88,6 @@ test("canonical join preserves IDs and rejects ambiguous names and inconsistent 
   assert.throws(() => bind({ orders: [{ stations: [members[0], members[2], members[1]] }] }));
   assert.throws(() => bind({ orders: [{ stations: members.slice(1) }] }));
 });
-
-// 등록 이력에 이미 결속된 prestate를 읽는다. 운영 정책을 수정하거나 날짜를 되돌리지 않는다.
-function registrationPrestate(bytes, sourceId) {
-  let policy = JSON.parse(bytes);
-  while (policy.sources.some((source) => source.sourceId === sourceId)) {
-    const lineage = policy.registrationLineage;
-    assert.ok(lineage?.addedSourceIds.length > 0, "first registration requires a recorded predecessor");
-    assert.deepEqual(policy.sources.slice(-lineage.addedSourceIds.length).map((source) => source.sourceId),
-      lineage.addedSourceIds);
-    const predecessor = { ...policy, sources: policy.sources.slice(0, -lineage.addedSourceIds.length) };
-    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
-    else predecessor.registrationLineage = lineage.predecessorLineage;
-    bytes = Buffer.from(lineage.predecessorPolicyText ?? `${JSON.stringify(predecessor, null, 2)}\n`);
-    assert.equal(hash(bytes), lineage.predecessorPolicySha256);
-    assert.deepEqual(JSON.parse(bytes), predecessor);
-    policy = predecessor;
-  }
-  return bytes;
-}
 
 test("retained XLSX parsing binds exact bytes and keeps native sparse row coordinates", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "korail-workbook-test-"));
@@ -204,8 +186,9 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
         licenseEvidenceUrl: "https://www.data.go.kr/data/15052169/fileData.do" } };
     const unregisteredPolicy = { ...baseFreshness, sourceClasses: [...fixtureClasses,
       { ...freshnessPolicy.sourceClasses.at(-1), sourceIds: [] }] };
-    const governancePolicyBytes = registrationPrestate(
-      await readFile(new URL("./source-governance-policy.json", import.meta.url)), receipt.sourceId,
+    // 등록 이력에 결속된 prestate다. 운영 정책을 수정하거나 날짜를 되돌리지 않는다.
+    const { bytes: governancePolicyBytes } = governanceBeforeRegistration(
+      JSON.parse(await readFile(new URL("./source-governance-policy.json", import.meta.url))), receipt.sourceId,
     );
     const fixtureSourceIds = new Set(JSON.parse(governancePolicyBytes).sources.map(({ sourceId }) => sourceId));
     const inventory = JSON.parse(await readFile(new URL("./source-inventory.json", import.meta.url)));

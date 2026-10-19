@@ -6,6 +6,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { BUILTIN_KNOWN_PROVIDER_CANDIDATES } from "./collect-nationwide-public-api-coverage.mjs";
+import { RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS } from "./lib/retired-sources.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -26,6 +28,26 @@ function assertTrackedFollowup(requirement, ownerRules) {
   assert.equal(owners.length, 1, `${requirementKey(requirement)}: missing or ambiguous owner`);
   assert.ok(Number.isInteger(owners[0].issue) && owners[0].issue > 0, "invalid owner issue");
 }
+
+// 검색 계획과 결과가 이름 붙이는 후보 provider는 지금 존재하는 후보여야 한다. 퇴역한 원천이 근거처럼 읽히면 안 된다.
+test("검색 계획과 결과의 provider 후보 id는 현행 source candidate이거나 내장 후보다", async () => {
+  const [plan, resolutions, candidates] = await Promise.all([
+    readFile(path.join(root, planPath), "utf8").then(JSON.parse),
+    readFile(path.join(root, resolutionsPath), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
+  ]);
+  const known = new Set([
+    ...candidates.candidates.map(({ id }) => id),
+    ...Object.values(BUILTIN_KNOWN_PROVIDER_CANDIDATES).flat().map(({ id }) => id),
+  ]);
+  const named = [
+    ...plan.entries.flatMap(({ knownProviderCandidateIds }) => knownProviderCandidateIds),
+    ...resolutions.unresolved.flatMap(({ providerCandidateIds = [] }) => providerCandidateIds),
+  ];
+  assert.ok(named.length > 0);
+  assert.deepEqual([...new Set(named)].filter((id) => !known.has(id)), []);
+  assert.deepEqual(named.filter((id) => RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS.includes(id)), []);
+});
 
 test("과거 검색 밖의 결측은 유일한 현행 담당 이슈가 있어야 한다", () => {
   const row = { regionId: "region", operatorId: "operator", lineId: "line", sourceDomain: "map" };
