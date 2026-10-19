@@ -8,7 +8,9 @@
 // 이 도구는 대상 workflow마다 main의 가장 최근 정기·dispatch run을 보고 아래를 모두 만족할 때만 `github.token`으로 dispatch한다.
 //   1. 그 run이 끝났고 success이며, job의 note step이 실행됐다(= 그 run이 쓰지 않고 끝났다): BLOCKED_BY_PENDING_PR의 "waiting" note,
 //      그리고 재확인·재결속이 push 직전 재확인에서 새 원장 쓰기 자동화를 만나거나 main이 움직여 올리지 않고 끝난 "superseded" note(같은 슬롯 손실이다).
-//   2. 지금 차단 대상이 없다. 판정 도구와 같은 함수(pendingLedgerWriters·pendingLedgerWriterPullRequests)로 다시 계산하므로
+//   2. 그 run 뒤에 같은 workflow가 main에서 막히지 않고 끝난 success run(push 포함)이 없다: 있으면 막힘은 이미 해소됐다(SUPERSEDED_BY_SUCCESS).
+//      conclusion만으로는 막힌 run과 구분되지 않아 같은 note step 판정으로 가른다. 읽지 못하면 해소로 보지 않고 resolution: UNDETERMINED로 남긴다.
+//   3. 지금 차단 대상이 없다. 판정 도구와 같은 함수(pendingLedgerWriters·pendingLedgerWriterPullRequests)로 다시 계산하므로
 //      "차단 PR이 병합되거나 닫힘"은 "차단 대상이 비었음"과 같다. 또 막히면 재dispatch된 run이 다시 막힌 run이 되어 같은 절차를 탄다.
 // 직렬화는 바꾸지 않는다: 재dispatch된 workflow는 자기 decision 단계에서 다시 판정한다.
 //
@@ -40,6 +42,8 @@ const RUN_LIST_LIMIT = 100;
 const OBSERVE_POLLS = 5;
 const OBSERVE_INTERVAL_MS = 3_000;
 const SCHEDULED_EVENTS = new Set(["schedule", "workflow_dispatch"]);
+// 막힘이 풀렸는지 볼 때만 push run도 본다: 재결속·재확인은 main push로도 돌아 막힌 run 뒤에 쓰기를 마칠 수 있다. 대상 선정·상한에는 쓰지 않는다.
+const RESOLVING_EVENTS = new Set([...SCHEDULED_EVENTS, "push"]);
 
 /**
  * 재dispatch 대상. 순서가 우선순위다(만료 위험이 큰 순서):
@@ -89,11 +93,11 @@ function pendingFor({ workflow, blockers }, { pullRequests, automationBranches, 
   return [...pending.pullRequests, ...pending.branches];
 }
 
-async function listRuns(api, repository, workflow) {
+async function listRuns(api, repository, workflow, events = SCHEDULED_EVENTS) {
   const listing = await api(`repos/${repository}/actions/workflows/${workflow}/runs?branch=${MAIN}&per_page=${RUN_LIST_LIMIT}`);
   if (!Array.isArray(listing?.workflow_runs)) fail("REDISPATCH_RUNS_INVALID", workflow);
   return listing.workflow_runs
-    .filter((item) => item?.head_branch === MAIN && SCHEDULED_EVENTS.has(item.event))
+    .filter((item) => item?.head_branch === MAIN && events.has(item.event))
     .map((item) => {
       if (!Number.isSafeInteger(item.id) || typeof item.status !== "string") fail("REDISPATCH_RUNS_INVALID", `${workflow} run ${String(item.id)}`);
       return { id: item.id, event: item.event, status: item.status, conclusion: item.conclusion ?? null, actor: item.actor?.login ?? null, createdAt: instant(item.created_at, "REDISPATCH_RUNS_INVALID") };
@@ -106,6 +110,22 @@ async function endedBlocked(api, repository, runId, noteSteps) {
   const listing = await api(`repos/${repository}/actions/runs/${runId}/jobs?per_page=100`);
   if (!Array.isArray(listing?.jobs)) fail("REDISPATCH_JOBS_INVALID", `run ${runId}`);
   return listing.jobs.some((job) => Array.isArray(job?.steps) && job.steps.some((step) => noteSteps.includes(step?.name) && step.conclusion === "success"));
+}
+
+/**
+ * 막힌 run 뒤에 같은 workflow가 main에서 쓰기를 마친 run(success이고 note step이 없는 run)을 찾는다. conclusion만으로는 모자란다:
+ * 막힌 run도 success로 끝나므로 note step으로 다시 가른다. 읽지 못하면 해소로 보지 않고 판정 불가를 돌려준다(대상에서 빼지 않는다).
+ */
+async function findResolvingRun(api, repository, target, blocked, blockedRun) {
+  const later = (await listRuns(api, repository, target.workflow, RESOLVING_EVENTS)).filter(({ status, conclusion, createdAt }) => status === "completed" && conclusion === "success" && createdAt > blocked.createdAt);
+  try {
+    for (const candidate of later) {
+      if (!(await blockedRun(target, candidate.id))) return { resolvedBy: candidate.id }; // NOSONAR -- 새 run부터 순서대로 읽는다
+    }
+  } catch (error) {
+    return { undetermined: error instanceof Error ? error.message : String(error) };
+  }
+  return {};
 }
 
 async function dispatchAndObserve({ workflow, before, repository, api, dispatchWorkflow, sleep, log }) {
@@ -156,10 +176,18 @@ export async function runRedispatch({
       results.push({ workflow, action: "SKIP", reason: "LATEST_NOT_BLOCKED" });
       continue;
     }
+    const { resolvedBy, undetermined } = await findResolvingRun(api, repository, target, latest, blockedRun); // NOSONAR -- 위와 같다
+    if (resolvedBy !== undefined) {
+      log(`${workflow}: run ${latest.id} ended blocked but run ${resolvedBy} finished after it without being blocked`);
+      results.push({ workflow, action: "SKIP", reason: "SUPERSEDED_BY_SUCCESS", supersededBy: resolvedBy });
+      continue;
+    }
+    const resolution = undetermined === undefined ? {} : { resolution: "UNDETERMINED" };
+    if (undetermined !== undefined) log(`::warning title=Blocked redispatch::${workflow}: could not tell whether a later run resolved blocked run ${latest.id} (${undetermined})`);
     const blockedBy = pendingFor(target, { pullRequests, automationBranches, repository });
     if (blockedBy.length > 0) {
       log(`${workflow}: run ${latest.id} ended without writing and is still waiting for ${blockedBy.join(", ")}`);
-      results.push({ workflow, action: "WAIT", blockedBy });
+      results.push({ workflow, action: "WAIT", blockedBy, ...resolution });
       continue;
     }
     // 상한: 막힌 run 바로 뒤에 github-actions[bot]이 dispatch한 run만 센다(막힘 -> 재dispatch -> 막힘 루프).
@@ -171,10 +199,10 @@ export async function runRedispatch({
     }
     if (recent >= REDISPATCH_DAILY_LIMIT) {
       limited.push(`${workflow} was already redispatched ${recent} time(s) after a blocked run in the last 24h (limit ${REDISPATCH_DAILY_LIMIT}) and run ${latest.id} ended blocked again`);
-      results.push({ workflow, action: "LIMIT", count: recent });
+      results.push({ workflow, action: "LIMIT", count: recent, ...resolution });
       continue;
     }
-    results.push({ workflow, action: "DISPATCH", blockedRunId: latest.id, runs });
+    results.push({ workflow, action: "DISPATCH", blockedRunId: latest.id, ...resolution, runs });
     candidates.push(workflow);
   }
   // 한 sweep에 쓰기 workflow는 최대 하나만 깨운다. 진행 중인 대상 run이 있으면 아무것도 깨우지 않는다.

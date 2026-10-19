@@ -426,3 +426,75 @@ test("대상 표는 workflow 파일의 note step과 판정 도구가 쓰는 차�
     assert.equal(yml.split("outputs.state == 'BLOCKED_BY_PENDING_PR'").length - 1, 1, `${workflow}: a single BLOCKED_BY_PENDING_PR consumer`);
   }
 });
+
+// 실제 사례(2026-10-19, 실패 이슈 #1355): 재결속 run 39182039810(00:43Z dispatch)이 topology PR #1352에 막혔고, 그 PR 병합 뒤 push run이 정상으로 돌았는데도
+// push 이벤트를 보지 않아 막힌 run이 계속 대상으로 남았다. 막힌 run 뒤에 같은 workflow가 main에서 쓰기를 마친(막히지 않은) run은 막힘이 해소된 것이다.
+const REBINDING_BLOCKED_RUN = 39182039810;
+const rebindingBlocked = run(REBINDING_BLOCKED_RUN, "2026-10-19T00:43:00Z");
+const afterBlocked = (id, createdAt, options) => run(id, createdAt, { event: "push", actor: "AquilaXk", ...options });
+const redispatchedAfterBlock = (id, createdAt) => run(id, createdAt, { actor: REDISPATCH_ACTOR });
+const blockedJobs = jobsWith(REBINDING, { blocked: true });
+const workedJobs = jobsWith(REBINDING, { blocked: false });
+
+const SUPERSEDE_CASES = [
+  {
+    name: "막힌 run 뒤에 push run이 막히지 않고 끝났으면 대상에서 뺀다(dispatch하지 않고 해소한 run을 남긴다)",
+    runs: [afterBlocked(39185256501, "2026-10-19T01:25:00Z"), afterBlocked(39184193471, "2026-10-19T01:11:00Z"), rebindingBlocked],
+    jobs: { 39185256501: workedJobs, 39184193471: workedJobs },
+    expected: { workflow: REBINDING, action: "SKIP", reason: "SUPERSEDED_BY_SUCCESS", supersededBy: 39185256501 },
+  },
+  {
+    name: "막힌 run 뒤에 run이 없으면 대상이다",
+    runs: [rebindingBlocked],
+    jobs: {},
+    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN },
+  },
+  {
+    name: "막힌 run 뒤의 run이 다시 막혔으면(conclusion은 success) 해소가 아니다: 대상으로 남는다",
+    runs: [afterBlocked(39184193471, "2026-10-19T01:11:00Z"), rebindingBlocked],
+    jobs: { 39184193471: blockedJobs },
+    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN },
+  },
+  {
+    name: "막힌 run 뒤의 run이 실패했거나 아직 진행 중이면 해소가 아니다",
+    runs: [afterBlocked(39185256501, "2026-10-19T01:25:00Z", { conclusion: "failure" }), afterBlocked(39184193471, "2026-10-19T01:11:00Z", { conclusion: "cancelled" }), rebindingBlocked],
+    jobs: {},
+    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN },
+  },
+  {
+    name: "막힌 run보다 앞선 성공 run은 해소로 보지 않는다",
+    runs: [rebindingBlocked, afterBlocked(39180000000, "2026-10-19T00:10:00Z")],
+    jobs: { 39180000000: workedJobs },
+    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN },
+  },
+  {
+    name: "해소 여부를 읽지 못하면(job 조회 오류) 대상에서 빼지 않고 판정 불가를 명시한 채 대상으로 남긴다",
+    runs: [afterBlocked(39185256501, "2026-10-19T01:25:00Z"), rebindingBlocked],
+    jobs: {},
+    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN, resolution: "UNDETERMINED" },
+  },
+];
+
+for (const { name, runs, jobs, expected } of SUPERSEDE_CASES) {
+  test(`막힌 run의 해소: ${name}`, async () => {
+    const { state, input } = fixture({ runs: { [REBINDING]: runs }, jobs: { [REBINDING_BLOCKED_RUN]: blockedJobs, ...jobs } });
+    const result = await runRedispatch(input);
+    assert.deepEqual(result.find(({ workflow }) => workflow === REBINDING), expected);
+    assert.deepEqual(state.dispatched, expected.action === "DISPATCH" ? [REBINDING] : []);
+  });
+}
+
+test("막힌 run 뒤에 해소됐다면 상한에 닿았어도 실패하지 않고, 해소되지 않았다면 상한에서 실패한다", async () => {
+  const loop = [
+    redispatchedAfterBlock(9303, "2026-10-19T01:40:00Z"),
+    redispatchedAfterBlock(9302, "2026-10-19T01:30:00Z"),
+    redispatchedAfterBlock(9301, "2026-10-19T01:20:00Z"),
+    rebindingBlocked,
+  ];
+  const loopJobs = { 9303: blockedJobs, 9302: blockedJobs, 9301: blockedJobs, [REBINDING_BLOCKED_RUN]: blockedJobs };
+  const resolved = fixture({ runs: { [REBINDING]: [afterBlocked(9304, "2026-10-19T01:50:00Z"), ...loop] }, jobs: { ...loopJobs, 9304: workedJobs } });
+  assert.equal((await runRedispatch(resolved.input)).find(({ workflow }) => workflow === REBINDING).reason, "SUPERSEDED_BY_SUCCESS");
+  const stillBlocked = fixture({ runs: { [REBINDING]: [afterBlocked(9304, "2026-10-19T01:50:00Z"), ...loop] }, jobs: { ...loopJobs, 9304: blockedJobs } });
+  await assert.rejects(runRedispatch(stillBlocked.input), /REDISPATCH_LIMIT: source-derivative-rebinding\.yml/u);
+  assert.deepEqual(stillBlocked.state.dispatched, []);
+});
