@@ -12,8 +12,8 @@ function stepBody(name) {
   return yml.slice(begin, end === -1 ? yml.length : end);
 }
 
-test("게시는 15분 정기 실행과 발행·RC 체인 완료, 사람 dispatch에서만 시작한다", () => {
-  assert.match(yml, /^on:\n  schedule:\n    - cron: "7,22,37,52 \* \* \* \*"\n  workflow_run:\n    workflows: \["Data Pack Release Cross-Repository Chain", "Data Pack Release Candidate Chain"\]\n    types: \[completed\]\n  workflow_dispatch:\n/mu);
+test("게시는 매시 정기 실행과 발행·RC 체인 완료, 사람 dispatch에서만 시작한다", () => {
+  assert.match(yml, /^on:\n  schedule:\n    - cron: "7 \* \* \* \*"\n  workflow_run:\n    workflows: \["Data Pack Release Cross-Repository Chain", "Data Pack Release Candidate Chain"\]\n    types: \[completed\]\n  workflow_dispatch:\n/mu);
   assert.doesNotMatch(yml, /\n  (push|pull_request|pull_request_target):/u);
   assert.match(yml, /\npermissions: \{\}\n/u);
   assert.deepEqual(yml.split("\n").filter((line) => line.startsWith("    if: ")), [

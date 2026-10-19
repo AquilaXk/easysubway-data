@@ -187,6 +187,7 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
   const actual = JSON.parse(readFileSync(path.join(root, "release/product-gates/external-scheduler-heartbeat.json"), "utf8"));
   validateHeartbeatPolicy(actual);
   assert.deepEqual(actual.workflows.map(({ workflow }) => workflow), [
+    "automation-status-publish.yml",
     "current-capital-topology-refresh.yml",
     "current-capital-topology-registration.yml",
     "datapack-expiry-alert.yml",
@@ -211,6 +212,7 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
   // 여기서 cron을 바꾸면 그 계약의 주기와 분도 같이 바꿔야 한다(AquilaXk/easysubway-platform#258).
   const DATAPACK_EXPIRY = "datapack-expiry-alert.yml";
   const SUB_DAILY = [
+    { workflow: "automation-status-publish.yml", cadenceHours: 1, cron: "7 * * * *" },
     { workflow: "current-capital-topology-refresh.yml", cadenceHours: 2, cron: "47 */2 * * *" },
     { workflow: "current-capital-topology-registration.yml", cadenceHours: 2, cron: "5 */2 * * *" },
     { workflow: DATAPACK_EXPIRY, runName: "Data Pack Expiry Alert (datapack-expiry)", cadenceHours: 4, cron: "23 */4 * * *" },
