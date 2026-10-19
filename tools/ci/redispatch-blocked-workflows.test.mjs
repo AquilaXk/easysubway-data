@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { RECOVERY_PROOF } from "./close-recovered-failure-issues.mjs";
+
 import {
   REDISPATCH_ACTOR,
   REDISPATCH_DAILY_LIMIT,
@@ -428,73 +430,139 @@ test("대상 표는 workflow 파일의 note step과 판정 도구가 쓰는 차�
 });
 
 // 실제 사례(2026-10-19, 실패 이슈 #1355): 재결속 run 39182039810(00:43Z dispatch)이 topology PR #1352에 막혔고, 그 PR 병합 뒤 push run이 정상으로 돌았는데도
-// push 이벤트를 보지 않아 막힌 run이 계속 대상으로 남았다. 막힌 run 뒤에 같은 workflow가 main에서 쓰기를 마친(막히지 않은) run은 막힘이 해소된 것이다.
-const REBINDING_BLOCKED_RUN = 39182039810;
-const rebindingBlocked = run(REBINDING_BLOCKED_RUN, "2026-10-19T00:43:00Z");
-const afterBlocked = (id, createdAt, options) => run(id, createdAt, { event: "push", actor: "AquilaXk", ...options });
-const redispatchedAfterBlock = (id, createdAt) => run(id, createdAt, { actor: REDISPATCH_ACTOR });
-const blockedJobs = jobsWith(REBINDING, { blocked: true });
-const workedJobs = jobsWith(REBINDING, { blocked: false });
+// push 이벤트를 보지 않아 막힌 run이 계속 대상으로 남았다. 해소는 "note step이 없다"가 아니라 workflow별 증명 step이 success라는 긍정 증거로만 인정한다.
+const BLOCKED_AT = "2026-10-19T00:43:00Z";
+const LATER = "2026-10-19T01:25:00Z";
+const TRANSIENT = new Error("gh api failed: HTTP 502: Bad Gateway");
+const targetOf = (workflow) => REDISPATCH_TARGETS.find((target) => target.workflow === workflow);
+const stepsJob = (names) => ({ jobs: [{ id: 1, steps: names.map((name) => ({ name, conclusion: "success" })) }] });
+const blockedAfter = (workflow) => stepsJob(["Decide", NOTE_STEPS[workflow][0]]);
+// 이 workflow에서 일을 마쳤다고 인정하는 증명 대안들: 전달 step(RECOVERY_PROOF)과 "할 일 없음" step.
+const proofsOf = (workflow) => [...RECOVERY_PROOF[workflow], ...targetOf(workflow).noWorkSteps.map((name) => [name])];
+// 증명 없이 success로 끝나는 종료: 열린 PR 대기, 실행 중인 producer 대기(claim) 등. note step도 증명 step도 없다.
+const NO_PROOF_ENDINGS = {
+  "itx-current-promotion.yml": ["Mint App token for the open refresh pull request", "Ensure required CI on the open refresh pull request"],
+  "source-reverification.yml": ["Note reverification waiting on a running producer", "Note recipes skipped because of an open expectation-change failure issue"],
+  "current-capital-topology-registration.yml": ["Note registration waiting on a running producer", "Ensure required CI on the open refresh pull request"],
+  "source-derivative-rebinding.yml": ["Mint App token for the open refresh pull request", "Ensure required CI on the open refresh pull request"],
+};
 
-const SUPERSEDE_CASES = [
-  {
-    name: "막힌 run 뒤에 push run이 막히지 않고 끝났으면 대상에서 뺀다(dispatch하지 않고 해소한 run을 남긴다)",
-    runs: [afterBlocked(39185256501, "2026-10-19T01:25:00Z"), afterBlocked(39184193471, "2026-10-19T01:11:00Z"), rebindingBlocked],
-    jobs: { 39185256501: workedJobs, 39184193471: workedJobs },
-    expected: { workflow: REBINDING, action: "SKIP", reason: "SUPERSEDED_BY_SUCCESS", supersededBy: 39185256501 },
-  },
-  {
-    name: "막힌 run 뒤에 run이 없으면 대상이다",
-    runs: [rebindingBlocked],
-    jobs: {},
-    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN },
-  },
-  {
-    name: "막힌 run 뒤의 run이 다시 막혔으면(conclusion은 success) 해소가 아니다: 대상으로 남는다",
-    runs: [afterBlocked(39184193471, "2026-10-19T01:11:00Z"), rebindingBlocked],
-    jobs: { 39184193471: blockedJobs },
-    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN },
-  },
-  {
-    name: "막힌 run 뒤의 run이 실패했거나 아직 진행 중이면 해소가 아니다",
-    runs: [afterBlocked(39185256501, "2026-10-19T01:25:00Z", { conclusion: "failure" }), afterBlocked(39184193471, "2026-10-19T01:11:00Z", { conclusion: "cancelled" }), rebindingBlocked],
-    jobs: {},
-    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN },
-  },
-  {
-    name: "막힌 run보다 앞선 성공 run은 해소로 보지 않는다",
-    runs: [rebindingBlocked, afterBlocked(39180000000, "2026-10-19T00:10:00Z")],
-    jobs: { 39180000000: workedJobs },
-    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN },
-  },
-  {
-    name: "해소 여부를 읽지 못하면(job 조회 오류) 대상에서 빼지 않고 판정 불가를 명시한 채 대상으로 남긴다",
-    runs: [afterBlocked(39185256501, "2026-10-19T01:25:00Z"), rebindingBlocked],
-    jobs: {},
-    expected: { workflow: REBINDING, action: "DISPATCH", blockedRunId: REBINDING_BLOCKED_RUN, resolution: "UNDETERMINED" },
-  },
-];
+// push로 도는 workflow만 본다: schedule·dispatch로 도는 뒤 run은 해소 판정 이전에 "가장 최근 run"이 되어 LATEST_NOT_BLOCKED로 걸러진다(기존 동작).
+for (const { workflow } of REDISPATCH_TARGETS.filter(({ pushTriggered }) => pushTriggered)) {
+  const blockedRunId = 39182039810;
+  const event = "push";
+  const later = (options) => run(39185256501, LATER, { event, actor: "AquilaXk", ...options });
+  const scenario = ({ laterRuns, laterJobs = {} }) => fixture({ runs: { [workflow]: [...laterRuns, run(blockedRunId, BLOCKED_AT)] }, jobs: { [blockedRunId]: blockedAfter(workflow), ...laterJobs } });
+  const dispatched = { workflow, action: "DISPATCH", blockedRunId };
 
-for (const { name, runs, jobs, expected } of SUPERSEDE_CASES) {
-  test(`막힌 run의 해소: ${name}`, async () => {
-    const { state, input } = fixture({ runs: { [REBINDING]: runs }, jobs: { [REBINDING_BLOCKED_RUN]: blockedJobs, ...jobs } });
-    const result = await runRedispatch(input);
-    assert.deepEqual(result.find(({ workflow }) => workflow === REBINDING), expected);
-    assert.deepEqual(state.dispatched, expected.action === "DISPATCH" ? [REBINDING] : []);
+  test(`해소 증명(${workflow}): 증명 step이 success인 run이 막힌 run 뒤에 있으면 대상에서 뺀다`, async () => {
+    for (const proof of proofsOf(workflow)) {
+      const { state, input } = scenario({ laterRuns: [later()], laterJobs: { 39185256501: stepsJob(proof) } });
+      const result = await runRedispatch(input);
+      assert.deepEqual(result.find((item) => item.workflow === workflow), { workflow, action: "SKIP", reason: "SUPERSEDED_BY_SUCCESS", supersededBy: 39185256501 }, proof.join(" + "));
+      assert.deepEqual(state.dispatched, []);
+    }
+  });
+
+  test(`해소 증명(${workflow}): 증명 없이 success로 끝난 run(대기·열린 PR·다시 막힘)과 실패·진행 중 run은 해소가 아니다`, async () => {
+    const notProof = [NO_PROOF_ENDINGS[workflow], blockedAfter(workflow).jobs[0].steps.map(({ name }) => name), []];
+    for (const names of notProof) {
+      const { state, input } = scenario({ laterRuns: [later()], laterJobs: { 39185256501: stepsJob(names) } });
+      const result = await runRedispatch(input);
+      assert.deepEqual(result.find((item) => item.workflow === workflow), dispatched, names.join(" + "));
+      assert.deepEqual(state.dispatched, [workflow]);
+    }
+    for (const options of [{ conclusion: "failure" }, { conclusion: "cancelled" }, { status: "completed", conclusion: "skipped" }]) {
+      const { input } = scenario({ laterRuns: [later(options)], laterJobs: { 39185256501: stepsJob(proofsOf(workflow)[0]) } });
+      assert.deepEqual((await runRedispatch(input)).find((item) => item.workflow === workflow), dispatched, JSON.stringify(options));
+    }
+  });
+
+  test(`해소 증명(${workflow}): 막힌 run보다 앞선 증명 run과 증명 step 일부만 success인 run은 해소가 아니다`, async () => {
+    const earlier = fixture({ runs: { [workflow]: [run(blockedRunId, BLOCKED_AT), run(39180000000, "2026-10-19T00:10:00Z", { event })] }, jobs: { [blockedRunId]: blockedAfter(workflow), 39180000000: stepsJob(proofsOf(workflow)[0]) } });
+    assert.deepEqual((await runRedispatch(earlier.input)).find((item) => item.workflow === workflow), dispatched);
+    const [proof] = proofsOf(workflow).filter((steps) => steps.length > 1);
+    if (proof === undefined) return;
+    const partial = scenario({ laterRuns: [later()], laterJobs: { 39185256501: stepsJob(proof.slice(0, -1)) } });
+    assert.deepEqual((await runRedispatch(partial.input)).find((item) => item.workflow === workflow), dispatched);
   });
 }
 
-test("막힌 run 뒤에 해소됐다면 상한에 닿았어도 실패하지 않고, 해소되지 않았다면 상한에서 실패한다", async () => {
-  const loop = [
-    redispatchedAfterBlock(9303, "2026-10-19T01:40:00Z"),
-    redispatchedAfterBlock(9302, "2026-10-19T01:30:00Z"),
-    redispatchedAfterBlock(9301, "2026-10-19T01:20:00Z"),
-    rebindingBlocked,
-  ];
-  const loopJobs = { 9303: blockedJobs, 9302: blockedJobs, 9301: blockedJobs, [REBINDING_BLOCKED_RUN]: blockedJobs };
-  const resolved = fixture({ runs: { [REBINDING]: [afterBlocked(9304, "2026-10-19T01:50:00Z"), ...loop] }, jobs: { ...loopJobs, 9304: workedJobs } });
-  assert.equal((await runRedispatch(resolved.input)).find(({ workflow }) => workflow === REBINDING).reason, "SUPERSEDED_BY_SUCCESS");
-  const stillBlocked = fixture({ runs: { [REBINDING]: [afterBlocked(9304, "2026-10-19T01:50:00Z"), ...loop] }, jobs: { ...loopJobs, 9304: blockedJobs } });
+test("해소 증명: push run은 push로 도는 workflow(registration·rebinding)에서만 해소로 본다", async () => {
+  for (const { workflow, pushTriggered } of REDISPATCH_TARGETS) {
+    const { input } = fixture({
+      runs: { [workflow]: [run(39185256501, LATER, { event: "push", actor: "AquilaXk" }), run(39182039810, BLOCKED_AT)] },
+      jobs: { 39182039810: blockedAfter(workflow), 39185256501: stepsJob(proofsOf(workflow)[0]) },
+    });
+    const action = (await runRedispatch(input)).find((item) => item.workflow === workflow).action;
+    assert.equal(action, pushTriggered ? "SKIP" : "DISPATCH", workflow);
+  }
+});
+
+test("해소 증명: 증명 step이 표에 없는 step만 success인 run은 해소로 보지 않는다(fail-closed)", async () => {
+  const workflow = "source-derivative-rebinding.yml";
+  // 표에 없는 증명 step 이름은 success여도 인정하지 않는다.
+  const { input } = fixture({
+    runs: { [workflow]: [run(39185256501, LATER, { event: "push", actor: "AquilaXk" }), run(39182039810, BLOCKED_AT)] },
+    jobs: { 39182039810: blockedAfter(workflow), 39185256501: stepsJob(["Some unlisted step"]) },
+  });
+  assert.equal((await runRedispatch(input)).find((item) => item.workflow === workflow).action, "DISPATCH");
+});
+
+test("해소 증명: 상한에 닿았어도 해소됐으면 실패하지 않고, 해소되지 않았으면 상한에서 실패한다", async () => {
+  const workflow = "source-derivative-rebinding.yml";
+  const loop = [9303, 9302, 9301].map((id, index) => run(id, `2026-10-19T01:${40 - index * 10}:00Z`, { actor: REDISPATCH_ACTOR }));
+  const jobs = { 9303: blockedAfter(workflow), 9302: blockedAfter(workflow), 9301: blockedAfter(workflow), 39182039810: blockedAfter(workflow) };
+  const runs = (laterJobs) => ({ runs: { [workflow]: [run(9304, "2026-10-19T01:50:00Z", { event: "push", actor: "AquilaXk" }), ...loop, run(39182039810, BLOCKED_AT)] }, jobs: { ...jobs, 9304: laterJobs } });
+  const resolved = fixture(runs(stepsJob(RECOVERY_PROOF[workflow][0])));
+  assert.equal((await runRedispatch(resolved.input)).find((item) => item.workflow === workflow).reason, "SUPERSEDED_BY_SUCCESS");
+  const stillBlocked = fixture(runs(blockedAfter(workflow)));
   await assert.rejects(runRedispatch(stillBlocked.input), /REDISPATCH_LIMIT: source-derivative-rebinding\.yml/u);
   assert.deepEqual(stillBlocked.state.dispatched, []);
+});
+
+test("해소를 읽다가 일시적 API 오류(5xx·네트워크)를 만나면 대상에서 빼지 않고 판정 불가를 명시한다", async () => {
+  const workflow = "source-derivative-rebinding.yml";
+  for (const error of [TRANSIENT, new Error("gh api failed: HTTP 429: rate limit"), new Error("gh api failed: ETIMEDOUT")]) {
+    const { state, input } = fixture({
+      runs: { [workflow]: [run(39185256501, LATER, { event: "push", actor: "AquilaXk" }), run(39182039810, BLOCKED_AT)] },
+      jobs: { 39182039810: blockedAfter(workflow) },
+    });
+    const api = input.api;
+    input.api = async (endpoint) => {
+      if (endpoint.includes("/runs/39185256501/jobs")) throw error;
+      return api(endpoint);
+    };
+    const result = await runRedispatch(input);
+    assert.deepEqual(result.find((item) => item.workflow === workflow), { workflow, action: "DISPATCH", blockedRunId: 39182039810, resolution: "UNDETERMINED" }, error.message);
+    assert.deepEqual(state.dispatched, [workflow]);
+  }
+});
+
+test("해소를 읽다가 계약 위반(job 형식)이나 코딩 오류를 만나면 삼키지 않고 run을 실패시킨다", async () => {
+  const workflow = "source-derivative-rebinding.yml";
+  const build = (laterJobs, apiError) => {
+    const { input } = fixture({
+      runs: { [workflow]: [run(39185256501, LATER, { event: "push", actor: "AquilaXk" }), run(39182039810, BLOCKED_AT)] },
+      jobs: { 39182039810: blockedAfter(workflow), 39185256501: laterJobs },
+    });
+    const api = input.api;
+    input.api = async (endpoint) => {
+      if (apiError && endpoint.includes("/runs/39185256501/jobs")) throw apiError;
+      return api(endpoint);
+    };
+    return input;
+  };
+  await assert.rejects(runRedispatch(build({ jobs: "not-a-list" })), /REDISPATCH_JOBS_INVALID/u);
+  await assert.rejects(runRedispatch(build(null, new TypeError("Cannot read properties of undefined"))), /Cannot read properties/u);
+  await assert.rejects(runRedispatch(build(null, new SyntaxError("Unexpected token < in JSON"))), /Unexpected token/u);
+});
+
+test("push로 도는 workflow는 표의 pushTriggered가 workflow 파일의 on: push와 같고, 증명 step은 workflow 파일에 실제로 있다", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  for (const target of REDISPATCH_TARGETS) {
+    const yml = readFileSync(path.join(root, ".github/workflows", target.workflow), "utf8");
+    assert.equal(/^on:\n(?:[^\n]*\n)*?  push:/mu.test(yml), target.pushTriggered, `${target.workflow}: pushTriggered`);
+    for (const name of [...proofsOf(target.workflow).flat()]) assert.ok(yml.includes(`      - name: ${name}\n`), `${target.workflow}: proof step "${name}"`);
+  }
 });
