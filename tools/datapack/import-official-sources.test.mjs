@@ -162,12 +162,7 @@ test("공식 source ingest adapter는 source inventory가 뒷받침하지 않는
 });
 
 test("공식 source ingest adapter는 provenance 전용 source를 production row source로 선택하지 않는다", async () => {
-  for (const sourceId of [
-    "kric-station-info",
-    "kric-station-elevator",
-    "kric-station-escalator",
-    "kric-wheelchair-lift-location",
-  ]) {
+  for (const sourceId of ["kric-station-info"]) {
     const outputDir = path.join(tmpdir(), `easysubway-source-ingest-provenance-only-${sourceId}-${Date.now()}`);
     const input = JSON.parse(await readFile(
       path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"),
@@ -428,9 +423,7 @@ test("공식 source ingest adapter는 KRIC 접근성 facility row를 stable stat
     fixture.packs[0].sourceInventory.map((source) => source.id).sort(),
     [
       "kric-disabled-toilet",
-      "kric-station-elevator",
-      "kric-station-escalator",
-      "kric-wheelchair-lift-location",
+      "kric-station-convenience-standard",
       "molit-urban-rail-full-route",
     ],
   );
@@ -492,7 +485,7 @@ test("공식 source ingest adapter는 KRIC 이동동선을 확정 edge가 아닌
   const fixture = JSON.parse(await readFile(outputPath, "utf8"));
   assert.deepEqual(
     fixture.packs[0].sourceInventory.map((source) => source.id).sort(),
-    ["kric-station-elevator-movement", "kric-wheelchair-lift-movement", "molit-urban-rail-full-route"],
+    ["kric-station-movement-detailed", "kric-station-movement-standard", "molit-urban-rail-full-route"],
   );
   assert.deepEqual(
     fixture.packs[0].movementPathCandidates.map(({ id, sourceId, stationId, reviewStatus }) => ({
@@ -504,13 +497,13 @@ test("공식 source ingest adapter는 KRIC 이동동선을 확정 edge가 아닌
     [
       {
         id: "movement-sangnoksu-elevator-kric-1",
-        sourceId: "kric-station-elevator-movement",
+        sourceId: "kric-station-movement-standard",
         stationId: "station-sangnoksu",
         reviewStatus: "PENDING_ADMIN_REVIEW",
       },
       {
         id: "movement-sangnoksu-wheelchair-lift-kric-1",
-        sourceId: "kric-wheelchair-lift-movement",
+        sourceId: "kric-station-movement-detailed",
         stationId: "station-sangnoksu",
         reviewStatus: "PENDING_ADMIN_REVIEW",
       },
@@ -654,9 +647,7 @@ function kricAccessibilityFacilitySourceIngestInput() {
     ...nationwideMasterSourceIngestInput(),
     sourceIds: [
       "molit-urban-rail-full-route",
-      "kric-station-elevator",
-      "kric-station-escalator",
-      "kric-wheelchair-lift-location",
+      "kric-station-convenience-standard",
       "kric-disabled-toilet",
     ],
     stationMappings: [
@@ -685,10 +676,10 @@ function kricAccessibilityFacilitySourceIngestInput() {
       ]),
     ],
     facilityRows: [
-      ["kric-station-elevator", "facility-sangnoksu-elevator-kric-1", "ELEVATOR", "상록수역 1번 엘리베이터"],
-      ["kric-station-escalator", "facility-sangnoksu-escalator-kric-1", "ESCALATOR", "상록수역 1번 에스컬레이터"],
+      ["kric-station-convenience-standard", "facility-sangnoksu-elevator-kric-1", "ELEVATOR", "상록수역 1번 엘리베이터"],
+      ["kric-station-convenience-standard", "facility-sangnoksu-escalator-kric-1", "ESCALATOR", "상록수역 1번 에스컬레이터"],
       [
-        "kric-wheelchair-lift-location",
+        "kric-station-convenience-standard",
         "facility-sangnoksu-wheelchair-lift-kric-1",
         "WHEELCHAIR_LIFT",
         "상록수역 휠체어리프트",
@@ -715,7 +706,7 @@ function kricAccessibilityFacilitySourceIngestInput() {
 function kricMovementCandidateSourceIngestInput() {
   return {
     ...nationwideMasterSourceIngestInput(),
-    sourceIds: ["molit-urban-rail-full-route", "kric-station-elevator-movement", "kric-wheelchair-lift-movement"],
+    sourceIds: ["molit-urban-rail-full-route", "kric-station-movement-standard", "kric-station-movement-detailed"],
     stationMappings: [
       {
         sourceId: "molit-urban-rail-full-route",
@@ -743,7 +734,7 @@ function kricMovementCandidateSourceIngestInput() {
     ],
     movementPathCandidates: [
       {
-        sourceId: "kric-station-elevator-movement",
+        sourceId: "kric-station-movement-standard",
         id: "movement-sangnoksu-elevator-kric-1",
         station: {
           sourceId: "molit-urban-rail-full-route",
@@ -758,7 +749,7 @@ function kricMovementCandidateSourceIngestInput() {
         sourceImageUrl: "https://www.data.go.kr/kric/elevator-movement/example.png",
       },
       {
-        sourceId: "kric-wheelchair-lift-movement",
+        sourceId: "kric-station-movement-detailed",
         id: "movement-sangnoksu-wheelchair-lift-kric-1",
         station: {
           sourceId: "molit-urban-rail-full-route",

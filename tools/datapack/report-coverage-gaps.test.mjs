@@ -1746,7 +1746,7 @@ test("전국 coverage gap report는 provenance 모드에서 source-native field�
     retrievedAt: "2026-06-22",
     sources: [
       {
-        id: "kric-station-elevator",
+        id: "kric-station-convenience-standard",
         coverageScope: {
           regionIds: ["capital"],
           operatorIds: ["seoul-metro"],
@@ -1772,7 +1772,7 @@ test("전국 coverage gap report는 provenance 모드에서 source-native field�
             entityType: "facility",
             entityId: "facility-sangnoksu-elevator-kric-1",
             field: "elevator",
-            sourceId: "kric-station-elevator",
+            sourceId: "kric-station-convenience-standard",
             coverageScope: {
               regionIds: ["capital"],
               operatorIds: ["seoul-metro"],
@@ -1818,7 +1818,7 @@ test("전국 coverage gap report는 provenance 모드에서 source-native field�
   );
   const elevatorCoverage = accessibilityRequirement.fieldCoverage.find((entry) => entry.field === "elevator");
   assert.equal(elevatorCoverage.status, "covered");
-  assert.deepEqual(elevatorCoverage.sourceIds, ["kric-station-elevator"]);
+  assert.deepEqual(elevatorCoverage.sourceIds, ["kric-station-convenience-standard"]);
   assert.ok(accessibilityRequirement.missingFields.includes("status"));
 });
 

@@ -37,7 +37,6 @@ test("unproven internal route availability fails check and normalizes to unknown
     INSERT INTO internal_route_edges VALUES
       ('stale', 'AVAILABLE', '', '', '', ''),
       ('unknown', 'UNKNOWN', '', '', '', ''),
-      ('proven', 'AVAILABLE', 'kric-station-elevator-movement', 'snapshot', '${"a".repeat(64)}', '${"b".repeat(64)}'),
       ('static-facility', 'AVAILABLE', 'kric-station-convenience-standard', 'snapshot', '${"c".repeat(64)}', '${"d".repeat(64)}');
   `);
 
@@ -50,7 +49,6 @@ test("unproven internal route availability fails check and normalizes to unknown
     database.prepare("SELECT id, accessibility_status AS status FROM internal_route_edges ORDER BY id").all()
       .map((row) => ({ ...row })),
     [
-      { id: "proven", status: "AVAILABLE" },
       { id: "stale", status: "UNKNOWN" },
       { id: "static-facility", status: "UNKNOWN" },
       { id: "unknown", status: "UNKNOWN" },

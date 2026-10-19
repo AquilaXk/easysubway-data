@@ -163,7 +163,7 @@ const CREDENTIAL_SIGNAL_RESULT_CODES = Object.freeze(["30"]);
 
 const PROVIDER_BLOCKED_EVIDENCE = Object.freeze({
   providerId: "kric",
-  sourceId: "kric-station-elevator",
+  sourceId: "kric-station-movement-detailed",
   failureClassification: "authorization-missing",
   lastVerifiedAt: "2026-08-04T00:00:00.000Z",
   reverifyAfter: "2026-08-05T00:00:00.000Z",

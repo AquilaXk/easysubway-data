@@ -22,6 +22,7 @@ import {
   isApprovedCurrentOrPriorGovernanceBinding,
   validateSourceGovernancePolicy,
 } from "./source-governance-policy.mjs";
+import { governanceBeforeRetirements } from "./test-fixtures/independent-source-governance.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -77,7 +78,7 @@ test("governance policy transition preserves each exact epoch and its closed pre
 });
 
 test("등록으로 추가한 policy는 이전 bytes 결속을 증명하고 신규 source의 과거 승인을 거부한다", async () => {
-  const policy = JSON.parse(await readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8"));
+  const policy = governanceBeforeRetirements(JSON.parse(await readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8")));
   const addedSources = policy.sources.slice(-policy.registrationLineage.addedSourceIds.length);
   const added = addedSources.at(-1);
   const predecessor = { ...policy, sources: policy.sources.slice(0, -addedSources.length) };
@@ -504,7 +505,7 @@ test("snapshot set explicit removal은 다른 known source만 허용한다", asy
     await buildSnapshot([...buildArgs, "--snapshot-id", "snapshot-a-1", "--remove-source-ids", " other "]);
     assert.deepEqual(
       JSON.parse(await readFile(snapshotSet, "utf8")).map(({ sourceId }) => sourceId),
-      ["kric-station-elevator"],
+      ["kric-station-convenience-standard"],
     );
     const currentSourceSet = await readFile(snapshotSet, "utf8");
     await assert.rejects(
@@ -514,9 +515,9 @@ test("snapshot set explicit removal은 다른 known source만 허용한다", asy
         "--retrieved-at", "2026-07-02T03:00:00Z",
         "--freshness-expires-at", "2026-09-30T03:00:00Z",
         "--previous-snapshot", outputPath,
-        "--remove-source-ids", "kric-station-elevator",
+        "--remove-source-ids", "kric-station-convenience-standard",
       ]),
-      /snapshot removal source must differ from refreshed source: kric-station-elevator/,
+      /snapshot removal source must differ from refreshed source: kric-station-convenience-standard/,
     );
     assert.equal(await readFile(snapshotSet, "utf8"), currentSourceSet);
 
@@ -1039,7 +1040,7 @@ async function buildSnapshot(args) {
   await execFileAsync(process.execPath, [
     "tools/datapack/build-source-snapshot.mjs",
     ...args,
-    "--source-id", "kric-station-elevator",
+    "--source-id", "kric-station-convenience-standard",
     "--provider", "국가철도공단",
     "--source-class-id", "static_accessibility_facility",
     "--governance-policy", "tools/datapack/source-governance-policy.json",

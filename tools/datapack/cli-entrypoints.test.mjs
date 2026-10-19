@@ -39,7 +39,6 @@ const CLI_ENTRYPOINTS = [
   { script: "import-transfer-baseline", args: REJECTED_FLAG, stderr: /--roster is required/ },
   { script: "prepare-retained-gwangju-contract", args: REJECTED_FLAG, stderr: /usage: --input <absolute\.json> --output <new-absolute\.json>/ },
   { script: "probe-korail-facility-workbook", args: REJECTED_FLAG, stderr: /usage: probe-korail-facility-workbook\.mjs --output/ },
-  { script: "probe-kric-facility-provider-tuples", args: REJECTED_FLAG, stderr: GENERIC_INVALID_ARGUMENTS },
   { script: "publish-incheon-accessibility-raw", args: REJECTED_FLAG, stderr: GENERIC_INVALID_ARGUMENTS },
   { script: "publish-kric-accessibility-raw", args: REJECTED_FLAG, stderr: GENERIC_INVALID_ARGUMENTS },
   { script: "publish-kric-station-timetables-raw", args: REJECTED_FLAG, stderr: /inputPath is required/ },

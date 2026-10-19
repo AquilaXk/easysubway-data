@@ -123,20 +123,64 @@ function sourceIds(policy) {
   return ids;
 }
 
+const LINEAGE_COMMON_KEYS = ["predecessorLineage", "predecessorPolicySha256", "predecessorPolicyText"];
+const ADDED_LINEAGE_KEYS = [...LINEAGE_COMMON_KEYS, "addedSourceIds"].sort(codepointCompare);
+const RETIRED_LINEAGE_KEYS = [...LINEAGE_COMMON_KEYS, "retiredSourceIds", "retiredSources"].sort(codepointCompare);
+const RETIRED_RECORD_KEYS = ["position", "source"];
+
+function hasExactKeys(value, expected) {
+  return JSON.stringify(Object.keys(value).sort(codepointCompare)) === JSON.stringify(expected);
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function uniqueSourceIds(value) {
+  if (!Array.isArray(value) || value.length === 0) governanceBindingError();
+  const ids = value.map((sourceId) => requiredText(sourceId, "lineage sourceId"));
+  if (new Set(ids).size !== ids.length) governanceBindingError();
+  return ids;
+}
+
+// 한 단계는 등록(addedSourceIds) 또는 퇴역(retiredSourceIds + 원문) 중 하나만 한다.
 function registrationLineage(policy) {
   const lineage = policy?.registrationLineage;
-  if (!lineage || typeof lineage !== "object" || Array.isArray(lineage)
-    || JSON.stringify(Object.keys(lineage).sort(codepointCompare))
-      !== JSON.stringify(["addedSourceIds", "predecessorLineage", "predecessorPolicySha256", "predecessorPolicyText"])) governanceBindingError();
+  if (!isPlainObject(lineage)
+    || !(hasExactKeys(lineage, ADDED_LINEAGE_KEYS) || hasExactKeys(lineage, RETIRED_LINEAGE_KEYS))) governanceBindingError();
   if (lineage.predecessorPolicyText !== null && typeof lineage.predecessorPolicyText !== "string") governanceBindingError();
   requiredSha256(lineage.predecessorPolicySha256, "predecessorPolicySha256");
-  if (lineage.predecessorLineage !== null && (typeof lineage.predecessorLineage !== "object" || Array.isArray(lineage.predecessorLineage))) {
+  if (lineage.predecessorLineage !== null && !isPlainObject(lineage.predecessorLineage)) governanceBindingError();
+  uniqueSourceIds(lineage.addedSourceIds ?? lineage.retiredSourceIds);
+  return lineage;
+}
+
+function sourcesBeforeRegistration(sources, lineage) {
+  const ids = sources.map(({ sourceId }) => sourceId);
+  const { addedSourceIds } = lineage;
+  if (ids.length <= addedSourceIds.length
+    || JSON.stringify(ids.slice(-addedSourceIds.length)) !== JSON.stringify(addedSourceIds)
+    || ids.slice(0, -addedSourceIds.length).some((sourceId) => addedSourceIds.includes(sourceId))) {
     governanceBindingError();
   }
-  if (!Array.isArray(lineage.addedSourceIds) || lineage.addedSourceIds.length === 0) governanceBindingError();
-  const addedSourceIds = lineage.addedSourceIds.map((sourceId) => requiredText(sourceId, "addedSourceIds"));
-  if (new Set(addedSourceIds).size !== addedSourceIds.length) governanceBindingError();
-  return lineage;
+  return sources.slice(0, -addedSourceIds.length);
+}
+
+// 퇴역 원문을 기록된 위치에 되돌려 직전 정책의 sources를 재구성한다. 위치는 직전 정책 기준 오름차순이다.
+function sourcesBeforeRetirement(sources, lineage) {
+  const { retiredSourceIds, retiredSources } = lineage;
+  if (!Array.isArray(retiredSources) || retiredSources.length !== retiredSourceIds.length) governanceBindingError();
+  const restored = [...sources];
+  let previousPosition = -1;
+  for (const [index, record] of retiredSources.entries()) {
+    if (!isPlainObject(record) || !hasExactKeys(record, RETIRED_RECORD_KEYS)
+      || !Number.isSafeInteger(record.position) || record.position <= previousPosition || record.position > restored.length
+      || !isPlainObject(record.source) || record.source.sourceId !== retiredSourceIds[index]
+      || sources.some(({ sourceId }) => sourceId === retiredSourceIds[index])) governanceBindingError();
+    restored.splice(record.position, 0, record.source);
+    previousPosition = record.position;
+  }
+  return restored;
 }
 
 function validateGovernancePolicyLineage({ currentPolicyVersion, currentPolicySha256, currentPolicyBytes }) {
@@ -164,12 +208,12 @@ function validateGovernancePolicyLineage({ currentPolicyVersion, currentPolicySh
     if (epoch) return { states, root: epoch };
     if (!bytes.equals(prettyPolicyBytes(policy))) governanceBindingError();
     const lineage = registrationLineage(policy);
-    if (ids.length <= lineage.addedSourceIds.length
-      || JSON.stringify(ids.slice(-lineage.addedSourceIds.length)) !== JSON.stringify(lineage.addedSourceIds)
-      || ids.slice(0, -lineage.addedSourceIds.length).some((sourceId) => lineage.addedSourceIds.includes(sourceId))) {
-      governanceBindingError();
-    }
-    const predecessor = { ...policy, sources: policy.sources.slice(0, -lineage.addedSourceIds.length) };
+    const predecessor = {
+      ...policy,
+      sources: "retiredSourceIds" in lineage
+        ? sourcesBeforeRetirement(policy.sources, lineage)
+        : sourcesBeforeRegistration(policy.sources, lineage),
+    };
     if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
     else predecessor.registrationLineage = lineage.predecessorLineage;
     bytes = prettyPolicyBytes(predecessor);
@@ -199,38 +243,78 @@ function knownEpochBinding({ snapshot, epoch }) {
   governanceBindingError();
 }
 
-export function buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes, addedSources }) {
+// 직전 정책 bytes가 닫힌 epoch까지 이어지는 승인 lineage를 갖는지 확인하고 다음 단계가 기록할 결속을 만든다.
+function successorBinding(predecessorPolicyBytes) {
   if (!Buffer.isBuffer(predecessorPolicyBytes)) governanceBindingError();
   const predecessorBytes = Buffer.from(predecessorPolicyBytes);
   const predecessor = exactPolicyBytes(predecessorBytes);
   const predecessorSha256 = sha256(predecessorBytes);
-  validateGovernancePolicyLineage({
+  const { states } = validateGovernancePolicyLineage({
     currentPolicyVersion: predecessor.policyVersion,
     currentPolicySha256: predecessorSha256,
     currentPolicyBytes: predecessorBytes,
   });
-  if (!Array.isArray(addedSources) || addedSources.length === 0 || addedSources.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry))) {
-    governanceBindingError();
-  }
-  const existing = new Set(sourceIds(predecessor));
-  const addedSourceIds = addedSources.map(({ sourceId }) => requiredText(sourceId, "added sourceId"));
-  if (new Set(addedSourceIds).size !== addedSourceIds.length || addedSourceIds.some((sourceId) => existing.has(sourceId))) governanceBindingError();
-  const predecessorLineage = predecessor.registrationLineage ?? null;
-  const policy = {
-    ...predecessor,
-    sources: [...predecessor.sources, ...addedSources],
-    registrationLineage: {
+  return {
+    predecessor,
+    knownSourceIds: new Set(states.flatMap(({ sourceIds }) => [...sourceIds])),
+    lineageHead: {
       predecessorPolicySha256: predecessorSha256,
-      addedSourceIds,
-      predecessorLineage,
+      predecessorLineage: predecessor.registrationLineage ?? null,
       predecessorPolicyText: predecessorBytes.equals(prettyPolicyBytes(predecessor))
         ? null : predecessorBytes.toString("utf8"),
     },
   };
+}
+
+function frozenSuccessor(policy) {
   return Object.freeze({
     policy: Object.freeze(policy),
     bytes: prettyPolicyBytes(policy),
     registrationLineage: Object.freeze(policy.registrationLineage),
+  });
+}
+
+export function buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes, addedSources }) {
+  const { predecessor, knownSourceIds, lineageHead } = successorBinding(predecessorPolicyBytes);
+  if (!Array.isArray(addedSources) || addedSources.length === 0 || addedSources.some((entry) => !isPlainObject(entry))) {
+    governanceBindingError();
+  }
+  const addedSourceIds = addedSources.map(({ sourceId }) => requiredText(sourceId, "added sourceId"));
+  // 퇴역한 id도 과거 정책에 남아 있으므로 다시 등록할 수 없다.
+  if (new Set(addedSourceIds).size !== addedSourceIds.length || addedSourceIds.some((sourceId) => knownSourceIds.has(sourceId))) governanceBindingError();
+  return frozenSuccessor({
+    ...predecessor,
+    sources: [...predecessor.sources, ...addedSources],
+    registrationLineage: {
+      predecessorPolicySha256: lineageHead.predecessorPolicySha256,
+      addedSourceIds,
+      predecessorLineage: lineageHead.predecessorLineage,
+      predecessorPolicyText: lineageHead.predecessorPolicyText,
+    },
+  });
+}
+
+/**
+ * 원장은 추가 전용이라 원천을 지우지 않고 퇴역 단계를 덧붙인다. 퇴역 원천은 현재 sources에서 빠지고, 원문과 직전 정책 안의
+ * 위치가 lineage에 남아 검증기가 직전 정책 bytes를 그대로 재구성한다. 직전 정책의 sources 순서대로 기록한다.
+ */
+export function buildGovernancePolicyRetirement({ predecessorPolicyBytes, retiredSourceIds }) {
+  const { predecessor, lineageHead } = successorBinding(predecessorPolicyBytes);
+  const requested = uniqueSourceIds(retiredSourceIds);
+  const retiredSources = predecessor.sources
+    .map((source, position) => ({ position, source }))
+    .filter(({ source }) => requested.includes(source.sourceId));
+  if (retiredSources.length !== requested.length || retiredSources.length === predecessor.sources.length) governanceBindingError();
+  return frozenSuccessor({
+    ...predecessor,
+    sources: predecessor.sources.filter(({ sourceId }) => !requested.includes(sourceId)),
+    registrationLineage: {
+      predecessorPolicySha256: lineageHead.predecessorPolicySha256,
+      retiredSourceIds: retiredSources.map(({ source }) => source.sourceId),
+      retiredSources,
+      predecessorLineage: lineageHead.predecessorLineage,
+      predecessorPolicyText: lineageHead.predecessorPolicyText,
+    },
   });
 }
 

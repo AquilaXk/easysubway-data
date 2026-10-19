@@ -30,10 +30,9 @@ function getTargetStationIds(pack) {
 }
 const facilityTypes = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT", "ACCESSIBILITY_STATUS_PROBE"];
 const accessibilityRouteSourceId = "seoul-metro-accessibility";
-const directRouteEvidenceSourceIds = new Set([
-  "kric-station-elevator-movement",
-  "kric-wheelchair-lift-movement",
-]);
+// 내부 경로 접근성 상태의 근거로 허용하는 원천. 현재 이 근거를 만드는 원천이 없으므로 비어 있고, 이 목록 밖의 상태는 UNKNOWN으로 되돌린다.
+const directRouteEvidenceSourceIds = new Set();
+// 현재 수집하지 않는 퇴역 원천 id. 옛 데이터팩 잔재 차단 전용이다.
 const replacedSourceIds = new Set([
   "kric-station-elevator",
   "kric-station-escalator",

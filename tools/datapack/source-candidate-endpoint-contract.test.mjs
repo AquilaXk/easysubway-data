@@ -6,14 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { resolveProviderCallIntegrity } from "./lib/provider-call-integrity.mjs";
-import {
-  collectKricAccessibilityProviderTupleEvidence,
-  KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
-} from "./collect-kric-accessibility-snapshots.mjs";
-import {
-  preflightKricFacilityProviderProbe,
-  resolveKricFacilityProviderProbe,
-} from "./probe-kric-facility-provider-tuples.mjs";
+import { isTransientKricResultCode } from "./lib/source-collection-retry.mjs";
 import { LINE_SOURCES } from "./collect-capital-route-topology.mjs";
 import { listOperations, validateOperation } from "./source-operation.mjs";
 
@@ -27,9 +20,6 @@ const KRIC_OPENAPI_PATH = /^\/openapi\/([A-Za-z][A-Za-z0-9]*)\/([A-Za-z][A-Za-z0
 const KRIC_PORTAL_DETAIL_IDS = Object.freeze({
   "kric-station-convenience-standard": "430",
   "kric-station-disabled-toilet": "432",
-  "kric-station-elevator": "189",
-  "kric-station-elevator-movement": "208",
-  "kric-station-escalator": "190",
   "kric-station-info": "183",
   "kric-station-movement-detailed": "306",
   "kric-station-movement-standard": "429",
@@ -44,8 +34,6 @@ const KRIC_PORTAL_DETAIL_IDS = Object.freeze({
   "kric-train-operation-organ": "266",
   "kric-transfer-movement-detailed": "307",
   "kric-transfer-movement-standard": "428",
-  "kric-wheelchair-lift-location": "205",
-  "kric-wheelchair-lift-movement": "209",
 });
 
 const URL_FIELDS = Object.freeze([
@@ -239,159 +227,6 @@ test("Capital topology catalog binds the exact credential-free 24-source operati
   assert.doesNotMatch(JSON.stringify(candidate), /s3:|aws|fallback/iu);
 });
 
-test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
-  const tuple = { railOprIsttCd: "GX", lnCd: "A", stinCd: "X101", stationName: "운정중앙" };
-  const evidence = await collectKricAccessibilityProviderTupleEvidence({
-    tuples: [tuple],
-    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.slice(0, 2),
-    serviceKey: "super-secret",
-    now: new Date("2026-08-05T00:00:00.000Z"),
-    fetchImpl: async (url) => {
-      const operationForRequest = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS
-        .find(({ endpoint }) => new URL(endpoint).pathname === url.pathname);
-      return response(200, [Object.fromEntries(operationForRequest.responseFields.map((field) => [
-        field, tuple[field] ?? field,
-      ]))]);
-    },
-  });
-
-  assert.equal(evidence.artifactKind, "kric-facility-provider-tuple-probe");
-  assert.equal(evidence.productionAdmissionAllowed, false);
-  assert.equal(evidence.operationCount, 2);
-  assert.equal(evidence.queryCount, 2);
-  assert.deepEqual(evidence.operations.map(({ sourceId, queries }) => ({ sourceId, tuples: queries.map((query) => query.providerTuple) })), [
-    { sourceId: "kric-station-elevator", tuples: ["GX/A/X101"] },
-    { sourceId: "kric-station-escalator", tuples: ["GX/A/X101"] },
-  ]);
-  assert.doesNotMatch(JSON.stringify(evidence), /stationId|lineId|super-secret|serviceKey/);
-});
-
-test("FACILITY provider probe는 empty 또는 partial operation을 evidence로 만들지 않는다", async () => {
-  await assert.rejects(() => collectKricAccessibilityProviderTupleEvidence({
-    tuples: [{ railOprIsttCd: "KR", lnCd: "1", stinCd: "116", stationName: "창동" }],
-    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.slice(0, 2),
-    serviceKey: "key",
-    fetchImpl: async (url) => {
-      const operationForRequest = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS
-        .find(({ endpoint }) => new URL(endpoint).pathname === url.pathname);
-      return response(200, url.pathname.endsWith("stationElevator") ? [Object.fromEntries(
-        operationForRequest.responseFields.map((field) => [
-          field, { railOprIsttCd: "KR", lnCd: "1", stinCd: "116" }[field] ?? field,
-        ]),
-      )] : []);
-    },
-  }), /KRIC provider tuple probe empty response: kric-station-escalator\/KR\/1\/116/);
-});
-
-test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 20 tuple만 허용한다", async () => {
-  // 2026-07-31 검토 증거는 이 roster로 평가됐다(#862 이후 현재 roster 선택과 별개인 고정 fixture).
-  const ROSTER_FILE = "kric-nationwide-route-rosters-20260730T203926676Z.json";
-  const [resolution, routeRosters] = await Promise.all([
-    readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url), "utf8").then(JSON.parse),
-    readFile(new URL(`./sources/${ROSTER_FILE}`, import.meta.url), "utf8").then(JSON.parse),
-  ]);
-
-  const input = resolveKricFacilityProviderProbe({ resolution, routeRosters, routeRostersFile: ROSTER_FILE, candidatesDocument: document });
-  assert.equal(input.tuples.length, 20);
-  assert.equal(input.tuples.filter(({ railOprIsttCd }) => railOprIsttCd === "GX").length, 5);
-  assert.equal(input.tuples.filter(({ railOprIsttCd }) => railOprIsttCd === "KR").length, 15);
-  assert.deepEqual(input.operations.map(({ sourceId }) => sourceId), [
-    "kric-station-elevator",
-    "kric-station-escalator",
-    "kric-wheelchair-lift-location",
-    "kric-station-elevator-movement",
-    "kric-wheelchair-lift-movement",
-  ]);
-  assert.throws(() => resolveKricFacilityProviderProbe({
-    resolution,
-    routeRosters: { ...routeRosters, rosters: [] },
-    routeRostersFile: ROSTER_FILE,
-    candidatesDocument: document,
-  }), /KRIC FACILITY provider probe inputs are invalid/);
-  assert.throws(() => resolveKricFacilityProviderProbe({
-    resolution,
-    routeRosters: {
-      ...routeRosters,
-      rosters: [{ ...routeRosters.rosters[0], resultCode: "03" }, ...routeRosters.rosters.slice(1)],
-    },
-    routeRostersFile: ROSTER_FILE,
-    candidatesDocument: document,
-  }), /KRIC FACILITY provider probe inputs are invalid/);
-  assert.throws(() => resolveKricFacilityProviderProbe({
-    resolution: {
-      ...resolution,
-      blockedGroups: resolution.blockedGroups.map((group, index) => index === 0
-        ? { ...group, providerTuples: ["KR/A/X101", ...group.providerTuples.slice(1)] }
-        : group),
-    },
-    routeRosters,
-    routeRostersFile: ROSTER_FILE,
-    candidatesDocument: document,
-  }), /KRIC FACILITY blocked group is invalid/);
-  assert.throws(() => resolveKricFacilityProviderProbe({
-    resolution,
-    routeRosters: {
-      ...routeRosters,
-      rosters: [{ ...routeRosters.rosters[0], stationCount: undefined, stations: undefined }, ...routeRosters.rosters.slice(1)],
-    },
-    routeRostersFile: ROSTER_FILE,
-    candidatesDocument: document,
-  }), /KRIC FACILITY provider probe inputs are invalid/);
-  assert.throws(() => resolveKricFacilityProviderProbe({
-    resolution, routeRosters, routeRostersFile: "kric-nationwide-route-rosters-20261001T050420765Z.json", candidatesDocument: document,
-  }), /KRIC FACILITY provider probe inputs are invalid/);
-});
-
-test("FACILITY provider probe는 동일 키 control operation 성공 전 target을 호출하지 않는다", async () => {
-  const serviceKey = `Aa1$${"a".repeat(56)}`;
-  let calls = 0;
-  const delays = [];
-  const result = await preflightKricFacilityProviderProbe({
-    candidatesDocument: document,
-    serviceKey,
-    requestIntervalMs: 250,
-    delayImpl: async (milliseconds) => { delays.push(milliseconds); },
-    fetchImpl: async (url) => {
-      calls += 1;
-      assert.equal(url.pathname, "/openapi/handicapped/stationCnvFacl");
-      return response(200, [{ dtlLoc: "대합실", gubun: "1", stinFlor: "B1" }]);
-    },
-  });
-  assert.equal(calls, 1);
-  assert.deepEqual(delays, [250]);
-  assert.deepEqual(result, { credentialRedacted: true, controlOperationId: "kric-station-convenience-standard" });
-
-  calls = 0;
-  await assert.rejects(() => preflightKricFacilityProviderProbe({
-    candidatesDocument: document,
-    serviceKey: "short",
-    fetchImpl: async () => { calls += 1; },
-  }), /kric credential length does not match/);
-  assert.equal(calls, 0);
-
-  await assert.rejects(() => preflightKricFacilityProviderProbe({
-    candidatesDocument: document,
-    serviceKey,
-    fetchImpl: async () => response(200, [], "30"),
-  }), /KRIC accessibility provider result invalid/);
-
-  const twoRowControl = structuredClone(document);
-  twoRowControl.providers.kric.controlOperation.expectedSuccess.minimumRowCount = 2;
-  await assert.rejects(() => preflightKricFacilityProviderProbe({
-    candidatesDocument: twoRowControl,
-    serviceKey,
-    fetchImpl: async () => response(200, [{ dtlLoc: "대합실", gubun: "1", stinFlor: "B1" }]),
-  }), /KRIC FACILITY control operation success contract is invalid/);
-});
-
-function response(status, body, resultCode = "00") {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => ({ header: { resultCode, resultMsg: "redacted" }, body }),
-  };
-}
-
 function kricOpenApiCandidates() {
   return document.candidates.filter((candidate) => {
     if (typeof candidate.requestUrl !== "string") return false;
@@ -534,15 +369,11 @@ test("KRIC provider는 키 형상 계약과 검증된 대조군 operation을 카
   assert.deepEqual(undocumented, [], "expectedSuccess.requiredFields must be documented provider output fields");
   assert.ok(integrity.controlOperation.expectedSuccess.minimumRowCount >= 1);
 
-  // credential 신호 코드도 창작이 아니다. 카탈로그가 실측으로 기록한 AUTHORIZATION_REQUIRED 관찰이 출처다.
-  const observedAuthorizationCodes = new Set(document.candidates
-    .map((entry) => entry.evidence?.operationLiveValidation)
-    .filter((observation) => observation?.schemaStatus === "AUTHORIZATION_REQUIRED")
-    .map((observation) => observation.providerResultCode));
-  assert.ok(observedAuthorizationCodes.size > 0, "catalog must record at least one AUTHORIZATION_REQUIRED observation");
-  const unobserved = integrity.credentialSignalResultCodes
-    .filter((code) => !observedAuthorizationCodes.has(code));
-  assert.deepEqual(unobserved, [], "credentialSignalResultCodes must come from recorded AUTHORIZATION_REQUIRED observations");
+  // credential 신호 코드도 창작이 아니다. KRIC 키는 operation별 활용신청이 필수이고 미신청이면 30(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)이
+  // 돌아온다. 근거 위치: lib/source-collection-retry.mjs의 resultCode 분류표와 그 주석의 실측 기록 포인터.
+  // 재시도로 풀리지 않는 코드만 credential 신호가 될 수 있다.
+  assert.deepEqual(integrity.credentialSignalResultCodes, ["30"]);
+  assert.deepEqual(integrity.credentialSignalResultCodes.filter(isTransientKricResultCode), []);
 });
 
 test("DATA_GO_KR_SERVICE_KEY runner는 공통 deterministic credential-validation 계약을 구현한다", async () => {

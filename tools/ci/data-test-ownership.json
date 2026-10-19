@@ -848,6 +848,7 @@
     {"path":"tools/datapack/promote-and-sign.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":400},
     {"path":"tools/datapack/sign-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":677},
     {"path":"tools/datapack/source-candidate-endpoint-contract.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":251},
+    {"path":"tools/datapack/source-governance-retirement.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":150},
     {"path":"tools/datapack/source-governance.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":704},
     {"path":"tools/datapack/source-operation.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":72},
     {"path":"tools/datapack/split-station-subnames.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":2},

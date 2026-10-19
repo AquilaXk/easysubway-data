@@ -53,11 +53,6 @@ test("KRIC evidence collector는 catalog 15개 allowlist와 tracked endpoint를 
     "kric-transfer-movement-standard",
     "kric-transfer-movement-detailed",
     "kric-station-convenience-standard",
-    "kric-station-elevator",
-    "kric-station-elevator-movement",
-    "kric-station-escalator",
-    "kric-wheelchair-lift-location",
-    "kric-wheelchair-lift-movement",
   ]);
 
   const request = resolveKricCandidateRequest({ candidates: [candidate] }, candidate.id);
@@ -103,11 +98,11 @@ test("KRIC evidence collector는 catalog 15개 allowlist와 tracked endpoint를 
 
 test("migrated KRIC runner는 legacy evidence와 분리된 operation sample을 사용한다", async () => {
   const migrated = {
-    id: "kric-station-elevator",
-    requestUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+    id: "kric-station-convenience-standard",
+    requestUrl: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
     operation: {
-      endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
-      sampleUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
+      endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
+      sampleUrl: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
       responseFields: ["providerField"],
     },
     evidence: {
@@ -143,11 +138,11 @@ test("migrated KRIC runner는 legacy evidence와 분리된 operation sample을 �
 
 test("migrated KRIC runner는 responseFields가 없어도 operation endpoint provenance를 기록한다", async () => {
   const migrated = {
-    id: "kric-station-elevator",
-    requestUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+    id: "kric-station-convenience-standard",
+    requestUrl: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
     operation: {
-      endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
-      sampleUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
+      endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
+      sampleUrl: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
     },
     evidence: {
       endpoint: "https://apis.data.go.kr/B551181/stationElevatorInfo/getStationElevatorList",

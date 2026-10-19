@@ -10,39 +10,6 @@ import { gunzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isRetryAfterExceedsCap, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 
-export const KRIC_APPROVED_ACCESSIBILITY_OPERATIONS = Object.freeze([
-  {
-    sourceId: "kric-station-elevator",
-    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
-    responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "rglnPsno", "rglnWgt", "runStinFlorFr", "runStinFlorTo", "stinCd"],
-    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
-  },
-  {
-    sourceId: "kric-station-escalator",
-    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
-    responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "updnDvNm"],
-    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
-  },
-  {
-    sourceId: "kric-wheelchair-lift-location",
-    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftLocation",
-    responseFields: ["bndWgt", "dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "len", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "wd"],
-    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
-  },
-  {
-    sourceId: "kric-station-elevator-movement",
-    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationElevatorMovement",
-    responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
-    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
-  },
-  {
-    sourceId: "kric-wheelchair-lift-movement",
-    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftMovement",
-    responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
-    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
-  },
-]);
-
 export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([{
   sourceId: "kric-station-convenience-standard",
   endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
@@ -338,83 +305,8 @@ export async function writeKricStandardAccessibilityObservation({ outputRoot, ob
   return manifest;
 }
 
-export async function collectKricAccessibilityProviderTupleEvidence({
-  tuples,
-  operations = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
-  serviceKey,
-  fetchImpl = fetch,
-  now = new Date(),
-  requestTimeoutMs = 30_000,
-  requestIntervalMs = 0,
-  delayImpl = delay,
-  retrySleepImpl,
-  retryBudget,
-  retryRandomImpl,
-} = {}) {
-  if (typeof serviceKey !== "string" || serviceKey === "") throw new Error("KRIC_SERVICE_KEY is required");
-  if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > 60_000) {
-    throw new Error("KRIC request interval is invalid");
-  }
-  const providerTuples = validateProviderTuples(tuples);
-  if (!Array.isArray(operations) || operations.length === 0) throw new Error("KRIC operations are required");
-  const seenOperations = new Set();
-  const capturedAt = now.toISOString();
-  let requestCount = 0;
-  const paceRequest = async () => {
-    if (requestCount > 0 && requestIntervalMs > 0) await delayImpl(requestIntervalMs);
-    requestCount += 1;
-  };
-  const collectedOperations = [];
-  for (const operation of operations) {
-    validateOperation(operation);
-    if (seenOperations.has(operation.sourceId)) throw new Error(`duplicate KRIC operation: ${operation.sourceId}`);
-    seenOperations.add(operation.sourceId);
-    const queries = [];
-    for (const tuple of providerTuples) {
-      const response = await requestRows({
-        operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget, retryRandomImpl,
-      });
-      if (response.rows.length === 0) {
-        throw new Error(`KRIC provider tuple probe empty response: ${operation.sourceId}/${providerTuple(tuple)}`);
-      }
-      queries.push({
-        providerTuple: providerTuple(tuple),
-        stationName: tuple.stationName,
-        rowCount: response.rows.length,
-        rawResponseSha256: response.rawResponseSha256,
-        providerRecordHash: hash(response.rows),
-        rows: response.rows,
-      });
-    }
-    collectedOperations.push({ sourceId: operation.sourceId, queries });
-  }
-  return {
-    schemaVersion: 1,
-    artifactKind: "kric-facility-provider-tuple-probe",
-    capturedAt,
-    credentialRedacted: true,
-    publishAllowed: false,
-    productionAdmissionAllowed: false,
-    operationCount: collectedOperations.length,
-    queryCount: collectedOperations.reduce((sum, operation) => sum + operation.queries.length, 0),
-    rowCount: collectedOperations.reduce((sum, operation) => (
-      sum + operation.queries.reduce((querySum, query) => querySum + query.rowCount, 0)
-    ), 0),
-    contentSha256: hash(collectedOperations.map((operation) => ({
-      sourceId: operation.sourceId,
-      queries: operation.queries.map(({ rawResponseSha256: _, ...query }) => query),
-    }))),
-    rawSha256: hash(collectedOperations.map(({ sourceId, queries }) => ({
-      sourceId,
-      queries: queries.map(({ providerTuple: tuple, rawResponseSha256 }) => ({ providerTuple: tuple, rawResponseSha256 })),
-    }))),
-    operations: collectedOperations,
-  };
-}
-
 export function validateKricAccessibilitySnapshotIdentity(snapshot) {
-  const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId)
-    ?? KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
+  const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
   const isMixed = snapshot?.providerResultCode === "MIXED";
   if (!operation || snapshot?.schemaVersion !== 1 || snapshot?.artifactKind !== "kric-accessibility-snapshot"
     || !(snapshot.providerResultCode === "00" || isMixed) || snapshot.schemaStatus !== "PASS"

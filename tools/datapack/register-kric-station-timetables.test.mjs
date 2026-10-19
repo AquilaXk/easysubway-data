@@ -14,6 +14,7 @@ import { STATION_LINES_SOURCE_ID, buildKricStationTimetableRegistrationOutputs, 
 import { inventoryChangeViolations, inventoryScopeViolations } from "./source-reverification-recipes.mjs";
 import { syntheticExpectedObservation, syntheticKricStationFetch } from "./test-fixtures/kric-station-timetable-synthetic.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { governanceBeforeSource } from "./test-fixtures/independent-source-governance.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -51,12 +52,7 @@ async function withoutRegisteredStationLines(root) {
   };
   await edit(OUTPUTS[0], (inventory) => { inventory.sources = inventory.sources.filter(({ id }) => id !== STATION_LINES_SOURCE_ID); });
   await edit(OUTPUTS[1], (ledger) => ledger.filter(({ sourceId }) => sourceId !== STATION_LINES_SOURCE_ID));
-  await edit(OUTPUTS[2], (governance) => {
-    if (!governance.sources.some(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID)) return;
-    if (JSON.stringify(governance.registrationLineage.addedSourceIds) !== JSON.stringify([STATION_LINES_SOURCE_ID])) throw new Error("unexpected governance lineage");
-    governance.sources = governance.sources.filter(({ sourceId }) => sourceId !== STATION_LINES_SOURCE_ID);
-    governance.registrationLineage = governance.registrationLineage.predecessorLineage;
-  });
+  await edit(OUTPUTS[2], (governance) => governanceBeforeSource(governance, STATION_LINES_SOURCE_ID));
   await edit(OUTPUTS[3], (freshness) => {
     for (const sourceClass of freshness.sourceClasses) sourceClass.sourceIds = sourceClass.sourceIds.filter((id) => id !== STATION_LINES_SOURCE_ID);
   });

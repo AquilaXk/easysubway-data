@@ -210,7 +210,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   });
 
   // #834 QA 결정(2026-09-30): 엘리베이터 이동경로는 kric-station-movement-standard(서버 번들 전용)로 교체했다.
-  // kric-station-elevator·kric-station-elevator-movement는 구조화된 엘리베이터 참조가 없어 계속 차단한다.
+  // 현재 수집하지 않는 퇴역 원천 id. 옛 데이터팩 잔재 차단 전용이다.
   const replacedSourceIds = new Set([
     "kric-station-elevator",
     "kric-station-escalator",
@@ -224,6 +224,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   const coverageEvidence = input.coverageEvidence.map((entry) => entry.sourceDomain !== "accessibility_facilities"
     ? entry
     : { ...entry, sourceIds: [KRIC_SOURCE_ID, SEOUL_SOURCE_ID] });
+  // 현재 수집하지 않는 퇴역 원천 id. 옛 데이터팩 잔재 차단 전용이다.
   const blockedMovementSourceIds = new Set([
     "kric-station-elevator-movement",
     "kric-wheelchair-lift-movement",
