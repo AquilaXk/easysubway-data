@@ -5,6 +5,15 @@ import test from "node:test";
 // data#1084: admin 자동화 상태 snapshot 게시 workflow의 구조 계약. 쓰기 권한이 없고, 새 장기 비밀이 없고, run 스크립트에 expression이 없다.
 const yml = readFileSync(new URL("../../.github/workflows/automation-status-publish.yml", import.meta.url), "utf8");
 
+const jobGuards = () => yml.split("\n").filter((line) => line.startsWith("    if: ")).map((line) => line.slice("    if: ${{ ".length, -" }}".length));
+// job 가드 expression을 JS로 옮겨 평가한다(endsWith는 메서드, 비교 연산자는 엄격 비교).
+const guardRuns = ({ event, actor, variable }) => {
+  const expression = jobGuards()[0].replace(/endsWith\(([^,]+), ([^)]+)\)/gu, "$1.endsWith($2)").replace(/([=!])=/gu, "$1==");
+  const github = { ref: "refs/heads/main", event_name: event, triggering_actor: actor };
+  return new Function("github", "vars", `return ${expression};`)(github, { DATAPACK_AUTOMATION_STATUS_PUBLISH: variable });
+};
+const SCHEDULER_BOT = "easysubway-release-chain[bot]";
+
 function stepBody(name) {
   const begin = yml.indexOf(`      - name: ${name}\n`);
   assert.notEqual(begin, -1, `missing workflow step: ${name}`);
@@ -12,13 +21,11 @@ function stepBody(name) {
   return yml.slice(begin, end === -1 ? yml.length : end);
 }
 
-test("게시는 매시 정기 실행과 발행·RC 체인 완료, 사람 dispatch에서만 시작한다", () => {
+test("게시는 매시 정기 실행과 발행·RC 체인 완료, 사람 dispatch에서만 시작한다(봇 dispatch는 변수를 거친다)", () => {
   assert.match(yml, /^on:\n  schedule:\n    - cron: "7 \* \* \* \*"\n  workflow_run:\n    workflows: \["Data Pack Release Cross-Repository Chain", "Data Pack Release Candidate Chain"\]\n    types: \[completed\]\n  workflow_dispatch:\n/mu);
   assert.doesNotMatch(yml, /\n  (push|pull_request|pull_request_target):/u);
   assert.match(yml, /\npermissions: \{\}\n/u);
-  assert.deepEqual(yml.split("\n").filter((line) => line.startsWith("    if: ")), [
-    "    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_AUTOMATION_STATUS_PUBLISH == 'true') }}",
-  ]);
+  assert.equal(jobGuards().length, 1);
   assert.match(yml, /\nconcurrency:\n  group: automation-status-publish\n  cancel-in-progress: true\n/u);
 });
 
@@ -59,3 +66,14 @@ test("곧 만료되는 원천 근거 게시는 변수 DATAPACK_AUTOMATION_STATUS
   assert.equal(publish.split("\n        run: ")[1].trim(), "node tools/ci/build-automation-status.mjs");
 });
 
+test("변수가 꺼져 있으면 스케줄러 봇 dispatch는 건너뛰고 사람 dispatch만 돈다", () => {
+  assert.equal(guardRuns({ event: "workflow_dispatch", actor: SCHEDULER_BOT, variable: "false" }), false);
+  assert.equal(guardRuns({ event: "workflow_dispatch", actor: "other-app[bot]", variable: "" }), false);
+  assert.equal(guardRuns({ event: "workflow_dispatch", actor: "AquilaXk", variable: "false" }), true);
+  assert.equal(guardRuns({ event: "schedule", actor: "github-actions[bot]", variable: "false" }), false);
+});
+
+test("변수가 켜져 있으면 스케줄러 봇 dispatch와 정기 실행이 돈다", () => {
+  assert.equal(guardRuns({ event: "workflow_dispatch", actor: SCHEDULER_BOT, variable: "true" }), true);
+  assert.equal(guardRuns({ event: "schedule", actor: "github-actions[bot]", variable: "true" }), true);
+});
