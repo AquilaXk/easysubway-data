@@ -1,21 +1,22 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-release-request",
-  "candidateId": "nationwide-candidate-20261019-seq159",
+  "candidateId": "nationwide-candidate-20261019-seq160",
   "scopeId": "nationwide_routing_android_v1",
-  "buildSpecSha256": "b16e7242be11c46cf4e7c371017be4d93fa8fa99a7d2402f1702886811f88449",
-  "sourceSnapshotSetHash": "75413977c5329cbef38c1059470811b35bb211ac930bfc77285eace21b4d5914",
+  "buildSpecSha256": "4e2552ba9468116bcaff59b5db897242c7ae563e401486b20d084e48774fad4c",
+  "sourceSnapshotSetHash": "65f52fbd62e652c2078b24ef1165c45de5c0c90067e1ab8f2ef8e11f2c423df1",
   "approvedLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
   "requestedBy": "datapack-scheduled-refresh",
   "approvedBy": "datapack-release-gates",
-  "approvalId": "release-request-nationwide-candidate-20261019-seq159",
+  "approvalId": "release-request-nationwide-candidate-20261019-seq160",
   "targetChannel": "production",
   "gateRun": {
     "repository": "AquilaXk/easysubway-data",
     "workflowPath": ".github/workflows/nationwide-candidate-refresh.yml",
-    "runId": 39262015864,
+    "runId": 39302865458,
     "runAttempt": 1,
-    "event": "schedule",
-    "headSha": "61278a1d3b8c05bbf617709fcbdf3e036b2c0946"
+    "event": "workflow_dispatch",
+    "headSha": "3cba32b237e0617a1a4c5dfb237c5633eac03fc2",
+    "actor": "easysubway-release-chain[bot]"
   }
 }
