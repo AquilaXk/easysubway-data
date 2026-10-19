@@ -3,6 +3,7 @@
   "artifactKind": "external-scheduler-heartbeat-policy",
   "dispatcher": { "login": "easysubway-release-chain[bot]", "type": "Bot" },
   "workflows": [
+    { "workflow": "automation-status-publish.yml", "maxAge": "PT3H" },
     { "workflow": "current-capital-topology-refresh.yml", "maxAge": "PT5H" },
     { "workflow": "current-capital-topology-registration.yml", "maxAge": "PT5H" },
     { "workflow": "datapack-expiry-alert.yml", "runName": "Data Pack Expiry Alert (datapack-expiry)", "maxAge": "PT9H" },

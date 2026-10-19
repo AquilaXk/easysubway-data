@@ -3,14 +3,14 @@ name: Automation Status Publish
 # backend admin "자동화 상태" 화면(backend#500)에 GitHub 자동화 상태 snapshot을 게시한다(data#1084, QA 결정 2026-10-09: 사람은 이상이 날 때만 admin에서 확인).
 # - push 방식이다. 이 workflow가 상태를 읽어 자동화 상태 전용 토큰(EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN, Bearer)으로 backend에 보낸다(backend#502).
 #   backend가 GitHub를 호출하지 않으므로 prod에 GitHub 토큰이 생기지 않는다.
-# - 15분마다와 발행·RC 체인이 끝날 때 돈다. 게시가 멈추면 admin이 "마지막 갱신 N분 전"으로 드러낸다. 읽지 못한 값은 채우지 않고 실패한다.
+# - 매시 7분(platform 외부 스케줄러 dispatch가 주 경로, 이 cron은 백업)과 발행·RC 체인이 끝날 때 돈다. 게시가 멈추면 admin이 "마지막 갱신 N분 전"으로 드러낸다. 읽지 못한 값은 채우지 않고 실패한다.
 # - 읽기 권한만 쓴다: data는 GITHUB_TOKEN(actions·issues·pull-requests·contents read), hub·platform run 조회는 App 토큰(actions read).
-# - 저장소 변수 DATAPACK_AUTOMATION_STATUS_PUBLISH가 true일 때만 정기 실행이 돈다(기본 꺼짐, backend 수신 API 배포 뒤 켠다). 사람 dispatch는 항상 돈다.
+# - 저장소 변수 DATAPACK_AUTOMATION_STATUS_PUBLISH가 true일 때만 정기 실행(GitHub cron, 외부 스케줄러 봇 dispatch, 체인 완료)이 돈다(기본 꺼짐, backend 수신 API 배포 뒤 켠다). 봇 dispatch도 이 변수를 거치고 사람 dispatch만 항상 돈다.
 # - 저장소 변수 DATAPACK_AUTOMATION_STATUS_FRESHNESS가 true일 때만 snapshot에 곧 만료되는 원천 근거(expiringSources, data#1116)를 싣는다(기본 꺼짐, 코드가 켜지 않는다).
 #   backend(backend#507)가 선택 필드로 받아 배포되기 전에 보내면 게시가 400으로 실패하므로, 변수는 QA 보고 뒤 backend 배포를 확인하고 별도 설정 변경으로만 켠다.
 on:
   schedule:
-    - cron: "7,22,37,52 * * * *"
+    - cron: "7 * * * *"
   workflow_run:
     workflows: ["Data Pack Release Cross-Repository Chain", "Data Pack Release Candidate Chain"]
     types: [completed]
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   publish:
     name: Publish the automation status
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_AUTOMATION_STATUS_PUBLISH == 'true') }}
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.triggering_actor != 'easysubway-release-chain[bot]' && !endsWith(github.triggering_actor, '[bot]')) || vars.DATAPACK_AUTOMATION_STATUS_PUBLISH == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production-datapack
