@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261018-seq157",
-  "publishedAt": "2026-10-18T22:29:17.109Z",
-  "releaseSequence": 157,
-  "builderGitSha": "43478adb6bbccaa8b4f7227e2524a93337102327",
+  "candidateId": "nationwide-candidate-20261019-seq158",
+  "publishedAt": "2026-10-19T02:29:35.995Z",
+  "releaseSequence": 158,
+  "builderGitSha": "cc79e2e665852bcc6860f4726e6845ed019c05c5",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "e1c1f2abefb29616ff7fc960b1458452be98914dbe3335731fb7be9f6869c6f0",
+  "fixtureSha256": "22b19519ac49ac52695a3611ce92f4750f261c6846ebb32dbd77192d5fa9b4e6",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -46,8 +46,6 @@
     "seoul-metro-route-map-positions-current-20261001T041912582Z",
     "molit-urban-rail-full-route-current-20261001T041912582Z",
     "seoulmetro-station-line-info-revalidated-20261001",
-    "seoul-metro-accessibility-20261018T023139289Z",
-    "capital-route-topology-20261018",
     "korail-metropolitan-timetable-file-2f7755ae8b68056d9c73285c8a3d8dc863b2de04776e713049f7c09e50b4c6c5",
     "korail-metropolitan-planned-timetable-6b27c34bb1e2b130e1fe5296e18da5d9959560e916b59248b2993a28e5cdc841",
     "gwangju-transportation-route-topology-923e3dd93fa2159e6f7f69edc72e3b419214858b8dced2f1689f8ec777a3dccf",
@@ -67,7 +65,9 @@
     "busan-transportation-timetable-20261018",
     "kric-subway-timetable-station-lines-20261018",
     "kric-nationwide-timetable-file-5406ee74ab2cebd50dd62a65cf016e50908036a45563fee5565e2eaaa92a51c8",
-    "kric-station-convenience-standard-20261018T221733462Z"
+    "kric-station-convenience-standard-20261018T221733462Z",
+    "seoul-metro-accessibility-20261018T223928056Z",
+    "capital-route-topology-20261019"
   ],
   "sourceSnapshots": [
     {
@@ -171,45 +171,6 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
       "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d"
-    },
-    {
-      "snapshotId": "seoul-metro-accessibility-20261018T023139289Z",
-      "sourceId": "seoul-metro-accessibility",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20261018/1dba90200e42d1ab93555138687c84b98f06c17cd6d475c648f55a686e348052.json",
-      "rawSha256": "1dba90200e42d1ab93555138687c84b98f06c17cd6d475c648f55a686e348052",
-      "redactedRequestFingerprint": "f2b9752b0554f3945909d44e7f42dddc5ca8d87b1d14f6cfd542291120c9faa5",
-      "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2027-01-16T02:31:39.289Z",
-      "rawRetentionExpiresAt": "2027-01-16T02:31:39.289Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303"
-    },
-    {
-      "snapshotId": "capital-route-topology-20261018",
-      "sourceId": "capital-route-topology",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261018/c2f765bdac378ac4679a8d861b83545c47cd1216189f4b46509b820e3d119eff.json",
-      "rawSha256": "c2f765bdac378ac4679a8d861b83545c47cd1216189f4b46509b820e3d119eff",
-      "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
-      "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-10-25T00:20:31.784Z",
-      "rawRetentionExpiresAt": "2027-01-16T00:20:31.784Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
-      "admissionRecordSha256s": [
-        {
-          "kind": "capitalTopologyAdmissionEvidence",
-          "sha256": "5b58209d50349ccad534bfd3cde683465912712913ae147a23a04077e1a70254"
-        }
-      ]
     },
     {
       "snapshotId": "korail-metropolitan-timetable-file-2f7755ae8b68056d9c73285c8a3d8dc863b2de04776e713049f7c09e50b4c6c5",
@@ -640,10 +601,49 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
+    },
+    {
+      "snapshotId": "seoul-metro-accessibility-20261018T223928056Z",
+      "sourceId": "seoul-metro-accessibility",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20261018/cd47fc48ba95484103212a811cb8745eb62c1e67292e13196af9205e1041233d.json",
+      "rawSha256": "cd47fc48ba95484103212a811cb8745eb62c1e67292e13196af9205e1041233d",
+      "redactedRequestFingerprint": "f2b9752b0554f3945909d44e7f42dddc5ca8d87b1d14f6cfd542291120c9faa5",
+      "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2027-01-16T22:39:28.056Z",
+      "rawRetentionExpiresAt": "2027-01-16T22:39:28.056Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303"
+    },
+    {
+      "snapshotId": "capital-route-topology-20261019",
+      "sourceId": "capital-route-topology",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261019/abcf196bf4ba730152844d758614b28d6bd63f6e3e0acaa76e66c635f2a4e934.json",
+      "rawSha256": "abcf196bf4ba730152844d758614b28d6bd63f6e3e0acaa76e66c635f2a4e934",
+      "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+      "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-10-26T00:44:08.985Z",
+      "rawRetentionExpiresAt": "2027-01-17T00:44:08.985Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "7ceabc3daca30927463ec811996cdb82584192552cbbc7f2e8bef95971731597"
+        }
+      ]
     }
   ],
-  "sourceSnapshotSetHash": "4173dd5ebcb596125a2e3c16c6ca2f8b7a5899045e4351507868dd2e55a20eec",
-  "sourceInventorySha256": "28c73a101c7305e6ab705e41bcb0dadb53be284b7efa6782df9fdcd8dc885398",
+  "sourceSnapshotSetHash": "89a4190cfc1454d5585fbe5ee93725f6c4542e0b763c2dc277cbed486cd6e4f7",
+  "sourceInventorySha256": "0666fb6dc1ec42911a855f2aae113e4e9469d76e076fdcf42e61ebbfe04821d0",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
@@ -660,24 +660,24 @@
       "snapshotId": "capital-route-topology-20260724"
     },
     "capitalTopologyCandidate": {
-      "path": "tools/datapack/sources/capital-route-topology-20261018.json",
-      "sha256": "c2f765bdac378ac4679a8d861b83545c47cd1216189f4b46509b820e3d119eff",
-      "snapshotId": "capital-route-topology-20261018"
+      "path": "tools/datapack/sources/capital-route-topology-20261019.json",
+      "sha256": "abcf196bf4ba730152844d758614b28d6bd63f6e3e0acaa76e66c635f2a4e934",
+      "snapshotId": "capital-route-topology-20261019"
     },
     "capitalTopologyReverification": {
-      "path": "tools/datapack/release/capital-topology-reverification-20261018.json",
-      "sha256": "eee1973aaf310b375c168facdcea8d84d58855489cbc403a19d8448d7146790e"
+      "path": "tools/datapack/release/capital-topology-reverification-20261019.json",
+      "sha256": "4f27a4ff0cf2530dd9dc65414667290bd24a5a2bcd92c2f8f441eedc94092279"
     },
     "capitalTopologyAdmission": {
       "schemaVersion": 1,
       "artifactKind": "capital-network-edge-admission",
       "issue": 2649,
       "status": "ADMITTED",
-      "snapshotId": "capital-route-topology-20261018",
+      "snapshotId": "capital-route-topology-20261019",
       "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-      "reviewedAt": "2026-10-18T00:20:31.784Z",
-      "reverifiedAt": "2026-10-18T00:20:31.784Z",
-      "freshUntil": "2026-10-25T00:20:31.784Z"
+      "reviewedAt": "2026-10-19T00:44:08.985Z",
+      "reverifiedAt": "2026-10-19T00:44:08.985Z",
+      "freshUntil": "2026-10-26T00:44:08.985Z"
     },
     "itxCoverageContract": {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -685,19 +685,19 @@
     },
     "incheonTimetables": {
       "line1": {
-        "path": "tools/datapack/sources/incheon-line1-train-timetable-20261018.json",
-        "sha256": "f26cdc23f7780c5bebd577295cdd7156423e0517e31e412ba0a65e424259d343",
-        "snapshotId": "incheon-line1-train-timetable-20261018"
+        "path": "tools/datapack/sources/incheon-line1-train-timetable-20261019.json",
+        "sha256": "d7a42ca235ee77ef6c8d580b696267a3c7e512c01e43048752e155e31615ddc5",
+        "snapshotId": "incheon-line1-train-timetable-20261019"
       },
       "line2": {
-        "path": "tools/datapack/sources/incheon-line2-train-timetable-20261018.json",
-        "sha256": "747f0271bc28144835bca7c8b07f036827e8d4d3e77c6c7da9e39bd46bf8966f",
-        "snapshotId": "incheon-line2-train-timetable-20261018"
+        "path": "tools/datapack/sources/incheon-line2-train-timetable-20261019.json",
+        "sha256": "9aae8d9626e1f2ef366cd0d26ea3900684b293e18843910e51856539cebbb9c9",
+        "snapshotId": "incheon-line2-train-timetable-20261019"
       }
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "0e78854f887a13a356317d0b9ba8f676ad30b334e09b95ee6291261760a1eaa7"
+      "sha256": "1135ded5f09393e7eb7c07d2515b9d9356c7dd4e8492ffcc3162a0b843b0c040"
     }
   },
   "officialOdFareEvidence": {
@@ -739,7 +739,7 @@
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20261017150040720.json",
   "itxTopologyEvidenceSha256": "d58f7fbc0c74a3bd8628e3cbf99cf85b863f9da4350089a1fd28feddb923961b",
   "approvedAliasLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
-  "facilityEvidenceLedgerHash": "5d835c56329d010a28a4551ed83624fcb693ce464117cd9de264a84f02b1a752",
+  "facilityEvidenceLedgerHash": "100be014222ba462eeb5e678cd6bea324c78f55f5caab50ed22250a290c847b4",
   "routeEvidenceLedgerHash": "cfe6e6513493770f7095f5e47ccbe6dc3d9f80ac3254d0aedd28ad2ec746e0ec",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd"
 }
