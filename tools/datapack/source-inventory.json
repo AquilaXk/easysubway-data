@@ -8659,11 +8659,11 @@
         ]
       },
       "retainedGwangjuProjectionEvidence": {
-        "snapshotId": "kric-nationwide-timetable-file-gwangju-4590d29d3a6dcb071d96ae9eb0932c78a17f01b3a1b82fcbbaba4fa21f84b68c",
-        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-4590d29d3a6dcb071d96ae9eb0932c78a17f01b3a1b82fcbbaba4fa21f84b68c.json",
-        "contentSha256": "4590d29d3a6dcb071d96ae9eb0932c78a17f01b3a1b82fcbbaba4fa21f84b68c",
-        "retainedSnapshotId": "kric-nationwide-timetable-file-5406ee74ab2cebd50dd62a65cf016e50908036a45563fee5565e2eaaa92a51c8",
-        "observationRawObjectSha256": "faa6cad86e1f216e697b5409ce02e2529961e4d4c6af16f2db8239becb6108c3",
+        "snapshotId": "kric-nationwide-timetable-file-gwangju-d9a86b7fa5061f405839f69cbebf317624c80016b5c6d37ae80a8186fc7f98e9",
+        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-d9a86b7fa5061f405839f69cbebf317624c80016b5c6d37ae80a8186fc7f98e9.json",
+        "contentSha256": "d9a86b7fa5061f405839f69cbebf317624c80016b5c6d37ae80a8186fc7f98e9",
+        "retainedSnapshotId": "kric-nationwide-timetable-file-01f0a2ccc5e6e6192e03c3a02bfac940d05f8ae760353ecf772d9cce9417668e",
+        "observationRawObjectSha256": "89a81a24b22434e9103b4b3ccbc51e5ac2efd205904ca9a4faa3857fbf7b5011",
         "routeNumber": "S2901",
         "recordCount": 15881,
         "recordsSha256": "cb0c1f50c7da47bb580cc0a8136e2adaf03f00a1390d5e1cf077b79532968956"
