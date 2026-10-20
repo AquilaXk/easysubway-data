@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-platform
-          ref: bc225a8866128d48b5b8ce0436aaf9c852827ec4
+          ref: f7e650eee4ab1e6690611582761a05415d018695
           path: platform-probe
           sparse-checkout: tools/ops/source-reachability-probe.mjs
           sparse-checkout-cone-mode: false
