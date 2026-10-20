@@ -793,10 +793,10 @@
     {
       "name": "stationLines",
       "sourceId": "kric-subway-timetable-station-lines",
-      "snapshotId": "kric-subway-timetable-station-lines-20261019",
-      "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
-      "recordsSha256": "af487da0eaa94d41c0c7a569c8f3a8bec8f90fcc43c33af52d90c215a3da71af",
-      "observedAt": "2026-10-19T13:53:45.883Z",
+      "snapshotId": "kric-subway-timetable-station-lines-20261020",
+      "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
+      "recordsSha256": "0d10c05eb53537cb46f59206f450257d11e9d5773d35c9eb1e42e28b589071df",
+      "observedAt": "2026-10-20T14:27:02.956Z",
       "lines": [
         {
           "lineId": "line-8604048b6430",
