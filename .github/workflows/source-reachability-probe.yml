@@ -1,0 +1,69 @@
+name: Source Reachability Probe
+
+# hub AquilaXk/easysubway#3036: GitHub 호스티드 러너(미국)에서 공공 원천 호스트의 연결 성공률·단계별 지연(dns·connect·tls·first-byte)을 잰다.
+# 서울 k3s CronJob(platform source-reachability-probe-deploy)과 같은 스크립트(platform tools/ops/source-reachability-probe.mjs)를 같은 커밋으로 받아 쓴다.
+# - 키·토큰·쿠키 없이 호스트 루트에 HEAD 한 번만 보낸다. 환경 비밀·쓰기 권한이 없고 저장소·PR·이슈를 바꾸지 않는다(contents: read).
+# - 한 번의 실행은 실제 벽시계 10분 경계(--align)에 맞춘 6라운드(약 53분)이고 매시 7분에 시작한다. 시작이 늦어져도 샘플은 같은 10분 격자에 놓이고,
+#   concurrency가 실행을 직렬화하므로 호스트당 요청은 10분에 1회를 넘지 않는다(실행을 취소하지 않아 표본을 잃지 않는다).
+# - 받은 스크립트의 SHA-256이 아래 기대값과 다르면 측정 전에 실패한다. 서울 DEPLOY 결과의 scriptSha256과 같은 값이어야 두 측정이 같은 스크립트다.
+# - 정기 실행은 저장소 변수 SOURCE_REACHABILITY_PROBE가 true일 때만 돈다(기본 꺼짐). 사람 dispatch는 항상 한 번 돈다.
+# - 측정 기간(KST 17~23시를 포함한 24~48시간)이 끝나면 변수를 false로 바꾸거나 이 workflow와 테스트를 지운다.
+# - 결과는 JSON Lines artifact와 요약 표다. 실패는 기록으로 남길 뿐 job을 실패시키지 않는다(도달 실패가 측정 대상이다).
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: source-reachability-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Source reachability from GitHub-hosted runner
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.SOURCE_REACHABILITY_PROBE == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - name: Checkout the shared probe script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-platform
+          ref: f7e650eee4ab1e6690611582761a05415d018695
+          path: platform-probe
+          sparse-checkout: tools/ops/source-reachability-probe.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Verify the shared probe script digest
+        env:
+          EXPECTED_SHA256: de9f6b6e2bf5aa3c597f8ff5772be891539cf57b6a9a05160d4772609701250f
+        run: |
+          set -euo pipefail
+          echo "${EXPECTED_SHA256}  platform-probe/tools/ops/source-reachability-probe.mjs" | sha256sum --check --strict
+          echo "probe script sha256: ${EXPECTED_SHA256}" >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Probe source reachability from this runner
+        run: |
+          set -euo pipefail
+          node platform-probe/tools/ops/source-reachability-probe.mjs --vantage gha-us-hosted --rounds 6 --interval-seconds 600 --align --output "${RUNNER_TEMP}/gha-us-hosted-probe.jsonl"
+      - name: Summarize the measurements
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [[ -s "${RUNNER_TEMP}/gha-us-hosted-probe.jsonl" ]]; then
+            node platform-probe/tools/ops/source-reachability-probe.mjs summarize "${RUNNER_TEMP}/gha-us-hosted-probe.jsonl" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+      - name: Upload the measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: source-reachability-gha-us-hosted-${{ github.run_id }}
+          path: ${{ runner.temp }}/gha-us-hosted-probe.jsonl
+          if-no-files-found: ignore
+          retention-days: 30

@@ -707,6 +707,7 @@
     {"path":"tools/ci/source-reverification-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/probe-provider-reachability.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/provider-reachability-probe-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/ci/source-reachability-probe-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/source-reverification-recipes.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/run-source-reverification.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":3200},
     {"path":"tools/datapack/run-source-reverification-daegu-chain.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":1000},
