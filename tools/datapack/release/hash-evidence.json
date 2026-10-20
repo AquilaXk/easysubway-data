@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "61278a1d3b8c05bbf617709fcbdf3e036b2c0946",
+  "builderGitSha": "2eafb0e101a89f916318ca058d4fa2b68810578a",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "75413977c5329cbef38c1059470811b35bb211ac930bfc77285eace21b4d5914"
+    "value": "69845ca8c2895b1ce75f3d781828036ef8341919e59c849127e949c149218997"
   },
   "sourceInventorySha256": {
-    "value": "6bd19f29f60cc9632390e6d93da2efe27d960906309dbc61ae675f89b6a05893"
+    "value": "8b4341af02eb69d18ffe362a498b2332630949f0c4f6d7eb9f214d09d8d9bb4d"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "315878446d073addb7f680b104705adfc230decbca205e0593de4665d30c8be5"
+    "sha256": "6c876a06b188051b4a7b883b4739283e6793b3093f18c518c7cf7808d0d3acde"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261019-seq159"
+      "value": "nationwide-candidate-20261019-seq161"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261019-seq159"
+      "value": "release-request-nationwide-candidate-20261019-seq161"
     }
   },
   "perSourceEvidence": [
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "a4c35f56b7532ac4135a8a1f153206b47fc3a7c5dfa32b3f0ecf54ccb8208820"
+      "perSourceSnapshotSetHash": "fdf93e5a71f59218c67cd7c4539efb1e4608681d7d0fc1f189f7ebb692652d74"
     },
     {
       "sourceId": "incheon-transit-accessibility",
@@ -130,39 +130,6 @@
         }
       ],
       "perSourceSnapshotSetHash": "29dbaf5ca1162ac0fd2a3131fa4e2b4213ac1e563790df8d97d69b9c8816a5f6"
-    },
-    {
-      "sourceId": "kric-subway-timetable-station-lines",
-      "snapshotId": "kric-subway-timetable-station-lines-20261018",
-      "rawSha256": "f215765dac4ba52b9b9c455f50a367a6079a8a08d6cab9984be75f3f5ae95723",
-      "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
-      "perSourceSnapshotSetHash": "c400964317fd4ce05a82008627805c40726fa3b3005ebafc8cffa0fa7b47f6c4"
-    },
-    {
-      "sourceId": "kric-nationwide-timetable-file",
-      "snapshotId": "kric-nationwide-timetable-file-5406ee74ab2cebd50dd62a65cf016e50908036a45563fee5565e2eaaa92a51c8",
-      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "admissionRecordSha256s": [
-        {
-          "kind": "retainedScheduleAdmissionEvidence",
-          "sha256": "18a06d899b86bba0e8597dadcc7fcbfffdc476d5eef1fb6fc1139885e290b23a"
-        }
-      ],
-      "perSourceSnapshotSetHash": "937f91ae366b28d99ebe0d121c16db4245ec2d187468906fd947753e1675a425"
-    },
-    {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20261018T221733462Z",
-      "rawSha256": "575874de67eb9418068e1bc75fca44a92ed677fced0e71d52957e44686171ed7",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "4072d51096f81bc5b469e8da2fd62ae277eec0572b48e299998444ebd89d232e"
-    },
-    {
-      "sourceId": "seoul-metro-accessibility",
-      "snapshotId": "seoul-metro-accessibility-20261018T223928056Z",
-      "rawSha256": "cd47fc48ba95484103212a811cb8745eb62c1e67292e13196af9205e1041233d",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "perSourceSnapshotSetHash": "9a30134786c304b9aed187a0127110910b837eba229db1ee97cf7a03736cd352"
     },
     {
       "sourceId": "capital-route-topology",
@@ -343,6 +310,39 @@
         }
       ],
       "perSourceSnapshotSetHash": "3721250cfab377ead47c1876b895dd345c62db4c7a204ff6386db3b30daab990"
+    },
+    {
+      "sourceId": "kric-subway-timetable-station-lines",
+      "snapshotId": "kric-subway-timetable-station-lines-20261019",
+      "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
+      "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+      "perSourceSnapshotSetHash": "e2ce60d11acd595bd290bd35df2003421bb594e5fef1780f002bc4fb0e022c1c"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "snapshotId": "kric-nationwide-timetable-file-01f0a2ccc5e6e6192e03c3a02bfac940d05f8ae760353ecf772d9cce9417668e",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "admissionRecordSha256s": [
+        {
+          "kind": "retainedScheduleAdmissionEvidence",
+          "sha256": "5dfb6d1c51f47b8a09063d631fc11b835ab80989386891b665222e7641574782"
+        }
+      ],
+      "perSourceSnapshotSetHash": "d004aea28c1b7b24b6480b671b68321c7e027ea56f01070414672d69de9e9ab3"
+    },
+    {
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20261019T170313241Z",
+      "rawSha256": "6371ecd961f08e3dda78c3a3095da8e4e6b8af124f2dcdfe396abbd3deb204e2",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "b8c56dcee87dfa6c1f2cc8a7abde057c6311161e968c0f77e68a29aa8efac5ff"
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-20261019T184035716Z",
+      "rawSha256": "ce63000339c7e733b271cd8443e247e385a29e0a4baab1eb79459ad96403d92f",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "d7ea8b8d7b8893f1963b2b181f1981016a7e7558accf4d4f57e7ea69672c177f"
     }
   ],
   "officialOdFareEvidence": {

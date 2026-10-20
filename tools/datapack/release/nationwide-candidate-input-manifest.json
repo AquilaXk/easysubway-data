@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261019-seq159",
-  "candidateBuildSpecSha256": "b16e7242be11c46cf4e7c371017be4d93fa8fa99a7d2402f1702886811f88449",
-  "preparationSha256": "5894c0b088b4fe744af8e643fb96baf09ff0545ebb61f4797eebbdf79222a087",
-  "fanInSha256": "bd05090eab8af72e41a0184a01bda1bc748b2c4d1a8feed030977ae1ca085a63",
+  "candidateId": "nationwide-candidate-20261019-seq161",
+  "candidateBuildSpecSha256": "c5ad73243b033a07b6324f789d95df70c2454fd5ef91f82079c613cf54ecaa99",
+  "preparationSha256": "d3706b3ae0bb6d088848378f0da9d0b60fecf6f487600fd7094a306390432077",
+  "fanInSha256": "22c9f85e34242f589c33e44120d974b70cf16f41159716c91250e6ae67771fbb",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
       "path": "release/product-gates/datapack-freshness-sla.json",
-      "sha256": "34429e05779c849b917bb0c5f890fd5afe96661db87e0f47c278d4b46c05e934",
-      "byteSize": 9630
+      "sha256": "777a0be9f9ed3c8b82bcd12b12599429e0d7ed38a2193935b8449f56586a3ba7",
+      "byteSize": 9439
     },
     {
       "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -29,8 +29,8 @@
     },
     {
       "path": "tools/datapack/nationwide-coverage-targets.json",
-      "sha256": "8f9caee0c2149a8cb40483fa0fa598086ba365d378b7acc1171a1f50f18e4122",
-      "byteSize": 19392
+      "sha256": "33ad00894592652f1fed7c02e8070d4c612d49f17de56bcb6b8565ceb35bea5e",
+      "byteSize": 19202
     },
     {
       "path": "tools/datapack/official-od-fare-admission.json",
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "bd05090eab8af72e41a0184a01bda1bc748b2c4d1a8feed030977ae1ca085a63",
+      "sha256": "22c9f85e34242f589c33e44120d974b70cf16f41159716c91250e6ae67771fbb",
       "byteSize": 36442
     },
     {
@@ -64,7 +64,7 @@
     },
     {
       "path": "tools/datapack/release/current-transfer-topology-metrics.json",
-      "sha256": "3d2a750eb2a667ce0cf090e1047e54c1a7abf6992d2cc0e4bb4049dabfca6af4",
+      "sha256": "bcebe8b92f65a3e3ba4a4709349da3307bc4ec464c2ae7dfabeda813ab278f77",
       "byteSize": 86578
     },
     {
@@ -74,23 +74,23 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "eba2167feb05901fd46d04e2fcb9854f4eea6095e222061768bf07603a4ed0ba",
-      "byteSize": 4678857
+      "sha256": "5d84324a162bc4644bcc7822b70d611a7ceb6591d981890166b9f069ea19734d",
+      "byteSize": 4716881
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
-      "sha256": "5dacb9428eb6277ae6ae768c646267a0eb96697262f3cf0cb76e49b01b515126",
+      "sha256": "39f3979aa824e1f570dc6ac4d64dc1d375098c007b63acdf0ea6e46e061fe2f9",
       "byteSize": 222667
     },
     {
       "path": "tools/datapack/source-governance-policy.json",
-      "sha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
-      "byteSize": 59134
+      "sha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
+      "byteSize": 60482
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "dcca70d98170e7e9b9f6a97501a8c450cc70c515ac0da5fdbcf7b85ede52d848",
-      "byteSize": 429570
+      "sha256": "cb8ce4bced4c7b0fffbd4ac468f61bd7e58ece0eb9d403dff88e7f3a9a2c2b06",
+      "byteSize": 404395
     },
     {
       "path": "tools/datapack/sources/busan-transportation-accessibility-60eec0fc612205541b835cedbff92f80085d0ccf8209d90e03b2a9a489f02675-20261018.json",
@@ -183,8 +183,8 @@
       "byteSize": 16241401
     },
     {
-      "path": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-4590d29d3a6dcb071d96ae9eb0932c78a17f01b3a1b82fcbbaba4fa21f84b68c.json",
-      "sha256": "278f3dffc2b9565834c3b764e3a8fbd09fd9339bb82b05a1c5ed4881207dfb67",
+      "path": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-d9a86b7fa5061f405839f69cbebf317624c80016b5c6d37ae80a8186fc7f98e9.json",
+      "sha256": "900663c0ac18b8b4bacafe6e044414b2355ce4a5ac92bd35f74f9d02acbd8a5f",
       "byteSize": 10060125
     },
     {
@@ -193,13 +193,13 @@
       "byteSize": 29394372
     },
     {
-      "path": "tools/datapack/sources/kric-station-convenience-standard-20261018T221733462Z.json",
-      "sha256": "2e81b662cca1d749392d02f3b11c7ec6c57c1a689e11293ea6e0d8a1d6d1229c",
+      "path": "tools/datapack/sources/kric-station-convenience-standard-20261019T170313241Z.json",
+      "sha256": "4a6a8c53fc93392b56a8ad6762d48e8ae991b4d23b9ca8bff0abf69dae496879",
       "byteSize": 774800
     },
     {
-      "path": "tools/datapack/sources/kric-subway-timetable-station-lines-20261018.json",
-      "sha256": "a27c7d50de20038a528c5f0e655ca2210651c76f3e01d9ebd1bf00d9a88aa988",
+      "path": "tools/datapack/sources/kric-subway-timetable-station-lines-20261019.json",
+      "sha256": "909ac5057fcd243540245125aafb5d4b51f44086017f758c172fc315f157f935",
       "byteSize": 10461819
     },
     {

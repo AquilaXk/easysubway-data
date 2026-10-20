@@ -118,27 +118,27 @@
     "itxTopologyEvidenceSha256": "d58f7fbc0c74a3bd8628e3cbf99cf85b863f9da4350089a1fd28feddb923961b"
   },
   "releaseIdentity": {
-    "candidateId": "nationwide-candidate-20261019-seq159",
-    "publishedAt": "2026-10-19T13:40:07.611Z",
-    "releaseSequence": 159
+    "candidateId": "nationwide-candidate-20261019-seq161",
+    "publishedAt": "2026-10-19T22:29:34.196Z",
+    "releaseSequence": 161
   },
   "builderIdentity": {
-    "gitSha": "61278a1d3b8c05bbf617709fcbdf3e036b2c0946",
+    "gitSha": "2eafb0e101a89f916318ca058d4fa2b68810578a",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
-    "candidateId": "nationwide-candidate-20261019-seq159",
+    "candidateId": "nationwide-candidate-20261019-seq161",
     "scopeId": "nationwide_routing_android_v1",
-    "approvalId": "release-request-nationwide-candidate-20261019-seq159",
+    "approvalId": "release-request-nationwide-candidate-20261019-seq161",
     "requestedBy": "datapack-scheduled-refresh",
     "approvedBy": "datapack-release-gates"
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "e2ae8aa9eb590e6028a15d28c88dda13adfc1e18c90aed8145798e355ccfe300"
+    "sha256": "eec3fda0e7c5bddfd859bab2474663d3d7291cdbadb89cf11112470b6d87c5f8"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",
-    "sha256": "030d4da6d19744633ef2d77dc4d0471d6e4eb4fbea9dc8502ee0993030cb5856"
+    "sha256": "1082ce1d44d081784d726b83d83dfa6ef8d192fcf9324503635c7a64bd934ae3"
   }
 }
