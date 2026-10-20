@@ -19,7 +19,7 @@
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "cc3746e224eba5cdf722101b46dcbd9268c418175bc682f0c4c3dfaf1e5bc06d"
+        "sha256": "04367194cc74bc4e153ac081fb37012604b1c58e12df7db20cc11e73f6ebe578"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -27,14 +27,14 @@
       },
       "sourceSnapshots": {
         "path": "tools/datapack/release/source-snapshots.json",
-        "sha256": "3b95b86b844f4c9d2873c57003cca332b442f44686b65517216a8fd1883c09f5"
+        "sha256": "0d1bb094eac34a0883b062d8c6c64bef098b7124b47b1f3e5bc48c0f45356f2f"
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "278a282a893262ae63c39b95e5df3f7c519536ced6a64caea0bdff888fdc62c3",
-        "fanInSha256": "08062a2f3cb67e962b2dacbe6e62cba87cafc186ee2e30c176e5dc70389b8849",
+        "sha256": "0433daa0fad1cfbdba963920a6ba7268cf25ba2d7ae71e601ef9a50e5280f68d",
+        "fanInSha256": "764c964639ee0518f4528d4db546a69342df5262f1e0fe930fb8da6f7e143f14",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
-        "sourceSetSha256": "d1df8df344363833b735dfc9e63aded4fc96a90884e0c924c58fc0b806f7d777",
+        "sourceSetSha256": "907acd91dc6915fa3e62644a868862ed7881a1a3c1c042224531b363c42ea042",
         "regionalMatrixSha256": "39f3979aa824e1f570dc6ac4d64dc1d375098c007b63acdf0ea6e46e061fe2f9"
       }
     }
@@ -4406,13 +4406,13 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "observedDataUpdatedAt": "2026-10-19",
-              "retrievedAt": "2026-10-19",
+              "observedDataUpdatedAt": "2026-10-20",
+              "retrievedAt": "2026-10-20",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z"
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -4421,8 +4421,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                "freshnessExpiresAt": "2026-11-18T13:53:45.883Z"
+                "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                "freshnessExpiresAt": "2026-11-19T14:27:02.956Z"
               }
             }
           ]
@@ -4439,10 +4439,10 @@
                   "issue": 903,
                   "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
                   "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
-                  "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261019.json",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261020.json",
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z",
                   "lineIds": [
                     "line-8604048b6430",
                     "line-828f04afc588",
@@ -4452,9 +4452,9 @@
                   ],
                   "tripCount": 3956,
                   "stopTimeCount": 50754,
-                  "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
+                  "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
                   "tripsSha256": "0511c2b1e7c4e1481940b5978568249c25d2f5e7f18bcfc171f6d4a97e1fb99b",
-                  "contentSha256": "af487da0eaa94d41c0c7a569c8f3a8bec8f90fcc43c33af52d90c215a3da71af"
+                  "contentSha256": "0d10c05eb53537cb46f59206f450257d11e9d5773d35c9eb1e42e28b589071df"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -4479,9 +4479,9 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "snapshotId": "kric-subway-timetable-station-lines-20261019",
-              "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261019/7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce.json"
+              "snapshotId": "kric-subway-timetable-station-lines-20261020",
+              "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261020/48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd.json"
             }
           ]
         },
@@ -13302,13 +13302,13 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "observedDataUpdatedAt": "2026-10-19",
-              "retrievedAt": "2026-10-19",
+              "observedDataUpdatedAt": "2026-10-20",
+              "retrievedAt": "2026-10-20",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z"
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -13317,8 +13317,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                "freshnessExpiresAt": "2026-11-18T13:53:45.883Z"
+                "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                "freshnessExpiresAt": "2026-11-19T14:27:02.956Z"
               }
             }
           ]
@@ -13335,10 +13335,10 @@
                   "issue": 903,
                   "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
                   "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
-                  "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261019.json",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261020.json",
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z",
                   "lineIds": [
                     "line-8604048b6430",
                     "line-828f04afc588",
@@ -13348,9 +13348,9 @@
                   ],
                   "tripCount": 3956,
                   "stopTimeCount": 50754,
-                  "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
+                  "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
                   "tripsSha256": "0511c2b1e7c4e1481940b5978568249c25d2f5e7f18bcfc171f6d4a97e1fb99b",
-                  "contentSha256": "af487da0eaa94d41c0c7a569c8f3a8bec8f90fcc43c33af52d90c215a3da71af"
+                  "contentSha256": "0d10c05eb53537cb46f59206f450257d11e9d5773d35c9eb1e42e28b589071df"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -13375,9 +13375,9 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "snapshotId": "kric-subway-timetable-station-lines-20261019",
-              "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261019/7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce.json"
+              "snapshotId": "kric-subway-timetable-station-lines-20261020",
+              "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261020/48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd.json"
             }
           ]
         },
@@ -13946,13 +13946,13 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "observedDataUpdatedAt": "2026-10-19",
-              "retrievedAt": "2026-10-19",
+              "observedDataUpdatedAt": "2026-10-20",
+              "retrievedAt": "2026-10-20",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z"
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -13961,8 +13961,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                "freshnessExpiresAt": "2026-11-18T13:53:45.883Z"
+                "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                "freshnessExpiresAt": "2026-11-19T14:27:02.956Z"
               }
             }
           ]
@@ -13979,10 +13979,10 @@
                   "issue": 903,
                   "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
                   "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
-                  "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261019.json",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261020.json",
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z",
                   "lineIds": [
                     "line-8604048b6430",
                     "line-828f04afc588",
@@ -13992,9 +13992,9 @@
                   ],
                   "tripCount": 3956,
                   "stopTimeCount": 50754,
-                  "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
+                  "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
                   "tripsSha256": "0511c2b1e7c4e1481940b5978568249c25d2f5e7f18bcfc171f6d4a97e1fb99b",
-                  "contentSha256": "af487da0eaa94d41c0c7a569c8f3a8bec8f90fcc43c33af52d90c215a3da71af"
+                  "contentSha256": "0d10c05eb53537cb46f59206f450257d11e9d5773d35c9eb1e42e28b589071df"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -14019,9 +14019,9 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "snapshotId": "kric-subway-timetable-station-lines-20261019",
-              "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261019/7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce.json"
+              "snapshotId": "kric-subway-timetable-station-lines-20261020",
+              "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261020/48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd.json"
             }
           ]
         },
@@ -15728,13 +15728,13 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "observedDataUpdatedAt": "2026-10-19",
-              "retrievedAt": "2026-10-19",
+              "observedDataUpdatedAt": "2026-10-20",
+              "retrievedAt": "2026-10-20",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z"
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -15743,8 +15743,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                "freshnessExpiresAt": "2026-11-18T13:53:45.883Z"
+                "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                "freshnessExpiresAt": "2026-11-19T14:27:02.956Z"
               }
             }
           ]
@@ -15761,10 +15761,10 @@
                   "issue": 903,
                   "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
                   "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
-                  "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261019.json",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261020.json",
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z",
                   "lineIds": [
                     "line-8604048b6430",
                     "line-828f04afc588",
@@ -15774,9 +15774,9 @@
                   ],
                   "tripCount": 3956,
                   "stopTimeCount": 50754,
-                  "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
+                  "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
                   "tripsSha256": "0511c2b1e7c4e1481940b5978568249c25d2f5e7f18bcfc171f6d4a97e1fb99b",
-                  "contentSha256": "af487da0eaa94d41c0c7a569c8f3a8bec8f90fcc43c33af52d90c215a3da71af"
+                  "contentSha256": "0d10c05eb53537cb46f59206f450257d11e9d5773d35c9eb1e42e28b589071df"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -15801,9 +15801,9 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "snapshotId": "kric-subway-timetable-station-lines-20261019",
-              "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261019/7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce.json"
+              "snapshotId": "kric-subway-timetable-station-lines-20261020",
+              "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261020/48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd.json"
             }
           ]
         },
@@ -17543,13 +17543,13 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "observedDataUpdatedAt": "2026-10-19",
-              "retrievedAt": "2026-10-19",
+              "observedDataUpdatedAt": "2026-10-20",
+              "retrievedAt": "2026-10-20",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z"
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -17558,8 +17558,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                "freshnessExpiresAt": "2026-11-18T13:53:45.883Z"
+                "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                "freshnessExpiresAt": "2026-11-19T14:27:02.956Z"
               }
             }
           ]
@@ -17576,10 +17576,10 @@
                   "issue": 903,
                   "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
                   "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
-                  "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261019.json",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261020.json",
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z",
                   "lineIds": [
                     "line-8604048b6430",
                     "line-828f04afc588",
@@ -17589,9 +17589,9 @@
                   ],
                   "tripCount": 3956,
                   "stopTimeCount": 50754,
-                  "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
+                  "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
                   "tripsSha256": "0511c2b1e7c4e1481940b5978568249c25d2f5e7f18bcfc171f6d4a97e1fb99b",
-                  "contentSha256": "af487da0eaa94d41c0c7a569c8f3a8bec8f90fcc43c33af52d90c215a3da71af"
+                  "contentSha256": "0d10c05eb53537cb46f59206f450257d11e9d5773d35c9eb1e42e28b589071df"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -17616,9 +17616,9 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "snapshotId": "kric-subway-timetable-station-lines-20261019",
-              "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261019/7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce.json"
+              "snapshotId": "kric-subway-timetable-station-lines-20261020",
+              "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261020/48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd.json"
             }
           ]
         },
@@ -18187,13 +18187,13 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "observedDataUpdatedAt": "2026-10-19",
-              "retrievedAt": "2026-10-19",
+              "observedDataUpdatedAt": "2026-10-20",
+              "retrievedAt": "2026-10-20",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z"
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -18202,8 +18202,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                "freshnessExpiresAt": "2026-11-18T13:53:45.883Z"
+                "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                "freshnessExpiresAt": "2026-11-19T14:27:02.956Z"
               }
             }
           ]
@@ -18220,10 +18220,10 @@
                   "issue": 903,
                   "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
                   "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
-                  "snapshotId": "kric-subway-timetable-station-lines-20261019",
-                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261019.json",
-                  "capturedAt": "2026-10-19T13:51:19.880Z",
-                  "freshUntil": "2026-11-18T13:53:45.883Z",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261020",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261020.json",
+                  "capturedAt": "2026-10-20T14:24:12.381Z",
+                  "freshUntil": "2026-11-19T14:27:02.956Z",
                   "lineIds": [
                     "line-8604048b6430",
                     "line-828f04afc588",
@@ -18233,9 +18233,9 @@
                   ],
                   "tripCount": 3956,
                   "stopTimeCount": 50754,
-                  "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
+                  "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
                   "tripsSha256": "0511c2b1e7c4e1481940b5978568249c25d2f5e7f18bcfc171f6d4a97e1fb99b",
-                  "contentSha256": "af487da0eaa94d41c0c7a569c8f3a8bec8f90fcc43c33af52d90c215a3da71af"
+                  "contentSha256": "0d10c05eb53537cb46f59206f450257d11e9d5773d35c9eb1e42e28b589071df"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -18260,9 +18260,9 @@
           "refs": [
             {
               "sourceId": "kric-subway-timetable-station-lines",
-              "snapshotId": "kric-subway-timetable-station-lines-20261019",
-              "rawSha256": "7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261019/7cac03d975a8a0d6a9438a9ef02c21b6b0b17bed736e39d005330a851fdbdfce.json"
+              "snapshotId": "kric-subway-timetable-station-lines-20261020",
+              "rawSha256": "48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261020/48ba694ae506fe667bd027e800bcff03db88023fa33b9a6702a79445ffee15cd.json"
             }
           ]
         },
@@ -28867,12 +28867,12 @@
             {
               "sourceId": "korail-metropolitan-timetable-file",
               "observedDataUpdatedAt": "2026-09-07",
-              "retrievedAt": "2026-10-19",
+              "retrievedAt": "2026-10-20",
               "admissionEvidence": [
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-10-19T12:24:54.011Z",
-                  "freshUntil": "2026-10-26T12:24:54.011Z"
+                  "capturedAt": "2026-10-20T14:27:21.231Z",
+                  "freshUntil": "2026-10-27T14:27:21.231Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -28881,8 +28881,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "korail-metropolitan-timetable-file-c57b91f28afd2e91b12a4edfe5de5c179be1634ae9873bfe1671590ab50c2310",
-                "freshnessExpiresAt": "2026-10-26T12:24:54.011Z"
+                "snapshotId": "korail-metropolitan-timetable-file-1906a5738bd865e071c66e089abca45336b218231d4a2722e20b54d6918834d1",
+                "freshnessExpiresAt": "2026-10-27T14:27:21.231Z"
               }
             }
           ]
@@ -28899,15 +28899,15 @@
                   "issue": 457,
                   "materializer": "tools/datapack/materialize-korail-route-topology.mjs",
                   "verificationTest": "tools/datapack/materialize-korail-route-topology.test.mjs",
-                  "snapshotId": "korail-metropolitan-timetable-file-c57b91f28afd2e91b12a4edfe5de5c179be1634ae9873bfe1671590ab50c2310",
-                  "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-c57b91f28afd2e91b12a4edfe5de5c179be1634ae9873bfe1671590ab50c2310.json",
-                  "capturedAt": "2026-10-19T12:24:54.011Z",
-                  "freshUntil": "2026-10-26T12:24:54.011Z",
+                  "snapshotId": "korail-metropolitan-timetable-file-1906a5738bd865e071c66e089abca45336b218231d4a2722e20b54d6918834d1",
+                  "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-1906a5738bd865e071c66e089abca45336b218231d4a2722e20b54d6918834d1.json",
+                  "capturedAt": "2026-10-20T14:27:21.231Z",
+                  "freshUntil": "2026-10-27T14:27:21.231Z",
                   "stationCount": 8,
                   "edgeCount": 14,
                   "excludedTransferCount": 0,
                   "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-                  "contentSha256": "c57b91f28afd2e91b12a4edfe5de5c179be1634ae9873bfe1671590ab50c2310"
+                  "contentSha256": "1906a5738bd865e071c66e089abca45336b218231d4a2722e20b54d6918834d1"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -28922,7 +28922,7 @@
           "refs": [
             {
               "sourceId": "korail-metropolitan-timetable-file",
-              "snapshotId": "korail-metropolitan-timetable-file-c57b91f28afd2e91b12a4edfe5de5c179be1634ae9873bfe1671590ab50c2310",
+              "snapshotId": "korail-metropolitan-timetable-file-1906a5738bd865e071c66e089abca45336b218231d4a2722e20b54d6918834d1",
               "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
               "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261003/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx"
             }
@@ -29060,13 +29060,13 @@
           "refs": [
             {
               "sourceId": "korail-metropolitan-planned-timetable",
-              "observedDataUpdatedAt": "2026-10-19",
-              "retrievedAt": "2026-10-19",
+              "observedDataUpdatedAt": "2026-10-20",
+              "retrievedAt": "2026-10-20",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-19T12:24:54.011Z",
-                  "freshUntil": "2026-11-18T12:24:54.011Z"
+                  "capturedAt": "2026-10-20T14:27:21.231Z",
+                  "freshUntil": "2026-11-19T14:27:21.231Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -29075,8 +29075,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "korail-metropolitan-planned-timetable-ac75540d789a290b91e769138de9494d82149d9f8ed4c0292e46aa1bdfbae14e",
-                "freshnessExpiresAt": "2026-11-18T12:24:54.011Z"
+                "snapshotId": "korail-metropolitan-planned-timetable-40eed2e685b17ccde8d54b7fef85c1bf0881f4590d0ed9caeedab53bc9b5e8a9",
+                "freshnessExpiresAt": "2026-11-19T14:27:21.231Z"
               }
             }
           ]
@@ -29093,20 +29093,20 @@
                   "issue": 454,
                   "materializer": "tools/datapack/materialize-korail-timetable.mjs",
                   "verificationTest": "tools/datapack/materialize-korail-timetable.test.mjs",
-                  "snapshotId": "korail-metropolitan-planned-timetable-ac75540d789a290b91e769138de9494d82149d9f8ed4c0292e46aa1bdfbae14e",
-                  "snapshotPath": "tools/datapack/sources/korail-metropolitan-planned-timetable-ac75540d789a290b91e769138de9494d82149d9f8ed4c0292e46aa1bdfbae14e.json",
-                  "capturedAt": "2026-10-19T12:24:54.011Z",
-                  "freshUntil": "2026-11-18T12:24:54.011Z",
+                  "snapshotId": "korail-metropolitan-planned-timetable-40eed2e685b17ccde8d54b7fef85c1bf0881f4590d0ed9caeedab53bc9b5e8a9",
+                  "snapshotPath": "tools/datapack/sources/korail-metropolitan-planned-timetable-40eed2e685b17ccde8d54b7fef85c1bf0881f4590d0ed9caeedab53bc9b5e8a9.json",
+                  "capturedAt": "2026-10-20T14:27:21.231Z",
+                  "freshUntil": "2026-11-19T14:27:21.231Z",
                   "rowCount": 1488,
                   "departureCount": 1488,
                   "tripCount": 194,
                   "stopTimeCount": 1488,
                   "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-                  "rowsSha256": "9ac49ad7156cae0b7e3aaf00ad2289fa45b51706b6646bc132ef22ee43418867",
+                  "rowsSha256": "c56b27fdfa0df2047d654fa43e2ae0e1e73b08ca893e1c30625ae1084c06b788",
                   "topologySourceId": "korail-metropolitan-timetable-file",
-                  "topologySnapshotId": "korail-metropolitan-timetable-file-c57b91f28afd2e91b12a4edfe5de5c179be1634ae9873bfe1671590ab50c2310",
-                  "topologyContentSha256": "c57b91f28afd2e91b12a4edfe5de5c179be1634ae9873bfe1671590ab50c2310",
-                  "contentSha256": "ac75540d789a290b91e769138de9494d82149d9f8ed4c0292e46aa1bdfbae14e",
+                  "topologySnapshotId": "korail-metropolitan-timetable-file-1906a5738bd865e071c66e089abca45336b218231d4a2722e20b54d6918834d1",
+                  "topologyContentSha256": "1906a5738bd865e071c66e089abca45336b218231d4a2722e20b54d6918834d1",
+                  "contentSha256": "40eed2e685b17ccde8d54b7fef85c1bf0881f4590d0ed9caeedab53bc9b5e8a9",
                   "tripsSha256": "71f33d17e7fe784af33d5e1cda18840b02993c03d9bded7bfef5c2dcb3d8adfe"
                 },
                 {
@@ -29123,7 +29123,7 @@
           "refs": [
             {
               "sourceId": "korail-metropolitan-planned-timetable",
-              "snapshotId": "korail-metropolitan-planned-timetable-ac75540d789a290b91e769138de9494d82149d9f8ed4c0292e46aa1bdfbae14e",
+              "snapshotId": "korail-metropolitan-planned-timetable-40eed2e685b17ccde8d54b7fef85c1bf0881f4590d0ed9caeedab53bc9b5e8a9",
               "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
               "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261003/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx"
             }
