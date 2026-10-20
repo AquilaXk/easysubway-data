@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { sha256 } from "../lib/hash.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SOURCE_ID = "daejeon-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
@@ -288,7 +289,7 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
 
 function canonicalStations(pack, topologySnapshot) {
   const expectedCodes = new Set(topologySnapshot.stationNumbers);
-  if (JSON.stringify([...expectedCodes].sort()) !== JSON.stringify([...STATION_NUMBERS].sort())) {
+  if (JSON.stringify([...expectedCodes].sort(codepointCompare)) !== JSON.stringify([...STATION_NUMBERS].sort(codepointCompare))) {
     throw new Error("Daejeon accessibility topology station numbers mismatch");
   }
   const stations = new Map();

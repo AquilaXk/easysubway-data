@@ -28,7 +28,7 @@ const STATION_CODE = /^[0-9A-Z]{4}$/u;
 const CAR = /^(?:[1-9]|10|All)$/u;
 const DOOR = /^(?:[1-9]|All)$/u;
 const DIRECTION = /^\S(?:.*\S)? 방면$/u;
-const DURATION = /^(?:|\d{2}:[0-5]\d)$/u;
+const DURATION = /^(?:\d{2}:[0-5]\d)?$/u;
 const MAX_RAW_BYTES = 4 * 1024 * 1024;
 
 export async function collectSeoulMetroTransferCarDoorDuration({ fetchImpl = fetch, now = new Date() } = {}) {

@@ -325,7 +325,7 @@ function browserExtractorExpression(svg) {
     async function prepareDocument(value) {
       document.body.innerHTML = "<div id='host' style='width:1200px;height:900px;margin:0'></div>";
       document.getElementById("host").innerHTML = decodeBase64Utf8(value);
-      if (document.fonts?.ready) {
+      if (document.fonts) {
         await Promise.race([document.fonts.ready, new Promise((resolve) => setTimeout(resolve, 250))]);
       }
       await new Promise((resolve) => setTimeout(resolve, 50));

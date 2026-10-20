@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const DEFAULT_REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const OWNERSHIP_RELATIVE_PATH = "tools/ci/data-test-ownership.json";
@@ -129,7 +130,7 @@ export function detectDirectPinnedInputReadsInSource({ testFile, source, pinnedP
     }
   }
 
-  return [...detected].sort();
+  return [...detected].sort(codepointCompare);
 }
 
 const RELATIVE_IMPORT_PATTERN = /\bfrom\s+["'](\.{1,2}\/[^"']+)["']/gu;
@@ -153,7 +154,7 @@ export function detectPinnedInputReadsThroughFixtureHelpers({ repositoryRoot, te
       pending.push({ file: helper, source: helperSource });
     }
   }
-  return [...detected].sort();
+  return [...detected].sort(codepointCompare);
 }
 
 export function auditCandidatePinnedInputReads({
@@ -236,7 +237,7 @@ export function auditCandidatePinnedInputReads({
         ...detectDirectPinnedInputReadsInSource({ testFile, source, pinnedPaths: pinnedSet }),
         ...detectPinnedInputReadsThroughFixtureHelpers({ repositoryRoot, testFile, source, pinnedPaths: pinnedSet }),
       ]),
-    ].sort();
+    ].sort(codepointCompare);
     const allowedPaths = allowlistByFile.get(testFile) ?? new Set();
 
     for (const detectedPath of detectedPaths) {

@@ -477,6 +477,7 @@ function seoulMetroRowsByKey(source) {
         y: row.scaledY,
         sourceId: seoulMetroSourceId,
         sourceName: "서울교통공사 사이버스테이션",
+        // 서울교통공사 사이버스테이션은 HTTP만 연다(2026-10-20 실측: https://www.seoulmetro.co.kr 는 TLS 연결 직후 reset). 등록된 원천 URL 그대로 쓴다.
         sourceUrl: "http://www.seoulmetro.co.kr/kr/cyberStation.do",
       };
       rows.set(svgKey("01", lineName, row.stationName), keyedRow);
@@ -1493,6 +1494,7 @@ function sourceInventoryEntries(sourceShaById) {
     {
       id: seoulMetroSourceId,
       owner: "서울교통공사",
+      // HTTP-only 원천이다(위 sourceUrl 주석의 실측과 같다). source-inventory.json의 등록 URL과 같아야 한다.
       url: "http://www.seoulmetro.co.kr/kr/cyberStation.do",
       sourceSha256: sourceShaById.get(seoulMetroSourceId) ?? "",
       license: "공식 웹 공개 노선도 기준",

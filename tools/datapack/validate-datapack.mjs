@@ -25,6 +25,7 @@ import {
   isNationwideCandidateId,
 } from "./build-current-release-candidate-accessibility-input.mjs";
 import { SERVICE_DAY_BOUNDARY_SECONDS } from "./lib/service-day-seconds.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 const facilityEvidenceProvenanceColumns = [
   "source_id",
   "source_snapshot_id",
@@ -540,7 +541,7 @@ export function assertLaunchScopeLinesHaveTimetableTrips({ database, pack, natio
       ...(pack.lines ?? []).map((line) => line.id),
       ...(pack.verifiedAccessibilityScope?.includedLineIds ?? []),
     ]),
-  ].sort();
+  ].sort(codepointCompare);
   const tripCountByLine = new Map(
     database
       .prepare(
@@ -2105,7 +2106,7 @@ export function assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineR
   }
   const missing = [...new Set(stationLineRows.map((row) => stationLineNodeId(row.station_id, row.line_id)))]
     .filter((node) => !endpointNodes.has(node))
-    .sort();
+    .sort(codepointCompare);
   if (missing.length > 0) {
     throw new Error(
       `${pack.id}@${pack.version} claimed station-line has no route edge endpoint: ${missing.length} (${missing.slice(0, 20).join(", ")}${missing.length > 20 ? ", ..." : ""})`,

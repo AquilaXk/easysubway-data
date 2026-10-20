@@ -246,4 +246,4 @@ async function main() {
   inputs.inputBytes = Object.fromEntries(records.map(([name, , bytes]) => [name, bytes]));
   await writeFile(path.join(root, LEDGER_PATH), `${JSON.stringify(buildNationwideRequirementOwnershipLedger(inputs), null, 2)}\n`);
 }
-if (process.argv[1] === new URL(import.meta.url).pathname) main();
+if (process.argv[1] === new URL(import.meta.url).pathname) await main();

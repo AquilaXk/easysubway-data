@@ -82,6 +82,13 @@ test("sourceIdFromLabel은 label을 안전한 식별자로 바꾼다", () => {
   assert.equal(sourceIdFromLabel("한글"), "unknown");
 });
 
+test("sourceIdFromLabel은 양끝의 구분자를 지우고 연속 구분자를 하나로 줄인다", () => {
+  assert.equal(sourceIdFromLabel("--KRIC__  Timetable!!"), "kric-timetable");
+  assert.equal(sourceIdFromLabel("---"), "unknown");
+  assert.equal(sourceIdFromLabel("a".repeat(60)), "a".repeat(48));
+  assert.equal(sourceIdFromLabel("a!".repeat(100_000)).length, 48);
+});
+
 test("withSourceCollectionRetry는 시도마다 한 줄을 남기고 다음 대기와 마지막 시도의 null을 기록한다", async () => {
   const outcomes = [() => { throw connectTimeout(); }, () => ({ response: new Response(null, { status: 503 }) }), () => ({ response: new Response(null, { status: 200 }) })];
   let call = 0;

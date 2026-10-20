@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { sha256 } from "../lib/hash.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+// PATH 탐색에 맡기지 않고 고정 경로의 tar를 쓴다(macOS·Ubuntu 공통).
+const TAR_EXECUTABLE = "/usr/bin/tar";
 
 // #979: fixture 커밋은 ITX topology 적용 전 입력 팩을 담는다. 승격마다 mobile 커밋이 바뀌지 않고, 출력 팩은 커밋된 증거에서 결정적으로 파생한다.
 export const PINNED_MOBILE_REVISION = "573aefdbbf2e639d28de18697eb449da85415353";
@@ -68,7 +70,7 @@ export function stageLocalMobileFixture({ repositoryRoot = ROOT, candidatePaths 
     maxBuffer: 100 * 1024 * 1024,
   });
 
-  execFileSync("tar", ["-x", "-C", root], {
+  execFileSync(TAR_EXECUTABLE, ["-x", "-C", root], {
     input: archiveTar,
   });
 

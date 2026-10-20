@@ -5,13 +5,14 @@ import { fileURLToPath } from "node:url";
 
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const DEFAULT_OAS_URL = "https://infuser.odcloud.kr/oas/docs?namespace=15071311/v1";
 const ODCLOUD_BASE_URL = "https://api.odcloud.kr";
 const DATASET_SUMMARY_PATTERN = /^서울교통공사_지하철혼잡도정보_(\d{8})$/;
 
 function canonicalJson(obj) {
-  return JSON.stringify(obj, Object.keys(obj).sort());
+  return JSON.stringify(obj, Object.keys(obj).sort(codepointCompare));
 }
 
 export function selectLatestOasUddi(oasDocument) {

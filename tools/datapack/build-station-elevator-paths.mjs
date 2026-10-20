@@ -381,7 +381,7 @@ export function buildStationElevatorCoverageReport(result) {
     for (const [reason, count] of Object.entries(value[field])) totals[reason] = (totals[reason] ?? 0) + count;
     return totals;
   }, {});
-  const countWhere = (predicate) => byStationLine.filter(predicate).length;
+  const countWhere = (predicate) => byStationLine.filter((value) => predicate(value)).length;
   const unmappedFacilityStationLines = [...unmappedFacilities.values()]
     .sort((left, right) => codepointCompare(`${left.providerStationCode}\0${left.lineName}`, `${right.providerStationCode}\0${right.lineName}`));
   const unmappedMovementStationLines = [...unmappedMovement.values()]

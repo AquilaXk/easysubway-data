@@ -16,6 +16,7 @@ import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE_ID = "kric-subway-timetable";
@@ -37,13 +38,13 @@ function parse(bytes, label) {
   try { return JSON.parse(bytes.toString("utf8")); } catch { return fail(`${label} is invalid JSON`); }
 }
 function exactKeys(value, keys) {
-  return value && typeof value === "object" && !Array.isArray(value) && isDeepStrictEqual(Object.keys(value).sort(), [...keys].sort());
+  return value && typeof value === "object" && !Array.isArray(value) && isDeepStrictEqual(Object.keys(value).sort(codepointCompare), [...keys].sort(codepointCompare));
 }
 function instant(value) {
   try { return requiredUtcInstant(value, "instant"); } catch { return Number.NaN; }
 }
 function one(items, predicate, label) {
-  const matches = Array.isArray(items) ? items.filter(predicate) : [];
+  const matches = Array.isArray(items) ? items.filter((item) => predicate(item)) : [];
   if (matches.length !== 1) fail(`${label} is missing or ambiguous`);
   return matches[0];
 }
@@ -64,7 +65,7 @@ function providerSchemaFingerprint(artifact) {
     for (const row of Array.isArray(body?.body) ? body.body : []) for (const key of Object.keys(row)) fields.add(key);
   }
   if (fields.size === 0) fail("KRIC raw responses have no provider rows");
-  return sha(JSON.stringify([...fields].sort()));
+  return sha(JSON.stringify([...fields].sort(codepointCompare)));
 }
 
 function validateReceipt(receipt, artifact, bytes, governance, now) {

@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { validateDaejeonRouteMapPositionsSnapshot } from "./collect-daejeon-route-map-positions.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SOURCE_ID = "daejeon-transportation-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
@@ -200,7 +201,7 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
 
 function canonicalStations(pack, topologySnapshot) {
   const expectedCodes = new Set(topologySnapshot.stationNumbers ?? []);
-  if (JSON.stringify([...expectedCodes].sort()) !== JSON.stringify([...STATION_CODES].sort())) {
+  if (JSON.stringify([...expectedCodes].sort(codepointCompare)) !== JSON.stringify([...STATION_CODES].sort(codepointCompare))) {
     throw new Error("Daejeon route map topology station codes mismatch");
   }
   const stations = new Map();
