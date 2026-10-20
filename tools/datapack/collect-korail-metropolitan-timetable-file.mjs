@@ -89,7 +89,7 @@ async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, r
       if (response?.status !== 200) return { response, bytes: null };
       validateResponse(response);
       return { response, bytes: await readBounded(response.body, bodyTimeoutMs) };
-    }, { label: "KORAIL metropolitan timetable file", sleep: sleepImpl, budget: retryBudget, random: randomImpl });
+    }, { label: "KORAIL metropolitan timetable file", sourceId: "korail-metropolitan-timetable-file", url: officialUrl, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
   }
