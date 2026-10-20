@@ -33,14 +33,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-platform
-          ref: bf4502bedcc7aede889ee95aee7a6f3d504d2e92
+          ref: 98efcca908e19406bcac884f6a793420afee4433
           path: platform-probe
           sparse-checkout: tools/ops/source-reachability-probe.mjs
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Verify the shared probe script digest
         env:
-          EXPECTED_SHA256: ea44755eff3da2ff3e3b906868310734188feab08d49489853355c2f02e9fd1d
+          EXPECTED_SHA256: de9f6b6e2bf5aa3c597f8ff5772be891539cf57b6a9a05160d4772609701250f
         run: |
           set -euo pipefail
           echo "${EXPECTED_SHA256}  platform-probe/tools/ops/source-reachability-probe.mjs" | sha256sum --check --strict
