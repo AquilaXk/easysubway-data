@@ -150,7 +150,7 @@ export async function fetchKasiPublicHolidayCalendarObservation({
     const request = fetchImpl
       ? (options) => fetchImpl(url, options)
       : (options) => nativeHttpsGet(url, options, httpsRequestImpl);
-    const fetched = await fetchKasiMonth(request, { sleepImpl, retryBudget, randomImpl });
+    const fetched = await fetchKasiMonth(request, { url, sleepImpl, retryBudget, randomImpl });
     const { raw, xml, dates } = readKasiMonthResponse(fetched, { year, month });
     for (const date of dates) holidays.add(date);
     observations.push({ year, month, raw, xml, sha256: createHash("sha256").update(raw).digest("hex"),
@@ -174,20 +174,22 @@ function readKasiMonthResponse({ response, raw, attemptCount }, { year, month })
 }
 
 // data.go.kr 공통 오류 envelope의 resultCode 중 일시 오류 코드(isTransientDataGoKrResultCode: 99·30 등)는 다시 요청한다. 쿼터(22)·권한(20)·기한(31) 등은 재시도하지 않는다.
-function isTransientProviderBody(raw) {
+function providerResultCodeOf(raw) {
   try {
-    return isTransientDataGoKrResultCode(scalar(singleElement(new TextDecoder("utf-8", { fatal: true }).decode(raw), "header"), "resultCode"));
+    return scalar(singleElement(new TextDecoder("utf-8", { fatal: true }).decode(raw), "header"), "resultCode");
   } catch {
-    return false;
+    return undefined;
   }
 }
+
+const isTransientProviderBody = (raw) => isTransientDataGoKrResultCode(providerResultCodeOf(raw));
 
 /**
  * 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
  * 연결·요청·본문 timeout 등 전송 오류)으로 같은 요청을 다시 보낸다(#1099, #1334). resultCode 99(UNKNOWN_ERROR)도 일시 오류로 본다.
  * 인증·형식 오류는 재시도하지 않는다. 한도(2번 재시도)를 다 쓰면 마지막 응답/오류를 기존 분류(KASI_HTTP·KASI_SCHEMA·NETWORK_*)로 드러낸다.
  */
-async function fetchKasiMonth(request, { sleepImpl, retryBudget, randomImpl }) {
+async function fetchKasiMonth(request, { url, sleepImpl, retryBudget, randomImpl }) {
   const transportAttempts = [];
   let attemptCount = 0;
   let outcome;
@@ -206,7 +208,10 @@ async function fetchKasiMonth(request, { sleepImpl, retryBudget, randomImpl }) {
       }
     }, {
       label: "KASI public holiday",
+      sourceId: "kasi-public-holiday",
+      url,
       isTransientResult: ({ raw }) => raw !== null && isTransientProviderBody(raw),
+      resultCodeOf: ({ raw }) => providerResultCodeOf(raw),
       sleep: sleepImpl,
       budget: retryBudget,
       random: randomImpl,

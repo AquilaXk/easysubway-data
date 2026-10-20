@@ -39,6 +39,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+      - name: Record source fetch attempts for the job summary
+        run: |
+          # 원천 수집기가 시도마다 JSON 한 줄(호스트·결과·오류 코드·소요)을 이 파일에 덧붙인다. URL·serviceKey·헤더는 기록하지 않는다(#3036).
+          echo "SOURCE_FETCH_TELEMETRY_PATH=${RUNNER_TEMP}/source-fetch-telemetry.jsonl" >> "${GITHUB_ENV}"
       - name: Decide which P7D sources are due
         id: decision
         env:
@@ -257,6 +261,13 @@ jobs:
             git push origin --delete "${branch}"
             echo "::notice title=Source reverification::removed ${branch}; the next run starts over."
           fi
+      - name: Summarize source fetch attempts
+        # 관측 표일 뿐이다. 이 step이 실패해도 job 결과를 바꾸지 않고, 수집 실패는 위 step들이 이미 드러낸다.
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
       - name: Report refresh failure as an issue
         if: ${{ failure() || cancelled() }}
         env:

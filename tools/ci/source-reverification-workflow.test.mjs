@@ -205,6 +205,20 @@ test("이 run의 claim은 PR이 되지 않으면 always()로 정리하고 PR이 
   before("Create source reverification pull request", cleanup.name);
 });
 
+// 시도별 계측(#3036): 수집 step들이 같은 파일에 기록하고, 요약 step은 always()로 돌되 자기 실패가 job 결과를 바꾸지 않는다(수집 실패는 앞 step들이 드러낸다).
+test("계측 파일 경로는 수집 전에 정하고 요약 step은 always()·continue-on-error로 마지막 보고 step 앞에서 돈다", () => {
+  const record = step("Record source fetch attempts for the job summary");
+  assert.match(record.block, /SOURCE_FETCH_TELEMETRY_PATH=\$\{RUNNER_TEMP\}\/source-fetch-telemetry\.jsonl" >> "\$\{GITHUB_ENV\}"/u);
+  before(record.name, "Decide which P7D sources are due");
+  const summary = step("Summarize source fetch attempts");
+  assert.equal(ifCondition(summary.block), "${{ always() }}");
+  assert.match(summary.block, /\n        continue-on-error: true\n/u);
+  assert.match(summary.block, /node tools\/ci\/summarize-source-fetch-telemetry\.mjs --input "\$\{SOURCE_FETCH_TELEMETRY_PATH:-\}" >> "\$\{GITHUB_STEP_SUMMARY\}"/u);
+  assert.equal((yml.match(/continue-on-error/gu) ?? []).length, 1, "요약 step만 continue-on-error다");
+  before("Reverify due P7D sources", summary.name);
+  before(summary.name, "Report refresh failure as an issue");
+});
+
 test("실패 보고가 마지막 step이고 실패·취소 모두 보고한다", () => {
   assertFailureReportLast({ yml, step, file: FILE, condition: "${{ failure() || cancelled() }}" });
 });

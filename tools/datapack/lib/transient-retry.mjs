@@ -107,20 +107,28 @@ function transportDetails(error) {
   }
 }
 
-/** 오류와 cause 사슬(4단계까지)에서 일시 전송 오류의 이름·코드를 찾는다. */
-export function isTransientTransportError(error) {
+/**
+ * 오류와 cause 사슬(CAUSE_DEPTH단계까지)의 { name, code }를 바깥에서 안쪽 순서로 돌려준다. 문자열이 아닌 이름·코드는 빈 문자열이다.
+ * 순환(seen-set)과 읽다가 던지는 getter에서 멈추고, 그때까지 읽은 층만 돌려준다. 오류 분류와 계측이 같은 순회를 쓴다.
+ */
+export function causeChainDetails(error) {
   const seen = new Set();
+  const chain = [];
   let current = error;
   for (let depth = 0; depth <= CAUSE_DEPTH; depth += 1) {
-    if ((typeof current !== "object" && typeof current !== "function") || current === null || seen.has(current)) return false;
+    if ((typeof current !== "object" && typeof current !== "function") || current === null || seen.has(current)) break;
     seen.add(current);
     const details = transportDetails(current);
-    if (details === null) return false;
-    if (TRANSIENT_ERROR_NAMES.has(details.name) || TRANSIENT_ERROR_CODES.has(details.code)) return true;
+    if (details === null) break;
+    chain.push({ name: details.name, code: details.code });
     current = details.cause;
   }
-  return false;
+  return chain;
 }
+
+/** 오류와 cause 사슬(4단계까지)에서 일시 전송 오류의 이름·코드를 찾는다. */
+export const isTransientTransportError = (error) => causeChainDetails(error)
+  .some(({ name, code }) => TRANSIENT_ERROR_NAMES.has(name) || TRANSIENT_ERROR_CODES.has(code));
 
 /**
  * 대기 예산 소진으로 던져진 오류를 마지막 시도의 원래 오류로 되돌린다. 수집기가 자기 오류 코드·분류(예: *_TRANSPORT)로 실패를 드러낼 때 쓴다.
