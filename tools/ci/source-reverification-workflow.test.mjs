@@ -213,7 +213,7 @@ test("계측 파일 경로는 수집 전에 정하고 요약 step은 always()·c
   const summary = step("Summarize source fetch attempts");
   assert.equal(ifCondition(summary.block), "${{ always() }}");
   assert.match(summary.block, /\n        continue-on-error: true\n/u);
-  assert.match(summary.block, /node tools\/ci\/summarize-source-fetch-telemetry\.mjs --input "\$\{SOURCE_FETCH_TELEMETRY_PATH\}" >> "\$\{GITHUB_STEP_SUMMARY\}"/u);
+  assert.match(summary.block, /node tools\/ci\/summarize-source-fetch-telemetry\.mjs --input "\$\{SOURCE_FETCH_TELEMETRY_PATH:-\}" >> "\$\{GITHUB_STEP_SUMMARY\}"/u);
   assert.equal((yml.match(/continue-on-error/gu) ?? []).length, 1, "요약 step만 continue-on-error다");
   before("Reverify due P7D sources", summary.name);
   before(summary.name, "Report refresh failure as an issue");

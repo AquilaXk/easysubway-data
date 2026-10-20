@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,7 +16,7 @@ import {
   sourceIdFromLabel,
   stageOfErrorCode,
 } from "./source-fetch-telemetry.mjs";
-import { createTransientRetryBudget } from "./transient-retry.mjs";
+import { causeChainDetails, createTransientRetryBudget } from "./transient-retry.mjs";
 
 const SECRET = "SECRET-KEY-9";
 const SECRET_URL = `https://user:pw@apis.example.test:8443/path/to/api?serviceKey=${SECRET}&x=1#frag`;
@@ -130,4 +131,71 @@ test("계측 환경 변수가 없으면 아무 파일도 만들지 않고 결과
   } finally {
     if (previous !== undefined) process.env[SOURCE_FETCH_TELEMETRY_PATH_ENV] = previous;
   }
+});
+
+// F2(#1370): 코드를 가진 cause가 여러 층이면 가장 깊은 코드를 쓴다. 첫 코드를 고르는 mutant는 여기서 죽는다.
+test("errorCodeOf는 코드를 가진 cause가 여러 층이면 가장 깊은 코드를 고른다", () => {
+  const innermost = Object.assign(new Error("inner"), { code: "UND_ERR_CONNECT_TIMEOUT" });
+  const middle = Object.assign(new Error("middle", { cause: innermost }), { code: "FETCH_FAILED" });
+  const outer = Object.assign(new Error("outer", { cause: middle }), { code: "COLLECTOR_TRANSPORT" });
+  assert.equal(errorCodeOf(outer), "UND_ERR_CONNECT_TIMEOUT");
+  assert.equal(errorCodeOf(Object.assign(new Error("outer", { cause: new Error("no code") }), { code: "COLLECTOR_TRANSPORT" })), "COLLECTOR_TRANSPORT");
+});
+
+// F5: 순회는 transient-retry의 helper 하나다. 순환·읽다가 던지는 getter에서 멈춘다.
+test("causeChainDetails는 순환에서 멈추고 던지는 getter 앞까지만 돌려준다", () => {
+  const first = new Error("first");
+  const second = Object.assign(new Error("second", { cause: first }), { code: "B" });
+  first.cause = second;
+  assert.deepEqual(causeChainDetails(second).map(({ code }) => code), ["B", ""]);
+  const hostile = Object.defineProperty(new Error("hostile"), "code", { get() { throw new Error("getter"); } });
+  assert.deepEqual(causeChainDetails(new Error("wrapper", { cause: hostile })).length, 1);
+  assert.equal(errorCodeOf(hostile), "UNKNOWN");
+});
+
+// F1: 관측은 결과를 바꾸지 않는다.
+test("계측 중 예외가 나도 원래 오류와 결과가 그대로 나온다", async () => {
+  const hostile = Object.defineProperty(new TypeError("original failure"), "code", { get() { throw new Error("getter boom"); } });
+  await withTelemetryFile(async () => {
+    await assert.rejects(withSourceCollectionRetry(async () => { throw hostile; }, {
+      label: "Hostile", sleep: noSleep, budget: createTransientRetryBudget(), isTransientError: () => false,
+    }), (error) => error === hostile);
+    const hostileUrl = Object.defineProperty(new Response(null, { status: 200 }), "url", { get() { throw new Error("url boom"); } });
+    const result = await withSourceCollectionRetry(async () => ({ response: hostileUrl }), { label: "Hostile url", budget: createTransientRetryBudget() });
+    assert.equal(result.response, hostileUrl);
+    await assert.rejects(withSourceCollectionRetry(async () => { throw hostile; }, { label: "Throwing result code", resultCodeOf: () => { throw new Error("rc boom"); }, isTransientError: () => false }), (error) => error === hostile);
+    const retried = await withSourceCollectionRetry(async () => ({ response: new Response(null, { status: 200 }) }), {
+      label: "Throwing result code", isTransientResult: () => { throw new Error("predicate boom"); }, budget: createTransientRetryBudget(),
+    }).catch((error) => error);
+    assert.equal(retried.message, "predicate boom", "재시도 판정이 던지는 오류는 계측과 무관하게 원래대로 전파된다");
+  });
+});
+
+// F3: 2xx지만 본문 resultCode 때문에 재시도한 시도는 success가 아니다.
+test("본문 resultCode 때문에 재시도한 2xx 시도는 retryable_result와 resultCode로 남기고 소진된 마지막 시도도 같다", async () => {
+  const codes = ["99", "99", "SECRET-KEY-9 with spaces"];
+  let call = 0;
+  const { records, text } = await withTelemetryFile(async () => {
+    await withSourceCollectionRetry(async () => ({ response: new Response(null, { status: 200 }), code: codes[call++] }), {
+      label: "Provider body", url: SECRET_URL, sleep: noSleep, budget: createTransientRetryBudget(), random: () => 0,
+      isTransientResult: () => true, resultCodeOf: ({ code }) => code,
+    });
+  });
+  assert.deepEqual(records.map(({ outcome, status, resultCode, nextDelayMs }) => ({ outcome, status, resultCode, nextDelayMs })), [
+    { outcome: "retryable_result", status: 200, resultCode: "99", nextDelayMs: 0 },
+    { outcome: "retryable_result", status: 200, resultCode: "99", nextDelayMs: 0 },
+    { outcome: "retryable_result", status: 200, resultCode: undefined, nextDelayMs: null },
+  ]);
+  assertErrorOmitsSecrets(new Error(text), [SECRET]);
+});
+
+// F4: 쓰기 실패는 사라지지 않고 종료 때 경고 한 줄이 된다.
+test("계측 쓰기가 실패하면 프로세스 종료 때 ::warning:: 한 줄에 건수를 남긴다", () => {
+  const script = `import(${JSON.stringify(new URL("./source-fetch-telemetry.mjs", import.meta.url).href)}).then((m) => { m.emitAttemptRecord({ a: 1 }); m.emitAttemptRecord({ a: 2 }); });`;
+  const child = spawnSync(process.execPath, ["-e", script], {
+    encoding: "utf8", env: { ...process.env, [SOURCE_FETCH_TELEMETRY_PATH_ENV]: "/nonexistent-dir-for-telemetry/x.jsonl" },
+  });
+  assert.equal(child.status, 0);
+  assert.equal(child.stderr.trim().split("\n").length, 1);
+  assert.match(child.stderr, /^::warning title=Source fetch telemetry::2 attempt records could not be written/u);
 });

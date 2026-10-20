@@ -109,6 +109,7 @@ async function fetchTimetableWithRetry({ url, label, fetchImpl, headerTimeoutMs,
     }, {
       label: `KRIC subwayTimetable ${label}`,
       sourceId: "kric-station-timetable",
+      resultCodeOf: ({ bytes }) => kricJsonResultCodeOf(bytes),
       url,
       isTransientError: (error) => error?.kricTransient === true,
       isTransientResult: ({ bytes }) => bytes !== undefined && isTransientKricResultCode(kricJsonResultCodeOf(bytes)),

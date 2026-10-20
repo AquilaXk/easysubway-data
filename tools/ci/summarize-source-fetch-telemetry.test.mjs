@@ -41,9 +41,19 @@ test("renderSummary는 Markdown 표를 만들고 실패가 없으면 오류 코�
   assert.match(markdown, /읽을 수 없는 계측 1줄/u);
 });
 
-test("계측이 비어 있거나 파일이 없으면 기록이 없다고 쓴다", async () => {
+test("파일은 있는데 기록이 없는 것과 계측 파일 자체가 없는 것을 구분해 쓴다", async () => {
   assert.match(renderSummary(""), /기록된 수집 시도가 없다/u);
-  assert.match(await summarizeFile("/nonexistent-dir-for-telemetry/none.jsonl"), /기록된 수집 시도가 없다/u);
+  for (const missing of [await summarizeFile("/nonexistent-dir-for-telemetry/none.jsonl"), await summarizeFile(""), await summarizeFile(undefined)]) {
+    assert.match(missing, /계측 파일 없음\(계측 비활성 또는 수집 미실행\)/u);
+    assert.doesNotMatch(missing, /기록된 수집 시도가 없다/u);
+  }
+});
+
+test("본문 resultCode 때문에 재시도한 시도는 실패로 세고 resultCode로 묶는다", () => {
+  const retried = attempt("a.test", 40, { outcome: "retryable_result", resultCode: "99" });
+  assert.deepEqual(summarizeByHost(parseTelemetry([retried, retried, attempt("a.test", 50)].join("\n")).records), [
+    { host: "a.test", attempts: 3, failures: 2, errorCodes: "resultCode 99 2", p50Ms: 40, p95Ms: 50 },
+  ]);
 });
 
 test("CLI는 --input 파일을 읽어 표를 stdout으로 내고, 인자가 없으면 2로 끝난다", () => {
@@ -54,6 +64,7 @@ test("CLI는 --input 파일을 읽어 표를 stdout으로 내고, 인자가 없�
     const script = path.join(import.meta.dirname, "summarize-source-fetch-telemetry.mjs");
     assert.match(execFileSync("node", [script, "--input", file], { encoding: "utf8" }), /\| a\.test \| 1 \| 0 \| - \| 10 \| 10 \|/u);
     assert.throws(() => execFileSync("node", [script], { stdio: "pipe" }), (error) => error.status === 2);
+    assert.match(execFileSync("node", [script, "--input", ""], { encoding: "utf8" }), /계측 파일 없음/u);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

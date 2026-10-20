@@ -244,6 +244,7 @@ function fetchWithRetry(url, fetchImpl, { sleepImpl, randomImpl }) {
     accept: "application/xml,text/xml",
     label: "Busan accessibility",
     sourceId: "busan-accessibility",
+    resultCodeOf: ({ bytes }) => providerResultCode(bytes),
     isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
     transportFailure: transportFailureWithCode("Busan accessibility"),
     sleep: sleepImpl,

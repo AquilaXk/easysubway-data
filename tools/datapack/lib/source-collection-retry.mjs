@@ -111,6 +111,7 @@ const discardBody = (response) => { Promise.resolve(response?.body?.cancel?.()).
  * @param {number} [options.minDelayMs] 재시도 대기의 하한(기본 0). 수집기가 요청 사이 간격을 정해 두었다면 재시도도 그 간격 아래로 내려가지 않게 한다. Retry-After가 cap을 넘으면 하한과 무관하게 fail-closed다.
  * @param {string} [options.label] Retry-After 초과 오류 메시지의 원천 이름.
  * @param {string} [options.sourceId] 시도별 계측(source-fetch-telemetry)의 원천 식별자. 기본은 label에서 만든다.
+ * @param {(result: T) => string | undefined} [options.resultCodeOf] 본문 때문에 재시도한 시도(isTransientResult)의 공급자 resultCode. 계측에 코드 문자열만 남긴다.
  * @param {string | URL} [options.url] 계측에 호스트만 싣는 요청 URL. 경로·쿼리는 기록하지 않는다. 없으면 응답의 url에서 호스트를 읽는다.
  * @param {() => number} [options.random] [0, 1)을 돌려주는 난수(테스트용 주입).
  * @param {(event: object) => void} [options.onRetry] 재시도 직전 알림(응답 본문은 이미 취소했다).
@@ -124,6 +125,7 @@ export function withSourceCollectionRetry(attempt, {
   label = "source collection",
   sourceId = sourceIdFromLabel(label),
   url,
+  resultCodeOf = () => undefined,
   random,
   sleep,
   budget,
@@ -150,23 +152,32 @@ export function withSourceCollectionRetry(attempt, {
     if (retryAfter > capDelayMs) throw new RetryAfterExceedsCapError(label, response.status, retryAfter, capDelayMs, result);
     return Math.max(minDelayMs, retryAfter);
   };
-  // 시도마다 한 줄을 남긴다. 다음 대기는 재시도가 정해진 뒤에야 알 수 있어, 기록은 보류했다가 onRetry(대기 있음)나 끝(대기 없음)에서 내보낸다.
+  // 시도마다 한 줄을 남긴다. 다음 대기는 재시도가 정해진 뒤에야 알 수 있어, 관측은 보류했다가 onRetry(대기 있음)나 끝(대기 없음)에서 내보낸다.
+  // 관측은 결과를 바꾸면 안 된다: 응답·오류를 읽고 기록을 만들고 쓰는 일은 전부 한 try 안에서 하고, 실패하면 버린다.
   let pending;
   const flushAttempt = (nextDelayMs) => {
-    if (pending === undefined) return;
-    emitAttemptRecord(buildAttemptRecord({ sourceId, ...pending, nextDelayMs }));
+    const observed = pending;
     pending = undefined;
+    if (observed === undefined) return;
+    try {
+      const { result, error } = observed;
+      const response = error === undefined ? responseOf(result) : undefined;
+      const retryableResult = error === undefined && response?.ok === true && isTransientResult(result);
+      emitAttemptRecord(buildAttemptRecord({
+        sourceId, url: url ?? response?.url, attempt: observed.attempt, response, error, durationMs: observed.durationMs, nextDelayMs,
+        retryableResult, resultCode: retryableResult ? resultCodeOf(result) : undefined,
+      }));
+    } catch { /* 계측 실패는 수집 결과를 바꾸지 않는다 */ }
   };
   const measuredAttempt = async (context) => {
     const startedAt = performance.now();
     const settle = (observed) => { pending = { attempt: context.attemptNumber, durationMs: performance.now() - startedAt, ...observed }; };
     try {
       const result = await attempt(context);
-      const response = responseOf(result);
-      settle({ url: url ?? response?.url, response });
+      settle({ result });
       return result;
     } catch (error) {
-      settle({ url, error });
+      settle({ error: error ?? new Error("non-error rejection") });
       throw error;
     }
   };
@@ -210,13 +221,13 @@ export const transportFailureWithCode = (label) => (failure) => {
  * @returns {Promise<{ response: Response, bytes: Buffer }>}
  */
 export async function fetchBytesWithSourceRetry({
-  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, sleep, budget, random, timeoutMs = 15_000, headers = {},
+  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, resultCodeOf, sleep, budget, random, timeoutMs = 15_000, headers = {},
 }) {
   try {
     return await withSourceCollectionRetry(async () => {
       const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(timeoutMs), headers: { accept, ...headers } });
       return { response, bytes: Buffer.from(await response.arrayBuffer()) };
-    }, { label, sourceId, url, isTransientResult, sleep, budget, random });
+    }, { label, sourceId, url, isTransientResult, resultCodeOf, sleep, budget, random });
   } catch (error) {
     if (!isRetryAfterExceedsCap(error)) throw transportFailure(unwrapTransientRetryFailure(error));
     const { rawEvidence } = error;

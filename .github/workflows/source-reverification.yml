@@ -267,7 +267,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH}" >> "${GITHUB_STEP_SUMMARY}"
+          node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
       - name: Report refresh failure as an issue
         if: ${{ failure() || cancelled() }}
         env:

@@ -2,8 +2,8 @@
 // 원천 수집 시도별 계측(tools/datapack/lib/source-fetch-telemetry.mjs, Refs AquilaXk/easysubway#3036)을 호스트별 Markdown 표로 모은다.
 // source-reverification의 마지막 보고 step 바로 앞 step이 이 출력을 job summary에 붙인다. 표는 관측일 뿐이라 수집 결과·job 결과를 바꾸지 않는다.
 //
-// 열: 호스트, 시도 수, 실패 수, 오류 코드별 개수(전송 오류는 코드, HTTP 실패는 HTTP <status>), p50·p95 소요(ms, 모든 시도의 nearest-rank).
-// 계측 파일이 없거나 비어 있으면 그 사실을 한 줄로 쓴다. 읽을 수 없는 줄은 건너뛰고 개수를 적는다(집계가 계측 한 줄 때문에 멈추지 않게 한다).
+// 열: 호스트, 시도 수, 실패 수, 오류 코드별 개수(전송 오류는 코드, 본문 resultCode 재시도는 resultCode <코드>, HTTP 실패는 HTTP <status>), p50·p95 소요(ms, 모든 시도의 nearest-rank).
+// 계측 파일이 없으면(환경 변수 없음 포함) "계측 파일 없음", 파일은 있는데 기록이 없으면 "기록된 수집 시도가 없다"로 구분해 쓴다. 읽을 수 없는 줄은 건너뛰고 개수를 적는다(집계가 계측 한 줄 때문에 멈추지 않게 한다).
 //
 // 사용: node tools/ci/summarize-source-fetch-telemetry.mjs --input <telemetry.jsonl>
 import { readFile } from "node:fs/promises";
@@ -33,13 +33,20 @@ export function parseTelemetry(text) {
   return { records, skipped };
 }
 
-const failureLabel = (record) => (record.outcome === "error" ? String(record.errorCode ?? "UNKNOWN") : `HTTP ${record.status ?? "?"}`);
+const compareText = ([left], [right]) => (left < right ? -1 : left > right ? 1 : 0);
+
+// 실패 행의 이름: 전송 오류는 오류 코드, 2xx지만 본문 resultCode 때문에 재시도한 시도는 resultCode, 그 밖의 HTTP 실패는 HTTP <status>.
+function failureLabel(record) {
+  if (record.outcome === "error") return String(record.errorCode ?? "UNKNOWN");
+  if (record.outcome === "retryable_result") return `resultCode ${record.resultCode ?? "?"}`;
+  return `HTTP ${record.status ?? "?"}`;
+}
 
 /** 호스트별 집계 행(호스트 이름순). */
 export function summarizeByHost(records) {
   const byHost = new Map();
   for (const record of records) byHost.set(record.host, [...(byHost.get(record.host) ?? []), record]);
-  return [...byHost.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([host, attempts]) => {
+  return [...byHost.entries()].sort(compareText).map(([host, attempts]) => {
     const failures = attempts.filter(({ outcome }) => outcome !== "success");
     const codeCounts = new Map();
     for (const failure of failures) codeCounts.set(failureLabel(failure), (codeCounts.get(failureLabel(failure)) ?? 0) + 1);
@@ -48,7 +55,7 @@ export function summarizeByHost(records) {
       host,
       attempts: attempts.length,
       failures: failures.length,
-      errorCodes: [...codeCounts.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([code, count]) => `${code} ${count}`).join(", "),
+      errorCodes: [...codeCounts.entries()].sort(compareText).map(([code, count]) => `${code} ${count}`).join(", "),
       p50Ms: percentile(durations, PERCENTILES.p50),
       p95Ms: percentile(durations, PERCENTILES.p95),
     };
@@ -67,19 +74,21 @@ export function renderSummary(text) {
   return [heading, "", "| 호스트 | 시도 | 실패 | 오류 코드별 | p50 ms | p95 ms |", "| --- | ---: | ---: | --- | ---: | ---: |", ...rows, ...skippedNote, ""].join("\n");
 }
 
+export const TELEMETRY_FILE_MISSING_SUMMARY = "### 원천 수집 시도 계측\n\n계측 파일 없음(계측 비활성 또는 수집 미실행).\n";
+
+/** file이 비었거나 없으면 "계측 파일 없음"이다. 파일은 있는데 기록이 없는 경우("기록된 수집 시도가 없다")와 구분한다. */
 export async function summarizeFile(file) {
-  let text;
-  try { text = await readFile(file, "utf8"); } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-    text = "";
+  if (!file) return TELEMETRY_FILE_MISSING_SUMMARY;
+  try { return renderSummary(await readFile(file, "utf8")); } catch (error) {
+    if (error?.code === "ENOENT") return TELEMETRY_FILE_MISSING_SUMMARY;
+    throw error;
   }
-  return renderSummary(text);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const inputIndex = process.argv.indexOf("--input");
   const input = inputIndex === -1 ? undefined : process.argv[inputIndex + 1];
-  if (!input) {
+  if (input === undefined) {
     console.error("usage: node tools/ci/summarize-source-fetch-telemetry.mjs --input <telemetry.jsonl>");
     process.exit(2);
   }
