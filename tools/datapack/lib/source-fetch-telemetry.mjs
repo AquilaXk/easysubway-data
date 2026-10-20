@@ -94,4 +94,4 @@ export function emitAttemptRecord(record, env = process.env) {
 }
 
 /** 사람이 읽는 label을 계측용 원천 식별자로 바꾼다(소문자, 영숫자 밖은 `-`). sourceId를 따로 주지 않은 호출자의 기본값이다. */
-export const sourceIdFromLabel = (label) => String(label).toLowerCase().replaceAll(/[^a-z0-9]+/gu, "-").replaceAll(/^-+|-+$/gu, "").slice(0, 48) || UNKNOWN_SOURCE;
+export const sourceIdFromLabel = (label) => String(label).toLowerCase().replaceAll(/[^a-z0-9]+/gu, "-").replaceAll(/^-|-$/gu, "").slice(0, 48) || UNKNOWN_SOURCE;

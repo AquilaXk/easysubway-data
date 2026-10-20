@@ -1445,8 +1445,8 @@ function parseSheetRows(xml, strings) {
       cells.set(col, text);
     }
     if (cells.size === 0) continue;
-    const maxCol = [...cells.keys()].sort().at(-1);
-    const width = columnToIndex(maxCol) + 1;
+    // 열 문자는 길이로 먼저 갈린다(Z < AA). 문자열 순서가 아니라 열 번호로 가장 오른쪽 열을 고른다.
+    const width = Math.max(...[...cells.keys()].map(columnToIndex)) + 1;
     const row = Array.from({ length: width }, (_, index) => cells.get(indexToColumn(index)) ?? "");
     rows.push(row);
   }

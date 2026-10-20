@@ -203,7 +203,7 @@ function productionCoverageEvidenceSummary(input, selectedSources, allowedSource
     const operatorId = requiredString(entry.operatorId, "coverageEvidence.operatorId");
     const sourceDomain = requiredString(entry.sourceDomain, "coverageEvidence.sourceDomain");
     requiredString(entry.evidence, "coverageEvidence.evidence");
-    const sourceIds = [...new Set(requiredStringArray(entry.sourceIds, "coverageEvidence.sourceIds"))].sort();
+    const sourceIds = [...new Set(requiredStringArray(entry.sourceIds, "coverageEvidence.sourceIds"))].sort(codepointCompare);
     const key = coverageKey(regionId, operatorId, sourceDomain);
     if (evidenceByKey.has(key)) {
       throw new Error(`duplicate production coverage evidence: ${key}`);

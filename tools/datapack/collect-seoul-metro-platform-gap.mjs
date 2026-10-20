@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
+// 서울 열린데이터광장 OpenAPI(8088)는 HTTP만 연다(2026-10-20 실측: https로 연결하면 ERR_SSL_WRONG_VERSION_NUMBER). probe-seoul-open-data-api.mjs와 같은 공식 HTTP-only provider다.
 const DEFAULT_ENDPOINT = "http://openapi.seoul.go.kr:8088/{serviceKey}/json/TbSubwayLineInfo";
 const PAGE_SIZE = 1000;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;

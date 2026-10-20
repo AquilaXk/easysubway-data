@@ -7,12 +7,12 @@ const yml = readFileSync(new URL("../../.github/workflows/automation-status-publ
 
 const jobGuards = () => yml.split("\n").filter((line) => line.startsWith("    if: ")).map((line) => line.slice("    if: ${{ ".length, -" }}".length));
 // job 가드 expression을 JS로 옮겨 평가한다(endsWith는 메서드, 비교 연산자는 엄격 비교).
-const guardRuns = ({ event, actor, variable }) => {
-  const expression = jobGuards()[0].replace(/endsWith\(([^,]+), ([^)]+)\)/gu, "$1.endsWith($2)").replace(/([=!])=/gu, "$1==");
-  const github = { ref: "refs/heads/main", event_name: event, triggering_actor: actor };
+// 행위자는 이름(github.actor·triggering_actor)이 아니라 GitHub가 payload에 채우는 sender.type으로 판정한다(Sonar githubactions:S8232: 이름은 위조·모방될 수 있다).
+const guardRuns = ({ event, senderType, variable }) => {
+  const expression = jobGuards()[0].replace(/([=!])=/gu, "$1==");
+  const github = { ref: "refs/heads/main", event_name: event, event: { sender: { type: senderType } } };
   return new Function("github", "vars", `return ${expression};`)(github, { DATAPACK_AUTOMATION_STATUS_PUBLISH: variable });
 };
-const SCHEDULER_BOT = "easysubway-release-chain[bot]";
 
 function stepBody(name) {
   const begin = yml.indexOf(`      - name: ${name}\n`);
@@ -66,14 +66,20 @@ test("곧 만료되는 원천 근거 게시는 변수 DATAPACK_AUTOMATION_STATUS
   assert.equal(publish.split("\n        run: ")[1].trim(), "node tools/ci/build-automation-status.mjs");
 });
 
-test("변수가 꺼져 있으면 스케줄러 봇 dispatch는 건너뛰고 사람 dispatch만 돈다", () => {
-  assert.equal(guardRuns({ event: "workflow_dispatch", actor: SCHEDULER_BOT, variable: "false" }), false);
-  assert.equal(guardRuns({ event: "workflow_dispatch", actor: "other-app[bot]", variable: "" }), false);
-  assert.equal(guardRuns({ event: "workflow_dispatch", actor: "AquilaXk", variable: "false" }), true);
-  assert.equal(guardRuns({ event: "schedule", actor: "github-actions[bot]", variable: "false" }), false);
+test("변수가 꺼져 있으면 봇(App) dispatch는 건너뛰고 사람 dispatch만 돈다", () => {
+  assert.equal(guardRuns({ event: "workflow_dispatch", senderType: "Bot", variable: "false" }), false);
+  assert.equal(guardRuns({ event: "workflow_dispatch", senderType: "Bot", variable: "" }), false);
+  assert.equal(guardRuns({ event: "workflow_dispatch", senderType: "User", variable: "false" }), true);
+  assert.equal(guardRuns({ event: "schedule", senderType: undefined, variable: "false" }), false);
 });
 
-test("변수가 켜져 있으면 스케줄러 봇 dispatch와 정기 실행이 돈다", () => {
-  assert.equal(guardRuns({ event: "workflow_dispatch", actor: SCHEDULER_BOT, variable: "true" }), true);
-  assert.equal(guardRuns({ event: "schedule", actor: "github-actions[bot]", variable: "true" }), true);
+test("변수가 켜져 있으면 봇(App) dispatch와 정기 실행이 돈다", () => {
+  assert.equal(guardRuns({ event: "workflow_dispatch", senderType: "Bot", variable: "true" }), true);
+  assert.equal(guardRuns({ event: "schedule", senderType: undefined, variable: "true" }), true);
+});
+
+test("job 가드는 위조·모방할 수 있는 이름 컨텍스트(actor·triggering_actor·sender.login)로 신뢰를 정하지 않는다", () => {
+  const [guard] = jobGuards();
+  assert.doesNotMatch(guard, /github\.(?:triggering_)?actor\b|sender\.login|endsWith/u);
+  assert.match(guard, /github\.event\.sender\.type == 'User'/u);
 });

@@ -18,6 +18,7 @@ import {
   mergeOfficialDistanceEvidence,
   MOLIT_FULL_ROUTE_DETAIL_URL,
   normalizeStationName,
+  parseGtxADistanceXlsx,
   parseLineSource,
   parseSeohaeMerged,
   projectCapitalTopologyOwnership,
@@ -887,4 +888,35 @@ defineSourceCollectionRetryTests({
     ? new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>')
     : new Response("노선,역\n1,a\n")),
   run: async ({ fetchImpl, sleepImpl }) => (await collectMolitFullRouteCsv({ fetchImpl, sleepImpl, randomImpl: () => 0 })).toString("utf8"),
+});
+
+// 무압축(stored) zip: unzipXlsx는 local file header만 읽으므로 CRC·central directory 없이도 열린다.
+function storedZip(entries) {
+  return Buffer.concat(Object.entries(entries).map(([name, text]) => {
+    const nameBytes = Buffer.from(name);
+    const data = Buffer.from(text);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt32LE(data.length, 18);
+    header.writeUInt32LE(data.length, 22);
+    header.writeUInt16LE(nameBytes.length, 26);
+    return Buffer.concat([header, nameBytes, data]);
+  }));
+}
+
+test("GTX-A xlsx 파서는 Z 뒤의 열(AA)까지 한 행의 너비로 읽는다", () => {
+  const strings = ["노선명", "정거장명", "철도거리(역간)", "GTX-A", "수서", "성남"];
+  const cell = (ref, index) => `<c r="${ref}" t="s"><v>${index}</v></c>`;
+  const number = (ref, value) => `<c r="${ref}"><v>${value}</v></c>`;
+  const sheet = `<worksheet><sheetData>
+    <row r="1">${cell("A1", 0)}${cell("B1", 1)}${cell("AA1", 2)}</row>
+    <row r="2">${cell("A2", 3)}${cell("B2", 4)}${number("AA2", 0)}</row>
+    <row r="3">${cell("A3", 3)}${cell("B3", 5)}${number("AA3", 7.5)}</row>
+  </sheetData></worksheet>`;
+  const xlsx = storedZip({
+    "xl/sharedStrings.xml": `<sst>${strings.map((text) => `<si><t>${text}</t></si>`).join("")}</sst>`,
+    "xl/worksheets/sheet1.xml": sheet,
+  });
+  const parsed = parseGtxADistanceXlsx(xlsx);
+  assert.deepEqual(parsed.branchSequences, [{ branchName: "GTX-A", stationNames: ["수서", "성남"], operatorRunCount: 1 }]);
 });

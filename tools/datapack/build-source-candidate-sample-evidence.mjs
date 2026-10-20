@@ -101,7 +101,7 @@ function fieldsFromRows(rows, format) {
   if (fields.size === 0) {
     throw new Error(`${format} response has no object fields`);
   }
-  return [...fields].sort();
+  return [...fields].sort(codepointCompare);
 }
 
 function jsonRows(raw) {

@@ -43,6 +43,7 @@ import { CANDIDATE_RELEASE_OUTPUTS } from "./lib/source-registration-transaction
 import { SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
 import { CANDIDATE_INPUT_MANIFEST_PATH } from "./lib/candidate-input-bundle.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -173,7 +174,7 @@ export function nationwideCandidateRefreshViolations({
   mismatch("fan-in evaluatedAt", fanIn?.evaluatedAt, evaluatedAt, ["fan-in", "requested"]);
   mismatch("publishedAt", buildSpec?.publishedAt, fanIn?.evaluatedAt, ["build spec", "fan-in"]);
   const selectedIds = (fanIn?.selectedSources ?? []).map(({ snapshotId }) => snapshotId);
-  const sorted = (values) => JSON.stringify([...values].sort());
+  const sorted = (values) => JSON.stringify([...values].sort(codepointCompare));
   if (!Array.isArray(buildSpec?.sourceSnapshotIds) || sorted(buildSpec.sourceSnapshotIds) !== sorted(selectedIds)) {
     violations.push("sourceSnapshotIds do not match fan-in heads");
   }

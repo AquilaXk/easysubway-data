@@ -25,7 +25,8 @@ concurrency:
 jobs:
   publish:
     name: Publish the automation status
-    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.triggering_actor != 'easysubway-release-chain[bot]' && !endsWith(github.triggering_actor, '[bot]')) || vars.DATAPACK_AUTOMATION_STATUS_PUBLISH == 'true') }}
+    # 사람(sender.type이 User) dispatch만 변수와 무관하게 돈다. 행위자 이름(actor·triggering_actor)은 모방할 수 있어 신뢰 근거로 쓰지 않고, GitHub가 이벤트 payload에 채우는 sender.type으로 가른다(Sonar githubactions:S8232).
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User') || vars.DATAPACK_AUTOMATION_STATUS_PUBLISH == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production-datapack

@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode, transportFailureWithCode } from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15001020/openapi.do";
@@ -229,7 +230,7 @@ function validateScope(scope) {
     codes.add(stationCode);
     return { stationCode, stationName, lineId };
   }).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));
-  if (JSON.stringify([...new Set(normalized.map(({ lineId }) => lineId))].sort()) !== JSON.stringify(LINE_IDS)) {
+  if (JSON.stringify([...new Set(normalized.map(({ lineId }) => lineId))].sort(codepointCompare)) !== JSON.stringify(LINE_IDS)) {
     throw new Error("Busan accessibility scope line set is incomplete");
   }
   return normalized;

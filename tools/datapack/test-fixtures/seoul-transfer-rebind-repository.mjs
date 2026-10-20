@@ -9,6 +9,7 @@ import { buildApplicability } from "../build-current-capital-transfer-topology-a
 import { rebuildAuthenticatedTransferTopologyMetrics } from "../build-current-transfer-topology-metrics.mjs";
 import { registerSeoulTransferSourceSnapshot } from "../register-seoul-transfer-source-snapshot.mjs";
 import { sha256 } from "../../lib/hash.mjs";
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 export const SEOUL_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
@@ -39,7 +40,7 @@ const lineBytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
 const prettyBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const sortValue = (value) => {
   if (Array.isArray(value)) return value.map(sortValue);
-  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortValue(value[key])]));
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort(codepointCompare).map((key) => [key, sortValue(value[key])]));
   return value;
 };
 const compareBytes = (left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right));

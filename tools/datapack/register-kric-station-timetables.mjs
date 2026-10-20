@@ -25,6 +25,7 @@ import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 export const STATION_LINES_SOURCE_ID = "kric-subway-timetable-station-lines";
 const TERMS_SOURCE_ID = "kric-subway-timetable";
@@ -48,7 +49,7 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const fail = (code) => { throw new Error(`KRIC_STATION_REGISTRATION_${code}`); };
 const exactKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
-  && isDeepStrictEqual(Object.keys(value).sort(), [...keys].sort());
+  && isDeepStrictEqual(Object.keys(value).sort(codepointCompare), [...keys].sort(codepointCompare));
 const instant = (value) => { try { return requiredUtcInstant(value, "instant"); } catch { return Number.NaN; } };
 const parse = (bytes, code) => { try { return JSON.parse(bytes.toString("utf8")); } catch { return fail(code); } };
 
@@ -130,7 +131,7 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
   if (freshnessClass.length !== 1 || !freshnessClass[0].sourceIds.includes(TERMS_SOURCE_ID)
     || freshnessClass[0].sourceIds.includes(STATION_LINES_SOURCE_ID) !== (previousHead !== null)
     || governanceEntry.sourceClassId !== FRESHNESS_CLASS_ID || freshnessClass[0].basisField !== "serviceEffectiveAt") fail("FRESHNESS_CLASS");
-  if (!previousHead) freshnessClass[0].sourceIds = [...freshnessClass[0].sourceIds, STATION_LINES_SOURCE_ID].sort();
+  if (!previousHead) freshnessClass[0].sourceIds = [...freshnessClass[0].sourceIds, STATION_LINES_SOURCE_ID].sort(codepointCompare);
 
   // 3. 원본 게시 receipt와 검토 admission(명시 입력).
   const receipt = parse(receiptFile.bytes, "RAW_RECEIPT");
@@ -169,7 +170,7 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
   const freshnessExpiresAt = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: FRESHNESS_CLASS_ID,
     basisAt: artifact.collectedAt, evaluationAt: now.toISOString() });
   if (!(instant(freshnessExpiresAt) > now.valueOf())) fail("FRESHNESS_EXPIRED");
-  const schemaFingerprint = sha(JSON.stringify([...new Set(responses.flatMap(({ rows }) => rows.flatMap((row) => Object.keys(row))))].sort()));
+  const schemaFingerprint = sha(JSON.stringify([...new Set(responses.flatMap(({ rows }) => rows.flatMap((row) => Object.keys(row))))].sort(codepointCompare)));
   const row = {
     schemaVersion: 1, artifactKind: "official-source-snapshot", snapshotId, sourceId: STATION_LINES_SOURCE_ID, provider: "국가철도공단",
     retrievedAt: artifact.collectedAt, sourceUpdatedAt: artifact.collectedAt, serviceEffectiveAt: artifact.collectedAt,

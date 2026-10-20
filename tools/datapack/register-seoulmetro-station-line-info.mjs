@@ -15,6 +15,7 @@ import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE_ID = "seoulmetro-station-line-info";
@@ -43,7 +44,7 @@ function instant(value, label) {
   return millis;
 }
 function one(items, predicate, label) {
-  const matches = Array.isArray(items) ? items.filter(predicate) : [];
+  const matches = Array.isArray(items) ? items.filter((item) => predicate(item)) : [];
   if (matches.length !== 1) fail(`${label} is missing or ambiguous`);
   return matches[0];
 }
@@ -54,8 +55,8 @@ async function readRevalidationDirectory(directory, repositoryRoot) {
   if (resolved === repositoryRoot || resolved.startsWith(`${repositoryRoot}${path.sep}`)) fail("revalidation directory must be outside the repository");
   const stat = await lstat(resolved);
   if (!stat.isDirectory() || stat.isSymbolicLink()) fail("revalidation directory must be a regular directory");
-  const names = (await readdir(resolved)).sort();
-  if (!isDeepStrictEqual(names, [EVIDENCE_FILE, SNAPSHOT_FILE].sort())) fail("revalidation directory inventory is invalid");
+  const names = (await readdir(resolved)).sort(codepointCompare);
+  if (!isDeepStrictEqual(names, [EVIDENCE_FILE, SNAPSHOT_FILE].sort(codepointCompare))) fail("revalidation directory inventory is invalid");
   const read = async (name) => {
     const file = path.join(resolved, name); const entry = await lstat(file);
     if (!entry.isFile() || entry.isSymbolicLink()) fail(`${name} must be a regular file`);
@@ -67,7 +68,7 @@ async function readRevalidationDirectory(directory, repositoryRoot) {
 function validateEvidence(evidence, head) {
   const { evidenceSha256, ...payload } = evidence ?? {};
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)
-    || !isDeepStrictEqual(Object.keys(evidence).sort(), [...EVIDENCE_KEYS].sort())
+    || !isDeepStrictEqual(Object.keys(evidence).sort(codepointCompare), [...EVIDENCE_KEYS].sort(codepointCompare))
     || evidence.schemaVersion !== 1 || evidence.artifactKind !== "current-static-source-revalidation-evidence"
     || evidence.sourceId !== SOURCE_ID || evidence.outcome !== "NO_CHANGE_REVALIDATED" || evidence.credentialRedacted !== true
     || evidenceSha256 !== sha(JSON.stringify(payload))

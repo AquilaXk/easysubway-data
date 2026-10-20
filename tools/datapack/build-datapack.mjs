@@ -4079,7 +4079,7 @@ function assertCongestionRowsExistInPack(pack, stats) {
     else if (!memberships.has(`${stationId}|${lineId}`)) missing.add(`station_lines ${stationId}|${lineId}`);
   }
   if (missing.size > 0) {
-    throw new Error(`station_congestion_stats references ids missing from the pack: ${[...missing].sort().join(", ")}`);
+    throw new Error(`station_congestion_stats references ids missing from the pack: ${[...missing].sort(codepointCompare).join(", ")}`);
   }
 }
 

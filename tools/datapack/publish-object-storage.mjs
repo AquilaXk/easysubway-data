@@ -540,7 +540,7 @@ function canonicalRequest(method, requestUrl, headers, payloadHash) {
 }
 
 function signedHeaders(headers) {
-  return Object.keys(lowercaseHeaders(headers)).sort().join(";");
+  return Object.keys(lowercaseHeaders(headers)).sort(codepointCompare).join(";");
 }
 
 function lowercaseHeaders(headers) {

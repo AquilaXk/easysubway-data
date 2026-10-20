@@ -9,6 +9,8 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+
 const PERCENTILES = Object.freeze({ p50: 50, p95: 95 });
 
 /** nearest-rank 백분위수. values는 비어 있지 않아야 한다. */
@@ -33,7 +35,7 @@ export function parseTelemetry(text) {
   return { records, skipped };
 }
 
-const compareText = ([left], [right]) => (left < right ? -1 : left > right ? 1 : 0);
+const compareText = ([left], [right]) => codepointCompare(left, right);
 
 // 실패 행의 이름: 전송 오류는 오류 코드, 2xx지만 본문 resultCode 때문에 재시도한 시도는 resultCode, 그 밖의 HTTP 실패는 HTTP <status>.
 function failureLabel(record) {
@@ -62,7 +64,7 @@ export function summarizeByHost(records) {
   });
 }
 
-const escapeCell = (value) => String(value).replaceAll("|", "\\|");
+const escapeCell = (value) => String(value).replaceAll("|", String.raw`\|`);
 
 /** job summary에 붙일 Markdown. */
 export function renderSummary(text) {
