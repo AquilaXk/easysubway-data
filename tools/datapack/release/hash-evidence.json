@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "2eafb0e101a89f916318ca058d4fa2b68810578a",
+  "builderGitSha": "655a4707ec8d996c40484b17e3cc64c7fb155eba",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -12,7 +12,7 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "100be014222ba462eeb5e678cd6bea324c78f55f5caab50ed22250a290c847b4",
+      "value": "481e0433d252067320939994489fd6dde289c954c60f27720ffbfda524be941f",
       "exporterKind": "facility-evidence",
       "rowCount": 919,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "69845ca8c2895b1ce75f3d781828036ef8341919e59c849127e949c149218997"
+    "value": "8c02fb07cf279be238d710d790ce618269e609607756ae949d4de06d538be0e6"
   },
   "sourceInventorySha256": {
-    "value": "8b4341af02eb69d18ffe362a498b2332630949f0c4f6d7eb9f214d09d8d9bb4d"
+    "value": "cc43c133c4bf34890a4ca3e47417fdad61202d176d6a05aa16be16d537de4802"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "6c876a06b188051b4a7b883b4739283e6793b3093f18c518c7cf7808d0d3acde"
+    "sha256": "56d8e81fcc7c103731c3ead47ff7e69db6000ec1e2194ebe0928308b7d873975"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261019-seq161"
+      "value": "nationwide-candidate-20261020-seq162"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261019-seq161"
+      "value": "release-request-nationwide-candidate-20261020-seq162"
     }
   },
   "perSourceEvidence": [
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "fdf93e5a71f59218c67cd7c4539efb1e4608681d7d0fc1f189f7ebb692652d74"
+      "perSourceSnapshotSetHash": "c94327f118ae1769b77aebc616e8d12869a3fde4bd48c8bb4af38600f2d25adf"
     },
     {
       "sourceId": "incheon-transit-accessibility",
@@ -130,18 +130,6 @@
         }
       ],
       "perSourceSnapshotSetHash": "29dbaf5ca1162ac0fd2a3131fa4e2b4213ac1e563790df8d97d69b9c8816a5f6"
-    },
-    {
-      "sourceId": "capital-route-topology",
-      "snapshotId": "capital-route-topology-20261019",
-      "rawSha256": "abcf196bf4ba730152844d758614b28d6bd63f6e3e0acaa76e66c635f2a4e934",
-      "admissionRecordSha256s": [
-        {
-          "kind": "capitalTopologyAdmissionEvidence",
-          "sha256": "7ceabc3daca30927463ec811996cdb82584192552cbbc7f2e8bef95971731597"
-        }
-      ],
-      "perSourceSnapshotSetHash": "19eb3b4269115d9f8fe9190c6941e6b6af7c39708d088a5a7b53fcaa3f177209"
     },
     {
       "sourceId": "gwangju-transportation-route-topology",
@@ -343,6 +331,18 @@
       "rawSha256": "ce63000339c7e733b271cd8443e247e385a29e0a4baab1eb79459ad96403d92f",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "perSourceSnapshotSetHash": "d7ea8b8d7b8893f1963b2b181f1981016a7e7558accf4d4f57e7ea69672c177f"
+    },
+    {
+      "sourceId": "capital-route-topology",
+      "snapshotId": "capital-route-topology-20261020",
+      "rawSha256": "47d8a7584e8934aadab2d48e61ac7afc1bc92edf10d31ae4d63f96e636c11d1c",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "2581c043bab55e77c4b74bf60107e43aa685c9ec2c3b63d8a2ddaf72c7ee7b88"
+        }
+      ],
+      "perSourceSnapshotSetHash": "25ac206df793ca9a10fb8314020475215ea3629523f2eeccd38baf23590f2070"
     }
   ],
   "officialOdFareEvidence": {
