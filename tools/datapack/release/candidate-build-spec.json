@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261020-seq164",
-  "publishedAt": "2026-10-20T16:29:41.294Z",
-  "releaseSequence": 164,
-  "builderGitSha": "1e7a82c9a4c7a416e25cbb8099e4bc1bc12f4ef3",
+  "candidateId": "nationwide-candidate-20261020-seq165",
+  "publishedAt": "2026-10-20T18:29:46.350Z",
+  "releaseSequence": 165,
+  "builderGitSha": "29adfb26af87130c78305ecb1ad36ce6544ac477",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "91be4616bb54088b90b73022f5d05e4a8d1d0e06b7a899e1c76bac558180715a",
+  "fixtureSha256": "4ed17d22bb8d3f3689b12bc0db83da5bc3d8014866e0a532c9a309e9ccdde862",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -49,7 +49,6 @@
     "busan-transportation-route-topology-fe5fe8266986ade7e7983af7bbd58be1a55e64b9982493294cada6c14f0ad081",
     "busan-transportation-accessibility-60eec0fc612205541b835cedbff92f80085d0ccf8209d90e03b2a9a489f02675-20261018",
     "busan-transportation-timetable-20261018",
-    "kric-nationwide-timetable-file-01f0a2ccc5e6e6192e03c3a02bfac940d05f8ae760353ecf772d9cce9417668e",
     "capital-route-topology-20261020",
     "kric-station-convenience-standard-20261020T114057190Z",
     "gwangju-transportation-route-topology-4137eb3c5afa7910b009baa2222878335ca9e9de3fe488389549bbad87f3387a",
@@ -67,7 +66,8 @@
     "kric-subway-timetable-station-lines-20261020",
     "korail-metropolitan-timetable-file-1906a5738bd865e071c66e089abca45336b218231d4a2722e20b54d6918834d1",
     "korail-metropolitan-planned-timetable-40eed2e685b17ccde8d54b7fef85c1bf0881f4590d0ed9caeedab53bc9b5e8a9",
-    "seoul-metro-accessibility-20261020T143823341Z"
+    "seoul-metro-accessibility-20261020T143823341Z",
+    "kric-nationwide-timetable-file-03439b0cbf177d9d71bfbbb109abe00f860c81fe2d9756e7fb51b204a06b6ab7"
   ],
   "sourceSnapshots": [
     {
@@ -235,28 +235,6 @@
         {
           "kind": "scheduleAdmissionEvidence",
           "sha256": "447bfbe00c29dcc5eb26d5a8d44b87f0ccaeaf77dee7c9474dc09e0add5f92c3"
-        }
-      ]
-    },
-    {
-      "snapshotId": "kric-nationwide-timetable-file-01f0a2ccc5e6e6192e03c3a02bfac940d05f8ae760353ecf772d9cce9417668e",
-      "sourceId": "kric-nationwide-timetable-file",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/sources/kric-nationwide-timetable-file/89a81a24b22434e9103b4b3ccbc51e5ac2efd205904ca9a4faa3857fbf7b5011/observation.json",
-      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "redactedRequestFingerprint": "d677d6f7bba03cd4b8be0b553eceb249252c082c9b3c6e390e9f35d209e6bcfe",
-      "schemaFingerprint": "6b3d4bb90d1c0160da3ef1bef74d0ffc26870da92e93bce5e764223f4a1cca85",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-10-26T16:44:12.993Z",
-      "rawRetentionExpiresAt": "2027-01-17T16:44:12.993Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
-      "admissionRecordSha256s": [
-        {
-          "kind": "retainedScheduleAdmissionEvidence",
-          "sha256": "e5fa3aeaeab6c3ae04ca9aa5975980252bdd3808523170801d832b1ee68d3cd1"
         }
       ]
     },
@@ -640,10 +618,32 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303"
+    },
+    {
+      "snapshotId": "kric-nationwide-timetable-file-03439b0cbf177d9d71bfbbb109abe00f860c81fe2d9756e7fb51b204a06b6ab7",
+      "sourceId": "kric-nationwide-timetable-file",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/sources/kric-nationwide-timetable-file/556d68ace4ee904808a8f3a7ff949192740ac9a419b7bd31abbb36306a46923a/observation.json",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "redactedRequestFingerprint": "d677d6f7bba03cd4b8be0b553eceb249252c082c9b3c6e390e9f35d209e6bcfe",
+      "schemaFingerprint": "6b3d4bb90d1c0160da3ef1bef74d0ffc26870da92e93bce5e764223f4a1cca85",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-10-27T17:32:12.655Z",
+      "rawRetentionExpiresAt": "2027-01-18T17:32:12.655Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
+      "admissionRecordSha256s": [
+        {
+          "kind": "retainedScheduleAdmissionEvidence",
+          "sha256": "4f4331b4f96cee5f1b7dcd89a7f005806c55b17bf8d636b10dca085a85ddb8b8"
+        }
+      ]
     }
   ],
-  "sourceSnapshotSetHash": "ec8efb61a5e348184ab4b40e7875d547f9d088d8a73592a0bedbb45e7b050661",
-  "sourceInventorySha256": "a59c50b4a29d2520b05c3b78ad4654afa82e7b4b73a2f7a8defc79eb0f2ff025",
+  "sourceSnapshotSetHash": "5d16ad2966f6e5bfc5034cf242b21f6fb36a01992802fe9dc91eeecdcb92153d",
+  "sourceInventorySha256": "8af76b98cca6c21b15481282894f955e4a2c2a0bfb2b1ab673153122f3612ed2",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
@@ -697,7 +697,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "04367194cc74bc4e153ac081fb37012604b1c58e12df7db20cc11e73f6ebe578"
+      "sha256": "bec259c388d9340902b9d346e0b392f79da8d1679d909101b0139ba51ea99cc0"
     }
   },
   "officialOdFareEvidence": {
