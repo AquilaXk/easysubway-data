@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261021-seq168",
-  "candidateBuildSpecSha256": "0cdd3f2fab54caeaf9278e226834581910d885dc7783d6fa673121166a8622af",
-  "preparationSha256": "315f60f6b12979001a39eac8445becd1cd97cb4a810645d486128e8669cda060",
-  "fanInSha256": "e1b802f0d8179d855bb1d21248ddd8d4747145b78fb2b52a5d62a1ab4094c6d3",
+  "candidateId": "nationwide-candidate-20261021-seq169",
+  "candidateBuildSpecSha256": "c6cc0de759567787a4f5ecbbdb4d86a612f42b3f697cb962a403f5c37e36fc5a",
+  "preparationSha256": "128a054abd876ea132d46d4465f37c8da647b30f7470f41b3bdf34b3291bb88c",
+  "fanInSha256": "239d799dcd72aad4afc955cf1a342f2182e1c90af085787ac909538e1230f643",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "e1b802f0d8179d855bb1d21248ddd8d4747145b78fb2b52a5d62a1ab4094c6d3",
+      "sha256": "239d799dcd72aad4afc955cf1a342f2182e1c90af085787ac909538e1230f643",
       "byteSize": 36442
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "ffaeeaf77049d4429033cf841c7932c2b1500d76a337de30875a50d2f5f16f5b",
-      "byteSize": 4844615
+      "sha256": "7057bb99af9abb3792d5992227e8f31b9a98b3b313432088584622adf16a3476",
+      "byteSize": 4862599
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "ad2a8a55a20964016f899963580932213cb7ea877c4dd17c11ab219da469b86d",
+      "sha256": "037cf7f6a1da73fb6ced9417394ae806c8165aa7b517c58c8bc25e1e49aab0d0",
       "byteSize": 405507
     },
     {
@@ -173,8 +173,8 @@
       "byteSize": 65917
     },
     {
-      "path": "tools/datapack/sources/korail-metropolitan-planned-timetable-40eed2e685b17ccde8d54b7fef85c1bf0881f4590d0ed9caeedab53bc9b5e8a9.json",
-      "sha256": "9ce6796f4a468bc04c2ca8500bd2cc241b2981ad514c3eb58ba9f39d0edc9ec6",
+      "path": "tools/datapack/sources/korail-metropolitan-planned-timetable-93792d4f2ce9230043283d3efad948fc324e4566454b90fd1388c4fc47b91873.json",
+      "sha256": "bedce4074181f49d7b1e7888ab5e2ceeb1a9ca0245d8d1447f580dc9972cb132",
       "byteSize": 613416
     },
     {
@@ -183,8 +183,8 @@
       "byteSize": 16241401
     },
     {
-      "path": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-f862f7a59abc3d814817146a28f4cbc16bcbd1a16e9452d7102ad0a0a07f3a38.json",
-      "sha256": "29d1df889bd0e09b3eeeba8c76741371090794a093bd0894931a5e36eb8dc265",
+      "path": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-e02eadbb4a56f4f503ae9f53b11689aaa38e08cc852ccc891dac9ec1f630c6ba.json",
+      "sha256": "04e2f9b01919b5982f82b20b4caf13a6e4599c5f1dec0e6fc6e8a55deb260fdb",
       "byteSize": 10060125
     },
     {
@@ -198,8 +198,8 @@
       "byteSize": 774800
     },
     {
-      "path": "tools/datapack/sources/kric-subway-timetable-station-lines-20261020.json",
-      "sha256": "f79f5004f37a627e6b16e3238921d6dd6548df775c5e0e108b5633458c86efd0",
+      "path": "tools/datapack/sources/kric-subway-timetable-station-lines-20261021.json",
+      "sha256": "4c27d0fc7d368895fa07592674aa68c149314b92f2f62f73826afc67d3f30116",
       "byteSize": 10461819
     },
     {
