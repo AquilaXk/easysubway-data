@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "2d4177e143617520ff9156b02648c3279365a531",
+  "builderGitSha": "b8e8ce722ca4260ff1fd8262963ef4ca65b93cd3",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "1e11ec05307a837f8f942d305ad239536e6dff5a7f533f7e83539231f4441dc2"
+    "value": "b5396f42bf5ddc6bcd8de82d6c36b0b4733511b11112f8216082be775edfbf75"
   },
   "sourceInventorySha256": {
-    "value": "35c880ad3019e42499bfb7ab5ddc7589dc71b71105b946a57c9fb252bfc62511"
+    "value": "9fb9ad4d0fdfce4a10f91ab456834807be7abcb9eb5516394e283c31ad85ac4e"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "39bf7596e547963475fbe3fdf896d24de5d36613fac67f6659bf7c7a7119efef"
+    "sha256": "c994ff058f9c07034d5dc776f51b6d99d3f3294a8ed42205aef616f554c2e6bf"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261021-seq166"
+      "value": "nationwide-candidate-20261021-seq167"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261021-seq166"
+      "value": "release-request-nationwide-candidate-20261021-seq167"
     }
   },
   "perSourceEvidence": [
@@ -130,13 +130,6 @@
         }
       ],
       "perSourceSnapshotSetHash": "29dbaf5ca1162ac0fd2a3131fa4e2b4213ac1e563790df8d97d69b9c8816a5f6"
-    },
-    {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20261020T114057190Z",
-      "rawSha256": "3e82852d113daaa433f559fccd612f02ddc799ae091b72617a2df924818009b8",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "f90c10f1b723f12d0996bf55a6d3e6880bf8056f0f3c15fe23eda2c5843e4647"
     },
     {
       "sourceId": "gwangju-transportation-route-topology",
@@ -343,6 +336,13 @@
         }
       ],
       "perSourceSnapshotSetHash": "31aa06cc3d4c57e62eebdc4ffe0f8e2c618f6bac7661735e4a052b961bb911f9"
+    },
+    {
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20261021T074144819Z",
+      "rawSha256": "cea56a035de3ecc76818e164400feb250651a4bef3f1bdcebfa45da2372b1add",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "06083279ef615ecb9b23365372565b3ea5eef256d168c7909bc9f4a5cda1f1cf"
     }
   ],
   "officialOdFareEvidence": {

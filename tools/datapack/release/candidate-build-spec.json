@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261021-seq166",
-  "publishedAt": "2026-10-21T02:29:38.673Z",
-  "releaseSequence": 166,
-  "builderGitSha": "2d4177e143617520ff9156b02648c3279365a531",
+  "candidateId": "nationwide-candidate-20261021-seq167",
+  "publishedAt": "2026-10-21T08:29:48.375Z",
+  "releaseSequence": 167,
+  "builderGitSha": "b8e8ce722ca4260ff1fd8262963ef4ca65b93cd3",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "39bf7596e547963475fbe3fdf896d24de5d36613fac67f6659bf7c7a7119efef",
+  "fixtureSha256": "c994ff058f9c07034d5dc776f51b6d99d3f3294a8ed42205aef616f554c2e6bf",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -49,7 +49,6 @@
     "busan-transportation-route-topology-fe5fe8266986ade7e7983af7bbd58be1a55e64b9982493294cada6c14f0ad081",
     "busan-transportation-accessibility-60eec0fc612205541b835cedbff92f80085d0ccf8209d90e03b2a9a489f02675-20261018",
     "busan-transportation-timetable-20261018",
-    "kric-station-convenience-standard-20261020T114057190Z",
     "gwangju-transportation-route-topology-4137eb3c5afa7910b009baa2222878335ca9e9de3fe488389549bbad87f3387a",
     "gwangju-transportation-accessibility-6613786db20315531bd33ae8c71d4c5fc23f98153af7f6018e06752b4b38ecb7-20261020",
     "daejeon-station-distance-fare-de71a65f2750a486faa949adbb91b70184332cb1041c176da6d2e34b5dc46f8a",
@@ -67,7 +66,8 @@
     "korail-metropolitan-planned-timetable-40eed2e685b17ccde8d54b7fef85c1bf0881f4590d0ed9caeedab53bc9b5e8a9",
     "seoul-metro-accessibility-20261020T143823341Z",
     "kric-nationwide-timetable-file-03439b0cbf177d9d71bfbbb109abe00f860c81fe2d9756e7fb51b204a06b6ab7",
-    "capital-route-topology-20261021"
+    "capital-route-topology-20261021",
+    "kric-station-convenience-standard-20261021T074144819Z"
   ],
   "sourceSnapshots": [
     {
@@ -237,23 +237,6 @@
           "sha256": "447bfbe00c29dcc5eb26d5a8d44b87f0ccaeaf77dee7c9474dc09e0add5f92c3"
         }
       ]
-    },
-    {
-      "snapshotId": "kric-station-convenience-standard-20261020T114057190Z",
-      "sourceId": "kric-station-convenience-standard",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20261020/3e82852d113daaa433f559fccd612f02ddc799ae091b72617a2df924818009b8.json",
-      "rawSha256": "3e82852d113daaa433f559fccd612f02ddc799ae091b72617a2df924818009b8",
-      "redactedRequestFingerprint": "be79e602355ab8d57ecf74d62b1576d21839f6292b9b29b39c0ed5a5a2194c52",
-      "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2027-01-18T11:40:57.190Z",
-      "rawRetentionExpiresAt": "2027-01-18T11:40:57.190Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
     },
     {
       "snapshotId": "gwangju-transportation-route-topology-4137eb3c5afa7910b009baa2222878335ca9e9de3fe488389549bbad87f3387a",
@@ -640,10 +623,27 @@
           "sha256": "493752f05f950084f0cedbe1d03592ddeb9219580a419daeb9134cbea7835ee3"
         }
       ]
+    },
+    {
+      "snapshotId": "kric-station-convenience-standard-20261021T074144819Z",
+      "sourceId": "kric-station-convenience-standard",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20261021/cea56a035de3ecc76818e164400feb250651a4bef3f1bdcebfa45da2372b1add.json",
+      "rawSha256": "cea56a035de3ecc76818e164400feb250651a4bef3f1bdcebfa45da2372b1add",
+      "redactedRequestFingerprint": "be79e602355ab8d57ecf74d62b1576d21839f6292b9b29b39c0ed5a5a2194c52",
+      "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2027-01-19T07:41:44.819Z",
+      "rawRetentionExpiresAt": "2027-01-19T07:41:44.819Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
     }
   ],
-  "sourceSnapshotSetHash": "1e11ec05307a837f8f942d305ad239536e6dff5a7f533f7e83539231f4441dc2",
-  "sourceInventorySha256": "35c880ad3019e42499bfb7ab5ddc7589dc71b71105b946a57c9fb252bfc62511",
+  "sourceSnapshotSetHash": "b5396f42bf5ddc6bcd8de82d6c36b0b4733511b11112f8216082be775edfbf75",
+  "sourceInventorySha256": "9fb9ad4d0fdfce4a10f91ab456834807be7abcb9eb5516394e283c31ad85ac4e",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
@@ -697,7 +697,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "a2b49a505a8f6e00d7b1787bea89cf507c4396d2f8c8961fd8a7fb94c1f88ba6"
+      "sha256": "227c7a49d2404a041271185f0d8f45271413a632e0d91b1ab24d0bb88cd482df"
     }
   },
   "officialOdFareEvidence": {
