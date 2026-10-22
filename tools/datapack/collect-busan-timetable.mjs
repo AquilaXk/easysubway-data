@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { sha256 } from "../lib/hash.mjs";
-import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode } from "./lib/source-collection-retry.mjs";
+import { fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, withRequestInterval } from "./lib/source-collection-retry.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_process.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15000522/openapi.do";
@@ -36,11 +36,13 @@ export async function collectBusanTimetable({
   concurrency = 4,
   sleepImpl = sleep,
   randomImpl,
+  requestIntervalMs = 0,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
   const scope = normalizeBusanTimetableScope(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
+  const pacedFetch = withRequestInterval(fetchImpl, { intervalMs: requestIntervalMs, sleep: sleepImpl });
   const requests = scope.flatMap((station) => DAYS.map((day) => ({ station, day })));
   const responses = new Array(requests.length);
   let next = 0;
@@ -50,7 +52,7 @@ export async function collectBusanTimetable({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl, randomImpl });
+        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl: pacedFetch, sleepImpl, randomImpl });
       } catch (error) {
         failure = error;
       }
@@ -280,6 +282,7 @@ async function main(args = process.argv.slice(2)) {
   const snapshot = await collectBusanTimetable({
     serviceKey: process.env.DATA_GO_KR_SERVICE_KEY,
     stationScopes: topology.scope,
+    requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
   });
   await writeFile(output, `${JSON.stringify(snapshot)}\n`, { mode: 0o600 });
   console.log(`sanitized Busan timetable snapshot ready: rows=${snapshot.rowCount}`);

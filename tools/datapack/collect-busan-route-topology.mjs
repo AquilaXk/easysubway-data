@@ -6,7 +6,7 @@ import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode } from "./lib/source-collection-retry.mjs";
+import { fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, withRequestInterval } from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
@@ -43,12 +43,14 @@ export async function collectBusanRouteTopology({
   sleepImpl = sleep,
   retryBudget,
   randomImpl,
+  requestIntervalMs = 0,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
   const scope = stationScopes == null ? null : validateStationScopes(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   if (typeof sleepImpl !== "function") throw new TypeError("sleepImpl must be a function");
+  const pacedFetch = withRequestInterval(fetchImpl, { intervalMs: requestIntervalMs, sleep: sleepImpl });
   const requestCodes = scope ? scope.map(({ stationCode: code }) => code) : [stationCode];
   const responses = new Array(requestCodes.length);
   let next = 0;
@@ -59,7 +61,7 @@ export async function collectBusanRouteTopology({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl, sleepImpl, retryBudget, randomImpl });
+        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl: pacedFetch, sleepImpl, retryBudget, randomImpl });
       } catch (error) {
         aborted = true;
         failures.push(error);
@@ -661,7 +663,9 @@ function parseArgs(argv) {
 async function main(argv) {
   const { output, scopeHtml, stationCode } = parseArgs(argv);
   const stationScopes = scopeHtml ? parseBusanRouteTopologyScope(await readFile(scopeHtml, "utf8")) : null;
-  const snapshot = await collectBusanRouteTopology({ serviceKey: process.env.DATA_GO_KR_SERVICE_KEY, stationCode, stationScopes });
+  const snapshot = await collectBusanRouteTopology({
+    serviceKey: process.env.DATA_GO_KR_SERVICE_KEY, stationCode, stationScopes, requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
+  });
   if (stationCode) throw new Error(`diagnostic station response is not admissible: scode=${stationCode}; edges=${snapshot.edgeCount}`);
   const admission = admitBusanRouteTopology(snapshot);
   await writeFile(output, `${JSON.stringify({ ...snapshot, admission }, null, 2)}\n`, { mode: 0o600 });
