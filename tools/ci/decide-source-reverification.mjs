@@ -168,9 +168,12 @@ function blockedRecipeIds({ openIssues, recipes }) {
 
 const overdueRowsOf = (dueRows) => dueRows.filter(({ state }) => state === "OVERDUE").map(({ recipeId, sourceId, dueAt, overdueAt }) => ({ recipeId, sourceId, dueAt, overdueAt }));
 
-/** 재확인 기한을 넘긴 recipe와 그에 의존하는 recipe(recipe 표 순서). 의존 recipe는 의존 대상이 돌 때만 다시 등록되므로 함께 연체다. */
+// 연체 recipe의 정의는 한 곳이다: 연체 행이 있는 recipe와 그에 의존하는 recipe. 의존 recipe는 의존 대상이 돌 때만 다시 등록되므로 함께 연체다.
+const overdueRecipeIdsOf = (overdueRows, recipes) => withDependents(overdueRows.map(({ recipeId }) => recipeId), recipes);
+
+/** 재확인 기한을 넘긴 recipe와 그에 의존하는 recipe(recipe 표 순서). */
 export function overdueReverificationRecipes({ inventory, ledger, policy, now, recipes = REVERIFICATION_RECIPES } = {}) {
-  return withDependents(overdueRowsOf(sourceReverificationDue({ inventory, ledger, policy, now, recipes })).map(({ recipeId }) => recipeId), recipes);
+  return overdueRecipeIdsOf(overdueRowsOf(sourceReverificationDue({ inventory, ledger, policy, now, recipes })), recipes);
 }
 
 // PR 없는 claim의 처지를 producer run(claim 브랜치 이름의 run id)으로 가린다. 복구는 하지 않는다(정리하고 다시 시작한다).
@@ -269,7 +272,7 @@ export async function main(argv, {
     await appendText(values.githubOutput, [
       `state=${result.state}`, `branch=${result.branch ?? ""}`, `recipes=${result.recipes.join(",")}`,
       `cleanup_claims=${result.cleanupClaims.join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, `blocked_recipes=${(result.blocked ?? []).join(",")}`,
-      `overdue_recipes=${[...new Set(result.overdue.map(({ recipeId }) => recipeId))].join(",")}`, "",
+      `overdue_recipes=${overdueRecipeIdsOf(result.overdue, REVERIFICATION_RECIPES).join(",")}`, "",
     ].join("\n"));
   }
   return result;

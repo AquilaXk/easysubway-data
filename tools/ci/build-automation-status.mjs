@@ -184,8 +184,8 @@ const FAILED_RUN_CONCLUSIONS = new Set(["failure", "timed_out", "startup_failure
 
 /**
  * 근거를 갱신하는 작업의 상태. 그 단계 workflow의 run 중 취소·건너뜀·neutral·진행 중을 건너뛰고 48시간 안에서 가장 최근의 success 또는 failure(failure·timed_out·startup_failure)로 정한다.
- * 그런 run이 없으면 정기 실행이 멈춘 단계이므로 FAILED다. 재확인 원천은 그 recipe가 원장 head 기준으로 연체여도 FAILED다(#3036): 재확인 workflow는 실패 run 사이에
- * 수집 없이 성공으로 끝나는 대기 run을 내므로 마지막 run만 보면 연체가 OK로 덮인다. 실패가 아니면 막힌 PR·주인 없는 claim·재생성 상한이 그 단계일 때 BLOCKED, 아니면 OK다.
+ * 그런 run이 없으면 정기 실행이 멈춘 단계이므로 FAILED다. 재확인 recipe의 원천은 어느 단계가 소유하든 그 recipe가 연체여도 FAILED다(#3036): 재확인 workflow는 실패 run 사이에
+ * 수집 없이 성공으로 끝나는 대기 run을 내고 소유 단계는 따로 성공할 수 있으므로 마지막 run만 보면 연체가 OK로 덮인다. 실패가 아니면 막힌 PR·주인 없는 claim·재생성 상한이 그 단계일 때 BLOCKED, 아니면 OK다.
  * 열린 실패 이슈는 쓰지 않는다: 이슈는 사람이 닫을 때까지 열려 있어 지금 실패 중인지를 말해 주지 못한다.
  */
 function refreshStateOf(sourceId, stage, { refreshRuns, stuck, now, overdueSourceIds }) {
@@ -201,7 +201,7 @@ function refreshStateOf(sourceId, stage, { refreshRuns, stuck, now, overdueSourc
   }
   const [latest] = decisive.sort(newest);
   if (latest === undefined || FAILED_RUN_CONCLUSIONS.has(latest.conclusion)) return "FAILED";
-  if (stage === REVERIFICATION_STAGE && overdueSourceIds.has(sourceId)) return "FAILED";
+  if (overdueSourceIds.has(sourceId)) return "FAILED";
   const prefix = AUTOMATION_STAGE_PREFIXES[stage];
   const blocked = stuck.pulls.some((pull) => pull.stage === stage)
     || stuck.claims.some((claim) => claim.branch.startsWith(prefix))
@@ -243,7 +243,7 @@ function expiringSourceOf(source, context) {
   };
 }
 
-/** 원장 head 기준으로 연체인 재확인 recipe(의존 recipe 포함)가 소유한 원천. 원장·정책을 읽지 못하면 채우지 않고 실패한다. */
+/** 연체인 재확인 recipe(의존 recipe 포함)가 소유한 원천. 원장·정책을 읽지 못하면 채우지 않고 실패한다. */
 function overdueReverificationSourceIds({ inventory, ledger, policy, now }) {
   const overdue = new Set(overdueReverificationRecipes({ inventory, ledger, policy, now }));
   return new Set(REVERIFICATION_RECIPES.filter(({ id }) => overdue.has(id)).flatMap(({ sourceIds }) => sourceIds));
