@@ -25,6 +25,7 @@ import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "../datapack/refresh-nation
 import { evaluateEvidenceChange } from "../datapack/run-source-reverification.mjs";
 import * as recorded from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
+import * as policy from "./automation-pr-policy.mjs";
 import { REFRESH_STAGES, REFRESH_STAGE_IDS, evaluateRefreshStage } from "./refresh-stage-contracts.mjs";
 
 // #985: 데이터 전용 자동화 PR의 자동 병합 정책(#870 전체 자동화 2단계). 정책은 PR 본문 증거 블록을 색인으로만 쓰고,
@@ -829,6 +830,22 @@ test("CLI decide: 판정을 GITHUB_OUTPUT에 쓰고, 값이 출력 형식에 맞
     await main(["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "cancelled", "--run-id", String(RUN_ID), "--github-output", stale], { api, log: () => {} });
     assert.equal(await readFile(stale, "utf8"), "state=STALE\npull_request=\nhead_sha=\nstage=\nevidence_sha256=\ndraft=false\nlabeled=false\nattested=false\n");
   });
+});
+
+// 2026-10-22 automation-pr-automerge.yml 실패 run(39799412785): required context가 아직 진행 중이라 CI 위반으로 막혔다. 위반 코드마다 reason이 남는다.
+test("CLI decide: 위반으로 막히면 위반 메시지 줄 뒤에 위반 코드들을 중복 없이 reason으로 남기고 1을 돌려준다", async () => {
+  const input = scenario("registration");
+  const inProgress = { ...run("Data contracts", "success", { id: 10 }), status: "in_progress", conclusion: null };
+  const blocked = { ...input, pull: { ...input.pull, user: { ...HUMAN } }, checkRuns: [inProgress, input.checkRuns[1]] };
+  const stderr = [];
+  const exitCode = await policy.runCli(
+    ["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "success", "--run-id", String(RUN_ID)],
+    { api: fakeApi(blocked).api, log: () => {}, stderr: { write: (text) => stderr.push(text) } },
+  );
+  assert.equal(exitCode, 1);
+  const lines = stderr.join("").split("\n").filter((line) => line !== "");
+  assert.match(lines.find((line) => line.startsWith("AUTOMATION_PR_CI:")), /Data contracts.*진행 중/u);
+  assert.equal(lines.at(-1), "reason=AUTOMATION_PR_AUTHOR,AUTOMATION_PR_CI");
 });
 
 // #986 리뷰 F1: 이미 한 일(attested)로 세는 기록도 코디네이터와 같은 기준이다. 편집된 기록·head 커밋보다 먼저 만든 기록은 없는 것으로 본다.
