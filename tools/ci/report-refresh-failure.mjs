@@ -182,12 +182,18 @@ export function failureIssuesOf({ openIssues, workflowFile }) {
   }).sort((left, right) => left.number - right.number);
 }
 
+const inlineCode = (text) => `\`${text}\``;
+
 // 재확인 기한을 넘긴 recipe(#3036). 대기 run은 실패하지 않았으므로 실패 문구 대신 연체 사실과 기록한 run을 적는다.
 function overdueLines(input, overdue) {
-  return [
-    `- 재확인 기한을 넘긴 recipe: ${overdue.map((recipeId) => `\`${recipeId}\``).join(", ")}. 원장 head가 새로 등록될 때까지 run마다 이 이슈에 기록한다.`,
-    `- 기록한 run: ${input.runUrl}`,
-  ];
+  const recipes = overdue.map(inlineCode).join(", ");
+  return [`- 재확인 기한을 넘긴 recipe: ${recipes}. 원장 head가 새로 등록될 때까지 run마다 이 이슈에 기록한다.`, `- 기록한 run: ${input.runUrl}`];
+}
+
+// 재알림 댓글의 첫 문장과 run 줄.
+function noticeLines(input, overdue) {
+  if (overdue.length > 0) return [`\`${input.workflowFile}\`의 원천이 아직 재확인 기한을 넘긴 상태다. 이전 데이터로 대체하지 않았다.`, "", ...overdueLines(input, overdue)];
+  return [`\`${input.workflowFile}\`가 다시 실패했다. 이전 데이터로 대체하지 않았다.`, "", `- 실패 run: ${input.runUrl}`];
 }
 
 function reportBackground(input, { orphan, overdue }) {
@@ -232,11 +238,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       duplicateNumbers,
       body: [
         COMMENT_MARKER,
-        overdue.length > 0
-          ? `\`${input.workflowFile}\`의 원천이 아직 재확인 기한을 넘긴 상태다. 이전 데이터로 대체하지 않았다.`
-          : `\`${input.workflowFile}\`가 다시 실패했다. 이전 데이터로 대체하지 않았다.`,
-        "",
-        ...(overdue.length > 0 ? overdueLines(input, overdue) : [`- 실패 run: ${input.runUrl}`]),
+        ...noticeLines(input, overdue),
         ...chainNote(input.workflowFile),
         "- 같은 workflow의 실패는 하루에 한 번만 댓글로 알린다. 그 사이 실패 run은 이슈 본문 상태 블록에 쌓인다.",
         ...(duplicateNumbers.length > 0
