@@ -5972,7 +5972,7 @@
             "--daily-limit",
             "1",
             "--output",
-            ".codex/evidence/tago-schedule-collection.json",
+            ".evidence/evidence/tago-schedule-collection.json",
             "--quiet"
           ],
           "requiredEnv": [
@@ -6126,7 +6126,7 @@
           "station_name",
           "station_sequence"
         ],
-        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .evidence/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
       },
       "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
       "capabilities": {
@@ -6309,7 +6309,7 @@
           "stnNo",
           "vcntEntrcNo"
         ],
-        "liveSampleNote": "리포 내장 raw(공식 source, 상록수·사당 포함 4호선 전량)에서 산출한 sanitized sample evidence 해시. 원본 스냅샷은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+        "liveSampleNote": "리포 내장 raw(공식 source, 상록수·사당 포함 4호선 전량)에서 산출한 sanitized sample evidence 해시. 원본 스냅샷은 .evidence/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
       },
       "nextAction": "admitted to production inventory; monitor freshness and re-collect credential-free snapshot on schema/coverage change",
       "capabilities": {
@@ -7589,7 +7589,7 @@
           "station_code",
           "station_name"
         ],
-        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .evidence/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
       },
       "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
       "capabilities": {

@@ -161,7 +161,7 @@
       "kricMovement": "kric-transfer-movement-detailed",
       "transfer": "seoul-metro-transfer-distance-duration"
     },
-    "reproducibility": "tracked snapshot; regenerated only from local-only raw inputs (.codex/evidence/1701/, gitignored)",
+    "reproducibility": "tracked snapshot; regenerated only from local-only raw inputs (.evidence/evidence/1701/, gitignored)",
     "scopeDecision": "프로덕션 pilot 팩 적재는 이 PR의 비범위이며 #1702/#1414 트랙 후속이다. 이 리포트의 팩 적재 대상은 capital 참조 팩(tools/datapack/fixtures/catalog-fixture.json)뿐이며, tools/datapack/release/의 프로덕션 pilot 팩·tools/datapack/inputs/*·release gate는 건드리지 않았다."
   },
   "pilotFieldDeviation": {
