@@ -297,15 +297,18 @@ function requiredText(value, label) {
 
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }
 
-async function main(args = process.argv.slice(2)) {
+export async function main(args = process.argv.slice(2), { env = process.env, fetchImpl, sleepImpl, randomImpl } = {}) {
   const expected = ["--scope-snapshot", "--output"];
   if (args.length !== 4 || expected.some((flag, index) => args[index * 2] !== flag) || !path.isAbsolute(args[3])) {
     throw new Error("usage: collect-busan-accessibility.mjs --scope-snapshot <json> --output <absolute.json>");
   }
   const topology = JSON.parse(await readFile(args[1], "utf8"));
   const snapshot = await collectBusanAccessibility({
-    serviceKey: process.env.DATA_GO_KR_SERVICE_KEY,
+    serviceKey: env.DATA_GO_KR_SERVICE_KEY,
     stationScopes: topology.scope,
+    fetchImpl,
+    sleepImpl,
+    randomImpl,
     requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
   });
   await writeFile(args[3], `${JSON.stringify(snapshot)}\n`, { mode: 0o600 });

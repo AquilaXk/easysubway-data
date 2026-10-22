@@ -660,11 +660,11 @@ function parseArgs(argv) {
   return { output: argv[1], scopeHtml: argv[2] === "--scope-html" ? argv[3] : null, stationCode: argv[2] === "--scode" ? argv[3] : null };
 }
 
-async function main(argv) {
+export async function main(argv, { env = process.env, fetchImpl, sleepImpl, randomImpl } = {}) {
   const { output, scopeHtml, stationCode } = parseArgs(argv);
   const stationScopes = scopeHtml ? parseBusanRouteTopologyScope(await readFile(scopeHtml, "utf8")) : null;
   const snapshot = await collectBusanRouteTopology({
-    serviceKey: process.env.DATA_GO_KR_SERVICE_KEY, stationCode, stationScopes, requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
+    serviceKey: env.DATA_GO_KR_SERVICE_KEY, stationCode, stationScopes, fetchImpl, sleepImpl, randomImpl, requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
   });
   if (stationCode) throw new Error(`diagnostic station response is not admissible: scode=${stationCode}; edges=${snapshot.edgeCount}`);
   const admission = admitBusanRouteTopology(snapshot);

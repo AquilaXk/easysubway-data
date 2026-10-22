@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
   admitBusanRouteTopology,
   collectBusanRouteTopology,
   extractBusanTransferRows,
+  main,
   parseBusanRouteTopologyScope,
   validateBusanRouteTopologySnapshot,
 } from "./collect-busan-route-topology.mjs";
-import { defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineCliRequestIntervalTests, defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 // #1099·#1334: 일시 오류는 같은 요청을 full jitter(base 2초·cap 20초)로 최대 2번 다시 보낸다. 난수 0.5로 대기는 1·2초다. 재시도 대기와 예산은 테스트마다 격리한다.
@@ -258,6 +261,24 @@ defineRequestIntervalTests({
     randomImpl: () => 0,
     requestIntervalMs,
   }),
+});
+
+// CLI 연결 계약(data #1359): main이 운영 요청 간격을 수집 함수에 넘기는지 실제 main 실행으로 고정한다.
+defineCliRequestIntervalTests({
+  name: "부산 topology collector",
+  delegate: adjacencyFetch(parseBusanRouteTopologyScope(SCOPE_HTML)),
+  run: async (io) => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "busan-topology-cli-"));
+    try {
+      const scopeHtml = path.join(dir, "scope.html");
+      await writeFile(scopeHtml, SCOPE_HTML);
+      await main(["--output", path.join(dir, "out.json"), "--scope-html", scopeHtml], {
+        ...io, env: { DATA_GO_KR_SERVICE_KEY: "fixture-key" }, randomImpl: () => 0,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
 });
 
 test("부산 topology collector는 공식 station/adjacency scope 전체를 bounded fan-out한다", async () => {

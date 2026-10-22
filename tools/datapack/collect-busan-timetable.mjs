@@ -271,7 +271,7 @@ function compareRows(left, right) {
 function compareText(left, right) { return left.localeCompare(right, "en"); }
 function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
-async function main(args = process.argv.slice(2)) {
+export async function main(args = process.argv.slice(2), { env = process.env, fetchImpl, sleepImpl, randomImpl } = {}) {
   const expected = ["--scope-snapshot", "--output"];
   if (args.length !== 4 || args.filter((_, index) => index % 2 === 0).some((name, index) => name !== expected[index])) {
     throw new Error("usage: collect-busan-timetable.mjs --scope-snapshot <json> --output <absolute.json>");
@@ -280,8 +280,11 @@ async function main(args = process.argv.slice(2)) {
   if (!path.isAbsolute(output)) throw new Error("output must be absolute");
   const topology = JSON.parse(await readFile(args[1], "utf8"));
   const snapshot = await collectBusanTimetable({
-    serviceKey: process.env.DATA_GO_KR_SERVICE_KEY,
+    serviceKey: env.DATA_GO_KR_SERVICE_KEY,
     stationScopes: topology.scope,
+    fetchImpl,
+    sleepImpl,
+    randomImpl,
     requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
   });
   await writeFile(output, `${JSON.stringify(snapshot)}\n`, { mode: 0o600 });

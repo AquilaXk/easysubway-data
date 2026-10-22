@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
   assertErrorOmitsSecrets,
+  defineCliRequestIntervalTests,
   defineDataGoKrResultCodeRetryTests,
   defineRequestIntervalTests,
   defineSourceCollectionRetryTests,
 } from "./lib/source-collection-retry-test-support.mjs";
 import {
   collectBusanAccessibility,
+  main,
   observedBusanAccessibilityRows,
   replayBusanAccessibility,
 } from "./collect-busan-accessibility.mjs";
@@ -202,6 +206,24 @@ defineRequestIntervalTests({
     randomImpl: () => 0,
     requestIntervalMs,
   }),
+});
+
+// CLI 연결 계약(data #1359): main이 운영 요청 간격을 수집 함수에 넘기는지 실제 main 실행으로 고정한다.
+defineCliRequestIntervalTests({
+  name: "부산 accessibility collector",
+  delegate: stationResponse,
+  run: async (io) => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "busan-accessibility-cli-"));
+    try {
+      const scopeSnapshot = path.join(dir, "scope.json");
+      await writeFile(scopeSnapshot, JSON.stringify(topology));
+      await main(["--scope-snapshot", scopeSnapshot, "--output", path.join(dir, "out.json")], {
+        ...io, env: { DATA_GO_KR_SERVICE_KEY: "fixture-key" }, randomImpl: () => 0,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
 });
 
 const collectWith = ({ fetchImpl, sleepImpl = async () => {}, serviceKey = "fixture-key" }) => collectBusanAccessibility({
