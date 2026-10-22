@@ -50,6 +50,7 @@ import {
   readNationwideCandidateRefreshState,
 } from "../datapack/refresh-nationwide-candidate.mjs";
 import { isObject } from "../lib/is-object.mjs";
+import { GITHUB_API_REASON, formatReasonLine } from "./failure-reason.mjs";
 
 const execFileAsync = promisify(execFile);
 const GIT = "/usr/bin/git";
@@ -114,8 +115,20 @@ const MAIN = "main";
 const sortCodepoint = (values) => [...values].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 const message = (error) => (error instanceof Error ? error.message : String(error));
 
+/**
+ * 판정이 막힌 이유. 메시지는 위반마다 `AUTOMATION_PR_<CODE>: <detail>` 한 줄이고, reasons에 코드(중복 없이)가 남아 CLI가 stderr 마지막 줄에 reason=으로 낸다.
+ * @param {{ code: string, detail: string }[]} violations
+ */
+function violationsError(violations) {
+  const error = new Error(violations.map(({ code, detail }) => `AUTOMATION_PR_${code}: ${detail}`).join("\n"));
+  error.reasons = [...new Set(violations.map(({ code }) => `AUTOMATION_PR_${code}`))];
+  return error;
+}
+
+const codedError = (code, detail) => violationsError([{ code, detail }]);
+
 export function inputError(detail) {
-  return new Error(`AUTOMATION_PR_INPUT: ${detail}`);
+  return codedError("INPUT", detail);
 }
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -130,7 +143,7 @@ export function automationAttestationMarker(headSha, evidenceSha256) {
 /** 본문 증거 블록 JSON 페이로드 텍스트의 sha256. 블록이 없거나 둘 이상이면 실패한다. */
 export function automationEvidenceDigest(body) {
   const payload = automationPrEvidencePayload(body);
-  if (payload === null) throw new Error("AUTOMATION_PR_EVIDENCE: 증거 블록이 정확히 하나가 아니다");
+  if (payload === null) throw codedError("EVIDENCE", "증거 블록이 정확히 하나가 아니다");
   return createHash("sha256").update(payload).digest("hex");
 }
 
@@ -560,7 +573,7 @@ export async function writeEvidenceDigest({ file, pull, evidence }) {
 async function readCiEvidence({ api, repository, runId }) {
   const listing = await api(`repos/${repository}/actions/runs/${runId}/artifacts?name=${EVIDENCE_ARTIFACT_NAME}`);
   const live = (Array.isArray(listing?.artifacts) ? listing.artifacts : []).filter((item) => item?.name === EVIDENCE_ARTIFACT_NAME && item.expired === false);
-  if (live.length !== 1 || !Number.isSafeInteger(live[0].id)) throw new Error(`AUTOMATION_PR_DIGEST: CI run ${runId}의 ${EVIDENCE_ARTIFACT_NAME} artifact가 정확히 하나(만료 전)가 아니다`);
+  if (live.length !== 1 || !Number.isSafeInteger(live[0].id)) throw codedError("DIGEST", `CI run ${runId}의 ${EVIDENCE_ARTIFACT_NAME} artifact가 정확히 하나(만료 전)가 아니다`);
   return api(`repos/${repository}/actions/artifacts/${live[0].id}/zip#${EVIDENCE_ARTIFACT_MEMBER}`);
 }
 
@@ -601,7 +614,7 @@ export async function decideAutomationPullRequest({ repository, headSha, runConc
   if (!result.applicable) return { state: "NOT_APPLICABLE" };
   // 뒤처진 것만이 위반이면 이상이 아니다. base 갱신은 head 결속을 깨므로 하지 않고, 닫고 다시 만드는 일은 automation-pr-behind-recreate.yml의 몫이다(#986 F2).
   if (!result.eligible && result.violations.every(({ code }) => code === "BEHIND")) return { state: "BEHIND" };
-  if (!result.eligible) throw new Error(result.violations.map(({ code, detail }) => `AUTOMATION_PR_${code}: ${detail}`).join("\n"));
+  if (!result.eligible) throw violationsError(result.violations);
   const headCommittedAt = commits.find((entry) => entry?.sha === headSha)?.commit?.committer?.date;
   return {
     state: "ELIGIBLE",
@@ -618,25 +631,60 @@ export async function decideAutomationPullRequest({ repository, headSha, runConc
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
-async function ghApi(endpoint) {
-  const hash = endpoint.indexOf("#");
-  if (hash !== -1) {
-    // artifact zip 안의 파일 하나를 JSON으로 읽는다: <endpoint>#<member>
-    const member = endpoint.slice(hash + 1);
-    if (member !== EVIDENCE_ARTIFACT_MEMBER) throw inputError(`artifact member ${member}`);
-    const { stdout: bytes } = await execFileAsync("gh", ["api", endpoint.slice(0, hash)], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
-    const dir = await mkdtemp(path.join(os.tmpdir(), "automation-pr-artifact-"));
-    try {
-      const zip = path.join(dir, "artifact.zip");
-      await writeFile(zip, bytes);
-      return JSON.parse((await execFileAsync("unzip", ["-p", zip, member], { maxBuffer: 1024 * 1024 })).stdout);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  }
-  const { stdout } = await execFileAsync("gh", ["api", "-H", "Accept: application/vnd.github+json", endpoint], { maxBuffer: 256 * 1024 * 1024 });
-  return JSON.parse(stdout);
+// gh 실패의 사유: stderr의 `HTTP <상태>`가 있으면 응답을 받은 실패(GITHUB_API_STATUS), 없으면 응답을 받기 전 실패다. 메시지는 원문 그대로 두고 사유만 덧붙인다.
+function githubApiError(error, reason, httpStatus) {
+  return Object.assign(new Error(error.message, { cause: error }), { reasons: [reason], httpStatus });
 }
+
+function ghFailure(error) {
+  const status = /\bHTTP (\d{3})\b/u.exec(String(error?.stderr ?? ""))?.[1];
+  return status === undefined
+    ? githubApiError(error, GITHUB_API_REASON.GITHUB_API_REQUEST_FAILED)
+    : githubApiError(error, GITHUB_API_REASON.GITHUB_API_STATUS, Number(status));
+}
+
+/** 성공으로 끝난 gh 호출의 본문을 읽는 단계(unzip·JSON 해석)의 실패는 본문 이상이다. */
+async function parseGithubBody(read) {
+  try {
+    return await read();
+  } catch (error) {
+    throw githubApiError(error, GITHUB_API_REASON.GITHUB_API_BODY_INVALID);
+  }
+}
+
+/** `gh api`로 GitHub를 읽는 api 함수. exec는 테스트에서 바꿔 끼운다. */
+export function createGhApi({ exec = execFileAsync } = {}) {
+  const gh = async (args, options) => {
+    try {
+      return await exec("gh", args, options);
+    } catch (error) {
+      throw ghFailure(error);
+    }
+  };
+  return async function ghApi(endpoint) {
+    const hash = endpoint.indexOf("#");
+    if (hash !== -1) {
+      // artifact zip 안의 파일 하나를 JSON으로 읽는다: <endpoint>#<member>
+      const member = endpoint.slice(hash + 1);
+      if (member !== EVIDENCE_ARTIFACT_MEMBER) throw inputError(`artifact member ${member}`);
+      const { stdout: bytes } = await gh(["api", endpoint.slice(0, hash)], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+      return parseGithubBody(async () => {
+        const dir = await mkdtemp(path.join(os.tmpdir(), "automation-pr-artifact-"));
+        try {
+          const zip = path.join(dir, "artifact.zip");
+          await writeFile(zip, bytes);
+          return JSON.parse((await exec("unzip", ["-p", zip, member], { maxBuffer: 1024 * 1024 })).stdout);
+        } finally {
+          await rm(dir, { recursive: true, force: true });
+        }
+      });
+    }
+    const { stdout } = await gh(["api", "-H", "Accept: application/vnd.github+json", endpoint], { maxBuffer: 256 * 1024 * 1024 });
+    return parseGithubBody(async () => JSON.parse(stdout));
+  };
+}
+
+const ghApi = createGhApi();
 
 export function parseOptions(rest, allowed, optional = ["github-output", "digest-output"]) {
   const values = {};
@@ -679,7 +727,7 @@ export async function main(argv, { api = ghApi, log = (line) => process.stdout.w
       return;
     }
     const evidence = parseAutomationPrEvidence(pull.body, { headSha: pull.head.sha });
-    if (evidence.stage !== stage) throw new Error(`AUTOMATION_PR_BRANCH: 증거 단계(${evidence.stage})와 브랜치 접두사의 단계(${stage})가 다르다`);
+    if (evidence.stage !== stage) throw codedError("BRANCH", `증거 단계(${evidence.stage})와 브랜치 접두사의 단계(${stage})가 다르다`);
     writeOutputs(values["github-output"], { applicable: "true", base_sha: evidence.baseSha });
     log(`자동화 PR 게이트 대상: ${stage}`);
   } else if (command === "gates") {
@@ -687,9 +735,9 @@ export async function main(argv, { api = ghApi, log = (line) => process.stdout.w
     const pull = await readPull(values["pull-request"]);
     const evidence = parseAutomationPrEvidence(pull.body, { headSha: pull.head.sha });
     const head = (await execFileAsync(GIT, ["rev-parse", "HEAD"], { cwd: values["repository-root"] })).stdout.trim();
-    if (head !== pull.head.sha) throw new Error(`AUTOMATION_PR_HEAD_MISMATCH: 작업 트리 head(${head})가 PR head(${pull.head.sha})와 다르다`);
+    if (head !== pull.head.sha) throw codedError("HEAD_MISMATCH", `작업 트리 head(${head})가 PR head(${pull.head.sha})와 다르다`);
     const { violations } = await recomputeAutomationGates({ evidence, repositoryRoot: path.resolve(values["repository-root"]) });
-    if (violations.length > 0) throw new Error(violations.map(({ code, detail }) => `AUTOMATION_PR_${code}: ${detail}`).join("\n"));
+    if (violations.length > 0) throw violationsError(violations);
     if (values["digest-output"] !== undefined) await writeEvidenceDigest({ file: values["digest-output"], pull, evidence });
     log(`자동화 PR 게이트 재계산 통과: ${evidence.stage}`);
   } else if (command === "decide") {
@@ -711,11 +759,27 @@ export async function main(argv, { api = ghApi, log = (line) => process.stdout.w
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+const UNEXPECTED_REASON = "UNEXPECTED_ERROR";
+const LEADING_CODE = /^(AUTOMATION_PR_[A-Z_]+)(?=:|$)/u;
+
+/** 실패의 사유: 판정·GitHub 호출이 남긴 reasons, 아니면 메시지가 `AUTOMATION_PR_<CODE>`로 시작하는 오류의 코드, 그 밖에는 UNEXPECTED_ERROR. */
+function failureDetails(error) {
+  const leading = LEADING_CODE.exec(message(error))?.[1];
+  const reasons = Array.isArray(error?.reasons) ? error.reasons : [leading ?? UNEXPECTED_REASON];
+  return { reason: reasons.join(","), httpStatus: error?.httpStatus };
+}
+
+/** CLI 진입점. 실패하면 오류 메시지 뒤에 사유 줄(reason=...)을 stderr 마지막 줄로 쓰고 1을 돌려준다. */
+export async function runCli(argv, { api = ghApi, log = (line) => process.stdout.write(`${line}\n`), stderr = process.stderr } = {}) {
   try {
-    await main(process.argv.slice(2));
+    await main(argv, { api, log });
+    return 0;
   } catch (error) {
-    process.stderr.write(`${message(error)}\n`);
-    process.exitCode = 1;
+    stderr.write(`${message(error)}\n${formatReasonLine(failureDetails(error))}\n`);
+    return 1;
   }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  process.exitCode = await runCli(process.argv.slice(2));
 }

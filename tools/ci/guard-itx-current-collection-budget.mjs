@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { GITHUB_API_REASON, formatReasonLine } from "./failure-reason.mjs";
 import { ITX_COLLECTION_LEDGER_SCHEMA_VERSION, ITX_COLLECTION_OUTCOME, evaluateItxCollectionAllowance } from "./itx-collection-allowance.mjs";
 import { readCollectionRequestCount } from "./itx-collection-evidence.mjs";
 
@@ -42,26 +43,63 @@ const KST_OFFSET_MILLIS = 9 * 60 * 60 * 1000;
 const DAY_MILLIS = 24 * 60 * 60 * 1000;
 const FAILURE_MESSAGE = "ITX current collection quota guard failed";
 
-function failure() {
-  return new Error(FAILURE_MESSAGE);
+/**
+ * 가드가 실패하는 이유의 전부. 실패마다 정확히 하나가 stderr 마지막 줄(reason=)과 실패 영수증에 남는다(2026-10-22 장애 때 모든 실패가 같은 한 줄이라 원인을 알 수 없었다).
+ * 판정(허용·거부)은 사유와 무관하다: 어느 사유든 가드는 막는다(fail closed).
+ */
+export const GUARD_REASON = Object.freeze({
+  ...GITHUB_API_REASON,
+  ENV_INVALID: "ENV_INVALID", // GITHUB_* 환경, 토큰, 시계, fetch 구현이 기대와 다르다
+  ARGUMENT_INVALID: "ARGUMENT_INVALID", // CLI 인자·출력 경로가 기대와 다르다
+  RUN_LIST_LIMIT: "RUN_LIST_LIMIT", // 한 workflow의 같은 날 run이 한 페이지 상한을 넘어 전체를 볼 수 없다
+  RUN_RECORD_INVALID: "RUN_RECORD_INVALID", // run 항목의 모양이 다르다
+  RUN_IDENTITY_MISMATCH: "RUN_IDENTITY_MISMATCH", // run의 event·branch·workflow 경로·생성 시각이 조회 조건과 다르거나 run이 중복이다
+  CURRENT_RUN_MISMATCH: "CURRENT_RUN_MISMATCH", // 이 run이 목록에 정확히 한 번, 첫 시도로 나타나지 않는다
+  JOB_LIST_EMPTY: "JOB_LIST_EMPTY", // 이전 run에 job이 없어 collector 진입 여부를 알 수 없다
+  JOB_LIST_LIMIT: "JOB_LIST_LIMIT", // 한 run의 job이 한 페이지 상한을 넘는다
+  JOB_RECORD_INVALID: "JOB_RECORD_INVALID", // job 항목의 모양이 다르거나 job이 중복이다
+  COLLECTOR_STEP_SHAPE: "COLLECTOR_STEP_SHAPE", // collector step이 정확히 하나가 아니거나 상태·결과를 해석할 수 없다
+  QUOTA_EXHAUSTED: "QUOTA_EXHAUSTED", // 정상적인 예산 거부: 같은 날 이미 수집했거나 시도·요청 예산을 썼다
+  RECEIPT_WRITE_FAILED: "RECEIPT_WRITE_FAILED", // 실패 영수증을 쓰지 못했다(처음 실패의 사유는 cause=)
+  LEDGER_WRITE_FAILED: "LEDGER_WRITE_FAILED", // 수집 기록 파일을 쓰지 못했다
+  INTERNAL_ERROR: "INTERNAL_ERROR", // 위 어디에도 속하지 않는 예기치 못한 예외(원문은 비밀이 섞일 수 있어 남기지 않는다)
+});
+
+/** 가드 실패. 메시지는 기존 고정 문구 그대로이고, 사유는 코드와 숫자·이름만 담는다. */
+export class ItxCollectionGuardError extends Error {
+  /** @param {string} reason GUARD_REASON 값 @param {{ httpStatus?: number, workflow?: string, allowance?: string, causeReason?: string }} details */
+  constructor(reason, { httpStatus, workflow, allowance, causeReason } = {}) {
+    super(FAILURE_MESSAGE);
+    this.reason = reason;
+    this.httpStatus = httpStatus;
+    this.workflow = workflow;
+    this.allowance = allowance;
+    this.causeReason = causeReason;
+  }
 }
 
+function failure(reason, details) {
+  return new ItxCollectionGuardError(reason, details);
+}
+
+const asGuardError = (error) => (error instanceof ItxCollectionGuardError ? error : failure(GUARD_REASON.INTERNAL_ERROR));
+
 function positiveInteger(value) {
-  if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) throw failure();
+  if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) throw failure(GUARD_REASON.ENV_INVALID);
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) throw failure();
+  if (!Number.isSafeInteger(parsed)) throw failure(GUARD_REASON.ENV_INVALID);
   return parsed;
 }
 
 function requiredToken(value) {
   if (typeof value !== "string" || value.length === 0 || value.length > 4096 || /[\r\n]/.test(value)) {
-    throw failure();
+    throw failure(GUARD_REASON.ENV_INVALID);
   }
   return value;
 }
 
 function quotaWindow(now) {
-  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw failure();
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw failure(GUARD_REASON.ENV_INVALID);
   const shifted = new Date(now.getTime() + KST_OFFSET_MILLIS);
   const year = shifted.getUTCFullYear();
   const month = shifted.getUTCMonth();
@@ -78,69 +116,67 @@ function quotaWindow(now) {
 }
 
 function validateRun(run, window, context, event) {
-  if (!run || typeof run !== "object" || Array.isArray(run)) throw failure();
-  if (!Number.isSafeInteger(run.id) || run.id <= 0) throw failure();
-  if (run.event !== event || run.head_branch !== EXPECTED_BRANCH) throw failure();
-  if (!Number.isSafeInteger(run.run_attempt) || run.run_attempt <= 0) throw failure();
-  if (run.path !== `.github/workflows/${context.workflowFile}`) throw failure();
+  const workflow = context.workflowFile;
+  if (!run || typeof run !== "object" || Array.isArray(run)
+    || !Number.isSafeInteger(run.id) || run.id <= 0
+    || !Number.isSafeInteger(run.run_attempt) || run.run_attempt <= 0) {
+    throw failure(GUARD_REASON.RUN_RECORD_INVALID, { workflow });
+  }
   const createdAt = Date.parse(run.created_at);
-  if (!Number.isFinite(createdAt) || createdAt < window.startMillis || createdAt > window.endMillis) {
-    throw failure();
+  if (run.event !== event || run.head_branch !== EXPECTED_BRANCH
+    || run.path !== `.github/workflows/${workflow}`
+    || !Number.isFinite(createdAt) || createdAt < window.startMillis || createdAt > window.endMillis) {
+    throw failure(GUARD_REASON.RUN_IDENTITY_MISMATCH, { workflow });
   }
   return run;
 }
 
 // collector step 결과를 수집 결과와 step 종료 시각으로 바꾼다. skipped면 공급자를 부르지 않았으므로 null이다.
 function collectorJobOutcome(job, runId, context) {
+  const workflow = context.workflowFile;
   if (!job || typeof job !== "object" || Array.isArray(job)
     || !Number.isSafeInteger(job.id) || job.id <= 0 || job.run_id !== runId
     || job.name !== context.jobName || !Array.isArray(job.steps)) {
-    throw failure();
+    throw failure(GUARD_REASON.JOB_RECORD_INVALID, { workflow });
   }
   const steps = job.steps.filter((step) => step?.name === context.collectorStepName);
-  if (steps.length !== 1) throw failure();
+  if (steps.length !== 1) throw failure(GUARD_REASON.COLLECTOR_STEP_SHAPE, { workflow });
   const step = steps[0];
   if (step.status === "in_progress" && step.conclusion == null) return { outcome: ITX_COLLECTION_OUTCOME.RUNNING, completedAt: null };
-  if (step.status !== "completed" || typeof step.conclusion !== "string") throw failure();
+  if (step.status !== "completed" || typeof step.conclusion !== "string") throw failure(GUARD_REASON.COLLECTOR_STEP_SHAPE, { workflow });
   if (step.conclusion === "skipped") return null;
   const completedAt = Date.parse(step.completed_at);
   const endedAt = Number.isFinite(completedAt) ? new Date(completedAt).toISOString() : null;
   if (step.conclusion === "success") return { outcome: ITX_COLLECTION_OUTCOME.SUCCEEDED, completedAt: endedAt };
   if (["failure", "cancelled", "timed_out", "action_required"].includes(step.conclusion)) return { outcome: ITX_COLLECTION_OUTCOME.FAILED, completedAt: endedAt };
-  throw failure();
+  throw failure(GUARD_REASON.COLLECTOR_STEP_SHAPE, { workflow });
 }
 
 // 한 run에 collector job이 여럿이면 가장 소비가 확실한 결과를 고른다: 진행 중 > 성공 > 실패.
 const OUTCOME_PRECEDENCE = [ITX_COLLECTION_OUTCOME.RUNNING, ITX_COLLECTION_OUTCOME.SUCCEEDED, ITX_COLLECTION_OUTCOME.FAILED];
 const RUN_COMPLETED = "completed";
 
-async function readResponse(response) {
-  if (!response || response.ok !== true || response.status !== 200 || typeof response.text !== "function") {
-    throw failure();
+async function readResponse(response, workflow) {
+  if (!response || typeof response.text !== "function") throw failure(GUARD_REASON.GITHUB_API_BODY_INVALID, { workflow });
+  if (response.ok !== true || response.status !== 200) {
+    throw failure(GUARD_REASON.GITHUB_API_STATUS, { workflow, httpStatus: Number.isSafeInteger(response.status) ? response.status : undefined });
   }
   let text;
   try {
     text = await response.text();
   } catch {
-    throw failure();
+    throw failure(GUARD_REASON.GITHUB_API_REQUEST_FAILED, { workflow });
   }
-  if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) throw failure();
+  if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) throw failure(GUARD_REASON.GITHUB_API_BODY_INVALID, { workflow });
   try {
     return JSON.parse(text);
   } catch {
-    throw failure();
+    throw failure(GUARD_REASON.GITHUB_API_BODY_INVALID, { workflow });
   }
 }
 
-// 이 run이 collector에 들어갔다면 그 결과({ outcome, completedAt }), 공급자를 부르지 않았다면 null.
-// run이 아직 끝나지 않았으면 collector step이 이미 실패했어도 진행 중이다: 뒤따르는 증거 artifact 업로드가 끝나기 전에는 쓴 요청 수를 증명할 수 없다.
-async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
-  const runId = run.id;
-  const requestUrl = new URL(
-    `https://api.github.com/repos/${EXPECTED_REPOSITORY}/actions/runs/${runId}/jobs`,
-  );
-  requestUrl.searchParams.set("filter", "all");
-  requestUrl.searchParams.set("per_page", String(MAX_JOBS));
+// GitHub REST GET 한 번. 실패 사유에는 예외 원문·URL·헤더를 싣지 않는다: fetch 예외 메시지에는 URL과 헤더가 섞일 수 있다.
+async function getGithubJson({ requestUrl, token, fetchImpl, workflow }) {
   let response;
   try {
     response = await fetchImpl(requestUrl.href, {
@@ -154,18 +190,33 @@ async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
       },
     });
   } catch {
-    throw failure();
+    throw failure(GUARD_REASON.GITHUB_API_REQUEST_FAILED, { workflow });
   }
-  const body = await readResponse(response);
+  return readResponse(response, workflow);
+}
+
+// 이 run이 collector에 들어갔다면 그 결과({ outcome, completedAt }), 공급자를 부르지 않았다면 null.
+// run이 아직 끝나지 않았으면 collector step이 이미 실패했어도 진행 중이다: 뒤따르는 증거 artifact 업로드가 끝나기 전에는 쓴 요청 수를 증명할 수 없다.
+async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
+  const runId = run.id;
+  const requestUrl = new URL(
+    `https://api.github.com/repos/${EXPECTED_REPOSITORY}/actions/runs/${runId}/jobs`,
+  );
+  requestUrl.searchParams.set("filter", "all");
+  requestUrl.searchParams.set("per_page", String(MAX_JOBS));
+  const workflow = context.workflowFile;
+  const body = await getGithubJson({ requestUrl, token, fetchImpl, workflow });
   if (!body || typeof body !== "object" || Array.isArray(body)
-    || !Number.isSafeInteger(body.total_count) || body.total_count < 1 || body.total_count > MAX_JOBS
-    || !Array.isArray(body.jobs) || body.jobs.length !== body.total_count) {
-    throw failure();
+    || !Number.isSafeInteger(body.total_count) || !Array.isArray(body.jobs)) {
+    throw failure(GUARD_REASON.GITHUB_API_BODY_INVALID, { workflow });
   }
+  if (body.total_count < 1) throw failure(GUARD_REASON.JOB_LIST_EMPTY, { workflow });
+  if (body.total_count > MAX_JOBS) throw failure(GUARD_REASON.JOB_LIST_LIMIT, { workflow });
+  if (body.jobs.length !== body.total_count) throw failure(GUARD_REASON.GITHUB_API_BODY_INVALID, { workflow });
   const jobIds = new Set();
   const results = [];
   for (const job of body.jobs) {
-    if (jobIds.has(job?.id)) throw failure();
+    if (jobIds.has(job?.id)) throw failure(GUARD_REASON.JOB_RECORD_INVALID, { workflow });
     jobIds.add(job?.id);
     results.push(collectorJobOutcome(job, runId, context));
   }
@@ -178,15 +229,15 @@ async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
 
 // 같은 KST 날의 ITX 수집 workflow 실행을 모두 읽어, 이 run 밖에서 collector에 들어간 실행과 그 결과를 돌려준다.
 async function inspectItxCollectionWindow({ env, now, fetchImpl }) {
-  if (!env || typeof env !== "object") throw failure();
+  if (!env || typeof env !== "object") throw failure(GUARD_REASON.ENV_INVALID);
   if (env.GITHUB_REPOSITORY !== EXPECTED_REPOSITORY
     || !COLLECTION_CONTEXTS.some(({ events }) => events.includes(env.GITHUB_EVENT_NAME))
-    || env.GITHUB_REF !== EXPECTED_REF) throw failure();
+    || env.GITHUB_REF !== EXPECTED_REF) throw failure(GUARD_REASON.ENV_INVALID);
 
   const runId = positiveInteger(env.GITHUB_RUN_ID);
-  if (positiveInteger(env.GITHUB_RUN_ATTEMPT) !== 1) throw failure();
+  if (positiveInteger(env.GITHUB_RUN_ATTEMPT) !== 1) throw failure(GUARD_REASON.ENV_INVALID);
   const token = requiredToken(env.GITHUB_TOKEN);
-  if (typeof fetchImpl !== "function") throw failure();
+  if (typeof fetchImpl !== "function") throw failure(GUARD_REASON.ENV_INVALID);
 
   const window = quotaWindow(now);
   const runs = [];
@@ -199,37 +250,24 @@ async function inspectItxCollectionWindow({ env, now, fetchImpl }) {
       requestUrl.searchParams.set("branch", EXPECTED_BRANCH);
       requestUrl.searchParams.set("created", window.createdRange);
       requestUrl.searchParams.set("per_page", String(MAX_RUNS));
-      let response;
-      try {
-        response = await fetchImpl(requestUrl.href, {
-          method: "GET",
-          redirect: "error",
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
-          headers: {
-            accept: "application/vnd.github+json",
-            authorization: `Bearer ${token}`,
-            "x-github-api-version": "2026-03-10",
-          },
-        });
-      } catch {
-        throw failure();
-      }
-      const body = await readResponse(response);
+      const workflow = context.workflowFile;
+      const body = await getGithubJson({ requestUrl, token, fetchImpl, workflow });
       if (!body || typeof body !== "object" || Array.isArray(body)
-        || !Number.isSafeInteger(body.total_count) || body.total_count < 0 || body.total_count > MAX_RUNS
-        || !Array.isArray(body.workflow_runs) || body.workflow_runs.length !== body.total_count) {
-        throw failure();
+        || !Number.isSafeInteger(body.total_count) || body.total_count < 0 || !Array.isArray(body.workflow_runs)) {
+        throw failure(GUARD_REASON.GITHUB_API_BODY_INVALID, { workflow });
       }
+      if (body.total_count > MAX_RUNS) throw failure(GUARD_REASON.RUN_LIST_LIMIT, { workflow });
+      if (body.workflow_runs.length !== body.total_count) throw failure(GUARD_REASON.GITHUB_API_BODY_INVALID, { workflow });
       runs.push(...body.workflow_runs.map((run) => ({
         run: validateRun(run, window, context, event),
         context,
       })));
     }
   }
-  if (new Set(runs.map(({ run }) => run.id)).size !== runs.length) throw failure();
+  if (new Set(runs.map(({ run }) => run.id)).size !== runs.length) throw failure(GUARD_REASON.RUN_IDENTITY_MISMATCH);
   const currentRuns = runs.filter(({ run }) => run.id === runId);
   if (currentRuns.length !== 1 || currentRuns[0].run.run_attempt !== 1
-    || currentRuns[0].run.event !== env.GITHUB_EVENT_NAME) throw failure();
+    || currentRuns[0].run.event !== env.GITHUB_EVENT_NAME) throw failure(GUARD_REASON.CURRENT_RUN_MISMATCH);
   const entered = [];
   for (const { run, context } of runs) {
     if (run.id === runId) continue;
@@ -280,14 +318,15 @@ export async function guardItxCurrentCollectionBudget({
   allowAfterFailure = false,
   downloadArtifact,
 } = {}) {
-  if (!Array.isArray(argv) || argv.length !== 0 || typeof allowAfterFailure !== "boolean") throw failure();
+  if (!Array.isArray(argv) || argv.length !== 0 || typeof allowAfterFailure !== "boolean") throw failure(GUARD_REASON.ARGUMENT_INVALID);
   if (allowAfterFailure) {
     const { runId, quotaWindow, entries } = await readItxCollectionLedger({ env, now, fetchImpl, downloadArtifact });
-    if (!evaluateItxCollectionAllowance({ entries, now, skipRetryGap: true }).allowed) throw failure();
+    const allowance = evaluateItxCollectionAllowance({ entries, now, skipRetryGap: true });
+    if (!allowance.allowed) throw failure(GUARD_REASON.QUOTA_EXHAUSTED, { allowance: allowance.reason });
     return { repository: EXPECTED_REPOSITORY, runId, quotaWindow, otherRunCount: entries.length };
   }
   const { runId, window, entered } = await inspectItxCollectionWindow({ env, now, fetchImpl });
-  if (entered.length > 0) throw failure();
+  if (entered.length > 0) throw failure(GUARD_REASON.QUOTA_EXHAUSTED);
   return {
     repository: EXPECTED_REPOSITORY,
     runId,
@@ -312,19 +351,20 @@ export async function probeItxCollectionToday({
 }
 
 function absolutePath(value) {
-  if (typeof value !== "string" || !path.isAbsolute(value)) throw failure();
+  if (typeof value !== "string" || !path.isAbsolute(value)) throw failure(GUARD_REASON.ARGUMENT_INVALID);
   return value;
 }
 
 function receiptOutput(argv) {
   if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--output"
     || typeof argv[1] !== "string" || !path.isAbsolute(argv[1]) || path.basename(argv[1]) !== "freshness.json") {
-    throw failure();
+    throw failure(GUARD_REASON.ARGUMENT_INVALID);
   }
   return argv[1];
 }
 
-async function writeFailureReceipt(output) {
+// 영수증에는 사유 코드와 숫자·이름만 남긴다(reason, httpStatus, workflow, allowance). 값이 없는 키는 JSON에서 빠진다.
+async function writeFailureReceipt(output, { reason, httpStatus, workflow, allowance }) {
   const receipt = {
     schemaVersion: 1,
     artifactKind: "itx-current-collection-preflight",
@@ -333,11 +373,15 @@ async function writeFailureReceipt(output) {
     providerCalls: 0,
     candidateCreated: false,
     credentialRedacted: true,
+    reason,
+    httpStatus,
+    workflow,
+    allowance,
   };
   try {
     await writeFile(output, `${JSON.stringify(receipt)}\n`, { flag: "wx", mode: 0o644 });
   } catch {
-    throw failure();
+    throw failure(GUARD_REASON.RECEIPT_WRITE_FAILED, { causeReason: reason });
   }
 }
 
@@ -357,9 +401,10 @@ export async function runItxCurrentCollectionBudgetGuardCli({
   const { output, allowAfterFailure } = guardCliArgs(argv);
   try {
     return await guardItxCurrentCollectionBudget({ argv: [], env, now, fetchImpl, allowAfterFailure, downloadArtifact });
-  } catch {
-    await writeFailureReceipt(output);
-    throw failure();
+  } catch (error) {
+    const failed = asGuardError(error);
+    await writeFailureReceipt(output, failed);
+    throw failed;
   }
 }
 
@@ -374,43 +419,37 @@ export async function runItxCollectionLedgerCli({
   fetchImpl = globalThis.fetch,
   downloadArtifact,
 } = {}) {
-  if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--ledger") throw failure();
+  if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--ledger") throw failure(GUARD_REASON.ARGUMENT_INVALID);
   const output = absolutePath(argv[1]);
+  let ledger;
   try {
-    const { quotaWindow, entries } = await readItxCollectionLedger({ env, now, fetchImpl, downloadArtifact });
-    await writeFile(output, `${JSON.stringify({ schemaVersion: ITX_COLLECTION_LEDGER_SCHEMA_VERSION, quotaWindow, entries })}\n`, { flag: "wx", mode: 0o644 });
-    return { quotaWindow, entries };
-  } catch {
-    throw failure();
+    ledger = await readItxCollectionLedger({ env, now, fetchImpl, downloadArtifact });
+  } catch (error) {
+    throw asGuardError(error);
   }
+  const { quotaWindow, entries } = ledger;
+  try {
+    await writeFile(output, `${JSON.stringify({ schemaVersion: ITX_COLLECTION_LEDGER_SCHEMA_VERSION, quotaWindow, entries })}\n`, { flag: "wx", mode: 0o644 });
+  } catch {
+    throw failure(GUARD_REASON.LEDGER_WRITE_FAILED);
+  }
+  return { quotaWindow, entries };
 }
 
+// 실패하면 기존 고정 문구 줄 뒤에 사유 줄(reason=...)을 stderr에 쓴다. 문구를 읽는 쪽은 첫 줄만 보면 된다.
 async function main() {
-  const [flag] = process.argv.slice(2);
-  if (process.argv.length === 3 && flag === "--probe") {
-    try {
+  const argv = process.argv.slice(2);
+  try {
+    if (argv.length === 1 && argv[0] === "--probe") {
       const { collectedToday } = await probeItxCollectionToday();
       process.stdout.write(`${collectedToday}\n`);
-    } catch {
-      process.stderr.write(`${FAILURE_MESSAGE}\n`);
-      process.exitCode = 1;
-    }
-    return;
-  }
-  if (flag === "--ledger") {
-    try {
+    } else if (argv[0] === "--ledger") {
       await runItxCollectionLedgerCli();
-    } catch {
-      process.stderr.write(`${FAILURE_MESSAGE}\n`);
-      process.exitCode = 1;
+    } else {
+      process.stdout.write(`${JSON.stringify(await runItxCurrentCollectionBudgetGuardCli())}\n`);
     }
-    return;
-  }
-  try {
-    const result = await runItxCurrentCollectionBudgetGuardCli();
-    process.stdout.write(`${JSON.stringify(result)}\n`);
-  } catch {
-    process.stderr.write(`${FAILURE_MESSAGE}\n`);
+  } catch (error) {
+    process.stderr.write(`${FAILURE_MESSAGE}\n${formatReasonLine(asGuardError(error))}\n`);
     process.exitCode = 1;
   }
 }

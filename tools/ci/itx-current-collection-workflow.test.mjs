@@ -531,6 +531,7 @@ test("KST quota guard 실패는 provider/raw/secret 없이 sanitized preflight r
     providerCalls: 0,
     candidateCreated: false,
     credentialRedacted: true,
+    reason: "QUOTA_EXHAUSTED",
   });
 });
 
