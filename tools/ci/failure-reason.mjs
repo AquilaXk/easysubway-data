@@ -9,6 +9,9 @@ export const GITHUB_API_REASON = Object.freeze({
   GITHUB_API_BODY_INVALID: "GITHUB_API_BODY_INVALID", // 성공 응답의 본문이 JSON이 아니거나 기대한 모양이 아니다
 });
 
+/** 가드가 모르는 예외. 원문은 비밀이 섞일 수 있어 남기지 않고 이 코드만 남긴다. */
+export const INTERNAL_ERROR_REASON = "INTERNAL_ERROR";
+
 // 사유 줄의 키 순서. 사유 코드가 항상 먼저다.
 const REASON_LINE_KEYS = Object.freeze([["reason", "reason"], ["status", "httpStatus"], ["workflow", "workflow"], ["allowance", "allowance"], ["cause", "causeReason"]]);
 

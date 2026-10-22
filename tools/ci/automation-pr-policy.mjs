@@ -50,7 +50,7 @@ import {
   readNationwideCandidateRefreshState,
 } from "../datapack/refresh-nationwide-candidate.mjs";
 import { isObject } from "../lib/is-object.mjs";
-import { GITHUB_API_REASON, formatReasonLine } from "./failure-reason.mjs";
+import { GITHUB_API_REASON, INTERNAL_ERROR_REASON, formatReasonLine } from "./failure-reason.mjs";
 
 const execFileAsync = promisify(execFile);
 const GIT = "/usr/bin/git";
@@ -652,39 +652,36 @@ async function parseGithubBody(read) {
   }
 }
 
-/** `gh api`로 GitHub를 읽는 api 함수. exec는 테스트에서 바꿔 끼운다. */
-export function createGhApi({ exec = execFileAsync } = {}) {
-  const gh = async (args, options) => {
-    try {
-      return await exec("gh", args, options);
-    } catch (error) {
-      throw ghFailure(error);
-    }
-  };
-  return async function ghApi(endpoint) {
-    const hash = endpoint.indexOf("#");
-    if (hash !== -1) {
-      // artifact zip 안의 파일 하나를 JSON으로 읽는다: <endpoint>#<member>
-      const member = endpoint.slice(hash + 1);
-      if (member !== EVIDENCE_ARTIFACT_MEMBER) throw inputError(`artifact member ${member}`);
-      const { stdout: bytes } = await gh(["api", endpoint.slice(0, hash)], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
-      return parseGithubBody(async () => {
-        const dir = await mkdtemp(path.join(os.tmpdir(), "automation-pr-artifact-"));
-        try {
-          const zip = path.join(dir, "artifact.zip");
-          await writeFile(zip, bytes);
-          return JSON.parse((await exec("unzip", ["-p", zip, member], { maxBuffer: 1024 * 1024 })).stdout);
-        } finally {
-          await rm(dir, { recursive: true, force: true });
-        }
-      });
-    }
-    const { stdout } = await gh(["api", "-H", "Accept: application/vnd.github+json", endpoint], { maxBuffer: 256 * 1024 * 1024 });
-    return parseGithubBody(async () => JSON.parse(stdout));
-  };
+async function gh(args, options) {
+  try {
+    return await execFileAsync("gh", args, options);
+  } catch (error) {
+    throw ghFailure(error);
+  }
 }
 
-const ghApi = createGhApi();
+/** `gh api`로 GitHub를 읽는 api 함수. */
+async function ghApi(endpoint) {
+  const hash = endpoint.indexOf("#");
+  if (hash !== -1) {
+    // artifact zip 안의 파일 하나를 JSON으로 읽는다: <endpoint>#<member>
+    const member = endpoint.slice(hash + 1);
+    if (member !== EVIDENCE_ARTIFACT_MEMBER) throw inputError(`artifact member ${member}`);
+    const { stdout: bytes } = await gh(["api", endpoint.slice(0, hash)], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+    return parseGithubBody(async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), "automation-pr-artifact-"));
+      try {
+        const zip = path.join(dir, "artifact.zip");
+        await writeFile(zip, bytes);
+        return JSON.parse((await execFileAsync("unzip", ["-p", zip, member], { maxBuffer: 1024 * 1024 })).stdout);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
+  const { stdout } = await gh(["api", "-H", "Accept: application/vnd.github+json", endpoint], { maxBuffer: 256 * 1024 * 1024 });
+  return parseGithubBody(async () => JSON.parse(stdout));
+}
 
 export function parseOptions(rest, allowed, optional = ["github-output", "digest-output"]) {
   const values = {};
@@ -759,13 +756,12 @@ export async function main(argv, { api = ghApi, log = (line) => process.stdout.w
   }
 }
 
-const UNEXPECTED_REASON = "UNEXPECTED_ERROR";
 const LEADING_CODE = /^(AUTOMATION_PR_[A-Z_]+)(?=:|$)/u;
 
-/** 실패의 사유: 판정·GitHub 호출이 남긴 reasons, 아니면 메시지가 `AUTOMATION_PR_<CODE>`로 시작하는 오류의 코드, 그 밖에는 UNEXPECTED_ERROR. */
+/** 실패의 사유: 판정·GitHub 호출이 남긴 reasons, 아니면 메시지가 `AUTOMATION_PR_<CODE>`로 시작하는 오류의 코드, 그 밖에는 INTERNAL_ERROR. */
 function failureDetails(error) {
   const leading = LEADING_CODE.exec(message(error))?.[1];
-  const reasons = Array.isArray(error?.reasons) ? error.reasons : [leading ?? UNEXPECTED_REASON];
+  const reasons = Array.isArray(error?.reasons) ? error.reasons : [leading ?? INTERNAL_ERROR_REASON];
   return { reason: reasons.join(","), httpStatus: error?.httpStatus };
 }
 

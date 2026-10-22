@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { GITHUB_API_REASON, formatReasonLine } from "./failure-reason.mjs";
+import { GITHUB_API_REASON, INTERNAL_ERROR_REASON, formatReasonLine } from "./failure-reason.mjs";
 import { ITX_COLLECTION_LEDGER_SCHEMA_VERSION, ITX_COLLECTION_OUTCOME, evaluateItxCollectionAllowance } from "./itx-collection-allowance.mjs";
 import { readCollectionRequestCount } from "./itx-collection-evidence.mjs";
 
@@ -62,7 +62,7 @@ export const GUARD_REASON = Object.freeze({
   QUOTA_EXHAUSTED: "QUOTA_EXHAUSTED", // 정상적인 예산 거부: 같은 날 이미 수집했거나 시도·요청 예산을 썼다
   RECEIPT_WRITE_FAILED: "RECEIPT_WRITE_FAILED", // 실패 영수증을 쓰지 못했다(처음 실패의 사유는 cause=)
   LEDGER_WRITE_FAILED: "LEDGER_WRITE_FAILED", // 수집 기록 파일을 쓰지 못했다
-  INTERNAL_ERROR: "INTERNAL_ERROR", // 위 어디에도 속하지 않는 예기치 못한 예외(원문은 비밀이 섞일 수 있어 남기지 않는다)
+  INTERNAL_ERROR: INTERNAL_ERROR_REASON, // 위 어디에도 속하지 않는 예기치 못한 예외(원문은 비밀이 섞일 수 있어 남기지 않는다)
 });
 
 /** 가드 실패. 메시지는 기존 고정 문구 그대로이고, 사유는 코드와 숫자·이름만 담는다. */
@@ -85,7 +85,7 @@ function failure(reason, details) {
 const asGuardError = (error) => (error instanceof ItxCollectionGuardError ? error : failure(GUARD_REASON.INTERNAL_ERROR));
 
 function positiveInteger(value) {
-  if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) throw failure(GUARD_REASON.ENV_INVALID);
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) throw failure(GUARD_REASON.ENV_INVALID);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed)) throw failure(GUARD_REASON.ENV_INVALID);
   return parsed;
@@ -251,7 +251,7 @@ async function inspectItxCollectionWindow({ env, now, fetchImpl }) {
       requestUrl.searchParams.set("created", window.createdRange);
       requestUrl.searchParams.set("per_page", String(MAX_RUNS));
       const workflow = context.workflowFile;
-      const body = await getGithubJson({ requestUrl, token, fetchImpl, workflow });
+      const body = await getGithubJson({ requestUrl, token, fetchImpl, workflow }); // NOSONAR -- 순차가 의도다: 같은 KST 날 run 조회의 GitHub API 호출 수와 rate를 억제한다
       if (!body || typeof body !== "object" || Array.isArray(body)
         || !Number.isSafeInteger(body.total_count) || body.total_count < 0 || !Array.isArray(body.workflow_runs)) {
         throw failure(GUARD_REASON.GITHUB_API_BODY_INVALID, { workflow });

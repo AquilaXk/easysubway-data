@@ -37,29 +37,22 @@ async function runPolicy(directory, args, ghScript = "exit 99") {
 
 const lastLine = ({ lines }) => lines.at(-1);
 
-test("gh api가 HTTP 5xx로 실패하면 reason=GITHUB_API_STATUS와 상태 숫자를 마지막 줄에 남긴다", async () => {
-  await withDirectory(async (directory) => {
-    const result = await runPolicy(directory, DECIDE, `echo "gh: HTTP 502: Bad Gateway (https://api.github.com/repos/${REPOSITORY}/commits/${HEAD}/pulls)" >&2\nexit 1`);
-    assert.equal(result.status, 1);
-    assert.equal(lastLine(result), "reason=GITHUB_API_STATUS status=502");
-  });
-});
+// gh가 실패하거나 이상한 본문을 돌려주는 방식마다 마지막 줄의 사유: [이름, 가짜 gh 스크립트, 기대하는 마지막 줄]
+const GH_FAILURES = [
+  ["HTTP 5xx로 실패하면 상태 숫자를 함께 남긴다", `echo "gh: HTTP 502: Bad Gateway (https://api.github.com/repos/${REPOSITORY}/commits/${HEAD}/pulls)" >&2\nexit 1`, "reason=GITHUB_API_STATUS status=502"],
+  ["응답을 받지 못하면(연결 실패·timeout) 요청 실패다", 'echo "error connecting to api.github.com" >&2\nexit 1', "reason=GITHUB_API_REQUEST_FAILED"],
+  ["성공으로 끝났지만 본문이 JSON이 아니면 본문 이상이다", 'echo "<html>Bad gateway</html>"', "reason=GITHUB_API_BODY_INVALID"],
+];
 
-test("gh api가 응답을 받지 못하면(연결 실패·timeout) reason=GITHUB_API_REQUEST_FAILED다", async () => {
-  await withDirectory(async (directory) => {
-    const result = await runPolicy(directory, DECIDE, 'echo "error connecting to api.github.com" >&2\nexit 1');
-    assert.equal(result.status, 1);
-    assert.equal(lastLine(result), "reason=GITHUB_API_REQUEST_FAILED");
+for (const [name, ghScript, reasonLine] of GH_FAILURES) {
+  test(`gh api ${name}`, async () => {
+    await withDirectory(async (directory) => {
+      const result = await runPolicy(directory, DECIDE, ghScript);
+      assert.equal(result.status, 1);
+      assert.equal(lastLine(result), reasonLine);
+    });
   });
-});
-
-test("gh api가 성공으로 끝났지만 본문이 JSON이 아니면 reason=GITHUB_API_BODY_INVALID다", async () => {
-  await withDirectory(async (directory) => {
-    const result = await runPolicy(directory, DECIDE, 'echo "<html>Bad gateway</html>"');
-    assert.equal(result.status, 1);
-    assert.equal(lastLine(result), "reason=GITHUB_API_BODY_INVALID");
-  });
-});
+}
 
 test("판정 인자 이상은 reason=AUTOMATION_PR_INPUT이다", async () => {
   await withDirectory(async (directory) => {
@@ -80,11 +73,11 @@ test("증거 블록이 없는 PR은 reason=AUTOMATION_PR_EVIDENCE_MISSING이다"
   });
 });
 
-test("코드가 붙지 않은 예외는 reason=UNEXPECTED_ERROR로 드러난다", async () => {
+test("코드가 붙지 않은 예외는 reason=INTERNAL_ERROR로 드러난다", async () => {
   await withDirectory(async (directory) => {
     const result = await runPolicy(directory, ["prepare", "--pull-request", path.join(directory, "missing.json")]);
     assert.equal(result.status, 1);
-    assert.equal(lastLine(result), "reason=UNEXPECTED_ERROR");
+    assert.equal(lastLine(result), "reason=INTERNAL_ERROR");
   });
 });
 
