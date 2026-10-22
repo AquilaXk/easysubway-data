@@ -4,6 +4,7 @@
 // - 댓글 알림은 workflow 이슈당 하루 한 번이다. 이미 보고한 run(재실행 포함)은 다시 쓰지 않는다.
 // - 같은 workflow의 열린 실패 이슈가 둘 이상이면 하나를 고르지 않고 실패한다.
 // - 이 보고는 실패를 덮지 않는다. 갱신 job은 이미 실패했고, 이 단계는 실패를 사람이 보게 할 뿐이다.
+// - 원천 재확인은 재확인 기한을 넘긴 recipe(--overdue)가 있으면 run이 성공으로 끝났어도(대기 run) 같은 이슈에 기록한다(#3036).
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -181,9 +182,30 @@ export function failureIssuesOf({ openIssues, workflowFile }) {
   }).sort((left, right) => left.number - right.number);
 }
 
+const inlineCode = (text) => `\`${text}\``;
+
+// 재확인 기한을 넘긴 recipe(#3036). 대기 run은 실패하지 않았으므로 실패 문구 대신 연체 사실과 기록한 run을 적는다.
+function overdueLines(input, overdue) {
+  const recipes = overdue.map(inlineCode).join(", ");
+  return [`- 재확인 기한을 넘긴 recipe: ${recipes}. 원장 head가 새로 등록될 때까지 run마다 이 이슈에 기록한다.`, `- 기록한 run: ${input.runUrl}`];
+}
+
+// 재알림 댓글의 첫 문장과 run 줄.
+function noticeLines(input, overdue) {
+  if (overdue.length > 0) return [`\`${input.workflowFile}\`의 원천이 아직 재확인 기한을 넘긴 상태다. 이전 데이터로 대체하지 않았다.`, "", ...overdueLines(input, overdue)];
+  return [`\`${input.workflowFile}\`가 다시 실패했다. 이전 데이터로 대체하지 않았다.`, "", `- 실패 run: ${input.runUrl}`];
+}
+
+function reportBackground(input, { orphan, overdue }) {
+  const workflow = `정기 원천 갱신 workflow \`${input.workflowFile}\``;
+  if (orphan) return [`- ${workflow}의 run이 PR 없는 claim 브랜치를 남겼고, 자동으로 삭제했다. 이전 데이터로 대체하지 않았다.`, ...orphanLines(input, orphan), orphanMarker(orphan.branch)];
+  if (overdue.length > 0) return [`- ${workflow}의 원천이 재확인 기한을 넘겼다. 이전 데이터로 대체하지 않았다.`, ...overdueLines(input, overdue)];
+  return [`- ${workflow}가 실패했다. 이전 데이터로 대체하지 않았다.`, `- 실패 run: ${input.runUrl}`];
+}
+
 const failureIssueTitle = (workflowFile) => `[Fix] 원천 자동 갱신 실패: ${REPORTABLE_WORKFLOWS[workflowFile]} (${workflowFile})`;
 
-export function planRefreshFailureReport({ repository, workflowFile, runId, openIssues, now, orphan: orphanInput, failures = [] }) {
+export function planRefreshFailureReport({ repository, workflowFile, runId, openIssues, now, orphan: orphanInput, failures = [], overdue = [] }) {
   const input = validated({ repository, workflowFile, runId });
   const orphan = validatedOrphan(orphanInput);
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CLOCK");
@@ -216,9 +238,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       duplicateNumbers,
       body: [
         COMMENT_MARKER,
-        `\`${input.workflowFile}\`가 다시 실패했다. 이전 데이터로 대체하지 않았다.`,
-        "",
-        `- 실패 run: ${input.runUrl}`,
+        ...noticeLines(input, overdue),
         ...chainNote(input.workflowFile),
         "- 같은 workflow의 실패는 하루에 한 번만 댓글로 알린다. 그 사이 실패 run은 이슈 본문 상태 블록에 쌓인다.",
         ...(duplicateNumbers.length > 0
@@ -236,9 +256,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       `${label} 원천 자동 갱신의 실패 원인을 고쳐 다음 정기 실행이 성공하게 한다.`,
       "",
       "### 배경",
-      ...(orphan
-        ? [`- 정기 원천 갱신 workflow \`${input.workflowFile}\`의 run이 PR 없는 claim 브랜치를 남겼고, 자동으로 삭제했다. 이전 데이터로 대체하지 않았다.`, ...orphanLines(input, orphan), orphanMarker(orphan.branch)]
-        : [`- 정기 원천 갱신 workflow \`${input.workflowFile}\`가 실패했다. 이전 데이터로 대체하지 않았다.`, `- 실패 run: ${input.runUrl}`]),
+      ...reportBackground(input, { orphan, overdue }),
       ...chainNote(input.workflowFile),
       ...(mergedBlocks([], failures).length > 0
         ? ["- 공급처 응답이 고정 기대 관측과 달라져 사람이 기대값을 고쳐야 풀리는 recipe가 있다(상태 블록의 표지). 이 이슈가 열려 있는 동안 그 recipe는 다시 수집하지 않는다. 기대값을 고친 뒤 이 이슈를 닫으면 다음 실행이 다시 수집한다."]
@@ -258,17 +276,28 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
   };
 }
 
+// --failures(원천 재확인 controller가 쓴 실패 목록)와 --overdue(재확인 판정의 연체 recipe, 쉼표 목록)만 선택이다.
+const REQUIRED_ARGUMENTS = Object.freeze(["workflowFile", "repository", "runId"]);
+
 function parseArgs(argv) {
-  const names = new Map([["--workflow", "workflowFile"], ["--repository", "repository"], ["--run-id", "runId"], ["--failures", "failuresPath"]]);
+  const names = new Map([["--workflow", "workflowFile"], ["--repository", "repository"], ["--run-id", "runId"], ["--failures", "failuresPath"], ["--overdue", "overdueList"]]);
   const values = {};
-  // --failures(원천 재확인 controller가 쓴 실패 목록)만 선택이다.
-  if (!Array.isArray(argv) || ![names.size * 2 - 2, names.size * 2].includes(argv.length)) fail("ARGUMENTS");
+  if (!Array.isArray(argv) || argv.length % 2 !== 0) fail("ARGUMENTS");
   for (let index = 0; index < argv.length; index += 2) {
     const key = names.get(argv[index]);
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("ARGUMENTS");
     values[key] = argv[index + 1];
   }
+  if (REQUIRED_ARGUMENTS.some((key) => !Object.hasOwn(values, key))) fail("ARGUMENTS");
   return values;
+}
+
+// 빈 값은 연체 없음이다. 이름은 이슈 본문에 그대로 들어가므로 식별자 형식이 아니면 받지 않는다.
+function parseOverdue(list = "") {
+  if (list === "") return [];
+  const recipeIds = list.split(",");
+  if (recipeIds.some((recipeId) => !FAILURE_RECIPE_ID.test(recipeId))) fail("OVERDUE", "recipe ids must be comma-separated identifiers");
+  return recipeIds;
 }
 
 // PATH 조회 없이 고정 경로로 gh를 찾는다(PATH 오염 차단, tools/route-map/svg-crop/render-svg.mjs와 같은 방식).
@@ -335,11 +364,12 @@ export async function listOpenIssues(repository, runGh) {
 export async function reportRefreshFailure({
   argv = process.argv.slice(2), runGh = defaultRunGh, now = () => new Date(), orphan, readText = (file) => readFile(file, "utf8"),
 } = {}) {
-  const { failuresPath, ...args } = parseArgs(argv);
+  const { failuresPath, overdueList, ...args } = parseArgs(argv);
   const input = validated(args);
+  const overdue = parseOverdue(overdueList);
   const failures = await readFailures(failuresPath, readText);
   const openIssues = await listOpenIssues(input.repository, runGh);
-  const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures });
+  const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures, overdue });
   if (plan.action === "create") {
     await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
     return plan;

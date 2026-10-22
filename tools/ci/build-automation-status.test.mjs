@@ -12,7 +12,7 @@ import {
   STATUS_STAGES,
   buildAutomationStatus,
   collectAutomationStatus,
-  loadSourceInventory,
+  loadSourceFreshnessInputs,
   main,
   postAutomationStatus,
   refreshWorkflowsOf,
@@ -37,8 +37,17 @@ const ownPull = (number, ref, createdHoursAgo, overrides = {}) => ({
   created_at: hoursAgo(createdHoursAgo), head: { ref, repo: { full_name: REPOSITORY } }, user: APP_USER, ...overrides,
 });
 
+// 재확인 recipe 연체 판정 입력(#3036 7-27). 정책은 실제 SLA 파일이고, 원장은 recipe가 만료 기준으로 삼는 head마다 한 행(기본: 한 시간 전 수집, P7D 만료)이다.
+const FRESHNESS_POLICY = JSON.parse(readFileSync(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url), "utf8"));
+const LEDGER_HEAD_SOURCE_IDS = REVERIFICATION_RECIPES.flatMap(({ due }) => (due?.kind === "ledger-head" ? due.sourceIds : []));
+const ledgerHeadRow = (sourceId, basisAt, freshnessExpiresAt) => ({
+  sourceId, snapshotId: `${sourceId}-1`, previousSnapshotId: null, retrievedAt: basisAt, serviceEffectiveAt: basisAt, freshnessExpiresAt,
+});
+const reverificationLedger = (overrides = {}) => LEDGER_HEAD_SOURCE_IDS.map((id) => overrides[id] ?? ledgerHeadRow(id, hoursAgo(1), hoursAgo(-7 * 24)));
+
 const emptyInputs = () => ({
   now, repository: REPOSITORY, manifest, stageRuns: {}, issues: [], openPulls: [], claimRefs: [], behind: { actions: [], anomalies: [] },
+  sourceLedger: reverificationLedger(), freshnessPolicy: FRESHNESS_POLICY,
 });
 
 test("스냅샷은 활성 데이터팩과 모든 단계를 담고, 기록이 없는 단계는 latest null로 드러낸다", () => {
@@ -350,7 +359,11 @@ const evidenceSource = (id, freshUntilHours, { evidence = "scheduleAdmissionEvid
 });
 // 갱신 소유자가 없는 원천을 보이는 합성 id. 실제 원천 id를 쓰면 그 원천이 소유자를 얻는 순간 이 테스트가 깨진다(#1122).
 const UNOWNED_SOURCE_ID = "synthetic-source-without-refresh-owner";
-const inventoryOf = (...sources) => ({ schemaVersion: 1, sources });
+// 재확인 판정은 원장 행이 없는 KRIC 시간표 projection의 관측 시각도 읽는다. 실제 inventory처럼 모든 fixture가 싣고, 사용 원천이 아니라 목록에는 실리지 않는다.
+const KRIC_PROJECTION = {
+  id: "kric-nationwide-timetable-file", capitalScheduleAdmissionEvidence: { observedAt: hoursAgo(1) }, korailScheduleAdmissionEvidence: { observedAt: hoursAgo(1) },
+};
+const inventoryOf = (...sources) => ({ schemaVersion: 1, sources: [...sources, KRIC_PROJECTION] });
 // 갱신 단계마다 가장 최근에 끝난 run이 성공인 목록. 테스트가 단계별로 덮어쓴다.
 const REFRESH_STAGES_IN_USE = [...new Set(sourceRefreshStages().values())].sort();
 const refreshRunsOf = (overrides = {}) => Object.fromEntries(REFRESH_STAGES_IN_USE.map((stage) => [stage, overrides[stage] ?? [run(1, { created_at: hoursAgo(1), conclusion: "success" })]]));
@@ -571,6 +584,47 @@ test("갱신 작업 상태: 그 단계 workflow의 가장 최근에 끝난 run�
   assert.equal(states({ runs: { "capital-topology-refresh": failed(2) } })[UNOWNED_SOURCE_ID], "NONE");
 });
 
+// #3036 7-27(2026-10-22 부산 사례): 재확인 workflow는 실패 run 사이에 수집 없이 성공으로 끝나는 대기 run(OPEN_PR·BLOCKED_BY_PENDING_PR·NOT_DUE·main 이동)을 낸다.
+// 마지막 run 하나로 정하면 연체된 recipe가 OK로 덮인다. 재확인 원천은 원장 recipe head의 연체(dueAt + scheduledPipeline.cadence, 또는 만료 경보 창)로도 판정한다.
+test("재확인 recipe가 연체면 실패 run 뒤에 대기 성공 run이 와도 그 recipe와 딸린 recipe의 원천은 FAILED다", () => {
+  assert.deepEqual([FRESHNESS_POLICY.scheduledPipeline.cadence, FRESHNESS_POLICY.monitoring.alertBeforePackExpiry], ["P1D", "PT6H"]);
+  const topology = "busan-transportation-route-topology";
+  const inventory = inventoryOf(
+    evidenceSource(topology, 60), evidenceSource("busan-transportation-accessibility", 60), evidenceSource("busan-transportation-timetable", 60),
+    evidenceSource("gwangju-transportation-accessibility", 60),
+  );
+  const waitingAfterFailure = refreshRunsOf({
+    "source-reverification": [run(2, { created_at: hoursAgo(1), conclusion: "success" }), run(1, { created_at: hoursAgo(1.3), conclusion: "failure" })],
+  });
+  const states = (busanHead) => Object.fromEntries(expiring({
+    sourceInventory: inventory, refreshRuns: waitingAfterFailure, sourceLedger: reverificationLedger({ [topology]: busanHead }),
+  }).map((item) => [item.sourceId, item.refreshState]));
+  // 수집 82시간 전: dueAt(+24시간)에서 하루가 더 지났다.
+  assert.deepEqual(states(ledgerHeadRow(topology, hoursAgo(82), iso(86))), {
+    [topology]: "FAILED", "busan-transportation-accessibility": "FAILED", "busan-transportation-timetable": "FAILED", "gwangju-transportation-accessibility": "OK",
+  });
+  // DUE지만 기한(dueAt + 하루) 안이면 지금처럼 마지막 run으로 정한다.
+  assert.equal(states(ledgerHeadRow(topology, hoursAgo(30), iso(138)))[topology], "OK");
+  // 만료 경보 창(만료 6시간 전) 안이면 수집이 최근이어도 연체다.
+  assert.equal(states(ledgerHeadRow(topology, hoursAgo(2), iso(5)))[topology], "FAILED");
+});
+
+// 재확인 recipe의 원천이 다른 단계(gwangju-timetable-refresh)의 소유여도 recipe가 연체면 FAILED다: 소유 단계의 마지막 run이 OK여도 연체는 가려지지 않는다.
+test("다른 단계가 소유한 원천도 재확인 recipe가 연체면 FAILED이고, 연체가 아니면 소유 단계의 마지막 run으로 정한다", () => {
+  const sourceId = "kric-nationwide-timetable-file";
+  assert.equal(sourceRefreshStages().get(sourceId), "gwangju-timetable-refresh");
+  assert.ok(REVERIFICATION_RECIPES.some((recipe) => recipe.sourceIds.includes(sourceId)), "the source is also a reverification recipe source");
+  const inventoryObservedAt = (observedAt) => ({
+    schemaVersion: 1,
+    sources: [{ ...evidenceSource(sourceId, 60), capitalScheduleAdmissionEvidence: { observedAt }, korailScheduleAdmissionEvidence: { observedAt } }],
+  });
+  const stateAt = (observedAt) => expiring({ sourceInventory: inventoryObservedAt(observedAt) })[0].refreshState;
+  // 관측 82시간 전: dueAt(+24시간)에서 하루가 더 지나 연체다. 소유 단계의 마지막 run은 성공이다.
+  assert.equal(stateAt(hoursAgo(82)), "FAILED");
+  // 관측 1시간 전이면 연체가 아니므로 소유 단계의 마지막 run(성공)으로 OK다.
+  assert.equal(stateAt(hoursAgo(1)), "OK");
+});
+
 test("갱신 단계의 run 목록이 없으면 OK로 채우지 않고 실패한다", () => {
   const inventory = inventoryOf(evidenceSource("incheon-line1-train-timetable", 2));
   assert.throws(() => buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventory }), /STATUS_RUNS_INVALID.*capital-topology-refresh/u);
@@ -666,8 +720,11 @@ test("표시 이름은 제어·양방향 문자를 지우고 200자로 제한한
 
 test("실제 source-inventory.json으로 만들어도 backend 계약(키·형식·정렬·상한)을 지킨다", () => {
   const inventory = JSON.parse(readFileSync(new URL("../datapack/source-inventory.json", import.meta.url), "utf8"));
+  // 재확인 판정은 관측 시각보다 이른 시각을 거부한다(clock skew). 실데이터 기준 시각은 KRIC projection의 마지막 관측 시각부터 잡는다.
+  const kric = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  const observedUntil = Math.max(Date.parse(kric.capitalScheduleAdmissionEvidence.observedAt), Date.parse(kric.korailScheduleAdmissionEvidence.observedAt));
   for (const hours of [0, 12, 300]) {
-    const at = new Date(Date.parse("2026-10-10T08:00:00.000Z") + hours * 3_600_000);
+    const at = new Date(observedUntil + hours * 3_600_000);
     const snapshot = buildAutomationStatus({ ...emptyInputs(), now: at, sourceInventory: inventory, refreshRuns: refreshRunsOf() });
     const list = snapshot.expiringSources;
     assert.ok(list.length <= EXPIRING_SOURCE_LIMIT);
@@ -693,21 +750,35 @@ test("실제 source-inventory.json으로 만들어도 backend 계약(키·형식
   }
 });
 
-test("loadSourceInventory: 변수가 true일 때만 인벤토리를 읽고, 꺼짐·미설정이면 undefined, 알 수 없는 값은 실패한다", async () => {
+test("loadSourceFreshnessInputs: 변수가 true일 때만 inventory·원장·신선도 정책을 읽고, 꺼짐·미설정이면 undefined, 알 수 없는 값·하나라도 못 읽으면 실패한다", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "status-inventory-"));
+  const files = {
+    "tools/datapack/source-inventory.json": inventoryOf(evidenceSource("a", 1)),
+    "tools/datapack/release/source-snapshots.json": reverificationLedger(),
+    "release/product-gates/datapack-freshness-sla.json": FRESHNESS_POLICY,
+  };
+  const load = (env, at = root) => loadSourceFreshnessInputs({ env, root: at });
+  const enabled = { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" };
   try {
-    await mkdir(path.join(root, "tools/datapack"), { recursive: true });
-    await writeFile(path.join(root, "tools/datapack/source-inventory.json"), JSON.stringify(inventoryOf(evidenceSource("a", 1))));
-    assert.equal(await loadSourceInventory({ env: {}, root }), undefined);
-    assert.equal(await loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "" }, root }), undefined);
-    assert.equal(await loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "false" }, root }), undefined);
-    assert.equal((await loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" }, root })).sources[0].id, "a");
-    for (const bad of ["TRUE", "1", "yes", " true"]) {
-      await assert.rejects(loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: bad }, root }), /STATUS_ENV_INVALID/u);
+    for (const [relative, value] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+      await writeFile(path.join(root, relative), JSON.stringify(value));
     }
-    await assert.rejects(loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" }, root: path.join(root, "missing") }), /ENOENT|STATUS_INVENTORY_INVALID/u);
-    await writeFile(path.join(root, "tools/datapack/source-inventory.json"), "{not json");
-    await assert.rejects(loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" }, root }), /STATUS_INVENTORY_INVALID/u);
+    assert.equal(await load({}), undefined);
+    assert.equal(await load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: "" }), undefined);
+    assert.equal(await load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: "false" }), undefined);
+    assert.deepEqual(await load(enabled), {
+      sourceInventory: files["tools/datapack/source-inventory.json"], sourceLedger: files["tools/datapack/release/source-snapshots.json"], freshnessPolicy: FRESHNESS_POLICY,
+    });
+    for (const bad of ["TRUE", "1", "yes", " true"]) {
+      await assert.rejects(load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: bad }), /STATUS_ENV_INVALID/u);
+    }
+    await assert.rejects(load(enabled, path.join(root, "missing")), /ENOENT/u);
+    for (const relative of Object.keys(files)) {
+      await writeFile(path.join(root, relative), "{not json");
+      await assert.rejects(load(enabled), new RegExp(`STATUS_INVENTORY_INVALID: ${relative}`, "u"));
+      await writeFile(path.join(root, relative), JSON.stringify(files[relative]));
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

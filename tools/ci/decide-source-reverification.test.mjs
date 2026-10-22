@@ -10,6 +10,7 @@ import {
   SOURCE_REVERIFICATION_CLAIM_PREFIX,
   decideSourceReverification,
   main,
+  overdueReverificationRecipes,
   parseSourceReverificationClaims,
   sourceReverificationDue,
 } from "./decide-source-reverification.mjs";
@@ -70,7 +71,7 @@ test("claim 접두어는 이 이슈 번호의 재확인 브랜치다", () => {
 });
 
 test("기준 시각이 최근이면 아무것도 DUE가 아니다(NOT_DUE)", () => {
-  assert.deepEqual(decideSourceReverification(input()), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [] });
+  assert.deepEqual(decideSourceReverification(input()), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [] });
 });
 
 test("기준 시각 + scheduledPipeline.cadence(P1D)가 지난 원천이 DUE다. 만료는 연장하지 않는다", () => {
@@ -101,13 +102,47 @@ test("freshnessExpiresAt만 싣는 head(KRIC 역별 시간표)도 기준 + P1D�
   assert.deepEqual(result.due, [{ recipeId: "kric-station-timetable", sourceId: STATION_LINES_SOURCE_ID, dueAt: iso(dueAgo(DAY + HOUR) + DAY) }]);
 });
 
-test("KRIC 역별 시간표는 만료가 6시간 안이면 기준 + P1D보다 먼저 DUE가 되고 만료를 연장하지 않는다", () => {
+test("KRIC 역별 시간표는 만료가 6시간 안이면 기준 + P1D보다 먼저 DUE가 되고(경보 창 안이라 곧바로 연체) 만료를 연장하지 않는다", () => {
   const expiring = ledgerAt(FRESH).map((entry) => (entry.sourceId === STATION_LINES_SOURCE_ID
     ? { ...stationLinesRow(dueAgo(2 * HOUR)), freshnessExpiresAt: iso(NOW.getTime() + 5 * HOUR) } : entry));
   const [entry] = sourceReverificationDue({ inventory: inventoryAt(FRESH), ledger: expiring, policy: POLICY, now: NOW }).filter(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID);
-  assert.equal(entry.state, "DUE");
+  assert.equal(entry.state, "OVERDUE");
   assert.equal(entry.dueAt, iso(NOW.getTime() - HOUR));
   assert.equal(entry.freshUntil, iso(NOW.getTime() + 5 * HOUR));
+});
+
+// #3036 7-26: 대기 run(열린 PR·claim·다른 원장 쓰기)은 성공으로 끝나 실패 이슈 경로를 타지 않는다. DUE가 된 뒤 정기 주기(scheduledPipeline.cadence)가
+// 한 번 더 지나도록 원장 head가 그대로이거나 만료 경보 창(alertBeforePackExpiry) 안이면 연체(OVERDUE)이고, 판정이 어느 상태로 끝나든 연체 행을 돌려준다.
+const busanAt = (basisMillis, overrides) => ledgerAt(FRESH).map((entry) => (entry.sourceId === "busan-transportation-route-topology" ? row(entry.sourceId, basisMillis, overrides) : entry));
+const busanRow = (ledger) => sourceReverificationDue({ inventory: inventoryAt(FRESH), ledger, policy: POLICY, now: NOW }).find(({ recipeId }) => recipeId === "busan-topology");
+
+test("DUE 뒤 scheduledPipeline.cadence가 더 지나면 OVERDUE이고, 만료 경보 창 안이면 바로 OVERDUE다", () => {
+  const graceLeft = busanRow(busanAt(dueAgo(DAY + HOUR)));
+  assert.deepEqual([graceLeft.state, graceLeft.dueAt, graceLeft.overdueAt], ["DUE", iso(dueAgo(HOUR)), iso(dueAgo(HOUR) + DAY)]);
+  const overdue = busanRow(busanAt(dueAgo(2 * DAY + HOUR)));
+  assert.deepEqual([overdue.state, overdue.overdueAt], ["OVERDUE", iso(dueAgo(HOUR))]);
+  const expiring = busanRow(busanAt(dueAgo(2 * HOUR), { freshnessExpiresAt: iso(NOW.getTime() + 5 * HOUR) }));
+  assert.deepEqual([expiring.state, expiring.dueAt, expiring.overdueAt], ["OVERDUE", iso(dueAgo(HOUR)), iso(dueAgo(HOUR))]);
+  assert.equal(busanRow(ledgerAt(FRESH)).state, "CURRENT");
+});
+
+test("연체 recipe는 열린 PR·claim 대기·차단 대기·실행 어느 판정에서도 overdue로 드러나 실패 이슈 판단이 참이 된다", () => {
+  const ledger = busanAt(dueAgo(2 * DAY + HOUR));
+  const expected = [{ recipeId: "busan-topology", sourceId: "busan-transportation-route-topology", dueAt: iso(dueAgo(DAY + HOUR)), overdueAt: iso(dueAgo(HOUR)) }];
+  const branch = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}1`;
+  const decisions = {
+    OPEN_PR: decideSourceReverification(input({ ledger, pullRequests: [pr("OPEN", 1)], automationBranches: [branch] })),
+    CLAIM_IN_PROGRESS: decideSourceReverification(input({ ledger, automationBranches: [branch], runs: [run(1, "in_progress")] })),
+    BLOCKED_BY_PENDING_PR: decideSourceReverification(input({ ledger, pullRequests: [writer(971)] })),
+    RUN: decideSourceReverification(input({ ledger })),
+  };
+  for (const [state, result] of Object.entries(decisions)) {
+    assert.equal(result.state, state);
+    assert.deepEqual(result.overdue, expected, state);
+  }
+  // 기한 안의 DUE는 연체가 아니다.
+  assert.deepEqual(decideSourceReverification(input({ ledger: busanAt(dueAgo(DAY + HOUR)) })).overdue, []);
+  assert.deepEqual(decideSourceReverification(input()).overdue, []);
 });
 
 // #1122: 공급처 기대 관측이 바뀌어 사람이 기대값을 고쳐야 하는 recipe는 실패 이슈가 열려 있는 동안 다시 돌지 않는다(같은 원인의 재수집을 2시간마다 되풀이하지 않는다).
@@ -184,7 +219,7 @@ test("판정 표는 recipe별 원천의 기준 시각·만료·dueAt을 그대�
   const table = sourceReverificationDue({ inventory: inventoryAt(FRESH), ledger: ledgerAt(FRESH), policy: POLICY, now: NOW });
   assert.equal(table.length, 9);
   const gwangju = table.find(({ sourceId }) => sourceId === "gwangju-transportation-route-topology");
-  assert.deepEqual(gwangju, { recipeId: "gwangju-topology", sourceId: "gwangju-transportation-route-topology", basisAt: iso(FRESH), freshUntil: iso(FRESH + 7 * DAY), dueAt: iso(FRESH + DAY), state: "CURRENT" });
+  assert.deepEqual(gwangju, { recipeId: "gwangju-topology", sourceId: "gwangju-transportation-route-topology", basisAt: iso(FRESH), freshUntil: iso(FRESH + 7 * DAY), dueAt: iso(FRESH + DAY), overdueAt: iso(FRESH + 2 * DAY), state: "CURRENT" });
 });
 
 test("원장 head가 없거나 갈라졌거나 만료 시각이 없으면 판정하지 않고 이상으로 실패한다", () => {
@@ -203,7 +238,7 @@ test("원장 head가 없거나 갈라졌거나 만료 시각이 없으면 판정
 
 test("이 workflow의 열린 PR이 있으면 DUE 여부와 상관없이 OPEN_PR이다", () => {
   const branch = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}1`;
-  assert.deepEqual(decideSourceReverification(input({ pullRequests: [pr("OPEN", 1)], automationBranches: [branch] })), { state: "OPEN_PR", branch, due: [], recipes: [], cleanupClaims: [] });
+  assert.deepEqual(decideSourceReverification(input({ pullRequests: [pr("OPEN", 1)], automationBranches: [branch] })), { state: "OPEN_PR", branch, due: [], recipes: [], cleanupClaims: [], overdue: [] });
 });
 
 test("열린 PR이 둘 이상이거나 claim 브랜치가 없거나 claim이 둘 이상이거나 닫힌 PR에 묶였으면 이상이다", () => {
@@ -218,13 +253,13 @@ test("열린 PR이 둘 이상이거나 claim 브랜치가 없거나 claim이 둘
 // 이 workflow는 OCI에 게시하기 전에 claim 브랜치를 push한다. PR 없는 claim은 producer run으로 처지를 가린다(복구 없이 정리한다: OCI 객체는 내용 주소라 다시 시작해도 안전).
 test("PR 없는 claim은 producer run이 돌고 있으면 CLAIM_IN_PROGRESS로 기다린다", () => {
   const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`;
-  assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs: [run(77, "in_progress")] })), { state: "CLAIM_IN_PROGRESS", branch: claim, due: [], recipes: [], cleanupClaims: [] });
+  assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs: [run(77, "in_progress")] })), { state: "CLAIM_IN_PROGRESS", branch: claim, due: [], recipes: [], cleanupClaims: [], overdue: [] });
 });
 
 test("끝난 run·기록 없는 run의 claim은 정리 대상으로 알리고 판정은 계속한다", () => {
   const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`;
   for (const runs of [[run(77, "completed", "failure")], [run(77, "completed", "cancelled")], [run(77, "completed", "success")], []]) {
-    assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [claim] });
+    assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [claim], overdue: [] });
   }
   const restarted = decideSourceReverification(input({ automationBranches: [claim], runs: [run(77, "completed", "failure")], ledger: ledgerAt(dueAgo(2 * DAY)) }));
   assert.equal(restarted.state, "RUN");
@@ -264,7 +299,7 @@ test("PR 목록이나 아직 끝나지 않은 run 목록이 조회 상한에 닿
 test("닫힘·병합 PR 이력이 상한을 훨씬 넘게 있어도 판정은 실패하지 않는다", () => {
   const history = (count, state) => Array.from({ length: count }, (_, index) => pr(state, index + 1, { number: 4000 + index, headRefName: `feat/old-${state}-${index}` }));
   const pullRequests = [...history(2500, "MERGED"), ...history(2500, "CLOSED")];
-  assert.deepEqual(decideSourceReverification(input({ pullRequests })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [] });
+  assert.deepEqual(decideSourceReverification(input({ pullRequests })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [] });
   const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`;
   const merged = pr("MERGED", 77, { number: 4999 });
   assert.deepEqual(decideSourceReverification(input({ pullRequests: [...pullRequests, merged], automationBranches: [claim] })).cleanupClaims, [claim]);
@@ -273,7 +308,7 @@ test("닫힘·병합 PR 이력이 상한을 훨씬 넘게 있어도 판정은 �
 // #987 리뷰 F1: 정기 실행이 하루 12번이라 끝난 run은 17일이면 200개를 넘는다. 끝난 run은 판정에 필요 없으므로(없는 run도 같은 ABANDONED) 상한에 세지 않는다.
 test("끝난 run이 상한을 넘게 쌓여도 판정은 실패하지 않는다", () => {
   const history = Array.from({ length: 500 }, (_, index) => run(1000 + index, "completed", index % 2 === 0 ? "success" : "failure"));
-  assert.deepEqual(decideSourceReverification(input({ runs: history })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [] });
+  assert.deepEqual(decideSourceReverification(input({ runs: history })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [] });
   const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}1000`;
   assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs: history })).cleanupClaims, [claim]);
   assert.equal(decideSourceReverification(input({ automationBranches: [`${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`], runs: [...history, run(77, "in_progress")] })).state, "CLAIM_IN_PROGRESS");
@@ -313,19 +348,19 @@ test("모든 원천이 DUE면 모든 recipe가 의존 순서로 전부 돈다", 
 
 // 커밋된 저장소 상태는 어떤 시각에도 판정 가능해야 한다(#942). 기준 시각은 고정 값이라 실행 시각에 묶이지 않는다.
 // 수집 시각보다 이른 기준 시각은 clock skew로 거부되는 것이 맞아, 실데이터 기준 시각은 실데이터의 모든 만료보다 늦은 값을 쓴다.
-// 이 전제에서 모든 행은 DUE이고 모든 recipe가 돈다. 행이나 recipe가 빠지거나 판정이 뒤집히면 여기서 깨진다.
+// 이 전제에서 모든 행은 기한까지 넘긴 연체(OVERDUE)이고 모든 recipe가 돈다. 행이나 recipe가 빠지거나 판정이 뒤집히면 여기서 깨진다.
 const REAL_DATA_CLOCK = new Date("2099-01-01T00:00:00.000Z");
 // recipe 표의 due 선언에서 유도한 기대 행 수: ledger-head는 원천마다 한 행, inventory-evidence는 recipe당 한 행이다.
 const expectedDueRowCount = (recipes) => recipes.reduce((count, { due }) => count + (due?.kind === "ledger-head" ? due.sourceIds.length : due ? 1 : 0), 0);
 
-test("저장소의 실제 원장·inventory·정책은 고정된 먼 미래 시각에 모든 행이 DUE이고 모든 recipe가 돈다", async () => {
+test("저장소의 실제 원장·inventory·정책은 고정된 먼 미래 시각에 모든 행이 연체이고 모든 recipe가 돈다", async () => {
   const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
   const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
   const [inventory, ledger, policy] = await Promise.all([readJson("tools/datapack/source-inventory.json"), readJson("tools/datapack/release/source-snapshots.json"), readJson("release/product-gates/datapack-freshness-sla.json")]);
   const table = sourceReverificationDue({ inventory, ledger, policy, now: REAL_DATA_CLOCK });
   assert.ok(table.every(({ freshUntil }) => Date.parse(freshUntil) < REAL_DATA_CLOCK.getTime()), "2099는 실데이터의 모든 freshUntil보다 늦다");
   assert.equal(table.length, expectedDueRowCount(REVERIFICATION_RECIPES));
-  assert.ok(table.every(({ state }) => state === "DUE"), JSON.stringify(table.filter(({ state }) => state !== "DUE")));
+  assert.ok(table.every(({ state }) => state === "OVERDUE"), JSON.stringify(table.filter(({ state }) => state !== "OVERDUE")));
   const result = decideSourceReverification(input({ inventory, ledger, policy, now: REAL_DATA_CLOCK }));
   assert.equal(result.state, "RUN");
   assert.deepEqual([...result.recipes].sort(), REVERIFICATION_RECIPES.map(({ id }) => id).sort());
@@ -344,7 +379,10 @@ test("CLI는 판정을 GITHUB_OUTPUT 값으로 남긴다", async () => {
   assert.equal(written.length, 1);
   assert.equal(written[0][0], "out.txt");
   assert.match(written[0][1], /^state=BLOCKED_BY_PENDING_PR\nbranch=\nrecipes=kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,/u);
-  assert.match(written[0][1], /\ncleanup_claims=\nblocked_by=automation\/456-capital-topology-registration-1\nblocked_recipes=\n$/u);
+  // 이슈 본문에 적히는 연체 목록은 상태 표(overdueReverificationRecipes)와 같은 정의다: 연체 행이 있는 recipe와 그에 의존하는 recipe(recipe 표 순서).
+  const overdueRecipes = "kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,gwangju-accessibility,busan-topology,busan-accessibility,busan-timetable,daejeon-topology,daejeon-accessibility,daejeon-timetable,daegu-sources,daegu-accessibility";
+  assert.match(written[0][1], new RegExp(`\\ncleanup_claims=\\nblocked_by=automation/456-capital-topology-registration-1\\nblocked_recipes=\\noverdue_recipes=${overdueRecipes}\\n$`, "u"));
+  assert.deepEqual(overdueReverificationRecipes({ inventory: files["inv.json"], ledger: files["led.json"], policy: files["pol.json"], now: NOW }), overdueRecipes.split(","));
   assert.equal(JSON.parse(logs[0]).state, "BLOCKED_BY_PENDING_PR");
   await assert.rejects(main(["--inventory", "inv.json"], { now: NOW, log() {}, readText: async () => "{}" }), /REVERIFICATION_INPUT_INVALID/u);
 });

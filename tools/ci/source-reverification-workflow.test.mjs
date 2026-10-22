@@ -219,8 +219,12 @@ test("계측 파일 경로는 수집 전에 정하고 요약 step은 always()·c
   before(summary.name, "Report refresh failure as an issue");
 });
 
-test("실패 보고가 마지막 step이고 실패·취소 모두 보고한다", () => {
-  assertFailureReportLast({ yml, step, file: FILE, condition: "${{ failure() || cancelled() }}" });
+// #3036 7-26: 대기 run은 성공으로 끝나므로, 판정이 연체 recipe를 알리면 실패하지 않은 run도 같은 보고 경로로 이슈에 기록한다.
+test("실패 보고가 마지막 step이고 실패·취소와 연체 recipe를 모두 보고한다", () => {
+  const report = assertFailureReportLast({ yml, step, file: FILE, condition: "${{ failure() || cancelled() || steps.decision.outputs.overdue_recipes != '' }}" });
+  // 실패·취소 run은 지금처럼 실패로 적고, 연체 문구는 실패하지 않은 대기 run에만 넘긴다.
+  assert.match(report.block, /\n          OVERDUE_RECIPES: \$\{\{ job\.status == 'success' && steps\.decision\.outputs\.overdue_recipes \|\| '' \}\}\n/u);
+  assert.match(report.block, /--failures "[^"]+" --overdue "\$\{OVERDUE_RECIPES\}"$/mu);
 });
 
 // #972·#974·#975 리뷰: step output·목록 값은 env로만 받아 셸 변수로 쓴다(표현식을 run 스크립트에 펼치지 않는다).

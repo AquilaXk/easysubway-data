@@ -13,6 +13,9 @@
 //   dueAt = min(기준 시각 + scheduledPipeline.cadence, freshUntil - monitoring.alertBeforePackExpiry)
 //   기준 시각 = 원천 등급(sourceClass)의 basisField. 원장 head 행에서, 원장 행이 없는 KRIC 시간표 projection은 inventory 증거에서 읽는다.
 //   만료(freshUntil)는 연장하지 않는다. 만료 경보 창이 하루보다 먼저 오면 그 시각이 우선이다.
+// 연체(OVERDUE) 기준(#3036): overdueAt = min(dueAt + scheduledPipeline.cadence, freshUntil - monitoring.alertBeforePackExpiry)
+//   DUE가 된 뒤 정기 주기가 한 번 더 지나도록 원장 head가 그대로이거나 만료 경보 창 안이면 연체다. 판정이 어느 상태로 끝나든 연체 행(overdue)을 돌려준다.
+//   대기(OPEN_PR·CLAIM_IN_PROGRESS·BLOCKED_BY_PENDING_PR)는 성공으로 끝나 실패 이슈 경로를 타지 않으므로, workflow는 연체 행이 있으면 성공 run도 실패 이슈에 기록한다.
 // 의존 recipe(접근성·계획 시각표)는 의존 대상이 돌 때 함께 돈다.
 //
 // 공급처 기대 관측이 바뀌어 사람이 기대값을 고쳐야 하는 recipe(SOURCE_EXPECTATION_CHANGED)는 이 workflow의 실패 이슈가 열려 있는 동안 건너뛴다(#1122).
@@ -92,12 +95,19 @@ export function ledgerHead(ledger, sourceId) {
   return heads[0];
 }
 
+function dueState(nowMillis, dueMillis, overdueMillis) {
+  if (nowMillis >= overdueMillis) return "OVERDUE";
+  return nowMillis >= dueMillis ? "DUE" : "CURRENT";
+}
+
 function dueEntry({ recipe, sourceId, basisAt, freshUntil, windows, nowMillis }) {
   const basisMillis = instant(basisAt, `${sourceId} basis`);
-  const freshMillis = instant(freshUntil, `${sourceId} freshUntil`);
-  const dueMillis = Math.min(addCadence(basisMillis, windows.cadence), freshMillis - windows.alertMillis);
+  const alertMillis = instant(freshUntil, `${sourceId} freshUntil`) - windows.alertMillis;
+  const dueMillis = Math.min(addCadence(basisMillis, windows.cadence), alertMillis);
+  const overdueMillis = Math.min(addCadence(dueMillis, windows.cadence), alertMillis);
   return {
-    recipeId: recipe.id, sourceId, basisAt, freshUntil, dueAt: new Date(dueMillis).toISOString(), state: nowMillis >= dueMillis ? "DUE" : "CURRENT",
+    recipeId: recipe.id, sourceId, basisAt, freshUntil, dueAt: new Date(dueMillis).toISOString(), overdueAt: new Date(overdueMillis).toISOString(),
+    state: dueState(nowMillis, dueMillis, overdueMillis),
   };
 }
 
@@ -131,8 +141,8 @@ function evidenceDueEntries({ recipe, inventory, policy, now, windows, nowMillis
 }
 
 /**
- * recipe가 자기 만료 기준을 가진 원천마다 기준 시각·만료·dueAt·상태를 계산한다(읽기 전용). 의존 recipe는 행이 없다.
- * @returns {{ recipeId: string, sourceId: string, basisAt: string, freshUntil: string, dueAt: string, state: "DUE"|"CURRENT" }[]}
+ * recipe가 자기 만료 기준을 가진 원천마다 기준 시각·만료·dueAt·overdueAt·상태를 계산한다(읽기 전용). 의존 recipe는 행이 없다.
+ * @returns {{ recipeId: string, sourceId: string, basisAt: string, freshUntil: string, dueAt: string, overdueAt: string, state: "CURRENT"|"DUE"|"OVERDUE" }[]}
  */
 export function sourceReverificationDue({ inventory, ledger, policy, now, recipes = REVERIFICATION_RECIPES } = {}) {
   if (!Array.isArray(inventory?.sources) || !Array.isArray(ledger) || !(now instanceof Date) || Number.isNaN(now.getTime())) fail("REVERIFICATION_INPUT_INVALID");
@@ -142,18 +152,28 @@ export function sourceReverificationDue({ inventory, ledger, policy, now, recipe
   return recipes.filter(({ due }) => due).flatMap((recipe) => entries[recipe.due.kind]({ recipe, ledger, inventory, policy, now, windows, nowMillis }));
 }
 
-// DUE인 recipe와 그에 의존하는 recipe를 recipe 표 순서(= 의존 순서)로 돌려준다.
-function selectRecipes(dueRows, recipes) {
-  const selected = new Set(dueRows.filter(({ state }) => state === "DUE").map(({ recipeId }) => recipeId));
+const isDue = ({ state }) => state !== "CURRENT";
+
+// 주어진 recipe와 그에 의존하는 recipe를 recipe 표 순서(= 의존 순서)로 돌려준다.
+function withDependents(recipeIds, recipes) {
+  const selected = new Set(recipeIds);
   for (const recipe of recipes) if (recipe.dependsOn.some((dependency) => selected.has(dependency))) selected.add(recipe.id);
   return recipes.filter(({ id }) => selected.has(id)).map(({ id }) => id);
 }
 
-// 실패 이슈 표지로 막힌 recipe와 그에 의존하는 recipe(recipe 표 순서 = 의존 순서).
+// 실패 이슈 표지로 막힌 recipe와 그에 의존하는 recipe.
 function blockedRecipeIds({ openIssues, recipes }) {
-  const blocked = new Set(failureIssuesOf({ openIssues, workflowFile: SOURCE_REVERIFICATION_WORKFLOW }).flatMap(({ body }) => blockedRecipeIdsOf(body ?? "")));
-  for (const recipe of recipes) if (recipe.dependsOn.some((dependency) => blocked.has(dependency))) blocked.add(recipe.id);
-  return blocked;
+  return new Set(withDependents(failureIssuesOf({ openIssues, workflowFile: SOURCE_REVERIFICATION_WORKFLOW }).flatMap(({ body }) => blockedRecipeIdsOf(body ?? "")), recipes));
+}
+
+const overdueRowsOf = (dueRows) => dueRows.filter(({ state }) => state === "OVERDUE").map(({ recipeId, sourceId, dueAt, overdueAt }) => ({ recipeId, sourceId, dueAt, overdueAt }));
+
+// 연체 recipe의 정의는 한 곳이다: 연체 행이 있는 recipe와 그에 의존하는 recipe. 의존 recipe는 의존 대상이 돌 때만 다시 등록되므로 함께 연체다.
+const overdueRecipeIdsOf = (overdueRows, recipes) => withDependents(overdueRows.map(({ recipeId }) => recipeId), recipes);
+
+/** 재확인 기한을 넘긴 recipe와 그에 의존하는 recipe(recipe 표 순서). */
+export function overdueReverificationRecipes({ inventory, ledger, policy, now, recipes = REVERIFICATION_RECIPES } = {}) {
+  return overdueRecipeIdsOf(overdueRowsOf(sourceReverificationDue({ inventory, ledger, policy, now, recipes })), recipes);
 }
 
 // PR 없는 claim의 처지를 producer run(claim 브랜치 이름의 run id)으로 가린다. 복구는 하지 않는다(정리하고 다시 시작한다).
@@ -205,18 +225,19 @@ export function decideSourceReverification({ inventory, ledger, policy, pullRequ
   assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits });
   const dueRows = sourceReverificationDue({ inventory, ledger, policy, now, recipes });
   const blockedIds = blockedRecipeIds({ openIssues, recipes });
-  const selected = selectRecipes(dueRows, recipes);
+  const selected = withDependents(dueRows.filter(isDue).map(({ recipeId }) => recipeId), recipes);
   const recipeIds = selected.filter((id) => !blockedIds.has(id));
   const blocked = selected.filter((id) => blockedIds.has(id));
-  const due = dueRows.filter(({ state, recipeId }) => state === "DUE" && !blockedIds.has(recipeId)).map(({ recipeId, sourceId, dueAt }) => ({ recipeId, sourceId, dueAt }));
+  const due = dueRows.filter((row) => isDue(row) && !blockedIds.has(row.recipeId)).map(({ recipeId, sourceId, dueAt }) => ({ recipeId, sourceId, dueAt }));
+  const overdue = overdueRowsOf(dueRows);
   const { state, branch, cleanupClaims } = classifyClaims({ pullRequests, automationBranches, runs, repository });
-  if (state) return { state, branch, due: [], recipes: [], cleanupClaims };
-  if (recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, cleanupClaims };
+  if (state) return { state, branch, due: [], recipes: [], cleanupClaims, overdue };
+  if (recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, cleanupClaims, overdue };
   const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow: SOURCE_REVERIFICATION_WORKFLOW });
   const blockedBy = [...pending.pullRequests, ...pending.branches];
   return blockedBy.length > 0
-    ? { state: "BLOCKED_BY_PENDING_PR", blockedBy, due, recipes: recipeIds, blocked, cleanupClaims }
-    : { state: "RUN", due, recipes: recipeIds, blocked, cleanupClaims };
+    ? { state: "BLOCKED_BY_PENDING_PR", blockedBy, due, recipes: recipeIds, blocked, cleanupClaims, overdue }
+    : { state: "RUN", due, recipes: recipeIds, blocked, cleanupClaims, overdue };
 }
 
 function parseArgs(argv) {
@@ -250,7 +271,8 @@ export async function main(argv, {
   if (values.githubOutput) {
     await appendText(values.githubOutput, [
       `state=${result.state}`, `branch=${result.branch ?? ""}`, `recipes=${result.recipes.join(",")}`,
-      `cleanup_claims=${result.cleanupClaims.join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, `blocked_recipes=${(result.blocked ?? []).join(",")}`, "",
+      `cleanup_claims=${result.cleanupClaims.join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, `blocked_recipes=${(result.blocked ?? []).join(",")}`,
+      `overdue_recipes=${overdueRecipeIdsOf(result.overdue, REVERIFICATION_RECIPES).join(",")}`, "",
     ].join("\n"));
   }
   return result;

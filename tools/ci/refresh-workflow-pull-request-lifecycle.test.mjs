@@ -157,6 +157,9 @@ test("OPEN_PR이면 App 토큰 발급 → required CI 보장(close→reopen) →
     assert.match(ageBlock, new RegExp(`node tools/ci/refresh-open-pr-age\\.mjs --workflow ${file.replaceAll(".", "\\.")} --prs "\\$\\{open_prs\\}" --policy release/product-gates/datapack-freshness-sla\\.json --repository "\\$\\{GITHUB_REPOSITORY\\}" --ci-state ${ciState}`, "u"), file);
     const report = find("Report refresh failure as an issue");
     assert.ok(report > age, file);
-    assert.equal(ifCondition(all[report].block), SINGLE_PR_PATH_WORKFLOWS.includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}", file);
+    // #3036: 원천 재확인은 재확인 기한을 넘긴 recipe가 있으면 대기로 성공한 run도 보고한다.
+    const failedOrCancelled = SINGLE_PR_PATH_WORKFLOWS.includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}";
+    const reportCondition = { "source-reverification.yml": "${{ failure() || cancelled() || steps.decision.outputs.overdue_recipes != '' }}" }[file] ?? failedOrCancelled;
+    assert.equal(ifCondition(all[report].block), reportCondition, file);
   }
 });

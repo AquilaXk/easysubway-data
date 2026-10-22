@@ -256,7 +256,12 @@ test("every scheduled source refresh workflow reports its own failure as an issu
       : "Report refresh failure as an issue";
     const body = stepBody(yml, stepName);
     // #972 리뷰: 등록 workflow는 취소·시간 초과로 끝난 실행도 보고한다(PR 없는 claim이 조용히 남지 않게).
-    const condition = ["current-capital-topology-registration.yml", "nationwide-candidate-refresh.yml", "source-derivative-rebinding.yml", "source-reverification.yml", "itx-current-promotion.yml"].includes(file) ? String.raw`failure\(\) \|\| cancelled\(\)` : String.raw`failure\(\)`;
+    // #3036: 원천 재확인은 재확인 기한을 넘긴 recipe가 있으면 대기로 성공한 run도 보고한다.
+    const failedOrCancelled = String.raw`failure\(\) \|\| cancelled\(\)`;
+    const condition = {
+      "source-reverification.yml": String.raw`${failedOrCancelled} \|\| steps\.decision\.outputs\.overdue_recipes != ''`,
+      ...Object.fromEntries(["current-capital-topology-registration.yml", "nationwide-candidate-refresh.yml", "source-derivative-rebinding.yml", "itx-current-promotion.yml"].map((name) => [name, failedOrCancelled])),
+    }[file] ?? String.raw`failure\(\)`;
     assert.match(body, new RegExp(String.raw`\n        if: \$\{\{ ${condition} \}\}\n`, "u"), `${file} must report only on failure`);
     assert.match(body, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
     assert.ok(body.includes(
@@ -450,6 +455,37 @@ test("CLI의 --failures 파일은 기대 관측 변경 실패만 표지로 옮�
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// #3036 7-26: 재확인 기한을 넘긴 recipe는 대기 run이 성공으로 끝나도 같은 실패 이슈 경로로 드러난다. 실패 즉시 보고는 그대로다.
+test("재확인 기한을 넘긴 recipe(overdue)는 run이 성공이어도 실패 이슈를 열고, 열린 이슈에는 run과 연체 recipe를 기록한다 (#3036)", () => {
+  const created = reverificationReport(9, start, { openIssues: [], overdue: ["busan-topology"] });
+  assert.equal(created.action, "create");
+  assert.match(created.body, /재확인 기한을 넘긴 recipe: `busan-topology`/u);
+  assert.ok(created.body.includes(runUrl(9)));
+  assert.doesNotMatch(created.body, /가 실패했다/u, "대기 run은 실패하지 않았다");
+  const issue = { number: 5, title: created.title, body: created.body, author: { login: "app/github-actions" }, createdAt: start.toISOString(), comments: [] };
+  const nextDay = reverificationReport(10, new Date(start.getTime() + hours(25)), { openIssues: [issue], overdue: ["busan-topology"] });
+  assert.equal(nextDay.action, "comment");
+  assert.match(nextDay.body, /재확인 기한을 넘긴 recipe: `busan-topology`/u);
+  assert.doesNotMatch(nextDay.body, /다시 실패했다/u);
+  assert.ok(nextDay.issueBody.includes(runUrl(10)));
+  // 연체가 없으면 지금과 같은 실패 보고다.
+  assert.match(reverificationReport(11, start, { openIssues: [] }).body, /가 실패했다/u);
+});
+
+test("CLI의 --overdue는 쉼표로 나눈 recipe id이고 빈 값은 연체 없음이며, 식별자가 아니면 GitHub에 쓰기 전에 실패한다 (#3036)", async () => {
+  const writes = [];
+  const cli = (value) => reportRefreshFailure({
+    argv: ["--workflow", reverificationFile, "--repository", repository, "--run-id", "9", "--failures", path.join(os.tmpdir(), "absent-reverification-failures.json"), "--overdue", value],
+    runGh: async (args) => { if (args[1] !== "list") writes.push(args[1]); return args[1] === "list" ? "[]" : ""; }, now: () => start,
+  });
+  assert.match((await cli("busan-topology,daegu-sources")).body, /재확인 기한을 넘긴 recipe: `busan-topology`, `daegu-sources`/u);
+  assert.doesNotMatch((await cli("")).body, /재확인 기한/u);
+  const before = writes.length;
+  await assert.rejects(cli("busan topology"), /REFRESH_FAILURE_REPORT_OVERDUE/u);
+  await assert.rejects(cli("busan-topology,"), /REFRESH_FAILURE_REPORT_OVERDUE/u);
+  assert.equal(writes.length, before);
 });
 
 test("recordedRunIdsOf는 봇이 쓴 본문과 봇의 알림 댓글에 적힌 run만 읽는다 (#1287)", async () => {

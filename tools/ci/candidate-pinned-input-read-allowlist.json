@@ -12,6 +12,7 @@
     {
       "testFile": "tools/ci/build-automation-status.test.mjs",
       "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
         "tools/datapack/source-inventory.json"
       ],
       "reason": "CI 자동화·재검증 정책 테스트가 작업 트리 설정·인벤토리·SLA 계약을 기본 템플릿으로 읽는다."

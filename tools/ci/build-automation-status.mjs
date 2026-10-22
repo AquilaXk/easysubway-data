@@ -6,6 +6,7 @@
 // - 시간이 지나며 변하는 판정(만료 임박 등)은 snapshot에 넣지 않고 backend가 렌더 시각으로 계산한다.
 // - 곧 만료되는 원천 근거(expiringSources, data#1116, backend#507)는 source-inventory.json의 freshUntil에서 만들고 만료 시각만 싣는다(남은 시간은 backend가 렌더 시각으로 계산).
 //   backend가 선택 필드로 받아 배포하기 전에는 보내면 게시가 400으로 실패하므로 AUTOMATION_STATUS_SOURCE_FRESHNESS가 true일 때만 싣는다(workflow 변수 DATAPACK_AUTOMATION_STATUS_FRESHNESS).
+//   같은 변수로 원장(source-snapshots.json)과 신선도 정책도 읽는다. 재확인 recipe의 연체는 run이 아니라 원장 head로 정한다(#3036).
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -22,6 +23,7 @@ import {
 } from "./automation-pr-policy.mjs";
 import { planBehindRecreation } from "./automation-pr-recreate.mjs";
 import { parseDeployRunName } from "./datapack-release-chain.mjs";
+import { overdueReverificationRecipes } from "./decide-source-reverification.mjs";
 import { REFRESH_STAGES } from "./refresh-stage-contracts.mjs";
 
 export const SNAPSHOT_MAX_BYTES = 64 * 1024;
@@ -42,7 +44,12 @@ const SOURCE_ID = /^[a-z0-9][a-z0-9-]{0,99}$/u;
 const EVIDENCE_KEY = /^[A-Za-z][A-Za-z0-9]{0,63}$/u;
 const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
 const SOURCE_NAME_MAX_CHARS = 200;
-const SOURCE_INVENTORY_PATH = "tools/datapack/source-inventory.json";
+const SOURCE_FRESHNESS_INPUTS = Object.freeze({
+  sourceInventory: "tools/datapack/source-inventory.json",
+  sourceLedger: "tools/datapack/release/source-snapshots.json",
+  freshnessPolicy: "release/product-gates/datapack-freshness-sla.json",
+});
+const REVERIFICATION_STAGE = "source-reverification";
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 export const STATUS_STAGES = Object.freeze([
@@ -133,7 +140,7 @@ export function sourceRefreshStages() {
     for (const sourceId of Object.keys(spec.owned)) add(sourceId, stage);
   }
   for (const recipe of REVERIFICATION_RECIPES) {
-    for (const sourceId of recipe.sourceIds) add(sourceId, "source-reverification");
+    for (const sourceId of recipe.sourceIds) add(sourceId, REVERIFICATION_STAGE);
   }
   return stages;
 }
@@ -177,10 +184,11 @@ const FAILED_RUN_CONCLUSIONS = new Set(["failure", "timed_out", "startup_failure
 
 /**
  * 근거를 갱신하는 작업의 상태. 그 단계 workflow의 run 중 취소·건너뜀·neutral·진행 중을 건너뛰고 48시간 안에서 가장 최근의 success 또는 failure(failure·timed_out·startup_failure)로 정한다.
- * 그런 run이 없으면 정기 실행이 멈춘 단계이므로 FAILED다. 실패가 아니면 막힌 PR·주인 없는 claim·재생성 상한이 그 단계일 때 BLOCKED, 아니면 OK다.
+ * 그런 run이 없으면 정기 실행이 멈춘 단계이므로 FAILED다. 재확인 recipe의 원천은 어느 단계가 소유하든 그 recipe가 연체여도 FAILED다(#3036): 재확인 workflow는 실패 run 사이에
+ * 수집 없이 성공으로 끝나는 대기 run을 내고 소유 단계는 따로 성공할 수 있으므로 마지막 run만 보면 연체가 OK로 덮인다. 실패가 아니면 막힌 PR·주인 없는 claim·재생성 상한이 그 단계일 때 BLOCKED, 아니면 OK다.
  * 열린 실패 이슈는 쓰지 않는다: 이슈는 사람이 닫을 때까지 열려 있어 지금 실패 중인지를 말해 주지 못한다.
  */
-function refreshStateOf(stage, refreshRuns, stuck, now) {
+function refreshStateOf(sourceId, stage, { refreshRuns, stuck, now, overdueSourceIds }) {
   if (stage === undefined) return "NONE";
   const runs = refreshRuns[stage];
   if (!Array.isArray(runs)) throw statusError("RUNS_INVALID", `no run list for refresh stage ${stage}`);
@@ -193,6 +201,7 @@ function refreshStateOf(stage, refreshRuns, stuck, now) {
   }
   const [latest] = decisive.sort(newest);
   if (latest === undefined || FAILED_RUN_CONCLUSIONS.has(latest.conclusion)) return "FAILED";
+  if (overdueSourceIds.has(sourceId)) return "FAILED";
   const prefix = AUTOMATION_STAGE_PREFIXES[stage];
   const blocked = stuck.pulls.some((pull) => pull.stage === stage)
     || stuck.claims.some((claim) => claim.branch.startsWith(prefix))
@@ -217,30 +226,37 @@ const severityRank = (item, nowMillis) => {
 };
 
 /** 원천 하나의 목록 항목. 대상이 아니면(사용 불가, 근거 없음) null이고, 값이 어긋나면 채우지 않고 실패한다. 만료된 근거도 언제 만료됐든 싣는다. */
-function expiringSourceOf(source, { now, refreshStages, refreshRuns, stuck }) {
+function expiringSourceOf(source, context) {
   if (source.productionUseAllowed !== true) return null;
   const freshness = earliestFreshness(source);
   if (freshness === null) return null;
   if (!SOURCE_ID.test(source.id)) throw inventoryError(`source id ${source.id} does not match the snapshot contract`);
   if (!EVIDENCE_KEY.test(freshness.evidence)) throw inventoryError(`source ${source.id} evidence key ${freshness.evidence} does not match the snapshot contract`);
-  const refreshStage = refreshStages.get(source.id);
+  const refreshStage = context.refreshStages.get(source.id);
   return {
     sourceId: source.id,
     name: sourceName(source.displayName, source.id),
     evidence: freshness.evidence,
     freshUntil: new Date(freshness.millis).toISOString(),
     refreshStage: refreshStage ?? null,
-    refreshState: refreshStateOf(refreshStage, refreshRuns, stuck, now),
+    refreshState: refreshStateOf(source.id, refreshStage, context),
   };
+}
+
+/** 연체인 재확인 recipe(의존 recipe 포함)가 소유한 원천. 원장·정책을 읽지 못하면 채우지 않고 실패한다. */
+function overdueReverificationSourceIds({ inventory, ledger, policy, now }) {
+  const overdue = new Set(overdueReverificationRecipes({ inventory, ledger, policy, now }));
+  return new Set(REVERIFICATION_RECIPES.filter(({ id }) => overdue.has(id)).flatMap(({ sourceIds }) => sourceIds));
 }
 
 /**
  * 곧 만료되는 원천 근거 후보를 모두 만든 뒤 심각도 순(만료 > FAILED·BLOCKED·NONE > OK), 같은 심각도 안에서는 만료가 이른 순서(같은 시각이면 sourceId 순)로 정렬해
  * 상위 EXPIRING_SOURCE_LIMIT개를 남긴다. 자르기 전 후보 개수를 함께 돌려준다. 사용 가능한(productionUseAllowed) 원천만 대상이고 값이 어긋나면 채우지 않고 실패한다.
  */
-function buildExpiringSources({ inventory, now, refreshRuns, stuck }) {
+function buildExpiringSources({ inventory, ledger, policy, now, refreshRuns, stuck }) {
   if (inventory === null || typeof inventory !== "object" || !Array.isArray(inventory.sources)) throw inventoryError("inventory has no sources array");
-  const context = { now, refreshStages: sourceRefreshStages(), refreshRuns, stuck };
+  const overdueSourceIds = overdueReverificationSourceIds({ inventory, ledger, policy, now });
+  const context = { now, refreshStages: sourceRefreshStages(), refreshRuns, stuck, overdueSourceIds };
   const seen = new Set();
   const candidates = [];
   for (const source of inventory.sources) {
@@ -256,24 +272,30 @@ function buildExpiringSources({ inventory, now, refreshRuns, stuck }) {
   return { expiringSources: candidates.toSorted(bySeverity).slice(0, EXPIRING_SOURCE_LIMIT), expiringSourcesTotalCount: candidates.length };
 }
 
-/**
- * AUTOMATION_STATUS_SOURCE_FRESHNESS가 true일 때만 source-inventory.json을 읽는다. 꺼짐·미설정이면 undefined(필드를 싣지 않는다).
- * 켜졌는데 읽지 못하거나 알 수 없는 값이면 채우지 않고 실패한다.
- */
-export async function loadSourceInventory({ env = process.env, root = REPOSITORY_ROOT } = {}) {
-  const flag = env.AUTOMATION_STATUS_SOURCE_FRESHNESS;
-  if (flag === undefined || flag === "" || flag === "false") return undefined;
-  if (flag !== "true") throw statusError("ENV_INVALID", "AUTOMATION_STATUS_SOURCE_FRESHNESS must be true, false or empty");
-  const text = await readFile(path.join(root, SOURCE_INVENTORY_PATH), "utf8");
+async function readJsonInput(root, relative) {
+  const text = await readFile(path.join(root, relative), "utf8");
   try {
     return JSON.parse(text);
   } catch {
-    throw inventoryError("source inventory is not valid JSON");
+    throw inventoryError(`${relative} is not valid JSON`);
   }
 }
 
+/**
+ * AUTOMATION_STATUS_SOURCE_FRESHNESS가 true일 때만 inventory·원장·신선도 정책을 읽는다. 꺼짐·미설정이면 undefined(필드를 싣지 않는다).
+ * 켜졌는데 하나라도 읽지 못하거나 알 수 없는 값이면 채우지 않고 실패한다.
+ */
+export async function loadSourceFreshnessInputs({ env = process.env, root = REPOSITORY_ROOT } = {}) {
+  const flag = env.AUTOMATION_STATUS_SOURCE_FRESHNESS;
+  if (flag === undefined || flag === "" || flag === "false") return undefined;
+  if (flag !== "true") throw statusError("ENV_INVALID", "AUTOMATION_STATUS_SOURCE_FRESHNESS must be true, false or empty");
+  const entries = await Promise.all(Object.entries(SOURCE_FRESHNESS_INPUTS).map(async ([key, relative]) => [key, await readJsonInput(root, relative)]));
+  return Object.fromEntries(entries);
+}
+
 export function buildAutomationStatus({
-  now, repository, manifest, stageRuns = {}, issues = [], openPulls = [], claimRefs = [], behind = { actions: [], anomalies: [] }, sourceInventory, refreshRuns = {},
+  now, repository, manifest, stageRuns = {}, issues = [], openPulls = [], claimRefs = [], behind = { actions: [], anomalies: [] },
+  sourceInventory, sourceLedger, freshnessPolicy, refreshRuns = {},
 }) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw statusError("CLOCK");
   if (typeof repository !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) throw statusError("ENV_INVALID", "repository");
@@ -319,7 +341,7 @@ export function buildAutomationStatus({
   };
   // 선택 필드: 인벤토리를 주었을 때만 싣는다(backend가 받기 전에는 주지 않는다).
   if (sourceInventory !== undefined) {
-    Object.assign(snapshot, buildExpiringSources({ inventory: sourceInventory, now, refreshRuns, stuck: snapshot.stuck }));
+    Object.assign(snapshot, buildExpiringSources({ inventory: sourceInventory, ledger: sourceLedger, policy: freshnessPolicy, now, refreshRuns, stuck: snapshot.stuck }));
   }
   return snapshot;
 }
@@ -431,10 +453,10 @@ export async function main(env = process.env, { execGhImpl = execGh, fetchImpl =
   const appApi = ghApi(env.APP_READ_TOKEN, execGhImpl);
   const manifestBase = env.CHAIN_DATAPACK_BASE_URL;
   if (typeof manifestBase !== "string" || !manifestBase.startsWith("https://")) throw statusError("ENV_INVALID", "CHAIN_DATAPACK_BASE_URL");
-  const sourceInventory = await loadSourceInventory({ env });
+  const sourceFreshness = await loadSourceFreshnessInputs({ env });
   const collected = await collectAutomationStatus({
     now: new Date(),
-    refreshWorkflows: sourceInventory === undefined ? undefined : refreshWorkflowsOf(),
+    refreshWorkflows: sourceFreshness === undefined ? undefined : refreshWorkflowsOf(),
     repositories,
     apis: { data: dataApi, hub: appApi, platform: appApi },
     listFailureIssues: async () => JSON.parse(await execGhImpl([
@@ -447,7 +469,7 @@ export async function main(env = process.env, { execGhImpl = execGh, fetchImpl =
       return response.json();
     },
   });
-  const snapshot = buildAutomationStatus({ ...collected, sourceInventory });
+  const snapshot = buildAutomationStatus({ ...collected, ...sourceFreshness });
   // 결과 사본은 러너 임시 디렉터리의 고정 이름 파일에만 쓴다(경로를 입력으로 받지 않는다).
   const tempDirectory = env.RUNNER_TEMP;
   if (typeof tempDirectory === "string" && path.isAbsolute(tempDirectory)) {
