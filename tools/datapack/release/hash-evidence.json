@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "115bd37d6567d4661acd81464f1edd41072f3d68",
+  "builderGitSha": "bc550ad89db2806b35ce4e98f912c545c9472aeb",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -12,7 +12,7 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "4b4ee7690117d100bc225c3cba57289c8c89fda3f7aef51abfb0767b645f6f70",
+      "value": "7a133275cd647af6df468b44c9151f1e656580892a4818357b59b4fd2499f51c",
       "exporterKind": "facility-evidence",
       "rowCount": 919,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "7772565bdc265e8da166dfeded23f96c42fcd8db23e78b3f3fe2724de25a5db9"
+    "value": "ab106b65ef7c7bf60a7cc18a46cc3a61df5f23f03b5f592be37e73cbee8b4f37"
   },
   "sourceInventorySha256": {
-    "value": "f48f8e675a4d153f20f0b1b76a1d8fa07e3ce550b2a5202157a39f2da7772ed8"
+    "value": "71dcd9f615b7894ac17eeeecb2996e085f15ac8aa0899c01905ca433c6d2f55f"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "da8b466c7579c06f6643ea28536da5edab64f78e6f4c771f739cfa18ad56f327"
+    "sha256": "0d4bda5fdbc24eb0132690bfe4180f7bbf154a418bb7cab2ef5fbad192fabfe8"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261021-seq169"
+      "value": "nationwide-candidate-20261022-seq170"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261021-seq169"
+      "value": "release-request-nationwide-candidate-20261022-seq170"
     }
   },
   "perSourceEvidence": [
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "c6037eba8ed19503ea7fce86f80a440672381fe02bbb73f77cfdb8182e54f8fa"
+      "perSourceSnapshotSetHash": "6fc2a6b5c19ba2803e20c34bd5ed54a0b2c4de2805bfa744ca4ee41f7cd7e11d"
     },
     {
       "sourceId": "incheon-transit-accessibility",
@@ -130,25 +130,6 @@
         }
       ],
       "perSourceSnapshotSetHash": "29dbaf5ca1162ac0fd2a3131fa4e2b4213ac1e563790df8d97d69b9c8816a5f6"
-    },
-    {
-      "sourceId": "capital-route-topology",
-      "snapshotId": "capital-route-topology-20261021",
-      "rawSha256": "bcc1456b5a1077f815929fedb3b31d40f7c8dd699c1e985a43e9c38662f72b21",
-      "admissionRecordSha256s": [
-        {
-          "kind": "capitalTopologyAdmissionEvidence",
-          "sha256": "493752f05f950084f0cedbe1d03592ddeb9219580a419daeb9134cbea7835ee3"
-        }
-      ],
-      "perSourceSnapshotSetHash": "31aa06cc3d4c57e62eebdc4ffe0f8e2c618f6bac7661735e4a052b961bb911f9"
-    },
-    {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20261021T074144819Z",
-      "rawSha256": "cea56a035de3ecc76818e164400feb250651a4bef3f1bdcebfa45da2372b1add",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "06083279ef615ecb9b23365372565b3ea5eef256d168c7909bc9f4a5cda1f1cf"
     },
     {
       "sourceId": "gwangju-transportation-route-topology",
@@ -343,6 +324,25 @@
         }
       ],
       "perSourceSnapshotSetHash": "fd5c9e52d7f34e330a77812208fae1217a6c4c7f9a84782d50b8d534b1cb311e"
+    },
+    {
+      "sourceId": "capital-route-topology",
+      "snapshotId": "capital-route-topology-20261022",
+      "rawSha256": "508c2375e0f008587981d070f13c3d7fc1d8cb8e004fc9ba559a01d0bc86bb88",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "133ee908b5cb69aa0df86d45922af91de99d8a8c8325752afffce8670b37f148"
+        }
+      ],
+      "perSourceSnapshotSetHash": "446d78062ca0e989e1d9ced1432c56e929a0ba6f1408018d5320f4d6403700cf"
+    },
+    {
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20261022T021747621Z",
+      "rawSha256": "309eee0f0c297dd022f10ecb095702a51fd73765ee6ba68fb4ddc5f66a3ff521",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "1f3558fe2083290ef0ce7c6e1e2e65b12db11c2604ec4637509f30fbe7a6b869"
     }
   ],
   "officialOdFareEvidence": {
