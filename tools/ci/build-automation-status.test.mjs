@@ -12,7 +12,7 @@ import {
   STATUS_STAGES,
   buildAutomationStatus,
   collectAutomationStatus,
-  loadSourceInventory,
+  loadSourceFreshnessInputs,
   main,
   postAutomationStatus,
   refreshWorkflowsOf,
@@ -704,8 +704,11 @@ test("표시 이름은 제어·양방향 문자를 지우고 200자로 제한한
 
 test("실제 source-inventory.json으로 만들어도 backend 계약(키·형식·정렬·상한)을 지킨다", () => {
   const inventory = JSON.parse(readFileSync(new URL("../datapack/source-inventory.json", import.meta.url), "utf8"));
+  // 재확인 판정은 관측 시각보다 이른 시각을 거부한다(clock skew). 실데이터 기준 시각은 KRIC projection의 마지막 관측 시각부터 잡는다.
+  const kric = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  const observedUntil = Math.max(Date.parse(kric.capitalScheduleAdmissionEvidence.observedAt), Date.parse(kric.korailScheduleAdmissionEvidence.observedAt));
   for (const hours of [0, 12, 300]) {
-    const at = new Date(Date.parse("2026-10-10T08:00:00.000Z") + hours * 3_600_000);
+    const at = new Date(observedUntil + hours * 3_600_000);
     const snapshot = buildAutomationStatus({ ...emptyInputs(), now: at, sourceInventory: inventory, refreshRuns: refreshRunsOf() });
     const list = snapshot.expiringSources;
     assert.ok(list.length <= EXPIRING_SOURCE_LIMIT);
@@ -731,21 +734,35 @@ test("실제 source-inventory.json으로 만들어도 backend 계약(키·형식
   }
 });
 
-test("loadSourceInventory: 변수가 true일 때만 인벤토리를 읽고, 꺼짐·미설정이면 undefined, 알 수 없는 값은 실패한다", async () => {
+test("loadSourceFreshnessInputs: 변수가 true일 때만 inventory·원장·신선도 정책을 읽고, 꺼짐·미설정이면 undefined, 알 수 없는 값·하나라도 못 읽으면 실패한다", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "status-inventory-"));
+  const files = {
+    "tools/datapack/source-inventory.json": inventoryOf(evidenceSource("a", 1)),
+    "tools/datapack/release/source-snapshots.json": reverificationLedger(),
+    "release/product-gates/datapack-freshness-sla.json": FRESHNESS_POLICY,
+  };
+  const load = (env, at = root) => loadSourceFreshnessInputs({ env, root: at });
+  const enabled = { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" };
   try {
-    await mkdir(path.join(root, "tools/datapack"), { recursive: true });
-    await writeFile(path.join(root, "tools/datapack/source-inventory.json"), JSON.stringify(inventoryOf(evidenceSource("a", 1))));
-    assert.equal(await loadSourceInventory({ env: {}, root }), undefined);
-    assert.equal(await loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "" }, root }), undefined);
-    assert.equal(await loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "false" }, root }), undefined);
-    assert.equal((await loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" }, root })).sources[0].id, "a");
-    for (const bad of ["TRUE", "1", "yes", " true"]) {
-      await assert.rejects(loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: bad }, root }), /STATUS_ENV_INVALID/u);
+    for (const [relative, value] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+      await writeFile(path.join(root, relative), JSON.stringify(value));
     }
-    await assert.rejects(loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" }, root: path.join(root, "missing") }), /ENOENT|STATUS_INVENTORY_INVALID/u);
-    await writeFile(path.join(root, "tools/datapack/source-inventory.json"), "{not json");
-    await assert.rejects(loadSourceInventory({ env: { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" }, root }), /STATUS_INVENTORY_INVALID/u);
+    assert.equal(await load({}), undefined);
+    assert.equal(await load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: "" }), undefined);
+    assert.equal(await load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: "false" }), undefined);
+    assert.deepEqual(await load(enabled), {
+      sourceInventory: files["tools/datapack/source-inventory.json"], sourceLedger: files["tools/datapack/release/source-snapshots.json"], freshnessPolicy: FRESHNESS_POLICY,
+    });
+    for (const bad of ["TRUE", "1", "yes", " true"]) {
+      await assert.rejects(load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: bad }), /STATUS_ENV_INVALID/u);
+    }
+    await assert.rejects(load(enabled, path.join(root, "missing")), /ENOENT/u);
+    for (const relative of Object.keys(files)) {
+      await writeFile(path.join(root, relative), "{not json");
+      await assert.rejects(load(enabled), new RegExp(`STATUS_INVENTORY_INVALID: ${relative}`, "u"));
+      await writeFile(path.join(root, relative), JSON.stringify(files[relative]));
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

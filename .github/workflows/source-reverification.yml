@@ -6,6 +6,7 @@ name: Source Reverification
 # - 결과는 App 토큰 PR 하나다. 본문에 source-reverification 증거 블록이 붙고, 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA)를 통과해야 한다.
 # - 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_SOURCE_REVERIFICATION이 true일 때만 돈다(기본 꺼짐). 사람 dispatch는 항상 돈다.
 # - 이상(수집 실패·등록 실패·sha 드리프트·수치 급변·판정 불가·CI 실패·방치)은 job을 실패시키고 실패 이슈(#926 경로)로 드러난다. 이전 데이터로 대체하지 않는다.
+# - 재확인 기한을 넘긴 recipe(판정의 overdue_recipes, #3036)는 run이 대기로 성공해도 같은 실패 이슈에 기록한다. job 결론은 바꾸지 않는다(막힘 재dispatch는 성공 run을 본다).
 # - recipe 하나가 실패해도 나머지 recipe의 등록은 PR로 올라간다(#1102). 의존 묶음(topology와 그에 결속되는 recipe)은 전부 등록되거나 전부 되돌려지고, 실패한 recipe는 PR 뒤 마지막 step이 job을 실패시켜 드러낸다.
 on:
   schedule:
@@ -269,8 +270,10 @@ jobs:
           set -euo pipefail
           node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
       - name: Report refresh failure as an issue
-        if: ${{ failure() || cancelled() }}
+        if: ${{ failure() || cancelled() || steps.decision.outputs.overdue_recipes != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          OVERDUE_RECIPES: ${{ job.status == 'success' && steps.decision.outputs.overdue_recipes || '' }}
         # #1122: controller가 남긴 실패 목록(없을 수 있다)에서 기대 관측 변경 실패를 이슈에 표지로 남긴다.
-        run: node tools/ci/report-refresh-failure.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --failures "${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}/operation/failures.json"
+        # #3036: 실패하지 않은 대기 run만 연체 recipe를 넘긴다(실패·취소 run은 지금처럼 실패로 적는다).
+        run: node tools/ci/report-refresh-failure.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --failures "${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}/operation/failures.json" --overdue "${OVERDUE_RECIPES}"
