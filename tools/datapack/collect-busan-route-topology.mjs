@@ -6,7 +6,7 @@ import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode } from "./lib/source-collection-retry.mjs";
+import { fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, withRequestInterval } from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
@@ -37,18 +37,20 @@ export async function collectBusanRouteTopology({
   serviceKey,
   stationCode = null,
   stationScopes = null,
-  fetchImpl = fetch,
+  fetchImpl: providerFetch = fetch,
   now = new Date(),
   concurrency = 4,
   sleepImpl = sleep,
   retryBudget,
   randomImpl,
+  requestIntervalMs = 0,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
   const scope = stationScopes == null ? null : validateStationScopes(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   if (typeof sleepImpl !== "function") throw new TypeError("sleepImpl must be a function");
+  const fetchImpl = withRequestInterval(providerFetch, { intervalMs: requestIntervalMs, sleep: sleepImpl });
   const requestCodes = scope ? scope.map(({ stationCode: code }) => code) : [stationCode];
   const responses = new Array(requestCodes.length);
   let next = 0;
@@ -658,10 +660,12 @@ function parseArgs(argv) {
   return { output: argv[1], scopeHtml: argv[2] === "--scope-html" ? argv[3] : null, stationCode: argv[2] === "--scode" ? argv[3] : null };
 }
 
-async function main(argv) {
+export async function main(argv, { env = process.env, fetchImpl, sleepImpl, randomImpl } = {}) {
   const { output, scopeHtml, stationCode } = parseArgs(argv);
   const stationScopes = scopeHtml ? parseBusanRouteTopologyScope(await readFile(scopeHtml, "utf8")) : null;
-  const snapshot = await collectBusanRouteTopology({ serviceKey: process.env.DATA_GO_KR_SERVICE_KEY, stationCode, stationScopes });
+  const snapshot = await collectBusanRouteTopology({
+    serviceKey: env.DATA_GO_KR_SERVICE_KEY, stationCode, stationScopes, fetchImpl, sleepImpl, randomImpl, requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
+  });
   if (stationCode) throw new Error(`diagnostic station response is not admissible: scode=${stationCode}; edges=${snapshot.edgeCount}`);
   const admission = admitBusanRouteTopology(snapshot);
   await writeFile(output, `${JSON.stringify({ ...snapshot, admission }, null, 2)}\n`, { mode: 0o600 });

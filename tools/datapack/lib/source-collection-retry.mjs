@@ -196,6 +196,33 @@ export function withSourceCollectionRetry(attempt, {
   }).finally(() => flushAttempt(null));
 }
 
+// 부산교통공사 OpenAPI(data.humetro.busan.kr)는 한 runner가 동시 4건으로 몰아 보내면 약 170~210번째 요청에서 모든 연결이 끊긴 채 재시도 창(약 40초)을 넘긴다.
+// 평균 초당 2.8건으로 흩어진 run은 끊김이 없었으므로 시작을 초당 2건으로 늦춘다(data #1359에 run별 계측).
+export const HUMETRO_REQUEST_INTERVAL_MS = 500;
+const MAX_REQUEST_INTERVAL_MS = 60_000;
+const defaultSleep = (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds); });
+
+/**
+ * fetch 시작 사이를 intervalMs 이상 벌린다. 동시 worker가 같은 fetch를 써도 시작은 하나씩 차례로 열린다. 재시도도 같은 fetch를 지나므로 간격을 지킨다.
+ * @param {Function} fetchImpl
+ * @param {{ intervalMs: number, sleep?: (milliseconds: number) => Promise<void> }} options intervalMs 0이면 fetchImpl을 그대로 돌려준다.
+ */
+export function withRequestInterval(fetchImpl, { intervalMs, sleep = defaultSleep }) {
+  if (!Number.isSafeInteger(intervalMs) || intervalMs < 0 || intervalMs > MAX_REQUEST_INTERVAL_MS) {
+    throw new Error(`SOURCE_COLLECTION_RETRY_ARGUMENTS: requestIntervalMs must be an integer from 0 to ${MAX_REQUEST_INTERVAL_MS}`);
+  }
+  if (intervalMs === 0) return fetchImpl;
+  let turn = Promise.resolve();
+  return async (...args) => {
+    const previous = turn;
+    let release;
+    turn = new Promise((resolve) => { release = resolve; });
+    await previous;
+    void sleep(intervalMs).then(release, release);
+    return fetchImpl(...args);
+  };
+}
+
 const SAFE_ERROR_CODE = /^[A-Za-z0-9._-]{1,32}$/u;
 
 /**

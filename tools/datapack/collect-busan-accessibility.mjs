@@ -3,7 +3,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
-import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode, transportFailureWithCode } from "./lib/source-collection-retry.mjs";
+import {
+  fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, transportFailureWithCode, withRequestInterval,
+} from "./lib/source-collection-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
@@ -22,16 +24,18 @@ const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 export async function collectBusanAccessibility({
   serviceKey,
   stationScopes,
-  fetchImpl = fetch,
+  fetchImpl: providerFetch = fetch,
   now = new Date(),
   concurrency = 4,
   sleepImpl,
   randomImpl,
+  requestIntervalMs = 0,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
   const scope = validateScope(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
+  const fetchImpl = withRequestInterval(providerFetch, { intervalMs: requestIntervalMs, sleep: sleepImpl });
   const responses = new Array(scope.length);
   let next = 0;
   let failure;
@@ -293,15 +297,19 @@ function requiredText(value, label) {
 
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }
 
-async function main(args = process.argv.slice(2)) {
+export async function main(args = process.argv.slice(2), { env = process.env, fetchImpl, sleepImpl, randomImpl } = {}) {
   const expected = ["--scope-snapshot", "--output"];
   if (args.length !== 4 || expected.some((flag, index) => args[index * 2] !== flag) || !path.isAbsolute(args[3])) {
     throw new Error("usage: collect-busan-accessibility.mjs --scope-snapshot <json> --output <absolute.json>");
   }
   const topology = JSON.parse(await readFile(args[1], "utf8"));
   const snapshot = await collectBusanAccessibility({
-    serviceKey: process.env.DATA_GO_KR_SERVICE_KEY,
+    serviceKey: env.DATA_GO_KR_SERVICE_KEY,
     stationScopes: topology.scope,
+    fetchImpl,
+    sleepImpl,
+    randomImpl,
+    requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
   });
   await writeFile(args[3], `${JSON.stringify(snapshot)}\n`, { mode: 0o600 });
   console.log(`sanitized Busan accessibility snapshot ready: rows=${snapshot.rowCount}`);

@@ -5,9 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { busanTimetableCounts, collectBusanTimetable } from "./collect-busan-timetable.mjs";
+import { busanTimetableCounts, collectBusanTimetable, main } from "./collect-busan-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { defineDataGoKrResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineCliRequestIntervalTests, defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   prepareBusanTimetableRegistration,
@@ -422,6 +422,38 @@ defineSourceCollectionRetryTests({
     sleepImpl,
     randomImpl: () => 0,
   }),
+});
+
+defineRequestIntervalTests({
+  name: "부산 timetable collector",
+  delegate: stationTimetableFetch,
+  run: ({ fetchImpl, sleepImpl, requestIntervalMs }) => collectBusanTimetable({
+    serviceKey: "fixture-key",
+    stationScopes: topology.scope,
+    now: new Date("2026-07-20T09:00:00.000Z"),
+    fetchImpl,
+    sleepImpl,
+    randomImpl: () => 0,
+    requestIntervalMs,
+  }),
+});
+
+// CLI 연결 계약(data #1359): main이 운영 요청 간격을 수집 함수에 넘기는지 실제 main 실행으로 고정한다.
+defineCliRequestIntervalTests({
+  name: "부산 timetable collector",
+  delegate: stationTimetableFetch,
+  run: async (io) => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "busan-timetable-cli-"));
+    try {
+      const scopeSnapshot = path.join(dir, "scope.json");
+      await writeFile(scopeSnapshot, JSON.stringify(topology));
+      await main(["--scope-snapshot", scopeSnapshot, "--output", path.join(dir, "out.json")], {
+        ...io, env: { DATA_GO_KR_SERVICE_KEY: "fixture-key" }, randomImpl: () => 0,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
 });
 
 // 부산교통공사 envelope resultCode 분류(공용 isTransientDataGoKrResultCode): 일시 코드(01·02·04·05·30·99)는 재시도하고, 그 밖은 즉시 실패한다.

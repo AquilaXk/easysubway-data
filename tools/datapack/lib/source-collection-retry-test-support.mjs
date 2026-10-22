@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { inspect } from "node:util";
 
+import { HUMETRO_REQUEST_INTERVAL_MS } from "./source-collection-retry.mjs";
+
 export const abortedByTimeout = () => Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
 
 /** 상태 줄은 정상인데 본문을 읽으면 timeout으로 끊기는 응답(계기가 된 부산 시간표 실패 모양). */
@@ -130,3 +132,73 @@ export const defineKricResultCodeRetryTests = (options) => defineResultCodeRetry
 
 /** 공공데이터포털 코드표(DATA_GO_KR_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
 export const defineDataGoKrResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: DATA_GO_KR_RESULT_CODE_ROWS, ...options });
+
+/**
+ * 가상 시계 타이머. sleep(ms)은 now + ms에 깨어나고, 깨울 타이머가 남아 있으면 drive가 가장 이른 것부터 시계를 그 시각으로 옮겨 깨운다.
+ * 동시 worker가 각자 기다리는 경우도 실제 시간처럼 겹쳐 흐르므로, 시작 시각의 간격으로 요청 간격 계약을 검증할 수 있다.
+ */
+function virtualTimers() {
+  const timers = [];
+  const clock = { now: 0 };
+  const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
+  const sleep = (milliseconds) => new Promise((resolve) => { timers.push({ at: clock.now + milliseconds, resolve }); });
+  const wakeEarliest = () => {
+    timers.sort((left, right) => left.at - right.at);
+    const next = timers.shift();
+    clock.now = Math.max(clock.now, next.at);
+    next.resolve();
+  };
+  const drive = (promise) => {
+    const state = { settled: false };
+    const outcome = promise.finally(() => { state.settled = true; });
+    const step = async () => {
+      await flushMicrotasks();
+      if (state.settled) return outcome;
+      if (timers.length > 0) wakeEarliest();
+      return step();
+    };
+    return step();
+  };
+  return { clock, sleep, drive };
+}
+
+async function assertRequestStartsSpaced({ delegate, run, intervalMs }) {
+  const timers = virtualTimers();
+  const starts = [];
+  const fetchImpl = async (...args) => {
+    starts.push(timers.clock.now);
+    return delegate(...args);
+  };
+  await timers.drive(run({ fetchImpl, sleepImpl: timers.sleep }));
+  assert.ok(starts.length > 1, "요청이 둘 이상이어야 간격을 잴 수 있다");
+  const gaps = starts.slice(1).map((start, index) => start - starts[index]);
+  assert.deepEqual(gaps.filter((gap) => gap < intervalMs), [], `요청 시작 간격이 ${intervalMs}ms보다 짧으면 안 된다`);
+}
+
+/**
+ * 요청 간격 계약(data #1359): requestIntervalMs를 받은 수집기는 동시 worker가 있어도 공급자 요청 시작 사이를 그 간격 이상 벌린다.
+ * @param {object} options
+ * @param {string} options.name 수집기 이름(테스트 제목).
+ * @param {Function} options.delegate 성공 응답을 만드는 fetch.
+ * @param {(io: { fetchImpl: Function, sleepImpl: Function, requestIntervalMs: number }) => Promise<unknown>} options.run 수집기를 기본 동시성으로 실행한다.
+ */
+export function defineRequestIntervalTests({ name, delegate, run }) {
+  const intervalMs = 500;
+  test(`${name}: requestIntervalMs를 받으면 요청 시작 사이를 그 간격 이상 벌린다`, () => assertRequestStartsSpaced({
+    delegate, intervalMs, run: (io) => run({ ...io, requestIntervalMs: intervalMs }),
+  }));
+}
+
+/**
+ * CLI 연결 계약(data #1359): 수집 함수의 기본 간격은 0이라, CLI main이 운영 간격을 넘기지 않으면 연타가 되살아난다.
+ * main을 그대로 실행해 공급자 요청 시작 사이가 운영 간격(HUMETRO_REQUEST_INTERVAL_MS) 이상인지 본다.
+ * @param {object} options
+ * @param {string} options.name CLI 이름(테스트 제목).
+ * @param {Function} options.delegate 성공 응답을 만드는 fetch.
+ * @param {(io: { fetchImpl: Function, sleepImpl: Function }) => Promise<unknown>} options.run CLI main을 fetch·sleep만 주입해 실행한다.
+ */
+export function defineCliRequestIntervalTests({ name, delegate, run }) {
+  test(`${name}: CLI는 운영 요청 간격으로 공급자 요청 시작 사이를 벌린다`, () => assertRequestStartsSpaced({
+    delegate, run, intervalMs: HUMETRO_REQUEST_INTERVAL_MS,
+  }));
+}
