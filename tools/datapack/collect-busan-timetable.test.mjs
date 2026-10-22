@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { busanTimetableCounts, collectBusanTimetable } from "./collect-busan-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { defineDataGoKrResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   prepareBusanTimetableRegistration,
@@ -421,6 +421,20 @@ defineSourceCollectionRetryTests({
     fetchImpl,
     sleepImpl,
     randomImpl: () => 0,
+  }),
+});
+
+defineRequestIntervalTests({
+  name: "부산 timetable collector",
+  delegate: stationTimetableFetch,
+  run: ({ fetchImpl, sleepImpl, requestIntervalMs }) => collectBusanTimetable({
+    serviceKey: "fixture-key",
+    stationScopes: topology.scope,
+    now: new Date("2026-07-20T09:00:00.000Z"),
+    fetchImpl,
+    sleepImpl,
+    randomImpl: () => 0,
+    requestIntervalMs,
   }),
 });
 

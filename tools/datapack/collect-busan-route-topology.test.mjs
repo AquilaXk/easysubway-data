@@ -10,7 +10,7 @@ import {
   parseBusanRouteTopologyScope,
   validateBusanRouteTopologySnapshot,
 } from "./collect-busan-route-topology.mjs";
-import { defineDataGoKrResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 // #1099·#1334: 일시 오류는 같은 요청을 full jitter(base 2초·cap 20초)로 최대 2번 다시 보낸다. 난수 0.5로 대기는 1·2초다. 재시도 대기와 예산은 테스트마다 격리한다.
@@ -231,6 +231,35 @@ test("#872 S3 커밋된 fan-in 선택 부산 snapshot의 raw 응답에서 환승
   assert.throws(() => extractBusanTransferRows(withoutRaw), /raw responses are required/);
 });
 
+/** scope의 이웃 관계를 그대로 돌려주는 정상 응답 fetch. */
+function adjacencyFetch(scope) {
+  const names = new Map(scope.map(({ stationCode, stationName }) => [stationCode, stationName]));
+  const byCode = new Map(scope.map((entry) => [entry.stationCode, entry]));
+  return async (url) => {
+    const stationCode = new URL(url).searchParams.get("scode");
+    const station = byCode.get(stationCode);
+    const items = station.neighborCodes.map((neighborCode) => `<item>
+        <startSn>${station.stationName}</startSn><startSc>${stationCode}</startSc>
+        <endSn>${names.get(neighborCode).replace(/역$/, "")}</endSn><endSc>${neighborCode}</endSc>
+        <dist>10</dist><time>60</time><stoppingTime>20</stoppingTime><exchange></exchange>
+      </item>`).join("");
+    return response(successXml(items));
+  };
+}
+
+defineRequestIntervalTests({
+  name: "부산 topology collector",
+  delegate: adjacencyFetch(parseBusanRouteTopologyScope(SCOPE_HTML)),
+  run: ({ fetchImpl, sleepImpl, requestIntervalMs }) => collect({
+    stationScopes: parseBusanRouteTopologyScope(SCOPE_HTML),
+    now: new Date("2026-07-20T00:00:00.000Z"),
+    fetchImpl,
+    sleepImpl,
+    randomImpl: () => 0,
+    requestIntervalMs,
+  }),
+});
+
 test("부산 topology collector는 공식 station/adjacency scope 전체를 bounded fan-out한다", async () => {
   const scope = parseBusanRouteTopologyScope(SCOPE_HTML);
   assert.equal(scope.length, 8);
@@ -240,19 +269,13 @@ test("부산 topology collector는 공식 station/adjacency scope 전체를 boun
   const names = new Map(scope.map(({ stationCode, stationName }) => [stationCode, stationName]));
   const byCode = new Map(scope.map((entry) => [entry.stationCode, entry]));
   const requested = [];
+  const adjacency = adjacencyFetch(scope);
   const snapshot = await collect({
     stationScopes: scope,
     now: new Date("2026-07-20T00:00:00.000Z"),
     fetchImpl: async (url) => {
-      const stationCode = new URL(url).searchParams.get("scode");
-      requested.push(stationCode);
-      const station = byCode.get(stationCode);
-      const items = station.neighborCodes.map((neighborCode) => `<item>
-        <startSn>${station.stationName}</startSn><startSc>${stationCode}</startSc>
-        <endSn>${names.get(neighborCode).replace(/역$/, "")}</endSn><endSc>${neighborCode}</endSc>
-        <dist>10</dist><time>60</time><stoppingTime>20</stoppingTime><exchange></exchange>
-      </item>`).join("");
-      return response(successXml(items));
+      requested.push(new URL(url).searchParams.get("scode"));
+      return adjacency(url);
     },
   });
   assert.deepEqual(requested.sort(), scope.map(({ stationCode }) => stationCode));

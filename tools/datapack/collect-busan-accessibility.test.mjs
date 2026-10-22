@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   assertErrorOmitsSecrets,
   defineDataGoKrResultCodeRetryTests,
+  defineRequestIntervalTests,
   defineSourceCollectionRetryTests,
 } from "./lib/source-collection-retry-test-support.mjs";
 import {
@@ -189,6 +190,20 @@ test("부산 accessibility collector는 credential 없는 provider·transport �
 });
 
 const stationResponse = (url) => response(topology.scope.find(({ stationCode }) => stationCode === new URL(url).searchParams.get("scode")).stationName);
+defineRequestIntervalTests({
+  name: "부산 accessibility collector",
+  delegate: stationResponse,
+  run: ({ fetchImpl, sleepImpl, requestIntervalMs }) => collectBusanAccessibility({
+    serviceKey: "fixture-key",
+    stationScopes: topology.scope,
+    now: new Date("2026-07-20T10:30:00.000Z"),
+    fetchImpl,
+    sleepImpl,
+    randomImpl: () => 0,
+    requestIntervalMs,
+  }),
+});
+
 const collectWith = ({ fetchImpl, sleepImpl = async () => {}, serviceKey = "fixture-key" }) => collectBusanAccessibility({
   serviceKey,
   concurrency: 1,

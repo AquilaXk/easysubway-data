@@ -130,3 +130,51 @@ export const defineKricResultCodeRetryTests = (options) => defineResultCodeRetry
 
 /** 공공데이터포털 코드표(DATA_GO_KR_RESULT_CODE_ROWS)로 defineResultCodeRetryTests를 등록한다. */
 export const defineDataGoKrResultCodeRetryTests = (options) => defineResultCodeRetryTests({ rows: DATA_GO_KR_RESULT_CODE_ROWS, ...options });
+
+/**
+ * 가상 시계 타이머. sleep(ms)은 now + ms에 깨어나고, 깨울 타이머가 남아 있으면 drive가 가장 이른 것부터 시계를 그 시각으로 옮겨 깨운다.
+ * 동시 worker가 각자 기다리는 경우도 실제 시간처럼 겹쳐 흐르므로, 시작 시각의 간격으로 요청 간격 계약을 검증할 수 있다.
+ */
+function virtualTimers() {
+  const timers = [];
+  const clock = { now: 0 };
+  const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
+  const sleep = (milliseconds) => new Promise((resolve) => { timers.push({ at: clock.now + milliseconds, resolve }); });
+  const drive = async (promise) => {
+    let settled = false;
+    const outcome = promise.finally(() => { settled = true; });
+    while (!settled) {
+      await flushMicrotasks();
+      if (settled || timers.length === 0) continue;
+      timers.sort((left, right) => left.at - right.at);
+      const next = timers.shift();
+      clock.now = Math.max(clock.now, next.at);
+      next.resolve();
+    }
+    return outcome;
+  };
+  return { clock, sleep, drive };
+}
+
+/**
+ * 요청 간격 계약(data #1359): requestIntervalMs를 받은 수집기는 동시 worker가 있어도 공급자 요청 시작 사이를 그 간격 이상 벌린다.
+ * @param {object} options
+ * @param {string} options.name 수집기 이름(테스트 제목).
+ * @param {Function} options.delegate 성공 응답을 만드는 fetch.
+ * @param {(io: { fetchImpl: Function, sleepImpl: Function, requestIntervalMs: number }) => Promise<unknown>} options.run 수집기를 기본 동시성으로 실행한다.
+ */
+export function defineRequestIntervalTests({ name, delegate, run }) {
+  const intervalMs = 500;
+  test(`${name}: requestIntervalMs를 받으면 요청 시작 사이를 그 간격 이상 벌린다`, async () => {
+    const timers = virtualTimers();
+    const starts = [];
+    const fetchImpl = async (...args) => {
+      starts.push(timers.clock.now);
+      return delegate(...args);
+    };
+    await timers.drive(run({ fetchImpl, sleepImpl: timers.sleep, requestIntervalMs: intervalMs }));
+    assert.ok(starts.length > 1, "요청이 둘 이상이어야 간격을 잴 수 있다");
+    const gaps = starts.slice(1).map((start, index) => start - starts[index]);
+    assert.deepEqual(gaps.filter((gap) => gap < intervalMs), [], `요청 시작 간격이 ${intervalMs}ms보다 짧으면 안 된다`);
+  });
+}
