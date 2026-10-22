@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "bc550ad89db2806b35ce4e98f912c545c9472aeb",
+  "builderGitSha": "f2d69de901cea8070e80c00f36b8edcf9698b80f",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "ab106b65ef7c7bf60a7cc18a46cc3a61df5f23f03b5f592be37e73cbee8b4f37"
+    "value": "66c646d491d91864b3169dda35e2926c2c50b421196256ebab4a46ac011984bc"
   },
   "sourceInventorySha256": {
-    "value": "71dcd9f615b7894ac17eeeecb2996e085f15ac8aa0899c01905ca433c6d2f55f"
+    "value": "8a8045b03644a5734b205fe2e74eae4d8edc4d8887a259de365dde0d3d1f7b2e"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "0d4bda5fdbc24eb0132690bfe4180f7bbf154a418bb7cab2ef5fbad192fabfe8"
+    "sha256": "aefb732998c61e5981fb4095523b7dab5bef2ec90ed622b41b9a7f4f6a525d01"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261022-seq170"
+      "value": "nationwide-candidate-20261022-seq171"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261022-seq170"
+      "value": "release-request-nationwide-candidate-20261022-seq171"
     }
   },
   "perSourceEvidence": [
@@ -276,13 +276,6 @@
       "perSourceSnapshotSetHash": "4f2a8d78248ebee9c8ef1bd69a93cd76e915d8688e5ec69fa13aa6c9ccb4938e"
     },
     {
-      "sourceId": "seoul-metro-accessibility",
-      "snapshotId": "seoul-metro-accessibility-20261021T123716663Z",
-      "rawSha256": "e8355645b8519abe64021a07e3685d131aa0f84d16bc41845f904cd04556ce71",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "perSourceSnapshotSetHash": "914ae37d3f4dde7a0dd93b71d616995c1f13e01b254e463dd61dbfb756e1a7b0"
-    },
-    {
       "sourceId": "kric-subway-timetable-station-lines",
       "snapshotId": "kric-subway-timetable-station-lines-20261021",
       "rawSha256": "c3f1e6fd355095560023a2ea3a4875be2f4b45e5651d6ebf2fc1db23e7d54217",
@@ -343,6 +336,13 @@
       "rawSha256": "309eee0f0c297dd022f10ecb095702a51fd73765ee6ba68fb4ddc5f66a3ff521",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
       "perSourceSnapshotSetHash": "1f3558fe2083290ef0ce7c6e1e2e65b12db11c2604ec4637509f30fbe7a6b869"
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-20261022T083146833Z",
+      "rawSha256": "fc61d276a63bb105f1df924519ae8273194eb6baaad38f5d38cce5c0090adeb8",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "868366a46226ebaf7f92de3cd72f34a7acaee4dfc6f868322c97f89356679ade"
     }
   ],
   "officialOdFareEvidence": {
