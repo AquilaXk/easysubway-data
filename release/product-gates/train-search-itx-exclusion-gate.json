@@ -268,8 +268,8 @@
       "stateMatrixPassed": true,
       "offlineUnavailablePassed": true,
       "subwayRegressionPassed": true,
-      "screenshotPath": ".codex/evidence/issue-2094-android-86be8d02/result.png",
-      "semanticsPath": ".codex/evidence/issue-2094-android-86be8d02/result.xml",
+      "screenshotPath": ".evidence/evidence/issue-2094-android-86be8d02/result.png",
+      "semanticsPath": ".evidence/evidence/issue-2094-android-86be8d02/result.xml",
       "screenshotSha256": "51cb92740643cd0671d55aa74c19d582ea92617dabe54d2e2057aca1beed11c7",
       "semanticsSha256": "d91ba0f790af500aef6cbc5f1c5820aff8384a0f64278c45235d99b0f5b2799e"
     },

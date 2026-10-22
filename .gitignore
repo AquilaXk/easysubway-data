@@ -34,6 +34,7 @@ CURSOR.md
 COPILOT.md
 docs/
 .codex/
+.evidence/
 .claude/
 .cursor/
 .aider/

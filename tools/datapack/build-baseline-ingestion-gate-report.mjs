@@ -217,7 +217,7 @@ export function buildBaselineIngestionGateReport({
         kricMovement: KRIC_MOVEMENT_SOURCE_ID,
       },
       reproducibility:
-        "tracked snapshot; regenerated only from local-only raw inputs (.codex/evidence/1701/, gitignored)",
+        "tracked snapshot; regenerated only from local-only raw inputs (.evidence/evidence/1701/, gitignored)",
     },
     coverage: buildCoverage({
       transfer,

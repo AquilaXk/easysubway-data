@@ -394,6 +394,10 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
   assert.ok(reviewProgram, 'review state jq program must stay testable');
 
   const fallbackBody =
+    '**Actionable comments posted: 0**\n<!-- Review source: Aquila fallback; canonical visible structure: PR #1926 Review 4676157515 -->';
+  const universalBody =
+    '**Actionable comments posted: 0**\n<!-- Review source: Aquila Universal Review; engine: aquila-review -->';
+  const retiredCodexBody =
     '**Actionable comments posted: 0**\n<!-- Review source: Codex CLI fallback; canonical visible structure: PR #1926 Review 4676157515 -->';
   const review = (id, state, submittedAt, body = '', overrides = {}) => ({
     id,
@@ -473,9 +477,28 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     0,
   );
   // 폴백 리뷰는 규약 양식의 제목줄과 provenance marker를 모두 가져야 한다.
-  assert.equal(
-    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody)], exactMarker),
+  for (const [label, body] of [
+    ['Aquila fallback marker', fallbackBody],
+    ['Aquila Universal Review marker', universalBody],
+  ]) {
+    assert.equal(
+      runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', body)], exactMarker),
+      0,
+      label,
+    );
+  }
+  assert.notEqual(
+    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', retiredCodexBody)], exactMarker),
     0,
+    'Codex CLI fallback marker only',
+  );
+  assert.notEqual(
+    runReviewFilter(
+      [review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '**Actionable comments posted: 0**')],
+      exactMarker,
+    ),
+    0,
+    'header without any provenance marker',
   );
   // 신뢰되지 않는 author_association은 어떤 본문으로도 게이트를 통과하지 못한다.
   assert.notEqual(

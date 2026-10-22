@@ -212,7 +212,7 @@ test("리포트: 수집 전량 기준 coverage + 게이트 + 스코프 metadata"
   assert.match(report.metadata.countingBasis, /환승역거리 소요시간 5행.*빠른하차 2행/);
   assert.equal(
     report.metadata.reproducibility,
-    "tracked snapshot; regenerated only from local-only raw inputs (.codex/evidence/1701/, gitignored)",
+    "tracked snapshot; regenerated only from local-only raw inputs (.evidence/evidence/1701/, gitignored)",
   );
 
   // coverage: 전량 5행 기준, 사당 양방향+강남 매칭(3), 성수 자기루프 제외, 없는역 quarantine.

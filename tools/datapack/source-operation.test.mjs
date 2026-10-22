@@ -712,7 +712,7 @@ test("TAGO operation의 output 경로를 보존한다", async () => {
   const tago = document.candidates.find((entry) => entry.id === "molit-tago-subway-info");
   assert.deepEqual(tago.operation.runner.arguments.slice(-3), [
     "--output",
-    ".codex/evidence/tago-schedule-collection.json",
+    ".evidence/evidence/tago-schedule-collection.json",
     "--quiet",
   ]);
 });
