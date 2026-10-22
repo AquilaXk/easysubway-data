@@ -24,7 +24,7 @@ const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 export async function collectBusanAccessibility({
   serviceKey,
   stationScopes,
-  fetchImpl = fetch,
+  fetchImpl: providerFetch = fetch,
   now = new Date(),
   concurrency = 4,
   sleepImpl,
@@ -35,7 +35,7 @@ export async function collectBusanAccessibility({
   const key = normalizeDataGoKrServiceKey(serviceKey);
   const scope = validateScope(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
-  const pacedFetch = withRequestInterval(fetchImpl, { intervalMs: requestIntervalMs, sleep: sleepImpl });
+  const fetchImpl = withRequestInterval(providerFetch, { intervalMs: requestIntervalMs, sleep: sleepImpl });
   const responses = new Array(scope.length);
   let next = 0;
   let failure;
@@ -44,7 +44,7 @@ export async function collectBusanAccessibility({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ station: scope[index], key, fetchImpl: pacedFetch, retry: { sleepImpl, randomImpl } });
+        responses[index] = await collectResponse({ station: scope[index], key, fetchImpl, retry: { sleepImpl, randomImpl } });
       } catch (error) {
         failure = error;
       }

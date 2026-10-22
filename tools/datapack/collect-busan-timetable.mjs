@@ -31,7 +31,7 @@ export function busanTimetableCounts(rows) {
 export async function collectBusanTimetable({
   serviceKey,
   stationScopes,
-  fetchImpl = fetch,
+  fetchImpl: providerFetch = fetch,
   now = new Date(),
   concurrency = 4,
   sleepImpl = sleep,
@@ -42,7 +42,7 @@ export async function collectBusanTimetable({
   const key = normalizeDataGoKrServiceKey(serviceKey);
   const scope = normalizeBusanTimetableScope(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
-  const pacedFetch = withRequestInterval(fetchImpl, { intervalMs: requestIntervalMs, sleep: sleepImpl });
+  const fetchImpl = withRequestInterval(providerFetch, { intervalMs: requestIntervalMs, sleep: sleepImpl });
   const requests = scope.flatMap((station) => DAYS.map((day) => ({ station, day })));
   const responses = new Array(requests.length);
   let next = 0;
@@ -52,7 +52,7 @@ export async function collectBusanTimetable({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl: pacedFetch, sleepImpl, randomImpl });
+        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl, randomImpl });
       } catch (error) {
         failure = error;
       }

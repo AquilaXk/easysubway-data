@@ -140,18 +140,22 @@ function virtualTimers() {
   const clock = { now: 0 };
   const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
   const sleep = (milliseconds) => new Promise((resolve) => { timers.push({ at: clock.now + milliseconds, resolve }); });
-  const drive = async (promise) => {
-    let settled = false;
-    const outcome = promise.finally(() => { settled = true; });
-    while (!settled) {
+  const wakeEarliest = () => {
+    timers.sort((left, right) => left.at - right.at);
+    const next = timers.shift();
+    clock.now = Math.max(clock.now, next.at);
+    next.resolve();
+  };
+  const drive = (promise) => {
+    const state = { settled: false };
+    const outcome = promise.finally(() => { state.settled = true; });
+    const step = async () => {
       await flushMicrotasks();
-      if (settled || timers.length === 0) continue;
-      timers.sort((left, right) => left.at - right.at);
-      const next = timers.shift();
-      clock.now = Math.max(clock.now, next.at);
-      next.resolve();
-    }
-    return outcome;
+      if (state.settled) return outcome;
+      if (timers.length > 0) wakeEarliest();
+      return step();
+    };
+    return step();
   };
   return { clock, sleep, drive };
 }

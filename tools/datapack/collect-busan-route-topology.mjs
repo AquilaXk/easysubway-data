@@ -37,7 +37,7 @@ export async function collectBusanRouteTopology({
   serviceKey,
   stationCode = null,
   stationScopes = null,
-  fetchImpl = fetch,
+  fetchImpl: providerFetch = fetch,
   now = new Date(),
   concurrency = 4,
   sleepImpl = sleep,
@@ -50,7 +50,7 @@ export async function collectBusanRouteTopology({
   const scope = stationScopes == null ? null : validateStationScopes(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   if (typeof sleepImpl !== "function") throw new TypeError("sleepImpl must be a function");
-  const pacedFetch = withRequestInterval(fetchImpl, { intervalMs: requestIntervalMs, sleep: sleepImpl });
+  const fetchImpl = withRequestInterval(providerFetch, { intervalMs: requestIntervalMs, sleep: sleepImpl });
   const requestCodes = scope ? scope.map(({ stationCode: code }) => code) : [stationCode];
   const responses = new Array(requestCodes.length);
   let next = 0;
@@ -61,7 +61,7 @@ export async function collectBusanRouteTopology({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl: pacedFetch, sleepImpl, retryBudget, randomImpl });
+        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl, sleepImpl, retryBudget, randomImpl });
       } catch (error) {
         aborted = true;
         failures.push(error);

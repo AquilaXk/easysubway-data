@@ -218,7 +218,7 @@ export function withRequestInterval(fetchImpl, { intervalMs, sleep = defaultSlee
     let release;
     turn = new Promise((resolve) => { release = resolve; });
     await previous;
-    Promise.resolve(sleep(intervalMs)).then(release, release);
+    void sleep(intervalMs).then(release, release);
     return fetchImpl(...args);
   };
 }
