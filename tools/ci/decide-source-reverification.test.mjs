@@ -10,6 +10,7 @@ import {
   SOURCE_REVERIFICATION_CLAIM_PREFIX,
   decideSourceReverification,
   main,
+  overdueReverificationRecipes,
   parseSourceReverificationClaims,
   sourceReverificationDue,
 } from "./decide-source-reverification.mjs";
@@ -378,7 +379,10 @@ test("CLI는 판정을 GITHUB_OUTPUT 값으로 남긴다", async () => {
   assert.equal(written.length, 1);
   assert.equal(written[0][0], "out.txt");
   assert.match(written[0][1], /^state=BLOCKED_BY_PENDING_PR\nbranch=\nrecipes=kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,/u);
-  assert.match(written[0][1], /\ncleanup_claims=\nblocked_by=automation\/456-capital-topology-registration-1\nblocked_recipes=\noverdue_recipes=kric-station-timetable,korail-topology,gwangju-topology,busan-topology,daejeon-topology,daegu-sources\n$/u);
+  // 이슈 본문에 적히는 연체 목록은 상태 표(overdueReverificationRecipes)와 같은 정의다: 연체 행이 있는 recipe와 그에 의존하는 recipe(recipe 표 순서).
+  const overdueRecipes = "kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,gwangju-accessibility,busan-topology,busan-accessibility,busan-timetable,daejeon-topology,daejeon-accessibility,daejeon-timetable,daegu-sources,daegu-accessibility";
+  assert.match(written[0][1], new RegExp(`\\ncleanup_claims=\\nblocked_by=automation/456-capital-topology-registration-1\\nblocked_recipes=\\noverdue_recipes=${overdueRecipes}\\n$`, "u"));
+  assert.deepEqual(overdueReverificationRecipes({ inventory: files["inv.json"], ledger: files["led.json"], policy: files["pol.json"], now: NOW }), overdueRecipes.split(","));
   assert.equal(JSON.parse(logs[0]).state, "BLOCKED_BY_PENDING_PR");
   await assert.rejects(main(["--inventory", "inv.json"], { now: NOW, log() {}, readText: async () => "{}" }), /REVERIFICATION_INPUT_INVALID/u);
 });

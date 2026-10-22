@@ -609,6 +609,22 @@ test("재확인 recipe가 연체면 실패 run 뒤에 대기 성공 run이 와�
   assert.equal(states(ledgerHeadRow(topology, hoursAgo(2), iso(5)))[topology], "FAILED");
 });
 
+// 재확인 recipe의 원천이 다른 단계(gwangju-timetable-refresh)의 소유여도 recipe가 연체면 FAILED다: 소유 단계의 마지막 run이 OK여도 연체는 가려지지 않는다.
+test("다른 단계가 소유한 원천도 재확인 recipe가 연체면 FAILED이고, 연체가 아니면 소유 단계의 마지막 run으로 정한다", () => {
+  const sourceId = "kric-nationwide-timetable-file";
+  assert.equal(sourceRefreshStages().get(sourceId), "gwangju-timetable-refresh");
+  assert.ok(REVERIFICATION_RECIPES.some((recipe) => recipe.sourceIds.includes(sourceId)), "the source is also a reverification recipe source");
+  const inventoryObservedAt = (observedAt) => ({
+    schemaVersion: 1,
+    sources: [{ ...evidenceSource(sourceId, 60), capitalScheduleAdmissionEvidence: { observedAt }, korailScheduleAdmissionEvidence: { observedAt } }],
+  });
+  const stateAt = (observedAt) => expiring({ sourceInventory: inventoryObservedAt(observedAt) })[0].refreshState;
+  // 관측 82시간 전: dueAt(+24시간)에서 하루가 더 지나 연체다. 소유 단계의 마지막 run은 성공이다.
+  assert.equal(stateAt(hoursAgo(82)), "FAILED");
+  // 관측 1시간 전이면 연체가 아니므로 소유 단계의 마지막 run(성공)으로 OK다.
+  assert.equal(stateAt(hoursAgo(1)), "OK");
+});
+
 test("갱신 단계의 run 목록이 없으면 OK로 채우지 않고 실패한다", () => {
   const inventory = inventoryOf(evidenceSource("incheon-line1-train-timetable", 2));
   assert.throws(() => buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventory }), /STATUS_RUNS_INVALID.*capital-topology-refresh/u);
