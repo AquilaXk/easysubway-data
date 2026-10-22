@@ -158,8 +158,8 @@ test("OPEN_PR이면 App 토큰 발급 → required CI 보장(close→reopen) →
     const report = find("Report refresh failure as an issue");
     assert.ok(report > age, file);
     // #3036: 원천 재확인은 재확인 기한을 넘긴 recipe가 있으면 대기로 성공한 run도 보고한다.
-    const reportCondition = file === "source-reverification.yml" ? "${{ failure() || cancelled() || steps.decision.outputs.overdue_recipes != '' }}"
-      : SINGLE_PR_PATH_WORKFLOWS.includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}";
+    const failedOrCancelled = SINGLE_PR_PATH_WORKFLOWS.includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}";
+    const reportCondition = { "source-reverification.yml": "${{ failure() || cancelled() || steps.decision.outputs.overdue_recipes != '' }}" }[file] ?? failedOrCancelled;
     assert.equal(ifCondition(all[report].block), reportCondition, file);
   }
 });
