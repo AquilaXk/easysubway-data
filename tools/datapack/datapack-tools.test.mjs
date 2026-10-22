@@ -2024,6 +2024,8 @@ test("KRIC route graph 수집 계획은 검증된 XML live sample을 재취득 �
     assert.equal(request.validatedLiveSampleFormat, "xml");
     assert.equal(request.sampleAcquisitionRequired, false);
     assert.equal("remainingAdmissionBlocker" in request, false);
+    assert.equal(request.evidenceOutput, `.evidence/evidence/kric/${request.candidateId}.sample.json`);
+    assert.equal(request.rawArchiveOutput, `.evidence/evidence/kric/${request.candidateId}.raw.json`);
     assert.equal(request.productionUseAllowed, false);
     assert.equal(request.automaticRouteGraphEdgeAllowed, false);
     assert.deepEqual(request.capabilities, {
