@@ -27,12 +27,12 @@ on:
     types: [submitted]
   workflow_run:
     # 발행 체인(RC chain·cross-repo chain)이 끝나면 잠금이 풀린 시점에 큐가 다시 판정한다(data#1084).
-    # RC chain이 GITHUB_TOKEN으로 dispatch한 cross-repo chain run은 끝나도 workflow_run을 만들지 않으므로 그 경로는 schedule이 잇는다.
     workflows: [CI, "Data Pack Release Candidate Chain", "Data Pack Release Cross-Repository Chain"]
     types: [completed]
   push:
     branches: [main]
-  # 이벤트가 오지 않는 재평가 공백의 안전망이다(#3036). 정시 혼잡을 피해 분을 비튼다.
+  # 이벤트가 오지 않는 재평가 공백의 안전망이다(#3036). RC chain이 GITHUB_TOKEN으로 dispatch한 cross-repo chain run은
+  # 끝나도 workflow_run을 만들지 않으므로, 그 잠금이 풀린 뒤의 재판정은 이 tick이 잇는다. 정시 혼잡을 피해 분을 비튼다.
   schedule:
     - cron: "4,19,34,49 * * * *"
   workflow_dispatch:
