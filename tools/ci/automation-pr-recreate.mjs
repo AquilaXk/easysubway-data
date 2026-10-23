@@ -160,9 +160,14 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
   return { actions: ordered, anomalies, deferred };
 }
 
+function stateOf(pull) {
+  if (pull?.state === "open") return "OPEN";
+  return (pull?.merged_at ?? null) === null ? "CLOSED" : "MERGED";
+}
+
 const statePullOf = (pull, repository) => ({
   number: pull?.number,
-  state: pull?.state === "open" ? "OPEN" : (pull?.merged_at ?? null) === null ? "CLOSED" : "MERGED",
+  state: stateOf(pull),
   headRefName: pull?.head?.ref,
   baseRefName: pull?.base?.ref,
   isCrossRepository: pull?.head?.repo?.full_name !== repository,
