@@ -58,12 +58,16 @@ jobs:
           # #995: PR 없는 claim은 DUE 여부와 무관하게 만든 run과 게시 증거(출력 커밋·receipt artifact)로 판정한다.
           # 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다). 닫힌(Abandon) claim도 같은 증거로 정리 대상이 된다.
           node tools/ci/claim-orphans.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"
+          # #3036: 선택 원천(에스컬레이터)이 실패하면 실패 이슈의 표지가 그 원천을 24시간 쉬게 한다. 판정은 열린 실패 이슈를 같은 필드로 읽는다(source-reverification과 같다).
+          issues="${RUNNER_TEMP}/kric-current-facility-refresh/open-issues.json"
+          gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 1000 --json number,title,body,author > "${issues}"
           node tools/ci/decide-current-kric-facility-refresh.mjs \
             --inventory tools/datapack/source-inventory.json \
             --policy release/product-gates/datapack-freshness-sla.json \
             --prs "${prs}" \
             --claims "${claims}" \
             --claim-evidence "${claim_evidence}" \
+            --issues "${issues}" \
             --repository "${GITHUB_REPOSITORY}" \
             --output "${KRIC_REFRESH_DECISION}" \
             --github-output "${GITHUB_OUTPUT}"
@@ -311,10 +315,13 @@ jobs:
             cp "${source_root}/raw-receipt.json" "${source_root}/receipt.json"
             main_sha="$(git rev-parse HEAD)"
             # #3036: 복구 대상 원천은 보존한 journal의 원천이다. recover-published가 두 journal의 원천이 같은지 다시 확인한다.
+            # 이 변경 이전 journal에는 sourceId가 없고 그때는 표준 원천뿐이었으므로 키가 없을 때만 표준으로 읽는다. 있는 값은 그대로 두어 prepare가 거부한다.
             source_id="$(SOURCE_JOURNAL="${source_root}/journal.json" node --input-type=module -e '
               import { readFile } from "node:fs/promises";
-              process.stdout.write(JSON.parse(await readFile(process.env.SOURCE_JOURNAL, "utf8")).sourceId ?? "");
+              import { kricFacilityJournalSourceId } from "./tools/datapack/lib/kric-standard-facilities.mjs";
+              process.stdout.write(String(kricFacilityJournalSourceId(JSON.parse(await readFile(process.env.SOURCE_JOURNAL, "utf8")))));
             ')"
+            printf 'KRIC_REFRESH_RECOVERED_SOURCE_ID=%s\n' "${source_id}" >> "${GITHUB_ENV}"
             node tools/datapack/run-current-capital-facility-operation.mjs \
               --phase prepare --source-id "${source_id}" --operation-root "${target_root}" --expected-main-sha "${main_sha}" --expected-facility-head-sha "${main_sha}"
             node tools/datapack/run-current-capital-facility-operation.mjs \
@@ -521,4 +528,9 @@ jobs:
         if: ${{ failure() }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node tools/ci/report-refresh-failure.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
+          DECISION_SOURCE_ID: ${{ steps.decision.outputs.source_id }}
+        run: |
+          # #3036: 실패 이슈에 실패한 원천을 적고 그 원천의 실패 시각 표지를 남긴다. 선택 원천의 재시도 쿨다운이 이 표지를 읽는다.
+          # 판정이 고른 원천이 없으면(복구 run) 복구한 journal의 원천을 쓰고, 둘 다 없으면 원천 없이 보고한다.
+          failed_source_id="${DECISION_SOURCE_ID:-${KRIC_REFRESH_RECOVERED_SOURCE_ID:-}}"
+          node tools/ci/report-refresh-failure.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --source-id "${failed_source_id}"

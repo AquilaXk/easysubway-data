@@ -57,7 +57,7 @@ test("KRIC refresh decision picks one source per run: a required source that nee
     [{ escalatorFreshUntil: null }, "2026-08-30T12:00:00.000Z", "EXPIRED", STANDARD],
     [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T03:59:59.999Z", "NOT_DUE", undefined],
     [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T04:00:00.000Z", "DUE", ESCALATOR],
-    [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T10:00:00.000Z", "EXPIRED", ESCALATOR],
+    [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T10:00:00.000Z", "DUE", STANDARD],
     [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T12:00:00.000Z", "EXPIRED", STANDARD],
     [{ freshUntil: "2026-08-30T09:00:00.000Z", escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T04:00:00.000Z", "DUE", STANDARD],
     [{ freshUntil: "2026-08-30T10:00:00.000Z", escalatorFreshUntil: "2026-08-30T09:00:00.000Z" }, "2026-08-30T04:00:00.000Z", "DUE", STANDARD],
@@ -153,7 +153,7 @@ test("a malformed failure marker or issue listing stops the decision instead of 
   const failedAt = new Date("2026-08-30T01:00:00.000Z");
   const options = { freshUntil: "2026-09-05T12:00:00.000Z", escalatorFreshUntil: null };
   const issue = failureIssue({ sourceId: ESCALATOR, at: failedAt });
-  const broken = { ...issue, body: issue.body.replace(failedAt.toISOString(), "2026-13-45T25:61:61.000Z") };
+  const broken = { ...issue, body: issue.body.replace(`${ESCALATOR}:${failedAt.toISOString()}`, `${ESCALATOR}:2026-13-45T25:61:61.000Z`) };
   await assert.rejects(() => decideWithIssues(options, [broken], NOW), /REFRESH_FAILURE_REPORT_SOURCE_MARKER/);
   await assert.rejects(() => decideWithIssues(options, {}, NOW), /REFRESH_FAILURE_REPORT_ISSUES/);
   const { decideCurrentKricFacilityRefresh } = await load();
