@@ -23,6 +23,7 @@ import {
   materializeDaeguTimetable,
   runDaeguTimetableMaterializer,
 } from "./materialize-daegu-timetable.mjs";
+import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 
 test("Daegu membership identity binds current MOLIT and mapping inputs", () => {
   const input = {
@@ -437,6 +438,7 @@ test("materialized SQLite·provenance가 대구 membership·topology·schedule 9
     "--provenance", path.join(packOutput, "current.provenance.json"),
     "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
     "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
+    "--now", COVERAGE_REVIEW_NOW,
     "--output", reportPath,
     "--allow-gaps",
   ], { cwd: root });

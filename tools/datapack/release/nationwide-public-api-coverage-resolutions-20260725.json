@@ -3,7 +3,7 @@
   "artifactKind": "nationwide-coverage-resolutions",
   "targetVersion": "2026-07-13",
   "searchPlanSha256": "70727554d8b049b622a0e376cd7b9bb7b964cc49a4c92877af1c0d4c0bc7ea6d",
-  "generatedAt": "2026-07-25T09:12:39.105Z",
+  "generatedAt": "2026-10-23T10:18:48.032Z",
   "entries": [
     {
       "regionId": "busan",
@@ -14,10 +14,10 @@
       "reasonCode": "PUBLIC_API_NO_DATA",
       "userMessageKo": "이 노선은 실시간 도착 정보를 아직 제공하지 않아요.",
       "fallback": "UNSUPPORTED_REGION",
-      "checkedAt": "2026-07-25T09:12:39.105Z",
-      "reviewedAt": "2026-07-25T09:12:39.105Z",
+      "checkedAt": "2026-10-23T10:18:48.032Z",
+      "reviewedAt": "2026-10-23T10:18:48.032Z",
       "reviewerRole": "AUTOMATED_PUBLIC_API_AUDIT",
-      "nextReviewAt": "2026-10-23T09:12:39.105Z",
+      "nextReviewAt": "2027-01-21T10:18:48.032Z",
       "requiredProviderIds": [
         "data-go-search"
       ],
@@ -273,10 +273,10 @@
       "reasonCode": "PUBLIC_API_NO_DATA",
       "userMessageKo": "이 노선은 실시간 도착 정보를 아직 제공하지 않아요.",
       "fallback": "UNSUPPORTED_REGION",
-      "checkedAt": "2026-07-25T09:12:39.105Z",
-      "reviewedAt": "2026-07-25T09:12:39.105Z",
+      "checkedAt": "2026-10-23T10:18:48.032Z",
+      "reviewedAt": "2026-10-23T10:18:48.032Z",
       "reviewerRole": "AUTOMATED_PUBLIC_API_AUDIT",
-      "nextReviewAt": "2026-10-23T09:12:39.105Z",
+      "nextReviewAt": "2027-01-21T10:18:48.032Z",
       "requiredProviderIds": [
         "data-go-search"
       ],
@@ -301,7 +301,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "3d621a8dd84ab7fd55d6116c1ba8874f035acdb115966e0c025bb925b736172f",
+          "responseSha256": "fad3513535a2138eef01803341b7dc5b052479133c1d471edf51ec0153730569",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -441,7 +441,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "d7129250fd9dd5a88caaca4bc2a9e49f4d953e6315fa83d8ea03608b57338331",
+          "responseSha256": "9e2a65433c91c1278e3c76a0549f728ecb3dfa3b830c6a8560dbaed4bdf8e294",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -474,7 +474,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "8c682c6c32f88d9d47374d8791dcca42bff8b0045c8bba1d60c008519cd57375",
+          "responseSha256": "e2df35cf248bc1b7f8b59c01a59a238bdc6b6a878c8858001152a190de3f8136",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -521,7 +521,7 @@
           "capturedRows": []
         }
       ],
-      "evidenceHash": "4172a7a23d6f750635069410446c52feeb9b1c161147e1bd6336d5918a4d6192"
+      "evidenceHash": "23c72474498d04419fcbf097cfaf6d5838935131cc4a10c9c6ba31bb689d7753"
     },
     {
       "regionId": "daegu",
@@ -532,10 +532,10 @@
       "reasonCode": "PUBLIC_API_NO_DATA",
       "userMessageKo": "이 노선은 실시간 도착 정보를 아직 제공하지 않아요.",
       "fallback": "UNSUPPORTED_REGION",
-      "checkedAt": "2026-07-25T09:12:39.105Z",
-      "reviewedAt": "2026-07-25T09:12:39.105Z",
+      "checkedAt": "2026-10-23T10:18:48.032Z",
+      "reviewedAt": "2026-10-23T10:18:48.032Z",
       "reviewerRole": "AUTOMATED_PUBLIC_API_AUDIT",
-      "nextReviewAt": "2026-10-23T09:12:39.105Z",
+      "nextReviewAt": "2027-01-21T10:18:48.032Z",
       "requiredProviderIds": [
         "data-go-search"
       ],
@@ -560,7 +560,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "86786bff29043008f56f8e9e2907d74ba24463c8dfa315f23c2de9ba3d0f4012",
+          "responseSha256": "249374c92884e7f737e2bb5f8ec995068a688b66eda06f0672cdf6dc1f4e7f51",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -662,7 +662,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "d7129250fd9dd5a88caaca4bc2a9e49f4d953e6315fa83d8ea03608b57338331",
+          "responseSha256": "9e2a65433c91c1278e3c76a0549f728ecb3dfa3b830c6a8560dbaed4bdf8e294",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -695,7 +695,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "8c682c6c32f88d9d47374d8791dcca42bff8b0045c8bba1d60c008519cd57375",
+          "responseSha256": "e2df35cf248bc1b7f8b59c01a59a238bdc6b6a878c8858001152a190de3f8136",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -742,7 +742,7 @@
           "capturedRows": []
         }
       ],
-      "evidenceHash": "ec86a05d8149d7b617a744f092df6825ab0880e2b0d11e424e2eb93eb527c2e3"
+      "evidenceHash": "3cf853f2cd0a7ea4f7e096219421422178956f2175b626f2f614e80b5da88709"
     },
     {
       "regionId": "daegu",
@@ -753,10 +753,10 @@
       "reasonCode": "PUBLIC_API_NO_DATA",
       "userMessageKo": "이 노선은 실시간 도착 정보를 아직 제공하지 않아요.",
       "fallback": "UNSUPPORTED_REGION",
-      "checkedAt": "2026-07-25T09:12:39.105Z",
-      "reviewedAt": "2026-07-25T09:12:39.105Z",
+      "checkedAt": "2026-10-23T10:18:48.032Z",
+      "reviewedAt": "2026-10-23T10:18:48.032Z",
       "reviewerRole": "AUTOMATED_PUBLIC_API_AUDIT",
-      "nextReviewAt": "2026-10-23T09:12:39.105Z",
+      "nextReviewAt": "2027-01-21T10:18:48.032Z",
       "requiredProviderIds": [
         "data-go-search"
       ],
@@ -781,7 +781,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "75584bb247fed5c364a78c3705dc14e72b0dc420f353d93271d81e9172a0db10",
+          "responseSha256": "c1ab8a43d5a7a14015b82d68365329775a929e12eabd4eed2f6aa2b97853244c",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -883,7 +883,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "d7129250fd9dd5a88caaca4bc2a9e49f4d953e6315fa83d8ea03608b57338331",
+          "responseSha256": "9e2a65433c91c1278e3c76a0549f728ecb3dfa3b830c6a8560dbaed4bdf8e294",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -916,7 +916,7 @@
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "matchCount": 0,
-          "responseSha256": "8c682c6c32f88d9d47374d8791dcca42bff8b0045c8bba1d60c008519cd57375",
+          "responseSha256": "e2df35cf248bc1b7f8b59c01a59a238bdc6b6a878c8858001152a190de3f8136",
           "pageCount": 1,
           "matchTermGroups": [
             [
@@ -963,7 +963,7 @@
           "capturedRows": []
         }
       ],
-      "evidenceHash": "9ffbc62f470c64b38f7b3ed3129610d15fd64f19727a7212e38d45527ee0fe8b"
+      "evidenceHash": "b35b9a0311bf83c87e7b7aa06602c1308633d1f266d881455baa84940cb4d233"
     }
   ],
   "unresolved": [
