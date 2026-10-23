@@ -285,6 +285,34 @@ test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으�
   assert.equal(decideSourceReverification(input({ ledger: stale, pullRequests: [writer(973, "automation/927-nationwide-candidate-refresh-"), writer(974, "feat/x")] })).state, "RUN");
 });
 
+test("재생 run은 DUE가 아니어도 RUN이고 recipe 목록은 비며, 이 workflow의 열린 PR이 있으면 정상 run처럼 OPEN_PR이다 (#3036)", () => {
+  assert.deepEqual(decideSourceReverification(input({ replayRunId: "39369279984" })), { state: "RUN", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [], replayRunId: "39369279984" });
+  assert.equal(decideSourceReverification(input({ replayRunId: "39369279984", pullRequests: [pr("OPEN", 77)], automationBranches: [`${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`] })).state, "OPEN_PR");
+  for (const bad of ["", "0", "abc", "12345678901234567890"]) assert.throws(() => decideSourceReverification(input({ replayRunId: bad })), /REVERIFICATION_INPUT_INVALID/u, bad);
+});
+
+test("재생 run이 다른 원장 쓰기 PR·claim에 막히면 기다리지 않고 REVERIFICATION_REPLAY_BLOCKED로 실패하며 같은 replay_run_id로 다시 dispatch하라고 알린다 (#3036)", () => {
+  // 재생 입력은 이 dispatch에만 있다. 대기로 끝나면 막힘 재dispatch가 입력 없이 다시 돌려 공급자에서 다시 수집한다.
+  const DUE_LEDGER = ledgerAt(dueAgo(DAY + HOUR));
+  for (const [label, blockers, expected] of [
+    ["열린 PR", { pullRequests: [writer(971)] }, "#971"],
+    ["PR 전의 claim", { automationBranches: ["automation/639-seoul-accessibility-refresh-9"] }, "automation/639-seoul-accessibility-refresh-9"],
+    ["ITX 승격 PR", { pullRequests: [writer(980, "automation/977-itx-promotion-")] }, "#980"],
+  ]) {
+    for (const ledger of [ledgerAt(FRESH), DUE_LEDGER]) {
+      assert.throws(
+        () => decideSourceReverification(input({ replayRunId: "39369279984", ledger, ...blockers })),
+        new RegExp(`^Error: REVERIFICATION_REPLAY_BLOCKED: replay of run 39369279984 is blocked by ${expected}; dispatch source-reverification\\.yml again with replay_run_id=39369279984 once they are merged or closed$`, "u"),
+        label,
+      );
+    }
+  }
+  // 재생이 아닌 run은 지금처럼 기다린다(이상이 아니다).
+  const waiting = decideSourceReverification(input({ ledger: DUE_LEDGER, pullRequests: [writer(971)] }));
+  assert.equal(waiting.state, "BLOCKED_BY_PENDING_PR");
+  assert.deepEqual(waiting.blockedBy, [971]);
+});
+
 // #972 리뷰 F3: 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다.
 test("PR 목록이나 아직 끝나지 않은 run 목록이 조회 상한에 닿으면 잘렸을 수 있으므로 판정하지 않고 실패한다", () => {
   const many = (count, factory) => Array.from({ length: count }, (_, index) => factory(index));
@@ -381,8 +409,15 @@ test("CLI는 판정을 GITHUB_OUTPUT 값으로 남긴다", async () => {
   assert.match(written[0][1], /^state=BLOCKED_BY_PENDING_PR\nbranch=\nrecipes=kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,/u);
   // 이슈 본문에 적히는 연체 목록은 상태 표(overdueReverificationRecipes)와 같은 정의다: 연체 행이 있는 recipe와 그에 의존하는 recipe(recipe 표 순서).
   const overdueRecipes = "kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,gwangju-accessibility,busan-topology,busan-accessibility,busan-timetable,daejeon-topology,daejeon-accessibility,daejeon-timetable,daegu-sources,daegu-accessibility";
-  assert.match(written[0][1], new RegExp(`\\ncleanup_claims=\\nblocked_by=automation/456-capital-topology-registration-1\\nblocked_recipes=\\noverdue_recipes=${overdueRecipes}\\n$`, "u"));
+  assert.match(written[0][1], new RegExp(`\\ncleanup_claims=\\nblocked_by=automation/456-capital-topology-registration-1\\nblocked_recipes=\\noverdue_recipes=${overdueRecipes}\\nreplay_run_id=\\n$`, "u"));
   assert.deepEqual(overdueReverificationRecipes({ inventory: files["inv.json"], ledger: files["led.json"], policy: files["pol.json"], now: NOW }), overdueRecipes.split(","));
   assert.equal(JSON.parse(logs[0]).state, "BLOCKED_BY_PENDING_PR");
   await assert.rejects(main(["--inventory", "inv.json"], { now: NOW, log() {}, readText: async () => "{}" }), /REVERIFICATION_INPUT_INVALID/u);
+  const replayed = [];
+  const replay = await main([
+    "--inventory", "inv.json", "--ledger", "led.json", "--policy", "pol.json", "--prs", "prs.json", "--automation-branches", "claims.txt",
+    "--runs", "runs.json", "--issues", "issues.json", "--repository", REPOSITORY, "--pr-limit", "1000", "--run-limit", "200", "--issue-limit", "1000", "--replay-run-id", "39369279984", "--github-output", "out.txt",
+  ], { now: NOW, log() {}, readText: async (file) => (file in texts ? texts[file] : JSON.stringify(files[file])), appendText: async (file, text) => replayed.push(text) });
+  assert.equal(replay.state, "RUN");
+  assert.match(replayed[0], /^state=RUN\nbranch=\nrecipes=\n[\s\S]*\nreplay_run_id=39369279984\n$/u);
 });

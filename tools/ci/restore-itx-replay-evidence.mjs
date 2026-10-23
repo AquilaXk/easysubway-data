@@ -11,13 +11,14 @@
 //
 // 사용: node tools/ci/restore-itx-replay-evidence.mjs --source-run-id <run id> --repository <owner/repo> --run <gh api run json> --jobs <gh api jobs json>
 //   --artifact-dir <내려받은 artifact 디렉터리> --contract <coverage contract> --output-root <작업 위치>
-import { lstat, readFile, readdir, writeFile } from "node:fs/promises";
+import { lstat, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isObject } from "../lib/is-object.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { readReplaySourceFile, replaySourceJobSteps, stepConclusion, verifyReplaySourceRun } from "./replay-source-run.mjs";
 
 export const ITX_REPLAY_WORKFLOW_PATH = ".github/workflows/itx-current-promotion.yml";
 export const ITX_REPLAY_EVIDENCE_FILES = Object.freeze([
@@ -35,9 +36,8 @@ const COLLECT_STEP = "Collect current ITX timetable";
 const RESTORE_STEP = "Restore retained ITX collection evidence";
 const GATE_STEP = "Evaluate promotion gate";
 const ARTIFACT_ID = /^itx-cheongchun-source-timetable-(\d{17})$/u;
-const RUN_ID = /^[1-9][0-9]{0,15}$/u;
+const REPLAY_CODE = "ITX_REPLAY";
 const SHA256 = /^[0-9a-f]{64}$/u;
-const MAX_FILE_BYTES = 32 * 1024 * 1024;
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);
@@ -54,23 +54,8 @@ function parseJson(buffer, label) {
   return fail("ITX_REPLAY_ARTIFACT_INVALID", `${label} is not a JSON object`);
 }
 
-function verifyRun({ sourceRunId, repository, run }) {
-  if (typeof sourceRunId !== "string" || !RUN_ID.test(sourceRunId)) fail("ITX_REPLAY_RUN_INVALID", "source run id");
-  if (!isObject(run) || run.id !== Number(sourceRunId) || run.path !== ITX_REPLAY_WORKFLOW_PATH || run.head_branch !== "main"
-    || !["workflow_dispatch", "schedule"].includes(run.event) || run.repository?.full_name !== repository) {
-    fail("ITX_REPLAY_RUN_INVALID", `run ${sourceRunId} is not a main run of itx-current-promotion.yml in ${repository}`);
-  }
-}
-
-const stepConclusion = (steps, name) => {
-  const matches = steps.filter((item) => item?.name === name);
-  return matches.length === 1 && matches[0].status === "completed" ? matches[0].conclusion : null;
-};
-
 function verifyJobs({ sourceRunId, jobs }) {
-  const matches = (Array.isArray(jobs?.jobs) ? jobs.jobs : []).filter((job) => job?.name === JOB_NAME && job.run_id === Number(sourceRunId));
-  const steps = matches.length === 1 && Array.isArray(matches[0].steps) ? matches[0].steps : null;
-  if (steps === null) return fail("ITX_REPLAY_STEP_NOT_SUCCESS", `run ${sourceRunId} has no single ${JOB_NAME} job`);
+  const steps = replaySourceJobSteps({ sourceRunId, jobs, jobName: JOB_NAME, code: REPLAY_CODE });
   // 수집기가 성공했거나(처음 수집한 run), 복원 step이 성공한 run(재생 run)이어야 한다. 둘 다이면 모순이라 거부한다.
   const collected = stepConclusion(steps, COLLECT_STEP) === "success";
   const restored = stepConclusion(steps, RESTORE_STEP) === "success";
@@ -84,7 +69,7 @@ function verifyJobs({ sourceRunId, jobs }) {
  */
 export function verifyItxReplaySource({ sourceRunId, repository, run, jobs, files, contract, now }) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime()) || typeof repository !== "string" || !isObject(files)) fail("ITX_REPLAY_INPUT_INVALID");
-  verifyRun({ sourceRunId, repository, run });
+  verifyReplaySourceRun({ sourceRunId, repository, run, workflowPath: ITX_REPLAY_WORKFLOW_PATH, code: REPLAY_CODE });
   verifyJobs({ sourceRunId, jobs });
 
   const names = Object.keys(files).sort(codepointCompare);
@@ -135,17 +120,12 @@ function parseArgs(argv) {
   return values;
 }
 
-async function readRegularFile(file, code) {
-  const stat = await lstat(file).catch(() => null);
-  if (stat === null || !stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES) fail(code, `${path.basename(file)} is not a regular file within the size limit`);
-  return readFile(file);
-}
-
 export async function main(argv, { now = new Date(), log = (line) => process.stdout.write(`${line}\n`) } = {}) {
   const values = parseArgs(argv);
-  const readJson = async (file) => JSON.parse((await readRegularFile(file, "ITX_REPLAY_INPUT_INVALID")).toString("utf8"));
-  const files = {};
-  for (const name of await readdir(values.artifactDir)) files[name] = await readRegularFile(path.join(values.artifactDir, name), "ITX_REPLAY_ARTIFACT_INVALID");
+  const readJson = async (file) => JSON.parse((await readReplaySourceFile(file, "ITX_REPLAY_INPUT_INVALID")).toString("utf8"));
+  const names = await readdir(values.artifactDir);
+  const contents = await Promise.all(names.map((name) => readReplaySourceFile(path.join(values.artifactDir, name), "ITX_REPLAY_ARTIFACT_INVALID")));
+  const files = Object.fromEntries(names.map((name, index) => [name, contents[index]]));
   const result = verifyItxReplaySource({
     sourceRunId: values.sourceRunId,
     repository: values.repository,

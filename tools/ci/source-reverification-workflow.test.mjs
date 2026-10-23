@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
+import { evaluateGithubExpression } from "./github-expression.mjs";
 import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
+import { SOURCE_REVERIFICATION_JOB, SOURCE_REVERIFICATION_REPLAY_SOURCE_STEPS, SOURCE_REVERIFICATION_WORKFLOW_PATH } from "./verify-source-reverification-replay-run.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 workflow 계약. 판정(DUE)이 고른 recipe를 claim → 수집·게시·등록 → 재확인 → push → App 토큰 PR 하나로 올린다.
 // 변수 DATAPACK_SCHEDULED_SOURCE_REVERIFICATION이 true일 때만 정기 실행이 돈다(기본 꺼짐). 이상은 job을 실패시켜 #926 실패 이슈로 드러난다.
@@ -10,6 +12,8 @@ const FILE = "source-reverification.yml";
 const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const RUN = "${{ steps.decision.outputs.state == 'RUN' }}";
 const CLAIMED = "${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' }}";
+const REGISTERED = "${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.reverify.outputs.registered != '0' }}";
+const REPLAYING = "${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.decision.outputs.replay_run_id != '' }}";
 const IDLE = "${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' }}";
 const PUSHED = "${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}";
 const names = () => steps().map(({ name }) => name);
@@ -44,7 +48,8 @@ test("판정 step이 claim·수집보다 먼저 돌고 PR·run·브랜치 목록
   assert.doesNotMatch(block, /--status "?completed|--status completed/u);
   assert.match(block, /jq -s 'add \| unique_by\(\.databaseId\)' "\$\{decision_root\}"\/runs\/\*\.json > "\$\{decision_root\}\/runs\.json"/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
-  assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --issues "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --issues "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --replay-run-id "\$\{REPLAY_RUN_ID\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /\n          REPLAY_RUN_ID: \$\{\{ inputs\.replay_run_id \}\}\n/u);
   before("Decide which P7D sources are due", "Claim exact main before provider access");
 });
 
@@ -112,17 +117,20 @@ test("claim은 읽은 main 그대로일 때만 만들고, 빈 커밋을 push한 
   before("Claim exact main before provider access", "Reverify due P7D sources");
 });
 
-test("controller는 claim 뒤에만 돌고 비밀은 이 step의 env로만 받으며 recipe 목록은 env로 받는다", () => {
+test("controller는 claim 뒤에만 돌고 비밀은 이 step의 env로만 받으며 recipe 목록은 env로 받는다. 재생 run에는 공급자 키를 넘기지 않는다", () => {
   const { block } = step("Reverify due P7D sources");
   assert.equal(ifCondition(block), CLAIMED);
   assert.match(block, /\n        id: reverify\n/u);
-  assert.match(block, /\n          DATA_GO_KR_SERVICE_KEY: \$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}\n/u);
+  assert.match(block, /\n          DATA_GO_KR_SERVICE_KEY: \$\{\{ steps\.decision\.outputs\.replay_run_id == '' && secrets\.DATA_GO_KR_SERVICE_KEY \|\| '' \}\}\n/u);
   assert.match(block, /\n          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}\n/u);
-  assert.match(block, /\n          KRIC_SERVICE_KEY: \$\{\{ secrets\.KRIC_SERVICE_KEY \}\}\n/u);
+  assert.match(block, /\n          KRIC_SERVICE_KEY: \$\{\{ steps\.decision\.outputs\.replay_run_id == '' && secrets\.KRIC_SERVICE_KEY \|\| '' \}\}\n/u);
   assert.match(block, /\n          RECIPES: \$\{\{ steps\.decision\.outputs\.recipes \}\}\n/u);
+  assert.match(block, /\n          REPLAY_RUN_ID: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
   assert.match(block, /git config user\.name "github-actions\[bot\]"/u);
   assert.match(block, /\[\[ "\$\(git rev-parse origin\/main\)" == "\$\{REVERIFICATION_MAIN_SHA\}" \]\]/u);
-  assert.match(block, /node tools\/datapack\/run-source-reverification\.mjs --operation-root "\$\{operation\}\/operation" --recipes "\$\{RECIPES\}" > "\$\{operation\}\/result\.json"/u);
+  assert.match(block, /node tools\/datapack\/run-source-reverification\.mjs --operation-root "\$\{operation\}\/operation" --recipes "\$\{RECIPES\}" --replay-bundle "\$\{operation\}\/replay-bundle" > "\$\{operation\}\/result\.json"/u);
+  assert.match(block, /node tools\/datapack\/run-source-reverification\.mjs --operation-root "\$\{operation\}\/operation" --replay-from "\$\{RUNNER_TEMP\}\/source-reverification-replay\/\$\{GITHUB_RUN_ID\}" --replay-bundle "\$\{operation\}\/replay-bundle" > "\$\{operation\}\/result\.json"/u);
+  assert.match(block, /echo "registered=\$\(jq '\.steps \| length' "\$\{operation\}\/result\.json"\)" >> "\$\{GITHUB_OUTPUT\}"/u);
   assert.equal((yml.match(/secrets\.DATA_GO_KR_SERVICE_KEY/gu) ?? []).length, 1, "the service key is only used by the controller step");
   assert.equal((yml.match(/secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/gu) ?? []).length, 1, "the OCI base URL is only used by the controller step");
   assert.equal((yml.match(/secrets\.KRIC_SERVICE_KEY/gu) ?? []).length, 1, "the KRIC service key is only used by the controller step");
@@ -140,7 +148,7 @@ test("원장 변화 게이트는 controller 뒤에 base(main) 기준으로 한 �
 
 test("push 직전 재확인은 판정과 같은 규칙으로 대기 목록을 읽고, 대기 중이면 올리지 않고 notice로 끝낸다", () => {
   const recheck = step("Recheck that no source-ledger automation is pending before pushing");
-  assert.equal(ifCondition(recheck.block), CLAIMED);
+  assert.equal(ifCondition(recheck.block), REGISTERED);
   assert.match(recheck.block, /\n        id: recheck\n/u);
   // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
   assert.match(recheck.block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
@@ -235,4 +243,83 @@ test("run 스크립트에는 표현식을 직접 넣지 않는다", () => {
 test("action은 SHA로 고정하고 광역 스테이징·강제 push를 쓰지 않는다", () => {
   for (const [, reference] of yml.matchAll(/\n\s+uses: ([^\s]+)/gu)) assert.match(reference, /@[0-9a-f]{40}$/u, reference);
   assert.doesNotMatch(yml, /git add -A|git add \.|--force|push -f/u);
+});
+
+test("dispatch는 재생할 원본 run id(replay_run_id)를 선택 입력으로 받는다 (#3036)", () => {
+  assert.match(yml, /\n  workflow_dispatch:\n    inputs:\n      replay_run_id:\n        description: [^\n]+\n        required: false\n        default: ""\n        type: string\n/u);
+});
+
+test("재생은 claim 뒤에 원본 run이 main의 이 workflow인지 확인하고 그 run의 artifact를 받은 뒤에 controller를 돌린다 (#3036)", () => {
+  const verify = step("Verify the replay source run");
+  assert.equal(ifCondition(verify.block), REPLAYING);
+  assert.match(verify.block, /\n          GH_TOKEN: \$\{\{ github\.token \}\}\n/u);
+  assert.match(verify.block, /\n          REPLAY_RUN_ID: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
+  assert.match(verify.block, /\n          gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{REPLAY_RUN_ID\}" > "\$\{source_root\}\/run\.json"\n/u);
+  assert.match(verify.block, /\n          gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{REPLAY_RUN_ID\}\/jobs\?filter=all&per_page=100" > "\$\{source_root\}\/jobs\.json"\n/u);
+  assert.match(verify.block, /\n          node tools\/ci\/verify-source-reverification-replay-run\.mjs --source-run-id "\$\{REPLAY_RUN_ID\}" --repository "\$\{GITHUB_REPOSITORY\}" --run "\$\{source_root\}\/run\.json" --jobs "\$\{source_root\}\/jobs\.json"$/u);
+  assert.doesNotMatch(verify.block, /secrets\./u);
+  const download = step("Download the retained reverification collection");
+  assert.equal(ifCondition(download.block), REPLAYING);
+  assert.match(download.block, /\n        uses: actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c\n/u);
+  assert.match(download.block, /\n          run-id: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
+  assert.match(download.block, /\n          name: source-reverification-\$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
+  assert.match(download.block, /\n          path: \$\{\{ runner\.temp \}\}\/source-reverification-replay\/\$\{\{ github\.run_id \}\}\n/u);
+  before("Claim exact main before provider access", verify.name);
+  before(verify.name, download.name);
+  before(download.name, "Reverify due P7D sources");
+});
+
+test("재생 원본 확인 도구가 읽는 workflow 경로·job 이름·step 이름은 이 workflow의 실제 이름이다 (#3036)", () => {
+  assert.equal(SOURCE_REVERIFICATION_WORKFLOW_PATH, `.github/workflows/${FILE}`);
+  assert.match(yml, new RegExp(`\\n  reverify:\\n    name: ${SOURCE_REVERIFICATION_JOB}\\n`, "u"));
+  for (const name of SOURCE_REVERIFICATION_REPLAY_SOURCE_STEPS) assert.equal(names().filter((stepName) => stepName === name).length, 1, name);
+});
+
+test("재생이 남긴 등록이 없으면 push·PR 없이 이유를 notice로 남기고 claim은 정리 step이 지운다 (#3036)", () => {
+  const note = step("Note the replay left nothing to register");
+  assert.equal(ifCondition(note.block), "${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.reverify.outputs.registered == '0' }}");
+  assert.match(note.block, /::notice title=Source reverification::/u);
+  assert.match(step("Reverify due P7D sources").block, /jq -r '\.dropped\[\]\? \| /u);
+  before("Reverify due P7D sources", note.name);
+});
+
+test("재생 run이 main 이동이나 다른 원장 쓰기 자동화 때문에 push하지 못하면 대기로 끝내지 않고 REVERIFICATION_REPLAY_BLOCKED로 실패한다 (#3036)", () => {
+  const fail = step("Fail a replay that could not open its pull request");
+  const runs = (outputs) => evaluateGithubExpression(ifCondition(fail.block), { steps: outputs });
+  const replay = (more) => ({ decision: { outputs: { state: "RUN", replay_run_id: "39369279984" } }, ...more });
+  const collect = (more) => ({ decision: { outputs: { state: "RUN", replay_run_id: "" } }, ...more });
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "false" } } })), true, "판정 뒤 main이 움직였다");
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "true" } }, reverify: { outputs: { registered: "3" } }, recheck: { outputs: { idle: "false" } } })), true, "다른 원장 쓰기가 시작됐다");
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "true" } }, recheck: { outputs: { idle: "true" } }, push: { outputs: { pushed: "false" } } })), true, "push 전에 main이 움직였다");
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "true" } }, recheck: { outputs: { idle: "true" } }, push: { outputs: { pushed: "true" } } })), false, "push됐다");
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "true" } }, reverify: { outputs: { registered: "0" } } })), false, "main이 이미 최신이라 등록할 것이 없다");
+  for (const outputs of [{ claim: { outputs: { claimed: "false" } } }, { claim: { outputs: { claimed: "true" } }, recheck: { outputs: { idle: "false" } } }, { push: { outputs: { pushed: "false" } } }]) {
+    assert.equal(runs(collect(outputs)), false, `수집 run은 지금처럼 다음 실행에 맡긴다 ${JSON.stringify(outputs)}`);
+  }
+  assert.match(fail.block, /\n          REPLAY_RUN_ID: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
+  assert.match(fail.block, /::error title=Source reverification::REVERIFICATION_REPLAY_BLOCKED: [^\n]*replay_run_id=\$\{REPLAY_RUN_ID\}/u);
+  assert.match(fail.block, /\n          exit 1\n/u);
+  before("Verify the reverification is based on the current main and push its branch", fail.name);
+  before(fail.name, "Report refresh failure as an issue");
+});
+
+test("재생 묶음은 이 run이 묶음을 썼을 때만 push 뒤·PR 생성 전에 run id 이름의 artifact로 올리고, 재생할 수 있는 증거 창(24시간)에 맞춰 1일 보관한다 (#3036)", () => {
+  const upload = step("Upload the retained collection for a later replay");
+  const runs = (outputs) => evaluateGithubExpression(ifCondition(upload.block), { steps: outputs });
+  const pushed = (bundle) => ({ decision: { outputs: { state: "RUN" } }, claim: { outputs: { claimed: "true" } }, recheck: { outputs: { idle: "true" } }, push: { outputs: { pushed: "true" } }, reverify: { outputs: { replay_bundle: bundle } } });
+  assert.equal(runs(pushed("true")), true);
+  assert.equal(runs(pushed("false")), false, "재생할 수 있는 묶음을 등록하지 않은 run은 올릴 것이 없다");
+  assert.equal(runs({ ...pushed("true"), push: { outputs: { pushed: "false" } } }), false, "push하지 않은 run의 묶음은 재생 원본이 아니다");
+  assert.match(upload.block, /\n        uses: actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n/u);
+  assert.match(upload.block, /\n          name: source-reverification-\$\{\{ github\.run_id \}\}\n/u);
+  assert.match(upload.block, /\n          path: \$\{\{ runner\.temp \}\}\/source-reverification\/\$\{\{ github\.run_id \}\}\/replay-bundle\n/u);
+  assert.match(upload.block, /\n          if-no-files-found: error\n/u, "묶음을 썼다고 했는데 파일이 없으면 실패한다");
+  assert.match(upload.block, /\n          retention-days: 1$/u, "재생 등록기가 24시간 지난 증거를 거부하므로 그보다 오래 두면 실패할 재생을 고르게 된다");
+  const reverify = step("Reverify due P7D sources").block;
+  assert.match(reverify, /\[\[ -f "\$\{operation\}\/replay-bundle\/manifest\.json" \]\]/u);
+  assert.match(reverify, /echo "replay_bundle=true" >> "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(reverify, /echo "replay_bundle=false" >> "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(reverify, /::notice title=Source reverification::no replayable dependency group was registered/u, "묶음을 남기지 않는 것도 로그로 드러낸다");
+  before("Verify the reverification is based on the current main and push its branch", upload.name);
+  before(upload.name, "Mint App token for the reverification pull request");
 });
