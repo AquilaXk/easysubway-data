@@ -12,14 +12,18 @@ async function load() {
   return import(`${pathToFileURL(modulePath).href}?test=${Date.now()}`);
 }
 
-async function fixture({ freshUntil = "2026-08-30T12:00:00.000Z", policy = "PT6H" } = {}) {
+const STANDARD = "kric-station-convenience-standard";
+const ESCALATOR = "kric-station-escalator-detailed";
+// 에스컬레이터 원천은 기본으로 표준보다 하루 늦게 만료되도록 등록돼 있어 기존 판정은 표준이 정한다. null이면 첫 등록 전(증거 없음) 상태다.
+async function fixture({ freshUntil = "2026-08-30T12:00:00.000Z", escalatorFreshUntil = "2026-08-31T12:00:00.000Z", policy = "PT6H" } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "kric-refresh-decision-"));
   const inventoryPath = path.join(directory, "inventory.json");
   const policyPath = path.join(directory, "policy.json");
   const prsPath = path.join(directory, "prs.json");
   const claimsPath = path.join(directory, "claims.txt");
   const claimEvidencePath = path.join(directory, "claim-evidence.json");
-  await writeFile(inventoryPath, JSON.stringify({ sources: [{ id: "kric-station-convenience-standard", accessibilityAdmissionEvidence: { freshUntil } }] }));
+  const escalator = escalatorFreshUntil === null ? { id: ESCALATOR } : { id: ESCALATOR, accessibilityAdmissionEvidence: { freshUntil: escalatorFreshUntil } };
+  await writeFile(inventoryPath, JSON.stringify({ sources: [{ id: STANDARD, accessibilityAdmissionEvidence: { freshUntil } }, escalator] }));
   await writeFile(policyPath, JSON.stringify({ monitoring: { alertBeforePackExpiry: policy } }));
   await writeFile(prsPath, "[]");
   await writeFile(claimsPath, "");
@@ -34,6 +38,40 @@ test("KRIC refresh decision reads the policy threshold and distinguishes NOT_DUE
     const result = await decideCurrentKricFacilityRefresh({ ...input, now: new Date(now) });
     assert.equal(result.state, state);
     assert.equal(result.alertBeforePackExpiry, "PT6H");
+    assert.equal(result.sourceId, state === "NOT_DUE" ? undefined : STANDARD);
+  }
+});
+
+// #3036: 표준·에스컬레이터 두 원천을 run 하나에 하나씩 갱신한다. 등록된 원천은 가장 먼저 만료되는 원천부터 고른다.
+// 첫 등록(증거 없음)은 등록된 원천이 만료·임박이 아닐 때만 고른다. 첫 등록이 실패해도 이미 쓰이는 원천의 갱신을 막지 않는다.
+test("KRIC refresh decision picks one source per run: the earliest-expiring registered source first, a first registration only when none is due", async () => {
+  const { decideCurrentKricFacilityRefresh } = await load();
+  const cases = [
+    [{ escalatorFreshUntil: null }, "2026-08-30T05:59:59.999Z", "DUE", ESCALATOR],
+    [{ escalatorFreshUntil: null }, "2026-08-30T06:00:00.000Z", "DUE", STANDARD],
+    [{ escalatorFreshUntil: null }, "2026-08-30T12:00:00.000Z", "EXPIRED", STANDARD],
+    [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T03:59:59.999Z", "NOT_DUE", undefined],
+    [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T04:00:00.000Z", "DUE", ESCALATOR],
+    [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T10:00:00.000Z", "EXPIRED", ESCALATOR],
+    [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T12:00:00.000Z", "EXPIRED", ESCALATOR],
+    [{ freshUntil: "2026-08-30T09:00:00.000Z", escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T04:00:00.000Z", "DUE", STANDARD],
+  ];
+  for (const [options, now, state, sourceId] of cases) {
+    const result = await decideCurrentKricFacilityRefresh({ ...(await fixture(options)), now: new Date(now) });
+    assert.deepEqual([result.state, result.sourceId], [state, sourceId], `${JSON.stringify(options)} at ${now}`);
+  }
+});
+
+test("KRIC refresh decision fails when a refreshed source has no inventory entry or a registered source has no valid freshUntil", async () => {
+  const { decideCurrentKricFacilityRefresh } = await load();
+  const input = await fixture();
+  for (const [sources, pattern] of [
+    [[{ id: STANDARD, accessibilityAdmissionEvidence: { freshUntil: "2026-08-30T12:00:00.000Z" } }], /KRIC facility source is not in the inventory: kric-station-escalator-detailed/],
+    [[{ id: ESCALATOR }], /KRIC facility source is not in the inventory: kric-station-convenience-standard/],
+    [[{ id: STANDARD, accessibilityAdmissionEvidence: {} }, { id: ESCALATOR }], /kric-station-convenience-standard freshUntil is invalid/],
+  ]) {
+    await writeFile(input.inventoryPath, JSON.stringify({ sources }));
+    await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), pattern);
   }
 });
 
@@ -89,7 +127,7 @@ test("an empty claim without a receipt is handed to cleanup in every due state a
   await writeFile(input.claimsPath, ref(125));
   await evidenceFile(input, kricEvidence(125));
   for (const [now, state] of [["2026-08-30T05:59:59.999Z", "NOT_DUE"], ["2026-08-30T06:00:00.000Z", "DUE"], ["2026-08-30T12:00:00.000Z", "EXPIRED"]]) {
-    assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: new Date(now) }), { state, alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}125`] }, state);
+    assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: new Date(now) }), { state, alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}125`], ...(state === "NOT_DUE" ? {} : { sourceId: STANDARD }) }, state);
   }
   await evidenceFile(input, running(125));
   for (const now of ["2026-08-30T05:00:00.000Z", "2026-08-30T07:00:00.000Z"]) {
@@ -137,7 +175,12 @@ test("decision CLI writes the state, branch and cleanup claims", async () => {
   const output = await readFile(outputPath, "utf8");
   assert.match(output, /"state": "RECOVER_CLAIM"/);
   assert.doesNotMatch(output, /https:\/\//);
-  assert.equal(await readFile(githubOutputPath, "utf8"), `state=RECOVER_CLAIM\nbranch=${PREFIX}123\ncleanup_claims=${PREFIX}124\n`);
+  assert.equal(await readFile(githubOutputPath, "utf8"), `state=RECOVER_CLAIM\nbranch=${PREFIX}123\ncleanup_claims=${PREFIX}124\nsource_id=\n`);
+  const dueOutputPath = path.join(input.directory, "github-output-due.txt");
+  await writeFile(input.claimsPath, "");
+  await evidenceFile(input);
+  await runCurrentKricFacilityRefreshDecision({ inventoryPath: input.inventoryPath, policyPath: input.policyPath, prsPath: input.prsPath, claimsPath: input.claimsPath, claimEvidencePath: input.claimEvidencePath, repository: input.repository, outputPath: path.join(input.directory, "decision-due.json"), githubOutputPath: dueOutputPath, now: NOW });
+  assert.equal(await readFile(dueOutputPath, "utf8"), `state=DUE\nbranch=\ncleanup_claims=\nsource_id=${STANDARD}\n`);
 });
 
 test("claim refs must be ls-remote heads of this workflow", async () => {
@@ -156,8 +199,8 @@ test("a claim the workflow closed out with an Abandon commit is cleaned like any
   const closed = kricEvidence(33931967736, { commits: { aheadBy: 2, subjects: ["Claim KRIC facility refresh", ABANDONED_CLAIM_SUBJECT], changedFiles: 0 }, artifacts: [{ name: "kric-current-facility-refresh-33931967736", expired: false }] });
   await writeFile(input.claimsPath, ref(33931967736));
   await evidenceFile(input, closed);
-  assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T12:00:00.000Z") }), { state: "EXPIRED", alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}33931967736`] });
-  assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: NOW }), { state: "DUE", alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}33931967736`] });
+  assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T12:00:00.000Z") }), { state: "EXPIRED", alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}33931967736`], sourceId: STANDARD });
+  assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: NOW }), { state: "DUE", alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}33931967736`], sourceId: STANDARD });
   await writeFile(input.claimsPath, ref(33931967736) + ref(123));
   await evidenceFile(input, closed, withOutput(123));
   assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: NOW }), { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch: `${PREFIX}123`, cleanupClaims: [`${PREFIX}33931967736`] });

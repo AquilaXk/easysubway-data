@@ -4,9 +4,13 @@ import path from "node:path";
 
 import { parsePrefixedRefs } from "./automation-pr-state.mjs";
 import { CLAIM_OWNERS, planUnboundClaims } from "./claim-orphans.mjs";
+import { KRIC_ESCALATOR_SOURCE_ID, KRIC_STANDARD_SOURCE_ID } from "../datapack/lib/kric-standard-facilities.mjs";
 
 const WORKFLOW = "kric-current-facility-refresh.yml";
-const SOURCE_ID = "kric-station-convenience-standard";
+// #3036: 이 workflow가 갱신하는 원천이다. run 하나는 원천 하나를 수집·게시·등록한다.
+const REFRESH_SOURCE_IDS = Object.freeze([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID]);
+// 고르는 순서다. 등록된 원천의 만료·임박이 첫 등록보다 앞서므로, 첫 등록이 실패해도 이미 쓰이는 원천의 갱신을 막지 않는다.
+const SOURCE_STATE_PRIORITY = Object.freeze(["EXPIRED", "DUE", "FIRST_REGISTRATION"]);
 const AUTOMATION_BRANCH = /^automation\/629-kric-facility-refresh-[0-9]+$/;
 const SOURCE_RUN_ID = /^[1-9][0-9]*$/;
 const GITHUB_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -61,6 +65,25 @@ function automationClaims(bytes) {
   return parsePrefixedRefs(bytes.toString("utf8"), CLAIM_OWNERS[WORKFLOW].prefix, invalid).map(({ branch }) => branch);
 }
 
+// 첫 등록 전 원천은 inventory 항목에 accessibilityAdmissionEvidence가 없다. 등록된 원천은 증거의 freshUntil로 판정한다.
+function sourceRefreshState(inventory, sourceId, currentTime, threshold) {
+  const source = inventory.sources?.find(({ id }) => id === sourceId);
+  if (!source) throw new Error(`KRIC facility source is not in the inventory: ${sourceId}`);
+  if (source.accessibilityAdmissionEvidence === undefined) return { sourceId, state: "FIRST_REGISTRATION", freshUntil: Number.POSITIVE_INFINITY };
+  const freshUntil = requireInstant(source.accessibilityAdmissionEvidence?.freshUntil, `${sourceId} freshUntil`);
+  if (currentTime >= freshUntil) return { sourceId, state: "EXPIRED", freshUntil };
+  if (currentTime >= freshUntil - threshold) return { sourceId, state: "DUE", freshUntil };
+  return { sourceId, state: "NOT_DUE", freshUntil };
+}
+
+function selectRefreshSource(states) {
+  for (const state of SOURCE_STATE_PRIORITY) {
+    const [selected] = states.filter((entry) => entry.state === state).sort((left, right) => left.freshUntil - right.freshUntil);
+    if (selected) return { state: state === "FIRST_REGISTRATION" ? "DUE" : state, sourceId: selected.sourceId };
+  }
+  return { state: "NOT_DUE" };
+}
+
 export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, now = new Date() } = {}) {
   const [inventoryBytes, policyBytes, prsBytes, claimsBytes, evidenceBytes] = await Promise.all([
     readFile(path.resolve(inventoryPath)), readFile(path.resolve(policyPath)), readFile(path.resolve(prsPath)), readFile(path.resolve(claimsPath)),
@@ -68,12 +91,11 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   ]);
   const inventory = requireObject(parseJson(inventoryBytes, "source inventory"), "source inventory");
   const policy = requireObject(parseJson(policyBytes, "freshness policy"), "freshness policy");
-  const source = inventory.sources?.find(({ id }) => id === SOURCE_ID);
-  const freshUntil = requireInstant(source?.accessibilityAdmissionEvidence?.freshUntil, "KRIC facility freshUntil");
   const alertBeforePackExpiry = policy.monitoring?.alertBeforePackExpiry;
   const threshold = parseDuration(alertBeforePackExpiry);
   const currentTime = now instanceof Date ? now.getTime() : NaN;
   if (!Number.isFinite(currentTime)) throw new Error("decision time is invalid");
+  const refresh = selectRefreshSource(REFRESH_SOURCE_IDS.map((sourceId) => sourceRefreshState(inventory, sourceId, currentTime, threshold)));
   const pullRequests = automationPullRequests(parseJson(prsBytes, "open pull requests"), repository);
   const pullRequestBranches = pullRequests.map(({ headRefName }) => headRefName);
   if (new Set(pullRequestBranches).size !== pullRequestBranches.length) {
@@ -102,9 +124,7 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   if (live.length > 1) throw new Error("duplicate KRIC refresh claims exist");
   if (plan.active.length === 1) return { state: "CLAIM_IN_PROGRESS", alertBeforePackExpiry, branch: plan.active[0], cleanupClaims };
   if (plan.recoverable.length === 1) return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: plan.recoverable[0], cleanupClaims };
-  if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry, cleanupClaims };
-  if (currentTime >= freshUntil - threshold) return { state: "DUE", alertBeforePackExpiry, cleanupClaims };
-  return { state: "NOT_DUE", alertBeforePackExpiry, cleanupClaims };
+  return { state: refresh.state, alertBeforePackExpiry, cleanupClaims, ...(refresh.sourceId === undefined ? {} : { sourceId: refresh.sourceId }) };
 }
 
 // RECOVER_CLAIM이 원래 run의 보존 증거(journal·raw receipt)를 받을 수 있는지 판정한다.
@@ -141,7 +161,7 @@ export async function runCurrentKricFacilityRefreshDecision({ inventoryPath, pol
   const result = await decideCurrentKricFacilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, now });
   await Promise.all([
     writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }),
-    writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\ncleanup_claims=${result.cleanupClaims.join(",")}\n`, { flag: "a" }),
+    writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\ncleanup_claims=${result.cleanupClaims.join(",")}\nsource_id=${result.sourceId ?? ""}\n`, { flag: "a" }),
   ]);
   return result;
 }
