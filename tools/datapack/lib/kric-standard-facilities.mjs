@@ -9,7 +9,7 @@ const FACILITY_TYPES = new Map([["EV", "ELEVATOR"], ["ES", "ESCALATOR"], ["WCLF"
 const KRIC_FACILITY_CODES = new Set([...FACILITY_TYPES.keys(), "ELEC", "FEED", "INFO", "TOLT"]);
 export const KRIC_STANDARD_FACILITY_TYPES = Object.freeze([...FACILITY_TYPES.values()]);
 // stationCnvFacl 문서는 gubun ES를 적지만 실측(2026-10-22 snapshot 213조회, 2,019행)에서 ES는 0행이다.
-// 그래서 목록에 ES가 없다는 것은 부재가 아니라 UNKNOWN이다. inventory capabilities.facility.absenceCoveredFacilityTypes와 같아야 한다.
+// 그래서 목록에 ES가 없다는 것은 부재가 아니라 UNKNOWN이다. production scope의 supportedV1Scope.facilityAbsenceCoverage KRIC 선언과 같아야 한다.
 export const KRIC_STANDARD_ABSENCE_COVERED_TYPES = Object.freeze(["ELEVATOR", "WHEELCHAIR_LIFT"]);
 const FACILITY_ID_MAX_LENGTH = 120;
 const ABSENT = Object.freeze({

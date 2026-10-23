@@ -9,6 +9,7 @@ import {
   canonicalFacilitySourceAdmissionJson,
   loadCurrentFacilitySourceAdmissionInput,
 } from "./build-facility-source-admission.mjs";
+import { KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS } from "./lib/kric-standard-facilities.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -81,6 +82,16 @@ test("#3036 UNKNOWN 칸이 있어도 확인된 칸 수가 scope 하한 아래면
   const undeclared = await historicalFacilityFixtureInput();
   undeclared.productionInput.supportedV1Scope.facilityAbsenceCoverage = [];
   assert.throws(() => buildFacilitySourceAdmission(undeclared), /FACILITY_ABSENCE_WITHOUT_COVERING_SOURCE: 2 rows/);
+});
+
+test("#3036 KRIC 상태 의미 목록 밖의 UNKNOWN 증거는 입수하지 않는다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  const unknown = input.productionInput.accessibilityStatusEvidence.find(({ evidenceKind }) => evidenceKind === "UNKNOWN");
+  assert.equal(KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS.includes(unknown.statusMeaning), true);
+  assert.equal(buildFacilitySourceAdmission(input).decision, "GO");
+
+  unknown.statusMeaning = "PROVIDER_SAID_NOTHING";
+  assert.throws(() => buildFacilitySourceAdmission(input), /FACILITY explicit unknown identity mismatch/);
 });
 
 test("current mixed accessibility evidence는 legacy FACILITY builder에서 fail-closed다", async () => {

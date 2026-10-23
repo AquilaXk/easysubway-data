@@ -85,9 +85,22 @@ test("#3036 production scope는 원천별로 부재를 단정할 수 있는 시�
   }
 });
 
+const trackedPilotInput = async () => JSON.parse(await readFile(path.join(import.meta.dirname, "inputs/capital-pilot-production-source-input.json"), "utf8"));
+
 test("#3036 pilot scope의 KRIC 편의시설 선언은 부재를 만드는 규칙과 같고 에스컬레이터를 포함하지 않는다", async () => {
-  const input = JSON.parse(await readFile(path.join(import.meta.dirname, "inputs/capital-pilot-production-source-input.json"), "utf8"));
+  const input = await trackedPilotInput();
   const declared = input.supportedV1Scope.facilityAbsenceCoverage.find(({ sourceId }) => sourceId === KRIC_STANDARD_SOURCE_ID);
   assert.deepEqual(declared.facilityTypes, [...KRIC_STANDARD_ABSENCE_COVERED_TYPES]);
   assert.equal(declared.facilityTypes.includes("ESCALATOR"), false);
+});
+
+test("#3036 pilot scope의 검증된 칸 하한은 원천이 존재·부재를 말할 수 없는 유형의 칸을 뺀 수다", async () => {
+  const input = await trackedPilotInput();
+  const { requiredFacilityTypes, facilityCoverageDenominator } = input.supportedV1Scope;
+  const stationLines = input.stationMappings.filter(({ sourceId }) => sourceId === "molit-urban-rail-full-route").length;
+  const uncoveredTypes = requiredFacilityTypes.filter((type) => !KRIC_STANDARD_ABSENCE_COVERED_TYPES.includes(type));
+  assert.deepEqual(uncoveredTypes, ["ESCALATOR"]);
+  assert.equal(facilityCoverageDenominator.expectedRows, stationLines * requiredFacilityTypes.length);
+  assert.equal(facilityCoverageDenominator.minimumVerifiedRows, facilityCoverageDenominator.expectedRows - stationLines * uncoveredTypes.length);
+  assert.deepEqual([facilityCoverageDenominator.expectedRows, facilityCoverageDenominator.minimumVerifiedRows], [6, 4]);
 });
