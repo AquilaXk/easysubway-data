@@ -9186,7 +9186,24 @@
           "portal": "KRIC 레일포털",
           "productionUseAllowed": true,
           "unlockStatus": "not_required"
-        }
+        },
+        "productionUseNoteKo": "fresh KRIC escalator snapshot kric-station-escalator-detailed-20261023T212311562Z registration verified."
+      },
+      "accessibilityAdmissionEvidence": {
+        "issue": 3036,
+        "decision": "APPROVED",
+        "licenseEvidenceHash": "2953cce5b977132db7e7a428c677e6d292401f77c40a1e8f8dd84af5a3e61df2",
+        "productionUseAllowed": true,
+        "snapshotId": "kric-station-escalator-detailed-20261023T212311562Z",
+        "snapshotPath": "tools/datapack/sources/kric-station-escalator-detailed-20261023T212311562Z.json",
+        "capturedAt": "2026-10-23T21:23:11.562Z",
+        "observedAt": "2026-10-23T21:23:11.562Z",
+        "freshUntil": "2026-10-24T21:23:11.562Z",
+        "absenceEvidenceMode": "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED",
+        "rawSha256": "385620d7341835dc78ed775ee1e90c3c8e615286f287eeac26437b93101b7bd3",
+        "contentSha256": "62d15d5e35bd6240a276c513bfd3b394341766221bb357a7e8c1a5e910c8d187",
+        "schemaFingerprint": "bf492f17cab7aa5ff8bb4ca4426162d6833bb6de639d1c3613d4ec2e47f892ab",
+        "snapshotFileSha256": "77805666046d80838c431dcd3464f610d3f6ffbe12a6c3a19ceab83ee4ead313"
       }
     }
   ]
