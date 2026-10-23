@@ -2068,7 +2068,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2025-04-12",
-      "retrievedAt": "2026-10-22",
+      "retrievedAt": "2026-10-23",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -2112,10 +2112,10 @@
         "issue": 2488,
         "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-incheon-timetable.test.mjs",
-        "snapshotId": "incheon-line1-train-timetable-20261022",
-        "snapshotPath": "tools/datapack/sources/incheon-line1-train-timetable-20261022.json",
-        "capturedAt": "2026-10-22T00:48:01.942Z",
-        "freshUntil": "2026-10-23T00:48:01.942Z",
+        "snapshotId": "incheon-line1-train-timetable-20261023",
+        "snapshotPath": "tools/datapack/sources/incheon-line1-train-timetable-20261023.json",
+        "capturedAt": "2026-10-23T00:48:44.066Z",
+        "freshUntil": "2026-10-24T00:48:44.066Z",
         "rowCount": 574,
         "departureCount": 18392,
         "tripCount": 574,
@@ -2123,7 +2123,7 @@
         "rawSha256": "93cea8efe1937c525cbe95c655f69171baed9fc2643e72daef6de4a5a25b9234",
         "rowsSha256": "cadbf0e7b064b097674769833b051ca1334b346285dbb5c2babe1d84a862fd71",
         "topologySourceId": "incheon-transit-station-info",
-        "topologySnapshotId": "incheon-transit-station-info-20261022",
+        "topologySnapshotId": "incheon-transit-station-info-20261023",
         "topologyContentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
         "rawUpSha256": "baef2440301bd5fec4715dadabeba4caf6f56c769cfbf6ad0655a29e4ea62579",
         "rawDownSha256": "6d51dacc7c8ce84d24aa32e023baff79239448e172780c5e8e679313b58b713f",
@@ -2162,7 +2162,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2025-06-30",
-      "retrievedAt": "2026-10-22",
+      "retrievedAt": "2026-10-23",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -2206,10 +2206,10 @@
         "issue": 2488,
         "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-incheon-timetable.test.mjs",
-        "snapshotId": "incheon-line2-train-timetable-20261022",
-        "snapshotPath": "tools/datapack/sources/incheon-line2-train-timetable-20261022.json",
-        "capturedAt": "2026-10-22T00:48:01.942Z",
-        "freshUntil": "2026-10-23T00:48:01.942Z",
+        "snapshotId": "incheon-line2-train-timetable-20261023",
+        "snapshotPath": "tools/datapack/sources/incheon-line2-train-timetable-20261023.json",
+        "capturedAt": "2026-10-23T00:48:44.066Z",
+        "freshUntil": "2026-10-24T00:48:44.066Z",
         "rowCount": 840,
         "departureCount": 22506,
         "tripCount": 840,
@@ -2217,7 +2217,7 @@
         "rawSha256": "d30e28247de4620b81ef855e5f09bbfb516b0dafc1de165983c0164e75431b79",
         "rowsSha256": "00558f197df117c76f3704e93bb0a53a620130c06382a5056b35e84f94285c2b",
         "topologySourceId": "incheon-transit-station-info",
-        "topologySnapshotId": "incheon-transit-station-info-20261022",
+        "topologySnapshotId": "incheon-transit-station-info-20261023",
         "topologyContentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
         "rawUpSha256": "4735527fb58e5e94aabd683f62de1247dcf435dbf46b42ffa91207758a2c53e1",
         "rawDownSha256": "497ec65f406e30c9e7ea2b5ac3731cf461184916d91ee10f7ef411c53e5183cc",
@@ -2387,7 +2387,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2026-06-30",
-      "retrievedAt": "2026-10-22",
+      "retrievedAt": "2026-10-23",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -2436,13 +2436,13 @@
         "issue": 2490,
         "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
         "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
-        "snapshotId": "incheon-transit-station-info-20261022",
+        "snapshotId": "incheon-transit-station-info-20261023",
         "lineIds": [
           "line-42b5805f3b5a",
           "line-98718184f016",
           "line-15b3b8a93259"
         ],
-        "verifiedAt": "2026-10-22T00:47:54.584Z",
+        "verifiedAt": "2026-10-23T00:48:35.012Z",
         "stationCount": 71,
         "membershipSourceId": "incheon-transit-station-info",
         "membershipSourceRawSha256": "4fd138ac74d3e937b18762f0eb9b0013b5fc910380474dd0ef023affc2868d54",
@@ -2450,17 +2450,17 @@
         "mappingSha256": "600ed0fc224facad418d0e6c45657c8a89b840eff1d1378fb48d06f139a27bf9",
         "stationCodesSha256": "dff57ce3c33a43846992885945c0b509c32fb91d5317fed3873060e0fc7ee2bf",
         "stationCodeSourceId": "incheon-transit-station-info",
-        "stationCodeSnapshotId": "incheon-transit-station-info-20261022",
+        "stationCodeSnapshotId": "incheon-transit-station-info-20261023",
         "stationCodeContentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a"
       },
       "topologyAdmissionEvidence": {
         "issue": 2481,
         "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
         "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
-        "snapshotId": "incheon-transit-station-info-20261022",
-        "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20261022.json",
-        "capturedAt": "2026-10-22T00:47:54.584Z",
-        "freshUntil": "2026-10-29T00:47:54.584Z",
+        "snapshotId": "incheon-transit-station-info-20261023",
+        "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20261023.json",
+        "capturedAt": "2026-10-23T00:48:35.012Z",
+        "freshUntil": "2026-10-30T00:48:35.012Z",
         "stationCount": 60,
         "edgeCount": 116,
         "excludedTransferCount": 0,
@@ -2472,10 +2472,10 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
         "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
-        "snapshotId": "incheon-transit-station-info-20261022",
-        "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20261022.json",
-        "snapshotSha256": "0ceab7067886ebfd511e2d17ce40f96437fdfd6248c2c3caa0cea904d289b38e",
-        "capturedAt": "2026-10-22T00:47:54.584Z",
+        "snapshotId": "incheon-transit-station-info-20261023",
+        "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20261023.json",
+        "snapshotSha256": "4d1ab7632e27a84b7e4a4c85e42335cc82d1866e6032445a37c5949b897363cf",
+        "capturedAt": "2026-10-23T00:48:35.012Z",
         "stationCount": 71,
         "datasetId": "15083751",
         "rawSha256": "4fd138ac74d3e937b18762f0eb9b0013b5fc910380474dd0ef023affc2868d54",
@@ -2492,19 +2492,19 @@
         },
         "observedDataUpdatedAt": "2026-06-30",
         "topologySourceId": "incheon-transit-station-info",
-        "topologySnapshotId": "incheon-transit-station-info-20261022",
+        "topologySnapshotId": "incheon-transit-station-info-20261023",
         "topologyContentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
-        "freshUntil": "2027-10-22T00:47:54.584Z",
+        "freshUntil": "2027-10-23T00:48:35.012Z",
         "topologyLineages": [
           {
             "sourceId": "incheon-transit-station-info",
-            "snapshotId": "incheon-transit-station-info-20261022",
+            "snapshotId": "incheon-transit-station-info-20261023",
             "contentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
             "lineId": "line-42b5805f3b5a"
           },
           {
             "sourceId": "incheon-transit-station-info",
-            "snapshotId": "incheon-transit-station-info-20261022",
+            "snapshotId": "incheon-transit-station-info-20261023",
             "contentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
             "lineId": "line-98718184f016"
           }
@@ -2632,15 +2632,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "b09260393e119237f56ab6afed507abfe69be0eab34eb1dd3e0630c4f5d945c3",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-e9e9a5b520a4"
             }
@@ -2913,15 +2913,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "ac71a346f351d059fb3563b0baef920d9d294015028d15be98bb36184f040aa9",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-828f04afc588"
             }
@@ -3040,15 +3040,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "0761de1cad5b3a4d46295c1bb79a9d067c7a8c9da64c9c28fdc328d9fb5d7638",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-5500c1600f71"
             }
@@ -3168,15 +3168,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "89bb3e4d5c530b7be3d8f20fc35702f9096feeef43d6dbc392db92877c39ff7a",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-8604048b6430"
             }
@@ -3303,15 +3303,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "0e5321625953e55060a2fea04ac834f226ffd6d048b0afaf7bbc88606db6fd39",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-54a7b980b7c3"
             }
@@ -3436,15 +3436,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "48b6f150880cbda8fb16f7aefff2dd08825922d24b5b95d8d6d45e47ed1fbb08",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-e4939a4b4713"
             }
@@ -3562,15 +3562,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "1519b96fde09ffc1b473762a2645945f9b08a3d6f1acf7b8fdbb17fbe74ffcb9",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-6e39be0cb6e2"
             }
@@ -3932,15 +3932,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "60363797c18da989a167b9a3a4f86f12b4e56d64c19b99208b4cb8e6e359922c",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-051552e50435"
             }
@@ -4058,15 +4058,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "c42e4430e3d25f0d821324e96080235713c70811230ccde8881ffac97f4c23ac",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-f0e747248a31"
             }
@@ -4186,15 +4186,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "72b9545dbe723a3ef33883ead8cc2fd5948faf971aa84bbb6d2daeedf7ee4b51",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "shinbundang"
             }
@@ -4312,15 +4312,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "1186f5b0ccc1e13cd0a1a45e42d12a2eeb77b9932892762d32a8b2e8cf1a6d65",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-aefa08ccc0a9"
             }
@@ -5283,15 +5283,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "7981ab86e67ebe203710fc36fa4c4463747bd3c6fffc549faeec9343d8f7135d",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-558d0bd8312d"
             }
@@ -5607,15 +5607,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "ea86b8629935d416de0e54bd1993cedeafbc61f6e825f97d69e56abbcebf4dbf",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-30886152e4f8"
             }
@@ -5734,15 +5734,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "1493c5ffdc4f0c1da1dd5436467b2aec35219c8ebfa8c7a6471d8c011996b3a5",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-62096860ab09"
             }
@@ -6673,8 +6673,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "realtime",
-      "observedDataUpdatedAt": "2026-10-22",
-      "retrievedAt": "2026-10-22",
+      "observedDataUpdatedAt": "2026-10-23",
+      "retrievedAt": "2026-10-23",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -6764,15 +6764,15 @@
         "decision": "APPROVED",
         "productionUseAllowed": true,
         "licenseEvidenceHash": "cd1063d4aa4b6290b1f4edabb9a74e62d70f8da5044aa4608b7f1e45e10c5963",
-        "snapshotId": "seoul-metro-accessibility-20261022T083146833Z",
-        "snapshotPath": "tools/datapack/sources/seoul-metro-accessibility-20261022T083146833Z.json",
-        "capturedAt": "2026-10-22T08:31:46.833Z",
-        "observedAt": "2026-10-22T08:31:46.833Z",
-        "freshUntil": "2026-10-23T08:31:46.833Z",
-        "rawSha256": "61693243b095c87f3468504b05eef05425e5f448ef69c1730ccd791ecb87bec9",
-        "contentSha256": "df0d456f02a5289ebd580adae783f4603592dee4796269bef036d501d474bfd0",
+        "snapshotId": "seoul-metro-accessibility-20261023T023201393Z",
+        "snapshotPath": "tools/datapack/sources/seoul-metro-accessibility-20261023T023201393Z.json",
+        "capturedAt": "2026-10-23T02:32:01.393Z",
+        "observedAt": "2026-10-23T02:32:01.393Z",
+        "freshUntil": "2026-10-24T02:32:01.393Z",
+        "rawSha256": "bf59fdbd757a4a8f5b93088950f1e0c7eb23e0eb60f764f9c4f17f3cedc62b28",
+        "contentSha256": "118423f55b4dab9cc05172b7c08fd324020a749cd02a414ee57f4fbe15949ac1",
         "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
-        "snapshotFileSha256": "393ba222d67dc8666586a115fae11991470b0c6e152d23ee43c63c7ed70cdb24",
+        "snapshotFileSha256": "a1669aa06344e66852cc15858d113054a845c1708c2bf3ac540099879bb82b45",
         "absenceEvidenceMode": "EXHAUSTIVE_LIST"
       }
     },
@@ -6995,15 +6995,15 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "2db140beb94048ca65df3ef455bf45bafa2939812776d4944fe0c73da3517d53",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-f0e747248a31"
             }
@@ -7279,57 +7279,57 @@
           "artifactKind": "capital-route-map-current-topology-admission",
           "issue": 2776,
           "status": "ADMITTED",
-          "topologySnapshotId": "capital-route-topology-20261022",
+          "topologySnapshotId": "capital-route-topology-20261023",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
           "positionSnapshotSha256": "e4f28efc7381e1d96ae7b1c31b7ed41a119317e2a7481382a54c83b39aa818ae",
-          "reviewedAt": "2026-10-22T00:47:46.728Z",
-          "freshUntil": "2026-10-29T00:47:46.728Z",
+          "reviewedAt": "2026-10-23T00:48:25.428Z",
+          "freshUntil": "2026-10-30T00:48:25.428Z",
           "topologyLineages": [
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-15b3b8a93259"
             },
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-2b2d9eaa53d0"
             },
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-3f41718e0833"
             },
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-41a8c75ec9d8"
             },
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-472a81add377"
             },
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "line-80fc4d5350d4"
             },
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "seoul-2"
             },
             {
               "sourceId": "capital-route-topology",
-              "snapshotId": "capital-route-topology-20261022",
+              "snapshotId": "capital-route-topology-20261023",
               "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
               "lineId": "seoul-4"
             }
@@ -7490,7 +7490,7 @@
         "productionUseAllowed": true,
         "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
         "snapshotPath": "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json",
-        "snapshotFileSha256": "3eb485f1c8ec2e6ba0b06d35177b7abd0b5604ef2fa84e327a2488b85f57a8fc",
+        "snapshotFileSha256": "68613456538440725eb4fd029f73ca4cf882d6fc9004d52ad5fb09b0291558c3",
         "capturedAt": "2026-08-15T09:40:38.817Z",
         "observedAt": "2026-08-15T09:40:38.817Z",
         "freshUntil": "2027-08-15T09:40:38.817Z",
@@ -7499,9 +7499,9 @@
         "contentSha256": "77725b1fdfa25173c5f009daf5b221a0e674cf667fb88110a6d8790081e87cf8",
         "schemaFingerprint": "18cb8d6e4775fcb5d02ca80e03255dbb4021dabfbe95edd054e32923f767117e",
         "metricsPath": "tools/datapack/release/current-transfer-topology-metrics.json",
-        "metricsArtifactSha256": "4c7bce4e5a583e5bf2b522776c5575cb3981fadd2b77b71969a00a583b9190a8",
+        "metricsArtifactSha256": "568027c346d9552941e7bae45c39b190de78c1e32a37a7053368f5860f49b051",
         "applicabilityPath": "tools/datapack/release/current-capital-transfer-topology-applicability.json",
-        "applicabilityArtifactSha256": "97f0cc2a87e7600d0bcb8b3dd8c1d64a520cf49b26bef563d0d4441fefdbca45",
+        "applicabilityArtifactSha256": "53ea2ab5367be7b1c6fd245f12730ed3f0404c6248d291953961be88f44418d7",
         "rowCount": 145,
         "physicalPairCount": 102,
         "directedMetricCount": 204,
@@ -8109,8 +8109,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "P7D",
-      "observedDataUpdatedAt": "2026-10-22",
-      "retrievedAt": "2026-10-22",
+      "observedDataUpdatedAt": "2026-10-23",
+      "retrievedAt": "2026-10-23",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 제1유형",
@@ -8161,10 +8161,10 @@
         "status": "APPROVED",
         "issue": 456,
         "sourceId": "capital-route-topology",
-        "snapshotId": "capital-route-topology-20261022",
-        "snapshotPath": "tools/datapack/sources/capital-route-topology-20261022.json",
-        "snapshotFileSha256": "508c2375e0f008587981d070f13c3d7fc1d8cb8e004fc9ba559a01d0bc86bb88",
-        "snapshotRawSha256": "508c2375e0f008587981d070f13c3d7fc1d8cb8e004fc9ba559a01d0bc86bb88",
+        "snapshotId": "capital-route-topology-20261023",
+        "snapshotPath": "tools/datapack/sources/capital-route-topology-20261023.json",
+        "snapshotFileSha256": "58fc488347ac82f2dbf084bb61d4c1ebcff122f0690c81196cae9996905e25fe",
+        "snapshotRawSha256": "58fc488347ac82f2dbf084bb61d4c1ebcff122f0690c81196cae9996905e25fe",
         "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
         "lineIds": [
           "line-472a81add377",
@@ -8178,16 +8178,16 @@
         ],
         "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
         "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
-        "rawReceiptSha256": "6535fd5ed5eda10f89d9e2fba6889531945af4cc67667e6a389125683b457f39",
-        "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261022/508c2375e0f008587981d070f13c3d7fc1d8cb8e004fc9ba559a01d0bc86bb88.json",
-        "rawObjectSha256": "508c2375e0f008587981d070f13c3d7fc1d8cb8e004fc9ba559a01d0bc86bb88",
+        "rawReceiptSha256": "be2b4d5ed997c9ec5879780dcd9d19e7e9bf55f188f096100ed31f615a9b6c36",
+        "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261023/58fc488347ac82f2dbf084bb61d4c1ebcff122f0690c81196cae9996905e25fe.json",
+        "rawObjectSha256": "58fc488347ac82f2dbf084bb61d4c1ebcff122f0690c81196cae9996905e25fe",
         "byteSize": 260470,
         "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
         "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
         "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
-        "evaluatedAt": "2026-10-22T00:57:31.478Z",
+        "evaluatedAt": "2026-10-23T01:14:11.740Z",
         "predecessorSnapshotIds": [
-          "capital-route-topology-20261021"
+          "capital-route-topology-20261022"
         ]
       }
     },
