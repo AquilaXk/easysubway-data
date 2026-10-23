@@ -19,6 +19,7 @@ import {
   sourceRefreshStages,
 } from "./build-automation-status.mjs";
 import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
+import { PROVIDER_BUDGET_BLOCK_STEP } from "./provider-call-budget.mjs";
 import { REFRESH_STAGES } from "./refresh-stage-contracts.mjs";
 
 const now = new Date("2026-10-10T03:00:00.000Z");
@@ -39,6 +40,7 @@ const ownPull = (number, ref, createdHoursAgo, overrides = {}) => ({
 
 // 재확인 recipe 연체 판정 입력(#3036 7-27). 정책은 실제 SLA 파일이고, 원장은 recipe가 만료 기준으로 삼는 head마다 한 행(기본: 한 시간 전 수집, P7D 만료)이다.
 const FRESHNESS_POLICY = JSON.parse(readFileSync(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url), "utf8"));
+const CALL_BUDGET_POLICY = JSON.parse(readFileSync(new URL("../../release/product-gates/provider-daily-call-budget.json", import.meta.url), "utf8"));
 const LEDGER_HEAD_SOURCE_IDS = REVERIFICATION_RECIPES.flatMap(({ due }) => (due?.kind === "ledger-head" ? due.sourceIds : []));
 const ledgerHeadRow = (sourceId, basisAt, freshnessExpiresAt) => ({
   sourceId, snapshotId: `${sourceId}-1`, previousSnapshotId: null, retrievedAt: basisAt, serviceEffectiveAt: basisAt, freshnessExpiresAt,
@@ -47,7 +49,7 @@ const reverificationLedger = (overrides = {}) => LEDGER_HEAD_SOURCE_IDS.map((id)
 
 const emptyInputs = () => ({
   now, repository: REPOSITORY, manifest, stageRuns: {}, issues: [], openPulls: [], claimRefs: [], behind: { actions: [], anomalies: [] },
-  sourceLedger: reverificationLedger(), freshnessPolicy: FRESHNESS_POLICY,
+  sourceLedger: reverificationLedger(), freshnessPolicy: FRESHNESS_POLICY, providerCallBudget: CALL_BUDGET_POLICY,
 });
 
 test("스냅샷은 활성 데이터팩과 모든 단계를 담고, 기록이 없는 단계는 latest null로 드러낸다", () => {
@@ -625,6 +627,73 @@ test("다른 단계가 소유한 원천도 재확인 recipe가 연체면 FAILED�
   assert.equal(stateAt(hoursAgo(1)), "OK");
 });
 
+// #3036: 부산 묶음이 공급자 하루 호출 예산·시도 상한에 막히면 그 KST 날이 끝날 때까지 다시 수집하지 않는다. 막은 run은 실패하지만 뒤이은 대기 run은 성공으로 끝나므로
+// 마지막 run만 보면 막힘이 OK로 덮인다. 오늘 예산 step이 실패한 run이 있고 묶음이 아직 DUE면 묶음의 원천은 FAILED다(연체와 같은 방식, #1437).
+test("부산 묶음이 오늘 호출 예산에 막혔으면 뒤이은 대기 성공 run이 있어도 묶음 원천은 FAILED다", () => {
+  const topology = "busan-transportation-route-topology";
+  const inventory = inventoryOf(
+    evidenceSource(topology, 60), evidenceSource("busan-transportation-accessibility", 60), evidenceSource("busan-transportation-timetable", 60),
+    evidenceSource("gwangju-transportation-accessibility", 60),
+  );
+  const waitingAfterBlock = refreshRunsOf({
+    "source-reverification": [run(2, { created_at: hoursAgo(1), conclusion: "success" }), run(1, { created_at: hoursAgo(1.3), conclusion: "failure" })],
+  });
+  const states = ({ busanHead, budgetBlockedRuns }) => Object.fromEntries(expiring({
+    sourceInventory: inventory, refreshRuns: waitingAfterBlock, sourceLedger: reverificationLedger({ [topology]: busanHead }), budgetBlockedRuns,
+  }).map((item) => [item.sourceId, item.refreshState]));
+  // 수집 30시간 전: DUE지만 연체 전이다. 예산 막힘이 없으면 마지막 run(대기 성공)으로 OK다.
+  const dueHead = ledgerHeadRow(topology, hoursAgo(30), iso(138));
+  assert.equal(states({ busanHead: dueHead, budgetBlockedRuns: [] })[topology], "OK");
+  assert.deepEqual(states({ busanHead: dueHead, budgetBlockedRuns: [1] }), {
+    [topology]: "FAILED", "busan-transportation-accessibility": "FAILED", "busan-transportation-timetable": "FAILED", "gwangju-transportation-accessibility": "OK",
+  });
+  // 막힌 뒤 같은 날 묶음이 등록돼 DUE가 아니면 막힘은 더 이상 이상이 아니다.
+  assert.equal(states({ busanHead: ledgerHeadRow(topology, hoursAgo(1), iso(167)), budgetBlockedRuns: [1] })[topology], "OK");
+});
+
+test("수집: 오늘(KST) 실패한 재확인 run의 job에서 예산 step 실패를 찾고, 어제 run·성공 run은 job을 읽지 않는다", async () => {
+  // now = 2026-10-10T03:00Z = KST 12:00. 오늘 KST는 2026-10-09T15:00Z부터다.
+  const reverificationRuns = [
+    run(30, { created_at: "2026-10-10T02:30:00Z", conclusion: "success" }),
+    run(31, { created_at: "2026-10-10T01:30:00Z", conclusion: "failure" }),
+    run(32, { created_at: "2026-10-09T23:30:00Z", conclusion: "failure" }),
+    run(33, { created_at: "2026-10-09T14:59:59Z", conclusion: "failure" }),
+  ];
+  const step = (name, conclusion) => ({ name, status: "completed", conclusion });
+  const jobsOf = {
+    31: [{ id: 1, name: "Source reverification", steps: [step("Reverify due P7D sources", "success"), step(PROVIDER_BUDGET_BLOCK_STEP, "skipped"), step("Report recipes that failed", "failure")] }],
+    32: [{ id: 2, name: "Source reverification", steps: [step("Reverify due P7D sources", "skipped"), step(PROVIDER_BUDGET_BLOCK_STEP, "failure")] }],
+  };
+  const requested = [];
+  const apis = {
+    data: async (endpoint) => {
+      requested.push(endpoint);
+      const jobs = endpoint.match(/actions\/runs\/(\d+)\/jobs/u);
+      if (jobs) return { total_count: (jobsOf[jobs[1]] ?? []).length, jobs: jobsOf[jobs[1]] ?? [] };
+      if (endpoint.includes("source-reverification.yml/runs?per_page=30&status=completed")) return { workflow_runs: reverificationRuns };
+      if (endpoint.includes("/actions/workflows/")) return { workflow_runs: [] };
+      return [];
+    },
+    hub: async () => ({ workflow_runs: [] }),
+    platform: async () => ({ workflow_runs: [] }),
+  };
+  const collected = await collectAutomationStatus({
+    now, repositories: { data: REPOSITORY, hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" }, apis,
+    listFailureIssues: async () => [], fetchManifest: async () => manifest, planBehind: async () => ({ actions: [], anomalies: [] }),
+    refreshWorkflows: { "source-reverification": "source-reverification.yml" },
+  });
+  assert.deepEqual(collected.budgetBlockedRuns, [32]);
+  assert.deepEqual(requested.filter((endpoint) => endpoint.includes("/jobs")), [
+    `repos/${REPOSITORY}/actions/runs/31/jobs?filter=latest&per_page=100`, `repos/${REPOSITORY}/actions/runs/32/jobs?filter=latest&per_page=100`,
+  ]);
+  await assert.rejects(collectAutomationStatus({
+    now, repositories: { data: REPOSITORY, hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" },
+    apis: { ...apis, data: async (endpoint) => (endpoint.includes("/jobs") ? { jobs: "nope" } : apis.data(endpoint)) },
+    listFailureIssues: async () => [], fetchManifest: async () => manifest, planBehind: async () => ({ actions: [], anomalies: [] }),
+    refreshWorkflows: { "source-reverification": "source-reverification.yml" },
+  }), /STATUS_RUNS_INVALID/u);
+});
+
 test("갱신 단계의 run 목록이 없으면 OK로 채우지 않고 실패한다", () => {
   const inventory = inventoryOf(evidenceSource("incheon-line1-train-timetable", 2));
   assert.throws(() => buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventory }), /STATUS_RUNS_INVALID.*capital-topology-refresh/u);
@@ -756,6 +825,7 @@ test("loadSourceFreshnessInputs: 변수가 true일 때만 inventory·원장·신
     "tools/datapack/source-inventory.json": inventoryOf(evidenceSource("a", 1)),
     "tools/datapack/release/source-snapshots.json": reverificationLedger(),
     "release/product-gates/datapack-freshness-sla.json": FRESHNESS_POLICY,
+    "release/product-gates/provider-daily-call-budget.json": CALL_BUDGET_POLICY,
   };
   const load = (env, at = root) => loadSourceFreshnessInputs({ env, root: at });
   const enabled = { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" };
@@ -769,6 +839,7 @@ test("loadSourceFreshnessInputs: 변수가 true일 때만 inventory·원장·신
     assert.equal(await load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: "false" }), undefined);
     assert.deepEqual(await load(enabled), {
       sourceInventory: files["tools/datapack/source-inventory.json"], sourceLedger: files["tools/datapack/release/source-snapshots.json"], freshnessPolicy: FRESHNESS_POLICY,
+      providerCallBudget: CALL_BUDGET_POLICY,
     });
     for (const bad of ["TRUE", "1", "yes", " true"]) {
       await assert.rejects(load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: bad }), /STATUS_ENV_INVALID/u);

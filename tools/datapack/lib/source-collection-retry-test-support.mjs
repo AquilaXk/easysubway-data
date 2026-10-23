@@ -5,10 +5,14 @@
 // defineResultCodeRetryTests는 resultCode 표 기반 재시도 계약을 한 곳에 두고, defineKricResultCodeRetryTests(KRIC: 일시 01·02·04·05·99)와
 // defineDataGoKrResultCodeRetryTests(공공데이터포털: 일시 01·02·04·05·30·99)가 원천별 행만 넘겨 수집기들이 함께 쓰게 한다.
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { inspect } from "node:util";
 
 import { HUMETRO_REQUEST_INTERVAL_MS } from "./source-collection-retry.mjs";
+import { SOURCE_FETCH_TELEMETRY_PATH_ENV } from "./source-fetch-telemetry.mjs";
 
 export const abortedByTimeout = () => Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
 
@@ -201,4 +205,31 @@ export function defineCliRequestIntervalTests({ name, delegate, run }) {
   test(`${name}: CLI는 운영 요청 간격으로 공급자 요청 시작 사이를 벌린다`, () => assertRequestStartsSpaced({
     delegate, run, intervalMs: HUMETRO_REQUEST_INTERVAL_MS,
   }));
+}
+
+/**
+ * 하루 호출 예산 계약(Refs AquilaXk/easysubway#3036): 원천 재확인 run이 공급자에 보낸 요청 수는 시도별 계측 파일에서 원천 id별로 센다.
+ * 계측의 원천 id가 inventory 원천 id(정책 release/product-gates/provider-daily-call-budget.json의 sourceId)와 다르면 예산 가드가 요청을 0건으로 센다.
+ * 공급자가 거부(HTTP 403, 재시도 대상 아님)하는 수집을 실제로 실행해 계측 기록의 원천 id를 본다.
+ * @param {object} options
+ * @param {string} options.name 수집기 이름(테스트 제목).
+ * @param {string} options.sourceId 계측에 남아야 하는 inventory 원천 id.
+ * @param {(io: { fetchImpl: Function, sleepImpl: Function }) => Promise<unknown>} options.run 수집 함수를 fetch·sleep만 주입해 실행한다.
+ */
+export function defineTelemetrySourceIdTests({ name, sourceId, run }) {
+  test(`${name}: 시도별 계측은 inventory 원천 id(${sourceId})로 남는다`, async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "telemetry-source-id-"));
+    const file = path.join(directory, "telemetry.jsonl");
+    const previous = process.env[SOURCE_FETCH_TELEMETRY_PATH_ENV];
+    process.env[SOURCE_FETCH_TELEMETRY_PATH_ENV] = file;
+    try {
+      await assert.rejects(run({ fetchImpl: async () => new Response("denied", { status: 403 }), sleepImpl: async () => {} }));
+      const records = (await readFile(file, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+      assert.ok(records.length > 0, "the rejected requests were recorded");
+      assert.deepEqual([...new Set(records.map((record) => record.sourceId))], [sourceId]);
+    } finally {
+      if (previous === undefined) delete process.env[SOURCE_FETCH_TELEMETRY_PATH_ENV]; else process.env[SOURCE_FETCH_TELEMETRY_PATH_ENV] = previous;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 }

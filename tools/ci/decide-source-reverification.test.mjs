@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
+import { PROVIDER_BUDGET_REASON, parseProviderCallBudgetPolicy, parseProviderCallLedger } from "./provider-call-budget.mjs";
 import { planRefreshFailureReport } from "./report-refresh-failure.mjs";
 import {
   SOURCE_REVERIFICATION_CLAIM_PREFIX,
@@ -54,9 +55,19 @@ const inventoryAt = (observedMillis) => ({ sources: [{
   korailScheduleAdmissionEvidence: { observedAt: iso(observedMillis) },
 }] });
 const FRESH = NOW.getTime() - 2 * HOUR;
+// 부산 세 operation의 KST 하루 호출 예산(Refs AquilaXk/easysubway#3036). 기본 입력은 같은 날 앞선 호출이 없는 기록이다.
+const BUSAN_SOURCES = ["busan-transportation-route-topology", "busan-transportation-accessibility", "busan-transportation-timetable"];
+const BUDGET_POLICY_JSON = Object.freeze({
+  schemaVersion: 1, artifactKind: "provider-daily-call-budget-policy", quotaWindow: "KST_DAY", maxCollectionsPerDay: 3,
+  operations: BUSAN_SOURCES.map((sourceId) => ({ sourceId, datasetUrl: "https://www.data.go.kr/data/15001019/openapi.do", dailyRequestLimit: 1000, expectedRequestsEvidence: "topologyAdmissionEvidence" })),
+});
+const BUDGET_POLICY = parseProviderCallBudgetPolicy(BUDGET_POLICY_JSON);
+const BUSAN_EXPECTED = Object.freeze({ "busan-transportation-route-topology": 114, "busan-transportation-accessibility": 114, "busan-transportation-timetable": 342 });
+const callLedger = (entries) => parseProviderCallLedger({ schemaVersion: 1, quotaWindow: "2026-10-07", entries });
+const providerBudget = (entries = []) => ({ policy: BUDGET_POLICY, ledger: callLedger(entries), expectedRequests: BUSAN_EXPECTED });
 const input = (overrides = {}) => ({
   inventory: inventoryAt(FRESH), ledger: ledgerAt(FRESH), policy: POLICY, pullRequests: [], automationBranches: [], runs: [], openIssues: [], repository: REPOSITORY,
-  now: NOW, limits: { pullRequests: 1000, runs: 200, issues: 1000 }, ...overrides,
+  now: NOW, limits: { pullRequests: 1000, runs: 200, issues: 1000 }, providerBudget: providerBudget(), ...overrides,
 });
 const pr = (state, runId, overrides = {}) => ({
   number: 990, state, isDraft: true, headRefName: `${SOURCE_REVERIFICATION_CLAIM_PREFIX}${runId}`, baseRefName: "main",
@@ -71,7 +82,7 @@ test("claim 접두어는 이 이슈 번호의 재확인 브랜치다", () => {
 });
 
 test("기준 시각이 최근이면 아무것도 DUE가 아니다(NOT_DUE)", () => {
-  assert.deepEqual(decideSourceReverification(input()), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [] });
+  assert.deepEqual(decideSourceReverification(input()), { state: "NOT_DUE", due: [], recipes: [], blocked: [], budgetBlocked: [], cleanupClaims: [], overdue: [] });
 });
 
 test("기준 시각 + scheduledPipeline.cadence(P1D)가 지난 원천이 DUE다. 만료는 연장하지 않는다", () => {
@@ -259,7 +270,7 @@ test("PR 없는 claim은 producer run이 돌고 있으면 CLAIM_IN_PROGRESS로 �
 test("끝난 run·기록 없는 run의 claim은 정리 대상으로 알리고 판정은 계속한다", () => {
   const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`;
   for (const runs of [[run(77, "completed", "failure")], [run(77, "completed", "cancelled")], [run(77, "completed", "success")], []]) {
-    assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [claim], overdue: [] });
+    assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], budgetBlocked: [], cleanupClaims: [claim], overdue: [] });
   }
   const restarted = decideSourceReverification(input({ automationBranches: [claim], runs: [run(77, "completed", "failure")], ledger: ledgerAt(dueAgo(2 * DAY)) }));
   assert.equal(restarted.state, "RUN");
@@ -286,7 +297,7 @@ test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으�
 });
 
 test("재생 run은 DUE가 아니어도 RUN이고 recipe 목록은 비며, 이 workflow의 열린 PR이 있으면 정상 run처럼 OPEN_PR이다 (#3036)", () => {
-  assert.deepEqual(decideSourceReverification(input({ replayRunId: "39369279984" })), { state: "RUN", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [], replayRunId: "39369279984" });
+  assert.deepEqual(decideSourceReverification(input({ replayRunId: "39369279984" })), { state: "RUN", due: [], recipes: [], blocked: [], budgetBlocked: [], cleanupClaims: [], overdue: [], replayRunId: "39369279984" });
   assert.equal(decideSourceReverification(input({ replayRunId: "39369279984", pullRequests: [pr("OPEN", 77)], automationBranches: [`${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`] })).state, "OPEN_PR");
   for (const bad of ["", "0", "abc", "12345678901234567890"]) assert.throws(() => decideSourceReverification(input({ replayRunId: bad })), /REVERIFICATION_INPUT_INVALID/u, bad);
 });
@@ -327,7 +338,7 @@ test("PR 목록이나 아직 끝나지 않은 run 목록이 조회 상한에 닿
 test("닫힘·병합 PR 이력이 상한을 훨씬 넘게 있어도 판정은 실패하지 않는다", () => {
   const history = (count, state) => Array.from({ length: count }, (_, index) => pr(state, index + 1, { number: 4000 + index, headRefName: `feat/old-${state}-${index}` }));
   const pullRequests = [...history(2500, "MERGED"), ...history(2500, "CLOSED")];
-  assert.deepEqual(decideSourceReverification(input({ pullRequests })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [] });
+  assert.deepEqual(decideSourceReverification(input({ pullRequests })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], budgetBlocked: [], cleanupClaims: [], overdue: [] });
   const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`;
   const merged = pr("MERGED", 77, { number: 4999 });
   assert.deepEqual(decideSourceReverification(input({ pullRequests: [...pullRequests, merged], automationBranches: [claim] })).cleanupClaims, [claim]);
@@ -336,7 +347,7 @@ test("닫힘·병합 PR 이력이 상한을 훨씬 넘게 있어도 판정은 �
 // #987 리뷰 F1: 정기 실행이 하루 12번이라 끝난 run은 17일이면 200개를 넘는다. 끝난 run은 판정에 필요 없으므로(없는 run도 같은 ABANDONED) 상한에 세지 않는다.
 test("끝난 run이 상한을 넘게 쌓여도 판정은 실패하지 않는다", () => {
   const history = Array.from({ length: 500 }, (_, index) => run(1000 + index, "completed", index % 2 === 0 ? "success" : "failure"));
-  assert.deepEqual(decideSourceReverification(input({ runs: history })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [] });
+  assert.deepEqual(decideSourceReverification(input({ runs: history })), { state: "NOT_DUE", due: [], recipes: [], blocked: [], budgetBlocked: [], cleanupClaims: [], overdue: [] });
   const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}1000`;
   assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs: history })).cleanupClaims, [claim]);
   assert.equal(decideSourceReverification(input({ automationBranches: [`${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`], runs: [...history, run(77, "in_progress")] })).state, "CLAIM_IN_PROGRESS");
@@ -394,30 +405,95 @@ test("저장소의 실제 원장·inventory·정책은 고정된 먼 미래 시�
   assert.deepEqual([...result.recipes].sort(), REVERIFICATION_RECIPES.map(({ id }) => id).sort());
 });
 
+// CLI 입력: 부산 원천의 이번 묶음 예상 요청 수는 inventory 증거가 가리키는 마지막 성공 수집 snapshot의 requestCount다.
+const cliInventory = () => ({ sources: [
+  ...inventoryAt(FRESH).sources,
+  ...BUSAN_SOURCES.map((id) => ({ id, topologyAdmissionEvidence: { snapshotPath: `tools/datapack/sources/${id}.json` } })),
+] });
+const cliTexts = (calls) => ({
+  "branches.txt": `${"a".repeat(40)}\trefs/heads/automation/456-capital-topology-registration-1\n`, "claims.txt": "",
+  "budget.json": JSON.stringify(BUDGET_POLICY_JSON), "calls.json": JSON.stringify({ schemaVersion: 1, quotaWindow: "2026-10-07", entries: calls }),
+  ...Object.fromEntries(BUSAN_SOURCES.map((id) => [`tools/datapack/sources/${id}.json`, JSON.stringify({ sourceId: id, requestCount: BUSAN_EXPECTED[id] })])),
+});
+const BUDGET_ARGS = Object.freeze(["--call-budget", "budget.json", "--provider-call-ledger", "calls.json"]);
+const cliArgs = (branches, extra = [], budgetArgs = BUDGET_ARGS) => [
+  "--inventory", "inv.json", "--ledger", "led.json", "--policy", "pol.json", "--prs", "prs.json", "--automation-branches", branches,
+  "--runs", "runs.json", "--issues", "issues.json", "--repository", REPOSITORY, "--pr-limit", "1000", "--run-limit", "200", "--issue-limit", "1000",
+  ...budgetArgs, ...extra, "--github-output", "out.txt",
+];
+
 test("CLI는 판정을 GITHUB_OUTPUT 값으로 남긴다", async () => {
   const written = [];
   const logs = [];
-  const files = { "inv.json": inventoryAt(FRESH), "led.json": ledgerAt(dueAgo(2 * DAY)), "pol.json": POLICY, "prs.json": [], "runs.json": [], "issues.json": [] };
-  const texts = { "branches.txt": `${"a".repeat(40)}\trefs/heads/automation/456-capital-topology-registration-1\n`, "claims.txt": "" };
-  const result = await main([
-    "--inventory", "inv.json", "--ledger", "led.json", "--policy", "pol.json", "--prs", "prs.json", "--automation-branches", "branches.txt",
-    "--runs", "runs.json", "--issues", "issues.json", "--repository", REPOSITORY, "--pr-limit", "1000", "--run-limit", "200", "--issue-limit", "1000", "--github-output", "out.txt",
-  ], { now: NOW, log: (line) => logs.push(line), readText: async (file) => (file in texts ? texts[file] : JSON.stringify(files[file])), appendText: async (file, text) => written.push([file, text]) });
+  const files = { "inv.json": cliInventory(), "led.json": ledgerAt(dueAgo(2 * DAY)), "pol.json": POLICY, "prs.json": [], "runs.json": [], "issues.json": [] };
+  const texts = cliTexts([]);
+  const readText = async (file) => (file in texts ? texts[file] : JSON.stringify(files[file]));
+  const result = await main(cliArgs("branches.txt"), { now: NOW, log: (line) => logs.push(line), readText, appendText: async (file, text) => written.push([file, text]) });
   assert.equal(result.state, "BLOCKED_BY_PENDING_PR");
   assert.equal(written.length, 1);
   assert.equal(written[0][0], "out.txt");
   assert.match(written[0][1], /^state=BLOCKED_BY_PENDING_PR\nbranch=\nrecipes=kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,/u);
   // 이슈 본문에 적히는 연체 목록은 상태 표(overdueReverificationRecipes)와 같은 정의다: 연체 행이 있는 recipe와 그에 의존하는 recipe(recipe 표 순서).
   const overdueRecipes = "kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,gwangju-accessibility,busan-topology,busan-accessibility,busan-timetable,daejeon-topology,daejeon-accessibility,daejeon-timetable,daegu-sources,daegu-accessibility";
-  assert.match(written[0][1], new RegExp(`\\ncleanup_claims=\\nblocked_by=automation/456-capital-topology-registration-1\\nblocked_recipes=\\noverdue_recipes=${overdueRecipes}\\nreplay_run_id=\\n$`, "u"));
+  assert.match(written[0][1], new RegExp(`\\ncleanup_claims=\\nblocked_by=automation/456-capital-topology-registration-1\\nblocked_recipes=\\noverdue_recipes=${overdueRecipes}\\nreplay_run_id=\\nbudget_blocked=\\nbudget_blocked_reason=\\n$`, "u"));
   assert.deepEqual(overdueReverificationRecipes({ inventory: files["inv.json"], ledger: files["led.json"], policy: files["pol.json"], now: NOW }), overdueRecipes.split(","));
   assert.equal(JSON.parse(logs[0]).state, "BLOCKED_BY_PENDING_PR");
   await assert.rejects(main(["--inventory", "inv.json"], { now: NOW, log() {}, readText: async () => "{}" }), /REVERIFICATION_INPUT_INVALID/u);
+  await assert.rejects(main(cliArgs("branches.txt", [], []), { now: NOW, log() {}, readText }), /REVERIFICATION_INPUT_INVALID: missing --callBudget/u);
   const replayed = [];
-  const replay = await main([
-    "--inventory", "inv.json", "--ledger", "led.json", "--policy", "pol.json", "--prs", "prs.json", "--automation-branches", "claims.txt",
-    "--runs", "runs.json", "--issues", "issues.json", "--repository", REPOSITORY, "--pr-limit", "1000", "--run-limit", "200", "--issue-limit", "1000", "--replay-run-id", "39369279984", "--github-output", "out.txt",
-  ], { now: NOW, log() {}, readText: async (file) => (file in texts ? texts[file] : JSON.stringify(files[file])), appendText: async (file, text) => replayed.push(text) });
+  const replay = await main(cliArgs("claims.txt", ["--replay-run-id", "39369279984"]), { now: NOW, log() {}, readText, appendText: async (file, text) => replayed.push(text) });
   assert.equal(replay.state, "RUN");
-  assert.match(replayed[0], /^state=RUN\nbranch=\nrecipes=\n[\s\S]*\nreplay_run_id=39369279984\n$/u);
+  assert.match(replayed[0], /^state=RUN\nbranch=\nrecipes=\n[\s\S]*\nreplay_run_id=39369279984\nbudget_blocked=\nbudget_blocked_reason=\n$/u);
+});
+
+test("CLI는 부산 묶음 예산 거부를 recipe 목록과 이유로 GITHUB_OUTPUT에 남긴다 (#3036)", async () => {
+  const files = { "inv.json": cliInventory(), "led.json": busanDue(), "pol.json": POLICY, "prs.json": [], "runs.json": [], "issues.json": [] };
+  const texts = cliTexts([spent(1, 900)]);
+  const outputs = [];
+  const result = await main(cliArgs("claims.txt"), { now: NOW, log() {}, readText: async (file) => (file in texts ? texts[file] : JSON.stringify(files[file])), appendText: async (file, text) => outputs.push(text) });
+  assert.equal(result.state, "BUDGET_BLOCKED");
+  assert.match(outputs[0], /\nbudget_blocked=busan-topology,busan-accessibility,busan-timetable\nbudget_blocked_reason=PROVIDER_DAILY_BUDGET_INSUFFICIENT: busan-transportation-route-topology used 900 \+ expected 114 exceeds the daily limit 1000\n$/u);
+  const brokenSnapshot = { ...texts, "tools/datapack/sources/busan-transportation-timetable.json": JSON.stringify({ requestCount: 0 }) };
+  await assert.rejects(main(cliArgs("claims.txt"), { now: NOW, log() {}, readText: async (file) => (file in brokenSnapshot ? brokenSnapshot[file] : JSON.stringify(files[file])), appendText: async () => {} }), /REVERIFICATION_INPUT_INVALID: busan-transportation-timetable/u);
+});
+
+// #3036: 부산 묶음은 공급자(data.go.kr 개발계정)의 operation별 KST 하루 1,000건 안에서만 시작한다.
+const busanDue = () => ledgerAt(FRESH).map((entry) => (entry.sourceId === "busan-transportation-route-topology" ? row(entry.sourceId, dueAgo(DAY + HOUR)) : entry));
+const spent = (runId, topology) => ({ runId, outcome: "FAILED", requestCounts: { "busan-transportation-route-topology": topology } });
+
+test("부산 묶음의 남은 하루 예산이 모자라면 묶음을 시작하지 않고(recipe에서 빼고) BUDGET_BLOCKED로 이유를 드러낸다 (#3036)", () => {
+  const result = decideSourceReverification(input({ ledger: busanDue(), providerBudget: providerBudget([spent(1, 456), spent(2, 456)]) }));
+  assert.equal(result.state, "BUDGET_BLOCKED");
+  assert.deepEqual(result.recipes, []);
+  assert.deepEqual(result.due, []);
+  assert.deepEqual(result.budgetBlocked, [{
+    recipeIds: ["busan-topology", "busan-accessibility", "busan-timetable"], reason: PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT,
+    detail: "busan-transportation-route-topology used 912 + expected 114 exceeds the daily limit 1000",
+  }]);
+});
+
+test("예산에 막힌 부산 묶음은 다른 DUE recipe의 재확인을 막지 않는다 (#3036)", () => {
+  const ledger = busanDue().map((entry) => (entry.sourceId === "gwangju-transportation-route-topology" ? row(entry.sourceId, dueAgo(DAY + HOUR)) : entry));
+  const result = decideSourceReverification(input({ ledger, providerBudget: providerBudget([spent(1, 4), spent(2, 4), spent(3, 4)]) }));
+  assert.equal(result.state, "RUN");
+  assert.deepEqual(result.recipes, ["gwangju-topology", "gwangju-accessibility"]);
+  assert.deepEqual(result.due.map(({ recipeId }) => recipeId), ["gwangju-topology"]);
+  assert.deepEqual(result.budgetBlocked.map(({ recipeIds, reason }) => [recipeIds, reason]), [[["busan-topology", "busan-accessibility", "busan-timetable"], PROVIDER_BUDGET_REASON.ATTEMPTS_EXHAUSTED]]);
+});
+
+test("예산 안이면 부산 묶음이 그대로 돈다. 앞선 run의 요청 수를 읽지 못하면 fail closed로 막는다 (#3036)", () => {
+  assert.deepEqual(decideSourceReverification(input({ ledger: busanDue(), providerBudget: providerBudget([spent(1, 114)]) })).recipes, ["busan-topology", "busan-accessibility", "busan-timetable"]);
+  const unreadable = { ...providerBudget(), ledger: parseProviderCallLedger({ schemaVersion: 1, quotaWindow: null, entries: null, unreadableReason: "GITHUB_API_STATUS" }) };
+  const result = decideSourceReverification(input({ ledger: busanDue(), providerBudget: unreadable }));
+  assert.equal(result.state, "BUDGET_BLOCKED");
+  assert.equal(result.budgetBlocked[0].reason, PROVIDER_BUDGET_REASON.EVIDENCE_MISSING);
+});
+
+test("재생 run과 대기 판정은 공급자를 부르지 않으므로 예산을 보지 않는다. 예산 입력이 없으면 판정하지 않는다 (#3036)", () => {
+  const exhausted = providerBudget([spent(1, 1000)]);
+  assert.equal(decideSourceReverification(input({ ledger: busanDue(), providerBudget: exhausted, replayRunId: "39369279984" })).state, "RUN");
+  const waiting = decideSourceReverification(input({ ledger: busanDue(), providerBudget: exhausted, pullRequests: [writer(55)] }));
+  assert.equal(waiting.state, "BLOCKED_BY_PENDING_PR");
+  assert.deepEqual(waiting.budgetBlocked, []);
+  assert.throws(() => decideSourceReverification(input({ providerBudget: undefined })), /REVERIFICATION_INPUT_INVALID/u);
 });

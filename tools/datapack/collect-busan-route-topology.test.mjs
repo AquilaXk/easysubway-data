@@ -13,7 +13,7 @@ import {
   parseBusanRouteTopologyScope,
   validateBusanRouteTopologySnapshot,
 } from "./collect-busan-route-topology.mjs";
-import { defineCliRequestIntervalTests, defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineCliRequestIntervalTests, defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests, defineTelemetrySourceIdTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 // #1099·#1334: 일시 오류는 같은 요청을 full jitter(base 2초·cap 20초)로 최대 2번 다시 보낸다. 난수 0.5로 대기는 1·2초다. 재시도 대기와 예산은 테스트마다 격리한다.
@@ -633,4 +633,17 @@ defineDataGoKrResultCodeRetryTests({
   run: ({ fetchImpl }) => collect({ ...retryFast(), fetchImpl }),
   assertRecovered: (snapshot) => assert.equal(snapshot.edgeCount, 4),
   assertFinal: (outcome, resultCode) => assert.rejects(outcome, new RegExp(`provider resultCode ${resultCode}`)),
+});
+
+// 하루 호출 예산(Refs AquilaXk/easysubway#3036): 원천 재확인이 이 수집기의 요청을 inventory 원천 id로 센다.
+defineTelemetrySourceIdTests({
+  name: "부산 topology collector",
+  sourceId: "busan-transportation-route-topology",
+  run: ({ fetchImpl, sleepImpl }) => collect({
+    stationScopes: parseBusanRouteTopologyScope(SCOPE_HTML),
+    now: new Date("2026-07-20T00:00:00.000Z"),
+    fetchImpl,
+    sleepImpl,
+    randomImpl: () => 0,
+  }),
 });
