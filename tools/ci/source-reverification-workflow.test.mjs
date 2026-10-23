@@ -303,14 +303,23 @@ test("재생 run이 main 이동이나 다른 원장 쓰기 자동화 때문에 p
   before(fail.name, "Report refresh failure as an issue");
 });
 
-test("재생 묶음은 push 뒤·PR 생성 전에 run id 이름의 artifact로 7일 보관한다 (#3036)", () => {
+test("재생 묶음은 이 run이 묶음을 썼을 때만 push 뒤·PR 생성 전에 run id 이름의 artifact로 올리고, 재생할 수 있는 증거 창(24시간)에 맞춰 1일 보관한다 (#3036)", () => {
   const upload = step("Upload the retained collection for a later replay");
-  assert.equal(ifCondition(upload.block), PUSHED);
+  const runs = (outputs) => evaluateGithubExpression(ifCondition(upload.block), { steps: outputs });
+  const pushed = (bundle) => ({ decision: { outputs: { state: "RUN" } }, claim: { outputs: { claimed: "true" } }, recheck: { outputs: { idle: "true" } }, push: { outputs: { pushed: "true" } }, reverify: { outputs: { replay_bundle: bundle } } });
+  assert.equal(runs(pushed("true")), true);
+  assert.equal(runs(pushed("false")), false, "재생할 수 있는 묶음을 등록하지 않은 run은 올릴 것이 없다");
+  assert.equal(runs({ ...pushed("true"), push: { outputs: { pushed: "false" } } }), false, "push하지 않은 run의 묶음은 재생 원본이 아니다");
   assert.match(upload.block, /\n        uses: actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n/u);
   assert.match(upload.block, /\n          name: source-reverification-\$\{\{ github\.run_id \}\}\n/u);
   assert.match(upload.block, /\n          path: \$\{\{ runner\.temp \}\}\/source-reverification\/\$\{\{ github\.run_id \}\}\/replay-bundle\n/u);
-  assert.match(upload.block, /\n          if-no-files-found: ignore\n/u);
-  assert.match(upload.block, /\n          retention-days: 7$/u);
+  assert.match(upload.block, /\n          if-no-files-found: error\n/u, "묶음을 썼다고 했는데 파일이 없으면 실패한다");
+  assert.match(upload.block, /\n          retention-days: 1$/u, "재생 등록기가 24시간 지난 증거를 거부하므로 그보다 오래 두면 실패할 재생을 고르게 된다");
+  const reverify = step("Reverify due P7D sources").block;
+  assert.match(reverify, /\[\[ -f "\$\{operation\}\/replay-bundle\/manifest\.json" \]\]/u);
+  assert.match(reverify, /echo "replay_bundle=true" >> "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(reverify, /echo "replay_bundle=false" >> "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(reverify, /::notice title=Source reverification::no replayable dependency group was registered/u, "묶음을 남기지 않는 것도 로그로 드러낸다");
   before("Verify the reverification is based on the current main and push its branch", upload.name);
   before(upload.name, "Mint App token for the reverification pull request");
 });

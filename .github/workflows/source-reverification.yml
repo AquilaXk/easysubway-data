@@ -215,6 +215,13 @@ jobs:
           node tools/ci/source-ledger-gate.mjs --base-sha "${REVERIFICATION_MAIN_SHA}" --output "${operation}/gate.json"
           printf 'REVERIFICATION_RESULT=%s\nREVERIFICATION_GATE=%s\nREVERIFICATION_HEAD_SHA=%s\n' "${operation}/result.json" "${operation}/gate.json" "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
           echo "registered=$(jq '.steps | length' "${operation}/result.json")" >> "${GITHUB_OUTPUT}"
+          # controller는 재생할 수 있는 의존 묶음을 등록했을 때만 manifest를 마지막에 쓴다. 없으면 이 run의 PR이 뒤처졌을 때 다시 수집한다.
+          if [[ -f "${operation}/replay-bundle/manifest.json" ]]; then
+            echo "replay_bundle=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice title=Source reverification::no replayable dependency group was registered, so this run keeps no replay bundle; a behind pull request from it collects again."
+            echo "replay_bundle=false" >> "${GITHUB_OUTPUT}"
+          fi
       - name: Note the replay left nothing to register
         if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.reverify.outputs.registered == '0' }}
         run: |
@@ -269,14 +276,15 @@ jobs:
           echo "::error title=Source reverification::REVERIFICATION_REPLAY_BLOCKED: replay of run ${REPLAY_RUN_ID} was not pushed because main moved or another source-ledger automation started; dispatch source-reverification.yml again with replay_run_id=${REPLAY_RUN_ID}"
           exit 1
       # PR이 열리자마자 main이 움직여 recreate가 돌아도 artifact가 이미 있어야 다시 수집하지 않으므로 PR 생성 전에 올린다.
+      # 재생 가능한 묶음의 등록기는 수집 시각에서 24시간이 지난 증거를 거부하므로 그 뒤의 재생은 반드시 실패한다. 보관을 1일로 두어 그 뒤에는 recreate가 다시 수집 경로를 고른다.
       - name: Upload the retained collection for a later replay
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' && steps.reverify.outputs.replay_bundle == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: source-reverification-${{ github.run_id }}
           path: ${{ runner.temp }}/source-reverification/${{ github.run_id }}/replay-bundle
-          if-no-files-found: ignore
-          retention-days: 7
+          if-no-files-found: error
+          retention-days: 1
       - name: Mint App token for the reverification pull request
         id: app-token-pr
         if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}
