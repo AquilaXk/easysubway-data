@@ -140,21 +140,41 @@ async function bindReleaseRequestToCandidate(root) {
   });
 }
 
-async function currentReleaseFixture(t) {
-  const root = await mkdtemp(path.join(tmpdir(), "facility-current-release-"));
+// 첫 등록 테스트는 원천의 원장 행과 inventory 증거가 없는 상태를 전제로 한다. 정기 갱신 PR이 그 원천을 등록하면 커밋된 저장소는 등록 뒤 상태가 되므로,
+// fixture는 저장소의 등록 여부와 무관하게 등록 전 상태로 만든다. 원장 행·증거·등록기가 쓰는 확인 문구만 걷어내고 나머지는 커밋된 값을 그대로 쓴다.
+const FIRST_REGISTRATION_SOURCE_IDS = Object.freeze([ESCALATOR_SOURCE_ID]);
+function withoutFirstRegistration(inventory, ledger) {
+  for (const sourceId of FIRST_REGISTRATION_SOURCE_IDS) {
+    const source = inventory.sources.find(({ id }) => id === sourceId);
+    delete source.accessibilityAdmissionEvidence;
+    delete source.admissionEvidence.productionUseNoteKo;
+  }
+  return ledger.filter(({ sourceId }) => !FIRST_REGISTRATION_SOURCE_IDS.includes(sourceId));
+}
+
+// #862 결정 C: 사전 검사가 전국 fan-in 선택을 판정하므로 수도권 pilot으로 줄인 합성 저장소가 아니라 커밋된 전국 입력을 쓴다.
+// 사전 검사가 읽는 파일만 복사한다. 등록된 시설 원천은 표준 원천뿐이고, 그 증거 snapshot을 inventory가 가리키는 경로 그대로 복사한다.
+async function copyCommittedReleaseInputs(t, prefix) {
+  const root = await mkdtemp(path.join(tmpdir(), prefix));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const relative of FIXTURE_INPUTS) {
     const target = path.join(root, relative);
     await mkdir(path.dirname(target), { recursive: true });
     await cp(path.join(REPOSITORY_ROOT, relative), target);
   }
-  // #862 결정 C: 사전 검사가 전국 fan-in 선택을 판정하므로 수도권 pilot으로 줄인 합성 저장소가 아니라 커밋된 전국 입력을 쓴다.
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const snapshotPath = inventory.sources.find(
-    ({ id }) => id === "kric-station-convenience-standard",
-  ).accessibilityAdmissionEvidence.snapshotPath;
+  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
+  const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+  const [inventory, ledger] = await Promise.all([readFile(inventoryPath, "utf8").then(JSON.parse), readFile(ledgerPath, "utf8").then(JSON.parse)]);
+  const snapshotPath = inventory.sources.find(({ id }) => id === STANDARD_SOURCE_ID).accessibilityAdmissionEvidence.snapshotPath;
   await mkdir(path.dirname(path.join(root, snapshotPath)), { recursive: true });
   await cp(path.join(REPOSITORY_ROOT, snapshotPath), path.join(root, snapshotPath));
+  await writeJson(ledgerPath, withoutFirstRegistration(inventory, ledger));
+  await writeJson(inventoryPath, inventory);
+  return root;
+}
+
+async function currentReleaseFixture(t) {
+  const root = await copyCommittedReleaseInputs(t, "facility-current-release-");
   // 커밋된 capital-route-topology 행의 credentialRedacted 누락은 별도 테스트가 막는다. 나머지 테스트에서는 채운다.
   const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
   const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
@@ -321,19 +341,7 @@ test("collection preflight accepts the scope-bound expanded source set", async (
 // 커밋된 전국 후보 spec을 수도권 pilot 모양으로 투영하지 않고 그대로 쓴다.
 // 전국 후보는 TRANSFER가 마지막 원천이 아니다(마지막은 busan 접근성 원천).
 async function committedNationwideReleaseFixture(t) {
-  const root = await mkdtemp(path.join(tmpdir(), "facility-nationwide-release-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  for (const relative of FIXTURE_INPUTS) {
-    const target = path.join(root, relative);
-    await mkdir(path.dirname(target), { recursive: true });
-    await cp(path.join(REPOSITORY_ROOT, relative), target);
-  }
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const snapshotPath = inventory.sources.find(
-    ({ id }) => id === "kric-station-convenience-standard",
-  ).accessibilityAdmissionEvidence.snapshotPath;
-  await mkdir(path.dirname(path.join(root, snapshotPath)), { recursive: true });
-  await cp(path.join(REPOSITORY_ROOT, snapshotPath), path.join(root, snapshotPath));
+  const root = await copyCommittedReleaseInputs(t, "facility-nationwide-release-");
   await bindReleaseRequestToCandidate(root);
   return root;
 }
@@ -1109,6 +1117,19 @@ test("complete observation survives COLLECTED journal write failure as recoverab
   const fixture = await finalizeFixture(t); const journalPath = path.join(fixture.operationRoot, "journal.json"); const journal = JSON.parse(await readFile(journalPath, "utf8")); journal.phase = "COLLECTION_STARTED"; await writeJson(journalPath, journal);
   await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot: fixture.root, operationRoot: fixture.operationRoot, now: NOW, execFileImpl: exactMainExec, journalWriteImpl: async () => { throw new Error("journal write failed"); } }), /journal write failed/);
   assert.equal(JSON.parse(await readFile(journalPath, "utf8")).phase, "COLLECTION_STARTED");
+});
+
+test("#3036 the release fixture is the pre-first-registration state however many facility sources the committed registry has registered", async (t) => {
+  const root = await currentReleaseFixture(t);
+  const [ledger, inventory] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.deepEqual(ledger.filter(({ sourceId }) => sourceId === ESCALATOR_SOURCE_ID), []);
+  const escalator = inventory.sources.find(({ id }) => id === ESCALATOR_SOURCE_ID);
+  assert.equal(escalator.accessibilityAdmissionEvidence, undefined);
+  assert.equal(escalator.admissionEvidence.productionUseNoteKo, undefined);
+  assert.ok(inventory.sources.find(({ id }) => id === STANDARD_SOURCE_ID).accessibilityAdmissionEvidence);
 });
 
 // #3036: 에스컬레이터 원천을 같은 operation으로 수집·게시·등록한다. 원천은 prepare가 정하고 journal이 들고 다닌다.
