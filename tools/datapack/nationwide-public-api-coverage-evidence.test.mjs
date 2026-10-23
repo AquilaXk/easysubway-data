@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { BUILTIN_KNOWN_PROVIDER_CANDIDATES } from "./collect-nationwide-public-api-coverage.mjs";
 import { RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS } from "./lib/retired-sources.mjs";
+import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -114,6 +115,7 @@ test("전국 공공데이터 재감사는 4건만 공식 미지원으로 닫고 
       "--inventory", "tools/datapack/source-inventory.json",
       "--resolution-plan", planPath,
       "--resolutions", resolutionsPath,
+      "--now", COVERAGE_REVIEW_NOW,
       "--output", outputPath,
       "--allow-gaps",
     ], { cwd: root });
@@ -130,4 +132,58 @@ test("전국 공공데이터 재감사는 4건만 공식 미지원으로 닫고 
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
+});
+
+async function coverageReportAt(now) {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-2138-review-clock-"));
+  const outputPath = path.join(outputDir, "report.json");
+  try {
+    await execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", "tools/datapack/source-inventory.json",
+      "--resolution-plan", planPath,
+      "--resolutions", resolutionsPath,
+      "--now", now,
+      "--output", outputPath,
+      "--allow-gaps",
+    ], { cwd: root });
+    return JSON.parse(await readFile(outputPath, "utf8"));
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+}
+
+// 실제 resolutions 문서의 만료 경계를 고정한다. 평가 시각을 문서의 nextReviewAt에서 유도하므로 재검토로 문서가 갱신돼도 같은 성질을 검증한다.
+test("실제 공식 미지원 resolutions는 모든 nextReviewAt 직전까지 terminal이고 만료 시각부터 전부 MISSING이다", async () => {
+  const { entries } = JSON.parse(await readFile(path.join(root, resolutionsPath), "utf8"));
+  const dueAt = entries.map(({ nextReviewAt }) => Date.parse(nextReviewAt));
+  const earliest = Math.min(...dueAt);
+  const latest = Math.max(...dueAt);
+
+  const beforeAnyDue = await coverageReportAt(new Date(earliest - 1).toISOString());
+  assert.equal(beforeAnyDue.summary.launchRequired.explicitlyUnsupportedCount, entries.length);
+  assert.equal(beforeAnyDue.requirements.filter(({ resolutionReviewStatus }) => resolutionReviewStatus === "EXPIRED").length, 0);
+
+  const afterAllDue = await coverageReportAt(new Date(latest).toISOString());
+  assert.equal(afterAllDue.summary.launchRequired.explicitlyUnsupportedCount, 0);
+  assert.deepEqual(
+    afterAllDue.requirements.filter(({ resolutionReviewStatus }) => resolutionReviewStatus === "EXPIRED")
+      .map(requirementKey).sort(),
+    entries.map(requirementKey).sort(),
+  );
+});
+
+// 실제 resolutions 문서를 쓰는 테스트가 실행 시각을 읽으면 문서의 nextReviewAt이 지나는 순간 기준선이 깨진다(2026-10-23 main CI 실패).
+test("실제 resolutions 문서로 coverage gate를 실행하는 테스트는 평가 시각을 고정한다", async () => {
+  const names = (await readdir(path.join(root, "tools/datapack"))).filter((name) => name.endsWith(".test.mjs"));
+  const unpinned = [];
+  for (const name of names) {
+    const text = await readFile(path.join(root, "tools/datapack", name), "utf8");
+    if (text.includes("nationwide-public-api-coverage-resolutions-") && text.includes('"tools/datapack/report-coverage-gaps.mjs"')
+      && !text.includes('"--now"')) {
+      unpinned.push(name);
+    }
+  }
+  assert.deepEqual(unpinned, []);
 });

@@ -18,6 +18,7 @@ import {
   materializeGwangjuRouteMapPositions,
   materializedGwangjuRouteMapPackContentHash,
 } from "./materialize-gwangju-route-map-positions.mjs";
+import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
@@ -232,6 +233,7 @@ test("materialized SQLite와 provenance가 광주 1호선 route_map_positions를
     "--provenance", path.join(packOutput, "current.provenance.json"),
     "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
     "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
+    "--now", COVERAGE_REVIEW_NOW,
     "--output", reportPath,
     "--allow-gaps",
   ], { cwd: root });

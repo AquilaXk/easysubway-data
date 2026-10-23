@@ -74,6 +74,8 @@ async function main() {
     ? { document: JSON.parse(resolutionBytes), sha256: sha256(resolutionBytes), searchPlan: resolutionPlan }
     : null;
   const outputPath = requireArg(args, "output");
+  // nextReviewAt 만료 판정의 평가 시각. 생략하면 실행 시각(게이트의 실제 판정)이고, 테스트는 고정 시각을 넘겨 wall-clock 결합을 없앤다.
+  const now = args.now === undefined ? new Date() : requiredDate(args.now, "--now");
   const report = buildCoverageGapReport(
     targets,
     inventory,
@@ -82,6 +84,7 @@ async function main() {
     releaseScope,
     releaseScopeTargets,
     resolutions,
+    now,
   );
 
   await mkdir(path.dirname(outputPath), { recursive: true });
@@ -126,6 +129,7 @@ function buildCoverageGapReport(
   releaseScope = null,
   releaseScopeTargets = null,
   resolutions = null,
+  now,
 ) {
   validateTargets(targets);
   const targetIndex = coverageTargetIndex(targets);
@@ -153,6 +157,7 @@ function buildCoverageGapReport(
     requirements,
     resolutions?.document,
     resolutions?.searchPlan,
+    now,
   );
   const summary = targets.schemaVersion === 2
     ? buildTierSummary(targets, requirements)
@@ -300,7 +305,7 @@ function summarizeTier(requirements, releaseTier) {
   };
 }
 
-function applyCoverageResolutions(targets, requirements, document, searchPlan) {
+function applyCoverageResolutions(targets, requirements, document, searchPlan, now) {
   if (!document) return [];
   if (!document || typeof document !== "object" || Array.isArray(document)) {
     throw new Error("coverage resolutions must be an object");
@@ -339,7 +344,7 @@ function applyCoverageResolutions(targets, requirements, document, searchPlan) {
     if (requirement.status === "SUPPORTED") {
       throw new Error(`supported requirement must not have unsupported resolution: ${key}`);
     }
-    const evidence = validateUnsupportedResolution(resolution, label);
+    const evidence = validateUnsupportedResolution(resolution, label, now);
     validateResolutionSearchPlan(resolution, planByKey.get(key), label);
     if (evidence.expired || resolution.supportStartedAt) {
       requirement.resolutionReviewStatus = resolution.supportStartedAt ? "SUPPORT_STARTED" : "EXPIRED";
@@ -436,7 +441,7 @@ function canonicalValue(value) {
   return Object.fromEntries(Object.keys(value).sort(compareStrings).map((key) => [key, canonicalValue(value[key])]));
 }
 
-function validateUnsupportedResolution(resolution, label) {
+function validateUnsupportedResolution(resolution, label, now) {
   if (requiredString(resolution.reasonCode, `${label}.reasonCode`) !== "PUBLIC_API_NO_DATA") {
     throw new Error(`${label}.reasonCode must be PUBLIC_API_NO_DATA`);
   }
@@ -471,7 +476,7 @@ function validateUnsupportedResolution(resolution, label) {
   if (evidenceHash !== sha256(JSON.stringify(resolution.publicApiQueries))) {
     throw new Error(`${label}.evidenceHash mismatch`);
   }
-  return { expired: nextReviewAt.getTime() <= Date.now() };
+  return { expired: nextReviewAt.getTime() <= now.getTime() };
 }
 
 function validatePublicApiQuery(query, label) {

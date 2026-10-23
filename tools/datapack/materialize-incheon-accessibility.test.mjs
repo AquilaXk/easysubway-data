@@ -19,6 +19,7 @@ import {
   validateProductionIncheonAccessibilityFixture,
 } from "./materialize-incheon-accessibility.mjs";
 import { materializeIncheonStationInfo } from "./materialize-incheon-station-info.mjs";
+import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -580,6 +581,7 @@ test("materialized SQLite와 provenance가 인천 accessibility_facilities 3건�
     "--provenance", path.join(packOutput, "current.provenance.json"),
     "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
     "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
+    "--now", COVERAGE_REVIEW_NOW,
     "--output", reportPath,
     "--allow-gaps",
   ], { cwd: root });
