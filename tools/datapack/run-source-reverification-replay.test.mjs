@@ -253,6 +253,8 @@ test("묶음 파일이 manifest의 sha256과 다르거나 재생할 수 없는 r
 const ESCAPING_NAME = "../../escape.json";
 const entryOf = (manifest, recipeId) => manifest.recipes.find((entry) => entry.recipeId === recipeId);
 const MANIFEST_TAMPERING = [
+  ["recipe 표에 없는 recipeId", (manifest) => { entryOf(manifest, "busan-timetable").recipeId = "no-such-recipe"; }],
+  ["객체가 아닌 recipe 항목", (manifest) => { manifest.recipes.push(null); }],
   ["모르는 schemaVersion", (manifest) => { manifest.schemaVersion = 2; }],
   ["모르는 artifactKind", (manifest) => { manifest.artifactKind = "source-reverification-bundle"; }],
   ["빈 recipe 목록", (manifest) => { manifest.recipes = []; }],
