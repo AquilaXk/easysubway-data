@@ -18,7 +18,7 @@ import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./s
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
 import { selectCurrentFiveRegionSourceIds } from "./build-current-five-region-source-fan-in.mjs";
-import { KRIC_FACILITY_REFRESH_SOURCE_IDS } from "./lib/kric-standard-facilities.mjs";
+import { KRIC_FACILITY_REFRESH_SOURCE_IDS, kricFacilityJournalSourceId } from "./lib/kric-standard-facilities.mjs";
 
 const execFile = promisify(execFileCallback);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -49,7 +49,7 @@ function parse(bytes, label) { try { return JSON.parse(bytes.toString("utf8")); 
 function parseJournal(bytes) {
   const journal = parse(bytes, "operation journal");
   if (!journal || typeof journal !== "object" || Array.isArray(journal) || Object.keys(journal).some((key) => !JOURNAL_KEYS.has(key))) throw new Error("operation journal has unsupported keys");
-  return journal;
+  return { ...journal, sourceId: kricFacilityJournalSourceId(journal) };
 }
 function requireText(value, label) { if (typeof value !== "string" || value === "") throw new Error(`${label} is required`); return value; }
 function requireFacilitySourceId(value) {
