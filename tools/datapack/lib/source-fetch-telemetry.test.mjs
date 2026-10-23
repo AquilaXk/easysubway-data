@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { countTelemetryRequests } from "../../ci/provider-call-ledger.mjs";
 import { assertErrorOmitsSecrets } from "./source-collection-retry-test-support.mjs";
 import { fetchBytesWithSourceRetry, withSourceCollectionRetry } from "./source-collection-retry.mjs";
 import {
   SOURCE_FETCH_TELEMETRY_PATH_ENV,
+  TELEMETRY_WRITE_FAILED_MARKER,
   buildAttemptRecord,
   emitAttemptRecord,
   errorCodeOf,
@@ -226,6 +228,35 @@ test("수집 재시도 래퍼는 계측 쓰기 실패를 삼키지 않고, colle
   `);
   assert.equal(child.stdout, "SOURCE_FETCH_TELEMETRY_WRITE_FAILED");
   assert.equal(child.status, 1);
+});
+
+// 실패한 run도 계측 artifact를 올린다. 일부만 쓰인 파일이 정확한 요청 수로 읽히면 예산이 부당하게 풀리므로, 기록을 잃은 파일은 호출 기록이 증명 불가로 거부한다.
+test("기록을 잃은 파일에는 표지 줄이 남아 호출 기록이 그 파일의 요청 수를 증명하지 않는다", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "source-fetch-telemetry-lost-"));
+  try {
+    const file = path.join(directory, "telemetry.jsonl");
+    const attempt = { sourceId: "kept-source", host: "example.test", attempt: 1, outcome: "success" };
+    // 첫 기록은 쓰고, 그 뒤 시도 기록의 쓰기만 실패하게 한다(표지 줄은 쓸 수 있는 일시 오류).
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      const append = fs.appendFileSync;
+      let failing = false;
+      fs.appendFileSync = (target, data) => { if (failing && !data.includes("telemetryWriteFailed")) throw new Error("disk full"); return append(target, data); };
+      syncBuiltinESMExports();
+      const { emitAttemptRecord } = await import(${telemetryModuleUrl});
+      emitAttemptRecord(${JSON.stringify(attempt)});
+      failing = true;
+      try { emitAttemptRecord(${JSON.stringify({ ...attempt, attempt: 2 })}); } catch { /* 오류 전파는 위 테스트가 본다 */ }
+    `], { encoding: "utf8", env: { ...process.env, [SOURCE_FETCH_TELEMETRY_PATH_ENV]: file } });
+    assert.equal(child.status, 1);
+    const lines = readFileSync(file, "utf8").trim().split("\n");
+    assert.equal(lines.length, 2);
+    assert.equal(lines[1], TELEMETRY_WRITE_FAILED_MARKER);
+    assert.throws(() => countTelemetryRequests(readFileSync(file)), /^Error: PROVIDER_CALL_TELEMETRY_INVALID/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("계측 파일이 쓸 수 있으면 같은 래퍼가 결과를 그대로 돌려주고 프로세스는 0으로 끝난다", () => {
