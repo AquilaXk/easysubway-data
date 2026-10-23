@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "ada08babe54c45f974a67c8c42a1b46f2e912d45",
+  "builderGitSha": "816f28e3e196365175147b49e1dba50804493acb",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -12,9 +12,9 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "3d239f74ecb265b11b3831ed2449a1b2b4c308605630d5243fd23f543c7c6c40",
+      "value": "93eaf75a38069deaef16e03fcd64453201f82c7d345532d2fccaa911e545c295",
       "exporterKind": "facility-evidence",
-      "rowCount": 919,
+      "rowCount": 1549,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "routeEvidenceLedgerHash": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "540227ef91d1333def3c8451d4a5728717567abc4c5b44562b538ef2ce86c083"
+    "value": "6dcf834ad48d24259ce8d86822bc41b6c29017534da93e3ed203c14d74410ce9"
   },
   "sourceInventorySha256": {
-    "value": "64831c179023de776f1c3dd08ba64eaa952c3807c69c220f495c6ed7bee3ccdb"
+    "value": "09a3b290299c171316aa22864fdf9d8cbba4ee95d95067c27a5c3c296d0030a3"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "22462f7bf057e62171483ecfc9e66a5aa819718d105668cdc8c46db8e8e821e0"
+    "sha256": "658c34b05b4d125f7ef105a95e5e0cc68fbda1ada80e2f8f6748edfa5d4cd39a"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261023-seq174"
+      "value": "nationwide-candidate-20261023-seq175"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261023-seq174"
+      "value": "release-request-nationwide-candidate-20261023-seq175"
     }
   },
   "perSourceEvidence": [
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "875e551784a9b5a879dac1bbffdbcfbccdad75be157350187a12a965717cb9a0"
+      "perSourceSnapshotSetHash": "9d9868cade846fd02948b3c207d57768063445f5bf42629629cb2c48c647fe00"
     },
     {
       "sourceId": "incheon-transit-accessibility",

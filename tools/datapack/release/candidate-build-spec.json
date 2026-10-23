@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261023-seq174",
-  "publishedAt": "2026-10-23T12:29:43.916Z",
-  "releaseSequence": 174,
-  "builderGitSha": "ada08babe54c45f974a67c8c42a1b46f2e912d45",
+  "candidateId": "nationwide-candidate-20261023-seq175",
+  "publishedAt": "2026-10-23T14:29:43.657Z",
+  "releaseSequence": 175,
+  "builderGitSha": "816f28e3e196365175147b49e1dba50804493acb",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "22462f7bf057e62171483ecfc9e66a5aa819718d105668cdc8c46db8e8e821e0",
+  "fixtureSha256": "658c34b05b4d125f7ef105a95e5e0cc68fbda1ada80e2f8f6748edfa5d4cd39a",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -642,8 +642,8 @@
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303"
     }
   ],
-  "sourceSnapshotSetHash": "540227ef91d1333def3c8451d4a5728717567abc4c5b44562b538ef2ce86c083",
-  "sourceInventorySha256": "64831c179023de776f1c3dd08ba64eaa952c3807c69c220f495c6ed7bee3ccdb",
+  "sourceSnapshotSetHash": "6dcf834ad48d24259ce8d86822bc41b6c29017534da93e3ed203c14d74410ce9",
+  "sourceInventorySha256": "09a3b290299c171316aa22864fdf9d8cbba4ee95d95067c27a5c3c296d0030a3",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
@@ -697,7 +697,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "72a6c2e4d0993eaf1313b3b65a5219f9f8e787d3c8df46e71d48dc88f36953fc"
+      "sha256": "fe82e47d06f5a53d67406b367063d36e1bd41f5d163b34444945c820f0eabd84"
     }
   },
   "officialOdFareEvidence": {
@@ -739,7 +739,7 @@
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20261017150040720.json",
   "itxTopologyEvidenceSha256": "d58f7fbc0c74a3bd8628e3cbf99cf85b863f9da4350089a1fd28feddb923961b",
   "approvedAliasLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
-  "facilityEvidenceLedgerHash": "3d239f74ecb265b11b3831ed2449a1b2b4c308605630d5243fd23f543c7c6c40",
+  "facilityEvidenceLedgerHash": "93eaf75a38069deaef16e03fcd64453201f82c7d345532d2fccaa911e545c295",
   "routeEvidenceLedgerHash": "cfe6e6513493770f7095f5e47ccbe6dc3d9f80ac3254d0aedd28ad2ec746e0ec",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd"
 }
