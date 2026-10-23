@@ -7,6 +7,7 @@
 // - 곧 만료되는 원천 근거(expiringSources, data#1116, backend#507)는 source-inventory.json의 freshUntil에서 만들고 만료 시각만 싣는다(남은 시간은 backend가 렌더 시각으로 계산).
 //   backend가 선택 필드로 받아 배포하기 전에는 보내면 게시가 400으로 실패하므로 AUTOMATION_STATUS_SOURCE_FRESHNESS가 true일 때만 싣는다(workflow 변수 DATAPACK_AUTOMATION_STATUS_FRESHNESS).
 //   같은 변수로 원장(source-snapshots.json)과 신선도 정책도 읽는다. 재확인 recipe의 연체는 run이 아니라 원장 head로 정한다(#3036).
+//   전국 coverage의 공식 미지원 근거(resolutions의 nextReviewAt)도 같은 목록에 싣는다. 재감사는 사람이 collect-nationwide-public-api-coverage.mjs를 돌려야 하므로(자동 갱신 경로 없음) refreshState는 NONE이고, 기한이 지나면 gate가 MISSING으로 되돌리는 시각과 같은 시각에 admin이 이미 만료로 드러낸다.
 //   공급자 하루 호출 예산(provider-daily-call-budget.json)에 막힌 재확인 묶음도 같은 방식으로 FAILED다: 오늘(KST) 예산 step이 실패한 run이 있고 묶음이 아직 DUE면 막힘이 이어진다.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -14,6 +15,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { DEFAULT_RESOLUTIONS_PATH } from "../datapack/build-nationwide-coverage-tally.mjs";
 import { REVERIFICATION_RECIPES, dependencyGroups } from "../datapack/source-reverification-recipes.mjs";
 import {
   AUTOMATION_STAGE_PREFIXES,
@@ -52,7 +54,9 @@ const SOURCE_FRESHNESS_INPUTS = Object.freeze({
   sourceLedger: "tools/datapack/release/source-snapshots.json",
   freshnessPolicy: "release/product-gates/datapack-freshness-sla.json",
   providerCallBudget: "release/product-gates/provider-daily-call-budget.json",
+  coverageResolutions: DEFAULT_RESOLUTIONS_PATH,
 });
+const COVERAGE_RESOLUTION_EVIDENCE = "coverageResolution";
 const REVERIFICATION_STAGE = "source-reverification";
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -247,6 +251,28 @@ function expiringSourceOf(source, context) {
   };
 }
 
+/** 사람이 id로 알아볼 수 있는 이름과, 원천 id 계약(소문자·숫자·하이픈)을 따르는 resolution 항목 id. */
+function coverageResolutionIdentity({ regionId, operatorId, lineId, sourceDomain }) {
+  const sourceId = `coverage-${[regionId, operatorId, lineId, sourceDomain].join("-")}`.replaceAll("_", "-");
+  if (!SOURCE_ID.test(sourceId)) throw inventoryError(`coverage resolution id ${sourceId} does not match the snapshot contract`);
+  return { sourceId, name: sourceName(`공식 미지원 근거 재감사 (${regionId} ${sourceDomain} ${lineId})`, sourceId) };
+}
+
+/**
+ * 공식 미지원 근거(resolutions entries)의 만료 항목. gate(report-coverage-gaps.mjs)가 같은 nextReviewAt에서 이 근거를 MISSING으로 되돌리므로 admin도 그 시각에 만료로 드러낸다.
+ * supportStartedAt이 있는 entry는 gate가 이미 terminal에서 뺀 것이라 만료 대상이 아니다. 값이 어긋나면 채우지 않고 실패한다. 재감사 경로가 사람 실행뿐이라 자동 갱신은 없다(NONE).
+ */
+function coverageResolutionExpiries(document) {
+  if (document === null || typeof document !== "object" || !Array.isArray(document.entries)) throw inventoryError("coverage resolutions has no entries array");
+  return document.entries.filter((entry) => entry?.supportStartedAt === undefined).map((entry) => {
+    if (entry === null || typeof entry !== "object") throw inventoryError("a coverage resolution entry is not an object");
+    const { sourceId, name } = coverageResolutionIdentity(entry);
+    const millis = typeof entry.nextReviewAt === "string" && UTC_INSTANT.test(entry.nextReviewAt) ? Date.parse(entry.nextReviewAt) : Number.NaN;
+    if (!Number.isFinite(millis)) throw inventoryError(`${sourceId} nextReviewAt is not a UTC instant`);
+    return { sourceId, name, evidence: COVERAGE_RESOLUTION_EVIDENCE, freshUntil: new Date(millis).toISOString(), refreshStage: null, refreshState: "NONE" };
+  });
+}
+
 /** 연체인 재확인 recipe(의존 recipe 포함)가 소유한 원천. 원장·정책을 읽지 못하면 채우지 않고 실패한다. */
 function overdueReverificationSourceIds({ inventory, ledger, policy, now }) {
   const overdue = new Set(overdueReverificationRecipes({ inventory, ledger, policy, now }));
@@ -271,7 +297,7 @@ function budgetBlockedReverificationSourceIds({ inventory, ledger, policy, now, 
  * 곧 만료되는 원천 근거 후보를 모두 만든 뒤 심각도 순(만료 > FAILED·BLOCKED·NONE > OK), 같은 심각도 안에서는 만료가 이른 순서(같은 시각이면 sourceId 순)로 정렬해
  * 상위 EXPIRING_SOURCE_LIMIT개를 남긴다. 자르기 전 후보 개수를 함께 돌려준다. 사용 가능한(productionUseAllowed) 원천만 대상이고 값이 어긋나면 채우지 않고 실패한다.
  */
-function buildExpiringSources({ inventory, ledger, policy, now, refreshRuns, stuck, providerCallBudget, budgetBlockedRuns }) {
+function buildExpiringSources({ inventory, ledger, policy, now, refreshRuns, stuck, providerCallBudget, budgetBlockedRuns, coverageResolutions }) {
   if (inventory === null || typeof inventory !== "object" || !Array.isArray(inventory.sources)) throw inventoryError("inventory has no sources array");
   const overdueSourceIds = overdueReverificationSourceIds({ inventory, ledger, policy, now });
   const budgetBlockedSourceIds = budgetBlockedReverificationSourceIds({ inventory, ledger, policy, now, providerCallBudget, budgetBlockedRuns });
@@ -284,6 +310,13 @@ function buildExpiringSources({ inventory, ledger, policy, now, refreshRuns, stu
     seen.add(source.id);
     const candidate = expiringSourceOf(source, context);
     if (candidate !== null) candidates.push(candidate);
+  }
+  if (coverageResolutions !== undefined) {
+    for (const expiry of coverageResolutionExpiries(coverageResolutions)) {
+      if (seen.has(expiry.sourceId)) throw inventoryError(`duplicate source id ${expiry.sourceId}`);
+      seen.add(expiry.sourceId);
+      candidates.push(expiry);
+    }
   }
   const nowMillis = now.getTime();
   const bySeverity = (left, right) => severityRank(left, nowMillis) - severityRank(right, nowMillis)
@@ -301,7 +334,7 @@ async function readJsonInput(root, relative) {
 }
 
 /**
- * AUTOMATION_STATUS_SOURCE_FRESHNESS가 true일 때만 inventory·원장·신선도 정책을 읽는다. 꺼짐·미설정이면 undefined(필드를 싣지 않는다).
+ * AUTOMATION_STATUS_SOURCE_FRESHNESS가 true일 때만 inventory·원장·신선도 정책·공식 미지원 근거를 읽는다. 꺼짐·미설정이면 undefined(필드를 싣지 않는다).
  * 켜졌는데 하나라도 읽지 못하거나 알 수 없는 값이면 채우지 않고 실패한다.
  */
 export async function loadSourceFreshnessInputs({ env = process.env, root = REPOSITORY_ROOT } = {}) {
@@ -314,7 +347,7 @@ export async function loadSourceFreshnessInputs({ env = process.env, root = REPO
 
 export function buildAutomationStatus({
   now, repository, manifest, stageRuns = {}, issues = [], openPulls = [], claimRefs = [], behind = { actions: [], anomalies: [] },
-  sourceInventory, sourceLedger, freshnessPolicy, providerCallBudget, refreshRuns = {}, budgetBlockedRuns = [],
+  sourceInventory, sourceLedger, freshnessPolicy, providerCallBudget, coverageResolutions, refreshRuns = {}, budgetBlockedRuns = [],
 }) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw statusError("CLOCK");
   if (typeof repository !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) throw statusError("ENV_INVALID", "repository");
@@ -361,7 +394,7 @@ export function buildAutomationStatus({
   // 선택 필드: 인벤토리를 주었을 때만 싣는다(backend가 받기 전에는 주지 않는다).
   if (sourceInventory !== undefined) {
     Object.assign(snapshot, buildExpiringSources({
-      inventory: sourceInventory, ledger: sourceLedger, policy: freshnessPolicy, now, refreshRuns, stuck: snapshot.stuck, providerCallBudget, budgetBlockedRuns,
+      inventory: sourceInventory, ledger: sourceLedger, policy: freshnessPolicy, now, refreshRuns, stuck: snapshot.stuck, providerCallBudget, budgetBlockedRuns, coverageResolutions,
     }));
   }
   return snapshot;

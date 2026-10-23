@@ -18,6 +18,7 @@ import {
   refreshWorkflowsOf,
   sourceRefreshStages,
 } from "./build-automation-status.mjs";
+import { DEFAULT_RESOLUTIONS_PATH } from "../datapack/build-nationwide-coverage-tally.mjs";
 import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
 import { PROVIDER_BUDGET_BLOCK_STEP } from "./provider-call-budget.mjs";
 import { REFRESH_STAGES } from "./refresh-stage-contracts.mjs";
@@ -446,6 +447,69 @@ test("totalCount는 잘리지 않았으면 목록 개수와 같고, 대상 원�
   assert.deepEqual([none.expiringSources, none.expiringSourcesTotalCount], [[], 0]);
 });
 
+// 공식 미지원 근거의 만료(전국 coverage resolutions nextReviewAt). gate가 같은 시각에 MISSING으로 되돌리므로 admin도 그 시각에 이상으로 드러내야 한다.
+const resolutionEntry = (nextReviewAtHours, overrides = {}) => ({
+  regionId: "daegu", operatorId: "daegu-transportation", lineId: "line-0ffaa95b1b5d", sourceDomain: "realtime_arrivals",
+  state: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE", nextReviewAt: iso(nextReviewAtHours), ...overrides,
+});
+const resolutionsOf = (...entries) => ({ schemaVersion: 1, artifactKind: "nationwide-coverage-resolutions", entries });
+const withResolutions = (...entries) => buildAutomationStatus({
+  ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(), coverageResolutions: resolutionsOf(...entries),
+});
+
+test("기한이 지난 공식 미지원 근거는 자동 갱신 없는 이미 만료 항목으로 싣고, 기한 전 근거와 시각 경계를 구분한다", () => {
+  const snapshot = withResolutions(
+    resolutionEntry(-1), resolutionEntry(0, { lineId: "line-5b8d9b05e7e6" }), resolutionEntry(0.5, { lineId: "line-e2938a4cc492" }),
+  );
+  assert.deepEqual(snapshot.expiringSources.map((item) => [item.sourceId, item.freshUntil]), [
+    ["coverage-daegu-daegu-transportation-line-0ffaa95b1b5d-realtime-arrivals", iso(-1)],
+    ["coverage-daegu-daegu-transportation-line-5b8d9b05e7e6-realtime-arrivals", iso(0)],
+    ["coverage-daegu-daegu-transportation-line-e2938a4cc492-realtime-arrivals", iso(0.5)],
+  ]);
+  assert.equal(snapshot.expiringSourcesTotalCount, 3);
+  assert.deepEqual(snapshot.expiringSources[0], {
+    sourceId: "coverage-daegu-daegu-transportation-line-0ffaa95b1b5d-realtime-arrivals",
+    name: "공식 미지원 근거 재감사 (daegu realtime_arrivals line-0ffaa95b1b5d)",
+    evidence: "coverageResolution", freshUntil: iso(-1), refreshStage: null, refreshState: "NONE",
+  });
+});
+
+test("만료된 공식 미지원 근거는 먼 미래에 만료되는 원천에 밀려 목록에서 잘리지 않는다", () => {
+  const farSources = Array.from({ length: EXPIRING_SOURCE_LIMIT + 2 }, (_, index) => evidenceSource(`far-${index}`, 400 + index));
+  const snapshot = buildAutomationStatus({
+    ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(...farSources), coverageResolutions: resolutionsOf(resolutionEntry(-5)),
+  });
+  assert.equal(snapshot.expiringSources.length, EXPIRING_SOURCE_LIMIT);
+  assert.equal(snapshot.expiringSources[0].evidence, "coverageResolution");
+  assert.equal(snapshot.expiringSourcesTotalCount, EXPIRING_SOURCE_LIMIT + 3);
+});
+
+test("지원이 시작된 공식 미지원 근거는 gate가 terminal에서 뺐으므로 만료 항목으로 싣지 않는다. 근거 문서를 주지 않으면 항목이 없다", () => {
+  assert.deepEqual(withResolutions(resolutionEntry(-1, { supportStartedAt: hoursAgo(10) })).expiringSources, []);
+  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf() }).expiringSources, []);
+});
+
+test("저장소의 실제 공식 미지원 근거는 전부 snapshot 항목 계약을 만족한다", () => {
+  const { entries } = JSON.parse(readFileSync(new URL(`../../${DEFAULT_RESOLUTIONS_PATH}`, import.meta.url), "utf8"));
+  const snapshot = withResolutions(...entries);
+  assert.equal(snapshot.expiringSourcesTotalCount, entries.length);
+  assert.deepEqual(
+    snapshot.expiringSources.map((item) => item.freshUntil).sort(),
+    entries.map(({ nextReviewAt }) => nextReviewAt).sort(),
+  );
+});
+
+test("공식 미지원 근거 문서가 어긋나면 채우지 않고 실패한다", () => {
+  const build = (coverageResolutions) => () => buildAutomationStatus({ ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(), coverageResolutions });
+  assert.throws(build({ entries: "nope" }), /STATUS_INVENTORY_INVALID: coverage resolutions has no entries array/u);
+  assert.throws(build(null), /STATUS_INVENTORY_INVALID/u);
+  assert.throws(build(resolutionsOf(null)), /not an object/u);
+  assert.throws(build(resolutionsOf(resolutionEntry(1, { nextReviewAt: "2026-10-23" }))), /nextReviewAt is not a UTC instant/u);
+  assert.throws(build(resolutionsOf(resolutionEntry(1, { nextReviewAt: undefined }))), /nextReviewAt is not a UTC instant/u);
+  assert.throws(build(resolutionsOf(resolutionEntry(1, { sourceDomain: "Realtime Arrivals" }))), /does not match the snapshot contract/u);
+  assert.throws(build(resolutionsOf(resolutionEntry(1), resolutionEntry(2))), /duplicate source id/u);
+});
+
 test("원천 하나에 근거가 여럿이면 가장 이른 freshUntil 하나만 싣고 근거 종류는 원천 항목 아래 최상위 키다", () => {
   const source = {
     id: "daegu-line1-train-timetable", displayName: "대구 1호선 열차 시간표", productionUseAllowed: true,
@@ -826,6 +890,7 @@ test("loadSourceFreshnessInputs: 변수가 true일 때만 inventory·원장·신
     "tools/datapack/release/source-snapshots.json": reverificationLedger(),
     "release/product-gates/datapack-freshness-sla.json": FRESHNESS_POLICY,
     "release/product-gates/provider-daily-call-budget.json": CALL_BUDGET_POLICY,
+    [DEFAULT_RESOLUTIONS_PATH]: resolutionsOf(resolutionEntry(1)),
   };
   const load = (env, at = root) => loadSourceFreshnessInputs({ env, root: at });
   const enabled = { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" };
@@ -839,7 +904,7 @@ test("loadSourceFreshnessInputs: 변수가 true일 때만 inventory·원장·신
     assert.equal(await load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: "false" }), undefined);
     assert.deepEqual(await load(enabled), {
       sourceInventory: files["tools/datapack/source-inventory.json"], sourceLedger: files["tools/datapack/release/source-snapshots.json"], freshnessPolicy: FRESHNESS_POLICY,
-      providerCallBudget: CALL_BUDGET_POLICY,
+      providerCallBudget: CALL_BUDGET_POLICY, coverageResolutions: files[DEFAULT_RESOLUTIONS_PATH],
     });
     for (const bad of ["TRUE", "1", "yes", " true"]) {
       await assert.rejects(load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: bad }), /STATUS_ENV_INVALID/u);
