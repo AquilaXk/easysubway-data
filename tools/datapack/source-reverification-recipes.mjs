@@ -94,7 +94,7 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     inventoryChanges: changes({ "busan-transportation-route-topology": TOPOLOGY_FIELDS }),
     due: ledgerHead("busan-transportation-route-topology"),
   },
-  // 결속 묶음(topology와 그에 딸린 recipe)은 전부 등록되거나 전부 되돌려진다(run-source-reverification.mjs의 dependencyGroups, #1102).
+  // 결속 묶음(topology와 그에 딸린 recipe)은 전부 등록되거나 전부 되돌려진다(dependencyGroups, #1102).
   // 딸린 원천은 topology head(topologySnapshotId·topologyContentSha256)에 결속돼 있어, topology만 새로 등록되고 딸린 원천이 옛 head에 남으면 결속이 어긋난다(#1103과 같은 이유).
   // 그래서 부산 시간표처럼 무거운 수집이 실패하면 topology 등록도 함께 되돌려지고, 그 롤백은 REVERIFICATION_GROUP_ROLLED_BACK으로 실패 이슈에 드러난다.
   // topology의 P7D 만료 전에 관리자 화면에 이상으로 보이게 하려는 의도된 동작이다. 부분 등록으로 숨기지 않는다.
@@ -173,6 +173,31 @@ export function recipeById(id) {
   const found = REVERIFICATION_RECIPES.find((recipe) => recipe.id === id);
   if (!found) throw new Error(`REVERIFICATION_RECIPE_UNKNOWN: ${String(id)}`);
   return found;
+}
+
+/**
+ * 의존으로 이어진 recipe끼리 묶는다(결속 묶음). 묶음과 묶음 안의 순서는 recipe 표 순서다.
+ * controller는 묶음 단위로 전부 등록하거나 전부 되돌리고(#1102), 판정은 묶음 단위로 공급자 하루 호출 예산을 본다(#3036).
+ */
+export function dependencyGroups(ordered) {
+  const groupOf = new Map();
+  const groups = [];
+  for (const recipe of ordered) {
+    const linked = [...new Set(recipe.dependsOn.map((id) => groupOf.get(id)))];
+    let group = linked[0];
+    if (group === undefined) {
+      group = [];
+      groups.push(group);
+    }
+    for (const other of linked.slice(1)) {
+      group.push(...other);
+      groups.splice(groups.indexOf(other), 1);
+      for (const member of other) groupOf.set(member.id, group);
+    }
+    group.push(recipe);
+    groupOf.set(recipe.id, group);
+  }
+  return groups.map((group) => ordered.filter((recipe) => group.includes(recipe)));
 }
 
 /**

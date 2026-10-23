@@ -7,8 +7,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { RECIPE_STEPS, REPLAY_MANIFEST_FILE, dependencyGroups, replaySourceReverification, runSourceReverification } from "./run-source-reverification.mjs";
-import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
+import { RECIPE_STEPS, REPLAY_MANIFEST_FILE, replaySourceReverification, runSourceReverification } from "./run-source-reverification.mjs";
+import { REVERIFICATION_RECIPES, dependencyGroups } from "./source-reverification-recipes.mjs";
 
 const LEDGER = "tools/datapack/release/source-snapshots.json";
 const INVENTORY = "tools/datapack/source-inventory.json";

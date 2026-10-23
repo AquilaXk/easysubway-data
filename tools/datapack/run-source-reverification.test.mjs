@@ -5,9 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { classifyRecipeFailure, defaultExecute, dependencyGroups, evaluateEvidenceChange, runSourceReverification } from "./run-source-reverification.mjs";
+import { classifyRecipeFailure, defaultExecute, evaluateEvidenceChange, runSourceReverification } from "./run-source-reverification.mjs";
 import { reportReverificationFailures } from "../ci/source-reverification-failures.mjs";
-import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
+import { REVERIFICATION_RECIPES, dependencyGroups } from "./source-reverification-recipes.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 controller. DUE로 판정된 recipe를 의존 순서로 실행하고 recipe마다 커밋한다.
 // 수집 실패는 SOURCE_FETCH_FAILED, 등록 실패는 SOURCE_REGISTRATION_FAILED, 원장·증거 변화가 정책을 넘으면 SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA로 멈춘다.
