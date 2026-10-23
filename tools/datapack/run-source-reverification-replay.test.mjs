@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { RECIPE_STEPS, REPLAY_MANIFEST_FILE, replaySourceReverification, runSourceReverification } from "./run-source-reverification.mjs";
+import { RECIPE_STEPS, REPLAY_MANIFEST_FILE, dependencyGroups, replaySourceReverification, runSourceReverification } from "./run-source-reverification.mjs";
 import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
 
 const LEDGER = "tools/datapack/release/source-snapshots.json";
@@ -171,6 +171,24 @@ test("main이 이미 같거나 더 새 snapshot을 가진 원천이 하나라도
   }
 });
 
+test("묶음의 원천 하나만 main에 같거나 더 새 snapshot이 있어도 부산 묶음 전체를 빼고 그 원천만 sourceIds에 적는다", async (t) => {
+  const { bundle } = await collectBusanBundle(t);
+  const main = await fixtureRepository(t);
+  const ledger = await readLedger(main);
+  ledger.push(ledgerRow("busan-transportation-accessibility", "busan-accessibility-newer", "2026-10-07T03:00:00.000Z", "busan-transportation-accessibility-base"));
+  await writeFile(path.join(main, LEDGER), `${JSON.stringify(ledger, null, 2)}\n`);
+  git(main, "commit", "-qam", "newer accessibility only");
+  const before = git(main, "rev-parse", "HEAD");
+  const work = await scratch(t, "partial");
+  const { calls, execute } = recordingExecute(main);
+  const result = await replaySourceReverification({ ...common(main, path.join(work, "operation"), execute), replayFrom: bundle });
+  assert.deepEqual(result.steps, []);
+  assert.deepEqual(result.dropped, [{ recipeIds: BUSAN, reason: "UP_TO_DATE_ON_MAIN", sourceIds: ["busan-transportation-accessibility"] }]);
+  assert.deepEqual(calls, [], "topology·시간표도 등록하지 않는다");
+  assert.equal(git(main, "rev-parse", "HEAD"), before);
+  assert.equal(headOf(await readLedger(main), "busan-transportation-route-topology").snapshotId, "busan-transportation-route-topology-base");
+});
+
 const fakeMeta = (id, dependsOn = []) => ({ id, message: `[Data] ${id} 재확인`, sourceIds: [`${id}-source`], dependsOn, due: null });
 const replayable = (id) => [
   { id: "collect", kind: "collect", run: async (ctx) => { await writeFile(ctx.file("out.json"), `${JSON.stringify({ sourceId: `${id}-source`, snapshotId: `${id}-collected`, capturedAt: COLLECTED })}\n`); }, retains: ["out.json"] },
@@ -232,9 +250,58 @@ test("묶음 파일이 manifest의 sha256과 다르거나 재생할 수 없는 r
   assert.equal(git(main, "log", "--format=%s"), "base");
 });
 
-test("실제 recipe 표에서 재생 가능한 recipe는 부산·대전 묶음과 광주·대구 접근성이다", () => {
-  const replayableIds = REVERIFICATION_RECIPES.map(({ id }) => id).filter((id) => RECIPE_STEPS[id].every(({ retains }) => Array.isArray(retains)));
-  assert.deepEqual(replayableIds, ["gwangju-accessibility", ...BUSAN, "daejeon-topology", "daejeon-accessibility", "daejeon-timetable", "daegu-accessibility"]);
+const ESCAPING_NAME = "../../escape.json";
+const entryOf = (manifest, recipeId) => manifest.recipes.find((entry) => entry.recipeId === recipeId);
+const MANIFEST_TAMPERING = [
+  ["모르는 schemaVersion", (manifest) => { manifest.schemaVersion = 2; }],
+  ["모르는 artifactKind", (manifest) => { manifest.artifactKind = "source-reverification-bundle"; }],
+  ["빈 recipe 목록", (manifest) => { manifest.recipes = []; }],
+  ["배열이 아닌 recipe 목록", (manifest) => { manifest.recipes = { ...manifest.recipes }; }],
+  ["../로 묶음 밖을 가리키는 보관 파일", (manifest, escapeSha) => { entryOf(manifest, "busan-timetable").files[0] = { name: ESCAPING_NAME, sha256: escapeSha }; }],
+  ["하위 경로를 담은 보관 파일", (manifest) => { entryOf(manifest, "busan-timetable").files[0].name = "nested/timetable.json"; }],
+  ["소문자 16진수가 아닌 sha256", (manifest) => { entryOf(manifest, "busan-timetable").files[0].sha256 = "A".repeat(64); }],
+  ["recipe와 다른 원천", (manifest) => { entryOf(manifest, "busan-topology").sources[0].sourceId = "first-source"; }],
+  ["시각이 아닌 capturedAt", (manifest) => { entryOf(manifest, "busan-topology").sources[0].capturedAt = "2026-10-07"; }],
+  ["빈 snapshotId", (manifest) => { entryOf(manifest, "busan-topology").sources[0].snapshotId = ""; }],
+];
+
+test("manifest의 모양·보관 파일 이름·sha256 형식·원천 중 하나라도 recipe와 다르면 main 상태와 관계없이 아무것도 쓰거나 등록하지 않고 REVERIFICATION_REPLAY_INVALID로 실패한다", async (t) => {
+  const { bundle } = await collectBusanBundle(t);
+  const manifestPath = path.join(bundle, REPLAY_MANIFEST_FILE);
+  const original = await readFile(manifestPath, "utf8");
+  const escapeBytes = Buffer.from("{\"outside\":true}\n");
+  await writeFile(path.join(path.dirname(bundle), "escape.json"), escapeBytes);
+  const escapeSha = createHash("sha256").update(escapeBytes).digest("hex");
+  const mains = [["재생할 main", await fixtureRepository(t)], ["이미 최신인 main", await fixtureRepository(t, { capturedAt: COLLECTED })]];
+  for (const [label, tamper] of MANIFEST_TAMPERING) {
+    const manifest = JSON.parse(original);
+    tamper(manifest, escapeSha);
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    for (const [state, main] of mains) {
+      const work = await scratch(t, "tampered");
+      const { calls, execute } = recordingExecute(main);
+      const before = git(main, "rev-parse", "HEAD");
+      await assert.rejects(
+        replaySourceReverification({ ...common(main, path.join(work, "operation"), execute), replayFrom: bundle }),
+        /^Error: REVERIFICATION_REPLAY_INVALID: /u, `${label} (${state})`,
+      );
+      assert.deepEqual(calls, [], `${label} (${state}): 등록기를 부르지 않는다`);
+      assert.equal(git(main, "rev-parse", "HEAD"), before, `${label} (${state})`);
+      assert.equal(git(main, "status", "--porcelain"), "", `${label} (${state})`);
+      await assert.rejects(readdir(path.join(work, "operation")), { code: "ENOENT" }, `${label} (${state}): 작업 위치에 아무것도 쓰지 않는다`);
+      await assert.rejects(readFile(path.join(work, "escape.json")), { code: "ENOENT" }, `${label} (${state}): 묶음 밖 경로로 쓰지 않는다`);
+    }
+  }
+});
+
+test("실제 recipe 표에서 재생되는 의존 묶음은 부산·대전 둘뿐이다. 광주·대구 접근성은 재생할 수 없는 recipe와 한 묶음이라 담기지 않는다", () => {
+  const replayableGroups = dependencyGroups(REVERIFICATION_RECIPES)
+    .filter((group) => group.every(({ id }) => RECIPE_STEPS[id].every(({ retains }) => Array.isArray(retains))))
+    .map((group) => group.map(({ id }) => id));
+  assert.deepEqual(replayableGroups, [BUSAN, ["daejeon-topology", "daejeon-accessibility", "daejeon-timetable"]]);
+  const groupOf = (id) => dependencyGroups(REVERIFICATION_RECIPES).find((group) => group.some((recipe) => recipe.id === id)).map((recipe) => recipe.id);
+  assert.deepEqual(groupOf("gwangju-accessibility"), ["gwangju-topology", "gwangju-accessibility"]);
+  assert.deepEqual(groupOf("daegu-accessibility"), ["daegu-sources", "daegu-accessibility"]);
 });
 
 const NETWORK_BLOCK = "data:text/javascript,globalThis.fetch=async()=>{throw new Error('NETWORK_BLOCKED')}";
