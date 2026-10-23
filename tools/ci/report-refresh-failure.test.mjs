@@ -18,6 +18,7 @@ import {
   refreshFailureMarker,
   reportRefreshFailure,
   resolveGh,
+  sourceFailuresOf,
 } from "./report-refresh-failure.mjs";
 
 const repository = "AquilaXk/easysubway-data";
@@ -497,4 +498,87 @@ test("recordedRunIdsOf는 봇이 쓴 본문과 봇의 알림 댓글에 적힌 ru
   const withHuman = { ...issue, comments: [...issue.comments, { author: { login: "AquilaXk" }, body: `${runUrl(99)}`, createdAt: start.toISOString() }] };
   assert.deepEqual([...new Set(recordedRunIdsOf(withHuman))].sort(), [11, 12]);
   assert.deepEqual(recordedRunIdsOf({ ...issue, body: "본문에 run이 없다", comments: [] }), []);
+});
+
+// #3036: 원천이 여럿인 workflow의 실패 이슈는 어느 원천이 실패했는지 적고, 원천별 마지막 실패 시각을 상태 블록 표지로 남긴다.
+// 선택 원천의 재시도 쿨다운이 이 표지를 읽는다.
+const kricFile = "kric-current-facility-refresh.yml";
+const KRIC_STANDARD = "kric-station-convenience-standard";
+const KRIC_ESCALATOR = "kric-station-escalator-detailed";
+const sourceMarker = (sourceId, at) => `<!-- refresh-source-failed:${sourceId}:${at.toISOString()} -->`;
+const kricReport = (runId, now, extra = {}) => planRefreshFailureReport({ repository, workflowFile: kricFile, runId: String(runId), now, ...extra });
+const kricIssue = (plan, at = start) => ({ number: 5, title: plan.title, body: plan.body, author: { login: "app/github-actions" }, createdAt: at.toISOString(), comments: [] });
+
+test("새 실패 이슈는 실패한 원천 id를 적고 그 원천의 실패 시각 표지를 상태 블록에 남긴다 (#3036)", () => {
+  const plan = kricReport(1, start, { openIssues: [], sourceId: KRIC_ESCALATOR });
+  assert.equal(plan.action, "create");
+  assert.match(plan.body, /실패 원천: `kric-station-escalator-detailed`/u);
+  const status = plan.body.slice(plan.body.indexOf("<!-- refresh-failure-status:start -->"), plan.body.indexOf("<!-- refresh-failure-status:end -->"));
+  assert.ok(status.includes(sourceMarker(KRIC_ESCALATOR, start)));
+  assert.deepEqual(sourceFailuresOf(plan.body), [{ sourceId: KRIC_ESCALATOR, failedAt: start.toISOString() }]);
+  const unnamed = kricReport(2, start, { openIssues: [] });
+  assert.doesNotMatch(unnamed.body, /실패 원천|refresh-source-failed/u);
+  assert.deepEqual(sourceFailuresOf(unnamed.body), []);
+});
+
+test("열린 이슈는 원천마다 마지막 실패 시각만 남기고 다른 원천의 표지를 지우지 않는다 (#3036)", () => {
+  const first = kricReport(1, start, { openIssues: [], sourceId: KRIC_ESCALATOR });
+  const standardAt = new Date(start.getTime() + hours(2));
+  const standard = kricReport(2, standardAt, { openIssues: [kricIssue(first)], sourceId: KRIC_STANDARD });
+  assert.equal(standard.action, "status");
+  assert.deepEqual(sourceFailuresOf(standard.issueBody), [
+    { sourceId: KRIC_STANDARD, failedAt: standardAt.toISOString() },
+    { sourceId: KRIC_ESCALATOR, failedAt: start.toISOString() },
+  ]);
+  const escalatorAt = new Date(start.getTime() + hours(4));
+  const again = kricReport(3, escalatorAt, { openIssues: [kricIssue({ ...first, body: standard.issueBody })], sourceId: KRIC_ESCALATOR });
+  assert.deepEqual(sourceFailuresOf(again.issueBody), [
+    { sourceId: KRIC_STANDARD, failedAt: standardAt.toISOString() },
+    { sourceId: KRIC_ESCALATOR, failedAt: escalatorAt.toISOString() },
+  ]);
+  assert.equal((again.issueBody.match(/refresh-source-failed:kric-station-escalator-detailed/gu) ?? []).length, 1);
+  const unnamed = kricReport(4, new Date(start.getTime() + hours(6)), { openIssues: [kricIssue({ ...first, body: again.issueBody })] });
+  assert.deepEqual(sourceFailuresOf(unnamed.issueBody), sourceFailuresOf(again.issueBody));
+});
+
+test("재알림 댓글도 실패한 원천을 적고, 이미 기록한 run은 표지를 바꾸지 않는다 (#3036)", () => {
+  const first = kricReport(1, start, { openIssues: [], sourceId: KRIC_ESCALATOR });
+  const nextDay = new Date(start.getTime() + COMMENT_INTERVAL_MS);
+  const comment = kricReport(2, nextDay, { openIssues: [kricIssue(first)], sourceId: KRIC_STANDARD });
+  assert.equal(comment.action, "comment");
+  assert.match(comment.body, /실패 원천: `kric-station-convenience-standard`/u);
+  assert.ok(sourceFailuresOf(comment.issueBody).some(({ sourceId, failedAt }) => sourceId === KRIC_STANDARD && failedAt === nextDay.toISOString()));
+  const rerun = kricReport(1, nextDay, { openIssues: [kricIssue(first)], sourceId: KRIC_ESCALATOR });
+  assert.equal(rerun.action, "skip");
+});
+
+test("PR 없는 claim 삭제 보고도 원천 실패 시각 표지를 지우지 않는다 (#3036)", () => {
+  const first = kricReport(1, start, { openIssues: [], sourceId: KRIC_ESCALATOR });
+  const orphan = kricReport(2, new Date(start.getTime() + hours(1)), { openIssues: [kricIssue(first)], orphan: orphanClaim({ branch: "automation/629-kric-facility-refresh-2" }) });
+  assert.equal(orphan.action, "comment");
+  assert.deepEqual(sourceFailuresOf(orphan.issueBody), [{ sourceId: KRIC_ESCALATOR, failedAt: start.toISOString() }]);
+});
+
+test("원천 표지는 상태 블록 안의 형식이 맞는 것만 읽고, 시각이 틀린 표지는 추정하지 않고 실패한다 (#3036)", () => {
+  const plan = kricReport(1, start, { openIssues: [], sourceId: KRIC_ESCALATOR });
+  const outside = `${sourceMarker(KRIC_STANDARD, start)}\n${plan.body}`;
+  assert.deepEqual(sourceFailuresOf(outside).map(({ sourceId }) => sourceId), [KRIC_ESCALATOR]);
+  for (const failedAt of ["2026-13-45T25:61:61.000Z", "2026-10-04", "2026-10-04T00:47:00Z"]) {
+    const broken = plan.body.replace(start.toISOString(), failedAt);
+    assert.throws(() => sourceFailuresOf(broken), /REFRESH_FAILURE_REPORT_SOURCE_MARKER/u, failedAt);
+  }
+  assert.throws(() => sourceFailuresOf("상태 블록이 없다"), /REFRESH_FAILURE_REPORT_STATUS_BLOCK/u);
+});
+
+test("CLI의 --source-id는 식별자이거나 빈 값(원천 없음)일 때만 받고, 아니면 GitHub에 쓰기 전에 실패한다 (#3036)", async () => {
+  const writes = [];
+  const cli = (...extra) => reportRefreshFailure({
+    argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "9", ...extra],
+    runGh: async (args) => { if (args[1] !== "list") writes.push(args[1]); return args[1] === "list" ? "[]" : ""; }, now: () => start,
+  });
+  assert.match((await cli("--source-id", KRIC_ESCALATOR)).body, /실패 원천: `kric-station-escalator-detailed`/u);
+  for (const unnamed of [[], ["--source-id", ""]]) assert.doesNotMatch((await cli(...unnamed)).body, /실패 원천/u);
+  const before = writes.length;
+  for (const bad of ["Kric Escalator", "a -->\n<!-- x", "-lead"]) await assert.rejects(cli("--source-id", bad), /REFRESH_FAILURE_REPORT_SOURCE_ID/u, JSON.stringify(bad));
+  assert.equal(writes.length, before);
 });

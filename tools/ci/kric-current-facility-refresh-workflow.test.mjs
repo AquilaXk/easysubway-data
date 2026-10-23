@@ -219,12 +219,38 @@ test("#3036 KRIC refresh recovery prepares the target for the source recorded in
   const directory = mkdtempSync(path.join(tmpdir(), "kric-recover-source-"));
   try {
     const journal = path.join(directory, "journal.json");
-    const run = () => execFileSync(process.execPath, ["--input-type=module", "-e", read[1]], { env: { ...process.env, SOURCE_JOURNAL: journal }, encoding: "utf8" });
+    const run = () => execFileSync(process.execPath, ["--input-type=module", "-e", read[1]], { cwd: root, env: { ...process.env, SOURCE_JOURNAL: journal }, encoding: "utf8" });
     writeFileSync(journal, JSON.stringify({ phase: "FINALIZE_STARTED", sourceId: "kric-station-escalator-detailed" }));
     assert.equal(run(), "kric-station-escalator-detailed");
     writeFileSync(journal, JSON.stringify({ phase: "FINALIZE_STARTED" }));
-    assert.equal(run(), "", "a journal without a source id yields an empty id that prepare rejects");
+    assert.equal(run(), "kric-station-convenience-standard", "a journal from before #3036 has no source id and could only be the standard source");
+    for (const sourceId of ["kric-station-escalator", "", null]) {
+      writeFileSync(journal, JSON.stringify({ phase: "FINALIZE_STARTED", sourceId }));
+      assert.equal(run(), sourceId ?? "null", `a present source id is passed on as written for prepare to judge: ${JSON.stringify(sourceId)}`);
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+// #3036 선택 원천의 재시도 쿨다운: 판정은 열린 실패 이슈의 원천 실패 시각 표지를 읽는다(source-reverification의 표지 판정과 같은 경로).
+test("#3036 KRIC refresh decision reads the open failure issues the way source reverification does", () => {
+  const { step } = loadWorkflow(root, "kric-current-facility-refresh.yml");
+  const decision = step("KRIC current facility refresh / Read due state").block;
+  assert.match(decision, /issues="\$\{RUNNER_TEMP\}\/kric-current-facility-refresh\/open-issues\.json"/u);
+  assert.match(decision, /gh issue list --repo "\$\{GITHUB_REPOSITORY\}" --state open --limit 1000 --json number,title,body,author > "\$\{issues\}"/u);
+  assert.match(decision, /--claim-evidence "\$\{claim_evidence\}" \\\n\s+--issues "\$\{issues\}" \\\n/u);
+  assert.ok(decision.indexOf("gh issue list") < decision.indexOf("decide-current-kric-facility-refresh.mjs"));
+});
+
+test("#3036 KRIC refresh failure report names the failed source from the decision or the recovered journal", () => {
+  const { step } = loadWorkflow(root, "kric-current-facility-refresh.yml");
+  const report = step("KRIC current facility refresh / Report refresh failure as an issue").block;
+  assert.match(report, /\n          DECISION_SOURCE_ID: \$\{\{ steps\.decision\.outputs\.source_id \}\}\n/u);
+  const script = report.split("\n        run: |")[1];
+  assert.doesNotMatch(script, /\$\{\{/u);
+  assert.match(script, /failed_source_id="\$\{DECISION_SOURCE_ID:-\$\{KRIC_REFRESH_RECOVERED_SOURCE_ID:-\}\}"/u);
+  assert.match(script, /--run-id "\$\{GITHUB_RUN_ID\}" --source-id "\$\{failed_source_id\}"/u);
+  const recover = step("KRIC current facility refresh / Recover claimed refresh").block;
+  assert.match(recover, /printf 'KRIC_REFRESH_RECOVERED_SOURCE_ID=%s\\n' "\$\{source_id\}" >> "\$\{GITHUB_ENV\}"/u);
 });

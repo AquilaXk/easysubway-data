@@ -1353,3 +1353,40 @@ test("#3036 the registrar refuses a first registration when the ledger gained a 
   assert.equal(registrations, 1);
   assert.deepEqual(await readJson("tools/datapack/source-inventory.json"), inventoryBefore);
 });
+
+// #3036 이전 journal은 sourceId 키가 없다. 그때는 표준 원천만 갱신했으므로 키가 없을 때만 표준으로 읽고, 있는 값은 그대로 검증한다.
+test("#3036 a retained journal without a sourceId is read as the standard source, and any present sourceId is judged as written", async (t) => {
+  const { source, journalPath, journal } = await publishedRecoveryFixture(t);
+  const repositoryRoot = await currentReleaseFixture(t);
+  const targetParent = await mkdtemp(path.join(tmpdir(), "facility-legacy-journal-"));
+  t.after(() => rm(targetParent, { recursive: true, force: true }));
+  const prepare = async (name, sourceId) => {
+    const operationRoot = path.join(targetParent, name);
+    await prepareCurrentCapitalFacilityOperation({ sourceId, repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+    return operationRoot;
+  };
+  const recover = (operationRoot) => recoverPublishedCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW });
+  const writeSourceJournal = async (sourceId) => {
+    const { sourceId: _dropped, ...legacy } = journal;
+    await writeJson(journalPath, sourceId === undefined ? legacy : { ...legacy, sourceId });
+  };
+  const escalatorTarget = await prepare("escalator-target", ESCALATOR_SOURCE_ID);
+  const standardTarget = await prepare("standard-target", STANDARD_SOURCE_ID);
+
+  await writeSourceJournal(undefined);
+  await assert.rejects(recover(escalatorTarget), /published recovery source identity mismatch/);
+  for (const sourceId of ["kric-station-escalator", "", null, 7]) {
+    await writeSourceJournal(sourceId);
+    await assert.rejects(recover(standardTarget), /published recovery source identity mismatch/, JSON.stringify(sourceId));
+  }
+  await writeSourceJournal(ESCALATOR_SOURCE_ID);
+  await assert.rejects(recover(standardTarget), /published recovery source identity mismatch/);
+  for (const root of [escalatorTarget, standardTarget]) {
+    assert.equal(JSON.parse(await readFile(path.join(root, "journal.json"), "utf8")).phase, "PREPARED");
+  }
+
+  await writeSourceJournal(undefined);
+  assert.deepEqual(await recover(standardTarget), { snapshotId: source.snapshot.snapshotId, status: "RECOVERED_PUBLISHED" });
+  const recovered = JSON.parse(await readFile(path.join(standardTarget, "journal.json"), "utf8"));
+  assert.deepEqual([recovered.phase, recovered.sourceId], ["FINALIZE_STARTED", STANDARD_SOURCE_ID]);
+});
