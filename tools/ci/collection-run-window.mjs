@@ -28,7 +28,7 @@ export const COLLECTION_WINDOW_REASON = Object.freeze({
   RUN_RECORD_INVALID: "RUN_RECORD_INVALID", // run 항목의 모양이 다르다
   RUN_IDENTITY_MISMATCH: "RUN_IDENTITY_MISMATCH", // run의 event·branch·workflow 경로·생성 시각이 조회 조건과 다르거나 run이 중복이다
   CURRENT_RUN_MISMATCH: "CURRENT_RUN_MISMATCH", // 이 run이 목록에 정확히 한 번, 첫 시도로 나타나지 않는다
-  JOB_LIST_EMPTY: "JOB_LIST_EMPTY", // 이전 run에 job이 없어 collector 진입 여부를 알 수 없다
+  JOB_LIST_EMPTY: "JOB_LIST_EMPTY", // 이전 run에 job이 없는데 취소된 대기 run도 아니라 collector 진입 여부를 알 수 없다
   JOB_LIST_LIMIT: "JOB_LIST_LIMIT", // 한 run의 job이 한 페이지 상한을 넘는다
   JOB_RECORD_INVALID: "JOB_RECORD_INVALID", // job 항목의 모양이 다르거나 job이 중복이다
   COLLECTOR_STEP_SHAPE: "COLLECTOR_STEP_SHAPE", // collector step이 정확히 하나가 아니거나 상태·결과를 해석할 수 없다
@@ -123,6 +123,10 @@ function collectorJobOutcome(job, runId, context) {
 // 한 run에 collector job이 여럿이면 가장 소비가 확실한 결과를 고른다: 진행 중 > 성공 > 실패.
 const OUTCOME_PRECEDENCE = [COLLECTION_OUTCOME.RUNNING, COLLECTION_OUTCOME.SUCCEEDED, COLLECTION_OUTCOME.FAILED];
 const RUN_COMPLETED = "completed";
+const RUN_CANCELLED = "cancelled";
+
+// concurrency로 취소된 대기 run은 job이 하나도 만들어지지 않은 채 completed·cancelled로 끝난다. collector에 들어간 적이 없으니 공급자를 부르지 않았다.
+const neverEnteredAnyJob = (run) => run.status === RUN_COMPLETED && run.conclusion === RUN_CANCELLED;
 
 async function readResponse(response, workflow) {
   if (!response || typeof response.text !== "function") throw failure(COLLECTION_WINDOW_REASON.GITHUB_API_BODY_INVALID, { workflow });
@@ -178,7 +182,10 @@ async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
     || !Number.isSafeInteger(body.total_count) || !Array.isArray(body.jobs)) {
     throw failure(COLLECTION_WINDOW_REASON.GITHUB_API_BODY_INVALID, { workflow });
   }
-  if (body.total_count < 1) throw failure(COLLECTION_WINDOW_REASON.JOB_LIST_EMPTY, { workflow });
+  if (body.total_count < 1) {
+    if (body.jobs.length === 0 && neverEnteredAnyJob(run)) return null;
+    throw failure(COLLECTION_WINDOW_REASON.JOB_LIST_EMPTY, { workflow });
+  }
   if (body.total_count > MAX_JOBS) throw failure(COLLECTION_WINDOW_REASON.JOB_LIST_LIMIT, { workflow });
   if (body.jobs.length !== body.total_count) throw failure(COLLECTION_WINDOW_REASON.GITHUB_API_BODY_INVALID, { workflow });
   const jobIds = new Set();

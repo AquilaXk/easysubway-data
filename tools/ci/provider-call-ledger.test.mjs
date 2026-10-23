@@ -134,6 +134,22 @@ test("job 모양별: 건너뛴 빈 job만 호출 없음이고 대기·취소·�
   await assert.rejects(ledgerFor(shaped("queued", null, []), { status: "queued" }), { reason: "COLLECTOR_STEP_SHAPE" }, "queued run");
 });
 
+// P3-b(PR #1452): concurrency로 취소된 대기 run은 job이 하나도 없다. 수집에 들어간 적이 없으니 호출 없음이고, 다른 0 job 상태는 알 수 없으니 기록 전체가 읽을 수 없게 된다.
+test("취소된 대기 run(완료·cancelled·job 0건)은 기록에 넣지 않고, 다른 0 job 상태는 기록을 읽을 수 없게 한다", async () => {
+  const ledgerWith = (runOverrides) => read(github({ runs: { workflow_dispatch: [run(61, "2026-10-20T01:00:00Z", runOverrides), currentRun()] } }));
+  const fixture = github({ runs: { workflow_dispatch: [run(61, "2026-10-20T01:00:00Z", { conclusion: "cancelled" }), currentRun()] } });
+  assert.deepEqual((await read(fixture)).entries, []);
+  assert.deepEqual(fixture.downloads, []);
+  for (const runOverrides of [
+    { status: "completed", conclusion: "failure" },
+    { status: "completed", conclusion: "success" },
+    { status: "completed", conclusion: null },
+    { status: "queued", conclusion: null },
+    { status: "in_progress", conclusion: null },
+    { status: "queued", conclusion: "cancelled" },
+  ]) await assert.rejects(ledgerWith(runOverrides), { reason: "JOB_LIST_EMPTY" }, JSON.stringify(runOverrides));
+});
+
 test("아직 끝나지 않은 run(수집 중이거나 증거 업로드 전)은 요청 수를 증명할 수 없어 null이다", async () => {
   const fixture = github({
     runs: { workflow_dispatch: [run(21, "2026-10-20T05:00:00Z", { status: "in_progress" }), currentRun()] },
