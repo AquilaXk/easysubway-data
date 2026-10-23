@@ -533,8 +533,8 @@ test("열린 이슈는 원천마다 마지막 실패 시각만 남기고 다른 
   const escalatorAt = new Date(start.getTime() + hours(4));
   const again = kricReport(3, escalatorAt, { openIssues: [kricIssue({ ...first, body: standard.issueBody })], sourceId: KRIC_ESCALATOR });
   assert.deepEqual(sourceFailuresOf(again.issueBody), [
-    { sourceId: KRIC_STANDARD, failedAt: standardAt.toISOString() },
     { sourceId: KRIC_ESCALATOR, failedAt: escalatorAt.toISOString() },
+    { sourceId: KRIC_STANDARD, failedAt: standardAt.toISOString() },
   ]);
   assert.equal((again.issueBody.match(/refresh-source-failed:kric-station-escalator-detailed/gu) ?? []).length, 1);
   const unnamed = kricReport(4, new Date(start.getTime() + hours(6)), { openIssues: [kricIssue({ ...first, body: again.issueBody })] });
@@ -564,7 +564,7 @@ test("원천 표지는 상태 블록 안의 형식이 맞는 것만 읽고, 시�
   const outside = `${sourceMarker(KRIC_STANDARD, start)}\n${plan.body}`;
   assert.deepEqual(sourceFailuresOf(outside).map(({ sourceId }) => sourceId), [KRIC_ESCALATOR]);
   for (const failedAt of ["2026-13-45T25:61:61.000Z", "2026-10-04", "2026-10-04T00:47:00Z"]) {
-    const broken = plan.body.replace(start.toISOString(), failedAt);
+    const broken = plan.body.replace(`${KRIC_ESCALATOR}:${start.toISOString()}`, `${KRIC_ESCALATOR}:${failedAt}`);
     assert.throws(() => sourceFailuresOf(broken), /REFRESH_FAILURE_REPORT_SOURCE_MARKER/u, failedAt);
   }
   assert.throws(() => sourceFailuresOf("상태 블록이 없다"), /REFRESH_FAILURE_REPORT_STATUS_BLOCK/u);
