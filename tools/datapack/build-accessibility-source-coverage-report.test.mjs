@@ -619,6 +619,7 @@ test("remote manifest URL과 bundled index가 같은 gzip SQLite를 가리키면
       facilityType: "ELEVATOR",
       domain: "STATION_FACILITY_EVIDENCE",
       evidenceKind: "VERIFIED_PRESENT",
+      statusMeaning: null,
       sourceId: "official-accessibility",
       sourceSnapshotId: "official-accessibility-20260728",
       providerRecordHash: hash("record"),
@@ -1584,3 +1585,34 @@ test("#3036 리뷰 F1: 후보 팩 생산 규칙이 낸 KRIC 시설 증거는 세
   assert.deepEqual(report.violations, emptyViolations());
   assert.equal(report.decision, "GO");
 });
+
+for (const [name, evidence] of [
+  ["에스컬레이터를 다른 노선 조회에 실렸다고 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "LISTED_ON_OTHER_LINE_QUERY",
+  }],
+  ["원천이 다루는 휠체어리프트를 원천 밖 유형이라 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  }],
+  ["신당 6호선 조회에 실린 휠체어리프트를 원천 밖 유형이라 적은 2호선 UNKNOWN", {
+    stationId: "station-e43cb7fb4322", lineId: "seoul-2", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  }],
+  ["청구 6호선 조회에 실린 승강기를 5호선에서 부재라 적은 NOT_EXISTS", {
+    stationId: "station-198b6e06f06c", lineId: "line-80fc4d5350d4", facilityType: "ELEVATOR", evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+  }],
+  ["상태 의미가 없는 에스컬레이터 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: null,
+  }],
+]) {
+  test(`#3036 리뷰 F1: snapshot과 어긋난 증거(${name})는 결속되지 않아 NO_GO다`, async (t) => {
+    const inputs = await pinnedKricCoverageInputs(t);
+    const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)]);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations, {
+      ...emptyViolations(),
+      provenance: [
+        `manifest-nationwide:${evidence.stationId}|${evidence.lineId}|${evidence.facilityType}|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+      ],
+    });
+  });
+}

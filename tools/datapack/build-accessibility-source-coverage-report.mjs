@@ -14,6 +14,11 @@ import {
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
+import {
+  KRIC_PRESENT_RESULT_CODE,
+  kricStandardListedTypesByStation,
+  kricStandardStatusState,
+} from "./lib/kric-standard-facilities.mjs";
 import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { normalizeMolitProviderLineName } from "./lib/molit-svg-provider-identity.mjs";
 
@@ -708,10 +713,13 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
           operatorName: row.operator_name,
         }))
       : undefined;
+    const evidenceStatusMeaningColumn = tableHasColumns(database, "station_facility_evidence", ["status_meaning"])
+      ? "status_meaning"
+      : "NULL";
     const evidenceClaims = tableExists(database, "station_facility_evidence")
       ? database.prepare(`
           SELECT station_id, line_id, facility_type, evidence_kind, source_id, source_snapshot_id,
-                 provider_record_hash, evidence_hash
+                 provider_record_hash, evidence_hash, ${evidenceStatusMeaningColumn} AS status_meaning
           FROM station_facility_evidence
           ORDER BY station_id, line_id, facility_type
         `).all().map((row) => ({
@@ -720,6 +728,7 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
           facilityType: row.facility_type,
           domain: "STATION_FACILITY_EVIDENCE",
           evidenceKind: row.evidence_kind,
+          statusMeaning: row.status_meaning,
           sourceId: row.source_id,
           sourceSnapshotId: row.source_snapshot_id,
           providerRecordHash: row.provider_record_hash,
@@ -1068,6 +1077,26 @@ function snapshotForClaim(snapshotsByIdentity, claim) {
   return snapshotsByIdentity.get(`${claim.sourceId}\0${claim.sourceSnapshotId}`);
 }
 
+// 목록에 없는 유형의 NOT_EXISTS·UNKNOWN 증거는 생산 규칙(kricStandardStatusState)을 같은 역의 결과 00 조회에 다시 적용해
+// 상태와 의미가 같고 hash가 (snapshot, 조회 tuple, 유형, 상태)에서 다시 계산될 때만 결속한다.
+function kricStatusClaimMatchesQuery(snapshot, query, claim) {
+  const stationQueries = snapshot.queries.filter(({ stationId, providerResultCode }) => stationId === claim.stationId
+    && providerResultCode === KRIC_PRESENT_RESULT_CODE);
+  const listedAtStation = kricStandardListedTypesByStation(stationQueries).get(claim.stationId) ?? new Set();
+  const expected = kricStandardStatusState(claim.facilityType, listedAtStation);
+  const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
+  return query.providerResultCode === KRIC_PRESENT_RESULT_CODE
+    && claim.evidenceKind === expected.evidenceKind
+    && claim.statusMeaning === expected.statusMeaning
+    && query.providerRecordHash === claim.providerRecordHash
+    && digest(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      query: tuple,
+      type: claim.facilityType,
+      evidenceKind: expected.evidenceKind,
+    })) === claim.evidenceHash;
+}
+
 function claimMatchesSnapshot(snapshot, claim) {
   if (!snapshot) return false;
   if (regionalAccessibilitySnapshot(snapshot)) return regionalClaimMatchesSnapshot(snapshot, claim);
@@ -1088,14 +1117,7 @@ function claimMatchesSnapshot(snapshot, claim) {
         return providerRecordHash === claim.providerRecordHash
           && digest(JSON.stringify({ snapshotId: snapshot.snapshotId, query: tuple, providerRecordHash })) === claim.evidenceHash;
       });
-      return claim.evidenceKind === "NOT_EXISTS"
-        && query.providerRecordHash === claim.providerRecordHash
-        && digest(JSON.stringify({
-          snapshotId: snapshot.snapshotId,
-          query: tuple,
-          type: claim.facilityType,
-          evidenceKind: "NOT_EXISTS",
-        })) === claim.evidenceHash;
+      return kricStatusClaimMatchesQuery(snapshot, query, claim);
     });
   }
   if (snapshot.artifactKind === "seoul-accessibility-snapshot") {

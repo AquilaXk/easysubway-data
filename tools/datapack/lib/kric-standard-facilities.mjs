@@ -2,6 +2,8 @@ import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { sha256 } from "../../lib/hash.mjs";
 
 export const KRIC_STANDARD_SOURCE_ID = "kric-station-convenience-standard";
+// stationCnvFacl 정상 응답 결과 코드. 결과 03(terminal)은 시설 존재·부재를 말하지 않는다.
+export const KRIC_PRESENT_RESULT_CODE = "00";
 // KRIC official stationCnvFacl contract: EV/ES/WCLF are the only route-relevant facility codes.
 const FACILITY_TYPES = new Map([["EV", "ELEVATOR"], ["ES", "ESCALATOR"], ["WCLF", "WHEELCHAIR_LIFT"]]);
 const KRIC_FACILITY_CODES = new Set([...FACILITY_TYPES.keys(), "ELEC", "FEED", "INFO", "TOLT"]);
@@ -56,7 +58,8 @@ export function kricStandardListedTypesByStation(queries) {
   return listed;
 }
 
-function absenceState(facilityType, listedAtStation) {
+// 조회 목록에 없는 유형의 상태다. 생산(materializer·후보 팩)과 검증(coverage report)이 같은 규칙을 쓴다.
+export function kricStandardStatusState(facilityType, listedAtStation) {
   if (!KRIC_STANDARD_ABSENCE_COVERED_TYPES.includes(facilityType)) return UNKNOWN_NOT_COVERED;
   return listedAtStation.has(facilityType) ? UNKNOWN_OTHER_LINE : ABSENT;
 }
@@ -96,7 +99,7 @@ export function kricStandardQueryFacilities({ snapshot, query, stationName, list
   const listedOnQuery = new Set(facilities.map(({ type }) => type));
   const listedAtStation = listedTypesByStation.get(query.stationId) ?? new Set();
   const statusEvidence = KRIC_STANDARD_FACILITY_TYPES.filter((type) => !listedOnQuery.has(type)).map((facilityType) => {
-    const state = absenceState(facilityType, listedAtStation);
+    const state = kricStandardStatusState(facilityType, listedAtStation);
     return {
       stationId: query.stationId,
       lineId: query.lineId,
