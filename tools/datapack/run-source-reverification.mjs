@@ -19,9 +19,12 @@
 //   SOURCE_COUNT_DELTA          행 수 변화가 정책 한도를 넘거나 커버리지가 줄었다.
 //   BINDING_MISMATCH            원장·증거의 필수 필드·직전 연결이 어긋났다.
 //   REVERIFICATION_OUTPUT_SCOPE recipe가 허용 경로(등록 결과 세 파일 + 새 snapshot 파일) 밖을 바꿨다.
+//   REVERIFICATION_REPLAY_INVALID  재생 묶음의 manifest·파일이 recipe와 맞지 않거나 sha256이 다르다(#3036).
+//   REVERIFICATION_REPLAY_MISMATCH 재생 등록이 묶음에 적힌 snapshot·수집 시각과 다른 원장 head를 만들었다(#3036).
 //
 // 사용(깨끗한 작업 트리, origin/main의 후손 HEAD에서):
-//   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...>
+//   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...> [--replay-bundle <absolute directory>]
+//   재생(#3036): --recipes 대신 --replay-from <앞선 run이 남긴 재생 묶음>. 수집 단계를 건너뛰어 공급자를 부르지 않는다.
 //   환경: data.go.kr 서비스 키(부산·대전 topology·KASI 공휴일), KRIC 서비스 키(역별 시간표), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -183,16 +186,27 @@ async function registerWithHead(ctx, script, args) {
   await ctx.execute(script, [...args, "--expected-head", await ctx.head()]);
 }
 
+const RECEIPT_FILE = "raw-receipt.json";
+
+// 수집 출력 하나와 게시 영수증만으로 다시 등록할 수 있는 recipe(#3036). retains는 재생에 필요한 파일이고 재생 묶음에는 이 파일만 담는다.
+// 재생(ctx.replay)은 수집 단계를 건너뛰고, 같은 등록기를 게시 없이(register 모드) 불러 보관한 수집 출력과 원래 게시 영수증으로 등록한다.
+function collectThenRegister({ output, collect, script, registerArgs = async () => [] }) {
+  return [
+    step("collect", "collect", (ctx) => collect(ctx, ctx.file(output)), { retains: Object.freeze([output]) }),
+    step("register", "register", async (ctx) => {
+      const args = ["--snapshot", ctx.file(output), ...(await registerArgs(ctx)), "--receipt", ctx.file(RECEIPT_FILE)];
+      await ctx.execute(script, ctx.replay ? ["register", ...args] : ["publish-register", ...args, "--expected-head", await ctx.head()]);
+    }, { retains: Object.freeze([RECEIPT_FILE]) }),
+  ];
+}
+
 // download: 수집기가 --download 모드를 요구하는가(data.go.kr 파일데이터). 부산 접근성 수집기는 오픈API를 직접 불러 그 플래그가 없다.
 function regionalAccessibilitySteps({ collectScript, collectArgs, download = true }) {
-  return [
-    step("collect", "collect", async (ctx) => {
-      await ctx.execute(collectScript, [...(download ? ["--download"] : []), ...(await collectArgs(ctx)), "--output", ctx.file("accessibility.json")]);
-    }),
-    step("register", "register", async (ctx) => {
-      await registerWithHead(ctx, "register-regional-accessibility.mjs", ["publish-register", "--snapshot", ctx.file("accessibility.json"), "--receipt", ctx.file("raw-receipt.json")]);
-    }),
-  ];
+  return collectThenRegister({
+    output: "accessibility.json",
+    collect: async (ctx, output) => ctx.execute(collectScript, [...(download ? ["--download"] : []), ...(await collectArgs(ctx)), "--output", output]),
+    script: "register-regional-accessibility.mjs",
+  });
 }
 
 async function sourceByKey(ctx, sourceId) {
@@ -425,49 +439,36 @@ export const RECIPE_STEPS = Object.freeze({
     collectScript: "collect-gwangju-accessibility.mjs",
     collectArgs: async (ctx) => ["--inventory", abs(ctx, INVENTORY_PATH)],
   }),
-  "busan-topology": [
-    step("collect", "collect", async (ctx) => {
-      await ctx.execute("collect-busan-route-topology.mjs", ["--output", ctx.file("topology.json"), "--scope-html", abs(ctx, BUSAN_SCOPE_HTML)]);
-    }),
-    step("register", "register", async (ctx) => {
-      await registerWithHead(ctx, "register-busan-route-topology.mjs", [
-        "publish-register", "--snapshot", ctx.file("topology.json"), "--station-map", abs(ctx, BUSAN_STATION_MAP), "--receipt", ctx.file("raw-receipt.json"),
-      ]);
-    }),
-  ],
+  "busan-topology": collectThenRegister({
+    output: "topology.json",
+    collect: (ctx, output) => ctx.execute("collect-busan-route-topology.mjs", ["--output", output, "--scope-html", abs(ctx, BUSAN_SCOPE_HTML)]),
+    script: "register-busan-route-topology.mjs",
+    registerArgs: async (ctx) => ["--station-map", abs(ctx, BUSAN_STATION_MAP)],
+  }),
   "busan-accessibility": regionalAccessibilitySteps({
     collectScript: "collect-busan-accessibility.mjs",
     collectArgs: async (ctx) => ["--scope-snapshot", await topologySnapshotPath(ctx, "busan-transportation-route-topology")],
     download: false,
   }),
-  "busan-timetable": [
-    step("collect", "collect", async (ctx) => {
-      await ctx.execute("collect-busan-timetable.mjs", ["--scope-snapshot", await topologySnapshotPath(ctx, "busan-transportation-route-topology"), "--output", ctx.file("timetable.json")]);
-    }),
-    step("register", "register", async (ctx) => {
-      await registerWithHead(ctx, "register-busan-timetable.mjs", ["publish-register", "--snapshot", ctx.file("timetable.json"), "--receipt", ctx.file("raw-receipt.json")]);
-    }),
-  ],
-  "daejeon-topology": [
-    step("collect", "collect", async (ctx) => {
-      await ctx.execute("collect-daejeon-route-topology.mjs", [], { env: { DAEJEON_TOPOLOGY_OUTPUT: ctx.file("topology.json") } });
-    }),
-    step("register", "register", async (ctx) => {
-      await registerWithHead(ctx, "register-daejeon-route-topology.mjs", ["publish-register", "--snapshot", ctx.file("topology.json"), "--receipt", ctx.file("raw-receipt.json")]);
-    }),
-  ],
+  "busan-timetable": collectThenRegister({
+    output: "timetable.json",
+    collect: async (ctx, output) => ctx.execute("collect-busan-timetable.mjs", ["--scope-snapshot", await topologySnapshotPath(ctx, "busan-transportation-route-topology"), "--output", output]),
+    script: "register-busan-timetable.mjs",
+  }),
+  "daejeon-topology": collectThenRegister({
+    output: "topology.json",
+    collect: (ctx, output) => ctx.execute("collect-daejeon-route-topology.mjs", [], { env: { DAEJEON_TOPOLOGY_OUTPUT: output } }),
+    script: "register-daejeon-route-topology.mjs",
+  }),
   "daejeon-accessibility": regionalAccessibilitySteps({
     collectScript: "collect-daejeon-accessibility.mjs",
     collectArgs: async (ctx) => ["--topology-snapshot", await topologySnapshotPath(ctx, "daejeon-station-distance-fare"), "--inventory", abs(ctx, INVENTORY_PATH), "--molit-csv", abs(ctx, MOLIT_STATION_CSV)],
   }),
-  "daejeon-timetable": [
-    step("collect", "collect", async (ctx) => {
-      await ctx.execute("probe-daejeon-coverage-api.mjs", [], { env: { DAEJEON_API_PROBE_SOURCE_ID: "daejeon-train-timetable", DAEJEON_API_PROBE_OUTPUT: ctx.file("timetable.json") } });
-    }),
-    step("register", "register", async (ctx) => {
-      await registerWithHead(ctx, "register-daejeon-timetable.mjs", ["publish-register", "--snapshot", ctx.file("timetable.json"), "--receipt", ctx.file("raw-receipt.json")]);
-    }),
-  ],
+  "daejeon-timetable": collectThenRegister({
+    output: "timetable.json",
+    collect: (ctx, output) => ctx.execute("probe-daejeon-coverage-api.mjs", [], { env: { DAEJEON_API_PROBE_SOURCE_ID: "daejeon-train-timetable", DAEJEON_API_PROBE_OUTPUT: output } }),
+    script: "register-daejeon-timetable.mjs",
+  }),
   "daegu-sources": [
     step("collect", "collect", async (ctx) => {
       await mkdir(ctx.file("collected"));
@@ -585,7 +586,7 @@ function violationError(recipe, violations) {
 }
 
 // recipe 하나: 단계를 순서대로 실행하고(실패는 이상 코드로 분류) 결과를 허용 경로·원장 게이트·증거 게이트에 통과시킨 뒤 한 커밋으로 쌓는다.
-async function runRecipe({ recipe, recipeSteps, ctx, policy, ledgerPath }) {
+async function runRecipe({ recipe, recipeSteps, ctx, policy, ledgerPath, verify }) {
   const { repositoryRoot, env } = ctx;
   const beforeInventory = recipe.due?.kind === "inventory-evidence" ? await ctx.readJson(INVENTORY_PATH) : null;
   for (const recipeStep of recipeSteps) {
@@ -608,15 +609,16 @@ async function runRecipe({ recipe, recipeSteps, ctx, policy, ledgerPath }) {
     violations.push(...gate.violations);
   }
   if (violations.length > 0) throw violationError(recipe, violations);
+  await verify?.(recipe);
   await git(repositoryRoot, ["add", "--", ...paths]);
   await git(repositoryRoot, ["commit", "-q", "-m", recipe.message]);
   return { result: { id: recipe.id, changed: true, paths }, evidenceRows };
 }
 
-function recipeContext({ recipe, repositoryRoot, operationRoot, env, shared, lib, now, execute }) {
+function recipeContext({ recipe, repositoryRoot, operationRoot, env, shared, lib, now, execute, replay }) {
   const operationDir = path.join(operationRoot, recipe.id);
   return {
-    recipeId: recipe.id, repositoryRoot, operationDir, env, shared, lib, now, execute,
+    recipeId: recipe.id, repositoryRoot, operationDir, env, shared, lib, now, execute, replay,
     head: async () => (await git(repositoryRoot, ["rev-parse", "HEAD"])).trim(),
     originMain: async () => (await git(repositoryRoot, ["rev-parse", "origin/main"])).trim(),
     readJson: async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8")),
@@ -670,24 +672,31 @@ function stopError(failures) {
   return new Error(`${first.code}: ${first.detail}${suffix}`);
 }
 
-export async function runSourceReverification({
-  repositoryRoot = ROOT, operationRoot, recipeIds, recipes = REVERIFICATION_RECIPES, steps = RECIPE_STEPS, env = process.env,
-  policy = null, ledgerPath = LEDGER_PATH, now = () => new Date(), execute = null, lib = defaultLib,
-} = {}) {
+function assertRoots(repositoryRoot, operationRoot) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !path.isAbsolute(operationRoot ?? "")) fail("REVERIFICATION_ARGUMENTS: repository and operation roots must be absolute");
   const relativeOperationRoot = path.relative(path.resolve(repositoryRoot), path.resolve(operationRoot));
   // 부모 세그먼트(..)만 저장소 밖이다. "..cache"처럼 점 두 개로 시작하는 이름의 하위 디렉터리는 저장소 안이다.
   const outsideRepository = relativeOperationRoot === ".." || relativeOperationRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeOperationRoot);
   if (!outsideRepository) fail("REVERIFICATION_ARGUMENTS: the operation root must be outside the repository");
-  const ordered = orderedRecipes(recipeIds, recipes);
+}
+
+async function prepareRun({ repositoryRoot, operationRoot, policy, env, lib, now, execute, replay }) {
   if ((await changedEntries(repositoryRoot)).length > 0) fail("REVERIFICATION_WORKTREE_DIRTY: the reverification needs a clean worktree");
   const ledgerPolicy = parseLedgerChangePolicy(policy ?? JSON.parse(await readFile(path.join(ROOT, POLICY_PATH), "utf8")));
-  const common = { repositoryRoot, operationRoot, env, lib, now: typeof now === "function" ? now : () => new Date(now), execute: execute ?? defaultExecute(repositoryRoot, env) };
+  await mkdir(operationRoot, { recursive: true });
+  return {
+    ledgerPolicy,
+    common: { repositoryRoot, operationRoot, env, lib, replay, now: typeof now === "function" ? now : () => new Date(now), execute: execute ?? defaultExecute(repositoryRoot, env) },
+  };
+}
+
+// 의존 묶음마다 recipe를 순서대로 실행하고 묶음 단위로 등록하거나 되돌린다(#1102). 재생은 수집 단계를 건너뛴다(#3036).
+async function runGroups({ groups, common, steps, ledgerPolicy, ledgerPath, verify }) {
+  const { repositoryRoot } = common;
   const results = [];
   const evidenceSources = [];
   const failures = [];
-  await mkdir(operationRoot, { recursive: true });
-  for (const group of dependencyGroups(ordered)) {
+  for (const group of groups) {
     const groupStart = (await git(repositoryRoot, ["rev-parse", "HEAD"])).trim();
     const base = { ...common, shared: new Map() };
     const groupResults = [];
@@ -700,11 +709,12 @@ export async function runSourceReverification({
         failures.push({ recipeId: recipe.id, code: DEPENDENCY_FAILED, detail: `${recipe.id} was not run because ${reason} failed` });
         continue;
       }
-      const recipeSteps = steps[recipe.id] ?? fail(`REVERIFICATION_RECIPE_UNKNOWN: ${recipe.id} has no steps`);
+      const allSteps = steps[recipe.id] ?? fail(`REVERIFICATION_RECIPE_UNKNOWN: ${recipe.id} has no steps`);
+      const recipeSteps = common.replay ? allSteps.filter(({ kind }) => kind !== "collect") : allSteps;
       const ctx = recipeContext({ recipe, ...base });
       try {
         await mkdir(ctx.operationDir, { recursive: true }); // NOSONAR -- recipe는 앞 recipe의 커밋 위에서 순서대로 실행한다
-        const { result, evidenceRows } = await runRecipe({ recipe, recipeSteps, ctx, policy: ledgerPolicy, ledgerPath }); // NOSONAR -- 위와 같다
+        const { result, evidenceRows } = await runRecipe({ recipe, recipeSteps, ctx, policy: ledgerPolicy, ledgerPath, verify }); // NOSONAR -- 위와 같다
         groupResults.push(result);
         groupEvidence.push(...evidenceRows);
       } catch (error) {
@@ -721,26 +731,169 @@ export async function runSourceReverification({
     results.push(...groupResults);
     evidenceSources.push(...groupEvidence);
   }
-  // 실패 이슈 보고가 읽는 실패 목록. controller가 멈춰도(등록된 recipe 없음) 남는다. 실패가 없으면 만들지 않는다.
+  return { results, evidenceSources, failures };
+}
+
+// 실패 이슈 보고가 읽는 실패 목록. controller가 멈춰도(등록된 recipe 없음) 남는다. 실패가 없으면 만들지 않는다.
+async function finishRun({ operationRoot, results, failures }) {
   if (failures.length > 0) await writeFile(path.join(operationRoot, FAILURES_FILE), jsonText(failures.map(({ recipeId, code }) => ({ recipeId, code }))));
   if (results.length === 0 && failures.length > 0) throw stopError(failures);
+}
+
+// ---------------------------------------------------------------------------
+// 재생 묶음(#3036): 뒤처진 재확인 PR을 공급자 재호출 없이 최신 main 위에 다시 만든다.
+// 정상 run과 재생 run은 PR이 된 등록 중 재생 가능한 의존 묶음의 보관 파일(retains)과 원장 head를 묶음으로 남긴다. workflow가 run artifact로 올린다.
+// 재생 run은 main이 같거나 더 새 snapshot을 가진 묶음을 통째로 빼고, 남은 묶음을 수집 없이 등록한 뒤 원장 head가 묶음과 같은지 확인한다.
+// ---------------------------------------------------------------------------
+export const REPLAY_MANIFEST_FILE = "manifest.json";
+const REPLAY_BUNDLE_KIND = "source-reverification-replay-bundle";
+const REPLAY_UP_TO_DATE = "UP_TO_DATE_ON_MAIN";
+const replayable = (recipeSteps) => Array.isArray(recipeSteps) && recipeSteps.every(({ retains }) => Array.isArray(retains));
+const retainedFiles = (recipeSteps) => recipeSteps.flatMap(({ retains }) => retains);
+const replayInvalid = (detail) => fail(`REVERIFICATION_REPLAY_INVALID: ${detail}`);
+
+async function writeReplayBundle({ bundleRoot, operationRoot, repositoryRoot, ledgerPath, ran, results, steps }) {
+  if (bundleRoot === null) return;
+  const registered = ran.filter(({ id }) => results.some((result) => result.id === id));
+  const ledger = JSON.parse(await readFile(path.join(repositoryRoot, ledgerPath), "utf8"));
+  const entries = [];
+  for (const group of dependencyGroups(registered)) {
+    // 묶음은 원자적이다. 재생할 수 없는 recipe가 하나라도 있으면 묶음 전체를 담지 않는다(다음 정기 실행이 다시 수집한다).
+    if (!group.every((recipe) => replayable(steps[recipe.id]))) continue;
+    for (const recipe of group) {
+      await mkdir(path.join(bundleRoot, recipe.id), { recursive: true });
+      const files = [];
+      for (const name of retainedFiles(steps[recipe.id])) {
+        const bytes = await readFile(path.join(operationRoot, recipe.id, name));
+        await writeFile(path.join(bundleRoot, recipe.id, name), bytes, { flag: "wx" });
+        files.push({ name, sha256: sha256(bytes) });
+      }
+      const sources = recipe.sourceIds.map((sourceId) => {
+        const { snapshotId, capturedAt } = ledgerHead(ledger, sourceId);
+        return { sourceId, snapshotId, capturedAt };
+      });
+      entries.push({ recipeId: recipe.id, files, sources });
+    }
+  }
+  if (entries.length === 0) return;
+  await writeFile(path.join(bundleRoot, REPLAY_MANIFEST_FILE), jsonText({ schemaVersion: 1, artifactKind: REPLAY_BUNDLE_KIND, recipes: entries }), { flag: "wx" });
+}
+
+const sameNames = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const isInstant = (value) => text(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+
+async function readReplayManifest(replayFrom, recipes, steps) {
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(path.join(replayFrom, REPLAY_MANIFEST_FILE), "utf8"));
+  } catch (error) {
+    replayInvalid(`the bundle manifest is unreadable: ${error.message}`);
+  }
+  if (manifest?.schemaVersion !== 1 || manifest.artifactKind !== REPLAY_BUNDLE_KIND || !Array.isArray(manifest.recipes) || manifest.recipes.length === 0) replayInvalid("the bundle manifest has an unknown shape");
+  for (const entry of manifest.recipes) {
+    const recipe = recipes.find(({ id }) => id === entry?.recipeId);
+    if (!recipe || !replayable(steps[recipe.id])) replayInvalid(`${String(entry?.recipeId)} cannot be replayed`);
+    const files = Array.isArray(entry.files) ? entry.files : [];
+    if (!sameNames(files.map(({ name }) => name), retainedFiles(steps[recipe.id])) || files.some(({ sha256: digest }) => !SHA256.test(digest ?? ""))) replayInvalid(`${recipe.id}: the retained files differ from the recipe`);
+    const sources = Array.isArray(entry.sources) ? entry.sources : [];
+    if (!sameNames(sources.map(({ sourceId }) => sourceId), recipe.sourceIds) || sources.some(({ snapshotId, capturedAt }) => !text(snapshotId) || !isInstant(capturedAt))) replayInvalid(`${recipe.id}: the registered sources differ from the recipe`);
+  }
+  return new Map(manifest.recipes.map((entry) => [entry.recipeId, entry]));
+}
+
+async function restoreRetainedFiles({ replayFrom, operationRoot, entry }) {
+  await mkdir(path.join(operationRoot, entry.recipeId), { recursive: true });
+  for (const { name, sha256: digest } of entry.files) {
+    const bytes = await readFile(path.join(replayFrom, entry.recipeId, name));
+    if (sha256(bytes) !== digest) replayInvalid(`${entry.recipeId}/${name} does not match its sha256`);
+    await writeFile(path.join(operationRoot, entry.recipeId, name), bytes, { flag: "wx" });
+  }
+}
+
+/** main이 같거나 더 새 snapshot을 가진 원천이 하나라도 있는 의존 묶음은 통째로 뺀다(freshness 정직성, 묶음 원자성). */
+function planReplay({ ordered, entries, ledger }) {
+  const replay = [];
+  const dropped = [];
+  for (const group of dependencyGroups(ordered)) {
+    const upToDate = group.flatMap((recipe) => entries.get(recipe.id).sources).filter(({ sourceId, capturedAt }) => {
+      const head = ledgerHead(ledger, sourceId);
+      if (!isInstant(head.capturedAt)) fail(`REVERIFICATION_LEDGER_BROKEN: ${sourceId}: the main ledger head ${head.snapshotId} has no capturedAt`);
+      return Date.parse(head.capturedAt) >= Date.parse(capturedAt);
+    });
+    if (upToDate.length > 0) dropped.push({ recipeIds: group.map(({ id }) => id), reason: REPLAY_UP_TO_DATE, sourceIds: upToDate.map(({ sourceId }) => sourceId) });
+    else replay.push(...group);
+  }
+  return { replay, dropped };
+}
+
+function verifyReplayed({ repositoryRoot, ledgerPath, entries }) {
+  return async (recipe) => {
+    const ledger = JSON.parse(await readFile(path.join(repositoryRoot, ledgerPath), "utf8"));
+    for (const { sourceId, snapshotId, capturedAt } of entries.get(recipe.id).sources) {
+      const head = ledgerHead(ledger, sourceId);
+      if (head.snapshotId !== snapshotId || head.capturedAt !== capturedAt) {
+        fail(`REVERIFICATION_REPLAY_MISMATCH: ${recipe.id}: ${sourceId} registered ${head.snapshotId} at ${head.capturedAt}, the bundle holds ${snapshotId} at ${capturedAt}`);
+      }
+    }
+  };
+}
+
+export async function runSourceReverification({
+  repositoryRoot = ROOT, operationRoot, recipeIds, recipes = REVERIFICATION_RECIPES, steps = RECIPE_STEPS, env = process.env,
+  policy = null, ledgerPath = LEDGER_PATH, now = () => new Date(), execute = null, lib = defaultLib, replayBundle = null,
+} = {}) {
+  assertRoots(repositoryRoot, operationRoot);
+  const ordered = orderedRecipes(recipeIds, recipes);
+  const { ledgerPolicy, common } = await prepareRun({ repositoryRoot, operationRoot, policy, env, lib, now, execute, replay: false });
+  const { results, evidenceSources, failures } = await runGroups({ groups: dependencyGroups(ordered), common, steps, ledgerPolicy, ledgerPath });
+  await finishRun({ operationRoot, results, failures });
+  await writeReplayBundle({ bundleRoot: replayBundle, operationRoot, repositoryRoot, ledgerPath, ran: ordered, results, steps });
   return { steps: results, evidenceSources, failures };
 }
+
+/**
+ * 재생 묶음(replayFrom)의 수집 출력으로 공급자 호출 없이 다시 등록한다. dropped는 main이 이미 같거나 더 새 snapshot을 가져 뺀 묶음이다.
+ * 남은 묶음이 없으면 아무것도 등록하지 않고 steps가 빈 결과를 돌려준다(workflow는 PR을 만들지 않는다).
+ */
+export async function replaySourceReverification({
+  repositoryRoot = ROOT, operationRoot, replayFrom, recipes = REVERIFICATION_RECIPES, steps = RECIPE_STEPS, env = process.env,
+  policy = null, ledgerPath = LEDGER_PATH, now = () => new Date(), execute = null, lib = defaultLib, replayBundle = null,
+} = {}) {
+  assertRoots(repositoryRoot, operationRoot);
+  if (!path.isAbsolute(replayFrom ?? "")) fail("REVERIFICATION_ARGUMENTS: the replay bundle must be absolute");
+  const entries = await readReplayManifest(replayFrom, recipes, steps);
+  const ordered = orderedRecipes([...entries.keys()], recipes);
+  const { ledgerPolicy, common } = await prepareRun({ repositoryRoot, operationRoot, policy, env, lib, now, execute, replay: true });
+  const { replay, dropped } = planReplay({ ordered, entries, ledger: JSON.parse(await readFile(path.join(repositoryRoot, ledgerPath), "utf8")) });
+  for (const recipe of replay) await restoreRetainedFiles({ replayFrom, operationRoot, entry: entries.get(recipe.id) });
+  const verify = verifyReplayed({ repositoryRoot, ledgerPath, entries });
+  const { results, evidenceSources, failures } = await runGroups({ groups: dependencyGroups(replay), common, steps, ledgerPolicy, ledgerPath, verify });
+  await finishRun({ operationRoot, results, failures });
+  await writeReplayBundle({ bundleRoot: replayBundle, operationRoot, repositoryRoot, ledgerPath, ran: replay, results, steps });
+  return { steps: results, evidenceSources, failures, dropped };
+}
+
+const USAGE = "REVERIFICATION_ARGUMENTS: usage: run-source-reverification.mjs --operation-root <absolute directory> (--recipes <id,id,...> | --replay-from <absolute bundle directory>) [--replay-bundle <absolute directory>]";
 
 function parseArgs(argv) {
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const key = argv[index];
-    if (!["--operation-root", "--recipes"].includes(key) || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("REVERIFICATION_ARGUMENTS: usage: run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...>");
+    if (!["--operation-root", "--recipes", "--replay-from", "--replay-bundle"].includes(key) || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail(USAGE);
     values[key] = argv[index + 1];
   }
-  if (!Object.hasOwn(values, "--operation-root") || !Object.hasOwn(values, "--recipes")) fail("REVERIFICATION_ARGUMENTS: usage: run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...>");
-  return { operationRoot: values["--operation-root"], recipeIds: values["--recipes"].split(",").filter(Boolean) };
+  if (!Object.hasOwn(values, "--operation-root") || Object.hasOwn(values, "--recipes") === Object.hasOwn(values, "--replay-from")) fail(USAGE);
+  return {
+    operationRoot: values["--operation-root"], replayBundle: values["--replay-bundle"] ?? null,
+    ...(Object.hasOwn(values, "--recipes") ? { recipeIds: values["--recipes"].split(",").filter(Boolean) } : { replayFrom: values["--replay-from"] }),
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    process.stdout.write(`${JSON.stringify(await runSourceReverification(parseArgs(process.argv.slice(2))))}\n`);
+    const options = parseArgs(process.argv.slice(2));
+    const result = options.replayFrom === undefined ? await runSourceReverification(options) : await replaySourceReverification(options);
+    process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

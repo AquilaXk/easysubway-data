@@ -285,6 +285,17 @@ test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으�
   assert.equal(decideSourceReverification(input({ ledger: stale, pullRequests: [writer(973, "automation/927-nationwide-candidate-refresh-"), writer(974, "feat/x")] })).state, "RUN");
 });
 
+// #3036: 재생 run(replay_run_id)은 DUE 판정이 아니라 보관한 수집분을 다시 등록하는 run이다. 다른 원장 쓰기가 없으면 DUE가 아니어도 RUN이고,
+// 열린 PR·진행 중 claim·다른 원장 쓰기 대기는 정상 run과 똑같이 막는다(재생도 같은 원장을 쓴다).
+test("재생 run은 DUE가 아니어도 RUN이고 recipe 목록은 비며, 직렬화 대기는 정상 run과 같다 (#3036)", () => {
+  assert.deepEqual(decideSourceReverification(input({ replayRunId: "39369279984" })), { state: "RUN", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [], replayRunId: "39369279984" });
+  const waiting = decideSourceReverification(input({ replayRunId: "39369279984", pullRequests: [writer(971)] }));
+  assert.equal(waiting.state, "BLOCKED_BY_PENDING_PR");
+  assert.deepEqual(waiting.blockedBy, [971]);
+  assert.equal(decideSourceReverification(input({ replayRunId: "39369279984", pullRequests: [pr("OPEN", 77)], automationBranches: [`${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`] })).state, "OPEN_PR");
+  for (const bad of ["", "0", "abc", "12345678901234567890"]) assert.throws(() => decideSourceReverification(input({ replayRunId: bad })), /REVERIFICATION_INPUT_INVALID/u, bad);
+});
+
 // #972 리뷰 F3: 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다.
 test("PR 목록이나 아직 끝나지 않은 run 목록이 조회 상한에 닿으면 잘렸을 수 있으므로 판정하지 않고 실패한다", () => {
   const many = (count, factory) => Array.from({ length: count }, (_, index) => factory(index));
@@ -381,8 +392,16 @@ test("CLI는 판정을 GITHUB_OUTPUT 값으로 남긴다", async () => {
   assert.match(written[0][1], /^state=BLOCKED_BY_PENDING_PR\nbranch=\nrecipes=kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,/u);
   // 이슈 본문에 적히는 연체 목록은 상태 표(overdueReverificationRecipes)와 같은 정의다: 연체 행이 있는 recipe와 그에 의존하는 recipe(recipe 표 순서).
   const overdueRecipes = "kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,gwangju-accessibility,busan-topology,busan-accessibility,busan-timetable,daejeon-topology,daejeon-accessibility,daejeon-timetable,daegu-sources,daegu-accessibility";
-  assert.match(written[0][1], new RegExp(`\\ncleanup_claims=\\nblocked_by=automation/456-capital-topology-registration-1\\nblocked_recipes=\\noverdue_recipes=${overdueRecipes}\\n$`, "u"));
+  assert.match(written[0][1], new RegExp(`\\ncleanup_claims=\\nblocked_by=automation/456-capital-topology-registration-1\\nblocked_recipes=\\noverdue_recipes=${overdueRecipes}\\nreplay_run_id=\\n$`, "u"));
   assert.deepEqual(overdueReverificationRecipes({ inventory: files["inv.json"], ledger: files["led.json"], policy: files["pol.json"], now: NOW }), overdueRecipes.split(","));
   assert.equal(JSON.parse(logs[0]).state, "BLOCKED_BY_PENDING_PR");
   await assert.rejects(main(["--inventory", "inv.json"], { now: NOW, log() {}, readText: async () => "{}" }), /REVERIFICATION_INPUT_INVALID/u);
+  // 재생 입력은 빈 값이면 정상 run이고, 값이 있으면 판정과 출력에 그대로 실린다(#3036).
+  const replayed = [];
+  const replay = await main([
+    "--inventory", "inv.json", "--ledger", "led.json", "--policy", "pol.json", "--prs", "prs.json", "--automation-branches", "claims.txt",
+    "--runs", "runs.json", "--issues", "issues.json", "--repository", REPOSITORY, "--pr-limit", "1000", "--run-limit", "200", "--issue-limit", "1000", "--replay-run-id", "39369279984", "--github-output", "out.txt",
+  ], { now: NOW, log() {}, readText: async (file) => (file in texts ? texts[file] : JSON.stringify(files[file])), appendText: async (file, text) => replayed.push(text) });
+  assert.equal(replay.state, "RUN");
+  assert.match(replayed[0], /^state=RUN\nbranch=\nrecipes=\n[\s\S]*\nreplay_run_id=39369279984\n$/u);
 });

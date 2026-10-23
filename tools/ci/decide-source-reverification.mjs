@@ -9,6 +9,9 @@
 //   CLAIM_IN_PROGRESS       PR 전의 claim을 만든 run이 아직 돈다. 기다린다.
 //   BLOCKED_BY_PENDING_PR   DUE인데 같은 원장 파일을 쓰는 다른 자동화 PR·claim이 있다. 이상이 아니라 대기다.
 //
+// 재생 run(--replay-run-id, #3036)은 뒤처져 닫힌 재확인 PR의 수집분을 공급자 호출 없이 다시 등록한다. DUE가 아니어도 RUN이고 recipes는 비어 있다
+// (재생할 recipe는 재생 묶음이 정한다). 열린 PR·진행 중 claim·다른 원장 쓰기 대기는 정상 run과 똑같이 막는다.
+//
 // DUE 기준(정책에서 읽는다, 코드에 기간을 두지 않는다):
 //   dueAt = min(기준 시각 + scheduledPipeline.cadence, freshUntil - monitoring.alertBeforePackExpiry)
 //   기준 시각 = 원천 등급(sourceClass)의 basisField. 원장 head 행에서, 원장 행이 없는 KRIC 시간표 projection은 inventory 증거에서 읽는다.
@@ -28,13 +31,14 @@
 //
 // 사용: node tools/ci/decide-source-reverification.mjs --inventory <file> --ledger <file> --policy <file> --prs <collect-automation-prs.mjs 출력>
 //   --automation-branches <git ls-remote "automation/*" 출력> --runs <gh run list JSON> --issues <gh issue list JSON(열린 이슈, number·title·body·author)> --repository <owner/repo>
-//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> --issue-limit <gh issue list --limit> [--github-output <path>]
+//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> --issue-limit <gh issue list --limit> [--replay-run-id <원본 run id>] [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { addCadence, deriveFreshnessExpiresAt } from "../datapack/freshness-policy.mjs";
 import { requiredUtcInstant } from "../datapack/lib/utc-instant.mjs";
 import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
+import { isReplayRunId } from "./decide-itx-current-promotion.mjs";
 import { activeRuns, ownPullRequestsByBranch, parseAutomationBranches, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
 import { REFRESH_CLAIM_PREFIXES, isoDurationMs } from "./refresh-open-pr-age.mjs";
 import { blockedRecipeIdsOf, failureIssuesOf } from "./report-refresh-failure.mjs";
@@ -186,8 +190,8 @@ function classifyUnboundClaim(branch, runs) {
   return found.status === "completed" ? "ABANDONED" : "RUNNING";
 }
 
-function assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits }) {
-  if (!Array.isArray(pullRequests) || !Array.isArray(openIssues) || !Array.isArray(automationBranches) || !Array.isArray(runs) || !validRepository(repository)
+function assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId }) {
+  if ((replayRunId !== undefined && !isReplayRunId(replayRunId)) || !Array.isArray(pullRequests) || !Array.isArray(openIssues) || !Array.isArray(automationBranches) || !Array.isArray(runs) || !validRepository(repository)
     || !(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(ledger) || !Array.isArray(inventory?.sources)
     || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1 || !Number.isSafeInteger(limits?.issues) || limits.issues < 1) fail("REVERIFICATION_INPUT_INVALID");
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
@@ -221,8 +225,8 @@ function classifyClaims({ pullRequests, automationBranches, runs, repository }) 
   return { state: null, cleanupClaims };
 }
 
-export function decideSourceReverification({ inventory, ledger, policy, pullRequests, automationBranches, runs, openIssues, repository, now, limits, recipes = REVERIFICATION_RECIPES } = {}) {
-  assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits });
+export function decideSourceReverification({ inventory, ledger, policy, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId, recipes = REVERIFICATION_RECIPES } = {}) {
+  assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId });
   const dueRows = sourceReverificationDue({ inventory, ledger, policy, now, recipes });
   const blockedIds = blockedRecipeIds({ openIssues, recipes });
   const selected = withDependents(dueRows.filter(isDue).map(({ recipeId }) => recipeId), recipes);
@@ -231,19 +235,22 @@ export function decideSourceReverification({ inventory, ledger, policy, pullRequ
   const due = dueRows.filter((row) => isDue(row) && !blockedIds.has(row.recipeId)).map(({ recipeId, sourceId, dueAt }) => ({ recipeId, sourceId, dueAt }));
   const overdue = overdueRowsOf(dueRows);
   const { state, branch, cleanupClaims } = classifyClaims({ pullRequests, automationBranches, runs, repository });
-  if (state) return { state, branch, due: [], recipes: [], cleanupClaims, overdue };
-  if (recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, cleanupClaims, overdue };
+  const replay = replayRunId === undefined ? {} : { replayRunId };
+  if (state) return { state, branch, due: [], recipes: [], cleanupClaims, overdue, ...replay };
+  // 재생은 DUE와 상관없이 보관한 수집분을 등록한다. 재생할 recipe는 재생 묶음이 정한다.
+  const work = replayRunId === undefined ? { due, recipes: recipeIds, blocked } : { due: [], recipes: [], blocked: [] };
+  if (replayRunId === undefined && recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, cleanupClaims, overdue };
   const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow: SOURCE_REVERIFICATION_WORKFLOW });
   const blockedBy = [...pending.pullRequests, ...pending.branches];
   return blockedBy.length > 0
-    ? { state: "BLOCKED_BY_PENDING_PR", blockedBy, due, recipes: recipeIds, blocked, cleanupClaims, overdue }
-    : { state: "RUN", due, recipes: recipeIds, blocked, cleanupClaims, overdue };
+    ? { state: "BLOCKED_BY_PENDING_PR", blockedBy, ...work, cleanupClaims, overdue, ...replay }
+    : { state: "RUN", ...work, cleanupClaims, overdue, ...replay };
 }
 
 function parseArgs(argv) {
   const keys = new Map([
     ["--inventory", "inventory"], ["--ledger", "ledger"], ["--policy", "policy"], ["--prs", "prs"], ["--automation-branches", "automationBranches"], ["--runs", "runs"], ["--issues", "issues"],
-    ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--issue-limit", "issueLimit"], ["--github-output", "githubOutput"],
+    ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--issue-limit", "issueLimit"], ["--replay-run-id", "replayRunId"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -266,13 +273,14 @@ export async function main(argv, {
     inventory: await readJson(values.inventory), ledger: await readJson(values.ledger), policy: await readJson(values.policy),
     pullRequests: await readJson(values.prs), automationBranches: parseAutomationBranches(await readText(values.automationBranches)), runs: await readJson(values.runs),
     openIssues: await readJson(values.issues), repository: values.repository, now, limits: { pullRequests: Number(values.prLimit), runs: Number(values.runLimit), issues: Number(values.issueLimit) },
+    replayRunId: values.replayRunId === "" ? undefined : values.replayRunId,
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {
     await appendText(values.githubOutput, [
       `state=${result.state}`, `branch=${result.branch ?? ""}`, `recipes=${result.recipes.join(",")}`,
       `cleanup_claims=${result.cleanupClaims.join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, `blocked_recipes=${(result.blocked ?? []).join(",")}`,
-      `overdue_recipes=${overdueRecipeIdsOf(result.overdue, REVERIFICATION_RECIPES).join(",")}`, "",
+      `overdue_recipes=${overdueRecipeIdsOf(result.overdue, REVERIFICATION_RECIPES).join(",")}`, `replay_run_id=${result.replayRunId ?? ""}`, "",
     ].join("\n"));
   }
   return result;
