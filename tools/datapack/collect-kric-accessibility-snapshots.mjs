@@ -40,14 +40,10 @@ function registeredOperation(sourceId) {
 const isExactTerminalTuple = (tuple) => Object.entries(KRIC_TERMINAL_RESULT_03).every(([field, value]) => tuple?.[field] === value);
 
 // 결과 03 tuple이 이 원천의 혼합 snapshot에 남을 수 있는지. 등록되지 않은 operation은 혼합 snapshot을 만들지 않는다.
+// 정확 tuple은 역·노선까지 하나로 정해지고 roster·조회 tuple은 중복이 없어서, 표준 snapshot의 결과 03은 많아야 하나다.
 function terminalTupleAllowed(sourceId, tuple) {
   const policy = registeredOperation(sourceId)?.terminalResult03Policy;
   return policy === ANY_TUPLE_TERMINAL_POLICY || (policy === EXACT_TUPLE_TERMINAL_POLICY && isExactTerminalTuple(tuple));
-}
-
-function terminalCountAllowed(sourceId, count) {
-  const policy = registeredOperation(sourceId)?.terminalResult03Policy;
-  return policy === ANY_TUPLE_TERMINAL_POLICY ? count > 0 : policy === EXACT_TUPLE_TERMINAL_POLICY && count === 1;
 }
 
 // Provider roster의 개명·오기만 exact tuple로 결속한다. 이름 유사도 fallback은 두지 않는다.
@@ -142,7 +138,7 @@ async function collectKricAccessibilitySnapshotResults({
       if (response.providerResultCode === "03") providerGaps.push(tuple);
       collected.push({ tuple, response });
     }
-    const isMixed = allowTerminalResult03 === true && terminalCountAllowed(operation.sourceId, providerGaps.length)
+    const isMixed = allowTerminalResult03 === true && providerGaps.length > 0
       && providerGaps.every((tuple) => terminalTupleAllowed(operation.sourceId, tuple));
     const terminalPolicy = registeredOperation(operation.sourceId)?.terminalResult03Policy;
     if (providerGaps.length > 0 && !isMixed) {
@@ -390,7 +386,7 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
     if (tupleKeys.has(tupleKey)) throw new Error("KRIC accessibility snapshot identity is invalid");
     tupleKeys.add(tupleKey);
   }
-  if (isMixed && !terminalCountAllowed(snapshot.sourceId, terminalCount)) {
+  if (isMixed && terminalCount === 0) {
     throw new Error("KRIC accessibility snapshot identity is invalid");
   }
   const contentSha256 = hash(snapshot.queries.map(({ rawResponseSha256: _, ...query }) => query));
