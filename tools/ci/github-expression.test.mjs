@@ -45,3 +45,22 @@ test("steps는 steps.<id>.outputs.<name>만 읽는다. outcome·conclusion 같�
   }
   assert.equal(evaluate("steps.claim.outputs.claimed == 'false'"), true);
 });
+
+test("needs.<job>.outputs.<name>은 하이픈 job id도 읽고, 건너뛴 job의 출력은 빈 문자열이다", () => {
+  const needs = { "queue-probe": { outputs: { labeled: "true" } } };
+  const evaluate = (expression, extra = {}) => evaluateGithubExpression(`\${{ ${expression} }}`, { ...context, needs, ...extra });
+  assert.equal(evaluate("needs.queue-probe.outputs.labeled == 'true'"), true);
+  assert.equal(evaluate("needs.queue-probe.outputs.labeled == 'true'", { needs: {} }), false);
+  assert.equal(evaluate("needs.queue-probe.outputs.labeled == ''", { needs: {} }), true);
+  for (const form of ["needs.queue-probe.result == 'success'", "needs.queue-probe.outputs", "needs.queue-probe", "needs"]) {
+    assert.throws(() => evaluate(form), /GITHUB_EXPRESSION_UNSUPPORTED/u, form);
+  }
+});
+
+test("cancelled()는 실행이 취소된 때만 참이다", () => {
+  const evaluate = (expression, extra = {}) => evaluateGithubExpression(`\${{ ${expression} }}`, { ...context, ...extra });
+  assert.equal(evaluate("!cancelled()"), true);
+  assert.equal(evaluate("!cancelled()", { cancelled: true }), false);
+  assert.equal(evaluate("cancelled()", { cancelled: true }), true);
+  assert.throws(() => evaluate("cancelled"), /GITHUB_EXPRESSION_SYNTAX/u);
+});

@@ -1,7 +1,7 @@
 // GitHub Actions `if` 식의 작은 부분집합 평가기(#1001). 계약 테스트가 식 문자열이 아니라 actor·event·변수 조합의 결과를 검증하게 한다.
-// 지원: || && ! == != 괄호, 문자열·불리언 리터럴, 컨텍스트 경로(github·vars·inputs·env, steps.<id>.outputs.<name>), endsWith(). 그 밖의 문법은 거절한다(조용히 넘기지 않는다).
+// 지원: || && ! == != 괄호, 문자열·불리언 리터럴, 컨텍스트 경로(github·vars·inputs·env, steps.<id>.outputs.<name>, needs.<job>.outputs.<name>), endsWith(), cancelled(). 그 밖의 문법은 거절한다(조용히 넘기지 않는다).
 // GitHub 의미를 따른다: 문자열 비교는 대소문자를 구분하지 않고, 빈 문자열·false는 거짓이며, &&와 ||는 피연산자 값을 돌려준다.
-const TOKEN = /\s*(\|\||&&|==|!=|!|\(|\)|,|'(?:[^']|'')*'|[A-Za-z_][\w.]*)/uy;
+const TOKEN = /\s*(\|\||&&|==|!=|!|\(|\)|,|'(?:[^']|'')*'|[A-Za-z_][\w.-]*)/uy;
 
 function tokenize(source) {
   const tokens = [];
@@ -20,8 +20,9 @@ function tokenize(source) {
   return tokens;
 }
 
-// steps는 앞 step의 출력만 읽는다. outcome·conclusion은 평가기가 돌려줄 값이 없어 빈 문자열로 덮이므로 받지 않고 거절한다.
-const CONTEXT_PATH = /^(?:(?:github|vars|inputs|env)(?:\.\w+)+|steps\.\w+\.outputs\.\w+)$/u;
+// steps와 needs는 출력만 읽는다. outcome·conclusion·result는 평가기가 돌려줄 값이 없어 빈 문자열로 덮이므로 받지 않고 거절한다.
+// needs의 job id는 하이픈을 가질 수 있다. 건너뛰거나 실패한 job의 출력은 빈 문자열이다.
+const CONTEXT_PATH = /^(?:(?:github|vars|inputs|env)(?:\.\w+)+|steps\.\w+\.outputs\.\w+|needs\.[\w-]+\.outputs\.\w+)$/u;
 const truthy = (value) => !(value === "" || value === false || value === null || value === undefined);
 const same = (left, right) => (typeof left === "string" && typeof right === "string" ? left.toLowerCase() === right.toLowerCase() : left === right);
 
@@ -77,6 +78,11 @@ export function evaluateGithubExpression(expression, context) {
       const suffix = parseOr();
       take(")");
       return String(subject).toLowerCase().endsWith(String(suffix).toLowerCase());
+    }
+    if (token === "cancelled") {
+      take("(");
+      take(")");
+      return context.cancelled === true;
     }
     if (CONTEXT_PATH.test(token)) return lookup(token);
     throw new Error(`GITHUB_EXPRESSION_UNSUPPORTED: ${token}`);
