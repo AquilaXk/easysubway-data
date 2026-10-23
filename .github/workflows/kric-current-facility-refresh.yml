@@ -310,8 +310,13 @@ jobs:
             }
             cp "${source_root}/raw-receipt.json" "${source_root}/receipt.json"
             main_sha="$(git rev-parse HEAD)"
+            # #3036: 복구 대상 원천은 보존한 journal의 원천이다. recover-published가 두 journal의 원천이 같은지 다시 확인한다.
+            source_id="$(SOURCE_JOURNAL="${source_root}/journal.json" node --input-type=module -e '
+              import { readFile } from "node:fs/promises";
+              process.stdout.write(JSON.parse(await readFile(process.env.SOURCE_JOURNAL, "utf8")).sourceId ?? "");
+            ')"
             node tools/datapack/run-current-capital-facility-operation.mjs \
-              --phase prepare --operation-root "${target_root}" --expected-main-sha "${main_sha}" --expected-facility-head-sha "${main_sha}"
+              --phase prepare --source-id "${source_id}" --operation-root "${target_root}" --expected-main-sha "${main_sha}" --expected-facility-head-sha "${main_sha}"
             node tools/datapack/run-current-capital-facility-operation.mjs \
               --phase recover-published --operation-root "${target_root}" --source-operation-root "${source_root}"
             node tools/datapack/run-current-capital-facility-operation.mjs \
@@ -399,14 +404,16 @@ jobs:
         env:
           KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+          KRIC_REFRESH_SOURCE_ID: ${{ steps.decision.outputs.source_id }}
         run: |
           set -euo pipefail
           # #995: 준비와 공급자 수집까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
+          # #3036: 판정이 고른 원천 하나(표준 또는 에스컬레이터)를 갱신한다. 원천은 journal에 남아 게시·등록·복구가 따른다.
           [[ "$(git rev-parse HEAD)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
             echo "KRIC refresh operation is not running from its claimed main" >&2
             exit 1
           }
-          node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${KRIC_REFRESH_MAIN_SHA}" --expected-facility-head-sha "${KRIC_REFRESH_MAIN_SHA}"
+          node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --source-id "${KRIC_REFRESH_SOURCE_ID}" --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${KRIC_REFRESH_MAIN_SHA}" --expected-facility-head-sha "${KRIC_REFRESH_MAIN_SHA}"
           node tools/datapack/run-current-capital-facility-operation.mjs --phase collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
 
       - name: KRIC current facility refresh / Publish and register current snapshot
