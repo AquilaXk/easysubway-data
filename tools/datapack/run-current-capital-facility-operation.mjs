@@ -197,15 +197,12 @@ async function validateReleasePreflight(root, planBytes, now, { replacingSourceI
     const replacingExpiredSource = replacingSourceIds.has(sourceId);
     if (!ledger || ledger.sourceId !== sourceId || ledger.licenseStatus !== "PASS" || ledger.snapshotStatus !== "LOCKED" || ledger.credentialRedacted !== true || (!replacingExpiredSource && freshnessExpiresAt <= now.getTime()) || rawRetentionExpiresAt <= now.getTime() || review?.status !== "APPROVED" || nextReviewAt <= now.getTime() || review.termsHash !== source?.admissionEvidence?.licenseEvidenceHash) throw new Error("selected source ledger/freshness binding mismatch");
   }
-  for (const sourceId of KRIC_FACILITY_REFRESH_SOURCE_IDS) {
+  await Promise.all(KRIC_FACILITY_REFRESH_SOURCE_IDS.map(async (sourceId) => {
     const source = inventory.sources?.find(({ id }) => id === sourceId);
     // 첫 등록 전 원천은 증거도 원장 행도 없다(fan-in 필수 원천의 증거는 수집 계획이 먼저 요구한다).
-    if (source?.accessibilityAdmissionEvidence === undefined) {
-      if (heads[sourceId] !== undefined) throw new Error(`KRIC facility first registration state is invalid: ${sourceId}`);
-      continue;
-    }
-    await assertFacilitySourceReleaseBinding(root, source, sourceId, snapshots);
-  }
+    if (source?.accessibilityAdmissionEvidence !== undefined) return assertFacilitySourceReleaseBinding(root, source, sourceId, snapshots);
+    if (heads[sourceId] !== undefined) throw new Error(`KRIC facility first registration state is invalid: ${sourceId}`);
+  }));
 }
 async function assertFacilitySourceReleaseBinding(root, source, sourceId, snapshots) {
   const evidence = source.accessibilityAdmissionEvidence; const relativeSnapshot = evidence?.snapshotPath;
@@ -663,5 +660,15 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   const finalized = { ...nextJournal, phase: "FINALIZED", snapshotId: snapshot.snapshotId, finalizedAt: now.toISOString() };
   await syncWrite(path.join(operation, JOURNAL), finalized); return finalized;
 }
-export async function main(argv, dependencies = {}) { const args = parseArgs(argv); const common = { operationRoot: args["operation-root"], ...(args["repository-root"] == null ? {} : { repositoryRoot: args["repository-root"] }), ...dependencies }; if (args.phase === "prepare") return prepareCurrentCapitalFacilityOperation({ ...common, sourceId: args["source-id"], expectedMainSha: args["expected-main-sha"], expectedFacilityHeadSha: args["expected-facility-head-sha"] }); if (args.phase === "collect") return collectCurrentCapitalFacilityOperation({ ...common, replacingSourceId: args["replacing-source-id"], serviceKey: dependencies.env?.KRIC_SERVICE_KEY ?? process.env.KRIC_SERVICE_KEY }); if (args.phase === "recover-published") return recoverPublishedCurrentCapitalFacilityOperation({ ...common, sourceOperationRoot: args["source-operation-root"] }); return finalizeCurrentCapitalFacilityOperation(common); }
+export async function main(argv, dependencies = {}) {
+  const args = parseArgs(argv);
+  const common = { operationRoot: args["operation-root"], ...(args["repository-root"] == null ? {} : { repositoryRoot: args["repository-root"] }), ...dependencies };
+  const phases = {
+    prepare: () => prepareCurrentCapitalFacilityOperation({ ...common, sourceId: args["source-id"], expectedMainSha: args["expected-main-sha"], expectedFacilityHeadSha: args["expected-facility-head-sha"] }),
+    collect: () => collectCurrentCapitalFacilityOperation({ ...common, replacingSourceId: args["replacing-source-id"], serviceKey: dependencies.env?.KRIC_SERVICE_KEY ?? process.env.KRIC_SERVICE_KEY }),
+    "recover-published": () => recoverPublishedCurrentCapitalFacilityOperation({ ...common, sourceOperationRoot: args["source-operation-root"] }),
+    finalize: () => finalizeCurrentCapitalFacilityOperation(common),
+  };
+  return phases[args.phase]();
+}
 if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).then((value) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)).catch((error) => { console.error(error instanceof Error ? error.message : "FACILITY operation failed"); process.exitCode = 1; });

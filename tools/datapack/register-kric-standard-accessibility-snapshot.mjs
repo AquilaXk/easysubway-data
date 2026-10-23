@@ -659,7 +659,7 @@ async function prepareProducerNeutralFullRegistration({ repositoryRoot, snapshot
   validateLicenseGovernance({ inventory, policySources, sourceId, label: "KRIC", now });
   const source = inventory.sources.find(({ id }) => id === sourceId);
   requiredSha256(source?.admissionEvidence?.adminReviewRecordHash, "KRIC admin review record hash");
-  if (source.accessibilityAdmissionEvidence === undefined) await assertFirstRegistrationReview(repositoryRoot, source);
+  await assertFirstRegistrationReview(repositoryRoot, source);
   const relative = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   if (path.resolve(snapshotTargetPath) !== path.join(path.resolve(repositoryRoot), relative)) {
     throw new Error("snapshot target path is invalid");
@@ -750,8 +750,10 @@ async function readFreshnessPolicy(repositoryRoot) {
   try { return { bytes, policy: JSON.parse(bytes) }; } catch { throw new Error("datapack freshness SLA is invalid"); }
 }
 
-// 첫 등록은 사람이 승인한 검토 기록에 결속된다. 기록 파일 바이트가 inventory의 adminReviewRecordHash와 같고 같은 원천·승인을 말해야 한다.
+// 첫 등록(증거 없음)은 사람이 승인한 검토 기록에 결속된다. 기록 파일 바이트가 inventory의 adminReviewRecordHash와 같고 같은 원천·승인을 말해야 한다.
+// 이후 등록은 직전 증거를 이어 쓰므로 검토 기록을 다시 읽지 않는다.
 async function assertFirstRegistrationReview(repositoryRoot, source) {
+  if (source.accessibilityAdmissionEvidence !== undefined) return;
   const admission = source.admissionEvidence;
   const relative = requiredText(admission.adminReviewRecordPath, "KRIC first registration review path");
   const { bytes } = await readRegularSnapshot(path.join(path.resolve(repositoryRoot), relative), "KRIC first registration review");
