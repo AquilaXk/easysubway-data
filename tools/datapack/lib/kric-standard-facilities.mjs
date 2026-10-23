@@ -56,6 +56,11 @@ export function kricStandardListedTypesByStation(queries) {
   return listed;
 }
 
+function absenceState(facilityType, listedAtStation) {
+  if (!KRIC_STANDARD_ABSENCE_COVERED_TYPES.includes(facilityType)) return UNKNOWN_NOT_COVERED;
+  return listedAtStation.has(facilityType) ? UNKNOWN_OTHER_LINE : ABSENT;
+}
+
 export function kricStandardQueryFacilities({ snapshot, query, stationName, listedTypesByStation }) {
   if (query.providerResultCode === "03") throw new Error("KRIC terminal provider result is invalid");
   const seenProviderRecordHashes = new Set();
@@ -70,7 +75,7 @@ export function kricStandardQueryFacilities({ snapshot, query, stationName, list
     supportedRows.push({ row, type, providerRecordHash });
   }
   const counts = new Map();
-  const facilities = supportedRows
+  const facilities = [...supportedRows]
     .sort((left, right) => codepointCompare(left.providerRecordHash, right.providerRecordHash))
     .map(({ row, type, providerRecordHash }) => {
       const number = (counts.get(type) ?? 0) + 1;
@@ -91,8 +96,7 @@ export function kricStandardQueryFacilities({ snapshot, query, stationName, list
   const listedOnQuery = new Set(facilities.map(({ type }) => type));
   const listedAtStation = listedTypesByStation.get(query.stationId) ?? new Set();
   const statusEvidence = KRIC_STANDARD_FACILITY_TYPES.filter((type) => !listedOnQuery.has(type)).map((facilityType) => {
-    const state = !KRIC_STANDARD_ABSENCE_COVERED_TYPES.includes(facilityType) ? UNKNOWN_NOT_COVERED
-      : listedAtStation.has(facilityType) ? UNKNOWN_OTHER_LINE : ABSENT;
+    const state = absenceState(facilityType, listedAtStation);
     return {
       stationId: query.stationId,
       lineId: query.lineId,

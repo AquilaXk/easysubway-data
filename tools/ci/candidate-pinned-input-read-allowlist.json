@@ -296,6 +296,13 @@
       "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
     },
     {
+      "testFile": "tools/datapack/facility-evidence-states.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿으로 읽는다. 공유 헬퍼 testOnlyInventoryPath가 현재 작업 트리 인벤토리를 복제해 test-only 원천을 더하고, import-official-sources.test.mjs와 같은 방식이다."
+    },
+    {
       "testFile": "tools/datapack/freshness-policy.test.mjs",
       "paths": [
         "release/product-gates/datapack-freshness-sla.json"
