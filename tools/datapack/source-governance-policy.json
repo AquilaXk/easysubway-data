@@ -780,8 +780,8 @@
       "licenseReview": {
         "status": "APPROVED",
         "termsHash": "2953cce5b977132db7e7a428c677e6d292401f77c40a1e8f8dd84af5a3e61df2",
-        "reviewedAt": "2026-10-23T00:00:00Z",
-        "nextReviewAt": "2027-10-23T00:00:00Z",
+        "reviewedAt": "2026-10-22T15:00:00Z",
+        "nextReviewAt": "2027-10-22T15:00:00Z",
         "termsUrl": "https://www.data.go.kr/data/15041683/openapi.do",
         "reviewedProvider": "국가철도공단",
         "reviewedDatasetUrl": "https://www.data.go.kr/data/15041683/openapi.do",
