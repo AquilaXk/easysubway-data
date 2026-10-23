@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261023-seq175",
-  "publishedAt": "2026-10-23T14:29:43.657Z",
-  "releaseSequence": 175,
-  "builderGitSha": "816f28e3e196365175147b49e1dba50804493acb",
+  "candidateId": "nationwide-candidate-20261023-seq176",
+  "publishedAt": "2026-10-23T16:30:00.424Z",
+  "releaseSequence": 176,
+  "builderGitSha": "9f36af93734052552efa63b4be45706d6bec3cbc",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "658c34b05b4d125f7ef105a95e5e0cc68fbda1ada80e2f8f6748edfa5d4cd39a",
+  "fixtureSha256": "f420b65488e0fd55deb61a58ae633093153b1096dd7527cdc51a111d241a8fec",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -61,13 +61,13 @@
     "daegu-line3-route-topology-128c1fa3e7e8303c3c863852189363255fac9d29fcdffc39d9f3ebdfceec820f",
     "daegu-line3-train-timetable-f2dfe63f69f875c60831dfdeeee373b27a909016084f45c12116d8efc3c4b8f7",
     "daegu-transportation-accessibility-b7032f52b4b484c7d43ede85d945789447ba00c00229f43c96cc0fab3a6210a1-20261023",
-    "kric-station-convenience-standard-20261022T202009207Z",
     "busan-transportation-route-topology-9527ea73c0af7ea12cfc3cc2058cff7427d54dd38a07caa66d330df2f3e68894",
     "busan-transportation-accessibility-9c7ee1f001ff7277ab799fff165949458198707949d5ccb5756bee6552fd5398-20261023",
     "busan-transportation-timetable-20261023",
     "kric-nationwide-timetable-file-7eb3e87fcf164d2215e9c72cee1abfe2f5acd22267675f8f169fc3d902abfb56",
     "capital-route-topology-20261023",
-    "seoul-metro-accessibility-20261023T023201393Z"
+    "seoul-metro-accessibility-20261023T023201393Z",
+    "kric-station-convenience-standard-20261023T161753785Z"
   ],
   "sourceSnapshots": [
     {
@@ -498,23 +498,6 @@
       ]
     },
     {
-      "snapshotId": "kric-station-convenience-standard-20261022T202009207Z",
-      "sourceId": "kric-station-convenience-standard",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20261022/b0db0083733cf356474c4046b44346dd33b6dde128e1ea51f020b7b1757a8617.json",
-      "rawSha256": "b0db0083733cf356474c4046b44346dd33b6dde128e1ea51f020b7b1757a8617",
-      "redactedRequestFingerprint": "be79e602355ab8d57ecf74d62b1576d21839f6292b9b29b39c0ed5a5a2194c52",
-      "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2027-01-20T20:20:09.207Z",
-      "rawRetentionExpiresAt": "2027-01-20T20:20:09.207Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
-    },
-    {
       "snapshotId": "busan-transportation-route-topology-9527ea73c0af7ea12cfc3cc2058cff7427d54dd38a07caa66d330df2f3e68894",
       "sourceId": "busan-transportation-route-topology",
       "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/busan-transportation-route-topology/20261022/9527ea73c0af7ea12cfc3cc2058cff7427d54dd38a07caa66d330df2f3e68894.json",
@@ -640,10 +623,27 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303"
+    },
+    {
+      "snapshotId": "kric-station-convenience-standard-20261023T161753785Z",
+      "sourceId": "kric-station-convenience-standard",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20261023/06890c641641092f05d85b2a1cdc48b9767ec45f4da3a9b672128d2200f1030b.json",
+      "rawSha256": "06890c641641092f05d85b2a1cdc48b9767ec45f4da3a9b672128d2200f1030b",
+      "redactedRequestFingerprint": "be79e602355ab8d57ecf74d62b1576d21839f6292b9b29b39c0ed5a5a2194c52",
+      "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2027-01-21T16:17:53.785Z",
+      "rawRetentionExpiresAt": "2027-01-21T16:17:53.785Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "f6f5e20f0ad87c108a9774b75c9a34c564d37b3b50587d615afb4bf78ead35de",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
     }
   ],
-  "sourceSnapshotSetHash": "6dcf834ad48d24259ce8d86822bc41b6c29017534da93e3ed203c14d74410ce9",
-  "sourceInventorySha256": "09a3b290299c171316aa22864fdf9d8cbba4ee95d95067c27a5c3c296d0030a3",
+  "sourceSnapshotSetHash": "4548d318741a326d279bc8eb097f4345721255914a8fea320b2d4985f006fc45",
+  "sourceInventorySha256": "8c33c0d8261eff8406e27788820fa96a37f740e8a431e9308378f9dd3389cceb",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
@@ -697,7 +697,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "fe82e47d06f5a53d67406b367063d36e1bd41f5d163b34444945c820f0eabd84"
+      "sha256": "54fc6a45d1b66b1d2580746134c86edc84504f84cd97a1f75f5ac527bf806fa4"
     }
   },
   "officialOdFareEvidence": {
@@ -739,7 +739,7 @@
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20261017150040720.json",
   "itxTopologyEvidenceSha256": "d58f7fbc0c74a3bd8628e3cbf99cf85b863f9da4350089a1fd28feddb923961b",
   "approvedAliasLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
-  "facilityEvidenceLedgerHash": "93eaf75a38069deaef16e03fcd64453201f82c7d345532d2fccaa911e545c295",
+  "facilityEvidenceLedgerHash": "5aa1cdd2980de18e1df1a47da234134b066ec092e9b3f14333095b05314b48f2",
   "routeEvidenceLedgerHash": "cfe6e6513493770f7095f5e47ccbe6dc3d9f80ac3254d0aedd28ad2ec746e0ec",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd"
 }
