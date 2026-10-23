@@ -17,7 +17,9 @@ import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, createCand
 import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import { collectKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
 
-import { admitOutOfStationTransferLinks, withCapitalKricFacilities, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
+import { admitOutOfStationTransferLinks, resolveKricEscalatorSnapshot, withCapitalKricFacilities, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -2356,4 +2358,144 @@ test("#3036 전국 후보 팩의 KRIC 시설·증거는 fan-in head snapshot 하
     .filter((row) => isKricStandard(row) && row.facilityType === "ESCALATOR" && row.evidenceKind !== "UNKNOWN"), []);
   const ids = finalPack.facilities.map(({ id }) => id);
   assert.equal(new Set(ids).size, ids.length);
+});
+
+// #3036: 에스컬레이터 원천은 fan-in 밖(requiredForProductionPack=false, #876 실측 환승 원천과 같은 방식)이다.
+// 후보는 inventory 증거가 원장 head와 같고 snapshot 바이트·원장 영수증·신선도·약관이 결속될 때만 고른다.
+// 첫 등록 전(inventory 항목이 없거나 증거가 없음)에는 고르지 않고, 그때 원장 행이 있으면 실패한다.
+const ESCALATOR_LICENSE_URL = "https://www.data.go.kr/data/15041683/openapi.do";
+const ESCALATOR_STORED_AT = "2026-10-23T00:05:00.000Z";
+async function escalatorCandidateInputs({ register = true, snapshotShape = "MIXED" } = {}) {
+  const { standard, pack, snapshot: mixed } = await pinnedTopologyEscalatorInputs();
+  const snapshot = snapshotShape === "MIXED" ? mixed : await collectedEscalatorSnapshot(escalatorRosterFor(standard.queries),
+    (tuple) => (Number.parseInt(sha256(tuple.stinCd)[0], 16) < 8 ? [escalatorRowFor(tuple, "대합실")] : []));
+  const [inventory, ledger, freshness] = await Promise.all(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+    "release/product-gates/datapack-freshness-sla.json"].map((relative) => candidatePinnedJson(pinnedRead, relative)));
+  const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  const standardSource = inventory.sources.find(({ id }) => id === KRIC_STANDARD);
+  const license = { ...structuredClone(standardSource.license), type: "PUBLIC_DATA_FREE_USE", evidenceUrl: ESCALATOR_LICENSE_URL };
+  const entry = {
+    ...structuredClone(standardSource), id: KRIC_ESCALATOR, requiredForProductionPack: false, datasetUrl: ESCALATOR_LICENSE_URL, license, fieldsProvided: ESCALATOR_FIELDS,
+    admissionEvidence: { candidateId: KRIC_ESCALATOR, sourceId: KRIC_ESCALATOR, issue: 3036, decision: "APPROVED", licenseEvidenceHash: sha256(canonicalJson(license)) },
+  };
+  delete entry.accessibilityAdmissionEvidence;
+  inventory.sources.push(entry);
+  freshness.sourceClasses.find(({ id }) => id === "static_accessibility_facility").sourceIds.push(KRIC_ESCALATOR);
+  let row = null;
+  if (register) {
+    entry.accessibilityAdmissionEvidence = {
+      issue: 3036, decision: "APPROVED", productionUseAllowed: true, licenseEvidenceHash: entry.admissionEvidence.licenseEvidenceHash,
+      snapshotId: snapshot.snapshotId, snapshotPath, capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil,
+      rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint,
+      snapshotFileSha256: sha256(snapshotBytes), absenceEvidenceMode: snapshot.absenceEvidenceMode,
+    };
+    const standardRow = ledger.find(({ snapshotId }) => snapshotId === validateLineage(ledger).headsBySource[KRIC_STANDARD]);
+    const { diffSummary: _diff, ...template } = structuredClone(standardRow);
+    row = {
+      ...template, sourceId: KRIC_ESCALATOR, snapshotId: snapshot.snapshotId, previousSnapshotId: null, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt,
+      rowCount: snapshot.rowCount, coverageCount: snapshot.queryCount, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint,
+      redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
+      freshnessExpiresAt: deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: "static_accessibility_facility", basisAt: snapshot.capturedAt, evaluationAt: snapshot.capturedAt }),
+      rawReceipt: { ...template.rawReceipt, sourceId: KRIC_ESCALATOR, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, capturedAt: snapshot.capturedAt, snapshotFileSha256: sha256(snapshotBytes), storedAt: ESCALATOR_STORED_AT },
+    };
+    ledger.push(row);
+  }
+  const overrides = new Map([
+    ["tools/datapack/source-inventory.json", Buffer.from(JSON.stringify(inventory))],
+    ["tools/datapack/release/source-snapshots.json", Buffer.from(JSON.stringify(ledger))],
+    ["release/product-gates/datapack-freshness-sla.json", Buffer.from(JSON.stringify(freshness))],
+    [snapshotPath, snapshotBytes],
+  ]);
+  const read = async (relative) => overrides.get(relative) ?? pinnedRead(relative);
+  return { read, inventory, ledger, freshness, snapshot, snapshotBytes, snapshotPath, standard, pack, row, entry };
+}
+const escalatorClock = "2026-10-23T12:29:43.916Z";
+const resolveWith = (inputs, overrides = {}) => resolveKricEscalatorSnapshot({
+  sourceInventory: inputs.inventory, sourceSnapshots: inputs.ledger, freshnessPolicy: inputs.freshness, evaluatedAt: escalatorClock, read: inputs.read, ...overrides,
+});
+
+test("#3036 에스컬레이터 원천은 등록 전에는 후보 입력이 아니고, 등록되면 원장 head·snapshot·영수증·신선도·약관에 결속된 snapshot을 쓴다", async () => {
+  const [inventory, ledger, freshness] = await Promise.all(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+    "release/product-gates/datapack-freshness-sla.json"].map((relative) => candidatePinnedJson(pinnedRead, relative)));
+  assert.equal(await resolveKricEscalatorSnapshot({ sourceInventory: inventory, sourceSnapshots: ledger, freshnessPolicy: freshness, evaluatedAt: escalatorClock, read: pinnedRead }), null, "inventory 항목이 없는 후보 입력");
+  const staged = await escalatorCandidateInputs({ register: false });
+  assert.equal(await resolveWith(staged), null, "첫 등록 전 항목");
+  for (const shape of ["MIXED", "00"]) {
+    const registered = await escalatorCandidateInputs({ snapshotShape: shape });
+    const resolved = await resolveWith(registered);
+    assert.deepEqual(resolved.snapshot, registered.snapshot, shape);
+    assert.equal(resolved.snapshot.providerResultCode, shape);
+    assert.deepEqual(resolved.row, registered.row, shape);
+  }
+});
+
+test("#3036 반증: 에스컬레이터 원천 결속의 각 항을 어기면 후보 입력 선택이 실패한다", async () => {
+  const cases = [
+    ["첫 등록 전 항목에 원장 행", async () => { const staged = await escalatorCandidateInputs({ register: false }); const registered = await escalatorCandidateInputs(); return [staged, { sourceSnapshots: registered.ledger }]; }, /nationwide candidate KRIC escalator first registration state is invalid/],
+    ["증거가 원장 head가 아님", async (inputs) => { inputs.entry.accessibilityAdmissionEvidence.snapshotId = `${KRIC_ESCALATOR}-20261022T000000000Z`; }, /nationwide candidate KRIC escalator admission is not the ledger head/],
+    ["snapshot 경로가 정본 경로가 아님", async (inputs) => { inputs.entry.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/other.json"; }, /nationwide candidate KRIC escalator snapshot path mismatch/],
+    ["snapshot 파일 바이트", async (inputs) => { inputs.entry.accessibilityAdmissionEvidence.snapshotFileSha256 = "0".repeat(64); }, /nationwide candidate KRIC escalator snapshot does not match its admission/],
+    ["증거 raw hash", async (inputs) => { inputs.entry.accessibilityAdmissionEvidence.rawSha256 = "0".repeat(64); }, /nationwide candidate KRIC escalator snapshot does not match its admission/],
+    ["원장 영수증 raw hash", async (inputs) => { inputs.row.rawReceipt.snapshotRawSha256 = "0".repeat(64); }, /nationwide candidate KRIC escalator snapshot does not match the ledger head/],
+    ["원장 content hash", async (inputs) => { inputs.row.contentSha256 = "0".repeat(64); }, /nationwide candidate KRIC escalator snapshot does not match the ledger head/],
+    ["원장 신선도가 정책과 다름", async (inputs) => { inputs.row.freshnessExpiresAt = "2027-12-31T00:00:00.000Z"; }, /nationwide candidate KRIC escalator freshness does not match the freshness policy/],
+    ["만료", async () => [await escalatorCandidateInputs(), { evaluatedAt: "2027-02-01T00:00:00.000Z" }], /nationwide candidate KRIC escalator snapshot is expired/],
+    ["후보 시계 뒤의 관측", async () => [await escalatorCandidateInputs(), { evaluatedAt: "2026-10-22T23:59:59.999Z" }], /nationwide candidate KRIC escalator snapshot is observed after the candidate clock/],
+    ["원문 저장 전 후보 시계", async () => [await escalatorCandidateInputs(), { evaluatedAt: "2026-10-23T00:04:59.999Z" }], /nationwide candidate clock precedes the raw object storage of a cited source: kric-station-escalator-detailed/],
+    ["약관 해시", async (inputs) => { inputs.entry.license.attribution = "tampered"; }, /nationwide candidate KRIC escalator license evidence does not match the inventory license/],
+    ["시설 사용 불허", async (inputs) => { inputs.entry.capabilities.facility.productionUseAllowed = false; }, /nationwide candidate KRIC escalator is not admitted for production facility use/],
+    ["필수 원천으로 표시", async (inputs) => { inputs.entry.requiredForProductionPack = true; }, /nationwide candidate KRIC escalator is not admitted for production facility use/],
+  ];
+  for (const [term, tamper, pattern] of cases) {
+    const inputs = await escalatorCandidateInputs();
+    const result = await tamper(inputs);
+    const [target, overrides] = Array.isArray(result) ? result : [inputs, {}];
+    await assert.rejects(resolveWith(target, overrides), pattern, term);
+  }
+});
+
+test("#3036 등록된 에스컬레이터 원천은 전국 후보에서 원천 밖 UNKNOWN 칸만 원문 규칙대로 바꾸고 팩 원천 목록에 실린다", async () => {
+  const inputs = await escalatorCandidateInputs();
+  const prepare = (readRepositoryFile) => prepareNationwideCandidate({ readRepositoryFile, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122 });
+  const [{ finalPack: before }, { finalPack: after }] = [await prepare(pinnedRead), await prepare(inputs.read)];
+  const cell = ({ stationId, lineId, facilityType }) => `${stationId}|${lineId}|${facilityType}`;
+  const beforeCells = new Map(before.stationFacilityEvidence.map((row) => [cell(row), row]));
+  const expected = expectedEscalatorStates({ snapshot: inputs.snapshot, pack: after });
+  const escalatorEvidence = after.stationFacilityEvidence.filter(isKricEscalator);
+  assert.deepEqual(escalatorEvidence.map((row) => [`${row.stationId}|${row.lineId}`, `${row.evidenceKind}:${row.statusMeaning}`]).sort(), [...expected].sort());
+  for (const row of after.stationFacilityEvidence.filter((evidence) => !isKricEscalator(evidence))) {
+    assert.deepEqual(row, beforeCells.get(cell(row)), `${cell(row)}: 에스컬레이터가 쓰지 않은 칸은 그대로다`);
+  }
+  // 바뀐 칸은 표준의 원천 밖 UNKNOWN이었거나, 표준 조회가 결과 03이라 증거가 없던 칸(까치산 2호선)이다.
+  const opened = escalatorEvidence.filter((row) => !beforeCells.has(cell(row)));
+  for (const row of escalatorEvidence.filter((evidence) => beforeCells.has(cell(evidence)))) {
+    assert.deepEqual([beforeCells.get(cell(row)).evidenceKind, beforeCells.get(cell(row)).statusMeaning], ["UNKNOWN", "SOURCE_DOES_NOT_COVER_TYPE"], `${cell(row)}: 바뀐 칸은 원천 밖 UNKNOWN이었다`);
+  }
+  const standardTerminal = inputs.standard.queries.filter(({ providerResultCode }) => providerResultCode === "03").map(({ stationId, lineId }) => `${stationId}|${lineId}|ESCALATOR`);
+  assert.deepEqual(opened.map(cell), standardTerminal.filter((key) => escalatorEvidence.some((row) => cell(row) === key)));
+  assert.deepEqual(opened.map(cell), ["station-b35616704ce3|seoul-2|ESCALATOR"]);
+  assert.equal(after.stationFacilityEvidence.length, before.stationFacilityEvidence.length + opened.length);
+  assert.deepEqual(after.facilities.filter((facility) => !isKricEscalator(facility)), before.facilities);
+  assert.equal(after.facilities.filter(isKricEscalator).length, inputs.snapshot.queries.reduce((sum, { rows }) => sum + rows.length, 0));
+  assert.ok(escalatorEvidence.some(({ evidenceKind }) => evidenceKind === "NOT_EXISTS") && escalatorEvidence.some(({ evidenceKind }) => evidenceKind === "EXISTS"));
+
+  // build-datapack은 시설·부재 증거 행의 원천을 팩 원천 목록의 coverageScope로 출처 기록에 묶는다. 인용한 원천은 모두 목록에 있어야 한다.
+  const packSourceIds = new Set(after.sourceInventory.map(({ id }) => id));
+  const cited = new Set([...after.facilities, ...after.stationFacilityEvidence].map(({ sourceId }) => sourceId));
+  assert.deepEqual([...cited].filter((sourceId) => !packSourceIds.has(sourceId)), []);
+  const packSource = after.sourceInventory.find(({ id }) => id === KRIC_ESCALATOR);
+  assert.deepEqual(packSource.coverageScope, inputs.entry.coverageScope);
+  assert.equal(packSource.updatedAt, inputs.snapshot.capturedAt);
+  assert.deepEqual(packSource.fields, ESCALATOR_FIELDS);
+  assert.equal(before.sourceInventory.some(({ id }) => id === KRIC_ESCALATOR), false);
+});
+
+test("#3036 첫 등록 전 에스컬레이터 항목은 전국 후보 팩을 바꾸지 않는다", async () => {
+  const staged = await escalatorCandidateInputs({ register: false });
+  const prepare = (readRepositoryFile) => prepareNationwideCandidate({ readRepositoryFile, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122 });
+  const [{ finalPack: before }, { finalPack: after }] = [await prepare(pinnedRead), await prepare(staged.read)];
+  assert.deepEqual(after.facilities, before.facilities);
+  assert.deepEqual(after.stationFacilityEvidence, before.stationFacilityEvidence);
+  assert.deepEqual(after.sourceInventory, before.sourceInventory);
 });
