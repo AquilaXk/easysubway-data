@@ -3,6 +3,8 @@ import { sha256 } from "../../lib/hash.mjs";
 
 export const KRIC_STANDARD_SOURCE_ID = "kric-station-convenience-standard";
 export const KRIC_ESCALATOR_SOURCE_ID = "kric-station-escalator-detailed";
+// KRIC 시설 정기 갱신(kric-current-facility-refresh)이 수집·게시·등록하는 원천이다. run 하나가 이 중 하나를 갱신한다(#3036).
+export const KRIC_FACILITY_REFRESH_SOURCE_IDS = Object.freeze([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID]);
 // KRIC 정상 응답 결과 코드. 결과 03(terminal)은 시설 존재·부재를 말하지 않는다.
 export const KRIC_PRESENT_RESULT_CODE = "00";
 const KRIC_MIXED_SNAPSHOT_RESULT_CODE = "MIXED";

@@ -18,7 +18,7 @@ import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./s
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
 import { selectCurrentFiveRegionSourceIds } from "./build-current-five-region-source-fan-in.mjs";
-import { KRIC_ESCALATOR_SOURCE_ID, KRIC_STANDARD_SOURCE_ID } from "./lib/kric-standard-facilities.mjs";
+import { KRIC_FACILITY_REFRESH_SOURCE_IDS } from "./lib/kric-standard-facilities.mjs";
 
 const execFile = promisify(execFileCallback);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -39,8 +39,7 @@ const RELEASE_INPUTS = Object.freeze({
   productionScope: "release/product-gates/production-datapack-scope.json",
 });
 const JOURNAL = "journal.json";
-// 이 operation이 갱신하는 KRIC 시설 원천이다(#3036). 필수 여부는 inventory가 정하고 production scope와 맞는지는 원천 집합 검증이 본다.
-const REFRESHED_FACILITY_SOURCE_IDS = Object.freeze([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID]);
+
 const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock", "tools/datapack/.active-facility-derived-identity-rebind.lock"]);
 const JOURNAL_KEYS = new Set(["schemaVersion", "artifactKind", "sourceId", "operationId", "phase", "preparedAt", "expectedMainSha", "expectedFacilityHeadSha", "planSha256", "inputSha256", "completedStages", "collectionStartedAt", "snapshotId", "completedObservation", "collectionReconciledAt", "finalizeObservedAt", "finalizedAt"]);
 const RAW_RECEIPT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
@@ -55,7 +54,7 @@ function parseJournal(bytes) {
 function requireText(value, label) { if (typeof value !== "string" || value === "") throw new Error(`${label} is required`); return value; }
 function requireFacilitySourceId(value) {
   if (value === undefined) throw new Error("KRIC facility source id is required");
-  if (!REFRESHED_FACILITY_SOURCE_IDS.includes(value)) throw new Error(`KRIC facility source is not refreshed by this operation: ${value}`);
+  if (!KRIC_FACILITY_REFRESH_SOURCE_IDS.includes(value)) throw new Error(`KRIC facility source is not refreshed by this operation: ${value}`);
   return value;
 }
 function assertObservationSource(sourceId, snapshot) { if (snapshot?.sourceId !== sourceId) throw new Error("collected observation source mismatch"); }
@@ -198,7 +197,7 @@ async function validateReleasePreflight(root, planBytes, now, { replacingSourceI
     const replacingExpiredSource = replacingSourceIds.has(sourceId);
     if (!ledger || ledger.sourceId !== sourceId || ledger.licenseStatus !== "PASS" || ledger.snapshotStatus !== "LOCKED" || ledger.credentialRedacted !== true || (!replacingExpiredSource && freshnessExpiresAt <= now.getTime()) || rawRetentionExpiresAt <= now.getTime() || review?.status !== "APPROVED" || nextReviewAt <= now.getTime() || review.termsHash !== source?.admissionEvidence?.licenseEvidenceHash) throw new Error("selected source ledger/freshness binding mismatch");
   }
-  for (const sourceId of REFRESHED_FACILITY_SOURCE_IDS) {
+  for (const sourceId of KRIC_FACILITY_REFRESH_SOURCE_IDS) {
     const source = inventory.sources?.find(({ id }) => id === sourceId);
     // 첫 등록 전 원천은 증거도 원장 행도 없다(fan-in 필수 원천의 증거는 수집 계획이 먼저 요구한다).
     if (source?.accessibilityAdmissionEvidence === undefined) {

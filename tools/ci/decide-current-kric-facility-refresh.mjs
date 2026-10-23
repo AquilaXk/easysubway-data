@@ -4,11 +4,9 @@ import path from "node:path";
 
 import { parsePrefixedRefs } from "./automation-pr-state.mjs";
 import { CLAIM_OWNERS, planUnboundClaims } from "./claim-orphans.mjs";
-import { KRIC_ESCALATOR_SOURCE_ID, KRIC_STANDARD_SOURCE_ID } from "../datapack/lib/kric-standard-facilities.mjs";
+import { KRIC_FACILITY_REFRESH_SOURCE_IDS } from "../datapack/lib/kric-standard-facilities.mjs";
 
 const WORKFLOW = "kric-current-facility-refresh.yml";
-// #3036: 이 workflow가 갱신하는 원천이다. run 하나는 원천 하나를 수집·게시·등록한다.
-const REFRESH_SOURCE_IDS = Object.freeze([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID]);
 // 고르는 순서다. 등록된 원천의 만료·임박이 첫 등록보다 앞서므로, 첫 등록이 실패해도 이미 쓰이는 원천의 갱신을 막지 않는다.
 const SOURCE_STATE_PRIORITY = Object.freeze(["EXPIRED", "DUE", "FIRST_REGISTRATION"]);
 const AUTOMATION_BRANCH = /^automation\/629-kric-facility-refresh-[0-9]+$/;
@@ -95,7 +93,7 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   const threshold = parseDuration(alertBeforePackExpiry);
   const currentTime = now instanceof Date ? now.getTime() : NaN;
   if (!Number.isFinite(currentTime)) throw new Error("decision time is invalid");
-  const refresh = selectRefreshSource(REFRESH_SOURCE_IDS.map((sourceId) => sourceRefreshState(inventory, sourceId, currentTime, threshold)));
+  const refresh = selectRefreshSource(KRIC_FACILITY_REFRESH_SOURCE_IDS.map((sourceId) => sourceRefreshState(inventory, sourceId, currentTime, threshold)));
   const pullRequests = automationPullRequests(parseJson(prsBytes, "open pull requests"), repository);
   const pullRequestBranches = pullRequests.map(({ headRefName }) => headRefName);
   if (new Set(pullRequestBranches).size !== pullRequestBranches.length) {

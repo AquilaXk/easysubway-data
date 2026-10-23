@@ -31,7 +31,7 @@ import { materializeAccessibilitySourceInput, seoulEdgeEvidenceHash, seoulStatus
 import { inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
-import { KRIC_ESCALATOR_SOURCE_ID, KRIC_STANDARD_SOURCE_ID } from "../datapack/lib/kric-standard-facilities.mjs";
+import { KRIC_FACILITY_REFRESH_SOURCE_IDS } from "../datapack/lib/kric-standard-facilities.mjs";
 import { isObject } from "../lib/is-object.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -125,10 +125,10 @@ export const REFRESH_STAGES = Object.freeze({
     workflow: "kric-current-facility-refresh.yml",
     stepId: "kric-facility-refresh",
     ledger: "append",
-    expectedSourceIds: Object.freeze([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID]),
+    expectedSourceIds: KRIC_FACILITY_REFRESH_SOURCE_IDS,
     sourceSelection: "ONE_OF",
-    owned: freezeFields(Object.fromEntries([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID].map((id) => [id, ["observedDataUpdatedAt", "retrievedAt", "admissionEvidence", "accessibilityAdmissionEvidence"]]))),
-    rules: Object.freeze([...LEDGER_RULES, oneOfSnapshotFamily("kric-facility-snapshot", [KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID], STAMP)]),
+    owned: freezeFields(Object.fromEntries(KRIC_FACILITY_REFRESH_SOURCE_IDS.map((id) => [id, ["observedDataUpdatedAt", "retrievedAt", "admissionEvidence", "accessibilityAdmissionEvidence"]]))),
+    rules: Object.freeze([...LEDGER_RULES, oneOfSnapshotFamily("kric-facility-snapshot", KRIC_FACILITY_REFRESH_SOURCE_IDS, STAMP)]),
   }),
   "seoul-accessibility-refresh": Object.freeze({
     workflow: "seoul-current-accessibility-refresh.yml",
