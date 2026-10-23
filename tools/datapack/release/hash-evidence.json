@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "f2d69de901cea8070e80c00f36b8edcf9698b80f",
+  "builderGitSha": "fce6d8726cb8f6bef0da1d2566e23b6e6c779983",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "66c646d491d91864b3169dda35e2926c2c50b421196256ebab4a46ac011984bc"
+    "value": "fad82e129c5f8db4c6d17b47297b929d75703875d0cb8e217df47712e74e28af"
   },
   "sourceInventorySha256": {
-    "value": "8a8045b03644a5734b205fe2e74eae4d8edc4d8887a259de365dde0d3d1f7b2e"
+    "value": "7f33aee88f5a6339d2e68ec49139c82c9b148309515fe232d963c2317c97bb73"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "aefb732998c61e5981fb4095523b7dab5bef2ec90ed622b41b9a7f4f6a525d01"
+    "sha256": "a15c74c6dd378ab78f871c6775adfdcac9a003f980303dd8babd6ffb50da56c6"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261022-seq171"
+      "value": "nationwide-candidate-20261023-seq172"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261022-seq171"
+      "value": "release-request-nationwide-candidate-20261023-seq172"
     }
   },
   "perSourceEvidence": [
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "6fc2a6b5c19ba2803e20c34bd5ed54a0b2c4de2805bfa744ca4ee41f7cd7e11d"
+      "perSourceSnapshotSetHash": "d65dd24bb67a9074dcef66fb9098ba3bacadb1f897acc02037e42efb7390a2f7"
     },
     {
       "sourceId": "incheon-transit-accessibility",
@@ -96,229 +96,6 @@
       "perSourceSnapshotSetHash": "43e3b3330a325a2c2aaceab784b35db60d9e4e646778386dbd02c138f158f9c8"
     },
     {
-      "sourceId": "busan-transportation-route-topology",
-      "snapshotId": "busan-transportation-route-topology-fe5fe8266986ade7e7983af7bbd58be1a55e64b9982493294cada6c14f0ad081",
-      "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "b9cf8ade2854d698d5c2761764d4a432c31d39de44244a5198b96dfcc2d329b3"
-        }
-      ],
-      "perSourceSnapshotSetHash": "4ff022305518b21ecae51bd15cfacb6af3f90b1fbe1bbbd704f88fdf5b1eeff1"
-    },
-    {
-      "sourceId": "busan-transportation-accessibility",
-      "snapshotId": "busan-transportation-accessibility-60eec0fc612205541b835cedbff92f80085d0ccf8209d90e03b2a9a489f02675-20261018",
-      "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
-      "admissionRecordSha256s": [
-        {
-          "kind": "accessibilityAdmissionEvidence",
-          "sha256": "e10ee9f52d316097305c2a6a14e7640527d62d2e07f8829fa18ee692001a21c4"
-        }
-      ],
-      "perSourceSnapshotSetHash": "f01745e6dedc300f0da8f1e81d269da379477df873c7843a77301507b6e1b43b"
-    },
-    {
-      "sourceId": "busan-transportation-timetable",
-      "snapshotId": "busan-transportation-timetable-20261018",
-      "rawSha256": "a05cfa01678de1ade026230dbdb3f6280c1d77c8d8ad480ec0ef9cd5ede8e54a",
-      "admissionRecordSha256s": [
-        {
-          "kind": "scheduleAdmissionEvidence",
-          "sha256": "447bfbe00c29dcc5eb26d5a8d44b87f0ccaeaf77dee7c9474dc09e0add5f92c3"
-        }
-      ],
-      "perSourceSnapshotSetHash": "29dbaf5ca1162ac0fd2a3131fa4e2b4213ac1e563790df8d97d69b9c8816a5f6"
-    },
-    {
-      "sourceId": "gwangju-transportation-route-topology",
-      "snapshotId": "gwangju-transportation-route-topology-208650e22339c7b0ad7e38df456cac1a02e3f19b9e58b13c16faae0c1323acf3",
-      "rawSha256": "6759e59ee4b980081cf3345b7164a52c02a990918a1211f0eed173c3faf97e9c",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "d211882729025cb30a2ea11dbdcc2dc664118ac01a82e540e467b0d5b650dc1a"
-        }
-      ],
-      "perSourceSnapshotSetHash": "ffad6169d430e913bbb3e36f3fb0658bbed92be9bba1dabe1b27202dc424e78d"
-    },
-    {
-      "sourceId": "gwangju-transportation-accessibility",
-      "snapshotId": "gwangju-transportation-accessibility-5d54ad74e33748c7b61b126bc2c46333b5091aabdeebf7b56665f46ffe93479e-20261021",
-      "rawSha256": "0e48d767d88e120a86149cf5a5793f6dde946a5838979043a2618f669fb62225",
-      "admissionRecordSha256s": [
-        {
-          "kind": "accessibilityAdmissionEvidence",
-          "sha256": "168082606ca392b9da98140e7dcc40ff6ec2f0ef5bff25e7d746a25ed92857ef"
-        }
-      ],
-      "perSourceSnapshotSetHash": "782e19cdf5b592e0e3619f7c020b778b58c81aaa256fff88eaf96bd71a88b506"
-    },
-    {
-      "sourceId": "daejeon-station-distance-fare",
-      "snapshotId": "daejeon-station-distance-fare-c8cc5c6689d94df02751e3f6c9d13625c15a2ff058a690d4b2ac79f01f75311b",
-      "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "df62061ba9f5877a0a80537c047f9d5c0a8e6c6c9494d349286adf50122f5ab7"
-        }
-      ],
-      "perSourceSnapshotSetHash": "e349fe37840951e9cec2c1b9b4baaff962556d13b7b87afed0e0f0886438ec87"
-    },
-    {
-      "sourceId": "daejeon-transportation-accessibility",
-      "snapshotId": "daejeon-transportation-accessibility-ac4768e8712c4ce8ef9be2c253c313bfa7f2caeca0e368ece5575b2907041f91-20261021",
-      "rawSha256": "7300ae2b4372ce5e702172463db72a5e1be3b270eb902cc0aba005dd9e4a44b2",
-      "admissionRecordSha256s": [
-        {
-          "kind": "accessibilityAdmissionEvidence",
-          "sha256": "13e3e043569c680ea299cd6c2074149bde85fa40fa5b292e016c85a14292353e"
-        }
-      ],
-      "perSourceSnapshotSetHash": "39893fece772cdd60d981b6de6b67918a5efb53eefff5a281744d5ba8ac647b0"
-    },
-    {
-      "sourceId": "daejeon-train-timetable",
-      "snapshotId": "daejeon-train-timetable-20261021",
-      "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
-      "admissionRecordSha256s": [
-        {
-          "kind": "scheduleAdmissionEvidence",
-          "sha256": "78dc05cfc40ee87c0b701c8721821a96db010c438a14bad8af0f5c2316be60b9"
-        }
-      ],
-      "perSourceSnapshotSetHash": "6b0561c956ba4555560e4f090e61496926c46317d70a28f6cbac781c814da20f"
-    },
-    {
-      "sourceId": "daegu-line1-route-topology",
-      "snapshotId": "daegu-line1-route-topology-7cd3eda029f6c357be2d4085703e8208f5ed7bc430ae7737869d427b69ff1748",
-      "rawSha256": "29398e8792899bc614c8e6563b0f4eaf1fec5182668b89d29045409395aae5c5",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "f43896d99b255444eb175ad575b13abb71e14ce97ed132b4ce5f9e76e4c6ed01"
-        }
-      ],
-      "perSourceSnapshotSetHash": "748f297e16321538f7159357f62a5db04f5b025b1a2450ba896a1939e5a6d397"
-    },
-    {
-      "sourceId": "daegu-line1-train-timetable",
-      "snapshotId": "daegu-line1-train-timetable-0c630e6565ec762048a6a5c4286a02af40c4f185280a3e70193fdcaebba360ee",
-      "rawSha256": "98fcb58f09a9e4f57d25ec853de05f9911a0ba01e0d184e57fe9b209d2d8c671",
-      "admissionRecordSha256s": [
-        {
-          "kind": "scheduleAdmissionEvidence",
-          "sha256": "9944c0aae6dcfd286c5ef3be1c2722bec37117695a63009b90aabca0233a092a"
-        }
-      ],
-      "perSourceSnapshotSetHash": "42c0962a5bc7c2ce34b7d88f243e149e9ff6cc4b38006694762ada20d74a6993"
-    },
-    {
-      "sourceId": "daegu-line2-route-topology",
-      "snapshotId": "daegu-line2-route-topology-486bc94c66b429b4555abb3d83a8b9d4a91ba55f0e38e2d7f61386507c829fca",
-      "rawSha256": "80ea59d739c3a327e1242c67ae9b400f4d393b8acd202ec4a26e9e737f1123c0",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "eeec766edbdf9178971c5eed18e79d5ffbdbff776cb062874363e723fa134f34"
-        }
-      ],
-      "perSourceSnapshotSetHash": "419660b44d1e129c99a2b5afa32694e7adce411e85437b81768b73da9d9a9cda"
-    },
-    {
-      "sourceId": "daegu-line2-train-timetable",
-      "snapshotId": "daegu-line2-train-timetable-b38a8d46f8562c6b090e670307152d5dbefc4bdcc6cae41af497b18ff21e90f4",
-      "rawSha256": "1639bc648e4fbe02cfadc007a6c9c89801494bcc34eaefe28dd3aa5639080fcc",
-      "admissionRecordSha256s": [
-        {
-          "kind": "scheduleAdmissionEvidence",
-          "sha256": "ef193c409707e8d43fa559210bccb283290778fd9cec6d46f0b42aa1fdd07a9e"
-        }
-      ],
-      "perSourceSnapshotSetHash": "b1a81c5abb3a1274815f20a34213834b7ef837f6d4ba9276bd40c1faedbb52f7"
-    },
-    {
-      "sourceId": "daegu-line3-route-topology",
-      "snapshotId": "daegu-line3-route-topology-d210984f70a69c390b41194fa33b24411ad74d1cfdf9b901c4eb9d9b44f4f03b",
-      "rawSha256": "844329649f860449b84e34e2af3841a16387fd39c9b313593bfc850f479eddf7",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "a7c3bf5a9ec3df5aee01f0dcc8a70899bfc8da5b04c144cebd0c45631ead1bc2"
-        }
-      ],
-      "perSourceSnapshotSetHash": "dcf4a0540c648ee9bfea3ac4a72c666bed4961309ec4cf2d324c2182fb242bc4"
-    },
-    {
-      "sourceId": "daegu-line3-train-timetable",
-      "snapshotId": "daegu-line3-train-timetable-21f6a193feebf2ab81caf5a96f93f70e67d7bb6cf8d99a10a28d4e836410a35a",
-      "rawSha256": "4d80acce97c2c474a2279561b1fc9662762f81e237b2dd02fb481fb2f30b2f61",
-      "admissionRecordSha256s": [
-        {
-          "kind": "scheduleAdmissionEvidence",
-          "sha256": "156d440d8449325c7f3fede9499e7a06c7dcfef9a32cf95ca3865e644bb9278e"
-        }
-      ],
-      "perSourceSnapshotSetHash": "e5b81f38fd62d01add9285fa2ab52b51b57f70f8d6de9c0bd4b475c2d681c0f0"
-    },
-    {
-      "sourceId": "daegu-transportation-accessibility",
-      "snapshotId": "daegu-transportation-accessibility-d2c72df594f0ce06f7a2f1f7d1ef10f167799e60486e0aa8c8ffa20dba9cff8e-20261021",
-      "rawSha256": "c49fdbe199b9aae0ef52a4fa977be0d5d464b892abd1339d5a890c738bf3659e",
-      "admissionRecordSha256s": [
-        {
-          "kind": "accessibilityAdmissionEvidence",
-          "sha256": "1c6c019f7c300f2f23eca189f3965c771a8b4fc003c438083b8a460d31263600"
-        }
-      ],
-      "perSourceSnapshotSetHash": "4f2a8d78248ebee9c8ef1bd69a93cd76e915d8688e5ec69fa13aa6c9ccb4938e"
-    },
-    {
-      "sourceId": "kric-subway-timetable-station-lines",
-      "snapshotId": "kric-subway-timetable-station-lines-20261021",
-      "rawSha256": "c3f1e6fd355095560023a2ea3a4875be2f4b45e5651d6ebf2fc1db23e7d54217",
-      "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
-      "perSourceSnapshotSetHash": "002e75a5514ef251ed550b3f0e7769722fa7e9b7d85eab95de3910d8662b6b49"
-    },
-    {
-      "sourceId": "korail-metropolitan-timetable-file",
-      "snapshotId": "korail-metropolitan-timetable-file-795dec228295bd53c6d93f0b3cf0e7994c1a7ceb2210acd39642209107689ede",
-      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "bb277b991938f836559f92c808cd15fa1acfca0db4b724d566228a2f1575da0e"
-        }
-      ],
-      "perSourceSnapshotSetHash": "466656611bb3cad52c7d30782f159568aacef7bbba706526d7e5f19a1d0b57cd"
-    },
-    {
-      "sourceId": "korail-metropolitan-planned-timetable",
-      "snapshotId": "korail-metropolitan-planned-timetable-93792d4f2ce9230043283d3efad948fc324e4566454b90fd1388c4fc47b91873",
-      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-      "admissionRecordSha256s": [
-        {
-          "kind": "scheduleAdmissionEvidence",
-          "sha256": "458fabb69d64b8404cb157f9b35cd28a34d22f6f8b607b52e7708cd95a7ad737"
-        }
-      ],
-      "perSourceSnapshotSetHash": "bdfcc3454250a4c7963418f83a83ac49d4aaa524ada8ad55034aaada7d1d1137"
-    },
-    {
-      "sourceId": "kric-nationwide-timetable-file",
-      "snapshotId": "kric-nationwide-timetable-file-e0ef103cb046dea49df019f8f1a6889975b85e956499e1c96e3ded2a671202f2",
-      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "admissionRecordSha256s": [
-        {
-          "kind": "retainedScheduleAdmissionEvidence",
-          "sha256": "405a1ee89c19eb611001b4f8620fb97821cd591be4c444975589aad5d7177bae"
-        }
-      ],
-      "perSourceSnapshotSetHash": "fd5c9e52d7f34e330a77812208fae1217a6c4c7f9a84782d50b8d534b1cb311e"
-    },
-    {
       "sourceId": "capital-route-topology",
       "snapshotId": "capital-route-topology-20261022",
       "rawSha256": "508c2375e0f008587981d070f13c3d7fc1d8cb8e004fc9ba559a01d0bc86bb88",
@@ -331,18 +108,241 @@
       "perSourceSnapshotSetHash": "446d78062ca0e989e1d9ced1432c56e929a0ba6f1408018d5320f4d6403700cf"
     },
     {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20261022T021747621Z",
-      "rawSha256": "309eee0f0c297dd022f10ecb095702a51fd73765ee6ba68fb4ddc5f66a3ff521",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "1f3558fe2083290ef0ce7c6e1e2e65b12db11c2604ec4637509f30fbe7a6b869"
-    },
-    {
       "sourceId": "seoul-metro-accessibility",
       "snapshotId": "seoul-metro-accessibility-20261022T083146833Z",
       "rawSha256": "fc61d276a63bb105f1df924519ae8273194eb6baaad38f5d38cce5c0090adeb8",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "perSourceSnapshotSetHash": "868366a46226ebaf7f92de3cd72f34a7acaee4dfc6f868322c97f89356679ade"
+    },
+    {
+      "sourceId": "kric-subway-timetable-station-lines",
+      "snapshotId": "kric-subway-timetable-station-lines-20261022",
+      "rawSha256": "210f3baffa101e301007f1fb4a0b02cdcb3faa5c199db4f5cbbe263caf057174",
+      "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+      "perSourceSnapshotSetHash": "2bd0c3f98304afce0ad39d49b52f46e2de0f1e1eb8f877c50cf4e713532949ca"
+    },
+    {
+      "sourceId": "korail-metropolitan-timetable-file",
+      "snapshotId": "korail-metropolitan-timetable-file-a72dcd0f6b04ab83ac183cc99a7409339713e6d99f77f60772b96a1e66275188",
+      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "5388132ade26ab4fcaf8e3978c769964e5bf88fd42c1930f13be510e687c871b"
+        }
+      ],
+      "perSourceSnapshotSetHash": "bcf8803e64096c0044d2cf6e44c8c6703a45929230cbf2d3ba84553f861e42cc"
+    },
+    {
+      "sourceId": "korail-metropolitan-planned-timetable",
+      "snapshotId": "korail-metropolitan-planned-timetable-6f98f2f8ac065ab1fd95b343a3ae98b815327c075288b42f8d9315701aa462ec",
+      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "b115a7e479cf428555b842cf00654764bce21474f00699c469aa3965f3962c1e"
+        }
+      ],
+      "perSourceSnapshotSetHash": "4547ed99a3783c3d4ef00688377386450c6205db54c48e85fd7ce89722d237cf"
+    },
+    {
+      "sourceId": "gwangju-transportation-route-topology",
+      "snapshotId": "gwangju-transportation-route-topology-4d5b9d4787b94fce907b3e8d6f7491ddad621142c4e36f2f9a0aa732f481e0ca",
+      "rawSha256": "6759e59ee4b980081cf3345b7164a52c02a990918a1211f0eed173c3faf97e9c",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "9a9134cca43f64ce70d2a60350e93c1b901b48983334e5d36faf1414b1a8e438"
+        }
+      ],
+      "perSourceSnapshotSetHash": "cbffc552c729d85c2fcbe000a46bcdf37e60e8cb5e9945695dbbfe89e8b40964"
+    },
+    {
+      "sourceId": "gwangju-transportation-accessibility",
+      "snapshotId": "gwangju-transportation-accessibility-9e99364dc1f48ba83eb1507d985dac48260878142f3ec3a5511364f406c88706-20261023",
+      "rawSha256": "0e48d767d88e120a86149cf5a5793f6dde946a5838979043a2618f669fb62225",
+      "admissionRecordSha256s": [
+        {
+          "kind": "accessibilityAdmissionEvidence",
+          "sha256": "e7a8bdc90331ad66635ca69069301a5e9880ead4f4298b7f4e7b818adc303063"
+        }
+      ],
+      "perSourceSnapshotSetHash": "28f56b4573725a8548cd272bd1e0d88daf41c5b40c7e9ebc7dd602eeb2cc1ddc"
+    },
+    {
+      "sourceId": "daejeon-station-distance-fare",
+      "snapshotId": "daejeon-station-distance-fare-93d23dd042b65b13e25aa6e19af546479ffc14a4c80b51b8e150a82045c8376f",
+      "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "9b9ecf92cd6db1bb6b573098a63edcf8bb3a8e4e01245bda9dcf6f7d7f6f2b43"
+        }
+      ],
+      "perSourceSnapshotSetHash": "5a6a20b662b823ff9c4a2758ec4fa19843b15c403c87eef76e67e0d05f7b0adc"
+    },
+    {
+      "sourceId": "daejeon-transportation-accessibility",
+      "snapshotId": "daejeon-transportation-accessibility-28e7339e60d43a8c84959b10f6f61faf4c3baa1a1637634f749fa2310c2f87c6-20261023",
+      "rawSha256": "7300ae2b4372ce5e702172463db72a5e1be3b270eb902cc0aba005dd9e4a44b2",
+      "admissionRecordSha256s": [
+        {
+          "kind": "accessibilityAdmissionEvidence",
+          "sha256": "5503ebcbb55612b6539c18da46b23736e045a885ca6069c6a44c53373e9c1171"
+        }
+      ],
+      "perSourceSnapshotSetHash": "2c3f1f2e1ce53f3aa0743e29663ddb9cb9e2c1143222b639ab4d789192abf5ec"
+    },
+    {
+      "sourceId": "daejeon-train-timetable",
+      "snapshotId": "daejeon-train-timetable-20261023",
+      "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "bbf47aa789afa0be815263db8192cbb6cf25bb1e17f1f9f112b2a4366f15e7ca"
+        }
+      ],
+      "perSourceSnapshotSetHash": "06cba192e5e089d89dd53e7c566c31649aeb54b23245f1796f4c7923a6f1ed74"
+    },
+    {
+      "sourceId": "daegu-line1-route-topology",
+      "snapshotId": "daegu-line1-route-topology-315e592669089efccbeaaad082cce2120060e03d2644866405cfe98f97a7e63f",
+      "rawSha256": "29398e8792899bc614c8e6563b0f4eaf1fec5182668b89d29045409395aae5c5",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "f4d9a807cfd9498af958f7f2feb2e9f45a643e1f41c1be64ab1377ddba2b8f4c"
+        }
+      ],
+      "perSourceSnapshotSetHash": "d5d84e6a61a4f5c3e48b046ce868b3a48a805829970699357f66bb28da54479d"
+    },
+    {
+      "sourceId": "daegu-line1-train-timetable",
+      "snapshotId": "daegu-line1-train-timetable-674fcf7f16740dd025ba708ee99899e1473fde3d22e4fc1f1e19082d7c18fa56",
+      "rawSha256": "98fcb58f09a9e4f57d25ec853de05f9911a0ba01e0d184e57fe9b209d2d8c671",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "2e50eb8ea0cfc7d6229de5d42e77099b110750489c40c4fb2fdec33f6a19ccec"
+        }
+      ],
+      "perSourceSnapshotSetHash": "6c23f09c9259ab6318c94c29dfe211e5d191f0169af1dd7071f9034dc2e3b43f"
+    },
+    {
+      "sourceId": "daegu-line2-route-topology",
+      "snapshotId": "daegu-line2-route-topology-a886efae163ca832b8fbfd670107cad25c4f98a8a52260e8813f9e9344a0470b",
+      "rawSha256": "80ea59d739c3a327e1242c67ae9b400f4d393b8acd202ec4a26e9e737f1123c0",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "58ef7247a13f7834a5cd261592be6081c7a06f2870b816fae997df8b5779eda3"
+        }
+      ],
+      "perSourceSnapshotSetHash": "d0b44d628705e80be0a1877277ebd2c475c5be8c5aced3a9354543d7a4581efa"
+    },
+    {
+      "sourceId": "daegu-line2-train-timetable",
+      "snapshotId": "daegu-line2-train-timetable-bd02d8d9fe57add076f426f99483d134252f3c365961786f17ef05db362c3fa3",
+      "rawSha256": "1639bc648e4fbe02cfadc007a6c9c89801494bcc34eaefe28dd3aa5639080fcc",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "0d0f2e5f298434774c45db6c89a1305d0f9670007735255460236d8244a045c8"
+        }
+      ],
+      "perSourceSnapshotSetHash": "29791e0108b9b762a0c909a06532e21e122ac98c260bdbfb9505fe56cde28740"
+    },
+    {
+      "sourceId": "daegu-line3-route-topology",
+      "snapshotId": "daegu-line3-route-topology-128c1fa3e7e8303c3c863852189363255fac9d29fcdffc39d9f3ebdfceec820f",
+      "rawSha256": "844329649f860449b84e34e2af3841a16387fd39c9b313593bfc850f479eddf7",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "5bfdf1ff2e22b4d9f453301044a42cbd4e632cfe1d73e25b68d5857816475566"
+        }
+      ],
+      "perSourceSnapshotSetHash": "8ffe44a741854b99e7e9bda86db2cd1e1ffca992b8a68776a11e50206a8a1cf7"
+    },
+    {
+      "sourceId": "daegu-line3-train-timetable",
+      "snapshotId": "daegu-line3-train-timetable-f2dfe63f69f875c60831dfdeeee373b27a909016084f45c12116d8efc3c4b8f7",
+      "rawSha256": "4d80acce97c2c474a2279561b1fc9662762f81e237b2dd02fb481fb2f30b2f61",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "1963dce27272a2701d2446c1d57a9109caab96d8bbad6ef7ea1ce1769262e227"
+        }
+      ],
+      "perSourceSnapshotSetHash": "79041680dda17716aae3c19238ade611143f8184013017e172aa338aec8a178f"
+    },
+    {
+      "sourceId": "daegu-transportation-accessibility",
+      "snapshotId": "daegu-transportation-accessibility-b7032f52b4b484c7d43ede85d945789447ba00c00229f43c96cc0fab3a6210a1-20261023",
+      "rawSha256": "c49fdbe199b9aae0ef52a4fa977be0d5d464b892abd1339d5a890c738bf3659e",
+      "admissionRecordSha256s": [
+        {
+          "kind": "accessibilityAdmissionEvidence",
+          "sha256": "c52b073a6d2022a069ab98b0ff45670b03c9c56bfaf08d5fe1b391aa05b13400"
+        }
+      ],
+      "perSourceSnapshotSetHash": "24b22e479ebd0bd83e3e59d8c4b6f36839489e7631864425d322fe7ca1f3d1b4"
+    },
+    {
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20261022T202009207Z",
+      "rawSha256": "b0db0083733cf356474c4046b44346dd33b6dde128e1ea51f020b7b1757a8617",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "3ab1863a15c2bf91ddbf1b3c6f242c32ed425ddeaef7ff0c944d161345e29d45"
+    },
+    {
+      "sourceId": "busan-transportation-route-topology",
+      "snapshotId": "busan-transportation-route-topology-9527ea73c0af7ea12cfc3cc2058cff7427d54dd38a07caa66d330df2f3e68894",
+      "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "5448c764b7aa8efe216d41e401aec93614f6036b2c1afd0946b52f2238629ebf"
+        }
+      ],
+      "perSourceSnapshotSetHash": "3ba14e1c84b48ced2b0cb36e5a4883bdb217b4f5836ab32c3f88530f2bdce5f4"
+    },
+    {
+      "sourceId": "busan-transportation-accessibility",
+      "snapshotId": "busan-transportation-accessibility-9c7ee1f001ff7277ab799fff165949458198707949d5ccb5756bee6552fd5398-20261023",
+      "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
+      "admissionRecordSha256s": [
+        {
+          "kind": "accessibilityAdmissionEvidence",
+          "sha256": "6b29abf758b931fcb06764a70dbb576a6b7c1670fd24a131850cf6c8e686f8a0"
+        }
+      ],
+      "perSourceSnapshotSetHash": "d9c7ee2333ec7dab5662cca0555e7725b4f9540c2d1a9cdf4fcce776af0f3919"
+    },
+    {
+      "sourceId": "busan-transportation-timetable",
+      "snapshotId": "busan-transportation-timetable-20261023",
+      "rawSha256": "a05cfa01678de1ade026230dbdb3f6280c1d77c8d8ad480ec0ef9cd5ede8e54a",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "0a0707064021c720b656311b6e94af48c7025038094e276a92f3097fc5e1ed90"
+        }
+      ],
+      "perSourceSnapshotSetHash": "6cbcb081c610a5f6fbac2e4868265951b41a6e2b59bc1de13bc655cfe0838f71"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "snapshotId": "kric-nationwide-timetable-file-7eb3e87fcf164d2215e9c72cee1abfe2f5acd22267675f8f169fc3d902abfb56",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "admissionRecordSha256s": [
+        {
+          "kind": "retainedScheduleAdmissionEvidence",
+          "sha256": "41845386ab4fccc86c6e61fdf9fcbc4630b6209be2f1203d742e75dc92ffac48"
+        }
+      ],
+      "perSourceSnapshotSetHash": "57c519cece5e53b322453119828c5bb72b93ce60ff153099a6903c00e6f0e18a"
     }
   ],
   "officialOdFareEvidence": {

@@ -9,7 +9,7 @@
       "snapshotId": "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
       "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
       "recordsSha256": "c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
-      "observedAt": "2026-10-21T12:23:55.677Z",
+      "observedAt": "2026-10-22T18:09:57.752Z",
       "lines": [
         {
           "lineId": "line-051552e50435",
@@ -793,10 +793,10 @@
     {
       "name": "stationLines",
       "sourceId": "kric-subway-timetable-station-lines",
-      "snapshotId": "kric-subway-timetable-station-lines-20261021",
-      "rawSha256": "c3f1e6fd355095560023a2ea3a4875be2f4b45e5651d6ebf2fc1db23e7d54217",
-      "recordsSha256": "993332e03afa85532970d34811d98051489cad07b37eb1c5e7d18105fc88fc62",
-      "observedAt": "2026-10-21T16:38:10.422Z",
+      "snapshotId": "kric-subway-timetable-station-lines-20261022",
+      "rawSha256": "210f3baffa101e301007f1fb4a0b02cdcb3faa5c199db4f5cbbe263caf057174",
+      "recordsSha256": "5064efdde4d8f5a24d67b6913d5b7179df927e14f8e7d30794441ffa2d4fcc0a",
+      "observedAt": "2026-10-22T18:12:47.212Z",
       "lines": [
         {
           "lineId": "line-8604048b6430",
