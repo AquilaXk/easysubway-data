@@ -45,10 +45,12 @@ test("current FACILITY official source admission은 exact six-cell handoff를 �
     BLOCKED_WITH_EVIDENCE: 0,
     MISSING: 0,
     STALE: 0,
-    UNKNOWN: 0,
-    VERIFIED_ABSENT: 4,
+    UNKNOWN: 2,
+    VERIFIED_ABSENT: 2,
     VERIFIED_PRESENT: 2,
   });
+  // #3036: stationCnvFacl은 ES를 주지 않으므로 에스컬레이터 칸은 UNKNOWN이다. 엘리베이터가 확인된 역-노선은 그대로 시설 있음이다.
+  assert.deepEqual(result.denominatorRows.filter(({ state }) => state === "UNKNOWN").map(({ facilityType }) => facilityType), ["ESCALATOR", "ESCALATOR"]);
   assert.deepEqual(result.cellStateSummary, {
     ADMITTED_FACILITY_ABSENT: 0,
     ADMITTED_FACILITY_PRESENT: 2,
@@ -65,6 +67,20 @@ test("current FACILITY official source admission은 exact six-cell handoff를 �
   assert.notEqual(result.sourceIdentity.snapshotFileSha256, result.sourceIdentity.rawObjectSha256);
   assert.notEqual(result.sourceIdentity.snapshotPayloadRawSha256, result.sourceIdentity.rawObjectSha256);
   assert.match(canonicalFacilitySourceAdmissionJson(result), /"admissionDigest"/);
+});
+
+test("#3036 UNKNOWN 칸이 있어도 확인된 칸 수가 scope 하한 아래면 NO_GO다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  input.productionInput.supportedV1Scope.facilityCoverageDenominator.minimumVerifiedRows = 5;
+  const result = buildFacilitySourceAdmission(input);
+  assert.equal(result.decision, "NO_GO");
+  assert.deepEqual(result.materializerEvidenceRows, []);
+  delete input.productionInput.supportedV1Scope.facilityCoverageDenominator.minimumVerifiedRows;
+  assert.throws(() => buildFacilitySourceAdmission(input), /FACILITY denominator minimumVerifiedRows mismatch/);
+
+  const undeclared = await historicalFacilityFixtureInput();
+  undeclared.productionInput.supportedV1Scope.facilityAbsenceCoverage = [];
+  assert.throws(() => buildFacilitySourceAdmission(undeclared), /FACILITY_ABSENCE_WITHOUT_COVERING_SOURCE: 2 rows/);
 });
 
 test("current mixed accessibility evidence는 legacy FACILITY builder에서 fail-closed다", async () => {
@@ -458,7 +474,7 @@ function rebindHistoricalFacilityEvidence(productionInput, snapshot) {
         snapshotId: snapshot.snapshotId,
         query: tuple,
         type: row.facilityType,
-        evidenceKind: "NOT_EXISTS",
+        evidenceKind: row.evidenceKind,
       })),
       verifiedAt: snapshot.capturedAt,
       retrievedAt: snapshot.capturedAt,

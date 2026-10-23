@@ -53,12 +53,16 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
   assert.deepEqual(output.facilityRows.map(({ type }) => type), ["ELEVATOR"]);
   assert.deepEqual(output.facilityRows.map(({ floorFrom, floorTo }) => [floorFrom, floorTo]), [["B3", ""]]);
   assert.deepEqual(output.accessibilityStatusEvidence.map(({ facilityType, evidenceKind }) => [facilityType, evidenceKind]), [
-    ["ESCALATOR", "NOT_EXISTS"], ["WHEELCHAIR_LIFT", "NOT_EXISTS"], ["ACCESSIBILITY_STATUS_PROBE", "EXISTS"],
+    ["ESCALATOR", "UNKNOWN"], ["WHEELCHAIR_LIFT", "NOT_EXISTS"], ["ACCESSIBILITY_STATUS_PROBE", "EXISTS"],
   ]);
   assert.equal(output.accessibilityStatusEvidence.at(-1).operationalStatus, "AVAILABLE");
   assert.deepEqual(output.accessibilityStatusEvidence.map(({ strictRouteEligibleReason }) => strictRouteEligibleReason), [
-    "FACILITY_NOT_INSTALLED", "FACILITY_NOT_INSTALLED", "STATUS_PROBE_NOT_ROUTE_EVIDENCE",
+    "FACILITY_PRESENCE_UNKNOWN", "FACILITY_NOT_INSTALLED", "STATUS_PROBE_NOT_ROUTE_EVIDENCE",
   ]);
+  assert.deepEqual(
+    ["installationStatus", "operationalStatus", "statusMeaning", "confidence"].map((key) => output.accessibilityStatusEvidence[0][key]),
+    ["UNKNOWN", "UNKNOWN", "SOURCE_DOES_NOT_COVER_TYPE", 0],
+  );
   assert.equal(output.routeEdges[0].accessibilityStatus, "UNKNOWN");
   assert.equal(output.routeEdges[0].verificationStatus, "NOT_VERIFIED");
   assert.deepEqual(output.sourceIds, ["kric-station-convenience-standard", "seoul-metro-accessibility"]);
@@ -275,6 +279,35 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
     kricSnapshot: { ...kricSnapshot, queries: [{ ...kricSnapshot.queries[0], stationId: "station-missing" }] },
     seoulSnapshot,
   }), /KRIC snapshot canonical mapping missing: station-missing/);
+});
+
+test("#3036 KRIC 목록에 없는 에스컬레이터와 환승역 다른 노선 조회에 있는 유형은 부재가 아니라 UNKNOWN 증거다", () => {
+  const input = {
+    sourceIds: [], coverageEvidence: [], movementPathCandidates: [], minimumProductionCoverage: { facilities: 0 },
+    stationMappings: [{ sourceId: "molit-urban-rail-full-route", sourceStationCode: "MOLIT-L5-1", lineId: "line-5", stationId: "station-a" }],
+    stationLineRows: [{ sourceId: "molit-urban-rail-full-route", sourceStationCode: "MOLIT-L5-1", stationCode: "1", lineId: "line-5", stationNameKo: "가" }],
+    kricStandardAccessibilityRoster: [{ stationId: "station-a", lineId: "line-5", railOprIsttCd: "S1", lnCd: "5", stinCd: "2538" }],
+  };
+  const query = (lineId, lnCd, stinCd, rows) => ({
+    stationId: "station-a", lineId, railOprIsttCd: "S1", lnCd, stinCd, providerRecordHash: stinCd.repeat(16), rows,
+  });
+  const output = materializeAccessibilitySourceInput({
+    input,
+    kricSnapshot: {
+      sourceId: "kric-station-convenience-standard", snapshotId: "kric-1", observedAt: "2026-10-22T00:00:00Z", capturedAt: "2026-10-22T00:00:00Z",
+      queries: [
+        query("line-5", "5", "2538", [{ gubun: "INFO", stinFlor: 1, dtlLoc: "대합실" }]),
+        query("line-6", "6", "2635", [{ gubun: "EV", grndDvCd: "2", stinFlor: 1, dtlLoc: "신금호방면5-3" }]),
+      ],
+    },
+    seoulSnapshot: { sourceId: "seoul-metro-accessibility", snapshotId: "seoul-1", observedAt: "2026-10-22T00:00:00Z", capturedAt: "2026-10-22T00:00:00Z", stations: [] },
+  });
+  assert.deepEqual(output.facilityRows, []);
+  assert.deepEqual(output.accessibilityStatusEvidence.map(({ lineId, facilityType, evidenceKind, statusMeaning }) => [lineId, facilityType, evidenceKind, statusMeaning]), [
+    ["line-5", "ELEVATOR", "UNKNOWN", "LISTED_ON_OTHER_LINE_QUERY"],
+    ["line-5", "ESCALATOR", "UNKNOWN", "SOURCE_DOES_NOT_COVER_TYPE"],
+    ["line-5", "WHEELCHAIR_LIFT", "NOT_EXISTS", "EXHAUSTIVE_LIST_ABSENCE"],
+  ]);
 });
 
 test("exact terminal 03은 facility를 만들지 않고 세 blocked carrier row로 보존한다", () => {

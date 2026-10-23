@@ -2,6 +2,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { assertFacilityAbsencesCovered, facilityAbsenceCoverageBySource } from "./lib/facility-evidence-states.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 
 const SUMMARY_RIDE_EDGE_PRODUCTION_POLICY = "fixture-only";
@@ -19,6 +20,7 @@ const maintenanceOperationalStatuses = [
 const strictRouteEligibilityReasons = new Set([
   "FACILITY_NOT_INSTALLED",
   "FACILITY_OPERATION_VERIFIED",
+  "FACILITY_PRESENCE_UNKNOWN",
   "NO_OFFICIAL_STATUS_FEED",
   "OPERATION_EVIDENCE_MISSING",
   "OPERATION_STATUS_NOT_AVAILABLE",
@@ -469,6 +471,13 @@ function validateFacilityCoverageDenominator(value, stationLineCount, supportedV
       `supportedV1Scope.facilityCoverageDenominator.expectedRows must equal stationLines x requiredFacilityTypes: ${computedRows}`,
     );
   }
+  const minimumVerifiedRows = requiredInteger(
+    value.minimumVerifiedRows,
+    "supportedV1Scope.facilityCoverageDenominator.minimumVerifiedRows",
+  );
+  if (minimumVerifiedRows < 0 || minimumVerifiedRows > expectedRows) {
+    throw new Error("supportedV1Scope.facilityCoverageDenominator.minimumVerifiedRows must be between 0 and expectedRows");
+  }
 }
 
 function assertActualIdsWithinScope(actualIds, allowedIds, message) {
@@ -487,6 +496,8 @@ function assertScopeIdsHaveRows(allowedIds, actualIds, message) {
   }
 }
 
+// #3036 QA 승인 2026-10-23: 지원 역-노선의 필수 시설 유형마다 EXISTS, 그 유형을 다루는 원천(scope facilityAbsenceCoverage)의
+// NOT_EXISTS, 또는 명시적 UNKNOWN 증거가 있어야 한다. 다루지 않는 유형의 부재는 거짓 단정이므로 실패한다.
 function validateSupportedFacilityCoverage(input, stationRows, stationFacilityEvidence) {
   if ((input.pack.artifactKind ?? "fixture") !== "production") {
     return;
@@ -495,21 +506,33 @@ function validateSupportedFacilityCoverage(input, stationRows, stationFacilityEv
   if (!Array.isArray(requiredFacilityTypes) || requiredFacilityTypes.length === 0) {
     throw new Error("supportedV1Scope.requiredFacilityTypes must be a non-empty array for production pack");
   }
-  const stationLineKeys = new Set(stationRows.map(({ mapping }) => `${mapping.stationId}:${mapping.lineId}`));
-  const evidenceKeys = new Set(
-    stationFacilityEvidence.map((evidence) => {
-      const lineId = requiredString(evidence.lineId, "stationFacilityEvidence.lineId");
-      const facilityType = requiredString(evidence.facilityType, "stationFacilityEvidence.facilityType");
-      return `${evidence.stationId}:${lineId}:${facilityType}`;
-    }),
+  assertFacilityAbsencesCovered(
+    stationFacilityEvidence,
+    facilityAbsenceCoverageBySource(input.supportedV1Scope, requiredStringArray(input.sourceIds, "sourceIds")),
   );
+  const stationLineKeys = new Set(stationRows.map(({ mapping }) => `${mapping.stationId}:${mapping.lineId}`));
+  const evidenceKindsByKey = new Map();
+  for (const evidence of stationFacilityEvidence) {
+    const lineId = requiredString(evidence.lineId, "stationFacilityEvidence.lineId");
+    const facilityType = requiredString(evidence.facilityType, "stationFacilityEvidence.facilityType");
+    const key = `${evidence.stationId}:${lineId}:${facilityType}`;
+    if (!evidenceKindsByKey.has(key)) evidenceKindsByKey.set(key, new Set());
+    evidenceKindsByKey.get(key).add(evidence.evidenceKind);
+  }
+  let verifiedRows = 0;
   for (const stationLineKey of [...stationLineKeys].sort((left, right) => codepointCompare(left, right))) {
     for (const facilityType of requiredStringArray(requiredFacilityTypes, "supportedV1Scope.requiredFacilityTypes")) {
       const key = `${stationLineKey}:${facilityType}`;
-      if (!evidenceKeys.has(key)) {
+      const kinds = evidenceKindsByKey.get(key);
+      if (!kinds) {
         throw new Error(`production facility evidence missing: ${key}`);
       }
+      if (kinds.has("EXISTS") || kinds.has("NOT_EXISTS")) verifiedRows += 1;
     }
+  }
+  const { minimumVerifiedRows } = input.supportedV1Scope.facilityCoverageDenominator;
+  if (verifiedRows < minimumVerifiedRows) {
+    throw new Error(`FACILITY_VERIFIED_ROWS_BELOW_MINIMUM: ${verifiedRows}/${minimumVerifiedRows}`);
   }
 }
 
@@ -1021,7 +1044,7 @@ function accessibilityStatusEvidenceRows(input, stationLineKeys, isProductionPac
       throw new Error(`accessibilityStatusEvidence station-line missing: ${stationId}:${lineId}`);
     }
     const evidenceKind = requiredString(row.evidenceKind, "accessibilityStatusEvidence.evidenceKind");
-    if (!["EXISTS", "NOT_EXISTS"].includes(evidenceKind)) {
+    if (!["EXISTS", "NOT_EXISTS", "UNKNOWN"].includes(evidenceKind)) {
       throw new Error(`accessibilityStatusEvidence.evidenceKind is not allowed: ${stationId}:${lineId}:${evidenceKind}`);
     }
     const strictRouteEligibleReason = row.strictRouteEligibleReason

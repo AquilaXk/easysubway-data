@@ -14,9 +14,9 @@ import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs
 import { holidayCalendarViolations, retainedKasiHolidayDates } from "./lib/regional-timetable-integrator.mjs";
 import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, createCandidateInputReader, parseCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
-import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
-import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { admitOutOfStationTransferLinks, withCapitalKricStandardFacilities, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -1900,4 +1900,163 @@ test("부산 FACILITY 판정은 원문 빈 필드를 미관측으로 보고 0으
   assert.equal(busanFacilityState({ wl_i: null, wl_o: null, el_i: 0, el_o: 0, es: 0 }), "UNKNOWN");
   assert.equal(busanFacilityState({ wl_i: 0, wl_o: 0, el_i: 0, el_o: 0, es: 0 }), "VERIFIED_ABSENT");
   assert.equal(busanFacilityState({ wl_i: null, wl_o: null, el_i: 2, el_o: 0, es: 0 }), "VERIFIED_PRESENT");
+});
+
+const KRIC_STANDARD = "kric-station-convenience-standard";
+const isKricStandard = ({ sourceId }) => sourceId === KRIC_STANDARD;
+const kricStandardFacilityId = (stationId, type, row) =>
+  `facility-${stationId}-${type.toLowerCase()}-kric-standard-${sha256(JSON.stringify(row)).slice(0, 16)}`;
+
+function kricStandardFixture() {
+  const ev1 = { dtlLoc: "1번출구", grndDvCd: "1", gubun: "EV", imgPath: null, mlFmlDvCd: null, stinFlor: 1, trfcWeakDvCd: null };
+  const ev2 = { ...ev1, dtlLoc: "대합실", grndDvCd: "2" };
+  const lift = { ...ev1, dtlLoc: "환승통로", gubun: "WCLF" };
+  const toilet = { ...ev1, dtlLoc: "화장실", gubun: "TOLT" };
+  const query = (stationId, stinCd, rows, overrides = {}) => ({
+    stationId, lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd,
+    providerResultCode: "00", status: "PRESENT", terminalPolicy: null, providerRecordHash: sha256(JSON.stringify(rows)), rows, ...overrides,
+  });
+  const snapshot = {
+    sourceId: KRIC_STANDARD, snapshotId: "kric-new", observedAt: "2026-10-22T20:20:09.207Z", capturedAt: "2026-10-22T20:20:09.207Z",
+    queries: [
+      query("station-a", "101", [ev1, ev2, ev2, toilet]),
+      query("station-b", "102", [lift]),
+      query("station-t", "103", [], { providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", providerRecordHash: null }),
+    ],
+  };
+  const baseKric = {
+    id: kricStandardFacilityId("station-a", "ELEVATOR", ev1), stationId: "station-a", lineId: "line-1", type: "ELEVATOR",
+    sourceId: KRIC_STANDARD, sourceSnapshotId: "kric-old",
+  };
+  const otherSource = { id: "facility-incheon-1", stationId: "station-i", lineId: "line-i", type: "ELEVATOR", sourceId: "incheon-transit-accessibility" };
+  const pack = {
+    stations: [["station-a", "가"], ["station-b", "나"], ["station-t", "다"], ["station-i", "라"]].map(([id, nameKo]) => ({ id, nameKo })),
+    stationLines: [...["station-a", "station-b", "station-t"].map((stationId) => ({ stationId, lineId: "line-1" })), { stationId: "station-i", lineId: "line-i" }],
+    facilities: [baseKric, otherSource],
+    stationFacilityEvidence: [
+      { stationId: "station-a", lineId: "line-1", facilityType: "ESCALATOR", evidenceKind: "NOT_EXISTS", sourceId: KRIC_STANDARD, sourceSnapshotId: "kric-old" },
+      { stationId: "station-i", lineId: "line-i", facilityType: "ELEVATOR", evidenceKind: "EXISTS", sourceId: "incheon-transit-accessibility" },
+    ],
+  };
+  return { snapshot, pack, rows: { ev1, ev2, lift }, otherSource, baseKric };
+}
+
+test("#3036 수도권 KRIC 조회마다 승강기·휠체어리프트를 팩 시설로 싣고 기반 팩의 KRIC 행은 head snapshot 행으로 바뀐다", () => {
+  const { snapshot, pack, rows, otherSource, baseKric } = kricStandardFixture();
+  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+
+  const kricFacilities = result.facilities.filter(isKricStandard);
+  assert.deepEqual(kricFacilities.map(({ id }) => id).sort(), [
+    kricStandardFacilityId("station-a", "ELEVATOR", rows.ev1),
+    kricStandardFacilityId("station-a", "ELEVATOR", rows.ev2),
+    kricStandardFacilityId("station-b", "WHEELCHAIR_LIFT", rows.lift),
+  ].sort());
+  assert.equal(kricFacilities.filter(({ id }) => id === baseKric.id).length, 1, "기반 팩과 같은 id는 한 번만 남는다");
+  assert.deepEqual([...new Set(kricFacilities.map(({ sourceSnapshotId }) => sourceSnapshotId))], ["kric-new"]);
+  for (const facility of kricFacilities) {
+    assert.deepEqual(
+      [facility.installationStatus, facility.operationalStatus, facility.status, facility.exitId, facility.verifiedAt],
+      ["INSTALLED", "UNKNOWN", "UNKNOWN", null, snapshot.observedAt],
+    );
+  }
+  assert.deepEqual(result.facilities.filter((row) => !isKricStandard(row)), [otherSource]);
+
+  const kricEvidence = result.stationFacilityEvidence.filter(isKricStandard);
+  assert.deepEqual(kricEvidence.map(({ stationId, facilityType, evidenceKind }) => `${stationId}|${facilityType}|${evidenceKind}`).sort(), [
+    "station-a|ELEVATOR|EXISTS",
+    "station-a|ESCALATOR|UNKNOWN",
+    "station-a|WHEELCHAIR_LIFT|NOT_EXISTS",
+    "station-b|ELEVATOR|NOT_EXISTS",
+    "station-b|ESCALATOR|UNKNOWN",
+    "station-b|WHEELCHAIR_LIFT|EXISTS",
+  ]);
+  for (const unknown of kricEvidence.filter(({ evidenceKind }) => evidenceKind === "UNKNOWN")) {
+    assert.deepEqual(
+      [unknown.installationStatus, unknown.operationalStatus, unknown.statusMeaning, unknown.confidence, unknown.strictRouteEligible],
+      ["UNKNOWN", "UNKNOWN", "SOURCE_DOES_NOT_COVER_TYPE", 0, false],
+    );
+  }
+  for (const evidence of kricEvidence.filter(({ evidenceKind }) => evidenceKind === "EXISTS")) {
+    const twins = kricFacilities.filter((facility) => facility.stationId === evidence.stationId && facility.lineId === evidence.lineId
+      && facility.type === evidence.facilityType && facility.providerRecordHash === evidence.providerRecordHash);
+    assert.equal(twins.length, 1, `${evidence.stationId} ${evidence.facilityType} 존재 증거는 같은 팩의 시설 행 하나를 가리킨다`);
+  }
+  for (const absence of kricEvidence.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS")) {
+    assert.deepEqual(
+      [absence.installationStatus, absence.operationalStatus, absence.statusMeaning, absence.strictRouteEligible, absence.strictRouteEligibleReason],
+      ["NOT_INSTALLED", "NOT_APPLICABLE", "EXHAUSTIVE_LIST_ABSENCE", false, "FACILITY_NOT_INSTALLED"],
+    );
+  }
+  assert.equal(result.stationFacilityEvidence.some((row) => row.stationId === "station-t"), false, "결과 03 조회는 부재를 만들지 않는다");
+  assert.deepEqual(result.stationFacilityEvidence.filter((row) => !isKricStandard(row)), [pack.stationFacilityEvidence[1]]);
+});
+
+test("#3036 팩 역-노선에 없는 KRIC 조회와 terminal 정책 밖 결과 03은 조용히 버리지 않고 실패한다", () => {
+  const { snapshot, pack } = kricStandardFixture();
+  const unmapped = (stationId, stinCd) => ({ ...snapshot.queries[1], stationId, stinCd });
+  assert.throws(
+    () => withCapitalKricStandardFacilities({ pack, snapshot: { ...snapshot, queries: [...snapshot.queries, unmapped("station-x", "901"), unmapped("station-y", "902")] } }),
+    /KRIC facility station-line missing: 2 queries \(S1\/1\/901 station-x:line-1, S1\/1\/902 station-y:line-1\)/,
+  );
+  assert.throws(
+    () => withCapitalKricStandardFacilities({ pack, snapshot: { ...snapshot, queries: [{ ...snapshot.queries[1], providerResultCode: "03", rows: [] }] } }),
+    /KRIC terminal provider result is invalid/,
+  );
+});
+
+test("#3036 후보가 고정한 KRIC snapshot의 결과 00 조회 212개(199역)가 모두 팩 시설·세 상태 증거가 되고 에스컬레이터 부재는 없다", async () => {
+  const fanIn = await candidatePinnedJson(pinnedRead, "tools/datapack/release/current-five-region-source-fan-in.json");
+  const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === KRIC_STANDARD).snapshotId;
+  const [snapshot, baseFixture] = await Promise.all([
+    candidatePinnedJson(pinnedRead, `tools/datapack/sources/${head}.json`),
+    candidatePinnedJson(pinnedRead, "tools/datapack/release/capital-production-canonical-pack.json"),
+  ]);
+  const result = withCapitalKricStandardFacilities({ pack: baseFixture.packs[0], snapshot });
+  const present = snapshot.queries.filter(({ providerResultCode }) => providerResultCode === "00");
+  const routeRows = (query) => [...new Set(query.rows.filter(({ gubun }) => gubun === "EV" || gubun === "WCLF").map((row) => JSON.stringify(row)))];
+  const kricFacilities = result.facilities.filter(isKricStandard);
+  const kricEvidence = result.stationFacilityEvidence.filter(isKricStandard);
+
+  assert.equal(present.length, 212);
+  assert.equal(new Set(kricFacilities.map(({ stationId }) => stationId)).size, 199);
+  assert.equal(kricFacilities.length, present.reduce((sum, query) => sum + routeRows(query).length, 0));
+  assert.deepEqual(
+    new Set(kricFacilities.map(({ stationId, lineId }) => `${stationId}|${lineId}`)),
+    new Set(present.filter((query) => routeRows(query).length > 0).map(({ stationId, lineId }) => `${stationId}|${lineId}`)),
+  );
+  assert.equal(new Set(kricFacilities.map(({ id }) => id)).size, kricFacilities.length);
+  for (const base of baseFixture.packs[0].facilities.filter(isKricStandard)) {
+    assert.equal(kricFacilities.filter(({ id }) => id === base.id).length, 1, `${base.id} 기반 팩 행은 한 번만 남는다`);
+  }
+  const evidenceKey = ({ stationId, lineId, facilityType }) => `${stationId}|${lineId}|${facilityType}`;
+  assert.equal(new Set(kricEvidence.map(evidenceKey)).size, kricEvidence.length, "(역, 노선, 유형)마다 증거는 하나다");
+  assert.equal(kricEvidence.length, present.length * 3, "결과 00 조회마다 승강기·에스컬레이터·휠체어리프트 세 칸을 채운다");
+  assert.deepEqual(new Set(kricEvidence.filter(({ facilityType }) => facilityType === "ESCALATOR").map(({ evidenceKind }) => evidenceKind)), new Set(["UNKNOWN"]));
+  const terminal = snapshot.queries.filter(({ providerResultCode }) => providerResultCode === "03");
+  assert.equal(terminal.length, 1);
+  assert.deepEqual([...kricFacilities, ...kricEvidence].filter(({ stationId, lineId }) => stationId === terminal[0].stationId
+    && lineId === terminal[0].lineId), [], "결과 03 역-노선은 시설도 부재도 만들지 않는다");
+  const listedAtStation = (stationId, type) => snapshot.queries.some((query) => query.stationId === stationId
+    && query.rows.some(({ gubun }) => gubun === (type === "ELEVATOR" ? "EV" : "WCLF")));
+  assert.deepEqual(kricEvidence.filter(({ evidenceKind, stationId, facilityType }) => evidenceKind === "NOT_EXISTS"
+    && listedAtStation(stationId, facilityType)).map(({ stationId, lineId, facilityType }) => `${stationId}|${lineId}|${facilityType}`), []);
+  const stationIdByName = (name) => baseFixture.packs[0].stations.find(({ nameKo }) => nameKo === name).id;
+  for (const name of ["서울역", "강남"]) {
+    assert.ok(kricFacilities.some(({ stationId, type }) => stationId === stationIdByName(name) && type === "ELEVATOR"), `${name} 엘리베이터`);
+  }
+});
+
+test("#3036 전국 후보 팩의 KRIC 시설·증거는 fan-in head snapshot 하나만 가리키고 에스컬레이터 부재를 싣지 않는다", async () => {
+  const { finalPack } = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122,
+  });
+  const fanIn = await candidatePinnedJson(pinnedRead, "tools/datapack/release/current-five-region-source-fan-in.json");
+  const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === KRIC_STANDARD).snapshotId;
+  const kricRows = [...finalPack.facilities, ...finalPack.stationFacilityEvidence].filter(isKricStandard);
+  assert.deepEqual([...new Set(kricRows.map(({ sourceSnapshotId }) => sourceSnapshotId))], [head]);
+  assert.equal(new Set(finalPack.facilities.filter(isKricStandard).map(({ stationId }) => stationId)).size, 199);
+  assert.deepEqual(finalPack.stationFacilityEvidence
+    .filter((row) => isKricStandard(row) && row.facilityType === "ESCALATOR" && row.evidenceKind !== "UNKNOWN"), []);
+  const ids = finalPack.facilities.map(({ id }) => id);
+  assert.equal(new Set(ids).size, ids.length);
 });

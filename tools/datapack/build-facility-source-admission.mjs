@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import { assertFacilityAbsencesCovered, facilityAbsenceCoverageBySource } from "./lib/facility-evidence-states.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -128,7 +129,8 @@ export function buildFacilitySourceAdmission(input) {
     && evidencePartition.output.summary.ambiguousCount === 0
     && evidencePartition.output.summary.duplicateCount === 0
     && evidencePartition.output.summary.blockingCount === 0
-    && denominatorRows.every(({ state }) => state === "VERIFIED_PRESENT" || state === "VERIFIED_ABSENT")
+    && denominatorRows.every(({ state }) => ADMITTED_DENOMINATOR_STATES.has(state))
+    && denominatorRows.filter(({ state }) => state !== "UNKNOWN").length >= stationContext.minimumVerifiedRows
     && cells.every(({ state }) => state === "ADMITTED_FACILITY_PRESENT" || state === "ADMITTED_FACILITY_ABSENT")
     ? "GO"
     : "NO_GO";
@@ -424,6 +426,12 @@ function buildStationContext(productionInput, candidateBuildSpec) {
   if (scope.facilityCoverageDenominator.expectedRows !== stationLines.length * requiredTypes.length) {
     throw new Error("FACILITY denominator count mismatch");
   }
+  const { minimumVerifiedRows } = scope.facilityCoverageDenominator;
+  const absenceCoverage = facilityAbsenceCoverageBySource(scope, productionInput.sourceIds ?? []);
+  if (!Number.isInteger(minimumVerifiedRows) || minimumVerifiedRows < 0
+    || minimumVerifiedRows > scope.facilityCoverageDenominator.expectedRows) {
+    throw new Error("FACILITY denominator minimumVerifiedRows mismatch");
+  }
   const stationLineSet = stationLines.map(({ stationId, lineId, operatorId }) => canonicalObject({
     stationId, lineId, operatorId,
   }));
@@ -438,6 +446,8 @@ function buildStationContext(productionInput, candidateBuildSpec) {
   return {
     candidate,
     requiredTypes,
+    minimumVerifiedRows,
+    absenceCoverage,
     stationLines,
     stationLineSetSha256: sha256(canonicalJson(stationLineSet)),
     stationLineMappingSha256: sha256(canonicalJson(mappingRows)),
@@ -513,6 +523,7 @@ function partitionInputEvidence({ productionInput, stationContext, queryContext,
     || !Array.isArray(productionInput.accessibilityStatusEvidence)) {
     throw new Error("FACILITY consumer evidence inputs are required");
   }
+  assertFacilityAbsencesCovered(productionInput.accessibilityStatusEvidence, stationContext.absenceCoverage);
   const stationLineByKey = new Map(stationContext.stationLines.map((line) => [stationLineKey(line), line]));
   const joinedQueryByStationLine = queryContext.joinedQueryByStationLine;
   const stationBySourceMapping = new Map(stationContext.stationLines.map((line) => [
@@ -592,14 +603,16 @@ function partitionInputEvidence({ productionInput, stationContext, queryContext,
       blocking.push(evidenceId);
       continue;
     }
-    validateAbsenceEvidence(row, query, snapshot);
+    const unknown = row.evidenceKind === "UNKNOWN";
+    if (unknown) validateUnknownEvidence(row, query, snapshot);
+    else validateAbsenceEvidence(row, query, snapshot);
     const projected = canonicalObject({
       evidenceId,
-      inputKind: "EXPLICIT_ABSENCE",
+      inputKind: unknown ? "EXPLICIT_UNKNOWN" : "EXPLICIT_ABSENCE",
       stationId: line.stationId,
       lineId: line.lineId,
       facilityType: row.facilityType,
-      state: "VERIFIED_ABSENT",
+      state: unknown ? "UNKNOWN" : "VERIFIED_ABSENT",
       providerRecordHash: row.providerRecordHash,
       evidenceHash: row.evidenceHash,
     });
@@ -680,6 +693,33 @@ function validateAbsenceEvidence(row, query, snapshot) {
   }
 }
 
+// #3036: stationCnvFacl이 다루지 않는 유형(ES)이나 같은 역 다른 노선 조회에 실린 유형은 명시적 UNKNOWN 증거다.
+const UNKNOWN_STATUS_MEANINGS = new Set(["SOURCE_DOES_NOT_COVER_TYPE", "LISTED_ON_OTHER_LINE_QUERY"]);
+// QA 승인 2026-10-23: 칸마다 확인된 존재·부재 또는 명시적 UNKNOWN이면 받고, 확인된 칸 수는 scope의 minimumVerifiedRows 이상이어야 한다.
+const ADMITTED_DENOMINATOR_STATES = new Set(["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNKNOWN"]);
+
+function validateUnknownEvidence(row, query, snapshot) {
+  const expectedEvidenceHash = sha256(JSON.stringify({
+    snapshotId: snapshot.snapshotId,
+    query: providerTuple(query),
+    type: row.facilityType,
+    evidenceKind: "UNKNOWN",
+  }));
+  if (query.rows.some(({ gubun }) => gubun === FACILITY_CODE_BY_TYPE[row.facilityType])
+    || row.sourceSnapshotId !== snapshot.snapshotId
+    || row.providerRecordHash !== query.providerRecordHash
+    || row.evidenceHash !== expectedEvidenceHash
+    || row.provenanceKind !== "OFFICIAL_SOURCE"
+    || row.installationStatus !== "UNKNOWN"
+    || row.operationalStatus !== "UNKNOWN"
+    || !UNKNOWN_STATUS_MEANINGS.has(row.statusMeaning)
+    || row.strictRouteEligibleReason !== "FACILITY_PRESENCE_UNKNOWN"
+    || row.confidence !== 0
+    || row.verifiedAt !== snapshot.capturedAt || row.retrievedAt !== snapshot.capturedAt) {
+    throw new Error("FACILITY explicit unknown identity mismatch");
+  }
+}
+
 function addDenominatorEvidence(index, line, facilityType, evidence) {
   const key = `${stationLineKey(line)}\0${facilityType}`;
   const values = index.get(key) ?? [];
@@ -694,7 +734,8 @@ function buildDenominatorRows({ stationContext, evidencePartition, sourceIdentit
     const evidence = evidencePartition.evidenceByDenominator.get(key) ?? [];
     const present = evidence.filter(({ state }) => state === "VERIFIED_PRESENT");
     const absent = evidence.filter(({ state }) => state === "VERIFIED_ABSENT");
-    if (present.length > 0 && absent.length > 0) throw new Error("conflicting FACILITY evidence");
+    const unknown = evidence.filter(({ state }) => state === "UNKNOWN");
+    if ([present, absent, unknown].filter(({ length }) => length > 0).length > 1) throw new Error("conflicting FACILITY evidence");
     let state = "MISSING";
     let evidenceKind = null;
     let evidenceReason = "OFFICIAL_FACILITY_EVIDENCE_MISSING";
@@ -712,8 +753,14 @@ function buildDenominatorRows({ stationContext, evidencePartition, sourceIdentit
       evidenceReason = "OFFICIAL_FACILITY_EXHAUSTIVE_ABSENCE";
       providerRecordHash = absent[0].providerRecordHash;
       evidenceHash = absent[0].evidenceHash;
+    } else if (unknown.length === 1) {
+      state = "UNKNOWN";
+      evidenceKind = "EXPLICIT_UNKNOWN";
+      evidenceReason = "OFFICIAL_FACILITY_EVIDENCE_UNKNOWN";
+      providerRecordHash = unknown[0].providerRecordHash;
+      evidenceHash = unknown[0].evidenceHash;
     }
-    if (stale && (state === "VERIFIED_PRESENT" || state === "VERIFIED_ABSENT")) {
+    if (stale && state !== "MISSING") {
       state = "STALE";
       evidenceReason = "OFFICIAL_FACILITY_SOURCE_STALE";
     }
@@ -752,7 +799,8 @@ function buildCells({
     } else if (rows.some((row) => row.state === "MISSING")) {
       state = "MISSING";
       admissionReason = "OFFICIAL_FACILITY_EVIDENCE_MISSING";
-    } else if (rows.some((row) => row.state === "UNKNOWN")) {
+    } else if (rows.some((row) => row.state === "UNKNOWN") && !rows.some((row) => row.state === "VERIFIED_PRESENT")) {
+      // 확인된 시설이 있으면 다른 유형이 UNKNOWN이어도 시설 있음이다(prepare-nationwide-candidate-run의 gwangjuFacilityState와 같은 규칙).
       state = "UNKNOWN";
       admissionReason = "OFFICIAL_FACILITY_EVIDENCE_UNKNOWN";
     } else if (rows.some((row) => row.state === "BLOCKED_WITH_EVIDENCE")) {

@@ -228,8 +228,10 @@ export function productionSourceIngestInput() {
     facilityCoverageDenominator: {
       kind: "station_line_x_required_facility_type",
       expectedRows: 6,
+      minimumVerifiedRows: 6,
     },
     requiredFacilityTypes: ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"],
+    facilityAbsenceCoverage: [],
   };
   input.stationMappings.unshift(
     {
@@ -487,6 +489,9 @@ export function withTestProductionAccessibility(input) {
       : value
   );
   fixture.sourceIds = fixture.sourceIds.map(replaceSource);
+  fixture.supportedV1Scope?.facilityAbsenceCoverage?.forEach((entry) => {
+    entry.sourceId = replaceSource(entry.sourceId);
+  });
   fixture.facilityRows.forEach((row) => {
     if (row.sourceId === "kric-station-convenience-standard") Object.assign(row, testAccessibilitySourceRow(row, row.id));
   });

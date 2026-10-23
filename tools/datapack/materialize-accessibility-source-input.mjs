@@ -3,20 +3,26 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import {
+  KRIC_STANDARD_FACILITY_TYPES,
+  KRIC_STANDARD_SOURCE_ID as KRIC_SOURCE_ID,
+  kricStandardListedTypesByStation,
+  kricStandardQueryFacilities,
+  validateKricStandardProviderRows,
+} from "./lib/kric-standard-facilities.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS, RETIRED_KRIC_MOVEMENT_SOURCE_IDS } from "./lib/retired-sources.mjs";
 
-const KRIC_SOURCE_ID = "kric-station-convenience-standard";
 const SEOUL_SOURCE_ID = "seoul-metro-accessibility";
-// KRIC official stationCnvFacl contract: EV/ES/WCLF are the only route-relevant facility codes.
-const FACILITY_TYPES = new Map([["EV", "ELEVATOR"], ["ES", "ESCALATOR"], ["WCLF", "WHEELCHAIR_LIFT"]]);
-const KRIC_FACILITY_CODES = new Set([...FACILITY_TYPES.keys(), "ELEC", "FEED", "INFO", "TOLT"]);
 const TERMINAL_POLICY = "EXACT_TUPLE_PROVIDER_RESULT_03";
 const TERMINAL_TUPLE = Object.freeze({ stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4" });
 const TERMINAL_OPERATOR_ID = "seoul-metro";
 const TERMINAL_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
+const KRIC_STATUS_EVIDENCE_NOTES = Object.freeze({
+  NOT_EXISTS: "KRIC stationCnvFacl exhaustive tuple query에 해당 facility code가 없다.",
+  UNKNOWN: "KRIC stationCnvFacl 조회로는 이 시설 유형의 존재·부재를 알 수 없다.",
+});
 
 export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoulSnapshot }) {
   if (kricSnapshot?.sourceId !== KRIC_SOURCE_ID || seoulSnapshot?.sourceId !== SEOUL_SOURCE_ID) {
@@ -46,7 +52,8 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   const facilityRows = [];
   const absenceRows = [];
   const snapshotQueries = kricSnapshot.queries ?? [];
-  validateKricProviderRows(snapshotQueries);
+  validateKricStandardProviderRows(snapshotQueries);
+  const listedTypesByStation = kricStandardListedTypesByStation(snapshotQueries);
   const regionalRoster = input.kricStandardAccessibilityRoster;
   const regionalRosterKeys = regionalRoster == null ? null : exactRosterKeys(regionalRoster);
   const regionalQueries = regionalRosterKeys == null
@@ -58,7 +65,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
       throw new Error(`KRIC snapshot canonical mapping missing: ${query?.stationId}`);
     }
     if (isTerminalQuery(query)) {
-      for (const facilityType of FACILITY_TYPES.values()) absenceRows.push({
+      for (const facilityType of KRIC_STANDARD_FACILITY_TYPES) absenceRows.push({
         stationId: query.stationId,
         lineId: query.lineId,
         operatorId: TERMINAL_OPERATOR_ID,
@@ -94,30 +101,12 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
       });
       continue;
     }
-    if (query.providerResultCode === "03") throw new Error("KRIC terminal provider result is invalid");
-    const stationName = stationLineIdentity(input, mapping).stationNameKo;
-    const counts = new Map();
-    const seenProviderRecordHashes = new Set();
-    const supportedRows = [];
-    for (const row of query.rows) {
-      if (!KRIC_FACILITY_CODES.has(row.gubun)) throw new Error(`unknown KRIC facility code: ${row.gubun}`);
-      const type = FACILITY_TYPES.get(row.gubun);
-      if (!type) continue;
-      const providerRecordHash = hash(row);
-      if (seenProviderRecordHashes.has(providerRecordHash)) continue;
-      seenProviderRecordHashes.add(providerRecordHash);
-      supportedRows.push({ row, type, providerRecordHash });
-    }
-    for (const { row, type, providerRecordHash } of supportedRows
-      .sort((left, right) => codepointCompare(left.providerRecordHash, right.providerRecordHash))) {
-      const number = (counts.get(type) ?? 0) + 1;
-      counts.set(type, number);
-      const providerFacilityRef = `${query.railOprIsttCd}:${query.lnCd}:${query.stinCd}:${row.gubun}:${providerRecordHash}`;
-      const facilityId = facilityIdsByProviderRef.get(providerFacilityRef)
-        ?? `facility-${query.stationId}-${type.toLowerCase()}-kric-standard-${providerRecordHash.slice(0, 16)}`;
-      if (facilityId.length > 120) {
-        throw new Error(`facility identity exceeds 120 characters: ${facilityId}`);
-      }
+    const { facilities, statusEvidence } = kricStandardQueryFacilities({
+      snapshot: kricSnapshot, query, stationName: stationLineIdentity(input, mapping).stationNameKo, listedTypesByStation,
+    });
+    for (const facility of facilities) {
+      const { providerFacilityRef } = facility;
+      const facilityId = facilityIdsByProviderRef.get(providerFacilityRef) ?? facility.id;
       if (providerRefsByFacilityId.has(facilityId)
           && providerRefsByFacilityId.get(facilityId) !== providerFacilityRef) {
         throw new Error("facility identity collision");
@@ -128,47 +117,26 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
         sourceId: KRIC_SOURCE_ID,
         id: facilityId,
         station: { sourceId: mapping.sourceId, sourceStationCode: mapping.sourceStationCode, lineId: mapping.lineId },
-        type,
-        name: `${stationName}역 ${type} ${number}`,
+        type: facility.type,
+        name: facility.name,
         status: "UNKNOWN",
         statusMeaning: "STATIC_LOCATION",
         operationalStatus: "UNKNOWN",
         installationStatus: "INSTALLED",
         providerFacilityRef,
         provenanceKind: "OFFICIAL_SOURCE",
-        floorFrom: kricFloorLabel(row),
+        floorFrom: facility.floorFrom,
         floorTo: "",
-        description: row.dtlLoc,
+        description: facility.description,
         verifiedAt: kricSnapshot.observedAt,
         retrievedAt: kricSnapshot.capturedAt,
         sourceSnapshotId: kricSnapshot.snapshotId,
-        providerRecordHash,
-        evidenceHash: hash({ snapshotId: kricSnapshot.snapshotId, query: tuple(query), providerRecordHash }),
+        providerRecordHash: facility.providerRecordHash,
+        evidenceHash: facility.evidenceHash,
         confidence: 100,
       });
     }
-    for (const type of FACILITY_TYPES.values()) {
-      if (counts.has(type)) continue;
-      absenceRows.push({
-        stationId: query.stationId,
-        lineId: query.lineId,
-        facilityType: type,
-        evidenceKind: "NOT_EXISTS",
-        sourceId: KRIC_SOURCE_ID,
-        sourceSnapshotId: kricSnapshot.snapshotId,
-        providerRecordHash: query.providerRecordHash,
-        evidenceHash: hash({ snapshotId: kricSnapshot.snapshotId, query: tuple(query), type, evidenceKind: "NOT_EXISTS" }),
-        provenanceKind: "OFFICIAL_SOURCE",
-        installationStatus: "NOT_INSTALLED",
-        operationalStatus: "NOT_APPLICABLE",
-        statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
-        confidence: 100,
-        verifiedAt: kricSnapshot.observedAt,
-        retrievedAt: kricSnapshot.capturedAt,
-        strictRouteEligibleReason: "FACILITY_NOT_INSTALLED",
-        note: "KRIC stationCnvFacl exhaustive tuple query에 해당 facility code가 없다.",
-      });
-    }
+    absenceRows.push(...statusEvidence.map((row) => ({ ...row, note: KRIC_STATUS_EVIDENCE_NOTES[row.evidenceKind] })));
   }
 
   const seoulStations = new Map((seoulSnapshot.stations ?? []).map((station) => [
@@ -270,20 +238,6 @@ function exactRosterKeys(values) {
   return keys;
 }
 
-function validateKricProviderRows(queries) {
-  for (const query of queries) {
-    if (!Array.isArray(query?.rows)) throw new Error(`KRIC snapshot canonical mapping missing: ${query?.stationId}`);
-    for (const row of query.rows) {
-      if (!KRIC_FACILITY_CODES.has(row.gubun)) throw new Error(`unknown KRIC facility code: ${row.gubun}`);
-      if (FACILITY_TYPES.has(row.gubun)) kricFloorLabel(row);
-    }
-  }
-}
-
-function tuple(query) {
-  return { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
-}
-
 function isTerminalQuery(query) {
   return query?.providerResultCode === "03"
     && query.terminalPolicy === TERMINAL_POLICY
@@ -291,13 +245,6 @@ function isTerminalQuery(query) {
     && query.rows?.length === 0
     && /^[0-9a-f]{64}$/.test(query.rawResponseSha256 ?? "")
     && Object.entries(TERMINAL_TUPLE).every(([field, value]) => query[field] === value);
-}
-
-function kricFloorLabel(row) {
-  if (row.stinFlor === undefined || row.stinFlor === null || row.stinFlor === "") return "";
-  if (String(row.grndDvCd) === "1") return `${row.stinFlor}F`;
-  if (String(row.grndDvCd) === "2") return `B${row.stinFlor}`;
-  throw new Error(`unknown KRIC ground division code: ${row.grndDvCd ?? "<missing>"}`);
 }
 
 function stationLineIdentity(input, mapping) {

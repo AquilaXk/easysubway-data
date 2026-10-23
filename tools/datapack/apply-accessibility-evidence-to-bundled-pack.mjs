@@ -29,6 +29,19 @@ function getTargetStationIds(pack) {
   }
   return [...ids].filter(Boolean).sort(codepointCompare);
 }
+// #3036: 전국 팩에는 reviewed 역의 다른 노선 KRIC 행(사당 2호선 등)도 있으므로 역이 아니라 역-노선 단위로 바꾼다.
+function getTargetStationLineKeys(pack) {
+  const keys = new Set();
+  for (const row of [...(pack?.facilities ?? []), ...(pack?.stationFacilityEvidence ?? [])]) {
+    if (row.stationId && row.lineId) keys.add(`${row.stationId}:${row.lineId}`);
+  }
+  for (const edge of pack?.networkEdges ?? []) {
+    for (const node of [edge.fromNodeId, edge.toNodeId]) {
+      if (typeof node === "string" && node.startsWith("station-") && node.includes(":")) keys.add(node);
+    }
+  }
+  return keys;
+}
 const facilityTypes = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT", "ACCESSIBILITY_STATUS_PROBE"];
 const accessibilityRouteSourceId = "seoul-metro-accessibility";
 // 데이터팩에서 걷어내는 원천: 퇴역한 KRIC 접근성 원천과 서울교통공사 접근성 원천(현행 근거로 다시 채운다).
@@ -388,9 +401,9 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
     throw new Error("canonical capital pack is missing");
   }
   const [pack] = activePacks;
-  const targetStationIds = new Set(getTargetStationIds(reviewedPack));
-  const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) =>
-    !targetStationIds.has(stationId)
+  const targetStationLines = getTargetStationLineKeys(reviewedPack);
+  const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, lineId, type, sourceId }) =>
+    !targetStationLines.has(`${stationId}:${lineId}`)
       || (!facilityTypes.includes(type)
         && !replacedSourceIds.has(sourceId)
         && sourceId !== "kric-station-convenience-standard"));
@@ -399,8 +412,8 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
   pack.dataQualityRecords = (pack.dataQualityRecords ?? []).filter(({ targetType, targetId }) =>
     targetType !== "facility" || facilityIds.has(targetId));
   pack.stationFacilityEvidence = (pack.stationFacilityEvidence ?? [])
-    .filter(({ stationId, facilityType }) =>
-      !targetStationIds.has(stationId) || !facilityTypes.includes(facilityType))
+    .filter(({ stationId, lineId, facilityType }) =>
+      !targetStationLines.has(`${stationId}:${lineId}`) || !facilityTypes.includes(facilityType))
     .concat(reviewedPack.stationFacilityEvidence ?? []);
   pack.networkEdges = (pack.networkEdges ?? [])
     .filter((edge) => !isAccessibilityRouteEdge(edge))
