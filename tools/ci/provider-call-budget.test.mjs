@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
+import { KRIC_ACCESSIBILITY_OPERATIONS } from "../datapack/collect-kric-accessibility-snapshots.mjs";
 import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
 import {
   PROVIDER_BUDGET_REASON,
@@ -167,4 +168,21 @@ test("저장소 정책: 부산 세 operation(15001019·15001020·15000522)이 �
     assert.notEqual(statement, "");
   }
   assert.match(assumed, /접근성.*시간표/u);
+});
+
+// #3036: KRIC 시설 operation은 문서화된 하루 한도가 없어 예산 판정 대상이 아니다. 확인한 것과 가정한 것을 나눠 남기고, 한도 숫자를 지어내지 않는다.
+test("저장소 정책: KRIC 시설 operation은 예산 operation이 아니며 한도 근거를 확인·가정으로 나눠 적는다", () => {
+  const [kric] = committedPolicy.unbudgetedOperations;
+  assert.equal(committedPolicy.unbudgetedOperations.length, 1);
+  assert.deepEqual(kric.sourceIds, KRIC_ACCESSIBILITY_OPERATIONS.map(({ sourceId }) => sourceId));
+  assert.equal(committedPolicy.operations.some(({ sourceId }) => kric.sourceIds.includes(sourceId)), false);
+  assert.equal("dailyRequestLimit" in kric, false, "한도를 확인하지 못한 operation에 숫자를 적지 않는다");
+  assert.ok(Number.isSafeInteger(kric.requestsPerCollection) && kric.requestsPerCollection > 0);
+  assert.ok(kric.verified.length > 0);
+  for (const { url, checkedAt, statement } of kric.verified) {
+    assert.ok(url === null || url.startsWith("https://www.data.go.kr/"), url);
+    assert.match(checkedAt, /^\d{4}-\d{2}-\d{2}$/u);
+    assert.notEqual(statement, "");
+  }
+  assert.match(kric.assumed, /stationEscalator/u);
 });
