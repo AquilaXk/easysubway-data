@@ -1781,7 +1781,7 @@ for (const [term, pick, tamper] of [
     assert.equal(report.decision, "NO_GO");
     assert.deepEqual(report.violations, {
       ...emptyViolations(),
-      provenance: [escalatorClaimId(tampered).replace("|ESCALATOR|", `|${tampered.facilityType}|`)],
+      provenance: [escalatorClaimId(tampered).replaceAll("|ESCALATOR|", `|${tampered.facilityType}|`)],
     });
   });
 }

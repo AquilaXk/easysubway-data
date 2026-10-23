@@ -930,7 +930,7 @@ test("#3036 에스컬레이터 혼합 snapshot 식별 검증은 결과 03 조회
     }],
     ["다른 원천 id", (_query, copy) => {
       copy.sourceId = "kric-station-convenience-standard";
-      copy.snapshotId = copy.snapshotId.replace("kric-station-escalator-detailed", "kric-station-convenience-standard");
+      copy.snapshotId = copy.snapshotId.replaceAll("kric-station-escalator-detailed", "kric-station-convenience-standard");
     }],
   ]) {
     assert.throws(() => validateKricAccessibilitySnapshotIdentity(tamperTerminal(mutate)), /snapshot identity is invalid/, term);
