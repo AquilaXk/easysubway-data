@@ -643,6 +643,7 @@
     {"path":"tools/datapack/evaluate-current-molit-transfer-freshness.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":25},
     {"path":"tools/datapack/evaluate-route-accessibility-edges.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":276},
     {"path":"tools/datapack/export-bundled-pack-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":10},
+    {"path":"tools/datapack/facility-evidence-states.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":500},
     {"path":"tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":69},
     {"path":"tools/datapack/freshness-policy.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":14},
     {"path":"tools/datapack/import-car-door-hints.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7},

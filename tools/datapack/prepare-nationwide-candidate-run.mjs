@@ -7,6 +7,13 @@ import { gunzipSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
+import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import {
+  KRIC_STANDARD_SOURCE_ID,
+  kricStandardStationContexts,
+  kricStandardQueryFacilities,
+} from "./lib/kric-standard-facilities.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
@@ -739,6 +746,95 @@ export function busanFacilityState(observedRow) {
     wheelchair_lift: counts.WHEELCHAIR_LIFT,
     escalator: counts.ESCALATOR,
   });
+}
+
+// #3036: 수도권 KRIC 편의시설 표준 snapshot의 결과 00 조회를 모두 팩 시설·증거로 싣는다.
+// 기반 팩의 KRIC 행(pilot 2역, 이전 snapshot)은 같은 결정적 id 규칙으로 다시 만들어지므로 이 snapshot의 행으로 바꾼다.
+// 결과 00 조회의 (역, 노선, 유형)마다 EXISTS·NOT_EXISTS·UNKNOWN 증거 하나를 싣는다(QA 승인 2026-10-23).
+// 결과 03 조회(UNVERIFIED_EVIDENCE_BLOCKED)는 시설도 부재도 만들지 않는다. 팩 역-노선에 없는 조회는 실패한다.
+export function withCapitalKricStandardFacilities({ pack, snapshot }) {
+  const stationNames = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
+  const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const queries = snapshot.queries.filter(({ status }) => status !== "UNVERIFIED_EVIDENCE_BLOCKED");
+  const unmapped = queries.filter(({ stationId, lineId }) => !stationLineKeys.has(`${stationId}\0${lineId}`) || !stationNames.get(stationId));
+  if (unmapped.length > 0) {
+    const labels = unmapped.map(({ railOprIsttCd, lnCd, stinCd, stationId, lineId }) => `${railOprIsttCd}/${lnCd}/${stinCd} ${stationId}:${lineId}`);
+    throw new Error(`nationwide candidate KRIC facility station-line missing: ${unmapped.length} queries (${labels.slice(0, 5).join(", ")})`);
+  }
+  const stationContexts = kricStandardStationContexts(snapshot, queries, pack.stationLines);
+  const facilities = [];
+  const evidence = [];
+  for (const query of queries) {
+    const observed = kricStandardQueryFacilities({ snapshot, query, stationName: stationNames.get(query.stationId), stationContexts });
+    const rows = observed.facilities.map(({ id, type, name, floorFrom, description, providerFacilityRef, providerRecordHash, evidenceHash }) => ({
+      id,
+      stationId: query.stationId,
+      lineId: query.lineId,
+      exitId: null,
+      type,
+      name,
+      status: "UNKNOWN",
+      floorFrom,
+      floorTo: "",
+      description,
+      sourceId: KRIC_STANDARD_SOURCE_ID,
+      sourceSnapshotId: snapshot.snapshotId,
+      providerFacilityRef,
+      providerRecordHash,
+      provenanceKind: "OFFICIAL_SOURCE",
+      statusMeaning: "STATIC_LOCATION",
+      operationalStatus: "UNKNOWN",
+      installationStatus: "INSTALLED",
+      verifiedAt: snapshot.observedAt,
+      retrievedAt: snapshot.capturedAt,
+      evidenceHash,
+      confidence: 100,
+      derivationKind: "OFFICIAL",
+      lastVerifiedAt: snapshot.observedAt,
+    }));
+    facilities.push(...rows);
+    // 존재 증거는 import-official-sources의 stationFacilityEvidenceRows와 같이 (역, 노선, 유형)마다 id가 가장 작은 시설 행을 가리킨다.
+    const firstByType = new Map();
+    for (const row of [...rows].sort((left, right) => codepointCompare(left.id, right.id))) {
+      if (!firstByType.has(row.type)) firstByType.set(row.type, row);
+    }
+    for (const row of firstByType.values()) {
+      evidence.push({
+        stationId: row.stationId,
+        lineId: row.lineId,
+        facilityType: row.type,
+        evidenceKind: "EXISTS",
+        sourceId: row.sourceId,
+        sourceSnapshotId: row.sourceSnapshotId,
+        providerRecordHash: row.providerRecordHash,
+        evidenceHash: row.evidenceHash,
+        provenanceKind: row.provenanceKind,
+        installationStatus: row.installationStatus,
+        operationalStatus: row.operationalStatus,
+        statusMeaning: row.statusMeaning,
+        confidence: row.confidence,
+        verifiedAt: row.verifiedAt,
+        retrievedAt: row.retrievedAt,
+        strictRouteEligible: false,
+        strictRouteEligibleReason: "OPERATION_STATUS_UNKNOWN",
+      });
+    }
+    for (const { strictRouteEligibleReason, ...row } of observed.statusEvidence) {
+      evidence.push({ ...row, strictRouteEligible: false, strictRouteEligibleReason });
+    }
+  }
+  // 시설 id는 역·유형·원문 행 hash로 정해진다. 같은 원문 행이 같은 역의 두 노선 조회에 실리면 id가 겹치므로
+  // materializer와 같이 조용히 합치지 않고 실패한다.
+  const facilityIds = new Set();
+  for (const { id } of facilities) {
+    if (facilityIds.has(id)) throw new Error(`facility identity collision: ${id}`);
+    facilityIds.add(id);
+  }
+  const isOtherSource = ({ sourceId }) => sourceId !== KRIC_STANDARD_SOURCE_ID;
+  return {
+    facilities: [...pack.facilities.filter(isOtherSource), ...facilities],
+    stationFacilityEvidence: [...pack.stationFacilityEvidence.filter(isOtherSource), ...evidence],
+  };
 }
 
 export async function prepareNationwideCandidate({
@@ -1505,6 +1601,9 @@ export async function prepareNationwideCandidate({
 
   finalPack.facilities.push(...regionalFacilities);
   finalPack.stationFacilityEvidence.push(...regionalEvidence);
+  Object.assign(finalPack, withCapitalKricStandardFacilities({
+    pack: finalPack, snapshot: validateKricAccessibilitySnapshotIdentity(kricConvenience),
+  }));
 
   const packSource = (source, updatedAt) => {
     const coverageScope = structuredClone(source.coverageScope);

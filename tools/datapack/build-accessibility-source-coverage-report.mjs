@@ -14,6 +14,12 @@ import {
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
+import {
+  KRIC_PRESENT_RESULT_CODE,
+  kricQueryResultCode,
+  kricStandardStationContexts,
+  kricStandardStatusState,
+} from "./lib/kric-standard-facilities.mjs";
 import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { normalizeMolitProviderLineName } from "./lib/molit-svg-provider-identity.mjs";
 
@@ -708,10 +714,13 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
           operatorName: row.operator_name,
         }))
       : undefined;
+    const evidenceStatusMeaningColumn = tableHasColumns(database, "station_facility_evidence", ["status_meaning"])
+      ? "status_meaning"
+      : "NULL";
     const evidenceClaims = tableExists(database, "station_facility_evidence")
       ? database.prepare(`
           SELECT station_id, line_id, facility_type, evidence_kind, source_id, source_snapshot_id,
-                 provider_record_hash, evidence_hash
+                 provider_record_hash, evidence_hash, ${evidenceStatusMeaningColumn} AS status_meaning
           FROM station_facility_evidence
           ORDER BY station_id, line_id, facility_type
         `).all().map((row) => ({
@@ -720,6 +729,7 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
           facilityType: row.facility_type,
           domain: "STATION_FACILITY_EVIDENCE",
           evidenceKind: row.evidence_kind,
+          statusMeaning: row.status_meaning,
           sourceId: row.source_id,
           sourceSnapshotId: row.source_snapshot_id,
           providerRecordHash: row.provider_record_hash,
@@ -1047,7 +1057,7 @@ function validateClaim(artifact, claim, sources, snapshotsByIdentity, violations
     valid = false;
   } else {
     const snapshot = snapshotsByIdentity.get(`${claim.sourceId}\0${claim.sourceSnapshotId}`);
-    if (!claimMatchesSnapshot(snapshot, claim)) {
+    if (!claimMatchesSnapshot(snapshot, claim, artifact.stationLines)) {
       violations.provenance.push(`${claimId}:CLAIM_SNAPSHOT_BINDING_MISMATCH`);
       valid = false;
     }
@@ -1068,7 +1078,29 @@ function snapshotForClaim(snapshotsByIdentity, claim) {
   return snapshotsByIdentity.get(`${claim.sourceId}\0${claim.sourceSnapshotId}`);
 }
 
-function claimMatchesSnapshot(snapshot, claim) {
+// 목록에 없는 유형의 NOT_EXISTS·UNKNOWN 증거는 생산 규칙(kricStandardStatusState)을 같은 역의 조회와 artifact의 역-노선에
+// 다시 적용해 상태와 의미가 같고 hash가 (snapshot, 조회 tuple, 유형, 상태)에서 다시 계산될 때만 결속한다.
+// 역-노선 표가 없는 artifact는 형제 역-노선 조회 여부를 확인할 수 없으므로 결속하지 않는다.
+function kricStatusClaimMatchesQuery(snapshot, query, claim, stationLines) {
+  if (!Array.isArray(stationLines)) return false;
+  const atClaimStation = ({ stationId }) => stationId === claim.stationId;
+  const stationContext = kricStandardStationContexts(snapshot, snapshot.queries.filter(atClaimStation), stationLines.filter(atClaimStation))
+    .get(claim.stationId);
+  const expected = kricStandardStatusState(claim.facilityType, stationContext);
+  const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
+  return kricQueryResultCode(query, snapshot) === KRIC_PRESENT_RESULT_CODE
+    && claim.evidenceKind === expected.evidenceKind
+    && claim.statusMeaning === expected.statusMeaning
+    && query.providerRecordHash === claim.providerRecordHash
+    && digest(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      query: tuple,
+      type: claim.facilityType,
+      evidenceKind: expected.evidenceKind,
+    })) === claim.evidenceHash;
+}
+
+function claimMatchesSnapshot(snapshot, claim, stationLines) {
   if (!snapshot) return false;
   if (regionalAccessibilitySnapshot(snapshot)) return regionalClaimMatchesSnapshot(snapshot, claim);
   if (Array.isArray(snapshot.claimBindings)) {
@@ -1076,58 +1108,55 @@ function claimMatchesSnapshot(snapshot, claim) {
       "stationId", "lineId", "facilityType", "providerRecordHash", "evidenceHash",
     ].every((field) => binding[field] === claim[field]));
   }
-  if (snapshot.artifactKind === "kric-accessibility-snapshot") {
-    const code = { ELEVATOR: "EV", ESCALATOR: "ES", WHEELCHAIR_LIFT: "WCLF" }[claim.facilityType];
-    if (!code) return false;
-    return (snapshot.queries ?? []).filter((query) => query.stationId === claim.stationId
-      && (!claim.lineId || query.lineId === claim.lineId)).some((query) => {
-      const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
-      const rows = (query.rows ?? []).filter(({ gubun }) => gubun === code);
-      if (rows.length > 0) return claim.evidenceKind === "EXISTS" && rows.some((row) => {
-        const providerRecordHash = digest(JSON.stringify(row));
-        return providerRecordHash === claim.providerRecordHash
-          && digest(JSON.stringify({ snapshotId: snapshot.snapshotId, query: tuple, providerRecordHash })) === claim.evidenceHash;
-      });
-      return claim.evidenceKind === "NOT_EXISTS"
-        && query.providerRecordHash === claim.providerRecordHash
-        && digest(JSON.stringify({
-          snapshotId: snapshot.snapshotId,
-          query: tuple,
-          type: claim.facilityType,
-          evidenceKind: "NOT_EXISTS",
-        })) === claim.evidenceHash;
-    });
-  }
-  if (snapshot.artifactKind === "seoul-accessibility-snapshot") {
-    const lineNumber = String(claim.lineId ?? "").match(/(\d+)$/)?.[1];
-    const lineName = lineNumber ? `${lineNumber}호선` : null;
-    const matchingStations = lineName && claim.stationName
-      ? (snapshot.stations ?? []).filter((station) => normalizeStationName(station.stationName) === normalizeStationName(claim.stationName)
-        && station.lineName === lineName)
-      : [];
-    const absentHash = lineNumber
-      ? digest(JSON.stringify({ stationId: claim.stationId, lineName, status: "NOT_COVERED" }))
-      : null;
-    if (claim.evidenceKind === "NOT_EXISTS") {
-      if (!claim.stationName || matchingStations.length > 0 || claim.providerRecordHash !== absentHash) return false;
-    } else if (!matchingStations.some((station) => digest(JSON.stringify(station)) === claim.providerRecordHash)) {
-      return false;
-    }
-    const expectedEvidenceHash = claim.domain === "NETWORK_EDGE"
-      ? digest(JSON.stringify({
-        edgeId: claim.claimId,
-        sourceSnapshotId: snapshot.snapshotId,
-        providerRecordHash: claim.providerRecordHash,
-      }))
-      : digest(JSON.stringify({
-        snapshotId: snapshot.snapshotId,
-        stationId: claim.stationId,
-        lineId: claim.lineId,
-        providerRecordHash: claim.providerRecordHash,
-      }));
-    return expectedEvidenceHash === claim.evidenceHash;
-  }
+  if (snapshot.artifactKind === "kric-accessibility-snapshot") return kricClaimMatchesSnapshot(snapshot, claim, stationLines);
+  if (snapshot.artifactKind === "seoul-accessibility-snapshot") return seoulClaimMatchesSnapshot(snapshot, claim);
   return false;
+}
+
+function kricClaimMatchesSnapshot(snapshot, claim, stationLines) {
+  const code = { ELEVATOR: "EV", ESCALATOR: "ES", WHEELCHAIR_LIFT: "WCLF" }[claim.facilityType];
+  if (!code) return false;
+  return (snapshot.queries ?? []).filter((query) => query.stationId === claim.stationId
+    && (!claim.lineId || query.lineId === claim.lineId)).some((query) => {
+    const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
+    const rows = (query.rows ?? []).filter(({ gubun }) => gubun === code);
+    if (rows.length > 0) return claim.evidenceKind === "EXISTS" && rows.some((row) => {
+      const providerRecordHash = digest(JSON.stringify(row));
+      return providerRecordHash === claim.providerRecordHash
+        && digest(JSON.stringify({ snapshotId: snapshot.snapshotId, query: tuple, providerRecordHash })) === claim.evidenceHash;
+    });
+    return kricStatusClaimMatchesQuery(snapshot, query, claim, stationLines);
+  });
+}
+
+function seoulClaimMatchesSnapshot(snapshot, claim) {
+  const lineNumber = String(claim.lineId ?? "").match(/(\d+)$/)?.[1];
+  const lineName = lineNumber ? `${lineNumber}호선` : null;
+  const matchingStations = lineName && claim.stationName
+    ? (snapshot.stations ?? []).filter((station) => normalizeStationName(station.stationName) === normalizeStationName(claim.stationName)
+      && station.lineName === lineName)
+    : [];
+  const absentHash = lineNumber
+    ? digest(JSON.stringify({ stationId: claim.stationId, lineName, status: "NOT_COVERED" }))
+    : null;
+  if (claim.evidenceKind === "NOT_EXISTS") {
+    if (!claim.stationName || matchingStations.length > 0 || claim.providerRecordHash !== absentHash) return false;
+  } else if (!matchingStations.some((station) => digest(JSON.stringify(station)) === claim.providerRecordHash)) {
+    return false;
+  }
+  const expectedEvidenceHash = claim.domain === "NETWORK_EDGE"
+    ? digest(JSON.stringify({
+      edgeId: claim.claimId,
+      sourceSnapshotId: snapshot.snapshotId,
+      providerRecordHash: claim.providerRecordHash,
+    }))
+    : digest(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      stationId: claim.stationId,
+      lineId: claim.lineId,
+      providerRecordHash: claim.providerRecordHash,
+    }));
+  return expectedEvidenceHash === claim.evidenceHash;
 }
 
 function absenceEvidenceModeFor(source, snapshot) {

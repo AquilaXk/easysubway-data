@@ -132,3 +132,31 @@ test("retainPreAuthorityRideEdges는 manifest.activePack.id로 고른 팩의 RID
   retainPreAuthorityRideEdges(fixture, "projected");
   assert.deepEqual(fixture.packs[0].networkEdges, [{ id: "nationwide-ride", edgeType: "RIDE" }]);
 });
+
+test("#3036 syncCanonicalAccessibilityEvidence는 reviewed 역-노선의 접근성 행만 바꾸고 같은 역 다른 노선 행은 남긴다", () => {
+  const kric = "kric-station-convenience-standard";
+  const facility = (lineId, id) => ({ id, stationId: "station-sadang", lineId, type: "ELEVATOR", sourceId: kric });
+  const evidence = (lineId, evidenceKind) => ({ stationId: "station-sadang", lineId, facilityType: "ELEVATOR", evidenceKind, sourceId: kric });
+  const reviewedSources = ["seoul-metro-accessibility", kric].map((id) => ({ id, updatedAt: "reviewed" }));
+  const canonical = {
+    manifest: { activePack: { id: "nationwide", version: "1" } },
+    packs: [{
+      id: "nationwide",
+      facilities: [facility("seoul-2", "line-2-elevator"), facility("seoul-4", "line-4-elevator-old")],
+      stationFacilityEvidence: [evidence("seoul-2", "EXISTS"), evidence("seoul-4", "EXISTS")],
+      networkEdges: [],
+      stationExits: [],
+      sourceInventory: reviewedSources.map(({ id }) => ({ id, updatedAt: "canonical" })),
+      minimumTableRows: {},
+    }],
+  };
+  syncCanonicalAccessibilityEvidence(canonical, {
+    facilities: [facility("seoul-4", "line-4-elevator-reviewed")],
+    stationFacilityEvidence: [{ ...evidence("seoul-4", "EXISTS"), reviewed: true }],
+    networkEdges: [],
+    sourceInventory: reviewedSources,
+  });
+  const [pack] = canonical.packs;
+  assert.deepEqual(pack.facilities.map(({ id }) => id), ["line-2-elevator", "line-4-elevator-reviewed"]);
+  assert.deepEqual(pack.stationFacilityEvidence.map(({ lineId, reviewed }) => `${lineId}:${reviewed === true}`), ["seoul-2:false", "seoul-4:true"]);
+});

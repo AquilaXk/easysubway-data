@@ -15,6 +15,8 @@ import {
   loadSelectableAccessibilityArtifacts,
   manifestAssetRoot,
 } from "./build-accessibility-source-coverage-report.mjs";
+import { withCapitalKricStandardFacilities } from "./prepare-nationwide-candidate-run.mjs";
+import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const EVALUATED_AT = "2026-07-28T00:00:00.000Z";
 
@@ -617,6 +619,7 @@ test("remote manifest URL과 bundled index가 같은 gzip SQLite를 가리키면
       facilityType: "ELEVATOR",
       domain: "STATION_FACILITY_EVIDENCE",
       evidenceKind: "VERIFIED_PRESENT",
+      statusMeaning: null,
       sourceId: "official-accessibility",
       sourceSnapshotId: "official-accessibility-20260728",
       providerRecordHash: hash("record"),
@@ -1487,4 +1490,192 @@ test("rowsSha256과 다른 지역 row는 hash 밖 필드만 바뀌어도 claim�
   assert.equal(report.decision, "NO_GO");
   assert.equal(report.violations.provenance.filter((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")).length,
     input.artifacts[0].claims.length);
+});
+
+// release-candidate 단계의 coverage report는 KRIC 세 상태 증거를 후보가 고정한 snapshot에서 다시 유도해 결속한다.
+const KRIC_STANDARD = "kric-station-convenience-standard";
+const KRIC_EVALUATED_AT = "2026-10-23T00:00:00.000Z";
+const KRIC_EVIDENCE_COLUMNS = Object.freeze([
+  "stationId", "lineId", "facilityType", "evidenceKind", "sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash", "statusMeaning",
+]);
+
+async function pinnedKricCoverageInputs(t) {
+  const read = await candidatePinnedReader();
+  const [inventory, sourceSnapshotPolicies, canonical] = await Promise.all([
+    candidatePinnedJson(read, "tools/datapack/source-inventory.json"),
+    candidatePinnedJson(read, "tools/datapack/release/source-snapshots.json"),
+    candidatePinnedJson(read, "tools/datapack/release/capital-production-canonical-pack.json"),
+  ]);
+  const { snapshotPath } = inventory.sources.find(({ id }) => id === KRIC_STANDARD).accessibilityAdmissionEvidence;
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-kric-coverage-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  await mkdir(path.dirname(path.join(repositoryRoot, snapshotPath)), { recursive: true });
+  await writeFile(path.join(repositoryRoot, snapshotPath), await read(snapshotPath));
+  const snapshots = await loadAccessibilityAdmissionSnapshots({
+    sources: inventory.sources, referencedSourceIds: new Set([KRIC_STANDARD]), repositoryRoot,
+  });
+  return { inventory, sourceSnapshotPolicies, pack: canonical.packs[0], snapshots, snapshot: snapshots[0], repositoryRoot };
+}
+
+async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, snapshots, repositoryRoot }, evidenceRows, { stationLinesReadable = true } = {}) {
+  const directory = await mkdtemp(path.join(repositoryRoot, "pack-"));
+  const sqlitePath = path.join(directory, "pack.sqlite");
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(`
+    CREATE TABLE operators (id TEXT${stationLinesReadable ? ", name_ko TEXT" : ""});
+    CREATE TABLE lines (id TEXT, operator_id TEXT, name_ko TEXT);
+    CREATE TABLE stations (id TEXT, name_ko TEXT, region TEXT);
+    CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
+    CREATE TABLE station_facility_evidence (station_id TEXT, line_id TEXT, facility_type TEXT, evidence_kind TEXT, source_id TEXT,
+      source_snapshot_id TEXT, provider_record_hash TEXT, evidence_hash TEXT, status_meaning TEXT);
+  `);
+  const insertAll = (table, rows) => {
+    const statement = database.prepare(`INSERT INTO ${table} VALUES (${rows[0].map(() => "?").join(", ")})`);
+    for (const row of rows) statement.run(...row);
+  };
+  insertAll("operators", pack.operators.map(({ id, nameKo }) => (stationLinesReadable ? [id, nameKo] : [id])));
+  insertAll("lines", pack.lines.map(({ id, operatorId, nameKo }) => [id, operatorId, nameKo]));
+  insertAll("stations", pack.stations.map(({ id, nameKo, region }) => [id, nameKo, region]));
+  insertAll("station_lines", pack.stationLines.map(({ stationId, lineId }) => [stationId, lineId]));
+  insertAll("station_facility_evidence", evidenceRows.map((row) => KRIC_EVIDENCE_COLUMNS.map((column) => row[column])));
+  database.close();
+  const bytes = await readFile(sqlitePath);
+  await mkdir(path.join(directory, "catalog"));
+  await writeFile(path.join(directory, "catalog", "pack.sqlite.gz"), gzipSync(bytes));
+  const artifacts = await loadSelectableAccessibilityArtifacts({
+    manifest: { packs: [{ id: "nationwide", url: "https://example.invalid/catalog/pack.sqlite.gz", sqliteSha256: hashBytes(bytes) }] },
+    manifestRoot: directory, bundledIndex: { packs: [] }, bundledRoot: directory,
+  });
+  return buildAccessibilitySourceCoverageReport({
+    artifacts, inventory, snapshots, sourceSnapshotPolicies, evaluatedAt: KRIC_EVALUATED_AT,
+  });
+}
+
+// stationCnvFacl 조회 결과로 낸 상태 증거의 계약: provider hash는 조회 hash, evidence hash는 (snapshot, 조회 tuple, 유형, 상태)의 hash다.
+function kricStatusEvidence(snapshot, { stationId, lineId, facilityType, evidenceKind, statusMeaning }) {
+  const query = snapshot.queries.find((candidate) => candidate.stationId === stationId && candidate.lineId === lineId);
+  const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
+  return {
+    stationId, lineId, facilityType, evidenceKind, statusMeaning,
+    sourceId: KRIC_STANDARD,
+    sourceSnapshotId: snapshot.snapshotId,
+    providerRecordHash: query.providerRecordHash,
+    evidenceHash: hash(JSON.stringify({ snapshotId: snapshot.snapshotId, query: tuple, type: facilityType, evidenceKind })),
+  };
+}
+
+test("#3036 사당 4호선 에스컬레이터 UNKNOWN 증거는 고정 KRIC snapshot에 결속되어 coverage report가 GO다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  })]);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("#3036 후보 팩 생산 규칙이 낸 KRIC 시설 증거는 세 상태 모두 coverage report에서 결속된다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const { stationFacilityEvidence } = withCapitalKricStandardFacilities({ pack: inputs.pack, snapshot: inputs.snapshot });
+  const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
+  assert.deepEqual(new Set(kricEvidence.map(({ evidenceKind, statusMeaning }) => `${evidenceKind}:${statusMeaning}`)), new Set([
+    "EXISTS:STATIC_LOCATION",
+    "NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE",
+    "UNKNOWN:SOURCE_DOES_NOT_COVER_TYPE",
+    "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY",
+    "UNKNOWN:STATION_LINE_NOT_QUERIED",
+  ]));
+
+  const report = await kricCoverageReport(inputs, kricEvidence);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+for (const [name, evidence] of [
+  ["에스컬레이터를 다른 노선 조회에 실렸다고 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "LISTED_ON_OTHER_LINE_QUERY",
+  }],
+  ["원천이 다루는 휠체어리프트를 원천 밖 유형이라 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  }],
+  ["신당 6호선 조회에 실린 휠체어리프트를 원천 밖 유형이라 적은 2호선 UNKNOWN", {
+    stationId: "station-e43cb7fb4322", lineId: "seoul-2", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  }],
+  ["청구 6호선 조회에 실린 승강기를 5호선에서 부재라 적은 NOT_EXISTS", {
+    stationId: "station-198b6e06f06c", lineId: "line-80fc4d5350d4", facilityType: "ELEVATOR", evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+  }],
+  ["형제 역-노선이 조회되지 않은 서울역 4호선 휠체어리프트를 부재라 적은 NOT_EXISTS", {
+    stationId: "station-2af75c3d707b", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+  }],
+  ["2·4호선이 모두 조회된 사당 휠체어리프트를 형제 역-노선 미조회라 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "STATION_LINE_NOT_QUERIED",
+  }],
+  ["상태 의미가 없는 에스컬레이터 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: null,
+  }],
+]) {
+  test(`#3036 snapshot과 어긋난 증거(${name})는 결속되지 않아 NO_GO다`, async (t) => {
+    const inputs = await pinnedKricCoverageInputs(t);
+    const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)]);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations, {
+      ...emptyViolations(),
+      provenance: [
+        `manifest-nationwide:${evidence.stationId}|${evidence.lineId}|${evidence.facilityType}|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+      ],
+    });
+  });
+}
+
+// 결속은 상태 종류, provider hash, evidence hash 세 항이 모두 맞아야 한다. 참 상태(사당 4호선 에스컬레이터 UNKNOWN)에서 한 항만 바꾸고 나머지 둘은 참 값으로 둔다.
+const SADANG_ESCALATOR_UNKNOWN = Object.freeze({
+  stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+});
+
+for (const [term, tamper] of [
+  ["상태 종류(NOT_EXISTS)", () => ({ evidenceKind: "NOT_EXISTS" })],
+  ["provider hash", () => ({ providerRecordHash: hash("다른 조회의 provider hash") })],
+  ["evidence hash", () => ({ evidenceHash: hash("다른 상태의 evidence hash") })],
+]) {
+  test(`#3036 참 UNKNOWN 증거에서 ${term}만 바꾸면 나머지 둘이 참이어도 결속되지 않아 NO_GO다`, async (t) => {
+    const inputs = await pinnedKricCoverageInputs(t);
+    const evidence = { ...kricStatusEvidence(inputs.snapshot, SADANG_ESCALATOR_UNKNOWN), ...tamper() };
+    const report = await kricCoverageReport(inputs, [evidence]);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations.provenance, [
+      `manifest-nationwide:${evidence.stationId}|${evidence.lineId}|${evidence.facilityType}|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+    ]);
+  });
+}
+
+test("#3036 결과 03이 없어 조회별 코드를 쓰지 않는 snapshot의 KRIC 세 상태 증거도 coverage report에서 결속되어 GO다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const queries = inputs.snapshot.queries.filter(({ providerResultCode }) => providerResultCode !== "03")
+    .map(({ providerResultCode: _providerResultCode, ...query }) => query);
+  const snapshot = { ...inputs.snapshot, providerResultCode: "00", queries };
+  const { stationFacilityEvidence } = withCapitalKricStandardFacilities({ pack: inputs.pack, snapshot });
+  const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
+  assert.equal(queries.some((query) => "providerResultCode" in query), false);
+  assert.equal(kricEvidence.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 141);
+
+  const report = await kricCoverageReport({ ...inputs, snapshots: [snapshot] }, kricEvidence);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("#3036 역-노선 표를 읽을 수 없는 artifact의 KRIC 상태 증거는 형제 역-노선을 확인할 수 없어 결속되지 않는다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const evidence = {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  };
+  const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)], { stationLinesReadable: false });
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "manifest-nationwide:station-sadang|seoul-4|ESCALATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
 });
