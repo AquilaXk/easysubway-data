@@ -38,6 +38,6 @@ export function stepConclusion(steps, name) {
 /** 심볼릭 링크가 아닌 일반 파일이고 크기 상한 안일 때만 읽는다. 아니면 code로 실패한다. */
 export async function readReplaySourceFile(file, code) {
   const stat = await lstat(file).catch(() => null);
-  if (stat === null || !stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES) fail(code, `${path.basename(file)} is not a regular file within the size limit`);
+  if (stat === null || !stat.isFile() || stat.size > MAX_FILE_BYTES) fail(code, `${path.basename(file)} is not a regular file within the size limit`);
   return readFile(file);
 }
