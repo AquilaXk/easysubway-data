@@ -15,6 +15,8 @@ import {
   loadSelectableAccessibilityArtifacts,
   manifestAssetRoot,
 } from "./build-accessibility-source-coverage-report.mjs";
+import { withCapitalKricStandardFacilities } from "./prepare-nationwide-candidate-run.mjs";
+import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const EVALUATED_AT = "2026-07-28T00:00:00.000Z";
 
@@ -1487,4 +1489,98 @@ test("rowsSha256과 다른 지역 row는 hash 밖 필드만 바뀌어도 claim�
   assert.equal(report.decision, "NO_GO");
   assert.equal(report.violations.provenance.filter((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")).length,
     input.artifacts[0].claims.length);
+});
+
+// #3036 리뷰 F1: release-candidate 단계의 coverage report는 KRIC 세 상태 증거를 후보가 고정한 snapshot에서 다시 유도해 결속한다.
+const KRIC_STANDARD = "kric-station-convenience-standard";
+const KRIC_EVALUATED_AT = "2026-10-23T00:00:00.000Z";
+const KRIC_EVIDENCE_COLUMNS = Object.freeze([
+  "stationId", "lineId", "facilityType", "evidenceKind", "sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash", "statusMeaning",
+]);
+
+async function pinnedKricCoverageInputs(t) {
+  const read = await candidatePinnedReader();
+  const [inventory, sourceSnapshotPolicies, canonical] = await Promise.all([
+    candidatePinnedJson(read, "tools/datapack/source-inventory.json"),
+    candidatePinnedJson(read, "tools/datapack/release/source-snapshots.json"),
+    candidatePinnedJson(read, "tools/datapack/release/capital-production-canonical-pack.json"),
+  ]);
+  const { snapshotPath } = inventory.sources.find(({ id }) => id === KRIC_STANDARD).accessibilityAdmissionEvidence;
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-kric-coverage-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  await mkdir(path.dirname(path.join(repositoryRoot, snapshotPath)), { recursive: true });
+  await writeFile(path.join(repositoryRoot, snapshotPath), await read(snapshotPath));
+  const snapshots = await loadAccessibilityAdmissionSnapshots({
+    sources: inventory.sources, referencedSourceIds: new Set([KRIC_STANDARD]), repositoryRoot,
+  });
+  return { inventory, sourceSnapshotPolicies, pack: canonical.packs[0], snapshots, snapshot: snapshots[0], repositoryRoot };
+}
+
+async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, snapshots, repositoryRoot }, evidenceRows) {
+  const directory = await mkdtemp(path.join(repositoryRoot, "pack-"));
+  const sqlitePath = path.join(directory, "pack.sqlite");
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(`
+    CREATE TABLE operators (id TEXT, name_ko TEXT);
+    CREATE TABLE lines (id TEXT, operator_id TEXT, name_ko TEXT);
+    CREATE TABLE stations (id TEXT, name_ko TEXT, region TEXT);
+    CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
+    CREATE TABLE station_facility_evidence (station_id TEXT, line_id TEXT, facility_type TEXT, evidence_kind TEXT, source_id TEXT,
+      source_snapshot_id TEXT, provider_record_hash TEXT, evidence_hash TEXT, status_meaning TEXT);
+  `);
+  const insertAll = (table, rows) => {
+    const statement = database.prepare(`INSERT INTO ${table} VALUES (${rows[0].map(() => "?").join(", ")})`);
+    for (const row of rows) statement.run(...row);
+  };
+  insertAll("operators", pack.operators.map(({ id, nameKo }) => [id, nameKo]));
+  insertAll("lines", pack.lines.map(({ id, operatorId, nameKo }) => [id, operatorId, nameKo]));
+  insertAll("stations", pack.stations.map(({ id, nameKo, region }) => [id, nameKo, region]));
+  insertAll("station_lines", pack.stationLines.map(({ stationId, lineId }) => [stationId, lineId]));
+  insertAll("station_facility_evidence", evidenceRows.map((row) => KRIC_EVIDENCE_COLUMNS.map((column) => row[column])));
+  database.close();
+  const bytes = await readFile(sqlitePath);
+  await mkdir(path.join(directory, "catalog"));
+  await writeFile(path.join(directory, "catalog", "pack.sqlite.gz"), gzipSync(bytes));
+  const artifacts = await loadSelectableAccessibilityArtifacts({
+    manifest: { packs: [{ id: "nationwide", url: "https://example.invalid/catalog/pack.sqlite.gz", sqliteSha256: hashBytes(bytes) }] },
+    manifestRoot: directory, bundledIndex: { packs: [] }, bundledRoot: directory,
+  });
+  return buildAccessibilitySourceCoverageReport({
+    artifacts, inventory, snapshots, sourceSnapshotPolicies, evaluatedAt: KRIC_EVALUATED_AT,
+  });
+}
+
+// stationCnvFacl 조회 결과로 낸 상태 증거의 계약: provider hash는 조회 hash, evidence hash는 (snapshot, 조회 tuple, 유형, 상태)의 hash다.
+function kricStatusEvidence(snapshot, { stationId, lineId, facilityType, evidenceKind, statusMeaning }) {
+  const query = snapshot.queries.find((candidate) => candidate.stationId === stationId && candidate.lineId === lineId);
+  const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
+  return {
+    stationId, lineId, facilityType, evidenceKind, statusMeaning,
+    sourceId: KRIC_STANDARD,
+    sourceSnapshotId: snapshot.snapshotId,
+    providerRecordHash: query.providerRecordHash,
+    evidenceHash: hash(JSON.stringify({ snapshotId: snapshot.snapshotId, query: tuple, type: facilityType, evidenceKind })),
+  };
+}
+
+test("#3036 리뷰 F1: 사당 4호선 에스컬레이터 UNKNOWN 증거는 고정 KRIC snapshot에 결속되어 coverage report가 GO다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  })]);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("#3036 리뷰 F1: 후보 팩 생산 규칙이 낸 KRIC 시설 증거는 세 상태 모두 coverage report에서 결속된다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const { stationFacilityEvidence } = withCapitalKricStandardFacilities({ pack: inputs.pack, snapshot: inputs.snapshot });
+  const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
+  assert.deepEqual(new Set(kricEvidence.map(({ evidenceKind }) => evidenceKind)), new Set(["EXISTS", "NOT_EXISTS", "UNKNOWN"]));
+
+  const report = await kricCoverageReport(inputs, kricEvidence);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
 });
