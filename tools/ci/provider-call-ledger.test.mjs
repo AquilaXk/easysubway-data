@@ -117,6 +117,23 @@ test("artifact가 없거나 계측 파일이 없거나 읽을 수 없으면 그 
   assert.deepEqual(ledger.entries.map(({ runId, requestCounts }) => [runId, requestCounts]), ids.map((id) => [id, null]));
 });
 
+// F1(PR #1452): 공급자를 부르지 않았다는 증명은 "건너뛴 빈 job" 하나뿐이다. 대기·취소·실패한 job은 step이 비었거나 일부만 있어도 호출 여부를 알 수 없어 기록 전체가 읽을 수 없게 된다.
+test("job 모양별: 건너뛴 빈 job만 호출 없음이고 대기·취소·실패 job은 step이 비었거나 일부만 있어도 증명되지 않는다", async () => {
+  const shaped = (status, conclusion, steps) => ({ id: 52, run_id: 51, name: JOB, status, conclusion, steps });
+  const setUp = { name: "Set up job", status: "completed", conclusion: "success" };
+  const ledgerFor = (candidate, runOverrides = {}) => read(github({ runs: { workflow_dispatch: [run(51, "2026-10-20T01:00:00Z", runOverrides), currentRun()] }, jobs: { 51: [candidate] } }));
+  assert.deepEqual((await ledgerFor(shaped("completed", "skipped", []))).entries, []);
+  for (const [label, candidate] of [
+    ["queued, 빈 step", shaped("queued", null, [])],
+    ["cancelled, 빈 step", shaped("completed", "cancelled", [])],
+    ["failure, 빈 step", shaped("completed", "failure", [])],
+    ["cancelled, collector 없는 일부 step", shaped("completed", "cancelled", [setUp])],
+    ["failure, collector 없는 일부 step", shaped("completed", "failure", [setUp])],
+    ["skipped지만 collector 없는 일부 step", shaped("completed", "skipped", [setUp])],
+  ]) await assert.rejects(ledgerFor(candidate), { reason: "COLLECTOR_STEP_SHAPE" }, label);
+  await assert.rejects(ledgerFor(shaped("queued", null, []), { status: "queued" }), { reason: "COLLECTOR_STEP_SHAPE" }, "queued run");
+});
+
 test("아직 끝나지 않은 run(수집 중이거나 증거 업로드 전)은 요청 수를 증명할 수 없어 null이다", async () => {
   const fixture = github({
     runs: { workflow_dispatch: [run(21, "2026-10-20T05:00:00Z", { status: "in_progress" }), currentRun()] },
