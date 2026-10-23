@@ -168,6 +168,21 @@ test("취소된 대기 run(완료·cancelled·job 0건)은 기록에 넣지 않�
   ]) await assert.rejects(ledgerWith(runOverrides), { reason: "JOB_LIST_EMPTY" }, JSON.stringify(runOverrides));
 });
 
+// P3-d(PR #1452): 호출 기록이 한 KST 날에 낼 수 있는 가장 큰 기록(event마다 한 페이지 100개)을 판정이 읽는 형식이 거부하지 않는다.
+test("run 창 한도까지 찬 기록(schedule 100개와 dispatch 100개, 이 run 제외)도 판정이 읽는 형식을 통과한다", async () => {
+  const schedule = Array.from({ length: 100 }, (_, index) => run(1_000 + index, "2026-10-20T01:00:00Z", { event: "schedule" }));
+  const dispatch = [...Array.from({ length: 99 }, (_, index) => run(2_000 + index, "2026-10-20T02:00:00Z")), currentRun()];
+  const priors = [...schedule, ...dispatch.slice(0, 99)];
+  const fixture = github({
+    runs: { schedule, workflow_dispatch: dispatch },
+    jobs: Object.fromEntries(priors.map(({ id }) => [id, [job(id, "failure")]])),
+    artifacts: Object.fromEntries(priors.map(({ id }) => [id, telemetry({ [TOPOLOGY]: 1 })])),
+  });
+  const ledger = await read(fixture);
+  assert.equal(ledger.entries.length, 199);
+  assert.equal(parseProviderCallLedger(ledger).entries.length, 199);
+});
+
 test("아직 끝나지 않은 run(수집 중이거나 증거 업로드 전)은 요청 수를 증명할 수 없어 null이다", async () => {
   const fixture = github({
     runs: { workflow_dispatch: [run(21, "2026-10-20T05:00:00Z", { status: "in_progress" }), currentRun()] },

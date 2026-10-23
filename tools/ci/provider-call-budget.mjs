@@ -5,8 +5,16 @@
 //   기록을 읽지 못했거나 요청 수 증거가 없는 run이 있다       PROVIDER_CALL_EVIDENCE_MISSING      쓴 요청 수를 모르면 추정하지 않고 막는다.
 //   묶음 operation을 부른 run이 하루 상한에 닿았다            PROVIDER_DAILY_ATTEMPTS_EXHAUSTED   싼 실패가 되풀이돼도 그날은 더 보내지 않는다.
 //   operation 하나라도 쓴 요청 + 이번 묶음 요청이 한도를 넘는다 PROVIDER_DAILY_BUDGET_INSUFFICIENT  묶음 중간에 한도에 닿지 않게 아예 시작하지 않는다.
-// 어느 거부든 그 KST 날이 끝날 때까지 풀리지 않는다(기록은 줄지 않는다). 판정은 묶음을 빼고, workflow가 job을 실패시켜 실패 이슈로 드러낸다.
+// 상한과 한도 거부(ATTEMPTS_EXHAUSTED, BUDGET_INSUFFICIENT)는 그 KST 날이 끝날 때까지 풀리지 않는다(쓴 요청 수는 줄지 않는다).
+// 증거 거부(EVIDENCE_MISSING)는 원인에 따라 다르다. run 창을 읽지 못한 경우와 아직 진행 중인 run(요청 수가 아직 없다)은 다음 run에서 풀릴 수 있다.
+// 끝났는데 계측 파일을 증명할 수 없는 run(artifact·파일 없음, 손상, 기록 유실)은 그 날이 끝날 때까지 증명되지 않은 채 남는다.
+// 판정은 묶음을 빼고, workflow가 job을 실패시켜 실패 이슈로 드러낸다.
+import { isSafeToken } from "../lib/safe-token.mjs";
+import { MAX_RUNS } from "./collection-run-window.mjs";
+
 export const PROVIDER_CALL_LEDGER_SCHEMA_VERSION = 1;
+/** 호출 기록이 읽는 source-reverification 실행 event. 호출 기록(provider-call-ledger)이 이 목록으로 run 창을 조회한다. */
+export const SOURCE_REVERIFICATION_EVENTS = Object.freeze(["schedule", "workflow_dispatch"]);
 export const PROVIDER_BUDGET_REASON = Object.freeze({
   EVIDENCE_MISSING: "PROVIDER_CALL_EVIDENCE_MISSING",
   ATTEMPTS_EXHAUSTED: "PROVIDER_DAILY_ATTEMPTS_EXHAUSTED",
@@ -16,10 +24,8 @@ export const PROVIDER_BUDGET_REASON = Object.freeze({
 export const PROVIDER_BUDGET_BLOCK_STEP = "Fail recipes blocked by the provider daily call budget";
 
 const POLICY_KIND = "provider-daily-call-budget-policy";
-// 계측 기록의 원천 id 형식(source-fetch-telemetry의 안전한 토큰)과 같다.
-const SOURCE_ID = /^[A-Za-z0-9._-]{1,48}$/u;
-// 한 KST 날 run 목록은 event(schedule·workflow_dispatch)마다 한 페이지 100개까지다(collection-run-window).
-const MAX_LEDGER_ENTRIES = 200;
+// 한 KST 날 run 목록은 event마다 한 페이지 MAX_RUNS개까지라서 기록 항목도 그 곱을 넘지 않는다(collection-run-window).
+const MAX_LEDGER_ENTRIES = MAX_RUNS * SOURCE_REVERIFICATION_EVENTS.length;
 const OUTCOMES = new Set(["SUCCEEDED", "RUNNING", "FAILED"]);
 const QUOTA_WINDOW = /^\d{4}-\d{2}-\d{2}$/u;
 const REASON_CODE = /^[A-Z][A-Z0-9_]{0,63}$/u;
@@ -37,7 +43,7 @@ function inputInvalid(detail) {
 }
 
 function parseOperation(operation) {
-  if (!isPlainObject(operation) || typeof operation.sourceId !== "string" || !SOURCE_ID.test(operation.sourceId)) policyInvalid("operation sourceId");
+  if (!isPlainObject(operation) || !isSafeToken(operation.sourceId)) policyInvalid("operation sourceId");
   if (!positiveInteger(operation.dailyRequestLimit)) policyInvalid(`${operation.sourceId} dailyRequestLimit must be a positive integer`);
   if (typeof operation.expectedRequestsEvidence !== "string" || operation.expectedRequestsEvidence === "") policyInvalid(`${operation.sourceId} expectedRequestsEvidence`);
   if (typeof operation.datasetUrl !== "string" || !operation.datasetUrl.startsWith("https://")) policyInvalid(`${operation.sourceId} datasetUrl`);
@@ -58,7 +64,7 @@ function parseRequestCounts(requestCounts) {
   if (requestCounts === null) return null;
   if (!isPlainObject(requestCounts)) inputInvalid("call ledger requestCounts");
   for (const [sourceId, count] of Object.entries(requestCounts)) {
-    if (!SOURCE_ID.test(sourceId) || !nonnegativeInteger(count)) inputInvalid(`call ledger requestCounts ${sourceId}`);
+    if (!isSafeToken(sourceId) || !nonnegativeInteger(count)) inputInvalid(`call ledger requestCounts ${sourceId}`);
   }
   return Object.freeze({ ...requestCounts });
 }

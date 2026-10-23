@@ -13,13 +13,14 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { COLLECTION_OUTCOME, COLLECTION_REPOSITORY, CollectionWindowError, downloadArtifactWithGh, inspectCollectionWindow, readEvidenceFile } from "./collection-run-window.mjs";
+import { isSafeToken } from "../lib/safe-token.mjs";
 import { INTERNAL_ERROR_REASON } from "./failure-reason.mjs";
-import { PROVIDER_CALL_LEDGER_SCHEMA_VERSION } from "./provider-call-budget.mjs";
+import { PROVIDER_CALL_LEDGER_SCHEMA_VERSION, SOURCE_REVERIFICATION_EVENTS } from "./provider-call-budget.mjs";
 
 /** source-reverification이 매 run 올리는 증거 artifact(`<artifactPrefix>-<run id>`)와 그 안의 시도별 계측 파일. */
 export const SOURCE_REVERIFICATION_CALL_EVIDENCE = Object.freeze({
   workflowFile: "source-reverification.yml",
-  events: Object.freeze(["schedule", "workflow_dispatch"]),
+  events: SOURCE_REVERIFICATION_EVENTS,
   jobName: "Source reverification",
   collectorStepName: "Reverify due P7D sources",
   artifactPrefix: "source-reverification-calls",
@@ -29,7 +30,6 @@ export const SOURCE_REVERIFICATION_CALL_EVIDENCE = Object.freeze({
 });
 
 // source-fetch-telemetry의 기록 형식: 원천 id는 안전한 토큰, 시도 번호는 1부터, 결과는 네 가지다.
-const SOURCE_ID = /^[A-Za-z0-9._-]{1,48}$/u;
 const ATTEMPT_OUTCOMES = new Set(["success", "http_error", "retryable_result", "error"]);
 
 function telemetryInvalid(detail) {
@@ -44,7 +44,7 @@ function attemptSourceId(line, index) {
     return telemetryInvalid(`line ${index + 1} is not JSON`);
   }
   if (record === null || typeof record !== "object" || Array.isArray(record)
-    || typeof record.sourceId !== "string" || !SOURCE_ID.test(record.sourceId)
+    || !isSafeToken(record.sourceId)
     || !Number.isSafeInteger(record.attempt) || record.attempt < 1 || !ATTEMPT_OUTCOMES.has(record.outcome)) {
     return telemetryInvalid(`line ${index + 1} is not an attempt record`);
   }

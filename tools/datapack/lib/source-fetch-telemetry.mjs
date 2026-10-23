@@ -9,6 +9,7 @@
 // 환경 변수가 없으면 아무것도 하지 않으므로 이 파일을 쓰지 않는 수집(ITX 등)은 영향이 없다.
 import { appendFileSync } from "node:fs";
 
+import { isSafeToken } from "../../lib/safe-token.mjs";
 import { causeChainDetails } from "./transient-retry.mjs";
 
 export const SOURCE_FETCH_TELEMETRY_PATH_ENV = "SOURCE_FETCH_TELEMETRY_PATH";
@@ -16,8 +17,6 @@ export const UNKNOWN_HOST = "unknown";
 export const UNKNOWN_SOURCE = "unknown";
 export const UNKNOWN_ERROR_CODE = "UNKNOWN";
 export const UNKNOWN_STAGE = "unknown";
-
-const SAFE_TOKEN = /^[A-Za-z0-9._-]{1,48}$/u;
 
 // undici·Node 오류 코드에서 실패 단계를 유추한다. 단계가 코드만으로 정해지지 않는 오류(ECONNRESET·UND_ERR_SOCKET·abort)는 unknown이다.
 const STAGE_BY_ERROR_CODE = Object.freeze({
@@ -34,7 +33,7 @@ const STAGE_BY_ERROR_CODE = Object.freeze({
   UND_ERR_RES_CONTENT_LENGTH_MISMATCH: "body",
 });
 
-const safeToken = (value) => (typeof value === "string" && SAFE_TOKEN.test(value) ? value : undefined);
+const safeToken = (value) => (isSafeToken(value) ? value : undefined);
 
 /** URL 문자열·URL 객체에서 호스트만 꺼낸다. 읽을 수 없으면 UNKNOWN_HOST다. 경로·쿼리·사용자 정보는 버린다. */
 export function hostOf(url) {

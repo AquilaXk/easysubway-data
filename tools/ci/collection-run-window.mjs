@@ -12,7 +12,8 @@ const execFileAsync = promisify(execFile);
 export const COLLECTION_REPOSITORY = "AquilaXk/easysubway-data";
 const EXPECTED_REF = "refs/heads/main";
 const EXPECTED_BRANCH = "main";
-const MAX_RUNS = 100;
+/** 한 workflow의 같은 KST 날 run은 event마다 한 페이지, 이 수까지만 읽는다. 넘으면 RUN_LIST_LIMIT로 멈춘다. */
+export const MAX_RUNS = 100;
 const MAX_JOBS = 100;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MILLIS = 10_000;

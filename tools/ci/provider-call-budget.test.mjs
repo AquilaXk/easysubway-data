@@ -91,7 +91,9 @@ test("기록 형식 검사: 음수·소수 요청 수, 안전하지 않은 원�
   ];
   for (const entries of bad) assert.throws(() => ledger(entries), /^Error: PROVIDER_BUDGET_INPUT_INVALID: call ledger/u);
   assert.throws(() => parseProviderCallLedger({ schemaVersion: 2, quotaWindow: "2026-10-20", entries: [] }), /PROVIDER_BUDGET_INPUT_INVALID/u);
-  assert.throws(() => parseProviderCallLedger({ schemaVersion: 1, quotaWindow: "2026-10-20", entries: Array.from({ length: 201 }, (_, index) => entry(index + 1, {})) }), /PROVIDER_BUDGET_INPUT_INVALID: call ledger/u);
+  const withRuns = (count) => ({ schemaVersion: 1, quotaWindow: "2026-10-20", entries: Array.from({ length: count }, (_, index) => entry(index + 1, {})) });
+  assert.equal(parseProviderCallLedger(withRuns(200)).entries.length, 200);
+  assert.throws(() => parseProviderCallLedger(withRuns(201)), /PROVIDER_BUDGET_INPUT_INVALID: call ledger/u);
 });
 
 test("정책 형식 검사: 한도·상한은 양의 정수이고 원천은 한 번씩만 있다", () => {
