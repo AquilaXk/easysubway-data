@@ -170,9 +170,12 @@ jobs:
           REPLAY_RUN_ID: ${{ steps.decision.outputs.replay_run_id }}
         run: |
           set -euo pipefail
-          # 재생 원본은 main에서 돈 이 workflow의 run이어야 한다. 다른 workflow·브랜치의 같은 이름 artifact는 받지 않는다.
-          source_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REPLAY_RUN_ID}" --jq '[.path, .head_branch] | join(" ")')"
-          [[ "${source_run}" == ".github/workflows/source-reverification.yml main" ]] || { echo "replay source run ${REPLAY_RUN_ID} is not a source-reverification.yml run on main (${source_run})" >&2; exit 1; }
+          # 재생 원본은 이 저장소 main에서 돈 이 workflow의 run이고 재확인과 재생 묶음 업로드가 성공한 run이어야 한다. 어긋나면 artifact를 받지 않고 실패한다.
+          source_root="${RUNNER_TEMP}/source-reverification-replay-source/${GITHUB_RUN_ID}"
+          mkdir -p "${source_root}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REPLAY_RUN_ID}" > "${source_root}/run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REPLAY_RUN_ID}/jobs?filter=all&per_page=100" > "${source_root}/jobs.json"
+          node tools/ci/verify-source-reverification-replay-run.mjs --source-run-id "${REPLAY_RUN_ID}" --repository "${GITHUB_REPOSITORY}" --run "${source_root}/run.json" --jobs "${source_root}/jobs.json"
       - name: Download the retained reverification collection
         if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.decision.outputs.replay_run_id != '' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c

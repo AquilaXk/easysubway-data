@@ -3,6 +3,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
+import { SOURCE_REVERIFICATION_JOB, SOURCE_REVERIFICATION_REPLAY_SOURCE_STEPS, SOURCE_REVERIFICATION_WORKFLOW_PATH } from "./verify-source-reverification-replay-run.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 workflow 계약. 판정(DUE)이 고른 recipe를 claim → 수집·게시·등록 → 재확인 → push → App 토큰 PR 하나로 올린다.
 // 변수 DATAPACK_SCHEDULED_SOURCE_REVERIFICATION이 true일 때만 정기 실행이 돈다(기본 꺼짐). 이상은 job을 실패시켜 #926 실패 이슈로 드러난다.
@@ -252,8 +253,9 @@ test("재생은 claim 뒤에 원본 run이 main의 이 workflow인지 확인하�
   assert.equal(ifCondition(verify.block), REPLAYING);
   assert.match(verify.block, /\n          GH_TOKEN: \$\{\{ github\.token \}\}\n/u);
   assert.match(verify.block, /\n          REPLAY_RUN_ID: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
-  assert.match(verify.block, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{REPLAY_RUN_ID\}" --jq '\[\.path, \.head_branch\] \| join\(" "\)'/u);
-  assert.match(verify.block, /\.github\/workflows\/source-reverification\.yml main/u);
+  assert.match(verify.block, /\n          gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{REPLAY_RUN_ID\}" > "\$\{source_root\}\/run\.json"\n/u);
+  assert.match(verify.block, /\n          gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{REPLAY_RUN_ID\}\/jobs\?filter=all&per_page=100" > "\$\{source_root\}\/jobs\.json"\n/u);
+  assert.match(verify.block, /\n          node tools\/ci\/verify-source-reverification-replay-run\.mjs --source-run-id "\$\{REPLAY_RUN_ID\}" --repository "\$\{GITHUB_REPOSITORY\}" --run "\$\{source_root\}\/run\.json" --jobs "\$\{source_root\}\/jobs\.json"$/u);
   assert.doesNotMatch(verify.block, /secrets\./u);
   const download = step("Download the retained reverification collection");
   assert.equal(ifCondition(download.block), REPLAYING);
@@ -264,6 +266,12 @@ test("재생은 claim 뒤에 원본 run이 main의 이 workflow인지 확인하�
   before("Claim exact main before provider access", verify.name);
   before(verify.name, download.name);
   before(download.name, "Reverify due P7D sources");
+});
+
+test("재생 원본 확인 도구가 읽는 workflow 경로·job 이름·step 이름은 이 workflow의 실제 이름이다 (#3036)", () => {
+  assert.equal(SOURCE_REVERIFICATION_WORKFLOW_PATH, `.github/workflows/${FILE}`);
+  assert.match(yml, new RegExp(`\\n  reverify:\\n    name: ${SOURCE_REVERIFICATION_JOB}\\n`, "u"));
+  for (const name of SOURCE_REVERIFICATION_REPLAY_SOURCE_STEPS) assert.equal(names().filter((stepName) => stepName === name).length, 1, name);
 });
 
 test("재생이 남긴 등록이 없으면 push·PR 없이 이유를 notice로 남기고 claim은 정리 step이 지운다 (#3036)", () => {

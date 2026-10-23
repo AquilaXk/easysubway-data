@@ -705,6 +705,7 @@
     {"path":"tools/ci/source-derivative-rebinding-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/decide-source-reverification.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":120},
     {"path":"tools/ci/source-reverification-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/ci/verify-source-reverification-replay-run.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/probe-provider-reachability.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/provider-reachability-probe-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/source-reachability-probe-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
