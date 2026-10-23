@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { parseProviderCallLedger } from "./provider-call-budget.mjs";
+import { evaluateProviderCallAllowance, parseProviderCallBudgetPolicy, parseProviderCallLedger } from "./provider-call-budget.mjs";
 import {
   SOURCE_REVERIFICATION_CALL_EVIDENCE,
   countTelemetryRequests,
@@ -107,14 +107,32 @@ test("수집 step이 건너뛰어졌거나 job이 통째로 건너뛰어진 run�
 });
 
 test("artifact가 없거나 계측 파일이 없거나 읽을 수 없으면 그 run의 요청 수는 null이다 (판정이 fail closed한다)", async () => {
-  const ids = [11, 12, 13, 14];
+  const ids = [11, 12, 13, 14, 15];
   const fixture = github({
     runs: { workflow_dispatch: [...ids.map((id) => run(id, "2026-10-20T01:00:00Z")), currentRun()] },
     jobs: Object.fromEntries(ids.map((id) => [id, [job(id, "failure")]])),
     artifacts: { 12: "not json\n", 13: `${attempt(TOPOLOGY)}\n{"sourceId":"x"}\n`, 14: attempt("../../etc") },
   });
-  const ledger = await read(fixture);
+  // 15: artifact는 내려받아지지만 그 안에 계측 파일이 없다. workflow가 빈 파일을 먼저 만들므로 파일이 없다는 것은 쓴 요청 수를 증명할 수 없다는 뜻이다(0건이 아니다).
+  const downloadArtifact = async (args) => {
+    if (args.runId === 15) return;
+    await fixture.downloadArtifact(args);
+  };
+  const ledger = await read(fixture, { downloadArtifact });
   assert.deepEqual(ledger.entries.map(({ runId, requestCounts }) => [runId, requestCounts]), ids.map((id) => [id, null]));
+});
+
+test("수집 step에 들어갔지만 계측 파일이 없는 run이 있으면 그날 묶음은 시작하지 않는다 (0건으로 읽어 예산을 풀어주지 않는다)", async () => {
+  const fixture = github({
+    runs: { workflow_dispatch: [run(41, "2026-10-20T01:00:00Z"), currentRun()] },
+    jobs: { 41: [job(41, "failure")] },
+  });
+  const ledger = parseProviderCallLedger(await read(fixture, { downloadArtifact: async () => {} }));
+  const policy = parseProviderCallBudgetPolicy(JSON.parse(await readFile(new URL("../../release/product-gates/provider-daily-call-budget.json", import.meta.url), "utf8")));
+  const decision = evaluateProviderCallAllowance({ policy, ledger, sourceIds: [TOPOLOGY], expectedRequests: { [TOPOLOGY]: 114 } });
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, "PROVIDER_CALL_EVIDENCE_MISSING");
+  assert.match(decision.detail, /run 41/u);
 });
 
 // F1(PR #1452): 공급자를 부르지 않았다는 증명은 "건너뛴 빈 job" 하나뿐이다. 대기·취소·실패한 job은 step이 비었거나 일부만 있어도 호출 여부를 알 수 없어 기록 전체가 읽을 수 없게 된다.
