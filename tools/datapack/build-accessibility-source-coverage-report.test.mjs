@@ -1517,12 +1517,12 @@ async function pinnedKricCoverageInputs(t) {
   return { inventory, sourceSnapshotPolicies, pack: canonical.packs[0], snapshots, snapshot: snapshots[0], repositoryRoot };
 }
 
-async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, snapshots, repositoryRoot }, evidenceRows) {
+async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, snapshots, repositoryRoot }, evidenceRows, { operatorTable = true } = {}) {
   const directory = await mkdtemp(path.join(repositoryRoot, "pack-"));
   const sqlitePath = path.join(directory, "pack.sqlite");
   const database = new DatabaseSync(sqlitePath);
   database.exec(`
-    CREATE TABLE operators (id TEXT, name_ko TEXT);
+    CREATE TABLE operators (id TEXT${operatorTable ? ", name_ko TEXT" : ""});
     CREATE TABLE lines (id TEXT, operator_id TEXT, name_ko TEXT);
     CREATE TABLE stations (id TEXT, name_ko TEXT, region TEXT);
     CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
@@ -1533,7 +1533,7 @@ async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, sna
     const statement = database.prepare(`INSERT INTO ${table} VALUES (${rows[0].map(() => "?").join(", ")})`);
     for (const row of rows) statement.run(...row);
   };
-  insertAll("operators", pack.operators.map(({ id, nameKo }) => [id, nameKo]));
+  insertAll("operators", pack.operators.map(({ id, nameKo }) => (operatorTable ? [id, nameKo] : [id])));
   insertAll("lines", pack.lines.map(({ id, operatorId, nameKo }) => [id, operatorId, nameKo]));
   insertAll("stations", pack.stations.map(({ id, nameKo, region }) => [id, nameKo, region]));
   insertAll("station_lines", pack.stationLines.map(({ stationId, lineId }) => [stationId, lineId]));
@@ -1578,7 +1578,13 @@ test("#3036 리뷰 F1: 후보 팩 생산 규칙이 낸 KRIC 시설 증거는 세
   const inputs = await pinnedKricCoverageInputs(t);
   const { stationFacilityEvidence } = withCapitalKricStandardFacilities({ pack: inputs.pack, snapshot: inputs.snapshot });
   const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
-  assert.deepEqual(new Set(kricEvidence.map(({ evidenceKind }) => evidenceKind)), new Set(["EXISTS", "NOT_EXISTS", "UNKNOWN"]));
+  assert.deepEqual(new Set(kricEvidence.map(({ evidenceKind, statusMeaning }) => `${evidenceKind}:${statusMeaning}`)), new Set([
+    "EXISTS:STATIC_LOCATION",
+    "NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE",
+    "UNKNOWN:SOURCE_DOES_NOT_COVER_TYPE",
+    "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY",
+    "UNKNOWN:STATION_LINE_NOT_QUERIED",
+  ]));
 
   const report = await kricCoverageReport(inputs, kricEvidence);
 
@@ -1599,6 +1605,12 @@ for (const [name, evidence] of [
   ["청구 6호선 조회에 실린 승강기를 5호선에서 부재라 적은 NOT_EXISTS", {
     stationId: "station-198b6e06f06c", lineId: "line-80fc4d5350d4", facilityType: "ELEVATOR", evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
   }],
+  ["형제 역-노선이 조회되지 않은 서울역 4호선 휠체어리프트를 부재라 적은 NOT_EXISTS", {
+    stationId: "station-2af75c3d707b", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+  }],
+  ["2·4호선이 모두 조회된 사당 휠체어리프트를 형제 역-노선 미조회라 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "STATION_LINE_NOT_QUERIED",
+  }],
   ["상태 의미가 없는 에스컬레이터 UNKNOWN", {
     stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: null,
   }],
@@ -1616,3 +1628,16 @@ for (const [name, evidence] of [
     });
   });
 }
+
+test("#3036 리뷰 F2: 역-노선 표를 읽을 수 없는 artifact의 KRIC 상태 증거는 형제 역-노선을 확인할 수 없어 결속되지 않는다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const evidence = {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  };
+  const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)], { operatorTable: false });
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "manifest-nationwide:station-sadang|seoul-4|ESCALATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+});

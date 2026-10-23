@@ -7,7 +7,7 @@ import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-access
 import {
   KRIC_STANDARD_FACILITY_TYPES,
   KRIC_STANDARD_SOURCE_ID as KRIC_SOURCE_ID,
-  kricStandardListedTypesByStation,
+  kricStandardStationContexts,
   kricStandardQueryFacilities,
   validateKricStandardProviderRows,
 } from "./lib/kric-standard-facilities.mjs";
@@ -28,9 +28,8 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   if (kricSnapshot?.sourceId !== KRIC_SOURCE_ID || seoulSnapshot?.sourceId !== SEOUL_SOURCE_ID) {
     throw new Error("accessibility snapshot source identity mismatch");
   }
-  const mappings = new Map((input.stationMappings ?? [])
-    .filter(({ sourceId }) => sourceId === "molit-urban-rail-full-route")
-    .map((mapping) => [mapping.stationId, mapping]));
+  const packStationLines = (input.stationMappings ?? []).filter(({ sourceId }) => sourceId === "molit-urban-rail-full-route");
+  const mappings = new Map(packStationLines.map((mapping) => [mapping.stationId, mapping]));
   const facilityIdsByProviderRef = new Map();
   const providerRefsByFacilityId = new Map();
   for (const row of (input.facilityRows ?? []).filter(({ sourceId }) => sourceId === KRIC_SOURCE_ID)) {
@@ -53,7 +52,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   const absenceRows = [];
   const snapshotQueries = kricSnapshot.queries ?? [];
   validateKricStandardProviderRows(snapshotQueries);
-  const listedTypesByStation = kricStandardListedTypesByStation(snapshotQueries);
+  const stationContexts = kricStandardStationContexts(snapshotQueries, packStationLines);
   const regionalRoster = input.kricStandardAccessibilityRoster;
   const regionalRosterKeys = regionalRoster == null ? null : exactRosterKeys(regionalRoster);
   const regionalQueries = regionalRosterKeys == null
@@ -102,7 +101,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
       continue;
     }
     const { facilities, statusEvidence } = kricStandardQueryFacilities({
-      snapshot: kricSnapshot, query, stationName: stationLineIdentity(input, mapping).stationNameKo, listedTypesByStation,
+      snapshot: kricSnapshot, query, stationName: stationLineIdentity(input, mapping).stationNameKo, stationContexts,
     });
     for (const facility of facilities) {
       const { providerFacilityRef } = facility;

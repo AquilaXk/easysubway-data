@@ -20,8 +20,11 @@ const unknownState = (statusMeaning) => Object.freeze({
   evidenceKind: "UNKNOWN", installationStatus: "UNKNOWN", operationalStatus: "UNKNOWN",
   statusMeaning, confidence: 0, strictRouteEligibleReason: "FACILITY_PRESENCE_UNKNOWN",
 });
-const UNKNOWN_NOT_COVERED = unknownState("SOURCE_DOES_NOT_COVER_TYPE");
-const UNKNOWN_OTHER_LINE = unknownState("LISTED_ON_OTHER_LINE_QUERY");
+// 목록에 없다는 사실만으로 부재를 말할 수 없는 경우의 의미다. 입수(admission)도 이 목록만 받는다.
+export const KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS = Object.freeze([
+  "SOURCE_DOES_NOT_COVER_TYPE", "LISTED_ON_OTHER_LINE_QUERY", "STATION_LINE_NOT_QUERIED",
+]);
+const UNKNOWN = Object.freeze(Object.fromEntries(KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS.map((meaning) => [meaning, unknownState(meaning)])));
 
 const hash = (value) => sha256(JSON.stringify(value));
 const tuple = ({ railOprIsttCd, lnCd, stinCd }) => ({ railOprIsttCd, lnCd, stinCd });
@@ -44,27 +47,34 @@ export function validateKricStandardProviderRows(queries) {
 }
 
 // 환승역 시설은 한 노선 조회에만 실리기도 한다(청구 6호선 조회의 "신금호방면5-3" 승강기, 신당 6호선 조회의 환승통로 리프트).
-// 그래서 부재는 역 단위로 판단한다: 같은 역의 어느 조회에도 없는 유형만 그 역-노선에서 부재이고, 다른 노선 조회에 있으면 UNKNOWN이다.
-export function kricStandardListedTypesByStation(queries) {
-  const listed = new Map();
-  for (const query of queries) {
+// 그래서 부재는 역 단위로 판단한다. 팩에 있는 그 역의 역-노선이 모두 결과 00으로 조회됐고 어느 조회에도 없는 유형만 부재다.
+// 다른 노선 조회에 있으면 LISTED_ON_OTHER_LINE_QUERY, 조회되지 않은(결과 03 포함) 역-노선이 남으면 STATION_LINE_NOT_QUERIED다.
+export function kricStandardStationContexts(queries, stationLines) {
+  const contexts = new Map();
+  const contextOf = (stationId) => {
+    if (!contexts.has(stationId)) contexts.set(stationId, { listedTypes: new Set(), unqueriedLineIds: new Set() });
+    return contexts.get(stationId);
+  };
+  for (const { stationId, lineId } of stationLines) contextOf(stationId).unqueriedLineIds.add(lineId);
+  for (const query of queries.filter(({ providerResultCode }) => providerResultCode === KRIC_PRESENT_RESULT_CODE)) {
+    const context = contextOf(query.stationId);
+    context.unqueriedLineIds.delete(query.lineId);
     for (const { gubun } of query.rows) {
       const type = FACILITY_TYPES.get(gubun);
-      if (!type) continue;
-      if (!listed.has(query.stationId)) listed.set(query.stationId, new Set());
-      listed.get(query.stationId).add(type);
+      if (type) context.listedTypes.add(type);
     }
   }
-  return listed;
+  return contexts;
 }
 
 // 조회 목록에 없는 유형의 상태다. 생산(materializer·후보 팩)과 검증(coverage report)이 같은 규칙을 쓴다.
-export function kricStandardStatusState(facilityType, listedAtStation) {
-  if (!KRIC_STANDARD_ABSENCE_COVERED_TYPES.includes(facilityType)) return UNKNOWN_NOT_COVERED;
-  return listedAtStation.has(facilityType) ? UNKNOWN_OTHER_LINE : ABSENT;
+export function kricStandardStatusState(facilityType, { listedTypes, unqueriedLineIds }) {
+  if (!KRIC_STANDARD_ABSENCE_COVERED_TYPES.includes(facilityType)) return UNKNOWN.SOURCE_DOES_NOT_COVER_TYPE;
+  if (listedTypes.has(facilityType)) return UNKNOWN.LISTED_ON_OTHER_LINE_QUERY;
+  return unqueriedLineIds.size > 0 ? UNKNOWN.STATION_LINE_NOT_QUERIED : ABSENT;
 }
 
-export function kricStandardQueryFacilities({ snapshot, query, stationName, listedTypesByStation }) {
+export function kricStandardQueryFacilities({ snapshot, query, stationName, stationContexts }) {
   if (query.providerResultCode === "03") throw new Error("KRIC terminal provider result is invalid");
   const seenProviderRecordHashes = new Set();
   const supportedRows = [];
@@ -97,9 +107,9 @@ export function kricStandardQueryFacilities({ snapshot, query, stationName, list
       };
     });
   const listedOnQuery = new Set(facilities.map(({ type }) => type));
-  const listedAtStation = listedTypesByStation.get(query.stationId) ?? new Set();
+  const stationContext = stationContexts.get(query.stationId);
   const statusEvidence = KRIC_STANDARD_FACILITY_TYPES.filter((type) => !listedOnQuery.has(type)).map((facilityType) => {
-    const state = kricStandardStatusState(facilityType, listedAtStation);
+    const state = kricStandardStatusState(facilityType, stationContext);
     return {
       stationId: query.stationId,
       lineId: query.lineId,

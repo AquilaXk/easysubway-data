@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { assertFacilityAbsencesCovered, facilityAbsenceCoverageBySource } from "./lib/facility-evidence-states.mjs";
+import { KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS } from "./lib/kric-standard-facilities.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -693,8 +694,8 @@ function validateAbsenceEvidence(row, query, snapshot) {
   }
 }
 
-// #3036: stationCnvFacl이 다루지 않는 유형(ES)이나 같은 역 다른 노선 조회에 실린 유형은 명시적 UNKNOWN 증거다.
-const UNKNOWN_STATUS_MEANINGS = new Set(["SOURCE_DOES_NOT_COVER_TYPE", "LISTED_ON_OTHER_LINE_QUERY"]);
+// #3036: 원천 밖 유형(ES), 같은 역 다른 노선 조회에 실린 유형, 조회되지 않은 형제 역-노선이 남은 유형은 명시적 UNKNOWN 증거다.
+const UNKNOWN_STATUS_MEANINGS = new Set(KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS);
 // QA 승인 2026-10-23: 칸마다 확인된 존재·부재 또는 명시적 UNKNOWN이면 받고, 확인된 칸 수는 scope의 minimumVerifiedRows 이상이어야 한다.
 const ADMITTED_DENOMINATOR_STATES = new Set(["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNKNOWN"]);
 

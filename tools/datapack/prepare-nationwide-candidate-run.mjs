@@ -10,7 +10,7 @@ import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mj
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import {
   KRIC_STANDARD_SOURCE_ID,
-  kricStandardListedTypesByStation,
+  kricStandardStationContexts,
   kricStandardQueryFacilities,
 } from "./lib/kric-standard-facilities.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -761,11 +761,11 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
     const labels = unmapped.map(({ railOprIsttCd, lnCd, stinCd, stationId, lineId }) => `${railOprIsttCd}/${lnCd}/${stinCd} ${stationId}:${lineId}`);
     throw new Error(`nationwide candidate KRIC facility station-line missing: ${unmapped.length} queries (${labels.slice(0, 5).join(", ")})`);
   }
-  const listedTypesByStation = kricStandardListedTypesByStation(queries);
+  const stationContexts = kricStandardStationContexts(queries, pack.stationLines);
   const facilities = [];
   const evidence = [];
   for (const query of queries) {
-    const observed = kricStandardQueryFacilities({ snapshot, query, stationName: stationNames.get(query.stationId), listedTypesByStation });
+    const observed = kricStandardQueryFacilities({ snapshot, query, stationName: stationNames.get(query.stationId), stationContexts });
     const rows = observed.facilities.map(({ id, type, name, floorFrom, description, providerFacilityRef, providerRecordHash, evidenceHash }) => ({
       id,
       stationId: query.stationId,
