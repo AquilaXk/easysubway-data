@@ -149,6 +149,20 @@ test("a failed attempt of the required source does not start a cooldown for the 
   assert.deepEqual([result.state, result.sourceId], ["DUE", ESCALATOR]);
 });
 
+test("duplicate failure issues cool a source until its latest recorded failure plus the cooldown", async () => {
+  const oldFailure = new Date("2026-08-30T01:00:00.000Z");
+  const newFailure = new Date("2026-08-30T10:00:00.000Z");
+  const issues = [
+    { ...failureIssue({ sourceId: ESCALATOR, at: oldFailure }), number: 7 },
+    { ...failureIssue({ sourceId: ESCALATOR, at: newFailure }), number: 8 },
+  ];
+  const options = { freshUntil: "2026-09-05T12:00:00.000Z", escalatorFreshUntil: null };
+  const stillCooling = await decideWithIssues(options, issues, new Date("2026-08-31T05:00:00.000Z"));
+  assert.deepEqual([stillCooling.state, stillCooling.sourceId], ["NOT_DUE", undefined]);
+  const afterLatest = await decideWithIssues(options, issues, new Date(newFailure.getTime() + FAILURE_COOLDOWN_MS));
+  assert.deepEqual([afterLatest.state, afterLatest.sourceId], ["DUE", ESCALATOR]);
+});
+
 test("a malformed failure marker or issue listing stops the decision instead of being guessed around", async () => {
   const failedAt = new Date("2026-08-30T01:00:00.000Z");
   const options = { freshUntil: "2026-09-05T12:00:00.000Z", escalatorFreshUntil: null };

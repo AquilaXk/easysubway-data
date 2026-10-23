@@ -538,7 +538,10 @@ test("열린 이슈는 원천마다 마지막 실패 시각만 남기고 다른 
   ]);
   assert.equal((again.issueBody.match(/refresh-source-failed:kric-station-escalator-detailed/gu) ?? []).length, 1);
   const unnamed = kricReport(4, new Date(start.getTime() + hours(6)), { openIssues: [kricIssue({ ...first, body: again.issueBody })] });
-  assert.deepEqual(sourceFailuresOf(unnamed.issueBody), sourceFailuresOf(again.issueBody));
+  assert.deepEqual(sourceFailuresOf(unnamed.issueBody), [
+    { sourceId: KRIC_ESCALATOR, failedAt: escalatorAt.toISOString() },
+    { sourceId: KRIC_STANDARD, failedAt: standardAt.toISOString() },
+  ]);
 });
 
 test("재알림 댓글도 실패한 원천을 적고, 이미 기록한 run은 표지를 바꾸지 않는다 (#3036)", () => {
