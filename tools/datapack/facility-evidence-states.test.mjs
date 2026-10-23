@@ -5,7 +5,12 @@ import path from "node:path";
 import test from "node:test";
 import { buildFixture } from "./import-official-sources.mjs";
 import { facilityAbsenceCoverageBySource } from "./lib/facility-evidence-states.mjs";
-import { KRIC_STANDARD_ABSENCE_COVERED_TYPES, KRIC_STANDARD_SOURCE_ID } from "./lib/kric-standard-facilities.mjs";
+import {
+  KRIC_STANDARD_ABSENCE_COVERED_TYPES,
+  KRIC_STANDARD_SOURCE_ID,
+  kricStandardStationContexts,
+  kricStandardStatusState,
+} from "./lib/kric-standard-facilities.mjs";
 import { capitalPilotProductionSourceInput, testOnlyInventoryPath } from "./test-fixtures/datapack-tools-source-ingest.mjs";
 
 // #3036 QA 승인 2026-10-23: 시설 증거는 (역, 노선, 유형)마다 EXISTS·NOT_EXISTS·UNKNOWN 세 상태다.
@@ -103,4 +108,15 @@ test("#3036 pilot scope의 검증된 칸 하한은 원천이 존재·부재를 �
   assert.equal(facilityCoverageDenominator.expectedRows, stationLines * requiredFacilityTypes.length);
   assert.equal(facilityCoverageDenominator.minimumVerifiedRows, facilityCoverageDenominator.expectedRows - stationLines * uncoveredTypes.length);
   assert.deepEqual([facilityCoverageDenominator.expectedRows, facilityCoverageDenominator.minimumVerifiedRows], [6, 4]);
+});
+
+test("#3036 결과 03 조회는 그 역-노선을 조회한 것으로 치지 않아 형제 역-노선의 부재 단정을 막는다", () => {
+  const stationLines = ["line-5", "line-2"].map((lineId) => ({ stationId: "station-k", lineId }));
+  const query = (lineId, providerResultCode, rows) => ({ stationId: "station-k", lineId, providerResultCode, rows });
+  const liftState = (queries) => {
+    const { evidenceKind, statusMeaning } = kricStandardStatusState("WHEELCHAIR_LIFT", kricStandardStationContexts(queries, stationLines).get("station-k"));
+    return [evidenceKind, statusMeaning];
+  };
+  assert.deepEqual(liftState([query("line-5", "00", [{ gubun: "EV" }]), query("line-2", "03", [])]), ["UNKNOWN", "STATION_LINE_NOT_QUERIED"]);
+  assert.deepEqual(liftState([query("line-5", "00", [{ gubun: "EV" }]), query("line-2", "00", [])]), ["NOT_EXISTS", "EXHAUSTIVE_LIST_ABSENCE"]);
 });
