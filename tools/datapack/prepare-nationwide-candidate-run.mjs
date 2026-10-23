@@ -761,7 +761,7 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
     const labels = unmapped.map(({ railOprIsttCd, lnCd, stinCd, stationId, lineId }) => `${railOprIsttCd}/${lnCd}/${stinCd} ${stationId}:${lineId}`);
     throw new Error(`nationwide candidate KRIC facility station-line missing: ${unmapped.length} queries (${labels.slice(0, 5).join(", ")})`);
   }
-  const stationContexts = kricStandardStationContexts(queries, pack.stationLines);
+  const stationContexts = kricStandardStationContexts(snapshot, queries, pack.stationLines);
   const facilities = [];
   const evidence = [];
   for (const query of queries) {

@@ -52,7 +52,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   const absenceRows = [];
   const snapshotQueries = kricSnapshot.queries ?? [];
   validateKricStandardProviderRows(snapshotQueries);
-  const stationContexts = kricStandardStationContexts(snapshotQueries, packStationLines);
+  const stationContexts = kricStandardStationContexts(kricSnapshot, snapshotQueries, packStationLines);
   const regionalRoster = input.kricStandardAccessibilityRoster;
   const regionalRosterKeys = regionalRoster == null ? null : exactRosterKeys(regionalRoster);
   const regionalQueries = regionalRosterKeys == null

@@ -4,6 +4,7 @@ import { sha256 } from "../../lib/hash.mjs";
 export const KRIC_STANDARD_SOURCE_ID = "kric-station-convenience-standard";
 // stationCnvFacl 정상 응답 결과 코드. 결과 03(terminal)은 시설 존재·부재를 말하지 않는다.
 export const KRIC_PRESENT_RESULT_CODE = "00";
+const KRIC_MIXED_SNAPSHOT_RESULT_CODE = "MIXED";
 // KRIC official stationCnvFacl contract: EV/ES/WCLF are the only route-relevant facility codes.
 const FACILITY_TYPES = new Map([["EV", "ELEVATOR"], ["ES", "ESCALATOR"], ["WCLF", "WHEELCHAIR_LIFT"]]);
 const KRIC_FACILITY_CODES = new Set([...FACILITY_TYPES.keys(), "ELEC", "FEED", "INFO", "TOLT"]);
@@ -27,6 +28,15 @@ export const KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS = Object.freeze([
 const UNKNOWN = Object.freeze(Object.fromEntries(KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS.map((meaning) => [meaning, unknownState(meaning)])));
 
 const hash = (value) => sha256(JSON.stringify(value));
+
+// 수집기(collect-kric-accessibility-snapshots)는 결과 03 조회가 있는 MIXED snapshot에만 조회별 providerResultCode를 쓴다.
+// 결과 03이 없는 snapshot은 조회별 코드 없이 snapshot 코드 00만 갖고, 그 조회는 모두 결과 00이다.
+// MIXED snapshot에서 조회별 코드가 빠진 조회는 결과를 알 수 없으므로 undefined를 돌려 조회된 것으로 치지 않는다.
+export function kricQueryResultCode(query, snapshot) {
+  if (query.providerResultCode !== undefined) return query.providerResultCode;
+  return snapshot.providerResultCode === KRIC_MIXED_SNAPSHOT_RESULT_CODE ? undefined : KRIC_PRESENT_RESULT_CODE;
+}
+
 const tuple = ({ railOprIsttCd, lnCd, stinCd }) => ({ railOprIsttCd, lnCd, stinCd });
 
 export function kricFloorLabel(row) {
@@ -49,14 +59,14 @@ export function validateKricStandardProviderRows(queries) {
 // 환승역 시설은 한 노선 조회에만 실리기도 한다(청구 6호선 조회의 "신금호방면5-3" 승강기, 신당 6호선 조회의 환승통로 리프트).
 // 그래서 부재는 역 단위로 판단한다. 팩에 있는 그 역의 역-노선이 모두 결과 00으로 조회됐고 어느 조회에도 없는 유형만 부재다.
 // 다른 노선 조회에 있으면 LISTED_ON_OTHER_LINE_QUERY, 조회되지 않은(결과 03 포함) 역-노선이 남으면 STATION_LINE_NOT_QUERIED다.
-export function kricStandardStationContexts(queries, stationLines) {
+export function kricStandardStationContexts(snapshot, queries, stationLines) {
   const contexts = new Map();
   const contextOf = (stationId) => {
     if (!contexts.has(stationId)) contexts.set(stationId, { listedTypes: new Set(), unqueriedLineIds: new Set() });
     return contexts.get(stationId);
   };
   for (const { stationId, lineId } of stationLines) contextOf(stationId).unqueriedLineIds.add(lineId);
-  for (const query of queries.filter(({ providerResultCode }) => providerResultCode === KRIC_PRESENT_RESULT_CODE)) {
+  for (const query of queries.filter((candidate) => kricQueryResultCode(candidate, snapshot) === KRIC_PRESENT_RESULT_CODE)) {
     const context = contextOf(query.stationId);
     context.unqueriedLineIds.delete(query.lineId);
     for (const { gubun } of query.rows) {
@@ -75,7 +85,8 @@ export function kricStandardStatusState(facilityType, { listedTypes, unqueriedLi
 }
 
 export function kricStandardQueryFacilities({ snapshot, query, stationName, stationContexts }) {
-  if (query.providerResultCode === "03") throw new Error("KRIC terminal provider result is invalid");
+  const resultCode = kricQueryResultCode(query, snapshot);
+  if (resultCode !== KRIC_PRESENT_RESULT_CODE) throw new Error(`KRIC provider result is not ${KRIC_PRESENT_RESULT_CODE}: ${resultCode ?? "<missing>"}`);
   const seenProviderRecordHashes = new Set();
   const supportedRows = [];
   for (const row of query.rows) {

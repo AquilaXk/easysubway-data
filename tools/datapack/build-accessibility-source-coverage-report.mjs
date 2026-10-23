@@ -16,6 +16,7 @@ import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwid
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
 import {
   KRIC_PRESENT_RESULT_CODE,
+  kricQueryResultCode,
   kricStandardStationContexts,
   kricStandardStatusState,
 } from "./lib/kric-standard-facilities.mjs";
@@ -1083,11 +1084,11 @@ function snapshotForClaim(snapshotsByIdentity, claim) {
 function kricStatusClaimMatchesQuery(snapshot, query, claim, stationLines) {
   if (!Array.isArray(stationLines)) return false;
   const atClaimStation = ({ stationId }) => stationId === claim.stationId;
-  const stationContext = kricStandardStationContexts(snapshot.queries.filter(atClaimStation), stationLines.filter(atClaimStation))
+  const stationContext = kricStandardStationContexts(snapshot, snapshot.queries.filter(atClaimStation), stationLines.filter(atClaimStation))
     .get(claim.stationId);
   const expected = kricStandardStatusState(claim.facilityType, stationContext);
   const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
-  return query.providerResultCode === KRIC_PRESENT_RESULT_CODE
+  return kricQueryResultCode(query, snapshot) === KRIC_PRESENT_RESULT_CODE
     && claim.evidenceKind === expected.evidenceKind
     && claim.statusMeaning === expected.statusMeaning
     && query.providerRecordHash === claim.providerRecordHash

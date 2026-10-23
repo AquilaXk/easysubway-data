@@ -41,7 +41,7 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
   };
   const kricSnapshot = {
     sourceId: "kric-station-convenience-standard", snapshotId: "kric-1", observedAt: "2026-07-28T00:00:00Z", capturedAt: "2026-07-28T00:00:00Z",
-    queries: [{ stationId: "station-a", lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd: "1", providerResultCode: "00", providerRecordHash: "a".repeat(64), rows: [{ gubun: "EV", grndDvCd: "2", stinFlor: 3, dtlLoc: "대합실" }, { gubun: "ELEC", stinFlor: 1, dtlLoc: "충전" }] }],
+    queries: [{ stationId: "station-a", lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd: "1", providerRecordHash: "a".repeat(64), rows: [{ gubun: "EV", grndDvCd: "2", stinFlor: 3, dtlLoc: "대합실" }, { gubun: "ELEC", stinFlor: 1, dtlLoc: "충전" }] }],
   };
   const seoulSnapshot = {
     sourceId: "seoul-metro-accessibility", snapshotId: "seoul-1", observedAt: "2026-07-28T00:00:00Z", capturedAt: "2026-07-28T00:00:00Z",
@@ -289,7 +289,7 @@ test("#3036 KRIC 목록에 없는 에스컬레이터와 환승역 다른 노선 
     kricStandardAccessibilityRoster: [{ stationId: "station-a", lineId: "line-5", railOprIsttCd: "S1", lnCd: "5", stinCd: "2538" }],
   };
   const query = (lineId, lnCd, stinCd, rows) => ({
-    stationId: "station-a", lineId, railOprIsttCd: "S1", lnCd, stinCd, providerResultCode: "00", providerRecordHash: stinCd.repeat(16), rows,
+    stationId: "station-a", lineId, railOprIsttCd: "S1", lnCd, stinCd, providerRecordHash: stinCd.repeat(16), rows,
   });
   const output = materializeAccessibilitySourceInput({
     input,

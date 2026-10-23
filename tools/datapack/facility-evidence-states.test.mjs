@@ -113,10 +113,25 @@ test("#3036 pilot scope의 검증된 칸 하한은 원천이 존재·부재를 �
 test("#3036 결과 03 조회는 그 역-노선을 조회한 것으로 치지 않아 형제 역-노선의 부재 단정을 막는다", () => {
   const stationLines = ["line-5", "line-2"].map((lineId) => ({ stationId: "station-k", lineId }));
   const query = (lineId, providerResultCode, rows) => ({ stationId: "station-k", lineId, providerResultCode, rows });
-  const liftState = (queries) => {
-    const { evidenceKind, statusMeaning } = kricStandardStatusState("WHEELCHAIR_LIFT", kricStandardStationContexts(queries, stationLines).get("station-k"));
+  const liftState = (queries, snapshot = { providerResultCode: "MIXED" }) => {
+    const { evidenceKind, statusMeaning } = kricStandardStatusState("WHEELCHAIR_LIFT", kricStandardStationContexts(snapshot, queries, stationLines).get("station-k"));
     return [evidenceKind, statusMeaning];
   };
   assert.deepEqual(liftState([query("line-5", "00", [{ gubun: "EV" }]), query("line-2", "03", [])]), ["UNKNOWN", "STATION_LINE_NOT_QUERIED"]);
   assert.deepEqual(liftState([query("line-5", "00", [{ gubun: "EV" }]), query("line-2", "00", [])]), ["NOT_EXISTS", "EXHAUSTIVE_LIST_ABSENCE"]);
+});
+
+test("#3036 조회별 결과 코드가 없는 조회는 결과 03이 없는 snapshot에서만 결과 00이다", () => {
+  const stationLines = ["line-5", "line-2"].map((lineId) => ({ stationId: "station-k", lineId }));
+  const queries = [{ stationId: "station-k", lineId: "line-5", rows: [{ gubun: "EV" }] }, { stationId: "station-k", lineId: "line-2", rows: [] }];
+  const liftState = (snapshot) => {
+    const { evidenceKind, statusMeaning } = kricStandardStatusState("WHEELCHAIR_LIFT", kricStandardStationContexts(snapshot, queries, stationLines).get("station-k"));
+    return [evidenceKind, statusMeaning];
+  };
+  assert.deepEqual(liftState({ providerResultCode: "00" }), ["NOT_EXISTS", "EXHAUSTIVE_LIST_ABSENCE"]);
+  assert.deepEqual(liftState({}), ["NOT_EXISTS", "EXHAUSTIVE_LIST_ABSENCE"]);
+  assert.deepEqual(liftState({ providerResultCode: "MIXED" }), ["UNKNOWN", "STATION_LINE_NOT_QUERIED"]);
+  const explicitTerminal = [queries[0], { ...queries[1], providerResultCode: "03" }];
+  const { evidenceKind } = kricStandardStatusState("WHEELCHAIR_LIFT", kricStandardStationContexts({ providerResultCode: "00" }, explicitTerminal, stationLines).get("station-k"));
+  assert.equal(evidenceKind, "UNKNOWN", "snapshot 코드가 00이어도 명시적 결과 03 조회는 조회된 것으로 치지 않는다");
 });

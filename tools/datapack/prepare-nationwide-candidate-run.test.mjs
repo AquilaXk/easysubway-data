@@ -2000,7 +2000,7 @@ test("#3036 팩 역-노선에 없는 KRIC 조회와 terminal 정책 밖 결과 0
   );
   assert.throws(
     () => withCapitalKricStandardFacilities({ pack, snapshot: { ...snapshot, queries: [{ ...snapshot.queries[1], providerResultCode: "03", rows: [] }] } }),
-    /KRIC terminal provider result is invalid/,
+    /KRIC provider result is not 00: 03/,
   );
 });
 
@@ -2082,7 +2082,7 @@ function kricEvidenceState(result, stationId, lineId, facilityType) {
   return [rows[0].evidenceKind, rows[0].statusMeaning];
 }
 
-test("#3036 리뷰 F2: 같은 역의 팩 역-노선 중 결과 00으로 조회되지 않은 것이 있으면 목록에 없는 유형도 부재가 아니라 UNKNOWN이다", async () => {
+test("#3036 같은 역의 팩 역-노선 중 결과 00으로 조회되지 않은 것이 있으면 목록에 없는 유형도 부재가 아니라 UNKNOWN이다", async () => {
   const { snapshot, pack, stationId, lineId } = await pinnedCapitalKricInputs();
   const result = withCapitalKricStandardFacilities({ pack, snapshot });
   const seoulStation = stationId("서울역");
@@ -2096,7 +2096,7 @@ test("#3036 리뷰 F2: 같은 역의 팩 역-노선 중 결과 00으로 조회�
   assert.deepEqual(kricEvidenceState(result, stationId("사당"), lineId("수도권 4호선"), "WHEELCHAIR_LIFT"), ["NOT_EXISTS", "EXHAUSTIVE_LIST_ABSENCE"]);
 });
 
-test("#3036 리뷰 F2: 까치산 2호선 조회가 결과 03이면 5호선 조회에 없는 유형은 부재가 아니라 UNKNOWN이다", async () => {
+test("#3036 까치산 2호선 조회가 결과 03이면 5호선 조회에 없는 유형은 부재가 아니라 UNKNOWN이다", async () => {
   const { snapshot, pack, stationId, lineId } = await pinnedCapitalKricInputs();
   const kkachisan = stationId("까치산");
   const line5 = lineId("수도권 5호선");
@@ -2116,6 +2116,83 @@ test("#3036 리뷰 F2: 까치산 2호선 조회가 결과 03이면 5호선 조�
     kricEvidenceState(withCapitalKricStandardFacilities({ pack, snapshot: withoutLift }), kkachisan, line5, "WHEELCHAIR_LIFT"),
     ["UNKNOWN", "STATION_LINE_NOT_QUERIED"],
   );
+});
+
+const KRIC_PACK_EVIDENCE_TYPES = Object.freeze({ ELEVATOR: "EV", ESCALATOR: "ES", WHEELCHAIR_LIFT: "WCLF" });
+
+// 수집기는 결과 03이 없는 snapshot에 조회별 providerResultCode를 쓰지 않는다. 실제 snapshot에서 결과 03 조회를 빼고 조회별 코드를 지운 같은 모양이다.
+function nonMixedKricSnapshot(snapshot) {
+  const queries = snapshot.queries.filter(({ providerResultCode }) => providerResultCode !== "03")
+    .map(({ providerResultCode: _providerResultCode, ...query }) => query);
+  return { ...snapshot, providerResultCode: "00", queries };
+}
+
+const kricStateCounts = (result) => {
+  const counts = {};
+  for (const { evidenceKind, statusMeaning } of result.stationFacilityEvidence.filter(isKricStandard)) {
+    counts[`${evidenceKind}:${statusMeaning}`] = (counts[`${evidenceKind}:${statusMeaning}`] ?? 0) + 1;
+  }
+  return counts;
+};
+
+test("#3036 결과 03이 없어 조회별 코드를 쓰지 않는 snapshot도 같은 조회를 결과 00으로 읽어 부재·UNKNOWN 분포가 혼합 snapshot과 같다", async () => {
+  const { snapshot, pack } = await pinnedCapitalKricInputs();
+  const variant = nonMixedKricSnapshot(snapshot);
+  assert.equal(variant.queries.some((query) => "providerResultCode" in query), false);
+  const distribution = {
+    "EXISTS:STATIC_LOCATION": 226,
+    "UNKNOWN:SOURCE_DOES_NOT_COVER_TYPE": 212,
+    "UNKNOWN:STATION_LINE_NOT_QUERIED": 54,
+    "NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE": 141,
+    "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY": 3,
+  };
+
+  assert.deepEqual(kricStateCounts(withCapitalKricStandardFacilities({ pack, snapshot })), distribution);
+  assert.deepEqual(kricStateCounts(withCapitalKricStandardFacilities({ pack, snapshot: variant })), distribution);
+});
+
+test("#3036 혼합 snapshot에서 조회별 결과 코드가 빠진 조회는 조회된 것으로 치지 않고 시설 증거를 만들지 않고 실패한다", async () => {
+  const { snapshot, pack } = await pinnedCapitalKricInputs();
+  const [first, ...rest] = snapshot.queries.filter(({ providerResultCode }) => providerResultCode === "00");
+  const { providerResultCode: _removed, ...codeless } = first;
+  assert.throws(
+    () => withCapitalKricStandardFacilities({ pack, snapshot: { ...snapshot, queries: [codeless, ...rest] } }),
+    /KRIC provider result is not 00: <missing>/,
+  );
+});
+
+// 구현(lib)을 거치지 않고 원문 행에서 직접 쓴 규칙이다. 결과 03이 아닌 조회가 조회된 것이다(혼합 snapshot의 00, 조회별 코드가 없는 snapshot의 모든 조회).
+// 승강기·휠체어리프트는 목록에 없을 때, 그 역의 팩 역-노선이 모두 조회됐고 어느 조회에도 없어야 부재다.
+function assertKricEvidenceMatchesRawRules({ snapshot, pack }) {
+  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+  const queried = snapshot.queries.filter((query) => query.providerResultCode !== "03");
+  const queriedLinesAt = (stationId) => new Set(queried.filter((query) => query.stationId === stationId).map((query) => query.lineId));
+  const listedAt = (stationId, code) => queried.some((query) => query.stationId === stationId && query.rows.some((row) => row.gubun === code));
+  const expectedState = (query, facilityType) => {
+    const code = KRIC_PACK_EVIDENCE_TYPES[facilityType];
+    if (query.rows.some((row) => row.gubun === code)) return "EXISTS:STATIC_LOCATION";
+    if (facilityType === "ESCALATOR") return "UNKNOWN:SOURCE_DOES_NOT_COVER_TYPE";
+    if (listedAt(query.stationId, code)) return "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY";
+    const everyStationLineQueried = pack.stationLines.filter((line) => line.stationId === query.stationId)
+      .every((line) => queriedLinesAt(query.stationId).has(line.lineId));
+    return everyStationLineQueried ? "NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE" : "UNKNOWN:STATION_LINE_NOT_QUERIED";
+  };
+  const actual = new Map(result.stationFacilityEvidence.filter(isKricStandard)
+    .map((row) => [`${row.stationId}|${row.lineId}|${row.facilityType}`, `${row.evidenceKind}:${row.statusMeaning}`]));
+  const expected = new Map(queried.flatMap((query) => Object.keys(KRIC_PACK_EVIDENCE_TYPES)
+    .map((facilityType) => [`${query.stationId}|${query.lineId}|${facilityType}`, expectedState(query, facilityType)])));
+
+  assert.equal(expected.size, 636);
+  assert.deepEqual([...actual].sort(), [...expected].sort());
+}
+
+test("#3036 실제 snapshot의 636개 KRIC 증거는 원문 행에서 직접 쓴 규칙의 상태·의미와 모두 같다", async () => {
+  assertKricEvidenceMatchesRawRules(await pinnedCapitalKricInputs());
+});
+
+test("#3036 조회별 코드를 쓰지 않는 snapshot 모양의 636개 KRIC 증거도 같은 원문 규칙과 모두 같다", async () => {
+  const { snapshot, pack } = await pinnedCapitalKricInputs();
+  assertKricEvidenceMatchesRawRules({ snapshot: nonMixedKricSnapshot(snapshot), pack });
 });
 
 test("#3036 전국 후보 팩의 KRIC 시설·증거는 fan-in head snapshot 하나만 가리키고 에스컬레이터 부재를 싣지 않는다", async () => {

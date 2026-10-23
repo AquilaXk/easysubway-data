@@ -1492,7 +1492,7 @@ test("rowsSha256과 다른 지역 row는 hash 밖 필드만 바뀌어도 claim�
     input.artifacts[0].claims.length);
 });
 
-// #3036 리뷰 F1: release-candidate 단계의 coverage report는 KRIC 세 상태 증거를 후보가 고정한 snapshot에서 다시 유도해 결속한다.
+// release-candidate 단계의 coverage report는 KRIC 세 상태 증거를 후보가 고정한 snapshot에서 다시 유도해 결속한다.
 const KRIC_STANDARD = "kric-station-convenience-standard";
 const KRIC_EVALUATED_AT = "2026-10-23T00:00:00.000Z";
 const KRIC_EVIDENCE_COLUMNS = Object.freeze([
@@ -1517,12 +1517,12 @@ async function pinnedKricCoverageInputs(t) {
   return { inventory, sourceSnapshotPolicies, pack: canonical.packs[0], snapshots, snapshot: snapshots[0], repositoryRoot };
 }
 
-async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, snapshots, repositoryRoot }, evidenceRows, { operatorTable = true } = {}) {
+async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, snapshots, repositoryRoot }, evidenceRows, { stationLinesReadable = true } = {}) {
   const directory = await mkdtemp(path.join(repositoryRoot, "pack-"));
   const sqlitePath = path.join(directory, "pack.sqlite");
   const database = new DatabaseSync(sqlitePath);
   database.exec(`
-    CREATE TABLE operators (id TEXT${operatorTable ? ", name_ko TEXT" : ""});
+    CREATE TABLE operators (id TEXT${stationLinesReadable ? ", name_ko TEXT" : ""});
     CREATE TABLE lines (id TEXT, operator_id TEXT, name_ko TEXT);
     CREATE TABLE stations (id TEXT, name_ko TEXT, region TEXT);
     CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
@@ -1533,7 +1533,7 @@ async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, sna
     const statement = database.prepare(`INSERT INTO ${table} VALUES (${rows[0].map(() => "?").join(", ")})`);
     for (const row of rows) statement.run(...row);
   };
-  insertAll("operators", pack.operators.map(({ id, nameKo }) => (operatorTable ? [id, nameKo] : [id])));
+  insertAll("operators", pack.operators.map(({ id, nameKo }) => (stationLinesReadable ? [id, nameKo] : [id])));
   insertAll("lines", pack.lines.map(({ id, operatorId, nameKo }) => [id, operatorId, nameKo]));
   insertAll("stations", pack.stations.map(({ id, nameKo, region }) => [id, nameKo, region]));
   insertAll("station_lines", pack.stationLines.map(({ stationId, lineId }) => [stationId, lineId]));
@@ -1564,7 +1564,7 @@ function kricStatusEvidence(snapshot, { stationId, lineId, facilityType, evidenc
   };
 }
 
-test("#3036 리뷰 F1: 사당 4호선 에스컬레이터 UNKNOWN 증거는 고정 KRIC snapshot에 결속되어 coverage report가 GO다", async (t) => {
+test("#3036 사당 4호선 에스컬레이터 UNKNOWN 증거는 고정 KRIC snapshot에 결속되어 coverage report가 GO다", async (t) => {
   const inputs = await pinnedKricCoverageInputs(t);
   const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, {
     stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
@@ -1574,7 +1574,7 @@ test("#3036 리뷰 F1: 사당 4호선 에스컬레이터 UNKNOWN 증거는 고�
   assert.equal(report.decision, "GO");
 });
 
-test("#3036 리뷰 F1: 후보 팩 생산 규칙이 낸 KRIC 시설 증거는 세 상태 모두 coverage report에서 결속된다", async (t) => {
+test("#3036 후보 팩 생산 규칙이 낸 KRIC 시설 증거는 세 상태 모두 coverage report에서 결속된다", async (t) => {
   const inputs = await pinnedKricCoverageInputs(t);
   const { stationFacilityEvidence } = withCapitalKricStandardFacilities({ pack: inputs.pack, snapshot: inputs.snapshot });
   const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
@@ -1615,7 +1615,7 @@ for (const [name, evidence] of [
     stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: null,
   }],
 ]) {
-  test(`#3036 리뷰 F1: snapshot과 어긋난 증거(${name})는 결속되지 않아 NO_GO다`, async (t) => {
+  test(`#3036 snapshot과 어긋난 증거(${name})는 결속되지 않아 NO_GO다`, async (t) => {
     const inputs = await pinnedKricCoverageInputs(t);
     const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)]);
 
@@ -1629,12 +1629,50 @@ for (const [name, evidence] of [
   });
 }
 
-test("#3036 리뷰 F2: 역-노선 표를 읽을 수 없는 artifact의 KRIC 상태 증거는 형제 역-노선을 확인할 수 없어 결속되지 않는다", async (t) => {
+// 결속은 상태 종류, provider hash, evidence hash 세 항이 모두 맞아야 한다. 참 상태(사당 4호선 에스컬레이터 UNKNOWN)에서 한 항만 바꾸고 나머지 둘은 참 값으로 둔다.
+const SADANG_ESCALATOR_UNKNOWN = Object.freeze({
+  stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+});
+
+for (const [term, tamper] of [
+  ["상태 종류(NOT_EXISTS)", () => ({ evidenceKind: "NOT_EXISTS" })],
+  ["provider hash", () => ({ providerRecordHash: hash("다른 조회의 provider hash") })],
+  ["evidence hash", () => ({ evidenceHash: hash("다른 상태의 evidence hash") })],
+]) {
+  test(`#3036 참 UNKNOWN 증거에서 ${term}만 바꾸면 나머지 둘이 참이어도 결속되지 않아 NO_GO다`, async (t) => {
+    const inputs = await pinnedKricCoverageInputs(t);
+    const evidence = { ...kricStatusEvidence(inputs.snapshot, SADANG_ESCALATOR_UNKNOWN), ...tamper() };
+    const report = await kricCoverageReport(inputs, [evidence]);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations.provenance, [
+      `manifest-nationwide:${evidence.stationId}|${evidence.lineId}|${evidence.facilityType}|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+    ]);
+  });
+}
+
+test("#3036 결과 03이 없어 조회별 코드를 쓰지 않는 snapshot의 KRIC 세 상태 증거도 coverage report에서 결속되어 GO다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const queries = inputs.snapshot.queries.filter(({ providerResultCode }) => providerResultCode !== "03")
+    .map(({ providerResultCode: _providerResultCode, ...query }) => query);
+  const snapshot = { ...inputs.snapshot, providerResultCode: "00", queries };
+  const { stationFacilityEvidence } = withCapitalKricStandardFacilities({ pack: inputs.pack, snapshot });
+  const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
+  assert.equal(queries.some((query) => "providerResultCode" in query), false);
+  assert.equal(kricEvidence.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 141);
+
+  const report = await kricCoverageReport({ ...inputs, snapshots: [snapshot] }, kricEvidence);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("#3036 역-노선 표를 읽을 수 없는 artifact의 KRIC 상태 증거는 형제 역-노선을 확인할 수 없어 결속되지 않는다", async (t) => {
   const inputs = await pinnedKricCoverageInputs(t);
   const evidence = {
     stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
   };
-  const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)], { operatorTable: false });
+  const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)], { stationLinesReadable: false });
 
   assert.equal(report.decision, "NO_GO");
   assert.deepEqual(report.violations.provenance, [
