@@ -86,7 +86,7 @@ export async function readProviderCallLedger({ env = process.env, now = new Date
   const { window, token, entered } = await inspectCollectionWindow({ env, now, fetchImpl, contexts: [SOURCE_REVERIFICATION_CALL_EVIDENCE] });
   const entries = [];
   for (const { run, outcome } of entered) {
-    const requestCounts = outcome === COLLECTION_OUTCOME.RUNNING ? null : await readRunRequestCounts({ runId: run.id, token, downloadArtifact }); // NOSONAR -- run마다 artifact를 하나씩 내려받아 임시 디렉터리를 바로 지운다
+    const requestCounts = outcome === COLLECTION_OUTCOME.RUNNING ? null : await readRunRequestCounts({ runId: run.id, token, downloadArtifact });
     entries.push({ runId: run.id, outcome, requestCounts });
   }
   entries.sort((left, right) => left.runId - right.runId);

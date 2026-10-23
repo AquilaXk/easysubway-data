@@ -9,7 +9,7 @@
     "observation": "개발계정 트래픽은 operation마다 하루 1,000건이다. KST 2026-10-20에 topology를 912건 쓴 뒤 9번째 run(39372684432)이 resultCode 22(LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR)를 받았고, 같은 날 접근성·시간표는 22를 받지 않았다(data #1435)."
   },
   "maxCollectionsPerDay": 3,
-  "maxCollectionsPerDayBasis": "같은 KST 날 한 묶음을 공급자에게 다시 보내는 run은 정기 1회와 재시도 2회까지다(ITX 수집의 하루 시도 상한과 같다). 묶음 한 번이 topology 114건을 쓰므로 3회는 342건이고, 2시간 주기로 6시간 동안 다시 시도한다. 2026-10-20에는 끊김이 12시간 이어져 8회가 topology 912건을 썼다.",
+  "maxCollectionsPerDayBasis": "같은 KST 날 한 묶음을 공급자에게 다시 보내는 run은 정기 1회와 재시도 2회까지다(ITX 수집의 하루 시도 상한과 같다). 묶음 한 번이 topology 114건을 쓰므로 3회는 342건이고, 2시간 주기로 4시간에 걸쳐 시도한다. 시간표는 한 번에 342건이라 예산이 먼저 두 번으로 막는다. 2026-10-20에는 끊김이 12시간 이어져 8회가 topology 912건을 썼다.",
   "operations": [
     {
       "sourceId": "busan-transportation-route-topology",

@@ -8,6 +8,7 @@
 //   OPEN_PR                 이 workflow의 열린 PR이 있다. 새 일을 하지 않고 CI·방치 상한만 본다.
 //   CLAIM_IN_PROGRESS       PR 전의 claim을 만든 run이 아직 돈다. 기다린다.
 //   BLOCKED_BY_PENDING_PR   DUE인데 같은 원장 파일을 쓰는 다른 자동화 PR·claim이 있다. 이상이 아니라 대기다.
+//   BUDGET_BLOCKED          DUE인 recipe가 모두 공급자 하루 호출 예산(provider-call-budget)에 막혀 실행할 것이 없다. workflow가 job을 실패시킨다.
 //
 // 재생 run(--replay-run-id, #3036)은 뒤처져 닫힌 재확인 PR의 수집분을 공급자 호출 없이 다시 등록하므로 DUE가 아니어도 RUN이다.
 //   다른 원장 쓰기 PR·claim에 막히면 기다리지 않고 REVERIFICATION_REPLAY_BLOCKED로 실패한다(ITX_PROMOTION_REPLAY_BLOCKED와 같다).
@@ -21,6 +22,10 @@
 //   대기(OPEN_PR·CLAIM_IN_PROGRESS·BLOCKED_BY_PENDING_PR)는 성공으로 끝나 실패 이슈 경로를 타지 않으므로, workflow는 연체 행이 있으면 성공 run도 실패 이슈에 기록한다.
 // 의존 recipe(접근성·계획 시각표)는 의존 대상이 돌 때 함께 돈다.
 //
+// 공급자 하루 호출 예산(#3036): 실행할 결속 묶음마다 같은 KST 날 앞선 run의 operation별 요청 수(provider-call-ledger)와 이번 묶음의 예상 요청 수를 더해
+//   정책(release/product-gates/provider-daily-call-budget.json)의 한도·시도 상한을 넘으면 그 묶음을 빼고 budgetBlocked로 이유를 돌려준다. 다른 묶음은 그대로 돈다.
+//   부분 수집은 없다: 묶음 단위로 시작하거나 시작하지 않는다. 재생 run과 대기 판정은 공급자를 부르지 않으므로 예산을 보지 않는다.
+//
 // 공급처 기대 관측이 바뀌어 사람이 기대값을 고쳐야 하는 recipe(SOURCE_EXPECTATION_CHANGED)는 이 workflow의 실패 이슈가 열려 있는 동안 건너뛴다(#1122).
 // 같은 원인의 재수집을 2시간마다 되풀이하지 않기 위해서다. 건너뛴 recipe는 blocked로 드러나고, 이슈를 닫으면 다음 실행이 다시 수집한다. 만료를 연장하지 않는다.
 //
@@ -31,15 +36,17 @@
 //
 // 사용: node tools/ci/decide-source-reverification.mjs --inventory <file> --ledger <file> --policy <file> --prs <collect-automation-prs.mjs 출력>
 //   --automation-branches <git ls-remote "automation/*" 출력> --runs <gh run list JSON> --issues <gh issue list JSON(열린 이슈, number·title·body·author)> --repository <owner/repo>
-//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> --issue-limit <gh issue list --limit> [--replay-run-id <원본 run id>] [--github-output <path>]
+//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> --issue-limit <gh issue list --limit>
+//   --call-budget <provider-daily-call-budget.json> --provider-call-ledger <provider-call-ledger.mjs --ledger 출력> [--replay-run-id <원본 run id>] [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { addCadence, deriveFreshnessExpiresAt } from "../datapack/freshness-policy.mjs";
 import { requiredUtcInstant } from "../datapack/lib/utc-instant.mjs";
-import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
+import { REVERIFICATION_RECIPES, dependencyGroups } from "../datapack/source-reverification-recipes.mjs";
 import { isReplayRunId } from "./decide-itx-current-promotion.mjs";
 import { activeRuns, ownPullRequestsByBranch, parseAutomationBranches, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
+import { evaluateProviderCallAllowance, parseProviderCallBudgetPolicy, parseProviderCallLedger } from "./provider-call-budget.mjs";
 import { REFRESH_CLAIM_PREFIXES, isoDurationMs } from "./refresh-open-pr-age.mjs";
 import { blockedRecipeIdsOf, failureIssuesOf } from "./report-refresh-failure.mjs";
 
@@ -175,6 +182,11 @@ const overdueRowsOf = (dueRows) => dueRows.filter(({ state }) => state === "OVER
 // 연체 recipe의 정의는 한 곳이다: 연체 행이 있는 recipe와 그에 의존하는 recipe. 의존 recipe는 의존 대상이 돌 때만 다시 등록되므로 함께 연체다.
 const overdueRecipeIdsOf = (overdueRows, recipes) => withDependents(overdueRows.map(({ recipeId }) => recipeId), recipes);
 
+/** DUE이거나 연체인 recipe와 그에 의존하는 recipe(recipe 표 순서). 실패 이슈 표지로 막힌 recipe도 포함한다. */
+export function dueReverificationRecipes({ inventory, ledger, policy, now, recipes = REVERIFICATION_RECIPES } = {}) {
+  return withDependents(sourceReverificationDue({ inventory, ledger, policy, now, recipes }).filter(isDue).map(({ recipeId }) => recipeId), recipes);
+}
+
 /** 재확인 기한을 넘긴 recipe와 그에 의존하는 recipe(recipe 표 순서). */
 export function overdueReverificationRecipes({ inventory, ledger, policy, now, recipes = REVERIFICATION_RECIPES } = {}) {
   return overdueRecipeIdsOf(overdueRowsOf(sourceReverificationDue({ inventory, ledger, policy, now, recipes })), recipes);
@@ -190,8 +202,11 @@ function classifyUnboundClaim(branch, runs) {
   return found.status === "completed" ? "ABANDONED" : "RUNNING";
 }
 
-function assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId }) {
-  if ((replayRunId !== undefined && !isReplayRunId(replayRunId)) || !Array.isArray(pullRequests) || !Array.isArray(openIssues) || !Array.isArray(automationBranches) || !Array.isArray(runs) || !validRepository(repository)
+const isProviderBudget = (budget) => Array.isArray(budget?.policy?.operations) && Object.hasOwn(budget, "ledger")
+  && budget.expectedRequests !== null && typeof budget.expectedRequests === "object";
+
+function assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId, providerBudget }) {
+  if ((replayRunId !== undefined && !isReplayRunId(replayRunId)) || !isProviderBudget(providerBudget) || !Array.isArray(pullRequests) || !Array.isArray(openIssues) || !Array.isArray(automationBranches) || !Array.isArray(runs) || !validRepository(repository)
     || !(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(ledger) || !Array.isArray(inventory?.sources)
     || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1 || !Number.isSafeInteger(limits?.issues) || limits.issues < 1) fail("REVERIFICATION_INPUT_INVALID");
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
@@ -225,8 +240,24 @@ function classifyClaims({ pullRequests, automationBranches, runs, repository }) 
   return { state: null, cleanupClaims };
 }
 
-export function decideSourceReverification({ inventory, ledger, policy, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId, recipes = REVERIFICATION_RECIPES } = {}) {
-  assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId });
+// 실행할 결속 묶음 중 공급자 하루 호출 예산이 허락하지 않는 묶음과 그 이유(#3036).
+function budgetBlockedGroups({ recipeIds, recipes, providerBudget }) {
+  return dependencyGroups(recipes.filter(({ id }) => recipeIds.includes(id))).flatMap((group) => {
+    const allowance = evaluateProviderCallAllowance({ ...providerBudget, sourceIds: group.flatMap(({ sourceIds }) => sourceIds) });
+    return allowance.allowed ? [] : [{ recipeIds: group.map(({ id }) => id), reason: allowance.reason, detail: allowance.detail }];
+  });
+}
+
+// 실행할 recipe에서 예산에 막힌 묶음을 뺀다. 남은 것이 없으면 BUDGET_BLOCKED다.
+function runWithinBudget({ due, recipeIds, blocked, recipes, providerBudget }) {
+  const budgetBlocked = budgetBlockedGroups({ recipeIds, recipes, providerBudget });
+  const refused = new Set(budgetBlocked.flatMap((group) => group.recipeIds));
+  const runnable = recipeIds.filter((id) => !refused.has(id));
+  return { state: runnable.length === 0 ? "BUDGET_BLOCKED" : "RUN", due: due.filter(({ recipeId }) => !refused.has(recipeId)), recipes: runnable, blocked, budgetBlocked };
+}
+
+export function decideSourceReverification({ inventory, ledger, policy, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId, providerBudget, recipes = REVERIFICATION_RECIPES } = {}) {
+  assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId, providerBudget });
   const dueRows = sourceReverificationDue({ inventory, ledger, policy, now, recipes });
   const blockedIds = blockedRecipeIds({ openIssues, recipes });
   const selected = withDependents(dueRows.filter(isDue).map(({ recipeId }) => recipeId), recipes);
@@ -237,23 +268,24 @@ export function decideSourceReverification({ inventory, ledger, policy, pullRequ
   const { state, branch, cleanupClaims } = classifyClaims({ pullRequests, automationBranches, runs, repository });
   const replay = replayRunId === undefined ? {} : { replayRunId };
   if (state) return { state, branch, due: [], recipes: [], cleanupClaims, overdue, ...replay };
-  const work = replayRunId === undefined ? { due, recipes: recipeIds, blocked } : { due: [], recipes: [], blocked: [] };
-  if (replayRunId === undefined && recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, cleanupClaims, overdue };
+  const work = replayRunId === undefined ? { due, recipes: recipeIds, blocked, budgetBlocked: [] } : { due: [], recipes: [], blocked: [], budgetBlocked: [] };
+  if (replayRunId === undefined && recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, budgetBlocked: [], cleanupClaims, overdue };
   const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow: SOURCE_REVERIFICATION_WORKFLOW });
   const blockedBy = [...pending.pullRequests, ...pending.branches];
   if (blockedBy.length > 0 && replayRunId !== undefined) {
     const blockers = blockedBy.map((blocker) => (typeof blocker === "number" ? `#${blocker}` : blocker)).join(", ");
     fail("REVERIFICATION_REPLAY_BLOCKED", `replay of run ${replayRunId} is blocked by ${blockers}; dispatch ${SOURCE_REVERIFICATION_WORKFLOW} again with replay_run_id=${replayRunId} once they are merged or closed`);
   }
-  return blockedBy.length > 0
-    ? { state: "BLOCKED_BY_PENDING_PR", blockedBy, ...work, cleanupClaims, overdue, ...replay }
-    : { state: "RUN", ...work, cleanupClaims, overdue, ...replay };
+  if (blockedBy.length > 0) return { state: "BLOCKED_BY_PENDING_PR", blockedBy, ...work, cleanupClaims, overdue, ...replay };
+  if (replayRunId !== undefined) return { state: "RUN", ...work, cleanupClaims, overdue, ...replay };
+  return { ...runWithinBudget({ due, recipeIds, blocked, recipes, providerBudget }), cleanupClaims, overdue };
 }
 
 function parseArgs(argv) {
   const keys = new Map([
     ["--inventory", "inventory"], ["--ledger", "ledger"], ["--policy", "policy"], ["--prs", "prs"], ["--automation-branches", "automationBranches"], ["--runs", "runs"], ["--issues", "issues"],
     ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--issue-limit", "issueLimit"], ["--replay-run-id", "replayRunId"], ["--github-output", "githubOutput"],
+    ["--call-budget", "callBudget"], ["--provider-call-ledger", "providerCallLedger"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -261,10 +293,23 @@ function parseArgs(argv) {
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("REVERIFICATION_INPUT_INVALID", `argument ${String(argv[index])}`);
     values[key] = argv[index + 1];
   }
-  for (const key of ["inventory", "ledger", "policy", "prs", "automationBranches", "runs", "issues", "repository", "prLimit", "runLimit", "issueLimit"]) {
+  for (const key of ["inventory", "ledger", "policy", "prs", "automationBranches", "runs", "issues", "repository", "prLimit", "runLimit", "issueLimit", "callBudget", "providerCallLedger"]) {
     if (!Object.hasOwn(values, key)) fail("REVERIFICATION_INPUT_INVALID", `missing --${key}`);
   }
   return values;
+}
+
+const SNAPSHOT_PATH = /^tools\/datapack\/sources\/[^/]+\.json$/u;
+// 이번 묶음이 operation마다 보낼 요청 수: inventory 증거(policy의 expectedRequestsEvidence)가 가리키는 마지막 성공 수집 snapshot의 requestCount.
+async function expectedRequestsOf({ budgetPolicy, inventory, readJson }) {
+  return Object.fromEntries(await Promise.all(budgetPolicy.operations.map(async ({ sourceId, expectedRequestsEvidence }) => {
+    const sources = inventory.sources.filter(({ id }) => id === sourceId);
+    const snapshotPath = sources.length === 1 ? sources[0][expectedRequestsEvidence]?.snapshotPath : undefined;
+    if (typeof snapshotPath !== "string" || !SNAPSHOT_PATH.test(snapshotPath)) fail("REVERIFICATION_INPUT_INVALID", `${sourceId} has no ${expectedRequestsEvidence}.snapshotPath`);
+    const { requestCount } = await readJson(snapshotPath);
+    if (!Number.isSafeInteger(requestCount) || requestCount < 1) fail("REVERIFICATION_INPUT_INVALID", `${sourceId} snapshot requestCount must be a positive integer`);
+    return [sourceId, requestCount];
+  })));
 }
 
 export async function main(argv, {
@@ -272,8 +317,13 @@ export async function main(argv, {
 } = {}) {
   const values = parseArgs(argv);
   const readJson = async (file) => JSON.parse(await readText(file));
+  const inventory = await readJson(values.inventory);
+  const budgetPolicy = parseProviderCallBudgetPolicy(await readJson(values.callBudget));
+  const providerBudget = {
+    policy: budgetPolicy, ledger: parseProviderCallLedger(await readJson(values.providerCallLedger)), expectedRequests: await expectedRequestsOf({ budgetPolicy, inventory, readJson }),
+  };
   const result = decideSourceReverification({
-    inventory: await readJson(values.inventory), ledger: await readJson(values.ledger), policy: await readJson(values.policy),
+    inventory, ledger: await readJson(values.ledger), policy: await readJson(values.policy), providerBudget,
     pullRequests: await readJson(values.prs), automationBranches: parseAutomationBranches(await readText(values.automationBranches)), runs: await readJson(values.runs),
     openIssues: await readJson(values.issues), repository: values.repository, now, limits: { pullRequests: Number(values.prLimit), runs: Number(values.runLimit), issues: Number(values.issueLimit) },
     replayRunId: values.replayRunId === "" ? undefined : values.replayRunId,
@@ -283,7 +333,9 @@ export async function main(argv, {
     await appendText(values.githubOutput, [
       `state=${result.state}`, `branch=${result.branch ?? ""}`, `recipes=${result.recipes.join(",")}`,
       `cleanup_claims=${result.cleanupClaims.join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, `blocked_recipes=${(result.blocked ?? []).join(",")}`,
-      `overdue_recipes=${overdueRecipeIdsOf(result.overdue, REVERIFICATION_RECIPES).join(",")}`, `replay_run_id=${result.replayRunId ?? ""}`, "",
+      `overdue_recipes=${overdueRecipeIdsOf(result.overdue, REVERIFICATION_RECIPES).join(",")}`, `replay_run_id=${result.replayRunId ?? ""}`,
+      `budget_blocked=${(result.budgetBlocked ?? []).flatMap(({ recipeIds }) => recipeIds).join(",")}`,
+      `budget_blocked_reason=${(result.budgetBlocked ?? []).map(({ reason, detail }) => `${reason}: ${detail}`).join(" | ")}`, "",
     ].join("\n"));
   }
   return result;

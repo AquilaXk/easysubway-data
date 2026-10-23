@@ -7,6 +7,7 @@ import { sha256 } from "../lib/hash.mjs";
 import { fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, withRequestInterval } from "./lib/source-collection-retry.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_process.tnn"; // NOSONAR -- provider contract is HTTP-only
+const SOURCE_ID = "busan-transportation-timetable";
 const DETAIL_URL = "https://www.data.go.kr/data/15000522/openapi.do";
 const DAYS = Object.freeze(["1", "2", "3"]);
 const RESPONSE_FIELDS = Object.freeze([
@@ -70,7 +71,7 @@ export async function collectBusanTimetable({
   return {
     schemaVersion: 1,
     artifactKind: "busan-timetable-snapshot",
-    sourceId: "busan-transportation-timetable",
+    sourceId: SOURCE_ID,
     detailUrl: DETAIL_URL,
     endpoint: ENDPOINT,
     capturedAt: capturedAt.toISOString(),
@@ -209,7 +210,7 @@ function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl) {
     fetchImpl,
     accept: "application/xml,text/xml",
     label: "Busan timetable",
-    sourceId: "busan-timetable",
+    sourceId: SOURCE_ID,
     resultCodeOf: ({ bytes }) => providerResultCode(bytes),
     isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
     transportFailure: (failure) => {
