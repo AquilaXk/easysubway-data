@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
+import { collectKricAccessibilitySnapshots, KRIC_ACCESSIBILITY_OPERATIONS } from "./collect-kric-accessibility-snapshots.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { parseKricStandardAccessibilitySnapshotRegistrationArgs, registerKricStandardAccessibilitySnapshot, runKricStandardAccessibilitySnapshotRegistration } from "./register-kric-standard-accessibility-snapshot.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
@@ -1100,4 +1100,19 @@ test("직접 실행 CLI는 절대 경로로 격리 fixture를 등록하고 상�
   });
   assert.equal(missingArgs.status, 1);
   assert.match(missingArgs.stderr, /registration CLI arguments are invalid/);
+});
+
+// #3036: 에스컬레이터 snapshot은 정기 갱신(producer-neutral full registration)으로만 등록한다. pilot 입력 경로는 표준 snapshot만 받는다.
+test("legacy pilot registration refuses an escalator snapshot before any write", async (t) => {
+  const values = await fixture(t);
+  const roster = values.snapshot.queries.map(({ stationId, lineId, railOprIsttCd, lnCd, stinCd, canonicalMappings }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, canonicalMappings }));
+  const [escalator] = await collectKricAccessibilitySnapshots({
+    roster, operations: [KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === "kric-station-escalator-detailed")], serviceKey: "fixture-only-key", now: values.now,
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: [] }) }),
+  });
+  await stageSnapshot(values, escalator);
+  values.snapshotTargetPath = path.join(path.dirname(values.snapshotTargetPath), `${escalator.snapshotId}.json`);
+  await assert.rejects(register(values), /pilot registration accepts only the KRIC standard snapshot/u);
+  await assertUnchanged(values);
+  await assert.rejects(readFile(values.snapshotTargetPath), { code: "ENOENT" });
 });

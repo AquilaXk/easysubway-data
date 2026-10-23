@@ -37,6 +37,12 @@ function registeredOperation(sourceId) {
   return KRIC_ACCESSIBILITY_OPERATIONS.find((operation) => operation.sourceId === sourceId);
 }
 
+export function requireKricAccessibilityOperation(sourceId) {
+  const operation = registeredOperation(sourceId);
+  if (!operation) throw new Error(`KRIC accessibility operation is not registered: ${sourceId}`);
+  return operation;
+}
+
 const isExactTerminalTuple = (tuple) => Object.entries(KRIC_TERMINAL_RESULT_03).every(([field, value]) => tuple?.[field] === value);
 
 // 결과 03 tuple이 이 원천의 혼합 snapshot에 남을 수 있는지. 등록되지 않은 operation은 혼합 snapshot을 만들지 않는다.
@@ -195,8 +201,7 @@ async function collectKricAccessibilitySnapshotResults({
 }
 
 export async function collectKricStandardAccessibilityObservation({ sourceId = "kric-station-convenience-standard", ...options } = {}) {
-  const operation = registeredOperation(sourceId);
-  if (!operation) throw new Error(`KRIC accessibility operation is not registered: ${sourceId}`);
+  const operation = requireKricAccessibilityOperation(sourceId);
   const { snapshots, rawCollections } = await collectKricAccessibilitySnapshotResults({
     ...options,
     operations: [operation],

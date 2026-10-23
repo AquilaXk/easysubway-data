@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import {
+  requireKricAccessibilityOperation,
   validateKricAccessibilityRawCollection,
   validateKricAccessibilitySnapshotIdentity,
 } from "./collect-kric-accessibility-snapshots.mjs";
@@ -12,11 +13,11 @@ import {
   publishAccessibilityRawObservation,
 } from "./lib/kric-raw-object-storage.mjs";
 
-const SOURCE_ID = "kric-station-convenience-standard";
 const ARTIFACT_KIND = "kric-accessibility-raw-collection";
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
 export async function publishKricAccessibilityRawArtifact({
+  sourceId,
   observationRoot,
   receiptPath,
   repositoryRoot = REPOSITORY_ROOT,
@@ -24,6 +25,7 @@ export async function publishKricAccessibilityRawArtifact({
   client = null,
   now = new Date(),
 } = {}) {
+  requireKricAccessibilityOperation(sourceId);
   return publishAccessibilityRawObservation({
     observationRoot,
     receiptPath,
@@ -31,7 +33,7 @@ export async function publishKricAccessibilityRawArtifact({
     env,
     client,
     now,
-    sourceId: SOURCE_ID,
+    sourceId,
     observationArtifactKind: "kric-standard-accessibility-observation",
     rawArtifactKind: ARTIFACT_KIND,
     receiptArtifactKind: "kric-accessibility-raw-object-receipt",
@@ -43,10 +45,11 @@ export async function publishKricAccessibilityRawArtifact({
 
 async function main() {
   const args = parseAccessibilityRawPublisherArgs(process.argv.slice(2));
-  if (Object.keys(args).length !== 2 || typeof args.observation !== "string" || typeof args.receipt !== "string") {
+  if (Object.keys(args).length !== 3 || typeof args["source-id"] !== "string" || typeof args.observation !== "string" || typeof args.receipt !== "string") {
     throw new Error("invalid arguments");
   }
   const receipt = await publishKricAccessibilityRawArtifact({
+    sourceId: args["source-id"],
     observationRoot: args.observation,
     receiptPath: args.receipt,
   });

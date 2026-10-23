@@ -18,6 +18,7 @@ import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./s
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
 import { selectCurrentFiveRegionSourceIds } from "./build-current-five-region-source-fan-in.mjs";
+import { KRIC_ESCALATOR_SOURCE_ID, KRIC_STANDARD_SOURCE_ID } from "./lib/kric-standard-facilities.mjs";
 
 const execFile = promisify(execFileCallback);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -38,8 +39,10 @@ const RELEASE_INPUTS = Object.freeze({
   productionScope: "release/product-gates/production-datapack-scope.json",
 });
 const JOURNAL = "journal.json";
+// 이 operation이 갱신하는 KRIC 시설 원천이다(#3036). 필수 여부는 inventory가 정하고 production scope와 맞는지는 원천 집합 검증이 본다.
+const REFRESHED_FACILITY_SOURCE_IDS = Object.freeze([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID]);
 const REGISTRAR_RESIDUES = Object.freeze(["tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock", "tools/datapack/.candidate-source-rebind.lock", "tools/datapack/.active-facility-derived-identity-rebind.lock"]);
-const JOURNAL_KEYS = new Set(["schemaVersion", "artifactKind", "operationId", "phase", "preparedAt", "expectedMainSha", "expectedFacilityHeadSha", "planSha256", "inputSha256", "completedStages", "collectionStartedAt", "snapshotId", "completedObservation", "collectionReconciledAt", "finalizeObservedAt", "finalizedAt"]);
+const JOURNAL_KEYS = new Set(["schemaVersion", "artifactKind", "sourceId", "operationId", "phase", "preparedAt", "expectedMainSha", "expectedFacilityHeadSha", "planSha256", "inputSha256", "completedStages", "collectionStartedAt", "snapshotId", "completedObservation", "collectionReconciledAt", "finalizeObservedAt", "finalizedAt"]);
 const RAW_RECEIPT_KEYS = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "snapshotRawSha256", "capturedAt", "snapshotFileSha256", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
@@ -50,6 +53,12 @@ function parseJournal(bytes) {
   return journal;
 }
 function requireText(value, label) { if (typeof value !== "string" || value === "") throw new Error(`${label} is required`); return value; }
+function requireFacilitySourceId(value) {
+  if (value === undefined) throw new Error("KRIC facility source id is required");
+  if (!REFRESHED_FACILITY_SOURCE_IDS.includes(value)) throw new Error(`KRIC facility source is not refreshed by this operation: ${value}`);
+  return value;
+}
+function assertObservationSource(sourceId, snapshot) { if (snapshot?.sourceId !== sourceId) throw new Error("collected observation source mismatch"); }
 function requireSha256(value, label) { if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) throw new Error(`${label} is invalid`); return value; }
 export async function syncWrite(target, value, { openImpl = open, renameImpl = rename, unlinkImpl = unlink } = {}) {
   const bytes = Buffer.isBuffer(value) ? value : Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
@@ -189,10 +198,21 @@ async function validateReleasePreflight(root, planBytes, now, { replacingSourceI
     const replacingExpiredSource = replacingSourceIds.has(sourceId);
     if (!ledger || ledger.sourceId !== sourceId || ledger.licenseStatus !== "PASS" || ledger.snapshotStatus !== "LOCKED" || ledger.credentialRedacted !== true || (!replacingExpiredSource && freshnessExpiresAt <= now.getTime()) || rawRetentionExpiresAt <= now.getTime() || review?.status !== "APPROVED" || nextReviewAt <= now.getTime() || review.termsHash !== source?.admissionEvidence?.licenseEvidenceHash) throw new Error("selected source ledger/freshness binding mismatch");
   }
-  const source = inventory.sources?.find(({ id }) => id === "kric-station-convenience-standard"); const relativeSnapshot = source?.accessibilityAdmissionEvidence?.snapshotPath;
-  if (typeof relativeSnapshot !== "string" || path.isAbsolute(relativeSnapshot) || path.resolve(root, relativeSnapshot) !== path.join(root, "tools/datapack/sources", `${source?.accessibilityAdmissionEvidence?.snapshotId}.json`)) throw new Error("KRIC release snapshot identity is invalid");
-  const snapshot = await readStableRegularFile(path.join(root, relativeSnapshot), "KRIC release snapshot"); const snapshotValue = validateKricAccessibilitySnapshotIdentity(parse(snapshot.bytes, "KRIC release snapshot")); const ledger = snapshots.find((entry) => entry?.sourceId === snapshotValue.sourceId && entry.snapshotId === snapshotValue.snapshotId); const evidence = source.accessibilityAdmissionEvidence;
-  if (!ledger || evidence.snapshotFileSha256 !== hash(snapshot.bytes) || evidence.rawSha256 !== snapshotValue.rawSha256 || evidence.contentSha256 !== snapshotValue.contentSha256 || evidence.schemaFingerprint !== snapshotValue.schemaFingerprint || ledger.rawReceipt?.snapshotId !== snapshotValue.snapshotId || ledger.rawReceipt?.snapshotRawSha256 !== snapshotValue.rawSha256 || ledger.contentSha256 !== snapshotValue.contentSha256 || ledger.schemaFingerprint !== snapshotValue.schemaFingerprint) throw new Error("KRIC source raw/ledger binding mismatch");
+  for (const sourceId of REFRESHED_FACILITY_SOURCE_IDS) {
+    const source = inventory.sources?.find(({ id }) => id === sourceId);
+    // 첫 등록 전 원천은 증거도 원장 행도 없다(fan-in 필수 원천의 증거는 수집 계획이 먼저 요구한다).
+    if (source?.accessibilityAdmissionEvidence === undefined) {
+      if (heads[sourceId] !== undefined) throw new Error(`KRIC facility first registration state is invalid: ${sourceId}`);
+      continue;
+    }
+    await assertFacilitySourceReleaseBinding(root, source, sourceId, snapshots);
+  }
+}
+async function assertFacilitySourceReleaseBinding(root, source, sourceId, snapshots) {
+  const evidence = source.accessibilityAdmissionEvidence; const relativeSnapshot = evidence?.snapshotPath;
+  if (typeof relativeSnapshot !== "string" || path.isAbsolute(relativeSnapshot) || path.resolve(root, relativeSnapshot) !== path.join(root, "tools/datapack/sources", `${evidence.snapshotId}.json`)) throw new Error("KRIC release snapshot identity is invalid");
+  const snapshot = await readStableRegularFile(path.join(root, relativeSnapshot), "KRIC release snapshot"); const snapshotValue = validateKricAccessibilitySnapshotIdentity(parse(snapshot.bytes, "KRIC release snapshot")); const ledger = snapshots.find((entry) => entry?.sourceId === snapshotValue.sourceId && entry.snapshotId === snapshotValue.snapshotId);
+  if (!ledger || snapshotValue.sourceId !== sourceId || evidence.snapshotFileSha256 !== hash(snapshot.bytes) || evidence.rawSha256 !== snapshotValue.rawSha256 || evidence.contentSha256 !== snapshotValue.contentSha256 || evidence.schemaFingerprint !== snapshotValue.schemaFingerprint || ledger.rawReceipt?.snapshotId !== snapshotValue.snapshotId || ledger.rawReceipt?.snapshotRawSha256 !== snapshotValue.rawSha256 || ledger.contentSha256 !== snapshotValue.contentSha256 || ledger.schemaFingerprint !== snapshotValue.schemaFingerprint) throw new Error("KRIC source raw/ledger binding mismatch");
 }
 function summary(observation) { return { snapshotId: observation.snapshot.snapshotId, requestCount: observation.rawArtifact.requestCount, status: "COLLECTED" }; }
 function validatedOperationPlan(planBytes) {
@@ -208,7 +228,7 @@ async function isRegisteredState({ root, snapshot, snapshotBytes, receipt, targe
   try { heads = validateLineage(snapshots).headsBySource; } catch { return false; }
   const ledger = matches[0]; const rawReceipt = ledger?.rawReceipt;
   const receiptKeys = ["sourceId", "snapshotId", "snapshotRawSha256", "snapshotFileSha256", "rawObjectSha256", "byteSize", "capturedAt", "storedAt"];
-  return source?.requiredForProductionPack === true && source.productionUseAllowed === true && source.capabilities?.facility?.productionUseAllowed === true && source.license?.redistributionAllowed === true && source.admissionEvidence?.decision === "APPROVED" && evidence?.decision === "APPROVED" && evidence.productionUseAllowed === true && evidence.licenseEvidenceHash === source.admissionEvidence?.licenseEvidenceHash && evidence.snapshotId === snapshot.snapshotId && evidence.snapshotPath === `tools/datapack/sources/${snapshot.snapshotId}.json` && evidence.snapshotFileSha256 === hash(snapshotBytes) && evidence.rawSha256 === snapshot.rawSha256 && evidence.contentSha256 === snapshot.contentSha256 && evidence.schemaFingerprint === snapshot.schemaFingerprint && matches.length === 1 && heads[snapshot.sourceId] === snapshot.snapshotId && [ledger?.snapshotStatus, ledger?.fetchStatus, ledger?.schemaStatus, ledger?.licenseStatus].join("\0") === "LOCKED\0SUCCESS\0PASS\0PASS" && snapshot.queryCount === expectedCoverageCount && ledger.coverageCount === snapshot.queryCount && ledger.contentSha256 === snapshot.contentSha256 && ledger.schemaFingerprint === snapshot.schemaFingerprint && ledger.rawSha256 === rawReceipt?.rawObjectSha256 && receiptKeys.every((key) => receipt?.[key] === rawReceipt?.[key]) && rawReceipt?.sourceId === snapshot.sourceId && rawReceipt?.snapshotId === snapshot.snapshotId && rawReceipt?.snapshotRawSha256 === snapshot.rawSha256 && rawReceipt?.snapshotFileSha256 === hash(snapshotBytes) && rawReceipt?.capturedAt === snapshot.capturedAt;
+  return source?.productionUseAllowed === true && source.capabilities?.facility?.productionUseAllowed === true && source.license?.redistributionAllowed === true && source.admissionEvidence?.decision === "APPROVED" && evidence?.decision === "APPROVED" && evidence.productionUseAllowed === true && evidence.licenseEvidenceHash === source.admissionEvidence?.licenseEvidenceHash && evidence.snapshotId === snapshot.snapshotId && evidence.snapshotPath === `tools/datapack/sources/${snapshot.snapshotId}.json` && evidence.snapshotFileSha256 === hash(snapshotBytes) && evidence.rawSha256 === snapshot.rawSha256 && evidence.contentSha256 === snapshot.contentSha256 && evidence.schemaFingerprint === snapshot.schemaFingerprint && matches.length === 1 && heads[snapshot.sourceId] === snapshot.snapshotId && [ledger?.snapshotStatus, ledger?.fetchStatus, ledger?.schemaStatus, ledger?.licenseStatus].join("\0") === "LOCKED\0SUCCESS\0PASS\0PASS" && snapshot.queryCount === expectedCoverageCount && ledger.coverageCount === snapshot.queryCount && ledger.contentSha256 === snapshot.contentSha256 && ledger.schemaFingerprint === snapshot.schemaFingerprint && ledger.rawSha256 === rawReceipt?.rawObjectSha256 && receiptKeys.every((key) => receipt?.[key] === rawReceipt?.[key]) && rawReceipt?.sourceId === snapshot.sourceId && rawReceipt?.snapshotId === snapshot.snapshotId && rawReceipt?.snapshotRawSha256 === snapshot.rawSha256 && rawReceipt?.snapshotFileSha256 === hash(snapshotBytes) && rawReceipt?.capturedAt === snapshot.capturedAt;
 }
 async function readCompletedObservation(observationRoot) {
   const rootStat = await lstat(observationRoot);
@@ -251,13 +271,13 @@ function assertObservationBinding(journal, observation) {
   const binding = journal?.completedObservation;
   if (!binding || JSON.stringify(binding) !== JSON.stringify(observationBinding(observation))) throw new Error("completed observation identity mismatch");
 }
-async function retainedReceiptObjectKey(receipt, root, now) {
+async function retainedReceiptObjectKey(receipt, root, now, sourceId) {
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)
     || Object.keys(receipt).length !== RAW_RECEIPT_KEYS.length
     || RAW_RECEIPT_KEYS.some((key, index) => Object.keys(receipt)[index] !== key)
     || receipt.schemaVersion !== 1
     || receipt.artifactKind !== "kric-accessibility-raw-object-receipt"
-    || receipt.sourceId !== "kric-station-convenience-standard"
+    || receipt.sourceId !== sourceId
     || typeof receipt.snapshotId !== "string" || receipt.snapshotId === ""
     || !/^[0-9a-f]{64}$/.test(receipt.snapshotRawSha256 ?? "")
     || !/^[0-9a-f]{64}$/.test(receipt.snapshotFileSha256 ?? "")
@@ -311,7 +331,7 @@ function reconstructedObservationBytes(observation, retainedRawArtifact, retaine
     rawBytes,
   };
 }
-async function reconstructRetainedObservation({ plan, receipt, rawBytes, collectImpl }) {
+async function reconstructRetainedObservation({ sourceId, plan, receipt, rawBytes, collectImpl }) {
   const rawArtifact = parse(rawBytes, "retained OCI raw artifact");
   const responses = new Map();
   if (!Array.isArray(rawArtifact?.responses)) throw new Error("retained OCI raw artifact is invalid");
@@ -323,6 +343,7 @@ async function reconstructRetainedObservation({ plan, receipt, rawBytes, collect
     responses.set(key, response);
   }
   const observation = await collectImpl({
+    sourceId,
     roster: roster(plan),
     serviceKey: "retained-oci-recovery",
     now: new Date(receipt.capturedAt),
@@ -348,15 +369,17 @@ function roster(plan) { return plan.stationLineProviderMappings.map((mapping) =>
 export function parseArgs(argv) {
   const values = {}; for (let index = 0; index < argv.length; index += 2) { const key = argv[index]; if (!key?.startsWith("--") || values[key.slice(2)] !== undefined) throw new Error("operation arguments are invalid"); values[key.slice(2)] = argv[index + 1]; }
   if (!["prepare", "collect", "recover-published", "finalize"].includes(values.phase)
-    || Object.keys(values).some((key) => !["phase", "operation-root", "repository-root", "expected-main-sha", "expected-facility-head-sha", "source-operation-root", "replacing-source-id"].includes(key))) throw new Error("operation arguments are invalid");
+    || Object.keys(values).some((key) => !["phase", "operation-root", "repository-root", "expected-main-sha", "expected-facility-head-sha", "source-operation-root", "replacing-source-id", "source-id"].includes(key))) throw new Error("operation arguments are invalid");
   requireText(values["operation-root"], "operation root");
   if (!path.isAbsolute(values["operation-root"])) throw new Error("operation root must be absolute");
   if (values["repository-root"] !== undefined && !path.isAbsolute(values["repository-root"])) throw new Error("repository root must be absolute");
   if (values.phase === "prepare") {
     requireText(values["expected-main-sha"], "expected main SHA");
     requireText(values["expected-facility-head-sha"], "expected facility head SHA");
+    requireFacilitySourceId(values["source-id"]);
     if (values["source-operation-root"] !== undefined || values["replacing-source-id"] !== undefined) throw new Error("operation arguments are invalid");
-  } else if (values.phase === "recover-published") {
+  } else if (values["source-id"] !== undefined) throw new Error("operation arguments are invalid");
+  else if (values.phase === "recover-published") {
     requireText(values["source-operation-root"], "source operation root");
     if (!path.isAbsolute(values["source-operation-root"]) || values["expected-main-sha"] !== undefined
       || values["expected-facility-head-sha"] !== undefined || values["replacing-source-id"] !== undefined) throw new Error("operation arguments are invalid");
@@ -367,7 +390,8 @@ export function parseArgs(argv) {
       : values["replacing-source-id"] !== undefined)) throw new Error("operation arguments are invalid");
   return values;
 }
-export async function prepareCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, expectedMainSha, expectedFacilityHeadSha, execFileImpl = execFile, now = new Date() } = {}) {
+export async function prepareCurrentCapitalFacilityOperation({ sourceId, repositoryRoot = ROOT, operationRoot, expectedMainSha, expectedFacilityHeadSha, execFileImpl = execFile, now = new Date() } = {}) {
+  requireFacilitySourceId(sourceId);
   requireText(expectedMainSha, "expected main SHA");
   requireText(expectedFacilityHeadSha, "expected facility head SHA");
   const root = path.resolve(repositoryRoot); const output = path.resolve(requireText(operationRoot, "operation root"));
@@ -378,15 +402,15 @@ export async function prepareCurrentCapitalFacilityOperation({ repositoryRoot = 
   const reread = await inputSnapshots(root); if (Object.entries(snapshots).some(([key, value]) => hash(value.bytes) !== hash(reread[key].bytes) || JSON.stringify(value.identity) !== JSON.stringify(reread[key].identity))) throw new Error("prepared input changed during preflight");
   await mkdir(output, { mode: 0o700 });
   await writeFile(path.join(output, "plan.json"), canonicalCurrentCapitalFacilityCollectionPlanJson(plan), { flag: "wx", mode: 0o600 });
-  const journal = { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", operationId: randomUUID(), phase: "PREPARED", preparedAt: now.toISOString(), expectedMainSha, expectedFacilityHeadSha, planSha256: hash(Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan))), inputSha256: Object.fromEntries(Object.entries(bytes).map(([key, value]) => [key, hash(value)])), completedStages: {} };
+  const journal = { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", sourceId, operationId: randomUUID(), phase: "PREPARED", preparedAt: now.toISOString(), expectedMainSha, expectedFacilityHeadSha, planSha256: hash(Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan))), inputSha256: Object.fromEntries(Object.entries(bytes).map(([key, value]) => [key, hash(value)])), completedStages: {} };
   await syncWrite(path.join(output, JOURNAL), journal); return { plan, journal };
 }
 export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, serviceKey, replacingSourceId, replacingSourceIds, fetchImpl = fetch, delayImpl, now = new Date(), env = process.env, execFileImpl = execFile, journalWriteImpl = syncWrite, collectImpl = collectKricStandardAccessibilityObservation, writeObservationImpl = writeKricStandardAccessibilityObservation } = {}) {
   const repository = path.resolve(repositoryRoot); const root = path.resolve(requireText(operationRoot, "operation root")); let journal = parseJournal(await regularBytes(path.join(root, JOURNAL), "operation journal"));
-  await assertExternalOperationRoot(repository, root); const planBytes = await assertPlanBinding(root, journal);
+  await assertExternalOperationRoot(repository, root); const planBytes = await assertPlanBinding(root, journal); const sourceId = requireFacilitySourceId(journal.sourceId);
   if (journal.phase === "COLLECTION_STARTED") {
     await assertExactFacilityRepository(repository, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl);
-    const observation = await readCompletedObservation(path.join(root, "observation"));
+    const observation = await readCompletedObservation(path.join(root, "observation")); assertObservationSource(sourceId, observation.snapshot);
     const binding = observationBinding(observation); journal = { ...journal, phase: "COLLECTED", snapshotId: observation.snapshot.snapshotId, completedObservation: binding, collectionReconciledAt: now.toISOString() }; await journalWriteImpl(path.join(root, JOURNAL), journal); return summary(observation);
   }
   if (journal.phase !== "PREPARED") throw new Error("collection may only start from PREPARED operation");
@@ -400,7 +424,8 @@ export async function collectCurrentCapitalFacilityOperation({ repositoryRoot = 
     journal = parseJournal(await regularBytes(path.join(root, JOURNAL), "operation journal"));
     if (journal.phase !== "PREPARED") throw new Error("collection may only start from PREPARED operation");
     await journalWriteImpl(path.join(root, JOURNAL), { ...journal, phase: "COLLECTION_STARTED", collectionStartedAt: now.toISOString() });
-    const observation = await collectImpl({ roster: roster(plan), serviceKey: key, fetchImpl, delayImpl, now, requestTimeoutMs: 30_000, requestIntervalMs: 250 });
+    const observation = await collectImpl({ sourceId, roster: roster(plan), serviceKey: key, fetchImpl, delayImpl, now, requestTimeoutMs: 30_000, requestIntervalMs: 250 });
+    assertObservationSource(sourceId, observation.snapshot);
     if (observation.rawArtifact.requestCount !== plan.counts.providerTupleCount) throw new Error(`KRIC collection must make exactly ${plan.counts.providerTupleCount} requests`);
     const observationRoot = path.join(root, "observation"); await writeObservationImpl({ outputRoot: observationRoot, observation });
     const completed = await readCompletedObservation(observationRoot); const binding = observationBinding(completed);
@@ -434,6 +459,8 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
   const targetJournal = parseJournal(await regularBytes(targetJournalPath, "target operation journal"));
   const sourceJournal = parseJournal(await regularBytes(sourceJournalPath, "source operation journal"));
   if (targetJournal.phase !== "PREPARED" || Object.keys(targetJournal.completedStages ?? {}).length !== 0) throw new Error("published recovery target must be PREPARED");
+  const sourceId = requireFacilitySourceId(targetJournal.sourceId);
+  if (sourceJournal.sourceId !== sourceId) throw new Error("published recovery source identity mismatch");
   if (!["FINALIZE_STARTED", "FINALIZED"].includes(sourceJournal.phase)) throw new Error("published recovery source must be FINALIZE_STARTED or FINALIZED");
   const sourcePublished = sourceJournal.completedStages?.published;
   if (!sourcePublished || Object.keys(sourcePublished).length !== 2 || !/^[0-9a-f]{64}$/.test(sourcePublished.receiptSha256 ?? "") || typeof sourcePublished.snapshotId !== "string") throw new Error("published recovery source stage is invalid");
@@ -487,7 +514,7 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
     if (!sourceFinalized || sourcePublished.snapshotId !== receipt.snapshotId) {
       throw new Error("published recovery source observation is unavailable");
     }
-    const objectKey = await retainedReceiptObjectKey(receipt, repository, now);
+    const objectKey = await retainedReceiptObjectKey(receipt, repository, now, sourceId);
     requireOciParBaseUrl(env);
     const client = rawObjectClient ?? preauthenticatedObjectStorageClient(
       new URL(env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL.trim()),
@@ -500,13 +527,14 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
       throw new Error("retained OCI raw object identity mismatch");
     }
     observation = await reconstructRetainedObservation({
+      sourceId,
       plan: rebuiltPlan,
       receipt,
       rawBytes: stored.body,
       collectImpl,
     });
   }
-  assertObservationBinding(sourceJournal, observation);
+  assertObservationBinding(sourceJournal, observation); assertObservationSource(sourceId, observation.snapshot);
   if (sourcePublished.snapshotId !== observation.snapshot.snapshotId) throw new Error("published recovery source stage is invalid");
   if (sourceFinalized && sourceFinalizedStages.registered.snapshotSha256 !== hash(observation.snapshotBytes)) throw new Error("published recovery finalized source stages are invalid");
   const recoveryNowMillis = requiredUtcInstant(now.toISOString(), "published recovery now");
@@ -571,7 +599,7 @@ export async function recoverPublishedCurrentCapitalFacilityOperation({ reposito
 }
 export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot = ROOT, operationRoot, now = new Date(), env = process.env, execFileImpl = execFile, publishImpl = publishKricAccessibilityRawArtifact, registerImpl = registerKricStandardAccessibilitySnapshot } = {}) {
   const root = path.resolve(repositoryRoot); const operation = path.resolve(requireText(operationRoot, "operation root")); const journal = parseJournal(await regularBytes(path.join(operation, JOURNAL), "operation journal"));
-  await assertExternalOperationRoot(root, operation); const planBytes = await assertPlanBinding(operation, journal); const plan = validatedOperationPlan(planBytes);
+  await assertExternalOperationRoot(root, operation); const planBytes = await assertPlanBinding(operation, journal); const plan = validatedOperationPlan(planBytes); const sourceId = requireFacilitySourceId(journal.sourceId);
   if (journal.phase === "COLLECTION_STARTED") {
     await assertExactFacilityRepository(root, requireText(journal.expectedMainSha, "prepared expected main SHA"), requireText(journal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl);
   }
@@ -586,7 +614,7 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
     "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
     "tools/datapack/.kric-standard-registration-transaction.json", "tools/datapack/.kric-standard-registration.lock",
   ]);
-  const completedObservation = await readCompletedObservation(path.join(operation, "observation")); assertObservationBinding(reconciledJournal, completedObservation);
+  const completedObservation = await readCompletedObservation(path.join(operation, "observation")); assertObservationBinding(reconciledJournal, completedObservation); assertObservationSource(sourceId, completedObservation.snapshot);
   const observationManifest = completedObservation.manifest;
   allowedResumePaths.add(`tools/datapack/sources/${observationManifest.snapshotId}.json`);
   if (reconciledJournal.phase === "COLLECTED") { await assertExactFacilityRepository(root, requireText(reconciledJournal.expectedMainSha, "prepared expected main SHA"), requireText(reconciledJournal.expectedFacilityHeadSha, "prepared expected facility head SHA"), execFileImpl); await assertNoRegistrarResidues(root); await assertPreparedInputs(root, reconciledJournal); await validateReleasePreflight(root, planBytes, now); }
@@ -606,7 +634,7 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
     if (receiptBytes == null) {
       requireOciParBaseUrl(env);
       try {
-        await publishImpl({ observationRoot, receiptPath, repositoryRoot: root, env, now });
+        await publishImpl({ sourceId, observationRoot, receiptPath, repositoryRoot: root, env, now });
       } catch (error) {
         receiptBytes = await existingRegularBytes(receiptPath, "raw receipt"); if (receiptBytes == null) throw error;
       }
@@ -636,5 +664,5 @@ export async function finalizeCurrentCapitalFacilityOperation({ repositoryRoot =
   const finalized = { ...nextJournal, phase: "FINALIZED", snapshotId: snapshot.snapshotId, finalizedAt: now.toISOString() };
   await syncWrite(path.join(operation, JOURNAL), finalized); return finalized;
 }
-export async function main(argv, dependencies = {}) { const args = parseArgs(argv); const common = { operationRoot: args["operation-root"], ...(args["repository-root"] == null ? {} : { repositoryRoot: args["repository-root"] }), ...dependencies }; if (args.phase === "prepare") return prepareCurrentCapitalFacilityOperation({ ...common, expectedMainSha: args["expected-main-sha"], expectedFacilityHeadSha: args["expected-facility-head-sha"] }); if (args.phase === "collect") return collectCurrentCapitalFacilityOperation({ ...common, replacingSourceId: args["replacing-source-id"], serviceKey: dependencies.env?.KRIC_SERVICE_KEY ?? process.env.KRIC_SERVICE_KEY }); if (args.phase === "recover-published") return recoverPublishedCurrentCapitalFacilityOperation({ ...common, sourceOperationRoot: args["source-operation-root"] }); return finalizeCurrentCapitalFacilityOperation(common); }
+export async function main(argv, dependencies = {}) { const args = parseArgs(argv); const common = { operationRoot: args["operation-root"], ...(args["repository-root"] == null ? {} : { repositoryRoot: args["repository-root"] }), ...dependencies }; if (args.phase === "prepare") return prepareCurrentCapitalFacilityOperation({ ...common, sourceId: args["source-id"], expectedMainSha: args["expected-main-sha"], expectedFacilityHeadSha: args["expected-facility-head-sha"] }); if (args.phase === "collect") return collectCurrentCapitalFacilityOperation({ ...common, replacingSourceId: args["replacing-source-id"], serviceKey: dependencies.env?.KRIC_SERVICE_KEY ?? process.env.KRIC_SERVICE_KEY }); if (args.phase === "recover-published") return recoverPublishedCurrentCapitalFacilityOperation({ ...common, sourceOperationRoot: args["source-operation-root"] }); return finalizeCurrentCapitalFacilityOperation(common); }
 if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).then((value) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)).catch((error) => { console.error(error instanceof Error ? error.message : "FACILITY operation failed"); process.exitCode = 1; });
