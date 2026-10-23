@@ -2004,14 +2004,31 @@ test("#3036 팩 역-노선에 없는 KRIC 조회와 terminal 정책 밖 결과 0
   );
 });
 
+test("#3036 같은 원문 행이 한 역의 두 노선 조회에 실려 시설 id가 겹치면 합치지 않고 실패한다", () => {
+  const { snapshot, pack, rows } = kricStandardFixture();
+  const lineTwo = { ...snapshot.queries[0], lineId: "line-2", lnCd: "2", stinCd: "201", rows: [rows.ev1] };
+  const twoLinePack = { ...pack, stationLines: [...pack.stationLines, { stationId: "station-a", lineId: "line-2" }] };
+  assert.throws(
+    () => withCapitalKricStandardFacilities({ pack: twoLinePack, snapshot: { ...snapshot, queries: [...snapshot.queries, lineTwo] } }),
+    new RegExp(`facility identity collision: ${kricStandardFacilityId("station-a", "ELEVATOR", rows.ev1)}`),
+  );
+});
+
+test("#3036 실제 snapshot의 환승역 고정 사례는 다른 노선 조회에 실린 유형을 UNKNOWN으로 남긴다", async () => {
+  const { snapshot, pack, stationId, lineId } = await pinnedCapitalKricInputs();
+  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+  const cheonggu = stationId("청구");
+  const sindang = stationId("신당");
+  assert.deepEqual(kricEvidenceState(result, cheonggu, lineId("수도권 5호선"), "ELEVATOR"), ["UNKNOWN", "LISTED_ON_OTHER_LINE_QUERY"]);
+  assert.deepEqual(kricEvidenceState(result, cheonggu, lineId("수도권 6호선"), "ELEVATOR"), ["EXISTS", "STATIC_LOCATION"]);
+  assert.deepEqual(kricEvidenceState(result, cheonggu, lineId("수도권 5호선"), "WHEELCHAIR_LIFT"), ["NOT_EXISTS", "EXHAUSTIVE_LIST_ABSENCE"]);
+  assert.deepEqual(kricEvidenceState(result, sindang, lineId("수도권 2호선"), "WHEELCHAIR_LIFT"), ["UNKNOWN", "LISTED_ON_OTHER_LINE_QUERY"]);
+  assert.deepEqual(kricEvidenceState(result, sindang, lineId("수도권 6호선"), "WHEELCHAIR_LIFT"), ["EXISTS", "STATIC_LOCATION"]);
+});
+
 test("#3036 후보가 고정한 KRIC snapshot의 결과 00 조회 212개(199역)가 모두 팩 시설·세 상태 증거가 되고 에스컬레이터 부재는 없다", async () => {
-  const fanIn = await candidatePinnedJson(pinnedRead, "tools/datapack/release/current-five-region-source-fan-in.json");
-  const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === KRIC_STANDARD).snapshotId;
-  const [snapshot, baseFixture] = await Promise.all([
-    candidatePinnedJson(pinnedRead, `tools/datapack/sources/${head}.json`),
-    candidatePinnedJson(pinnedRead, "tools/datapack/release/capital-production-canonical-pack.json"),
-  ]);
-  const result = withCapitalKricStandardFacilities({ pack: baseFixture.packs[0], snapshot });
+  const { snapshot, pack, stationId } = await pinnedCapitalKricInputs();
+  const result = withCapitalKricStandardFacilities({ pack, snapshot });
   const present = snapshot.queries.filter(({ providerResultCode }) => providerResultCode === "00");
   const routeRows = (query) => [...new Set(query.rows.filter(({ gubun }) => gubun === "EV" || gubun === "WCLF").map((row) => JSON.stringify(row)))];
   const kricFacilities = result.facilities.filter(isKricStandard);
@@ -2025,7 +2042,7 @@ test("#3036 후보가 고정한 KRIC snapshot의 결과 00 조회 212개(199역)
     new Set(present.filter((query) => routeRows(query).length > 0).map(({ stationId, lineId }) => `${stationId}|${lineId}`)),
   );
   assert.equal(new Set(kricFacilities.map(({ id }) => id)).size, kricFacilities.length);
-  for (const base of baseFixture.packs[0].facilities.filter(isKricStandard)) {
+  for (const base of pack.facilities.filter(isKricStandard)) {
     assert.equal(kricFacilities.filter(({ id }) => id === base.id).length, 1, `${base.id} 기반 팩 행은 한 번만 남는다`);
   }
   const evidenceKey = ({ stationId, lineId, facilityType }) => `${stationId}|${lineId}|${facilityType}`;
@@ -2040,9 +2057,8 @@ test("#3036 후보가 고정한 KRIC snapshot의 결과 00 조회 212개(199역)
     && query.rows.some(({ gubun }) => gubun === (type === "ELEVATOR" ? "EV" : "WCLF")));
   assert.deepEqual(kricEvidence.filter(({ evidenceKind, stationId, facilityType }) => evidenceKind === "NOT_EXISTS"
     && listedAtStation(stationId, facilityType)).map(({ stationId, lineId, facilityType }) => `${stationId}|${lineId}|${facilityType}`), []);
-  const stationIdByName = (name) => baseFixture.packs[0].stations.find(({ nameKo }) => nameKo === name).id;
   for (const name of ["서울역", "강남"]) {
-    assert.ok(kricFacilities.some(({ stationId, type }) => stationId === stationIdByName(name) && type === "ELEVATOR"), `${name} 엘리베이터`);
+    assert.ok(kricFacilities.some((facility) => facility.stationId === stationId(name) && facility.type === "ELEVATOR"), `${name} 엘리베이터`);
   }
 });
 

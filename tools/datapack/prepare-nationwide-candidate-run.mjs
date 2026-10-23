@@ -823,6 +823,13 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
       evidence.push({ ...row, strictRouteEligible: false, strictRouteEligibleReason });
     }
   }
+  // 시설 id는 역·유형·원문 행 hash로 정해진다. 같은 원문 행이 같은 역의 두 노선 조회에 실리면 id가 겹치므로
+  // materializer와 같이 조용히 합치지 않고 실패한다.
+  const facilityIds = new Set();
+  for (const { id } of facilities) {
+    if (facilityIds.has(id)) throw new Error(`facility identity collision: ${id}`);
+    facilityIds.add(id);
+  }
   const isOtherSource = ({ sourceId }) => sourceId !== KRIC_STANDARD_SOURCE_ID;
   return {
     facilities: [...pack.facilities.filter(isOtherSource), ...facilities],
