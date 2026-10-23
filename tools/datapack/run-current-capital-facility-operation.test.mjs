@@ -1329,3 +1329,27 @@ test("#3036 published recovery refuses a target prepared for another facility so
   assert.deepEqual([journal.phase, journal.sourceId], ["PREPARED", ESCALATOR_SOURCE_ID]);
   await assert.rejects(readFile(path.join(targetRoot, "receipt.json")), /ENOENT/u);
 });
+
+// 수집 사전 검사 뒤 등록 전에 원장이 바뀌어도 등록기가 첫 등록 상태를 스스로 다시 판정한다.
+test("#3036 the registrar refuses a first registration when the ledger gained a head for the source after preflight", async (t) => {
+  const { repositoryRoot, operationRoot, oci, readJson } = await collectedEscalatorOperation(t);
+  const ledgerPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
+  let registrations = 0;
+  const registerImpl = async (options) => {
+    registrations += 1;
+    const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+    const standardHead = ledger.find(({ snapshotId }) => snapshotId === validateLineage(ledger).headsBySource[STANDARD_SOURCE_ID]);
+    const { diffSummary: _diff, ...row } = structuredClone(standardHead);
+    ledger.push({ ...row, sourceId: ESCALATOR_SOURCE_ID, snapshotId: `${ESCALATOR_SOURCE_ID}-20261001T000000000Z`, previousSnapshotId: null });
+    await writeJson(ledgerPath, ledger);
+    const { registerKricStandardAccessibilitySnapshot } = await import("./register-kric-standard-accessibility-snapshot.mjs");
+    return registerKricStandardAccessibilitySnapshot(options);
+  };
+  const inventoryBefore = await readJson("tools/datapack/source-inventory.json");
+  await assert.rejects(main(["--phase", "finalize", "--operation-root", operationRoot], {
+    repositoryRoot, now: new Date(NOW.getTime() + 60_000), env: OCI_ENV, execFileImpl: exactMainExec, registerImpl,
+    publishImpl: (options) => publishKricAccessibilityRawArtifact({ ...options, client: oci.client }),
+  }), /source snapshot lineage is missing/);
+  assert.equal(registrations, 1);
+  assert.deepEqual(await readJson("tools/datapack/source-inventory.json"), inventoryBefore);
+});

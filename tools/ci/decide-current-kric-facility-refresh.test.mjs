@@ -55,6 +55,8 @@ test("KRIC refresh decision picks one source per run: the earliest-expiring regi
     [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T10:00:00.000Z", "EXPIRED", ESCALATOR],
     [{ escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T12:00:00.000Z", "EXPIRED", ESCALATOR],
     [{ freshUntil: "2026-08-30T09:00:00.000Z", escalatorFreshUntil: "2026-08-30T10:00:00.000Z" }, "2026-08-30T04:00:00.000Z", "DUE", STANDARD],
+    [{ freshUntil: "2026-08-30T10:00:00.000Z", escalatorFreshUntil: "2026-08-30T09:00:00.000Z" }, "2026-08-30T04:00:00.000Z", "DUE", ESCALATOR],
+    [{ freshUntil: "2026-08-30T03:00:00.000Z", escalatorFreshUntil: "2026-08-30T02:00:00.000Z" }, "2026-08-30T04:00:00.000Z", "EXPIRED", ESCALATOR],
   ];
   for (const [options, now, state, sourceId] of cases) {
     const result = await decideCurrentKricFacilityRefresh({ ...(await fixture(options)), now: new Date(now) });
