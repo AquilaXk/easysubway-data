@@ -73,10 +73,13 @@ async function main() {
   const resolutions = resolutionBytes
     ? { document: JSON.parse(resolutionBytes), sha256: sha256(resolutionBytes), searchPlan: resolutionPlan }
     : null;
+  if (args.now !== undefined && !args.resolutions) {
+    throw new Error("--resolutions is required with --now");
+  }
   const outputPath = requireArg(args, "output");
   // nextReviewAt 만료 판정의 평가 시각. 생략하면 실행 시각(게이트의 실제 판정)이고, 테스트는 고정 시각을 넘겨 wall-clock 결합을 없앤다.
   const now = args.now === undefined ? new Date() : requiredDate(args.now, "--now");
-  const report = buildCoverageGapReport(
+  const report = buildCoverageGapReport({
     targets,
     inventory,
     provenance,
@@ -85,7 +88,7 @@ async function main() {
     releaseScopeTargets,
     resolutions,
     now,
-  );
+  });
 
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -121,7 +124,7 @@ async function main() {
   }
 }
 
-function buildCoverageGapReport(
+function buildCoverageGapReport({
   targets,
   inventory,
   provenance = null,
@@ -130,7 +133,7 @@ function buildCoverageGapReport(
   releaseScopeTargets = null,
   resolutions = null,
   now,
-) {
+}) {
   validateTargets(targets);
   const targetIndex = coverageTargetIndex(targets);
   validateInventory(inventory);
@@ -307,7 +310,32 @@ function summarizeTier(requirements, releaseTier) {
 
 function applyCoverageResolutions(targets, requirements, document, searchPlan, now) {
   if (!document) return [];
-  if (!document || typeof document !== "object" || Array.isArray(document)) {
+  assertCoverageResolutionsDocument(document, targets);
+  const planByKey = coverageResolutionPlanIndex(targets, document, searchPlan);
+
+  const byKey = new Map(requirements.map((entry) => [requirementKey(entry), entry]));
+  const seen = new Set();
+  const transitions = [];
+  for (const [index, resolution] of document.entries.entries()) {
+    const label = `coverage resolutions entries[${index}]`;
+    const key = requiredRequirementKey(resolution, label);
+    if (seen.has(key)) throw new Error(`duplicate coverage resolution: ${key}`);
+    seen.add(key);
+    const requirement = byKey.get(key);
+    assertResolvableRequirement(resolution, requirement, key);
+    const evidence = validateUnsupportedResolution(resolution, label, now);
+    validateResolutionSearchPlan(resolution, planByKey.get(key), label);
+    if (evidence.expired || resolution.supportStartedAt) {
+      requirement.resolutionReviewStatus = resolution.supportStartedAt ? "SUPPORT_STARTED" : "EXPIRED";
+      continue;
+    }
+    transitions.push(applyUnsupportedResolution(requirement, resolution, key));
+  }
+  return transitions;
+}
+
+function assertCoverageResolutionsDocument(document, targets) {
+  if (typeof document !== "object" || Array.isArray(document)) {
     throw new Error("coverage resolutions must be an object");
   }
   if (document.schemaVersion !== 1) throw new Error("coverage resolutions schemaVersion must be 1");
@@ -318,55 +346,46 @@ function applyCoverageResolutions(targets, requirements, document, searchPlan, n
     throw new Error("coverage resolutions targetVersion must match coverage targets");
   }
   if (!Array.isArray(document.entries)) throw new Error("coverage resolutions entries must be an array");
-  const planByKey = coverageResolutionPlanIndex(targets, document, searchPlan);
+}
 
-  const byKey = new Map(requirements.map((entry) => [requirementKey(entry), entry]));
-  const seen = new Set();
-  const transitions = [];
-  for (const [index, resolution] of document.entries.entries()) {
-    const label = `coverage resolutions entries[${index}]`;
-    if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
-      throw new Error(`${label} must be an object`);
-    }
-    const key = requirementKey({
-      regionId: requiredString(resolution.regionId, `${label}.regionId`),
-      operatorId: requiredString(resolution.operatorId, `${label}.operatorId`),
-      lineId: requiredString(resolution.lineId, `${label}.lineId`),
-      sourceDomain: requiredString(resolution.sourceDomain, `${label}.sourceDomain`),
-    });
-    if (seen.has(key)) throw new Error(`duplicate coverage resolution: ${key}`);
-    seen.add(key);
-    const requirement = byKey.get(key);
-    if (!requirement) throw new Error(`unknown coverage resolution requirement: ${key}`);
-    if (resolution.state !== "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE") {
-      throw new Error(`coverage resolution state is invalid: ${resolution.state ?? "missing"}`);
-    }
-    if (requirement.status === "SUPPORTED") {
-      throw new Error(`supported requirement must not have unsupported resolution: ${key}`);
-    }
-    const evidence = validateUnsupportedResolution(resolution, label, now);
-    validateResolutionSearchPlan(resolution, planByKey.get(key), label);
-    if (evidence.expired || resolution.supportStartedAt) {
-      requirement.resolutionReviewStatus = resolution.supportStartedAt ? "SUPPORT_STARTED" : "EXPIRED";
-      continue;
-    }
-    requirement.status = resolution.state;
-    requirement.capabilityFallback = resolution.fallback;
-    requirement.reasonCode = resolution.reasonCode;
-    requirement.userMessageKo = resolution.userMessageKo;
-    requirement.resolutionEvidenceHash = resolution.evidenceHash;
-    requirement.resolutionReviewStatus = "CURRENT";
-    requirement.publicApiQueries = resolution.publicApiQueries;
-    transitions.push({
-      requirementKey: key,
-      before: "MISSING",
-      after: resolution.state,
-      reasonCode: resolution.reasonCode,
-      evidenceHash: resolution.evidenceHash,
-      reviewedAt: resolution.reviewedAt,
-    });
+function requiredRequirementKey(entry, label) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    throw new Error(`${label} must be an object`);
   }
-  return transitions;
+  return requirementKey({
+    regionId: requiredString(entry.regionId, `${label}.regionId`),
+    operatorId: requiredString(entry.operatorId, `${label}.operatorId`),
+    lineId: requiredString(entry.lineId, `${label}.lineId`),
+    sourceDomain: requiredString(entry.sourceDomain, `${label}.sourceDomain`),
+  });
+}
+
+function assertResolvableRequirement(resolution, requirement, key) {
+  if (!requirement) throw new Error(`unknown coverage resolution requirement: ${key}`);
+  if (resolution.state !== "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE") {
+    throw new Error(`coverage resolution state is invalid: ${resolution.state ?? "missing"}`);
+  }
+  if (requirement.status === "SUPPORTED") {
+    throw new Error(`supported requirement must not have unsupported resolution: ${key}`);
+  }
+}
+
+function applyUnsupportedResolution(requirement, resolution, key) {
+  requirement.status = resolution.state;
+  requirement.capabilityFallback = resolution.fallback;
+  requirement.reasonCode = resolution.reasonCode;
+  requirement.userMessageKo = resolution.userMessageKo;
+  requirement.resolutionEvidenceHash = resolution.evidenceHash;
+  requirement.resolutionReviewStatus = "CURRENT";
+  requirement.publicApiQueries = resolution.publicApiQueries;
+  return {
+    requirementKey: key,
+    before: "MISSING",
+    after: resolution.state,
+    reasonCode: resolution.reasonCode,
+    evidenceHash: resolution.evidenceHash,
+    reviewedAt: resolution.reviewedAt,
+  };
 }
 
 function coverageResolutionPlanIndex(targets, resolutions, plan) {
@@ -390,13 +409,7 @@ function coverageResolutionPlanIndex(targets, resolutions, plan) {
   const byKey = new Map();
   for (const [index, entry] of plan.entries.entries()) {
     const label = `coverage resolution search plan entries[${index}]`;
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
-    const key = requirementKey({
-      regionId: requiredString(entry.regionId, `${label}.regionId`),
-      operatorId: requiredString(entry.operatorId, `${label}.operatorId`),
-      lineId: requiredString(entry.lineId, `${label}.lineId`),
-      sourceDomain: requiredString(entry.sourceDomain, `${label}.sourceDomain`),
-    });
+    const key = requiredRequirementKey(entry, label);
     if (byKey.has(key)) throw new Error(`duplicate coverage resolution search plan entry: ${key}`);
     if (!Array.isArray(entry.queries) || entry.queries.length === 0) {
       throw new Error(`${label}.queries must be a non-empty array`);

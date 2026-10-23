@@ -7,7 +7,7 @@ import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-m
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
 import { execFileAsync } from "./test-fixtures/datapack-tools-support.mjs";
 import { sha256 } from "../lib/hash.mjs";
-import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
+import { COVERAGE_REVIEW_DUE_AT, COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 import {
   completeCoverageInventory,
   completeCoverageProvenance,
@@ -284,7 +284,7 @@ test("전국 coverage report는 불완전하거나 만료된 공공 API 미지�
 
 });
 
-const REVIEW_BOUNDARY = "2026-10-23T09:12:39.105Z";
+const REVIEW_BOUNDARY = COVERAGE_REVIEW_DUE_AT;
 const plusMillis = (instant, millis) => new Date(Date.parse(instant) + millis).toISOString();
 
 async function reportRequirementAt({ nextReviewAt, now }) {
@@ -375,6 +375,22 @@ test("--now는 밀리초까지 있는 ISO 시각만 받는다", async (context) 
     await context.test(label, async () => {
       await assert.rejects(reportRequirementAt({ nextReviewAt: REVIEW_BOUNDARY, now: value }), /--now must be an ISO timestamp/);
     });
+  }
+});
+
+test("--now는 --resolutions 없이 쓰면 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-now-without-resolutions-"));
+  try {
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", "tools/datapack/source-inventory.json",
+      "--now", COVERAGE_REVIEW_NOW,
+      "--output", path.join(outputDir, "report.json"),
+      "--allow-gaps",
+    ], { cwd: root }), /--resolutions is required with --now/);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
   }
 });
 

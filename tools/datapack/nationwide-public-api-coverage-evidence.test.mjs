@@ -174,16 +174,24 @@ test("실제 공식 미지원 resolutions는 모든 nextReviewAt 직전까지 te
   );
 });
 
+// 게이트 호출 하나의 argv 배열 리터럴. 호출은 게이트 스크립트 경로로 시작하고 첫 `]`에서 끝난다.
+const coverageGateInvocations = (text) =>
+  [...text.matchAll(/"tools\/datapack\/report-coverage-gaps\.mjs"[^\]]*\]/g)].map(([invocation]) => invocation);
+
 // 실제 resolutions 문서를 쓰는 테스트가 실행 시각을 읽으면 문서의 nextReviewAt이 지나는 순간 기준선이 깨진다(2026-10-23 main CI 실패).
-test("실제 resolutions 문서로 coverage gate를 실행하는 테스트는 평가 시각을 고정한다", async () => {
+// 파일 단위 문자열 검사로는 한 호출만 고정해도 통과하므로 --resolutions를 넘기는 호출마다 --now가 argv에 있는지 센다.
+test("resolutions를 넘겨 coverage gate를 실행하는 호출은 모두 평가 시각을 고정한다", async () => {
   const names = (await readdir(path.join(root, "tools/datapack"))).filter((name) => name.endsWith(".test.mjs"));
   const unpinned = [];
+  let resolutionInvocations = 0;
   for (const name of names) {
     const text = await readFile(path.join(root, "tools/datapack", name), "utf8");
-    if (text.includes("nationwide-public-api-coverage-resolutions-") && text.includes('"tools/datapack/report-coverage-gaps.mjs"')
-      && !text.includes('"--now"')) {
-      unpinned.push(name);
+    for (const invocation of coverageGateInvocations(text)) {
+      if (!invocation.includes('"--resolutions"')) continue;
+      resolutionInvocations += 1;
+      if (!invocation.includes('"--now"')) unpinned.push(`${name}: ${invocation.replace(/\s+/g, " ")}`);
     }
   }
+  assert.ok(resolutionInvocations >= 20, `resolutions gate invocations scanned: ${resolutionInvocations}`);
   assert.deepEqual(unpinned, []);
 });
