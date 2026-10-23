@@ -36,3 +36,12 @@ test("지원하지 않는 문법은 거절한다", () => {
   assert.throws(() => run("(true"), /GITHUB_EXPRESSION_SYNTAX/u);
   assert.throws(() => run("secrets.X"), /GITHUB_EXPRESSION_UNSUPPORTED/u);
 });
+
+test("steps는 steps.<id>.outputs.<name>만 읽는다. outcome·conclusion 같은 다른 형태는 빈 문자열로 덮지 않고 거절한다", () => {
+  const steps = { claim: { outcome: "success", outputs: { claimed: "false" } } };
+  const evaluate = (expression) => evaluateGithubExpression(`\${{ ${expression} }}`, { ...context, steps });
+  for (const form of ["steps.claim.outcome == 'success'", "steps.claim.conclusion == 'success'", "steps.claim.outputs", "steps.claim", "steps.claim.outputs.claimed.extra", "steps"]) {
+    assert.throws(() => evaluate(form), /GITHUB_EXPRESSION_UNSUPPORTED/u, form);
+  }
+  assert.equal(evaluate("steps.claim.outputs.claimed == 'false'"), true);
+});
