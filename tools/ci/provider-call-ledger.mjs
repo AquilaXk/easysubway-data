@@ -86,7 +86,7 @@ export async function readProviderCallLedger({ env = process.env, now = new Date
   const { window, token, entered } = await inspectCollectionWindow({ env, now, fetchImpl, contexts: [SOURCE_REVERIFICATION_CALL_EVIDENCE] });
   const entries = [];
   for (const { run, outcome } of entered) {
-    const requestCounts = outcome === COLLECTION_OUTCOME.RUNNING ? null : await readRunRequestCounts({ runId: run.id, token, downloadArtifact });
+    const requestCounts = outcome === COLLECTION_OUTCOME.RUNNING ? null : await readRunRequestCounts({ runId: run.id, token, downloadArtifact }); // NOSONAR -- 순차가 의도다: GitHub REST 권장대로 같은 토큰의 artifact 내려받기를 동시에 보내지 않아 secondary rate limit을 피한다
     entries.push({ runId: run.id, outcome, requestCounts });
   }
   entries.sort((left, right) => left.runId - right.runId);

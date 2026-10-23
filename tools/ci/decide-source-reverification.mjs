@@ -312,6 +312,8 @@ async function expectedRequestsOf({ budgetPolicy, inventory, readJson }) {
   })));
 }
 
+const budgetBlockReason = ({ reason, detail }) => `${reason}: ${detail}`;
+
 export async function main(argv, {
   now = new Date(), log = console.log, readText = (file) => readFile(file, "utf8"), appendText = (file, text) => appendFile(file, text),
 } = {}) {
@@ -335,7 +337,7 @@ export async function main(argv, {
       `cleanup_claims=${result.cleanupClaims.join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, `blocked_recipes=${(result.blocked ?? []).join(",")}`,
       `overdue_recipes=${overdueRecipeIdsOf(result.overdue, REVERIFICATION_RECIPES).join(",")}`, `replay_run_id=${result.replayRunId ?? ""}`,
       `budget_blocked=${(result.budgetBlocked ?? []).flatMap(({ recipeIds }) => recipeIds).join(",")}`,
-      `budget_blocked_reason=${(result.budgetBlocked ?? []).map(({ reason, detail }) => `${reason}: ${detail}`).join(" | ")}`, "",
+      `budget_blocked_reason=${(result.budgetBlocked ?? []).map(budgetBlockReason).join(" | ")}`, "",
     ].join("\n"));
   }
   return result;

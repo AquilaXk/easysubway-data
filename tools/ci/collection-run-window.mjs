@@ -244,7 +244,7 @@ export async function inspectCollectionWindow({ env, now, fetchImpl, contexts })
   const entered = [];
   for (const { run, context } of runs) {
     if (run.id === runId) continue;
-    const result = await previousRunCollectorOutcome({ run, token, fetchImpl, context });
+    const result = await previousRunCollectorOutcome({ run, token, fetchImpl, context }); // NOSONAR -- 순차가 의도다: GitHub REST 권장대로 같은 토큰의 요청을 동시에 보내지 않아 secondary rate limit을 피한다
     if (result !== null) entered.push({ run, context, ...result });
   }
   return { runId, window, token, entered };
