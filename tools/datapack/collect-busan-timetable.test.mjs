@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { busanTimetableCounts, collectBusanTimetable, main } from "./collect-busan-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { defineCliRequestIntervalTests, defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineCliRequestIntervalTests, defineDataGoKrResultCodeRetryTests, defineRequestIntervalTests, defineSourceCollectionRetryTests, defineTelemetrySourceIdTests } from "./lib/source-collection-retry-test-support.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   prepareBusanTimetableRegistration,
@@ -499,4 +499,18 @@ test("부산 timetable collector는 resultCode 30이 3회 이어지면(키 미�
   const { collection, calls } = await collectWithEnvelopes(["30", "30", "30", "30"]);
   await assert.rejects(collection, /Busan timetable provider resultCode 30; rawSha256=[a-f0-9]{64}/);
   assert.equal(calls(), 3);
+});
+
+// 하루 호출 예산(Refs AquilaXk/easysubway#3036): 원천 재확인이 이 수집기의 요청을 inventory 원천 id로 센다.
+defineTelemetrySourceIdTests({
+  name: "부산 timetable collector",
+  sourceId: "busan-transportation-timetable",
+  run: ({ fetchImpl, sleepImpl }) => collectBusanTimetable({
+    serviceKey: "fixture-key",
+    stationScopes: topology.scope,
+    now: new Date("2026-07-20T09:00:00.000Z"),
+    fetchImpl,
+    sleepImpl,
+    randomImpl: () => 0,
+  }),
 });

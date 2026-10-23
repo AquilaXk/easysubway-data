@@ -4,6 +4,8 @@ import test from "node:test";
 
 import { evaluateGithubExpression } from "./github-expression.mjs";
 import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
+import { PROVIDER_BUDGET_BLOCK_STEP } from "./provider-call-budget.mjs";
+import { SOURCE_REVERIFICATION_CALL_EVIDENCE } from "./provider-call-ledger.mjs";
 import { SOURCE_REVERIFICATION_JOB, SOURCE_REVERIFICATION_REPLAY_SOURCE_STEPS, SOURCE_REVERIFICATION_WORKFLOW_PATH } from "./verify-source-reverification-replay-run.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 workflow 계약. 판정(DUE)이 고른 recipe를 claim → 수집·게시·등록 → 재확인 → push → App 토큰 PR 하나로 올린다.
@@ -48,7 +50,7 @@ test("판정 step이 claim·수집보다 먼저 돌고 PR·run·브랜치 목록
   assert.doesNotMatch(block, /--status "?completed|--status completed/u);
   assert.match(block, /jq -s 'add \| unique_by\(\.databaseId\)' "\$\{decision_root\}"\/runs\/\*\.json > "\$\{decision_root\}\/runs\.json"/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
-  assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --issues "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --replay-run-id "\$\{REPLAY_RUN_ID\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --issues "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --call-budget release\/product-gates\/provider-daily-call-budget\.json --provider-call-ledger "\$\{decision_root\}\/provider-call-ledger\.json" --replay-run-id "\$\{REPLAY_RUN_ID\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
   assert.match(block, /\n          REPLAY_RUN_ID: \$\{\{ inputs\.replay_run_id \}\}\n/u);
   before("Decide which P7D sources are due", "Claim exact main before provider access");
 });
@@ -322,4 +324,47 @@ test("재생 묶음은 이 run이 묶음을 썼을 때만 push 뒤·PR 생성 �
   assert.match(reverify, /::notice title=Source reverification::no replayable dependency group was registered/u, "묶음을 남기지 않는 것도 로그로 드러낸다");
   before("Verify the reverification is based on the current main and push its branch", upload.name);
   before(upload.name, "Mint App token for the reverification pull request");
+});
+
+// #3036: 부산 원천(data.go.kr 개발계정)의 operation별 KST 하루 호출 예산. 판정은 공급자를 부르기 전에 같은 날 앞선 run의 요청 수를 읽고,
+// 모든 run은 실패해도 자기 요청 수(시도별 계측 파일)를 artifact로 남겨 다음 run이 셀 수 있게 한다.
+test("판정 전에 같은 날 앞선 run의 공급자 호출 기록을 읽고 판정에 넘긴다. 예산 판정은 claim·수집보다 먼저다 (#3036)", () => {
+  const { block } = step("Decide which P7D sources are due");
+  assert.match(block, /\n          GITHUB_TOKEN: \$\{\{ github\.token \}\}\n/u);
+  const ledger = block.indexOf('node tools/ci/provider-call-ledger.mjs --ledger "${decision_root}/provider-call-ledger.json"');
+  assert.ok(ledger !== -1 && ledger < block.indexOf("node tools/ci/decide-source-reverification.mjs"), "the call ledger is read before the decision");
+  before("Decide which P7D sources are due", "Claim exact main before provider access");
+  before("Decide which P7D sources are due", "Reverify due P7D sources");
+  assert.equal(ifCondition(step("Claim exact main before provider access").block), "${{ steps.decision.outputs.state == 'RUN' }}");
+});
+
+test("시도별 계측 파일은 판정 전에 빈 파일로 만들고, 모든 run이 실패·취소에도 그 파일을 run id 이름의 artifact로 2일 보관한다 (#3036)", () => {
+  const record = step("Record source fetch attempts for the job summary");
+  assert.match(record.block, /: > "\$\{RUNNER_TEMP\}\/source-fetch-telemetry\.jsonl"/u);
+  const upload = step("Upload provider call evidence");
+  assert.equal(ifCondition(upload.block), "${{ always() }}");
+  assert.match(upload.block, /uses: actions\/upload-artifact@[0-9a-f]{40}\n/u);
+  assert.match(upload.block, new RegExp(`\\n          name: ${SOURCE_REVERIFICATION_CALL_EVIDENCE.artifactPrefix}-\\$\\{\\{ github\\.run_id \\}\\}\\n`, "u"));
+  assert.match(upload.block, new RegExp(`\\n          path: \\$\\{\\{ runner\\.temp \\}\\}/${SOURCE_REVERIFICATION_CALL_EVIDENCE.file.replaceAll(".", "\\.")}\\n`, "u"));
+  assert.match(upload.block, /\n          if-no-files-found: error\n/u);
+  assert.match(upload.block, /\n          retention-days: 2$/u, "KST 하루 창 전체(최대 24시간)를 덮는다");
+  before("Reverify due P7D sources", upload.name);
+  before(upload.name, "Report refresh failure as an issue");
+});
+
+test("호출 기록이 읽는 job·step 이름은 이 workflow의 실제 이름이다 (#3036)", () => {
+  assert.equal(SOURCE_REVERIFICATION_CALL_EVIDENCE.workflowFile, FILE);
+  assert.match(yml, new RegExp(`\\n    name: ${SOURCE_REVERIFICATION_CALL_EVIDENCE.jobName}\\n`, "u"));
+  assert.ok(names().includes(SOURCE_REVERIFICATION_CALL_EVIDENCE.collectorStepName));
+  assert.deepEqual([...SOURCE_REVERIFICATION_CALL_EVIDENCE.events].sort(), ["schedule", "workflow_dispatch"]);
+});
+
+test("예산·시도 상한에 막힌 묶음은 PR을 만든 뒤 이름 있는 코드로 job을 실패시켜 실패 이슈로 드러난다 (#3036)", () => {
+  const blocked = step(PROVIDER_BUDGET_BLOCK_STEP);
+  assert.equal(ifCondition(blocked.block), "${{ always() && steps.decision.outputs.budget_blocked != '' }}");
+  assert.match(blocked.block, /\n          BUDGET_BLOCKED: \$\{\{ steps\.decision\.outputs\.budget_blocked \}\}\n/u);
+  assert.match(blocked.block, /\n          BUDGET_BLOCKED_REASON: \$\{\{ steps\.decision\.outputs\.budget_blocked_reason \}\}\n/u);
+  assert.match(blocked.block, /echo "::error title=Source reverification::\$\{BUDGET_BLOCKED\} not collected today: \$\{BUDGET_BLOCKED_REASON\}"\n\s+exit 1/u);
+  before("Create source reverification pull request", blocked.name);
+  before(blocked.name, "Report refresh failure as an issue");
 });

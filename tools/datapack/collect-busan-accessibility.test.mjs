@@ -10,6 +10,7 @@ import {
   defineCliRequestIntervalTests,
   defineDataGoKrResultCodeRetryTests,
   defineRequestIntervalTests,
+  defineTelemetrySourceIdTests,
   defineSourceCollectionRetryTests,
 } from "./lib/source-collection-retry-test-support.mjs";
 import {
@@ -285,4 +286,18 @@ test("부산 accessibility collector는 소진된 재시도 오류에 인증키�
   const exhaustedTransport = await collectWith({ serviceKey, fetchImpl: leaky }).catch((error) => error);
   assert.match(exhaustedTransport.message, /transport failure; code=ECONNRESET/);
   assertErrorOmitsSecrets(exhaustedTransport, [serviceKey, encodeURIComponent(serviceKey), "data.humetro.busan.kr"]);
+});
+
+// 하루 호출 예산(Refs AquilaXk/easysubway#3036): 원천 재확인이 이 수집기의 요청을 inventory 원천 id로 센다.
+defineTelemetrySourceIdTests({
+  name: "부산 accessibility collector",
+  sourceId: "busan-transportation-accessibility",
+  run: ({ fetchImpl, sleepImpl }) => collectBusanAccessibility({
+    serviceKey: "fixture-key",
+    stationScopes: topology.scope,
+    now: new Date("2026-07-20T10:30:00.000Z"),
+    fetchImpl,
+    sleepImpl,
+    randomImpl: () => 0,
+  }),
 });

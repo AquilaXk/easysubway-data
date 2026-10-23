@@ -10,6 +10,7 @@ import { sha256 } from "../lib/hash.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn"; // NOSONAR -- provider contract is HTTP-only
+const SOURCE_ID = "busan-transportation-accessibility";
 const DETAIL_URL = "https://www.data.go.kr/data/15001020/openapi.do";
 const COUNT_FIELDS = Object.freeze([
   "wl_i", "wl_o", "el_i", "el_o", "es", "blindroad", "ourbridge", "helptake", "toilet",
@@ -84,7 +85,7 @@ function buildBusanAccessibilitySnapshot({ scope, responses, capturedAt }) {
   return {
     schemaVersion: 1,
     artifactKind: "busan-accessibility-snapshot",
-    sourceId: "busan-transportation-accessibility",
+    sourceId: SOURCE_ID,
     detailUrl: DETAIL_URL,
     endpoint: ENDPOINT,
     capturedAt: capturedAt.toISOString(),
@@ -248,7 +249,7 @@ function fetchWithRetry(url, fetchImpl, { sleepImpl, randomImpl }) {
     fetchImpl,
     accept: "application/xml,text/xml",
     label: "Busan accessibility",
-    sourceId: "busan-accessibility",
+    sourceId: SOURCE_ID,
     resultCodeOf: ({ bytes }) => providerResultCode(bytes),
     isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
     transportFailure: transportFailureWithCode("Busan accessibility"),

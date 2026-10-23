@@ -10,6 +10,7 @@ import { fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientData
 import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
+const SOURCE_ID = "busan-transportation-route-topology";
 const DETAIL_URL = "https://www.data.go.kr/data/15001019/openapi.do";
 const FIELDS = ["startSn", "startSc", "endSn", "endSc", "dist", "time", "stoppingTime", "exchange"];
 const BUSAN_ROUTE_TOPOLOGY_FIELDS = Object.freeze([
@@ -86,7 +87,7 @@ export async function collectBusanRouteTopology({
   return {
     schemaVersion: 1,
     artifactKind: "busan-route-topology-snapshot",
-    sourceId: "busan-transportation-route-topology",
+    sourceId: SOURCE_ID,
     detailUrl: DETAIL_URL,
     endpoint: ENDPOINT,
     capturedAt: capturedAt.toISOString(),
@@ -286,7 +287,7 @@ export function admitBusanRouteTopology(snapshot, { now = new Date() } = {}) {
 
 export function validateBusanRouteTopologySnapshot(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "busan-route-topology-snapshot"
-    || snapshot.sourceId !== "busan-transportation-route-topology" || snapshot.official !== true
+    || snapshot.sourceId !== SOURCE_ID || snapshot.official !== true
     || snapshot.detailUrl !== DETAIL_URL || snapshot.endpoint !== ENDPOINT || snapshot.credentialRedacted !== true) {
     throw new Error("Busan route topology admission identity is invalid");
   }
@@ -339,7 +340,7 @@ export function validateBusanRouteTopologySnapshot(snapshot) {
 // snapshot 형식은 바꾸지 않으므로 이미 승인된 snapshot도 재수집 없이 쓴다. raw hash·역간 edge·환승 행 수가
 // snapshot 기록과 하나라도 다르면 실패한다.
 export function extractBusanTransferRows(snapshot) {
-  if (snapshot?.sourceId !== "busan-transportation-route-topology" || snapshot.credentialRedacted !== true) {
+  if (snapshot?.sourceId !== SOURCE_ID || snapshot.credentialRedacted !== true) {
     throw new Error("Busan route topology transfer extraction identity is invalid");
   }
   if (!Array.isArray(snapshot.rawResponses) || snapshot.rawResponses.length === 0
@@ -546,6 +547,7 @@ function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
     fetchImpl,
     accept: "application/xml,text/xml",
     label: "Busan route topology",
+    sourceId: SOURCE_ID,
     isTransientResult: ({ response, bytes }) => response.ok && isTransientProviderBody(bytes),
     transportFailure: (failure) => new Error("Busan route topology transport failure", { cause: failure }),
     sleep: sleepImpl,

@@ -18,7 +18,7 @@ import {
   unwrapTransientRetryFailure,
   withTransientRetry,
 } from "./transient-retry.mjs";
-import { buildAttemptRecord, emitAttemptRecord, sourceIdFromLabel } from "./source-fetch-telemetry.mjs";
+import { SourceFetchTelemetryWriteError, buildAttemptRecord, emitAttemptRecord, sourceIdFromLabel } from "./source-fetch-telemetry.mjs";
 
 export const SOURCE_COLLECTION_RETRY_POLICY = Object.freeze({
   maxAttempts: 3,
@@ -153,7 +153,8 @@ export function withSourceCollectionRetry(attempt, {
     return Math.max(minDelayMs, retryAfter);
   };
   // 시도마다 한 줄을 남긴다. 다음 대기는 재시도가 정해진 뒤에야 알 수 있어, 관측은 보류했다가 onRetry(대기 있음)나 끝(대기 없음)에서 내보낸다.
-  // 관측은 결과를 바꾸면 안 된다: 응답·오류를 읽고 기록을 만들고 쓰는 일은 전부 한 try 안에서 하고, 실패하면 버린다.
+  // 관측은 결과를 바꾸면 안 된다: 응답·오류를 읽고 기록을 만드는 일은 전부 한 try 안에서 하고, 실패하면 버린다.
+  // 단 기록을 쓰지 못한 실패는 버리지 않는다: 호출 수 증거가 불완전해지므로 그대로 던진다.
   let pending;
   const flushAttempt = (nextDelayMs) => {
     const observed = pending;
@@ -167,7 +168,9 @@ export function withSourceCollectionRetry(attempt, {
         sourceId, url: url ?? response?.url, attempt: observed.attempt, response, error, durationMs: observed.durationMs, nextDelayMs,
         retryableResult, resultCode: retryableResult ? resultCodeOf(result) : undefined,
       }));
-    } catch { /* 계측 실패는 수집 결과를 바꾸지 않는다 */ }
+    } catch (error) {
+      if (error instanceof SourceFetchTelemetryWriteError) throw error;
+    }
   };
   const measuredAttempt = async (context) => {
     const startedAt = performance.now();

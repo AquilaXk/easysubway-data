@@ -150,6 +150,37 @@ test("collector step이 skipped인 run은 공급자를 부르지 않았으므로
   assert.deepEqual((await ledgerOf(fixture)).entries, []);
 });
 
+// F1(PR #1452): 공급자를 부르지 않았다는 증명은 "건너뛴 빈 job" 하나뿐이다. 대기·취소·실패한 job은 step이 비었거나 일부만 있어도 호출 여부를 알 수 없어 실패한다.
+test("job 모양별: 건너뛴 빈 job만 호출 없음이고 대기·취소·실패 job은 step이 비었거나 일부만 있어도 증명되지 않는다", async () => {
+  const shaped = (status, conclusion, steps) => ({ id: FAILED_RUN + 10_000, run_id: FAILED_RUN, name: PROMOTION.job, status, conclusion, steps });
+  const setUp = { name: "Set up job", status: "completed", conclusion: "success" };
+  const ledgerFor = (candidate, runOverrides = {}) => ledgerOf({ runs: [run(FAILED_RUN, PROMOTION, runOverrides), currentRun()], jobs: { [FAILED_RUN]: [candidate] } });
+  assert.deepEqual((await ledgerFor(shaped("completed", "skipped", []))).entries, []);
+  for (const [label, candidate] of [
+    ["queued, 빈 step", shaped("queued", null, [])],
+    ["cancelled, 빈 step", shaped("completed", "cancelled", [])],
+    ["failure, 빈 step", shaped("completed", "failure", [])],
+    ["cancelled, collector 없는 일부 step", shaped("completed", "cancelled", [setUp])],
+    ["failure, collector 없는 일부 step", shaped("completed", "failure", [setUp])],
+    ["skipped지만 collector 없는 일부 step", shaped("completed", "skipped", [setUp])],
+  ]) await assert.rejects(() => ledgerFor(candidate), { reason: "COLLECTOR_STEP_SHAPE" }, label);
+  await assert.rejects(() => ledgerFor(shaped("queued", null, []), { status: "queued" }), { reason: "COLLECTOR_STEP_SHAPE" }, "queued run");
+});
+
+// P3-b(PR #1452): concurrency로 취소된 대기 run은 job이 하나도 만들어지지 않았다. 수집에 들어간 적이 없으므로 호출 없음이다. 다른 0 job 상태는 알 수 없으니 실패한다.
+test("취소된 대기 run(완료·cancelled·job 0건)은 수집에 들어가지 않았으므로 기록에 넣지 않고, 다른 0 job 상태는 실패한다", async () => {
+  const ledgerWith = (runOverrides) => ledgerOf({ runs: [run(FAILED_RUN, PROMOTION, runOverrides), currentRun()], jobs: {} });
+  assert.deepEqual((await ledgerWith({ status: "completed", conclusion: "cancelled" })).entries, []);
+  for (const runOverrides of [
+    { status: "completed", conclusion: "failure" },
+    { status: "completed", conclusion: "success" },
+    { status: "completed", conclusion: null },
+    { status: "queued", conclusion: null },
+    { status: "in_progress", conclusion: null },
+    { status: "queued", conclusion: "cancelled" },
+  ]) await assert.rejects(() => ledgerWith(runOverrides), { reason: "JOB_LIST_EMPTY" }, JSON.stringify(runOverrides));
+});
+
 test("KASI 휴일 조회 실패로 끝난 run은 TAGO 요청 0건으로 기록한다", async () => {
   const fixture = { ...failedPriorRun(), artifacts: { [FAILED_RUN]: writeKasiFailureArtifact } };
   assert.equal((await ledgerOf(fixture)).entries[0].requestCount, 0);

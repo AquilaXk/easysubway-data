@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { countTelemetryRequests } from "../../ci/provider-call-ledger.mjs";
 import { assertErrorOmitsSecrets } from "./source-collection-retry-test-support.mjs";
 import { fetchBytesWithSourceRetry, withSourceCollectionRetry } from "./source-collection-retry.mjs";
 import {
   SOURCE_FETCH_TELEMETRY_PATH_ENV,
+  TELEMETRY_WRITE_FAILED_MARKER,
   buildAttemptRecord,
   emitAttemptRecord,
   errorCodeOf,
@@ -70,9 +72,8 @@ test("buildAttemptRecord는 성공·HTTP 오류·전송 오류를 안전한 필�
   });
 });
 
-test("emitAttemptRecord는 환경 변수가 없으면 쓰지 않고, 쓰기에 실패해도 던지지 않는다", async () => {
+test("emitAttemptRecord는 환경 변수가 없으면 쓰지 않고, 있으면 기록 한 줄을 덧붙인다", async () => {
   emitAttemptRecord({ a: 1 }, {});
-  emitAttemptRecord({ a: 1 }, { [SOURCE_FETCH_TELEMETRY_PATH_ENV]: "/nonexistent-dir-for-telemetry/x.jsonl" });
   const { records } = await withTelemetryFile(async () => { emitAttemptRecord({ a: 1 }); });
   assert.deepEqual(records, [{ a: 1 }]);
 });
@@ -196,13 +197,81 @@ test("본문 resultCode 때문에 재시도한 2xx 시도는 retryable_result와
   assertErrorOmitsSecrets(new Error(text), [SECRET]);
 });
 
-// F4: 쓰기 실패는 사라지지 않고 종료 때 경고 한 줄이 된다.
-test("계측 쓰기가 실패하면 프로세스 종료 때 ::warning:: 한 줄에 건수를 남긴다", () => {
-  const script = `import(${JSON.stringify(new URL("./source-fetch-telemetry.mjs", import.meta.url).href)}).then((m) => { m.emitAttemptRecord({ a: 1 }); m.emitAttemptRecord({ a: 2 }); });`;
-  const child = spawnSync(process.execPath, ["-e", script], {
-    encoding: "utf8", env: { ...process.env, [SOURCE_FETCH_TELEMETRY_PATH_ENV]: "/nonexistent-dir-for-telemetry/x.jsonl" },
-  });
-  assert.equal(child.status, 0);
+// 쓰기 실패는 치명적이다(PR #1452 F3). 이 파일이 하루 호출 예산의 증거라서, 잃어버린 기록은 요청 수를 적게 세어 예산을 부당하게 풀어준다.
+// 실패하면 collector가 던진 오류를 삼켜도 프로세스가 이름 있는 코드로 0이 아닌 상태로 끝난다. 종료 상태를 보려면 자식 프로세스가 필요하다.
+const UNWRITABLE_TELEMETRY = "/nonexistent-dir-for-telemetry/x.jsonl";
+const telemetryModuleUrl = JSON.stringify(new URL("./source-fetch-telemetry.mjs", import.meta.url).href);
+const retryModuleUrl = JSON.stringify(new URL("./source-collection-retry.mjs", import.meta.url).href);
+const runChild = (script) => spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+  encoding: "utf8", env: { ...process.env, [SOURCE_FETCH_TELEMETRY_PATH_ENV]: UNWRITABLE_TELEMETRY },
+});
+
+test("계측 쓰기가 실패하면 emitAttemptRecord가 SOURCE_FETCH_TELEMETRY_WRITE_FAILED로 던지고 프로세스는 0이 아닌 상태로 끝난다", () => {
+  const child = runChild(`
+    const { emitAttemptRecord } = await import(${telemetryModuleUrl});
+    try { emitAttemptRecord({ a: 1 }); } catch (error) { process.stdout.write(error.code); }
+    try { emitAttemptRecord({ a: 2 }); } catch { /* 두 번째 실패도 센다 */ }
+  `);
+  assert.equal(child.stdout, "SOURCE_FETCH_TELEMETRY_WRITE_FAILED");
+  assert.equal(child.status, 1);
   assert.equal(child.stderr.trim().split("\n").length, 1);
-  assert.match(child.stderr, /^::warning title=Source fetch telemetry::2 attempt records could not be written/u);
+  assert.match(child.stderr, /^::error title=Source fetch telemetry::SOURCE_FETCH_TELEMETRY_WRITE_FAILED: 2 attempt records could not be written/u);
+});
+
+test("수집 재시도 래퍼는 계측 쓰기 실패를 삼키지 않고, collector가 그 오류를 잡아도 프로세스는 0이 아닌 상태로 끝난다", () => {
+  const child = runChild(`
+    const { withSourceCollectionRetry } = await import(${retryModuleUrl});
+    try {
+      await withSourceCollectionRetry(async () => ({ response: new Response(null, { status: 200 }) }), { label: "Lost telemetry" });
+      process.stdout.write("RESOLVED");
+    } catch (error) { process.stdout.write(error.code); }
+  `);
+  assert.equal(child.stdout, "SOURCE_FETCH_TELEMETRY_WRITE_FAILED");
+  assert.equal(child.status, 1);
+});
+
+// 실패한 run도 계측 artifact를 올린다. 일부만 쓰인 파일이 정확한 요청 수로 읽히면 예산이 부당하게 풀리므로, 기록을 잃은 파일은 호출 기록이 증명 불가로 거부한다.
+test("기록을 잃은 파일에는 표지 줄이 남아 호출 기록이 그 파일의 요청 수를 증명하지 않는다", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "source-fetch-telemetry-lost-"));
+  try {
+    const file = path.join(directory, "telemetry.jsonl");
+    const attempt = { sourceId: "kept-source", host: "example.test", attempt: 1, outcome: "success" };
+    // 첫 기록은 쓰고, 그 뒤 시도 기록의 쓰기만 실패하게 한다(표지 줄은 쓸 수 있는 일시 오류).
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      const append = fs.appendFileSync;
+      let failing = false;
+      fs.appendFileSync = (target, data) => { if (failing && !data.includes("telemetryWriteFailed")) throw new Error("disk full"); return append(target, data); };
+      syncBuiltinESMExports();
+      const { emitAttemptRecord } = await import(${telemetryModuleUrl});
+      emitAttemptRecord(${JSON.stringify(attempt)});
+      failing = true;
+      try { emitAttemptRecord(${JSON.stringify({ ...attempt, attempt: 2 })}); } catch { /* 오류 전파는 위 테스트가 본다 */ }
+    `], { encoding: "utf8", env: { ...process.env, [SOURCE_FETCH_TELEMETRY_PATH_ENV]: file } });
+    assert.equal(child.status, 1);
+    const lines = readFileSync(file, "utf8").trim().split("\n");
+    assert.equal(lines.length, 2);
+    assert.equal(lines[1], TELEMETRY_WRITE_FAILED_MARKER);
+    assert.throws(() => countTelemetryRequests(readFileSync(file)), /^Error: PROVIDER_CALL_TELEMETRY_INVALID/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("계측 파일이 쓸 수 있으면 같은 래퍼가 결과를 그대로 돌려주고 프로세스는 0으로 끝난다", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "source-fetch-telemetry-ok-"));
+  try {
+    const file = path.join(directory, "telemetry.jsonl");
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      const { withSourceCollectionRetry } = await import(${retryModuleUrl});
+      const result = await withSourceCollectionRetry(async () => ({ response: new Response(null, { status: 200 }) }), { label: "Kept telemetry" });
+      process.stdout.write(String(result.response.status));
+    `], { encoding: "utf8", env: { ...process.env, [SOURCE_FETCH_TELEMETRY_PATH_ENV]: file } });
+    assert.equal(child.stdout, "200");
+    assert.equal(child.status, 0);
+    assert.equal(readFileSync(file, "utf8").trim().split("\n").length, 1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

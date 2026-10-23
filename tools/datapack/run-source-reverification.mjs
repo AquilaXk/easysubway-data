@@ -37,7 +37,7 @@ import { ledgerHead } from "../ci/decide-source-reverification.mjs";
 import { isSourceReverificationAllowedPath, SOURCE_EXPECTATION_CHANGED, SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS } from "../ci/source-reverification-paths.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { credentialForms } from "./collect-kric-station-timetables.mjs";
-import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
+import { REVERIFICATION_RECIPES, dependencyGroups } from "./source-reverification-recipes.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -630,28 +630,6 @@ const GROUP_ROLLED_BACK = "REVERIFICATION_GROUP_ROLLED_BACK";
 const DEPENDENCY_FAILED = "REVERIFICATION_DEPENDENCY_FAILED";
 const RECIPE_FAILED = "REVERIFICATION_RECIPE_FAILED";
 const NAMED_FAILURE = /^([A-Z][A-Z0-9_]+): ([\s\S]*)$/u;
-
-/** 의존으로 이어진 recipe끼리 묶는다. 묶음과 묶음 안의 순서는 recipe 표 순서다. */
-export function dependencyGroups(ordered) {
-  const groupOf = new Map();
-  const groups = [];
-  for (const recipe of ordered) {
-    const linked = [...new Set(recipe.dependsOn.map((id) => groupOf.get(id)))];
-    let group = linked[0];
-    if (group === undefined) {
-      group = [];
-      groups.push(group);
-    }
-    for (const other of linked.slice(1)) {
-      group.push(...other);
-      groups.splice(groups.indexOf(other), 1);
-      for (const member of other) groupOf.set(member.id, group);
-    }
-    group.push(recipe);
-    groupOf.set(recipe.id, group);
-  }
-  return groups.map((group) => ordered.filter((recipe) => group.includes(recipe)));
-}
 
 function failureOf(recipe, error) {
   const named = NAMED_FAILURE.exec(String(error?.message ?? error));

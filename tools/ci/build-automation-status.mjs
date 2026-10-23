@@ -7,13 +7,14 @@
 // - 곧 만료되는 원천 근거(expiringSources, data#1116, backend#507)는 source-inventory.json의 freshUntil에서 만들고 만료 시각만 싣는다(남은 시간은 backend가 렌더 시각으로 계산).
 //   backend가 선택 필드로 받아 배포하기 전에는 보내면 게시가 400으로 실패하므로 AUTOMATION_STATUS_SOURCE_FRESHNESS가 true일 때만 싣는다(workflow 변수 DATAPACK_AUTOMATION_STATUS_FRESHNESS).
 //   같은 변수로 원장(source-snapshots.json)과 신선도 정책도 읽는다. 재확인 recipe의 연체는 run이 아니라 원장 head로 정한다(#3036).
+//   공급자 하루 호출 예산(provider-daily-call-budget.json)에 막힌 재확인 묶음도 같은 방식으로 FAILED다: 오늘(KST) 예산 step이 실패한 run이 있고 묶음이 아직 DUE면 막힘이 이어진다.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
+import { REVERIFICATION_RECIPES, dependencyGroups } from "../datapack/source-reverification-recipes.mjs";
 import {
   AUTOMATION_STAGE_PREFIXES,
   AUTOMATION_STAGE_WORKFLOWS,
@@ -23,7 +24,9 @@ import {
 } from "./automation-pr-policy.mjs";
 import { planBehindRecreation } from "./automation-pr-recreate.mjs";
 import { parseDeployRunName } from "./datapack-release-chain.mjs";
-import { overdueReverificationRecipes } from "./decide-source-reverification.mjs";
+import { kstQuotaWindow } from "./collection-run-window.mjs";
+import { dueReverificationRecipes, overdueReverificationRecipes } from "./decide-source-reverification.mjs";
+import { PROVIDER_BUDGET_BLOCK_STEP, parseProviderCallBudgetPolicy } from "./provider-call-budget.mjs";
 import { REFRESH_STAGES } from "./refresh-stage-contracts.mjs";
 
 export const SNAPSHOT_MAX_BYTES = 64 * 1024;
@@ -48,6 +51,7 @@ const SOURCE_FRESHNESS_INPUTS = Object.freeze({
   sourceInventory: "tools/datapack/source-inventory.json",
   sourceLedger: "tools/datapack/release/source-snapshots.json",
   freshnessPolicy: "release/product-gates/datapack-freshness-sla.json",
+  providerCallBudget: "release/product-gates/provider-daily-call-budget.json",
 });
 const REVERIFICATION_STAGE = "source-reverification";
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -188,7 +192,7 @@ const FAILED_RUN_CONCLUSIONS = new Set(["failure", "timed_out", "startup_failure
  * 수집 없이 성공으로 끝나는 대기 run을 내고 소유 단계는 따로 성공할 수 있으므로 마지막 run만 보면 연체가 OK로 덮인다. 실패가 아니면 막힌 PR·주인 없는 claim·재생성 상한이 그 단계일 때 BLOCKED, 아니면 OK다.
  * 열린 실패 이슈는 쓰지 않는다: 이슈는 사람이 닫을 때까지 열려 있어 지금 실패 중인지를 말해 주지 못한다.
  */
-function refreshStateOf(sourceId, stage, { refreshRuns, stuck, now, overdueSourceIds }) {
+function refreshStateOf(sourceId, stage, { refreshRuns, stuck, now, overdueSourceIds, budgetBlockedSourceIds }) {
   if (stage === undefined) return "NONE";
   const runs = refreshRuns[stage];
   if (!Array.isArray(runs)) throw statusError("RUNS_INVALID", `no run list for refresh stage ${stage}`);
@@ -201,7 +205,7 @@ function refreshStateOf(sourceId, stage, { refreshRuns, stuck, now, overdueSourc
   }
   const [latest] = decisive.sort(newest);
   if (latest === undefined || FAILED_RUN_CONCLUSIONS.has(latest.conclusion)) return "FAILED";
-  if (overdueSourceIds.has(sourceId)) return "FAILED";
+  if (overdueSourceIds.has(sourceId) || budgetBlockedSourceIds.has(sourceId)) return "FAILED";
   const prefix = AUTOMATION_STAGE_PREFIXES[stage];
   const blocked = stuck.pulls.some((pull) => pull.stage === stage)
     || stuck.claims.some((claim) => claim.branch.startsWith(prefix))
@@ -250,13 +254,28 @@ function overdueReverificationSourceIds({ inventory, ledger, policy, now }) {
 }
 
 /**
+ * 오늘(KST) 공급자 하루 호출 예산에 막힌 재확인 묶음의 원천(#3036). 막힘은 그 KST 날이 끝날 때까지 풀리지 않으므로, 오늘 예산 step이 실패한 run이 있고
+ * 예산 대상 원천을 가진 결속 묶음이 아직 DUE면 그 묶음의 원천 전부다. 묶음이 그사이 등록돼 DUE가 아니면 이상이 아니다.
+ */
+function budgetBlockedReverificationSourceIds({ inventory, ledger, policy, now, providerCallBudget, budgetBlockedRuns }) {
+  if (budgetBlockedRuns.length === 0) return new Set();
+  const guarded = new Set(parseProviderCallBudgetPolicy(providerCallBudget).operations.map(({ sourceId }) => sourceId));
+  const due = new Set(dueReverificationRecipes({ inventory, ledger, policy, now }));
+  return new Set(dependencyGroups(REVERIFICATION_RECIPES.filter(({ id }) => due.has(id)))
+    .map((group) => group.flatMap(({ sourceIds }) => sourceIds))
+    .filter((sourceIds) => sourceIds.some((sourceId) => guarded.has(sourceId)))
+    .flat());
+}
+
+/**
  * 곧 만료되는 원천 근거 후보를 모두 만든 뒤 심각도 순(만료 > FAILED·BLOCKED·NONE > OK), 같은 심각도 안에서는 만료가 이른 순서(같은 시각이면 sourceId 순)로 정렬해
  * 상위 EXPIRING_SOURCE_LIMIT개를 남긴다. 자르기 전 후보 개수를 함께 돌려준다. 사용 가능한(productionUseAllowed) 원천만 대상이고 값이 어긋나면 채우지 않고 실패한다.
  */
-function buildExpiringSources({ inventory, ledger, policy, now, refreshRuns, stuck }) {
+function buildExpiringSources({ inventory, ledger, policy, now, refreshRuns, stuck, providerCallBudget, budgetBlockedRuns }) {
   if (inventory === null || typeof inventory !== "object" || !Array.isArray(inventory.sources)) throw inventoryError("inventory has no sources array");
   const overdueSourceIds = overdueReverificationSourceIds({ inventory, ledger, policy, now });
-  const context = { now, refreshStages: sourceRefreshStages(), refreshRuns, stuck, overdueSourceIds };
+  const budgetBlockedSourceIds = budgetBlockedReverificationSourceIds({ inventory, ledger, policy, now, providerCallBudget, budgetBlockedRuns });
+  const context = { now, refreshStages: sourceRefreshStages(), refreshRuns, stuck, overdueSourceIds, budgetBlockedSourceIds };
   const seen = new Set();
   const candidates = [];
   for (const source of inventory.sources) {
@@ -295,7 +314,7 @@ export async function loadSourceFreshnessInputs({ env = process.env, root = REPO
 
 export function buildAutomationStatus({
   now, repository, manifest, stageRuns = {}, issues = [], openPulls = [], claimRefs = [], behind = { actions: [], anomalies: [] },
-  sourceInventory, sourceLedger, freshnessPolicy, refreshRuns = {},
+  sourceInventory, sourceLedger, freshnessPolicy, providerCallBudget, refreshRuns = {}, budgetBlockedRuns = [],
 }) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw statusError("CLOCK");
   if (typeof repository !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) throw statusError("ENV_INVALID", "repository");
@@ -341,7 +360,9 @@ export function buildAutomationStatus({
   };
   // 선택 필드: 인벤토리를 주었을 때만 싣는다(backend가 받기 전에는 주지 않는다).
   if (sourceInventory !== undefined) {
-    Object.assign(snapshot, buildExpiringSources({ inventory: sourceInventory, ledger: sourceLedger, policy: freshnessPolicy, now, refreshRuns, stuck: snapshot.stuck }));
+    Object.assign(snapshot, buildExpiringSources({
+      inventory: sourceInventory, ledger: sourceLedger, policy: freshnessPolicy, now, refreshRuns, stuck: snapshot.stuck, providerCallBudget, budgetBlockedRuns,
+    }));
   }
   return snapshot;
 }
@@ -366,6 +387,18 @@ async function collectRefreshRuns({ refreshWorkflows, api, repository }) {
     return [stage, response.workflow_runs];
   }));
   return Object.fromEntries(entries);
+}
+
+/** 재확인 run 중 오늘(KST) 실패했고 공급자 하루 호출 예산 step이 실패한 run id(#3036). jobs 응답이 목록이 아니면 채우지 않고 실패한다. */
+async function collectBudgetBlockedRuns({ runs, api, repository, now }) {
+  const today = kstQuotaWindow(now);
+  const failedToday = runs.filter((run) => run?.conclusion === "failure" && instant(run.created_at) >= today.startMillis && instant(run.created_at) <= today.endMillis);
+  const blocked = await Promise.all(failedToday.map(async (run) => {
+    const response = await api(`repos/${repository}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`);
+    if (!Array.isArray(response?.jobs)) throw statusError("RUNS_INVALID", `jobs of reverification run ${String(run.id)} is not a list`);
+    return response.jobs.some((job) => Array.isArray(job?.steps) && job.steps.some((step) => step?.name === PROVIDER_BUDGET_BLOCK_STEP && step.conclusion === "failure"));
+  }));
+  return failedToday.filter((_, index) => blocked[index]).map((run) => run.id);
 }
 
 export async function collectAutomationStatus({ now, repositories, apis, listFailureIssues, fetchManifest, planBehind = planBehindRecreation, refreshWorkflows }) {
@@ -396,7 +429,10 @@ export async function collectAutomationStatus({ now, repositories, apis, listFai
     claimRefs.push({ branch, committedAt });
   }
   const collected = { now, repository: dataRepository, manifest, stageRuns, issues, openPulls, behind, claimRefs };
-  return refreshRuns === undefined ? collected : { ...collected, refreshRuns };
+  if (refreshRuns === undefined) return collected;
+  const reverificationRuns = refreshRuns[REVERIFICATION_STAGE];
+  const budgetBlockedRuns = reverificationRuns === undefined ? [] : await collectBudgetBlockedRuns({ runs: reverificationRuns, api: apis.data, repository: dataRepository, now });
+  return { ...collected, refreshRuns, budgetBlockedRuns };
 }
 
 // ---------- 게시 ----------

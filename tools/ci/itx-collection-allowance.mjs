@@ -10,8 +10,9 @@
 // 실패 종류는 job 실패로 끝나 실패 보고(#926)와 관리자 자동화 상태에 드러난다. 대기 종류는 이상이 아니다.
 import { TAGO_DAILY_REQUEST_LIMIT } from "../datapack/collect-tago-itx-cheongchun-od.mjs";
 import { DEFAULT_CONTINUATION_MAX_LIVE_REQUESTS, DEFAULT_MAX_RECORDS } from "../datapack/provider-response-capture.mjs";
+import { COLLECTION_OUTCOME } from "./collection-run-window.mjs";
 
-export const ITX_COLLECTION_OUTCOME = Object.freeze({ SUCCEEDED: "SUCCEEDED", RUNNING: "RUNNING", FAILED: "FAILED" });
+export const ITX_COLLECTION_OUTCOME = COLLECTION_OUTCOME;
 /** guard-itx-current-collection-budget --ledger가 쓰고 decide-itx-current-promotion이 읽는 기록 파일의 형식 버전. */
 export const ITX_COLLECTION_LEDGER_SCHEMA_VERSION = 1;
 
