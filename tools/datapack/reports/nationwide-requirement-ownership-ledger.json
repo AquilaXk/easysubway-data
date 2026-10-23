@@ -15,7 +15,7 @@
       },
       "tally": {
         "path": "tools/datapack/reports/nationwide-coverage-tally.json",
-        "sha256": "39f3979aa824e1f570dc6ac4d64dc1d375098c007b63acdf0ea6e46e061fe2f9"
+        "sha256": "5f793eea58938a9610fc5f2bd3bb417290ea1b6c6ea026f9e0adad14c134e780"
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
@@ -31,11 +31,11 @@
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "957fa908ae4036714a0cc29fac2e153aa6c67da95e4665e113f4e2da00d3e08f",
-        "fanInSha256": "e867528b5cfd3019adf4b4c2e2c290fb28698743aa0ce6ba046d89a8d30b6224",
+        "sha256": "8a88dae77bc0f2df6eff3e2a5664ff26e05dbb014507308e57b6555009a65a37",
+        "fanInSha256": "61bcc53b1a861e773249a445a0b8696da57aa25c4f07916e23ac0196e6ae04df",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
         "sourceSetSha256": "3e69a0986a2d8f959b7caa9198093b1ad4e9908161b5b770c59410d5ac7d2e83",
-        "regionalMatrixSha256": "39f3979aa824e1f570dc6ac4d64dc1d375098c007b63acdf0ea6e46e061fe2f9"
+        "regionalMatrixSha256": "5f793eea58938a9610fc5f2bd3bb417290ea1b6c6ea026f9e0adad14c134e780"
       }
     }
   },
