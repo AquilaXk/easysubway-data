@@ -2046,6 +2046,62 @@ test("#3036 후보가 고정한 KRIC snapshot의 결과 00 조회 212개(199역)
   }
 });
 
+async function pinnedCapitalKricInputs() {
+  const fanIn = await candidatePinnedJson(pinnedRead, "tools/datapack/release/current-five-region-source-fan-in.json");
+  const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === KRIC_STANDARD).snapshotId;
+  const [snapshot, baseFixture] = await Promise.all([
+    candidatePinnedJson(pinnedRead, `tools/datapack/sources/${head}.json`),
+    candidatePinnedJson(pinnedRead, "tools/datapack/release/capital-production-canonical-pack.json"),
+  ]);
+  const pack = baseFixture.packs[0];
+  const stationId = (nameKo) => pack.stations.find((station) => station.nameKo === nameKo).id;
+  const lineId = (nameKo) => pack.lines.find((line) => line.nameKo === nameKo).id;
+  return { snapshot, pack, stationId, lineId };
+}
+
+function kricEvidenceState(result, stationId, lineId, facilityType) {
+  const rows = result.stationFacilityEvidence.filter((row) => isKricStandard(row)
+    && row.stationId === stationId && row.lineId === lineId && row.facilityType === facilityType);
+  assert.equal(rows.length, 1, `${stationId}|${lineId}|${facilityType} 증거는 하나다`);
+  return [rows[0].evidenceKind, rows[0].statusMeaning];
+}
+
+test("#3036 리뷰 F2: 같은 역의 팩 역-노선 중 결과 00으로 조회되지 않은 것이 있으면 목록에 없는 유형도 부재가 아니라 UNKNOWN이다", async () => {
+  const { snapshot, pack, stationId, lineId } = await pinnedCapitalKricInputs();
+  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+  const seoulStation = stationId("서울역");
+  assert.deepEqual(
+    pack.stationLines.filter((line) => line.stationId === seoulStation).map((line) => line.lineId).sort(),
+    ["수도권 1호선", "수도권 4호선", "수도권 GTX-A", "수도권 경의중앙", "수도권 공항"].map(lineId).sort(),
+  );
+  assert.deepEqual(snapshot.queries.filter((query) => query.stationId === seoulStation).map((query) => query.lineId), [lineId("수도권 4호선")]);
+  assert.deepEqual(kricEvidenceState(result, seoulStation, lineId("수도권 4호선"), "WHEELCHAIR_LIFT"), ["UNKNOWN", "STATION_LINE_NOT_QUERIED"]);
+  assert.deepEqual(kricEvidenceState(result, seoulStation, lineId("수도권 4호선"), "ELEVATOR"), ["EXISTS", "STATIC_LOCATION"]);
+  assert.deepEqual(kricEvidenceState(result, stationId("사당"), lineId("수도권 4호선"), "WHEELCHAIR_LIFT"), ["NOT_EXISTS", "EXHAUSTIVE_LIST_ABSENCE"]);
+});
+
+test("#3036 리뷰 F2: 까치산 2호선 조회가 결과 03이면 5호선 조회에 없는 유형은 부재가 아니라 UNKNOWN이다", async () => {
+  const { snapshot, pack, stationId, lineId } = await pinnedCapitalKricInputs();
+  const kkachisan = stationId("까치산");
+  const line5 = lineId("수도권 5호선");
+  const queries = snapshot.queries.filter((query) => query.stationId === kkachisan);
+  assert.deepEqual(queries.map(({ lineId: queried, providerResultCode }) => [queried, providerResultCode]).sort(), [
+    [line5, "00"], [lineId("수도권 2호선"), "03"],
+  ].sort());
+  assert.deepEqual(kricEvidenceState(withCapitalKricStandardFacilities({ pack, snapshot }), kkachisan, line5, "WHEELCHAIR_LIFT"), ["EXISTS", "STATIC_LOCATION"]);
+
+  const withoutLift = {
+    ...snapshot,
+    queries: snapshot.queries.map((query) => (query.stationId === kkachisan && query.lineId === line5
+      ? { ...query, rows: query.rows.filter(({ gubun }) => gubun !== "WCLF") }
+      : query)),
+  };
+  assert.deepEqual(
+    kricEvidenceState(withCapitalKricStandardFacilities({ pack, snapshot: withoutLift }), kkachisan, line5, "WHEELCHAIR_LIFT"),
+    ["UNKNOWN", "STATION_LINE_NOT_QUERIED"],
+  );
+});
+
 test("#3036 전국 후보 팩의 KRIC 시설·증거는 fan-in head snapshot 하나만 가리키고 에스컬레이터 부재를 싣지 않는다", async () => {
   const { finalPack } = await prepareNationwideCandidate({
     readRepositoryFile: pinnedRead, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122,
