@@ -27,8 +27,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+import { MAX_CLAIM_BRANCHES, BRANCH_PR_LIMIT } from "./collect-automation-prs.mjs";
 import { isReplayRunId } from "./decide-itx-current-promotion.mjs";
-import { LEDGER_WRITER_WORKFLOWS } from "./refresh-open-pr-age.mjs";
+import { parseAutomationBranches, pendingLedgerWriterPullRequests, pendingLedgerWriters } from "./automation-pr-state.mjs";
+import { LEDGER_WRITER_WORKFLOWS, REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import {
   AUTOMATION_STAGE_WORKFLOWS,
   REPOSITORY_PATTERN,
@@ -70,9 +72,10 @@ const REPLAY_RUN_SUFFIX = /-([1-9][0-9]*)$/u;
 // 수도권 topology 갱신 PR이 그날 ITX 수집분을 들고 있다는 표지: ITX admission 파일을 새로 만든다(current-capital-topology-refresh의 TOPOLOGY_ITX_ADMISSION_PATH).
 const ITX_ADMISSION_FILE = /^tools\/datapack\/itx-current-network-edge-admission-\d{8}\.json$/u;
 
+// countsClaims: 재생 run의 판정이 PR 없는 claim 브랜치도 진행 중인 일로 세는가. 재확인 판정은 pendingLedgerWriters로 세고(decide-source-reverification), ITX 판정은 열린 PR만 센다(decide-itx-current-promotion).
 const STAGE_REPLAY = Object.freeze({
-  "itx-promotion": Object.freeze({ artifactPrefix: "itx-current-promotion", code: "ITX_REPLAY", gateVariable: "DATAPACK_SCHEDULED_ITX_PROMOTION" }),
-  "source-reverification": Object.freeze({ artifactPrefix: "source-reverification", code: "SOURCE_REVERIFICATION_REPLAY", gateVariable: "DATAPACK_SCHEDULED_SOURCE_REVERIFICATION" }),
+  "itx-promotion": Object.freeze({ artifactPrefix: "itx-current-promotion", code: "ITX_REPLAY", gateVariable: "DATAPACK_SCHEDULED_ITX_PROMOTION", countsClaims: false }),
+  "source-reverification": Object.freeze({ artifactPrefix: "source-reverification", code: "SOURCE_REVERIFICATION_REPLAY", gateVariable: "DATAPACK_SCHEDULED_SOURCE_REVERIFICATION", countsClaims: true }),
 });
 const REPLAY_MODES = Object.freeze([RECREATE_MODE.REPLAY, RECREATE_MODE.REPLAY_OR_RECOLLECT]);
 
@@ -129,14 +132,11 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
   const ours = (pull) => pull?.head?.repo?.full_name === repository && isAutomationApp(pull.user) ? automationStageForBranch(pull.head.ref) : null;
   const { closures, windowClosures } = countClosures({ closedPulls, ours, windowStart, countFrom });
 
-  // 재생 run은 다른 원장 쓰기 PR이 열려 있으면 ITX_PROMOTION_REPLAY_BLOCKED·REVERIFICATION_REPLAY_BLOCKED로 실패한다.
-  // 그때 PR은 이미 닫힌 뒤라서, 재생 run의 판정과 같은 기준으로 열린 원장 쓰기 PR이 있는 동안은 재생을 미룬다(원장 쓰기 PR은 한 번에 하나다).
-  // 뒤처진 형제 PR도 같은 실행에서 닫고 다시 dispatch하므로 열린 PR로 센다(재dispatch한 형제가 재생 판정보다 먼저 PR을 열 수 있다).
+  // 재생 run의 판정은 다른 원장 쓰기 PR이 열려 있으면 ITX_PROMOTION_REPLAY_BLOCKED로, 재확인 재생은 PR 없는 claim 브랜치가 있어도 REVERIFICATION_REPLAY_BLOCKED로 실패한다.
+  // 그때 PR은 이미 닫힌 뒤라서, 재생 run의 판정과 같은 함수·같은 입력으로 막힘을 미리 판정해 막혀 있는 동안은 재생을 미룬다(원장 쓰기 PR은 한 번에 하나다).
+  // 뒤처진 형제 PR도 같은 실행에서 닫고 다시 dispatch하므로 이번 계획에서는 열린 PR로 세고, 다음 계획에서 그 형제가 claim으로만 보이면 재확인 재생은 claim으로 센다.
   // ITX·재확인 PR이 함께 뒤처져 서로 기다리면 재확인 묶음이 만료(보관 1일)되는 대로 재확인 PR이 다시 수집 경로로 닫혀 ITX가 재생된다.
-  const ledgerWritersBlocking = (replayStage) => openPulls.filter((pull) => {
-    const stage = ours(pull);
-    return stage !== null && stage !== replayStage && LEDGER_WRITER_WORKFLOWS.includes(AUTOMATION_STAGE_WORKFLOWS[stage]);
-  }).map(({ number }) => number);
+  const ledgerWritersBlocking = ledgerWriterBlockers({ repository, api, openPulls });
 
   const actions = [];
   const anomalies = [];
@@ -158,6 +158,48 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
   // 재생 dispatch는 실행의 마지막이다. 앞선 쓰기가 실패하면 ITX PR은 닫히지 않은 채 남는다.
   const ordered = [...actions.filter(({ replayRunId }) => replayRunId === undefined), ...actions.filter(({ replayRunId }) => replayRunId !== undefined)];
   return { actions: ordered, anomalies, deferred };
+}
+
+const statePullOf = (pull, repository) => ({
+  number: pull?.number,
+  state: pull?.state === "open" ? "OPEN" : (pull?.merged_at ?? null) === null ? "CLOSED" : "MERGED",
+  headRefName: pull?.head?.ref,
+  baseRefName: pull?.base?.ref,
+  isCrossRepository: pull?.head?.repo?.full_name !== repository,
+  headRepository: { nameWithOwner: pull?.head?.repo?.full_name },
+});
+
+// PR 없는 원장 쓰기 claim 브랜치의 PR 상태(병합된 브랜치는 끝난 일이다)까지 모아 재생 run의 판정과 같은 pendingLedgerWriters 입력을 만든다.
+// automation/ 브랜치 수 상한(MAX_CLAIM_BRANCHES)과 브랜치별 PR 목록 상한(BRANCH_PR_LIMIT)은 판정 입력을 모으는 collect-automation-prs와 같다.
+async function readClaimInput({ repository, api, openPulls }) {
+  const refs = await readPages(api, `repos/${repository}/git/matching-refs/heads/automation/`, { limit: 3 });
+  const automationBranches = parseAutomationBranches(refs.map(({ ref, object }) => `${object?.sha}\t${ref}`).join("\n"));
+  if (automationBranches.length > MAX_CLAIM_BRANCHES) throw inputError(`AUTOMATION_CLAIM_BRANCH_LIMIT: ${automationBranches.length} automation branches exceed the limit ${MAX_CLAIM_BRANCHES}`);
+  const pullRequests = new Map(openPulls.map((pull) => [pull.number, statePullOf(pull, repository)]));
+  const openHeads = new Set(openPulls.map((pull) => pull?.head?.ref));
+  const ledgerPrefixes = LEDGER_WRITER_WORKFLOWS.map((workflow) => REFRESH_CLAIM_PREFIXES[workflow]);
+  const owner = repository.split("/")[0];
+  for (const branch of automationBranches.filter((name) => !openHeads.has(name) && ledgerPrefixes.some((prefix) => name.startsWith(prefix)))) {
+    const rows = await api(`repos/${repository}/pulls?state=all&head=${owner}:${branch}&per_page=100`); // NOSONAR -- 브랜치별 조회 수가 적고 한 번의 실패로 판정을 멈춰야 하므로 순서대로 읽는다
+    if (!Array.isArray(rows)) throw inputError(`pull requests of ${branch}`);
+    if (rows.length >= BRANCH_PR_LIMIT) throw inputError(`AUTOMATION_PR_LIST_TRUNCATED: pull request list for ${branch} reached its limit ${BRANCH_PR_LIMIT}`);
+    for (const pull of rows) pullRequests.set(pull?.number, statePullOf(pull, repository));
+  }
+  return { pullRequests: [...pullRequests.values()], automationBranches };
+}
+
+/** replayStage의 재생 run 판정이 막힐 원장 쓰기 PR 번호와(재확인만) PR 없는 claim 브랜치 이름. claim 목록은 필요할 때 한 번만 읽는다. */
+function ledgerWriterBlockers({ repository, api, openPulls }) {
+  let claimInput = null;
+  return async (replayStage) => {
+    const workflow = AUTOMATION_STAGE_WORKFLOWS[replayStage];
+    if (!STAGE_REPLAY[replayStage].countsClaims) {
+      return pendingLedgerWriterPullRequests(openPulls.map((pull) => statePullOf(pull, repository)), repository, workflow);
+    }
+    claimInput ??= await readClaimInput({ repository, api, openPulls });
+    const pending = pendingLedgerWriters({ ...claimInput, repository, exceptWorkflow: workflow });
+    return [...pending.pullRequests, ...pending.branches];
+  };
 }
 
 // closures: 같은 main tip에서 닫힌 횟수(루프 상한). windowClosures: tip과 관계없이 24시간 안에 닫힌 횟수(starvation 상한).
@@ -204,7 +246,7 @@ async function planReplay({ pull, stage, mode, used, repository, api, gateEnable
   if (!gateEnabled[stage]) return { anomaly: { stage, number: pull.number, closures: used, reason: gateDisabled(stage) } };
   const runId = REPLAY_RUN_SUFFIX.exec(pull.head.ref)?.[1];
   if (isReplayRunId(runId) && await replaySourceAlive({ repository, api, stage, runId })) {
-    const blockedBy = ledgerWritersBlocking(stage);
+    const blockedBy = await ledgerWritersBlocking(stage);
     if (blockedBy.length > 0) return { deferred: { stage, number: pull.number, reason: `${code}_WAITS_FOR_LEDGER_WRITERS`, blockedBy } };
     return { action: { replayRunId: runId } };
   }
@@ -234,7 +276,7 @@ export async function recreateBehindPullRequests({
     log(`closed #${action.number} (${action.stage}) and removed ${action.branch}`);
     if (action.recollect !== undefined) log(`${action.recollect}: #${action.number} (${action.stage}) has no live replay artifact, so the stage collects again from the providers`);
     if (STAGE_REDISPATCH[action.stage] && !dispatched.has(action.workflow)) {
-      await dispatchAgain({ action, dispatchWorkflow }); // NOSONAR -- 재생 dispatch는 실행의 마지막이고, 앞선 쓰기가 실패하면 이후 쓰기를 하지 않으므로 순서대로 실행한다
+      await dispatchStageWorkflow({ action, dispatchWorkflow }); // NOSONAR -- 재생 dispatch는 실행의 마지막이고, 앞선 쓰기가 실패하면 이후 쓰기를 하지 않으므로 순서대로 실행한다
       dispatched.add(action.workflow);
       log(`dispatched ${action.workflow} from ${MAIN}${action.replayRunId === undefined ? "" : ` replaying run ${action.replayRunId}`}`);
     }
@@ -244,7 +286,7 @@ export async function recreateBehindPullRequests({
   }
 }
 
-async function dispatchAgain({ action, dispatchWorkflow }) {
+async function dispatchStageWorkflow({ action, dispatchWorkflow }) {
   if (action.replayRunId === undefined) return dispatchWorkflow(action.workflow);
   // 수집분은 원본 run의 artifact에 남아 있다. 이 dispatch가 실패해도 같은 입력으로 다시 dispatch하면 복구된다.
   try {

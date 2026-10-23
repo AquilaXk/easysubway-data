@@ -47,7 +47,7 @@ const TOPOLOGY_FILES_WITHOUT_ITX = TOPOLOGY_FILES_WITH_ITX.filter((file) => !fil
 const sha = (digit) => String(digit).repeat(40);
 const open = (number, branch, { user = AUTOMATION_PR_APP, repo = REPOSITORY, head = sha(number % 10), createdAt = "2026-10-01T00:00:00Z" } = {}) => ({ number, state: "open", user, created_at: createdAt, head: { ref: branch, sha: head, repo: { full_name: repo } }, base: { ref: "main" } });
 const closed = (number, branch, hoursAgo, { merged = false, user = AUTOMATION_PR_APP } = {}) => ({
-  number, state: "closed", user, head: { ref: branch, sha: sha(number % 10), repo: { full_name: REPOSITORY } },
+  number, state: "closed", user, head: { ref: branch, sha: sha(number % 10), repo: { full_name: REPOSITORY } }, base: { ref: "main" },
   closed_at: new Date(NOW.getTime() - hoursAgo * 3600_000).toISOString(), merged_at: merged ? new Date(NOW.getTime() - hoursAgo * 3600_000).toISOString() : null,
 });
 
@@ -55,10 +55,17 @@ const closed = (number, branch, hoursAgo, { merged = false, user = AUTOMATION_PR
 const liveArtifact = (runId, overrides = {}, prefix = "itx-current-promotion") => ({ id: 1, name: `${prefix}-${runId}`, expired: false, ...overrides });
 // #1147: 닫힘 상한은 "현재 main tip이 생긴 뒤" 닫힌 횟수만 센다. 기본 tip은 24시간 창보다 훨씬 오래돼 창만 상한을 정한다.
 const hoursBeforeNow = (hours) => new Date(NOW.getTime() - hours * 3600_000).toISOString();
-function fakeApi({ openPulls = [], closedPulls = [], behind = {}, artifacts = (runId) => [liveArtifact(runId)], files = {}, tipCommittedAt = hoursBeforeNow(72) }) {
+// claims: PR 없이 남은 automation/ 브랜치(재생 run의 판정이 진행 중인 일로 센다). branchPulls: 브랜치 이름 -> 그 브랜치에 묶인 PR(전 상태).
+const automationRefs = (branches) => branches.map((branch, index) => ({ ref: `refs/heads/${branch}`, object: { sha: sha(index % 10), type: "commit" } }));
+function fakeApi({ openPulls = [], closedPulls = [], behind = {}, artifacts = (runId) => [liveArtifact(runId)], files = {}, tipCommittedAt = hoursBeforeNow(72), claims = [], branchPulls = {} }) {
   const calls = [];
   const api = async (endpoint) => {
     calls.push(endpoint);
+    if (endpoint === `repos/${REPOSITORY}/git/matching-refs/heads/automation/?per_page=100&page=1`) {
+      return automationRefs([...openPulls.map(({ head }) => head.ref).filter((branch) => branch.startsWith("automation/")), ...claims]);
+    }
+    const branchMatch = /^repos\/[^/]+\/[^/]+\/pulls\?state=all&head=AquilaXk:(automation\/[^&]+)&per_page=100$/u.exec(endpoint);
+    if (branchMatch) return branchPulls[branchMatch[1]] ?? [];
     const filesMatch = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/files\?per_page=100&page=1$/u.exec(endpoint);
     if (filesMatch) return (files[Number(filesMatch[1])] ?? []).map((filename) => ({ filename, status: "added" }));
     const artifactMatch = /^repos\/[^/]+\/[^/]+\/actions\/runs\/(\d+)\/artifacts\?name=(itx-current-promotion|source-reverification)-\d+$/u.exec(endpoint);
@@ -761,4 +768,69 @@ test("재확인 재생 dispatch가 실패하면 원본 run id를 담아 실패�
   const writer = recorder();
   writer.dispatchWorkflow = async () => { throw new Error("HTTP 500"); };
   await assert.rejects(recreateBehindPullRequests({ ...REVERIFICATION_ON, repository: REPOSITORY, api, now: NOW, ...writer }), /SOURCE_REVERIFICATION_REPLAY_DISPATCH_FAILED: replay_run_id=9005 .*HTTP 500/u);
+});
+
+// R1: 재확인 재생 run의 판정(pendingLedgerWriters)은 열린 PR뿐 아니라 PR 없는 claim 브랜치에서도 막혀 REVERIFICATION_REPLAY_BLOCKED로 실패한다.
+// 계획이 열린 PR만 보면 형제를 닫고 다시 dispatch한 직후의 다음 계획에서 형제가 claim으로만 보여, 닫은 뒤 실패하는 재생을 보낸다.
+const SIBLING_CLAIM = "automation/456-capital-topology-registration-9201";
+const deferredOf = (plan) => plan.deferred.map(({ stage, number, reason, blockedBy }) => ({ stage, number, reason, blockedBy }));
+const REVERIFICATION_WAITS = { stage: "source-reverification", number: 5, reason: "SOURCE_REVERIFICATION_REPLAY_WAITS_FOR_LEDGER_WRITERS" };
+
+test("R1: PR 없는 원장 쓰기 claim 브랜치만 남아 있어도 재확인 재생을 미룬다. PR은 닫지 않고 dispatch도 없다 (#3036)", async () => {
+  const { api } = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, claims: [SIBLING_CLAIM] });
+  const plan = await planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api, now: NOW });
+  assert.deepEqual(plan.actions, []);
+  assert.deepEqual(deferredOf(plan), [{ ...REVERIFICATION_WAITS, blockedBy: [SIBLING_CLAIM] }]);
+  const writer = recorder();
+  await recreateBehindPullRequests({ ...REVERIFICATION_ON, repository: REPOSITORY, api, now: NOW, ...writer });
+  assert.deepEqual(writer.writes, [], "재확인 PR을 닫지 않고 재생도 보내지 않는다");
+});
+
+test("R1: claim이 열린 PR과 함께 있으면 PR 번호만 알린다. 닫힌 PR에 남은 브랜치는 막고, 병합된 PR의 브랜치와 같은 단계·원장을 쓰지 않는 단계의 claim은 막지 않는다 (#3036)", async () => {
+  const plan = async (overrides) => planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, now: NOW, api: fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, ...overrides }).api });
+  const withPr = await plan({ openPulls: [open(5, BRANCHES["source-reverification"]), open(3, SIBLING_CLAIM)] });
+  assert.deepEqual(deferredOf(withPr), [{ ...REVERIFICATION_WAITS, blockedBy: [3] }], "열린 PR의 head는 PR 번호로만 센다");
+  const closedPr = await plan({ claims: [SIBLING_CLAIM], branchPulls: { [SIBLING_CLAIM]: [closed(40, SIBLING_CLAIM, 2)] } });
+  assert.deepEqual(deferredOf(closedPr), [{ ...REVERIFICATION_WAITS, blockedBy: [SIBLING_CLAIM] }], "닫힌 PR에 남은 브랜치는 진행 흔적이다");
+  for (const [label, claim, branchPulls] of [
+    ["병합된 PR의 브랜치", SIBLING_CLAIM, { [SIBLING_CLAIM]: [closed(41, SIBLING_CLAIM, 2, { merged: true })] }],
+    ["같은 재확인 단계의 다른 claim", "automation/984-source-reverification-9300", {}],
+    ["원장을 쓰지 않는 후보 갱신 claim", "automation/927-nationwide-candidate-refresh-9301", {}],
+    ["단계가 아닌 automation 브랜치", "automation/700-unrelated-experiment-1", {}],
+  ]) {
+    const free = await plan({ claims: [claim], branchPulls });
+    assert.deepEqual(free.actions.map(({ number, replayRunId }) => ({ number, replayRunId })), [{ number: 5, replayRunId: "9005" }], label);
+    assert.deepEqual(free.deferred, [], label);
+  }
+});
+
+test("R1: 형제를 닫고 다시 dispatch한 계획의 다음 계획에서는 형제가 claim으로만 보이므로 재확인 재생을 미루고, claim이 사라진 뒤에야 재생한다 (#3036)", async () => {
+  const siblingOpen = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(5, BRANCHES["source-reverification"])], behind: { [sha(1)]: 1, [sha(5)]: 1 }, artifacts: reverificationArtifact });
+  const first = await planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: siblingOpen.api, now: NOW });
+  assert.deepEqual(first.actions.map(({ stage }) => stage), ["registration"], "형제만 닫고 다시 dispatch한다");
+  assert.deepEqual(deferredOf(first), [{ ...REVERIFICATION_WAITS, blockedBy: [1] }]);
+  const siblingClaimOnly = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, claims: [SIBLING_CLAIM] });
+  const second = await planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: siblingClaimOnly.api, now: NOW });
+  assert.deepEqual(second.actions, []);
+  assert.deepEqual(deferredOf(second), [{ ...REVERIFICATION_WAITS, blockedBy: [SIBLING_CLAIM] }]);
+  const settled = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact });
+  const third = await planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: settled.api, now: NOW });
+  assert.deepEqual(third.actions.map(({ number, replayRunId }) => ({ number, replayRunId })), [{ number: 5, replayRunId: "9005" }]);
+});
+
+test("R1: ITX 승격 재생의 판정은 열린 PR만 보므로 claim만 남은 경우에는 미루지 않는다. claim 목록도 읽지 않는다 (#3036)", async () => {
+  const { api, calls } = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"])], behind: { [sha(2)]: 1 }, claims: [SIBLING_CLAIM] });
+  const plan = await ITX_PLAN({ api });
+  assert.deepEqual(plan.actions.map(({ number, replayRunId }) => ({ number, replayRunId })), [{ number: 2, replayRunId: "9002" }]);
+  assert.deepEqual(plan.deferred, []);
+  assert.equal(calls.some((endpoint) => endpoint.includes("matching-refs")), false);
+});
+
+test("R1: automation 브랜치가 상한(50)을 넘거나 한 브랜치의 PR 목록이 잘리면 재생을 판정하지 않고 실패한다 (#3036)", async () => {
+  const many = Array.from({ length: 51 }, (_, index) => `automation/700-unrelated-experiment-${index + 1}`);
+  const crowded = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, claims: many });
+  await assert.rejects(planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: crowded.api, now: NOW }), /AUTOMATION_CLAIM_BRANCH_LIMIT/u);
+  const manyPulls = Array.from({ length: 100 }, (_, index) => closed(100 + index, SIBLING_CLAIM, 2));
+  const truncated = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, claims: [SIBLING_CLAIM], branchPulls: { [SIBLING_CLAIM]: manyPulls } });
+  await assert.rejects(planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: truncated.api, now: NOW }), /AUTOMATION_PR_LIST_TRUNCATED/u);
 });
