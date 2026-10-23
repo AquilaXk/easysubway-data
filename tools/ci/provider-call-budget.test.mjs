@@ -156,5 +156,13 @@ test("저장소 정책: 부산 세 operation(15001019·15001020·15000522)이 �
   assert.deepEqual(committedPolicy.operations.map(({ datasetUrl }) => datasetUrl.match(/\/data\/(\d+)\//u)[1]), ["15001019", "15001020", "15000522"]);
   const recipeSources = new Set(REVERIFICATION_RECIPES.filter(({ id }) => id.startsWith("busan-")).flatMap(({ sourceIds }) => sourceIds));
   for (const { sourceId } of policy.operations) assert.ok(recipeSources.has(sourceId), `${sourceId} belongs to a reverification recipe`);
-  assert.match(committedPolicy.dailyRequestLimitBasis.evidenceUrl, /^https:\/\/www\.data\.go\.kr\//u);
+  // 한도 근거는 확인한 것과 가정한 것을 나눠 적는다: 확인 항목은 모두 확인일이 있고 URL은 공공데이터포털이며, 가정은 비어 있지 않다.
+  const { verified, assumed } = committedPolicy.dailyRequestLimitBasis;
+  assert.ok(verified.length > 0);
+  for (const { url, checkedAt, statement } of verified) {
+    assert.ok(url === null || url.startsWith("https://www.data.go.kr/"), url);
+    assert.match(checkedAt, /^\d{4}-\d{2}-\d{2}$/u);
+    assert.notEqual(statement, "");
+  }
+  assert.match(assumed, /접근성.*시간표/u);
 });
