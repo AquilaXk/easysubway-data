@@ -16,7 +16,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
-import { REFRESH_STAGES, REFRESH_STAGE_IDS, isRefreshStage, refreshPathShapeViolation } from "./refresh-stage-contracts.mjs";
+import { REFRESH_STAGES, REFRESH_STAGE_IDS, isRefreshStage, refreshPathShapeViolation, refreshSourceRowsMatch } from "./refresh-stage-contracts.mjs";
 import { SOURCE_REVERIFICATION_RECIPE_IDS, isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
 import { isObject } from "../lib/is-object.mjs";
 
@@ -112,7 +112,7 @@ function validateRefreshStage(value) {
   only(step.paths.every((entry, index) => index === 0 || step.paths[index - 1] < entry), "paths must be sorted and unique");
   const shape = refreshPathShapeViolation(value.stage, step.paths);
   only(shape === null, `paths: ${String(shape)}`);
-  only(JSON.stringify(value.sources.map(({ sourceId }) => sourceId)) === JSON.stringify(spec.expectedSourceIds), `source rows must be exactly ${spec.expectedSourceIds.join(", ")}`);
+  only(refreshSourceRowsMatch(value.stage, value.sources.map(({ sourceId }) => sourceId)), `source rows must be ${spec.sourceSelection === "ONE_OF" ? "exactly one of" : "exactly"} ${spec.expectedSourceIds.join(", ")}`);
 }
 
 function validateEvidence(value) {

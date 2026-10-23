@@ -13,9 +13,12 @@ import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./s
 import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 import { validateCurrentCapitalFacilityPlanAndCanonicalPack } from "./build-current-capital-facility-source-admission.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
+import { KRIC_ESCALATOR_SOURCE_ID, KRIC_STANDARD_SOURCE_ID } from "./lib/kric-standard-facilities.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
-const SOURCE_ID = "kric-station-convenience-standard";
+const SOURCE_ID = KRIC_STANDARD_SOURCE_ID;
+// 정기 갱신(producer-neutral full registration)이 등록하는 KRIC 시설 원천과 inventory 메모에 쓰는 이름이다(#3036).
+const FULL_REGISTRATION_SOURCE_LABELS = new Map([[KRIC_STANDARD_SOURCE_ID, "KRIC standard"], [KRIC_ESCALATOR_SOURCE_ID, "KRIC escalator"]]);
 const SEOUL_SOURCE_ID = "seoul-metro-accessibility";
 const SHA256 = /^[0-9a-f]{64}$/;
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -76,7 +79,7 @@ async function recoverJournalRecord({ entry, record, root, directory, seen, atom
   }
   seen.add(record.target);
   if (!allowed.has(record.target)
-    && !/^tools\/datapack\/sources\/(?:kric-station-convenience-standard|seoul-metro-accessibility)-[A-Za-z0-9]+\.json$/.test(record.target)) {
+    && !/^tools\/datapack\/sources\/(?:kric-station-convenience-standard|kric-station-escalator-detailed|seoul-metro-accessibility)-[A-Za-z0-9]+\.json$/.test(record.target)) {
     throw new Error("journal");
   }
   const target = contained(root, record.target);
@@ -486,17 +489,23 @@ function buildSeoulRegistration({
   return nextLedger;
 }
 
-function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, seoulRegistration, kricAccessibilityRoster, freshnessExpiresAt, governancePolicySha256, governancePolicyVersion, now }) {
-  const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
+// 첫 등록 전 원천은 inventory 항목에 accessibilityAdmissionEvidence가 없고 원장 행도 없다. 둘 중 하나만 있으면 상태가 어긋난 것이다.
+function sourceLineagePredecessor({ source, snapshots, sourceId }) {
+  const previousId = validateLineage(snapshots).headsBySource[sourceId];
+  const firstRegistration = source.accessibilityAdmissionEvidence === undefined;
+  if (firstRegistration ? previousId !== undefined : !previousId) throw new Error("source snapshot lineage is missing");
+  return firstRegistration ? null : snapshots.find(({ snapshotId }) => snapshotId === previousId);
+}
+
+function stageRegistries({ sourceId = SOURCE_ID, inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, seoulRegistration, kricAccessibilityRoster, freshnessExpiresAt, governancePolicySha256, governancePolicyVersion, now }) {
+  const source = inventory?.sources?.find(({ id }) => id === sourceId);
   if (!source) throw new Error("production source inventory entry is missing");
-  const previousId = validateLineage(snapshots).headsBySource[SOURCE_ID];
-  if (!previousId) throw new Error("source snapshot lineage is missing");
-  const previous = snapshots.find(({ snapshotId }) => snapshotId === previousId);
+  const previous = sourceLineagePredecessor({ source, snapshots, sourceId });
   const nextLedger = {
     schemaVersion: 1,
     artifactKind: "official-source-snapshot",
     snapshotId: snapshot.snapshotId,
-    sourceId: SOURCE_ID,
+    sourceId,
     provider: source.provider,
     retrievedAt: snapshot.capturedAt,
     sourceUpdatedAt: snapshot.observedAt,
@@ -514,21 +523,27 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
     fetchStatus: "SUCCESS",
     redistributionAllowed: true,
     credentialRedacted: true,
-    previousSnapshotId: previous.snapshotId,
+    previousSnapshotId: previous?.snapshotId ?? null,
     freshnessExpiresAt,
     rawRetentionExpiresAt: rawReceipt.rawRetentionExpiresAt,
     adminReviewRecordHash: source.admissionEvidence?.adminReviewRecordHash,
     governancePolicySha256,
     governancePolicyVersion,
   };
-  nextLedger.diffSummary = buildSnapshotDiff(previous, nextLedger);
+  if (previous) nextLedger.diffSummary = buildSnapshotDiff(previous, nextLedger);
   const nextInventory = structuredClone(inventory);
-  const nextSource = nextInventory.sources.find(({ id }) => id === SOURCE_ID);
+  const nextSource = nextInventory.sources.find(({ id }) => id === sourceId);
   nextSource.productionUseAllowed = true;
   nextSource.retrievedAt = snapshot.capturedAt.slice(0, 10);
   nextSource.observedDataUpdatedAt = snapshot.observedAt.slice(0, 10);
+  // 첫 등록은 검토 승인(admissionEvidence)의 이슈·결정·약관 해시로 증거를 연다. 이후 등록은 직전 증거의 그 값을 이어 쓴다.
+  const admittedEvidence = nextSource.accessibilityAdmissionEvidence ?? {
+    issue: nextSource.admissionEvidence.issue,
+    decision: nextSource.admissionEvidence.decision,
+    licenseEvidenceHash: nextSource.admissionEvidence.licenseEvidenceHash,
+  };
   nextSource.accessibilityAdmissionEvidence = {
-    ...nextSource.accessibilityAdmissionEvidence,
+    ...admittedEvidence,
     productionUseAllowed: true,
     snapshotId: snapshot.snapshotId,
     snapshotPath,
@@ -546,7 +561,7 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
   }
   nextSource.admissionEvidence = {
     ...nextSource.admissionEvidence,
-    productionUseNoteKo: `fresh KRIC standard snapshot ${snapshot.snapshotId} registration verified.`,
+    productionUseNoteKo: `fresh ${FULL_REGISTRATION_SOURCE_LABELS.get(sourceId)} snapshot ${snapshot.snapshotId} registration verified.`,
   };
   const seoulLedger = seoulRegistration == null ? null : buildSeoulRegistration({
     inventory: nextInventory,
@@ -594,7 +609,8 @@ async function prepareProducerNeutralFullRegistration({ repositoryRoot, snapshot
   const { bytes: planBytes } = planFile;
   const { bytes: canonicalBytes } = canonicalFile;
   const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
-  if (snapshot.sourceId !== SOURCE_ID) throw new Error("capital FACILITY snapshot source is invalid");
+  const { sourceId } = snapshot;
+  if (!FULL_REGISTRATION_SOURCE_LABELS.has(sourceId)) throw new Error("capital FACILITY snapshot source is invalid");
   let plan;
   try {
     plan = JSON.parse(planBytes);
@@ -640,19 +656,22 @@ async function prepareProducerNeutralFullRegistration({ repositoryRoot, snapshot
     inventory,
     freshnessPolicy: freshness.policy,
   });
-  validateLicenseGovernance({ inventory, policySources, sourceId: SOURCE_ID, label: "KRIC", now });
-  requiredSha256(inventory.sources.find(({ id }) => id === SOURCE_ID)?.admissionEvidence?.adminReviewRecordHash, "KRIC admin review record hash");
+  validateLicenseGovernance({ inventory, policySources, sourceId, label: "KRIC", now });
+  const source = inventory.sources.find(({ id }) => id === sourceId);
+  requiredSha256(source?.admissionEvidence?.adminReviewRecordHash, "KRIC admin review record hash");
+  await assertFirstRegistrationReview(repositoryRoot, source);
   const relative = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   if (path.resolve(snapshotTargetPath) !== path.join(path.resolve(repositoryRoot), relative)) {
     throw new Error("snapshot target path is invalid");
   }
   const freshnessExpiresAt = deriveFreshnessExpiresAt({
     policy: freshness.policy,
-    sourceClassId: policySources.get(SOURCE_ID).sourceClassId,
+    sourceClassId: policySources.get(sourceId).sourceClassId,
     basisAt: snapshot.capturedAt,
     evaluationAt: now.toISOString(),
   });
   const staged = stageRegistries({
+    sourceId,
     inventory,
     snapshots,
     input: null,
@@ -717,7 +736,7 @@ async function readGovernancePolicy(repositoryRoot, snapshot, rawReceipt) {
   try { policy = JSON.parse(bytes); } catch { throw new Error("source governance policy is invalid"); }
   const expectedRawRetentionExpiresAt = deriveRawRetentionExpiresAt({
     policy,
-    sourceId: SOURCE_ID,
+    sourceId: snapshot.sourceId,
     retrievedAt: snapshot.capturedAt,
   });
   if (rawReceipt.rawRetentionExpiresAt !== expectedRawRetentionExpiresAt) {
@@ -729,6 +748,22 @@ async function readGovernancePolicy(repositoryRoot, snapshot, rawReceipt) {
 async function readFreshnessPolicy(repositoryRoot) {
   const { bytes } = await readRegularSnapshot(path.join(path.resolve(repositoryRoot), "release/product-gates/datapack-freshness-sla.json"), "datapack freshness SLA");
   try { return { bytes, policy: JSON.parse(bytes) }; } catch { throw new Error("datapack freshness SLA is invalid"); }
+}
+
+// 첫 등록(증거 없음)은 사람이 승인한 검토 기록에 결속된다. 기록 파일 바이트가 inventory의 adminReviewRecordHash와 같고 같은 원천·승인을 말해야 한다.
+// 이후 등록은 직전 증거를 이어 쓰므로 검토 기록을 다시 읽지 않는다.
+async function assertFirstRegistrationReview(repositoryRoot, source) {
+  if (source.accessibilityAdmissionEvidence !== undefined) return;
+  const admission = source.admissionEvidence;
+  const relative = requiredText(admission.adminReviewRecordPath, "KRIC first registration review path");
+  const { bytes } = await readRegularSnapshot(path.join(path.resolve(repositoryRoot), relative), "KRIC first registration review");
+  let review;
+  try { review = JSON.parse(bytes); } catch { throw new Error("KRIC first registration review is invalid"); }
+  if (sha256(bytes) !== admission.adminReviewRecordHash || review.sourceId !== source.id || review.decision !== "APPROVED"
+    || admission.decision !== "APPROVED" || review.approvedBy !== admission.approvedBy || review.approvedAt !== admission.approvedAt
+    || review.licenseEvidenceHash !== admission.licenseEvidenceHash) {
+    throw new Error("KRIC first registration review binding is invalid");
+  }
 }
 
 function validateLicenseGovernance({ inventory, policySources, sourceId, label, now }) {
@@ -845,6 +880,7 @@ async function prepareRegistration({
     ...paths.map((file) => readFile(file)),
   ]);
   const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
+  if (snapshot.sourceId !== SOURCE_ID) throw new Error("pilot registration accepts only the KRIC standard snapshot");
   if (snapshot.providerResultCode === "MIXED") {
     throw new Error("mixed KRIC snapshot requires producer-neutral full registration");
   }

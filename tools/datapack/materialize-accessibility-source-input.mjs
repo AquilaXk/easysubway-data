@@ -7,8 +7,8 @@ import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-access
 import {
   KRIC_STANDARD_FACILITY_TYPES,
   KRIC_STANDARD_SOURCE_ID as KRIC_SOURCE_ID,
-  kricStandardStationContexts,
-  kricStandardQueryFacilities,
+  kricStationContexts,
+  kricQueryFacilities,
   validateKricStandardProviderRows,
 } from "./lib/kric-standard-facilities.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
@@ -52,7 +52,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   const absenceRows = [];
   const snapshotQueries = kricSnapshot.queries ?? [];
   validateKricStandardProviderRows(snapshotQueries);
-  const stationContexts = kricStandardStationContexts(kricSnapshot, snapshotQueries, packStationLines);
+  const stationContexts = kricStationContexts(kricSnapshot, snapshotQueries, packStationLines);
   const regionalRoster = input.kricStandardAccessibilityRoster;
   const regionalRosterKeys = regionalRoster == null ? null : exactRosterKeys(regionalRoster);
   const regionalQueries = regionalRosterKeys == null
@@ -100,7 +100,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
       });
       continue;
     }
-    const { facilities, statusEvidence } = kricStandardQueryFacilities({
+    const { facilities, statusEvidence } = kricQueryFacilities({
       snapshot: kricSnapshot, query, stationName: stationLineIdentity(input, mapping).stationNameKo, stationContexts,
     });
     for (const facility of facilities) {

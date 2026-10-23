@@ -8,11 +8,7 @@ import { gunzipSync } from "node:zlib";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
-import {
-  KRIC_STANDARD_SOURCE_ID,
-  kricStandardStationContexts,
-  kricStandardQueryFacilities,
-} from "./lib/kric-standard-facilities.mjs";
+import { KRIC_ESCALATOR_SOURCE_ID, kricQueryFacilities, kricStationContexts } from "./lib/kric-standard-facilities.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
@@ -536,6 +532,51 @@ export async function resolveSeoulMeasuredTransferMetrics({ sourceInventory, sou
   return { artifact, metrics: artifact.metrics, row, receipt, licenseRecordSha256 };
 }
 
+// #3036(QA 승인 2026-10-23): KRIC stationEscalator 원천도 fan-in 선택 집합 밖(requiredForProductionPack=false)이고 #876과 같은 규칙으로 고른다.
+// 첫 등록 전(inventory 항목이 없거나 accessibilityAdmissionEvidence가 없음)에는 후보 입력이 아니다. 이때 원장 행이 있으면 상태가 어긋난 것이다.
+// 등록된 뒤에는 증거가 원장 head이고, snapshot 바이트가 증거·원장 영수증과 같고, 정책으로 유도한 신선도가 원장과 같고 후보 시계 이후이며,
+// 인용 원문 저장이 후보 시계 이전이고, 약관 해시가 inventory license 레코드 hash일 때만 쓴다.
+export async function resolveKricEscalatorSnapshot({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt, read }) {
+  const sources = (Array.isArray(sourceInventory?.sources) ? sourceInventory.sources : []).filter(({ id }) => id === KRIC_ESCALATOR_SOURCE_ID);
+  if (sources.length > 1) throw new Error("nationwide candidate input inventory source missing or ambiguous for kric-station-escalator-detailed");
+  const [source] = sources;
+  const head = validateLineage(sourceSnapshots).headsBySource[KRIC_ESCALATOR_SOURCE_ID];
+  const evidence = source?.accessibilityAdmissionEvidence;
+  if (evidence === undefined) {
+    if (head !== undefined) throw new Error("nationwide candidate KRIC escalator first registration state is invalid");
+    return null;
+  }
+  if (source.requiredForProductionPack !== false || source.productionUseAllowed !== true || source.capabilities?.facility?.productionUseAllowed !== true
+    || evidence.productionUseAllowed !== true || evidence.decision !== "APPROVED") {
+    throw new Error("nationwide candidate KRIC escalator is not admitted for production facility use");
+  }
+  if (typeof evidence.snapshotId !== "string" || head !== evidence.snapshotId) throw new Error("nationwide candidate KRIC escalator admission is not the ledger head");
+  if (evidence.snapshotPath !== `tools/datapack/sources/${head}.json`) throw new Error("nationwide candidate KRIC escalator snapshot path mismatch");
+  const row = sourceSnapshots.find(({ snapshotId }) => snapshotId === head);
+  const bytes = await read(evidence.snapshotPath);
+  const snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(bytes));
+  if (sha256(bytes) !== evidence.snapshotFileSha256 || snapshot.snapshotId !== head || snapshot.sourceId !== KRIC_ESCALATOR_SOURCE_ID
+    || snapshot.rawSha256 !== evidence.rawSha256 || snapshot.contentSha256 !== evidence.contentSha256 || snapshot.capturedAt !== evidence.capturedAt) {
+    throw new Error("nationwide candidate KRIC escalator snapshot does not match its admission");
+  }
+  if (row.rawReceipt?.snapshotRawSha256 !== snapshot.rawSha256 || row.rawReceipt?.snapshotFileSha256 !== evidence.snapshotFileSha256
+    || row.contentSha256 !== snapshot.contentSha256 || row.retrievedAt !== snapshot.capturedAt) {
+    throw new Error("nationwide candidate KRIC escalator snapshot does not match the ledger head");
+  }
+  const evaluatedMillis = Date.parse(requiredInstant(evaluatedAt, "KRIC escalator evaluatedAt"));
+  if (Date.parse(policyBasisAt({ policy: freshnessPolicy, sourceId: KRIC_ESCALATOR_SOURCE_ID, record: row })) > evaluatedMillis) {
+    throw new Error("nationwide candidate KRIC escalator snapshot is observed after the candidate clock");
+  }
+  const freshUntil = policyFreshUntil({ policy: freshnessPolicy, sourceId: KRIC_ESCALATOR_SOURCE_ID, record: row, evaluationAt: evaluatedAt });
+  if (row.freshnessExpiresAt !== freshUntil) throw new Error("nationwide candidate KRIC escalator freshness does not match the freshness policy");
+  if (Date.parse(freshUntil) <= evaluatedMillis) throw new Error("nationwide candidate KRIC escalator snapshot is expired");
+  assertCandidateClockAfterRawStorage({ evaluatedAt, stored: [{ sourceId: KRIC_ESCALATOR_SOURCE_ID, storedAt: row.rawReceipt.storedAt }] });
+  if (source.admissionEvidence?.licenseEvidenceHash !== sha256(canonicalJson(source.license)) || evidence.licenseEvidenceHash !== source.admissionEvidence.licenseEvidenceHash) {
+    throw new Error("nationwide candidate KRIC escalator license evidence does not match the inventory license");
+  }
+  return { snapshot, row, source };
+}
+
 // #876 메인 결정 B(2026-10-02): 실측 환승시간과 서울교통공사 거리 원천의 우선순위.
 // - 두 원천이 같은 방향을 덮으면 시간은 실측 원천, 거리는 서울교통공사 공식 거리다. 행의 원천 id는 시간 원천이고,
 //   거리 원천(id·snapshot·레코드 hash·표기)은 distanceSource로 함께 들고 간다. 레코드 hash는 두 원천 레코드 hash의 결속이다.
@@ -748,11 +789,24 @@ export function busanFacilityState(observedRow) {
   });
 }
 
-// #3036: 수도권 KRIC 편의시설 표준 snapshot의 결과 00 조회를 모두 팩 시설·증거로 싣는다.
-// 기반 팩의 KRIC 행(pilot 2역, 이전 snapshot)은 같은 결정적 id 규칙으로 다시 만들어지므로 이 snapshot의 행으로 바꾼다.
+// 원천이 다루지 않는 유형이라 남긴 UNKNOWN 칸이다. 그 유형을 다루는 원천의 증거가 같은 칸에 오면 그 증거로 바뀐다.
+const isUncoveredTypePlaceholder = ({ evidenceKind, statusMeaning }) => evidenceKind === "UNKNOWN" && statusMeaning === "SOURCE_DOES_NOT_COVER_TYPE";
+const facilityEvidenceKey = ({ stationId, lineId, facilityType }) => `${stationId}\0${lineId}\0${facilityType}`;
+
+// 이 snapshot이 채우는 칸의 기존 증거 중 다른 원천의 원천 밖 UNKNOWN만 빼고, 그 밖의 증거와 겹치면 덮지 않고 실패한다.
+function supersedeFacilityEvidence(rows, claimed, sourceId) {
+  return rows.filter((row) => {
+    if (!claimed.has(facilityEvidenceKey(row))) return true;
+    if (isUncoveredTypePlaceholder(row)) return false;
+    throw new Error(`facility evidence conflict: ${row.stationId}:${row.lineId}:${row.facilityType} (${row.sourceId} ${row.evidenceKind}:${row.statusMeaning}) by ${sourceId}`);
+  });
+}
+
+// #3036: 수도권 KRIC 시설 snapshot(편의시설 표준, 에스컬레이터)의 결과 00 조회를 모두 팩 시설·증거로 싣는다.
+// 기반 팩의 같은 원천 행(pilot 2역, 이전 snapshot)은 같은 결정적 id 규칙으로 다시 만들어지므로 이 snapshot의 행으로 바꾼다.
 // 결과 00 조회의 (역, 노선, 유형)마다 EXISTS·NOT_EXISTS·UNKNOWN 증거 하나를 싣는다(QA 승인 2026-10-23).
 // 결과 03 조회(UNVERIFIED_EVIDENCE_BLOCKED)는 시설도 부재도 만들지 않는다. 팩 역-노선에 없는 조회는 실패한다.
-export function withCapitalKricStandardFacilities({ pack, snapshot }) {
+export function withCapitalKricFacilities({ pack, snapshot }) {
   const stationNames = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
   const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
   const queries = snapshot.queries.filter(({ status }) => status !== "UNVERIFIED_EVIDENCE_BLOCKED");
@@ -761,11 +815,11 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
     const labels = unmapped.map(({ railOprIsttCd, lnCd, stinCd, stationId, lineId }) => `${railOprIsttCd}/${lnCd}/${stinCd} ${stationId}:${lineId}`);
     throw new Error(`nationwide candidate KRIC facility station-line missing: ${unmapped.length} queries (${labels.slice(0, 5).join(", ")})`);
   }
-  const stationContexts = kricStandardStationContexts(snapshot, queries, pack.stationLines);
+  const stationContexts = kricStationContexts(snapshot, queries, pack.stationLines);
   const facilities = [];
   const evidence = [];
   for (const query of queries) {
-    const observed = kricStandardQueryFacilities({ snapshot, query, stationName: stationNames.get(query.stationId), stationContexts });
+    const observed = kricQueryFacilities({ snapshot, query, stationName: stationNames.get(query.stationId), stationContexts });
     const rows = observed.facilities.map(({ id, type, name, floorFrom, description, providerFacilityRef, providerRecordHash, evidenceHash }) => ({
       id,
       stationId: query.stationId,
@@ -777,7 +831,7 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
       floorFrom,
       floorTo: "",
       description,
-      sourceId: KRIC_STANDARD_SOURCE_ID,
+      sourceId: snapshot.sourceId,
       sourceSnapshotId: snapshot.snapshotId,
       providerFacilityRef,
       providerRecordHash,
@@ -830,10 +884,11 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
     if (facilityIds.has(id)) throw new Error(`facility identity collision: ${id}`);
     facilityIds.add(id);
   }
-  const isOtherSource = ({ sourceId }) => sourceId !== KRIC_STANDARD_SOURCE_ID;
+  const isOtherSource = ({ sourceId }) => sourceId !== snapshot.sourceId;
+  const claimed = new Set(evidence.map(facilityEvidenceKey));
   return {
     facilities: [...pack.facilities.filter(isOtherSource), ...facilities],
-    stationFacilityEvidence: [...pack.stationFacilityEvidence.filter(isOtherSource), ...evidence],
+    stationFacilityEvidence: [...supersedeFacilityEvidence(pack.stationFacilityEvidence.filter(isOtherSource), claimed, snapshot.sourceId), ...evidence],
   };
 }
 
@@ -1006,6 +1061,9 @@ export async function prepareNationwideCandidate({
   // #876: 실측 환승시간 원천을 우선순위 규칙으로 합친다. #878: 거리 없이 시간만 있는 방향은 표준 보행속도로 거리를 유도해 쓰고,
   // 실측 0초 방향만 사용 불가로 남는다.
   const measuredTransfer = await resolveSeoulMeasuredTransferMetrics({
+    sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
+  });
+  const kricEscalator = await resolveKricEscalatorSnapshot({
     sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
   });
   const { byDirection: officialTransferMetricMap } = applyMeasuredTransferTimePrecedence({
@@ -1601,9 +1659,11 @@ export async function prepareNationwideCandidate({
 
   finalPack.facilities.push(...regionalFacilities);
   finalPack.stationFacilityEvidence.push(...regionalEvidence);
-  Object.assign(finalPack, withCapitalKricStandardFacilities({
+  Object.assign(finalPack, withCapitalKricFacilities({
     pack: finalPack, snapshot: validateKricAccessibilitySnapshotIdentity(kricConvenience),
   }));
+  // #3036: 표준이 남긴 에스컬레이터 원천 밖 UNKNOWN 칸을 에스컬레이터 원천 증거로 바꾼다(등록 전이면 표준의 칸 그대로다).
+  if (kricEscalator) Object.assign(finalPack, withCapitalKricFacilities({ pack: finalPack, snapshot: kricEscalator.snapshot }));
 
   const packSource = (source, updatedAt) => {
     const coverageScope = structuredClone(source.coverageScope);
@@ -1894,6 +1954,8 @@ export async function prepareNationwideCandidate({
     { id: "busan-transportation-route-topology", updatedAt: busanTransfer.head.capturedAt },
     // #876: 실측 환승시간 원천을 시간 원천으로 인용하는 경로 행·규칙이 이 원천을 가리킨다.
     { id: MEASURED_TRANSFER_SOURCE_ID, updatedAt: measuredTransfer.row.capturedAt },
+    // #3036: 에스컬레이터 시설·부재 증거 행이 이 원천을 가리킨다(build-datapack 출처 기록이 팩 원천 목록의 coverageScope를 쓴다).
+    ...(kricEscalator ? [{ id: KRIC_ESCALATOR_SOURCE_ID, updatedAt: kricEscalator.snapshot.capturedAt }] : []),
   ];
 
   for (const item of regionalSourcesToAdd) {

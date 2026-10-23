@@ -14,6 +14,7 @@ import {
   packMarkerOnlyViolations,
   refreshFileViolation,
   refreshPathShapeViolation,
+  refreshSourceRowsMatch,
 } from "./refresh-stage-contracts.mjs";
 import { evaluateLedgerChange } from "./source-ledger-gate.mjs";
 
@@ -23,6 +24,8 @@ import { evaluateLedgerChange } from "./source-ledger-gate.mjs";
 const GOVERNANCE_PATH = "tools/datapack/source-governance-policy.json";
 const SLA_PATH = "release/product-gates/datapack-freshness-sla.json";
 const STAGES = ["gwangju-timetable-refresh", "capital-topology-refresh", "kric-facility-refresh", "seoul-accessibility-refresh"];
+const KRIC_STANDARD = "kric-station-convenience-standard";
+const KRIC_ESCALATOR = "kric-station-escalator-detailed";
 
 
 test("계약 표: 단계 네 개가 각자 workflow·claim 접두사·증거 단계 id·원장 방식을 가진다", () => {
@@ -39,9 +42,10 @@ test("계약 표: 단계 네 개가 각자 workflow·claim 접두사·증거 단
   assert.deepEqual(STAGES.map((stage) => REFRESH_STAGES[stage].expectedSourceIds), [
     ["kric-nationwide-timetable-file"],
     ["capital-route-topology", "incheon-line1-train-timetable", "incheon-line2-train-timetable", "incheon-transit-station-info"],
-    ["kric-station-convenience-standard"],
+    [KRIC_STANDARD, KRIC_ESCALATOR],
     ["seoul-metro-accessibility"],
   ]);
+  assert.deepEqual(STAGES.map((stage) => REFRESH_STAGES[stage].sourceSelection), ["ALL", "ALL", "ONE_OF", "ALL"]);
   for (const other of ["registration", "derivative-rebinding", "candidate-refresh", "itx-promotion", "source-reverification", "", undefined, null]) assert.equal(isRefreshStage(other), false, String(other));
   assert.throws(() => { REFRESH_STAGES["seoul-accessibility-refresh"].ledger = "unchanged"; }, TypeError, "표는 동결돼 있다");
 });
@@ -60,13 +64,18 @@ test("소유 inventory 항목과 필드 표는 기록된 실제 실행이 바꾼
     const owned = REFRESH_STAGES[stage].owned;
     for (const run of runsOf(stage)) {
       const recorded = Object.fromEntries(run.inventory.changed.map((entry) => [entry.id, entry.changedFields]));
-      assert.deepEqual(Object.keys(owned).sort(), Object.keys(recorded).sort(), `${run.label}: 소유 항목`);
+      // ONE_OF 단계(KRIC 시설)의 실행은 갱신한 원천 하나의 항목만 바꾼다.
+      const expectedIds = REFRESH_STAGES[stage].sourceSelection === "ONE_OF" ? Object.keys(recorded) : Object.keys(owned);
+      assert.ok(Object.keys(recorded).every((id) => Object.hasOwn(owned, id)), `${run.label}: 소유 항목 밖`);
+      assert.deepEqual(expectedIds.sort(), Object.keys(recorded).sort(), `${run.label}: 소유 항목`);
       for (const [id, fields] of Object.entries(recorded)) assert.deepEqual([...owned[id]].sort(), fields, `${run.label}: ${id} 소유 필드`);
     }
   }
   assert.equal(Object.keys(REFRESH_STAGES["capital-topology-refresh"].owned).length, 19);
   assert.deepEqual(REFRESH_STAGES["seoul-accessibility-refresh"].owned, { "seoul-metro-accessibility": ["observedDataUpdatedAt", "retrievedAt", "accessibilityAdmissionEvidence"] });
-  assert.deepEqual(REFRESH_STAGES["kric-facility-refresh"].owned, { "kric-station-convenience-standard": ["observedDataUpdatedAt", "retrievedAt", "admissionEvidence", "accessibilityAdmissionEvidence"] });
+  // 에스컬레이터 원천은 표준과 같은 등록기 경로로 등록되므로 같은 필드를 바꾼다(첫 등록 실행 기록은 run-current-capital-facility-operation 테스트가 결속한다).
+  const kricFields = ["observedDataUpdatedAt", "retrievedAt", "admissionEvidence", "accessibilityAdmissionEvidence"];
+  assert.deepEqual(REFRESH_STAGES["kric-facility-refresh"].owned, { [KRIC_STANDARD]: kricFields, [KRIC_ESCALATOR]: kricFields });
   assert.deepEqual(REFRESH_STAGES["gwangju-timetable-refresh"].owned, { "kric-nationwide-timetable-file": ["retrievedAt", "retainedScheduleAdmissionEvidence"] });
 });
 
@@ -148,7 +157,8 @@ test("기록된 실제 갱신 PR 여섯 건은 게이트 재계산을 위반 없
   for (const run of RECORDED) {
     const result = await evaluate(run);
     assert.deepEqual(result.violations, [], run.label);
-    assert.deepEqual(result.rows.map(({ sourceId }) => sourceId), REFRESH_STAGES[run.stage].expectedSourceIds, `${run.label}: 원천 행`);
+    assert.equal(refreshSourceRowsMatch(run.stage, result.rows.map(({ sourceId }) => sourceId)), true, `${run.label}: 원천 행`);
+    if (run.stage === "kric-facility-refresh") assert.deepEqual(result.rows.map(({ sourceId }) => sourceId), [KRIC_STANDARD], run.label);
     for (const row of result.rows) {
       assert.match(row.rawSha256, /^[0-9a-f]{64}$/u, `${run.label} ${row.sourceId}`);
       assert.match(row.contentSha256, /^[0-9a-f]{64}$/u, `${run.label} ${row.sourceId}`);
@@ -835,4 +845,81 @@ test("#1067 반증: 근거를 읽을 수 없으면 위반이다(fail closed)", a
   for (const [label, mutations] of Object.entries(cases)) {
     assert.notDeepEqual(await markerOnly(topologyRun, mutations), [], label);
   }
+});
+
+// #3036: KRIC 시설 단계는 run 하나가 원천 하나를 갱신한다. 기록된 실행이 아직 없는 에스컬레이터 첫 등록은 등록기가 쓰는 모양 그대로 합성한다.
+const ESCALATOR_CAPTURED_AT = "2026-10-24T00:17:00.000Z";
+const ESCALATOR_SNAPSHOT_ID = "kric-station-escalator-detailed-20261024T001700000Z";
+const ESCALATOR_SNAPSHOT_PATH = `tools/datapack/sources/${ESCALATOR_SNAPSHOT_ID}.json`;
+const ESCALATOR_ADMISSION = { candidateId: KRIC_ESCALATOR, sourceId: KRIC_ESCALATOR, issue: 3036, decision: "APPROVED", licenseEvidenceHash: "2953cce5b977132db7e7a428c677e6d292401f77c40a1e8f8dd84af5a3e61df2" };
+const stagedEscalatorEntry = () => ({ id: KRIC_ESCALATOR, productionUseAllowed: true, updateFrequency: "daily", datasetUrl: "https://www.data.go.kr/data/15041683/openapi.do", license: { type: "PUBLIC_DATA_FREE_USE" }, admissionEvidence: structuredClone(ESCALATOR_ADMISSION), observedDataUpdatedAt: "2026-10-23", retrievedAt: "2026-10-23" });
+function escalatorFirstRegistrationRun() {
+  const recorded = runsOf("kric-facility-refresh")[0];
+  const evidence = {
+    issue: 3036, decision: "APPROVED", productionUseAllowed: true, licenseEvidenceHash: ESCALATOR_ADMISSION.licenseEvidenceHash,
+    snapshotId: ESCALATOR_SNAPSHOT_ID, snapshotPath: ESCALATOR_SNAPSHOT_PATH, capturedAt: ESCALATOR_CAPTURED_AT, observedAt: ESCALATOR_CAPTURED_AT,
+    freshUntil: "2026-10-25T00:17:00.000Z", rawSha256: "a".repeat(64), contentSha256: "b".repeat(64), schemaFingerprint: "c".repeat(64),
+    snapshotFileSha256: "0".repeat(64), absenceEvidenceMode: "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED",
+  };
+  const { id: _id, admissionEvidence, observedDataUpdatedAt, retrievedAt, ...kept } = stagedEscalatorEntry();
+  return {
+    ...recorded,
+    label: "synthetic escalator first registration",
+    files: [{ filename: LEDGER_PATH, status: "modified" }, { filename: INVENTORY_PATH, status: "modified" }, { filename: ESCALATOR_SNAPSHOT_PATH, status: "added" }],
+    inventory: {
+      top: recorded.inventory.top,
+      unownedEntryIds: [...recorded.inventory.unownedEntryIds, KRIC_STANDARD],
+      changed: [{
+        id: KRIC_ESCALATOR, changedFields: ["accessibilityAdmissionEvidence", "admissionEvidence", "observedDataUpdatedAt", "retrievedAt"], kept,
+        before: { admissionEvidence, observedDataUpdatedAt, retrievedAt },
+        after: { admissionEvidence: { ...admissionEvidence, productionUseNoteKo: `fresh KRIC escalator snapshot ${ESCALATOR_SNAPSHOT_ID} registration verified.` }, observedDataUpdatedAt: "2026-10-24", retrievedAt: "2026-10-24", accessibilityAdmissionEvidence: evidence },
+      }],
+    },
+    ledger: {
+      base: recorded.ledger.base,
+      head: [...recorded.ledger.base, {
+        schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: KRIC_ESCALATOR, snapshotId: ESCALATOR_SNAPSHOT_ID, previousSnapshotId: null,
+        retrievedAt: ESCALATOR_CAPTURED_AT, rowCount: 431, coverageCount: 213, rawSha256: "d".repeat(64), contentSha256: "b".repeat(64), snapshotStatus: "LOCKED",
+      }],
+    },
+  };
+}
+
+test("#3036 KRIC 시설 단계는 에스컬레이터 첫 등록 PR을 원천 행 하나(FIRST)로 위반 없이 통과시킨다", async () => {
+  const run = escalatorFirstRegistrationRun();
+  assert.equal(refreshFileViolation(run.stage, run.files), null);
+  const result = await evaluate(run);
+  assert.deepEqual(result.violations, []);
+  assert.deepEqual(result.rows, [{ sourceId: KRIC_ESCALATOR, snapshotId: ESCALATOR_SNAPSHOT_ID, previousSnapshotId: null, rawSha256: "d".repeat(64), contentSha256: "b".repeat(64), rowDelta: 0, coverageDelta: 0, diffStatus: "FIRST" }]);
+  assert.equal(refreshSourceRowsMatch(run.stage, [KRIC_ESCALATOR]), true);
+  assert.equal(refreshSourceRowsMatch(run.stage, [KRIC_STANDARD, KRIC_ESCALATOR]), false);
+  assert.equal(refreshSourceRowsMatch(run.stage, []), false);
+  assert.equal(refreshSourceRowsMatch(run.stage, ["seoul-metro-accessibility"]), false);
+});
+
+test("#3036 반증: KRIC 시설 단계는 두 원천을 한 PR에 올리거나, 갱신하지 않은 원천의 항목을 바꾸거나, 다른 원천 snapshot 파일을 대면 막는다", async () => {
+  const escalator = escalatorFirstRegistrationRun();
+  const standardRun = runsOf("kric-facility-refresh")[0];
+  const standardRow = standardRun.ledger.head.at(-1);
+  const both = await evaluate(escalator, { mutateLedger: (ledger) => { ledger.push(structuredClone(standardRow)); } });
+  assert.ok(codes(both).includes("LEDGER_GATE"), "두 원천의 새 행");
+  assert.match(both.violations.map(({ detail }) => detail).join("\n"), /exactly one of kric-station-convenience-standard, kric-station-escalator-detailed \(found kric-station-escalator-detailed, kric-station-convenience-standard\)/u);
+
+  const tamperedOther = await evaluate(standardRun, {
+    mutateBaseInventory: (inventory) => { inventory.sources.push(stagedEscalatorEntry()); },
+    mutateInventory: (inventory) => { inventory.sources.push({ ...stagedEscalatorEntry(), retrievedAt: "2026-10-24" }); },
+  });
+  assert.ok(codes(tamperedOther).includes("INVENTORY_GATE"), "표준 갱신 PR이 에스컬레이터 항목을 바꿈");
+  const untouchedOther = await evaluate(standardRun, {
+    mutateBaseInventory: (inventory) => { inventory.sources.push(stagedEscalatorEntry()); },
+    mutateInventory: (inventory) => { inventory.sources.push(stagedEscalatorEntry()); },
+  });
+  assert.deepEqual(untouchedOther.violations, [], "표준 갱신 PR은 에스컬레이터 항목이 그대로면 통과한다");
+
+  const standardFile = `tools/datapack/sources/${KRIC_STANDARD}-20261024T001700000Z.json`;
+  const swappedPaths = filenames(escalator).map((entry) => (entry === ESCALATOR_SNAPSHOT_PATH ? standardFile : entry)).sort();
+  assert.equal(refreshPathShapeViolation(escalator.stage, swappedPaths), null, "두 원천 snapshot 파일은 같은 경로 규칙이다");
+  const swapped = await evaluate(escalator, { mutateFiles: (head) => { head.set(standardFile, head.get(ESCALATOR_SNAPSHOT_PATH)); head.delete(ESCALATOR_SNAPSHOT_PATH); } }, { paths: swappedPaths });
+  assert.ok(codes(swapped).includes("REFRESH_GATE"), "에스컬레이터 행에 표준 snapshot 파일");
+  assert.notEqual(refreshPathShapeViolation(escalator.stage, [...filenames(escalator), standardFile].sort()), null, "snapshot 파일 둘");
 });

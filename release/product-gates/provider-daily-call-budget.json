@@ -47,5 +47,30 @@
       "dailyRequestLimit": 1000,
       "expectedRequestsEvidence": "scheduleAdmissionEvidence"
     }
+  ],
+  "unbudgetedOperations": [
+    {
+      "provider": "KRIC 철도산업정보센터 OpenAPI",
+      "sourceIds": [
+        "kric-station-convenience-standard",
+        "kric-station-escalator-detailed"
+      ],
+      "requestsPerCollection": 213,
+      "verified": [
+        {
+          "kind": "dataset-page",
+          "url": "https://www.data.go.kr/data/15041683/openapi.do",
+          "checkedAt": "2026-10-23",
+          "statement": "stationEscalator 데이터셋(국가철도공단_역사별 에스컬레이터 현황)의 신청 가능 트래픽 칸은 '해당 기관의 정책에 따라 트래픽 수는 상이 할 수 있음'이라고만 적고 숫자가 없다. 개발·운영 단계 모두 자동승인, 이용허락범위 제한 없음, 무료다."
+        },
+        {
+          "kind": "observation",
+          "url": null,
+          "checkedAt": "2026-10-23",
+          "statement": "stationCnvFacl은 213건 수집을 원장에 31번 등록했고, KRIC 시설 갱신 최근 40개 run에서 실패는 1건(39554457797, NETWORK_TIMEOUT)이며 한도 결과 코드는 없었다."
+        }
+      ],
+      "assumed": "KRIC 문서(data.kric.go.kr)와 응답 헤더는 2026-10-23에 이 환경에서 HTTPS로 닿지 않아 확인하지 못했다. stationEscalator도 stationCnvFacl처럼 하루 한도가 없다고 가정하고(inventory quotaEvidence defaultDailyLimit unlimited, 2026-07-13 기록), 첫 수집은 stationCnvFacl과 같은 수도권 213건을 같은 요청 간격으로 보낸다. operation마다 활용신청이 따로 필요하고 미신청은 결과 코드 30이다."
+    }
   ]
 }

@@ -7,8 +7,8 @@ import test from "node:test";
 
 import { stageContracts } from "./stage-contracts.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/4888b8b74d6b7c16c39cd2fcadedea3035f1895f/contracts/bundles/data-contracts-v1.0.0.json";
-const bundleSha256 = "fd61131d2cd0b99f9266e1e029ba9dc1ed8b7d588885caf99a2b583b6a563c60";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/54a2719638910f30ad7da2a4493d286fafb7ffca/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleSha256 = "48e3a41d992fac4135b28c1fe83dc62f4ca1fcdfc5d2e4dbad4f039d4b4b811c";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
@@ -22,6 +22,7 @@ const staticAccessibilitySourceIds = [
   "daejeon-transportation-accessibility",
   "gwangju-transportation-accessibility",
   "busan-transportation-accessibility",
+  "kric-station-escalator-detailed",
 ];
 const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
 const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];

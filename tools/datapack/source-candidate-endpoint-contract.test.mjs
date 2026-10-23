@@ -20,6 +20,7 @@ const KRIC_OPENAPI_PATH = /^\/openapi\/([A-Za-z][A-Za-z0-9]*)\/([A-Za-z][A-Za-z0
 const KRIC_PORTAL_DETAIL_IDS = Object.freeze({
   "kric-station-convenience-standard": "430",
   "kric-station-disabled-toilet": "432",
+  "kric-station-escalator-detailed": "190",
   "kric-station-info": "183",
   "kric-station-movement-detailed": "306",
   "kric-station-movement-standard": "429",

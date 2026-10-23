@@ -9095,6 +9095,99 @@
         "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
         "licenseEvidenceHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2"
       }
+    },
+    {
+      "id": "kric-station-escalator-detailed",
+      "displayName": "국가철도공단_역사별 에스컬레이터 현황",
+      "userDisplayName": "국가철도공단 역사별 에스컬레이터 현황",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "수도권 역사별 에스컬레이터 위치(KRIC stationEscalator 역-노선 전수 조회)",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily",
+      "observedDataUpdatedAt": "2026-10-23",
+      "retrievedAt": "2026-10-23",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041683/openapi.do"
+      },
+      "fieldsProvided": [
+        "dtlLoc",
+        "exitNo",
+        "grndDvNmFr",
+        "grndDvNmTo",
+        "lnCd",
+        "railOprIsttCd",
+        "runStinFlorFr",
+        "runStinFlorTo",
+        "stinCd",
+        "updnDvNm"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "SOURCE_INVENTORY_COVERED",
+          "updateFrequency": "daily",
+          "unsupportedNotes": "production use is limited to ESCALATOR evidence from the fresh exhaustive stationEscalator query snapshot; result 03 and unqueried station-lines stay UNKNOWN"
+        }
+      },
+      "admissionEvidence": {
+        "candidateId": "kric-station-escalator-detailed",
+        "sourceId": "kric-station-escalator-detailed",
+        "catalogProviderId": "provider:kric-station-escalator",
+        "issue": 3036,
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-10-23T00:00:00+09:00",
+        "adminReviewRecordPath": "tools/datapack/release/kric-station-escalator-detailed-review-admission.json",
+        "adminReviewRecordHash": "c665271c6ffa6ca4ff43e50f259b77580bbdfe8531d7a11925aba7a62da9a38b",
+        "licenseEvidenceHash": "2953cce5b977132db7e7a428c677e6d292401f77c40a1e8f8dd84af5a3e61df2",
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": true,
+          "unlockStatus": "not_required"
+        }
+      }
     }
   ]
 }

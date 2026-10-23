@@ -17,8 +17,9 @@ import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mj
 import {
   KRIC_PRESENT_RESULT_CODE,
   kricQueryResultCode,
-  kricStandardStationContexts,
-  kricStandardStatusState,
+  kricRowsOfType,
+  kricStationContexts,
+  kricFacilityStatusState,
 } from "./lib/kric-standard-facilities.mjs";
 import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { normalizeMolitProviderLineName } from "./lib/molit-svg-provider-identity.mjs";
@@ -1078,15 +1079,15 @@ function snapshotForClaim(snapshotsByIdentity, claim) {
   return snapshotsByIdentity.get(`${claim.sourceId}\0${claim.sourceSnapshotId}`);
 }
 
-// 목록에 없는 유형의 NOT_EXISTS·UNKNOWN 증거는 생산 규칙(kricStandardStatusState)을 같은 역의 조회와 artifact의 역-노선에
+// 목록에 없는 유형의 NOT_EXISTS·UNKNOWN 증거는 생산 규칙(kricFacilityStatusState)을 같은 역의 조회와 artifact의 역-노선에
 // 다시 적용해 상태와 의미가 같고 hash가 (snapshot, 조회 tuple, 유형, 상태)에서 다시 계산될 때만 결속한다.
 // 역-노선 표가 없는 artifact는 형제 역-노선 조회 여부를 확인할 수 없으므로 결속하지 않는다.
 function kricStatusClaimMatchesQuery(snapshot, query, claim, stationLines) {
   if (!Array.isArray(stationLines)) return false;
   const atClaimStation = ({ stationId }) => stationId === claim.stationId;
-  const stationContext = kricStandardStationContexts(snapshot, snapshot.queries.filter(atClaimStation), stationLines.filter(atClaimStation))
+  const stationContext = kricStationContexts(snapshot, snapshot.queries.filter(atClaimStation), stationLines.filter(atClaimStation))
     .get(claim.stationId);
-  const expected = kricStandardStatusState(claim.facilityType, stationContext);
+  const expected = kricFacilityStatusState(claim.facilityType, stationContext);
   const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
   return kricQueryResultCode(query, snapshot) === KRIC_PRESENT_RESULT_CODE
     && claim.evidenceKind === expected.evidenceKind
@@ -1113,13 +1114,13 @@ function claimMatchesSnapshot(snapshot, claim, stationLines) {
   return false;
 }
 
+// 원천마다 행을 유형으로 읽는 규칙(편의시설 표준은 gubun, 에스컬레이터 원천은 행 전부)은 생산과 같은 lib가 정한다.
 function kricClaimMatchesSnapshot(snapshot, claim, stationLines) {
-  const code = { ELEVATOR: "EV", ESCALATOR: "ES", WHEELCHAIR_LIFT: "WCLF" }[claim.facilityType];
-  if (!code) return false;
   return (snapshot.queries ?? []).filter((query) => query.stationId === claim.stationId
     && (!claim.lineId || query.lineId === claim.lineId)).some((query) => {
     const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
-    const rows = (query.rows ?? []).filter(({ gubun }) => gubun === code);
+    const rows = kricRowsOfType(snapshot, query.rows ?? [], claim.facilityType);
+    if (rows === null) return false;
     if (rows.length > 0) return claim.evidenceKind === "EXISTS" && rows.some((row) => {
       const providerRecordHash = digest(JSON.stringify(row));
       return providerRecordHash === claim.providerRecordHash

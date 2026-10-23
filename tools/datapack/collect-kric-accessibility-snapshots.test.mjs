@@ -38,6 +38,15 @@ const roster = [
   { stationId: "station-a", lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd: "101" },
 ];
 
+// #3036 QA 승인 2026-10-23: stationEscalator를 퇴역 id(kric-station-escalator)가 아닌 새 원천 id로 다시 받는다.
+// 응답 필드는 hub API 카탈로그 provider:kric-station-escalator의 실측 필드와 같다.
+const escalatorOperation = {
+  sourceId: "kric-station-escalator-detailed",
+  endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+  responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "updnDvNm"],
+  tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+};
+
 test("production 기본 KRIC 접근성 수집은 historical standard operation을 유지한다", async () => {
   const standardOperation = {
     sourceId: "kric-station-convenience-standard",
@@ -50,6 +59,7 @@ test("production 기본 KRIC 접근성 수집은 historical standard operation�
       ...roster[0],
       canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b", lineId: "line-2" }],
     }],
+    operations: [KRIC_ACCESSIBILITY_OPERATIONS[0]],
     serviceKey: "super-secret",
     fetchImpl: async (url) => {
       assert.equal(url.pathname, new URL(standardOperation.endpoint).pathname);
@@ -57,7 +67,10 @@ test("production 기본 KRIC 접근성 수집은 historical standard operation�
     },
   });
 
-  assert.deepEqual(KRIC_ACCESSIBILITY_OPERATIONS, [standardOperation]);
+  assert.deepEqual(KRIC_ACCESSIBILITY_OPERATIONS.map(({ terminalResult03Policy: _policy, ...rest }) => rest), [standardOperation, escalatorOperation]);
+  assert.deepEqual(KRIC_ACCESSIBILITY_OPERATIONS.map(({ terminalResult03Policy }) => terminalResult03Policy), [
+    "EXACT_TUPLE_PROVIDER_RESULT_03", "ANY_TUPLE_PROVIDER_RESULT_03",
+  ]);
   assert.equal(snapshots[0].sourceId, standardOperation.sourceId);
   assert.deepEqual(validateKricAccessibilitySnapshotIdentity(snapshots[0]), snapshots[0]);
   assert.doesNotMatch(JSON.stringify(snapshots), /super-secret|serviceKey/);
@@ -812,4 +825,146 @@ defineSourceCollectionRetryTests({
     roster: roster.slice(0, 1), operations: [operation], serviceKey: "key", now: new Date("2026-07-20T09:00:00.000Z"),
     fetchImpl, retrySleepImpl: sleepImpl, retryBudget: createTransientRetryBudget(), retryRandomImpl: () => 0,
   }),
+});
+
+const escalatorTuple = (stationId, lineId, stinCd) => ({
+  stationId, lineId, railOprIsttCd: "S1", lnCd: "1", stinCd,
+  canonicalMappings: [{ artifactId: "bundled-capital", stationId, lineId }],
+});
+const escalatorRoster = [
+  escalatorTuple("station-a", "line-1", "101"), escalatorTuple("station-b", "line-1", "102"), escalatorTuple("station-c", "line-1", "103"),
+];
+const escalatorProviderRow = (url, dtlLoc) => ({
+  dtlLoc, exitNo: "2", grndDvNmFr: "지하", grndDvNmTo: "지상", lnCd: url.searchParams.get("lnCd"),
+  railOprIsttCd: url.searchParams.get("railOprIsttCd"), runStinFlorFr: "1", runStinFlorTo: "1",
+  stinCd: url.searchParams.get("stinCd"), updnDvNm: "상행",
+});
+const terminal03 = () => ({ ok: true, status: 200, json: async () => ({ header: { resultCode: "03" }, body: [] }) });
+const escalatorFetch = (terminalStations = []) => async (url) => {
+  assert.equal(url.pathname, "/openapi/convenientInfo/stationEscalator");
+  const stinCd = url.searchParams.get("stinCd");
+  if (terminalStations.includes(stinCd)) return terminal03();
+  return response(200, stinCd === "101" ? [escalatorProviderRow(url, "1번 출구"), escalatorProviderRow(url, "환승통로")] : []);
+};
+const collectEscalator = (options) => collectKricStandardAccessibilityObservation({
+  sourceId: "kric-station-escalator-detailed", roster: escalatorRoster, serviceKey: "key", now: new Date("2026-10-23T00:00:00.000Z"), ...options,
+});
+
+test("#3036 에스컬레이터 observation은 stationEscalator 행을 tuple 결속으로 검증하고 결과 03이 없으면 조회별 코드 없는 snapshot이다", async () => {
+  const { snapshot, rawArtifact } = await collectEscalator({ fetchImpl: escalatorFetch() });
+
+  assert.equal(snapshot.sourceId, "kric-station-escalator-detailed");
+  assert.equal(snapshot.snapshotId, "kric-station-escalator-detailed-20261023T000000000Z");
+  assert.deepEqual([snapshot.providerResultCode, snapshot.absenceEvidenceMode], ["00", "EXHAUSTIVE_LIST"]);
+  assert.deepEqual(snapshot.queries.map(({ stinCd, status, rows }) => [stinCd, status, rows.length]), [
+    ["101", "PRESENT", 2], ["102", "ABSENT_EXPLICIT_ZERO", 0], ["103", "ABSENT_EXPLICIT_ZERO", 0],
+  ]);
+  assert.equal(snapshot.queries.some((query) => "providerResultCode" in query), false);
+  assert.deepEqual(validateKricAccessibilitySnapshotIdentity(snapshot), snapshot);
+  assert.deepEqual(validateKricAccessibilityRawCollection(rawArtifact, snapshot), rawArtifact);
+
+  await assert.rejects(collectEscalator({
+    fetchImpl: async (url) => response(200, [{ ...escalatorProviderRow(url, "다른 역 행"), stinCd: "999" }]),
+  }), /KRIC accessibility schema invalid: kric-station-escalator-detailed\/S1\/1\/101/);
+  await assert.rejects(collectEscalator({
+    fetchImpl: async (url) => {
+      const { updnDvNm: _missing, ...row } = escalatorProviderRow(url, "필드 누락");
+      return response(200, [row]);
+    },
+  }), /KRIC accessibility schema invalid/);
+});
+
+test("#3036 에스컬레이터 observation은 어느 tuple의 결과 03도 조회별 코드와 함께 혼합 snapshot으로 남긴다", async () => {
+  const { snapshot, rawArtifact } = await collectEscalator({ fetchImpl: escalatorFetch(["102", "103"]) });
+
+  assert.deepEqual([snapshot.providerResultCode, snapshot.absenceEvidenceMode], ["MIXED", "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED"]);
+  assert.deepEqual(snapshot.queries.map(({ stinCd, providerResultCode, status, terminalPolicy, providerRecordHash }) => [
+    stinCd, providerResultCode, status, terminalPolicy, providerRecordHash === null,
+  ]), [
+    ["101", "00", "PRESENT", null, false],
+    ["102", "03", "UNVERIFIED_EVIDENCE_BLOCKED", "ANY_TUPLE_PROVIDER_RESULT_03", true],
+    ["103", "03", "UNVERIFIED_EVIDENCE_BLOCKED", "ANY_TUPLE_PROVIDER_RESULT_03", true],
+  ]);
+  assert.deepEqual(validateKricAccessibilitySnapshotIdentity(snapshot), snapshot);
+  assert.deepEqual(validateKricAccessibilityRawCollection(rawArtifact, snapshot), rawArtifact);
+  assert.deepEqual(rawArtifact.responses.map(({ providerResultCode }) => providerResultCode), ["00", "03", "03"]);
+
+  await assert.rejects(collectKricAccessibilitySnapshots({
+    roster: escalatorRoster, operations: [KRIC_ACCESSIBILITY_OPERATIONS[1]], serviceKey: "key", fetchImpl: escalatorFetch(["102"]),
+  }), /KRIC accessibility provider gaps: count=1; tuples=kric-station-escalator-detailed\/S1\/1\/102\/03/);
+});
+
+// 혼합 snapshot 식별 검증의 각 항을 하나씩 어긴 사본이다. 식별 hash는 다시 계산해 hash 검사가 아니라 그 항이 막는지 본다.
+function rehashedSnapshot(snapshot) {
+  const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  const mixed = snapshot.providerResultCode === "MIXED";
+  const rawIdentity = (query) => {
+    const identity = Object.fromEntries(["stationId", "lineId", "railOprIsttCd", "lnCd", "stinCd", "rawResponseSha256"].map((field) => [field, query[field]]));
+    return mixed ? { ...identity, providerResultCode: query.providerResultCode, terminalPolicy: query.terminalPolicy, providerRecordHash: query.providerRecordHash } : identity;
+  };
+  return {
+    ...snapshot,
+    queryCount: snapshot.queries.length,
+    rowCount: snapshot.queries.reduce((sum, query) => sum + query.rows.length, 0),
+    contentSha256: digest(snapshot.queries.map(({ rawResponseSha256: _, ...query }) => query)),
+    rawSha256: digest(snapshot.queries.map(rawIdentity)),
+  };
+}
+
+test("#3036 에스컬레이터 혼합 snapshot 식별 검증은 결과 03 조회의 정책·행·hash·상태와 결과 03 존재를 하나씩 강제한다", async () => {
+  const { snapshot } = await collectEscalator({ fetchImpl: escalatorFetch(["102"]) });
+  const tamperTerminal = (mutate) => {
+    const copy = structuredClone(snapshot);
+    mutate(copy.queries.find(({ stinCd }) => stinCd === "102"), copy);
+    return rehashedSnapshot(copy);
+  };
+  assert.deepEqual(validateKricAccessibilitySnapshotIdentity(rehashedSnapshot(structuredClone(snapshot))), rehashedSnapshot(structuredClone(snapshot)));
+  for (const [term, mutate] of [
+    ["표준 원천의 정확 tuple 정책", (query) => { query.terminalPolicy = "EXACT_TUPLE_PROVIDER_RESULT_03"; }],
+    ["정책 없음", (query) => { query.terminalPolicy = null; }],
+    ["결과 03 조회의 행", (query) => { query.rows = [{ ...snapshot.queries[0].rows[0], stinCd: "102" }]; }],
+    ["결과 03 조회의 provider hash", (query) => { query.providerRecordHash = "0".repeat(64); }],
+    ["결과 03 조회의 상태", (query) => { query.status = "ABSENT_EXPLICIT_ZERO"; }],
+    ["결과 03이 없는 혼합 snapshot", (query) => {
+      Object.assign(query, { providerResultCode: "00", status: "ABSENT_EXPLICIT_ZERO", terminalPolicy: null, providerRecordHash: createHash("sha256").update("[]").digest("hex") });
+    }],
+    ["다른 원천 id", (_query, copy) => {
+      copy.sourceId = "kric-station-convenience-standard";
+      copy.snapshotId = copy.snapshotId.replaceAll("kric-station-escalator-detailed", "kric-station-convenience-standard");
+    }],
+  ]) {
+    assert.throws(() => validateKricAccessibilitySnapshotIdentity(tamperTerminal(mutate)), /snapshot identity is invalid/, term);
+  }
+});
+
+test("#3036 표준 원천은 결과 03을 정확 tuple 하나에만 허용하고 에스컬레이터 정책 표기를 받지 않는다", async () => {
+  const terminal = {
+    stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4",
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b35616704ce3", lineId: "seoul-2" }],
+  };
+  const { snapshot } = await collectKricStandardAccessibilityObservation({
+    roster: [terminal, { ...escalatorRoster[0], lnCd: "2" }], serviceKey: "key",
+    fetchImpl: async (url) => (url.searchParams.get("stinCd") === "234-4" ? terminal03() : response(200, [])),
+  });
+  assert.equal(snapshot.providerResultCode, "MIXED");
+  const relabeled = structuredClone(snapshot);
+  relabeled.queries.find(({ stinCd }) => stinCd === "234-4").terminalPolicy = "ANY_TUPLE_PROVIDER_RESULT_03";
+  assert.throws(() => validateKricAccessibilitySnapshotIdentity(rehashedSnapshot(relabeled)), /snapshot identity is invalid/);
+  await assert.rejects(collectKricStandardAccessibilityObservation({ sourceId: "kric-station-escalator", roster: [terminal], serviceKey: "key", fetchImpl: escalatorFetch() }),
+    /KRIC accessibility operation is not registered: kric-station-escalator/);
+});
+
+// #3036: 에스컬레이터 원천은 어느 tuple의 결과 03이든 받지만, 모든 조회가 03이면 증거가 하나도 없는 수집이다.
+// 조용히 전부 UNKNOWN이 되지 않게 이름 있는 코드로 실패하고, 이미 만들어진 snapshot도 식별 검증에서 거부한다.
+test("#3036 모든 조회가 결과 03인 수집은 KRIC_ACCESSIBILITY_ALL_RESULT_03으로 실패하고 그런 snapshot은 식별 검증에서 거부한다", async () => {
+  await assert.rejects(collectEscalator({ fetchImpl: escalatorFetch(["101", "102", "103"]) }),
+    /^Error: KRIC_ACCESSIBILITY_ALL_RESULT_03: kric-station-escalator-detailed count=3$/);
+
+  const { snapshot } = await collectEscalator({ fetchImpl: escalatorFetch(["102", "103"]) });
+  const allBlocked = structuredClone(snapshot);
+  Object.assign(allBlocked.queries.find(({ stinCd }) => stinCd === "101"), {
+    providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", terminalPolicy: "ANY_TUPLE_PROVIDER_RESULT_03", providerRecordHash: null, rows: [],
+  });
+  assert.throws(() => validateKricAccessibilitySnapshotIdentity(rehashedSnapshot(allBlocked)), /^Error: KRIC_ACCESSIBILITY_ALL_RESULT_03: kric-station-escalator-detailed count=3$/);
+  assert.equal(validateKricAccessibilitySnapshotIdentity(snapshot).queries.filter(({ providerResultCode }) => providerResultCode === "00").length, 1);
 });

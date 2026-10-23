@@ -15,8 +15,11 @@ import { holidayCalendarViolations, retainedKasiHolidayDates } from "./lib/regio
 import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, createCandidateInputReader, parseCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
 import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { collectKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
 
-import { admitOutOfStationTransferLinks, withCapitalKricStandardFacilities, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
+import { admitOutOfStationTransferLinks, resolveKricEscalatorSnapshot, withCapitalKricFacilities, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -1943,7 +1946,7 @@ function kricStandardFixture() {
 
 test("#3036 수도권 KRIC 조회마다 승강기·휠체어리프트를 팩 시설로 싣고 기반 팩의 KRIC 행은 head snapshot 행으로 바뀐다", () => {
   const { snapshot, pack, rows, otherSource, baseKric } = kricStandardFixture();
-  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+  const result = withCapitalKricFacilities({ pack, snapshot });
 
   const kricFacilities = result.facilities.filter(isKricStandard);
   assert.deepEqual(kricFacilities.map(({ id }) => id).sort(), [
@@ -1995,11 +1998,11 @@ test("#3036 팩 역-노선에 없는 KRIC 조회와 terminal 정책 밖 결과 0
   const { snapshot, pack } = kricStandardFixture();
   const unmapped = (stationId, stinCd) => ({ ...snapshot.queries[1], stationId, stinCd });
   assert.throws(
-    () => withCapitalKricStandardFacilities({ pack, snapshot: { ...snapshot, queries: [...snapshot.queries, unmapped("station-x", "901"), unmapped("station-y", "902")] } }),
+    () => withCapitalKricFacilities({ pack, snapshot: { ...snapshot, queries: [...snapshot.queries, unmapped("station-x", "901"), unmapped("station-y", "902")] } }),
     /KRIC facility station-line missing: 2 queries \(S1\/1\/901 station-x:line-1, S1\/1\/902 station-y:line-1\)/,
   );
   assert.throws(
-    () => withCapitalKricStandardFacilities({ pack, snapshot: { ...snapshot, queries: [{ ...snapshot.queries[1], providerResultCode: "03", rows: [] }] } }),
+    () => withCapitalKricFacilities({ pack, snapshot: { ...snapshot, queries: [{ ...snapshot.queries[1], providerResultCode: "03", rows: [] }] } }),
     /KRIC provider result is not 00: 03/,
   );
 });
@@ -2009,14 +2012,14 @@ test("#3036 같은 원문 행이 한 역의 두 노선 조회에 실려 시설 i
   const lineTwo = { ...snapshot.queries[0], lineId: "line-2", lnCd: "2", stinCd: "201", rows: [rows.ev1] };
   const twoLinePack = { ...pack, stationLines: [...pack.stationLines, { stationId: "station-a", lineId: "line-2" }] };
   assert.throws(
-    () => withCapitalKricStandardFacilities({ pack: twoLinePack, snapshot: { ...snapshot, queries: [...snapshot.queries, lineTwo] } }),
+    () => withCapitalKricFacilities({ pack: twoLinePack, snapshot: { ...snapshot, queries: [...snapshot.queries, lineTwo] } }),
     new RegExp(`facility identity collision: ${kricStandardFacilityId("station-a", "ELEVATOR", rows.ev1)}`),
   );
 });
 
 test("#3036 실제 snapshot의 환승역 고정 사례는 다른 노선 조회에 실린 유형을 UNKNOWN으로 남긴다", async () => {
   const { snapshot, pack, stationId, lineId } = await pinnedCapitalKricInputs();
-  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+  const result = withCapitalKricFacilities({ pack, snapshot });
   const cheonggu = stationId("청구");
   const sindang = stationId("신당");
   assert.deepEqual(kricEvidenceState(result, cheonggu, lineId("수도권 5호선"), "ELEVATOR"), ["UNKNOWN", "LISTED_ON_OTHER_LINE_QUERY"]);
@@ -2028,7 +2031,7 @@ test("#3036 실제 snapshot의 환승역 고정 사례는 다른 노선 조회�
 
 test("#3036 후보가 고정한 KRIC snapshot의 결과 00 조회 212개(199역)가 모두 팩 시설·세 상태 증거가 되고 에스컬레이터 부재는 없다", async () => {
   const { snapshot, pack, stationId } = await pinnedCapitalKricInputs();
-  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+  const result = withCapitalKricFacilities({ pack, snapshot });
   const present = snapshot.queries.filter(({ providerResultCode }) => providerResultCode === "00");
   const routeRows = (query) => [...new Set(query.rows.filter(({ gubun }) => gubun === "EV" || gubun === "WCLF").map((row) => JSON.stringify(row)))];
   const kricFacilities = result.facilities.filter(isKricStandard);
@@ -2084,7 +2087,7 @@ function kricEvidenceState(result, stationId, lineId, facilityType) {
 
 test("#3036 같은 역의 팩 역-노선 중 결과 00으로 조회되지 않은 것이 있으면 목록에 없는 유형도 부재가 아니라 UNKNOWN이다", async () => {
   const { snapshot, pack, stationId, lineId } = await pinnedCapitalKricInputs();
-  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+  const result = withCapitalKricFacilities({ pack, snapshot });
   const seoulStation = stationId("서울역");
   assert.deepEqual(
     pack.stationLines.filter((line) => line.stationId === seoulStation).map((line) => line.lineId).sort(),
@@ -2104,7 +2107,7 @@ test("#3036 까치산 2호선 조회가 결과 03이면 5호선 조회에 없는
   assert.deepEqual(queries.map(({ lineId: queried, providerResultCode }) => [queried, providerResultCode]).sort(), [
     [line5, "00"], [lineId("수도권 2호선"), "03"],
   ].sort());
-  assert.deepEqual(kricEvidenceState(withCapitalKricStandardFacilities({ pack, snapshot }), kkachisan, line5, "WHEELCHAIR_LIFT"), ["EXISTS", "STATIC_LOCATION"]);
+  assert.deepEqual(kricEvidenceState(withCapitalKricFacilities({ pack, snapshot }), kkachisan, line5, "WHEELCHAIR_LIFT"), ["EXISTS", "STATIC_LOCATION"]);
 
   const withoutLift = {
     ...snapshot,
@@ -2113,7 +2116,7 @@ test("#3036 까치산 2호선 조회가 결과 03이면 5호선 조회에 없는
       : query)),
   };
   assert.deepEqual(
-    kricEvidenceState(withCapitalKricStandardFacilities({ pack, snapshot: withoutLift }), kkachisan, line5, "WHEELCHAIR_LIFT"),
+    kricEvidenceState(withCapitalKricFacilities({ pack, snapshot: withoutLift }), kkachisan, line5, "WHEELCHAIR_LIFT"),
     ["UNKNOWN", "STATION_LINE_NOT_QUERIED"],
   );
 });
@@ -2147,8 +2150,8 @@ test("#3036 결과 03이 없어 조회별 코드를 쓰지 않는 snapshot도 �
     "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY": 3,
   };
 
-  assert.deepEqual(kricStateCounts(withCapitalKricStandardFacilities({ pack, snapshot })), distribution);
-  assert.deepEqual(kricStateCounts(withCapitalKricStandardFacilities({ pack, snapshot: variant })), distribution);
+  assert.deepEqual(kricStateCounts(withCapitalKricFacilities({ pack, snapshot })), distribution);
+  assert.deepEqual(kricStateCounts(withCapitalKricFacilities({ pack, snapshot: variant })), distribution);
 });
 
 test("#3036 혼합 snapshot에서 조회별 결과 코드가 빠진 조회는 조회된 것으로 치지 않고 시설 증거를 만들지 않고 실패한다", async () => {
@@ -2156,7 +2159,7 @@ test("#3036 혼합 snapshot에서 조회별 결과 코드가 빠진 조회는 �
   const [first, ...rest] = snapshot.queries.filter(({ providerResultCode }) => providerResultCode === "00");
   const { providerResultCode: _removed, ...codeless } = first;
   assert.throws(
-    () => withCapitalKricStandardFacilities({ pack, snapshot: { ...snapshot, queries: [codeless, ...rest] } }),
+    () => withCapitalKricFacilities({ pack, snapshot: { ...snapshot, queries: [codeless, ...rest] } }),
     /KRIC provider result is not 00: <missing>/,
   );
 });
@@ -2164,7 +2167,7 @@ test("#3036 혼합 snapshot에서 조회별 결과 코드가 빠진 조회는 �
 // 구현(lib)을 거치지 않고 원문 행에서 직접 쓴 규칙이다. 결과 03이 아닌 조회가 조회된 것이다(혼합 snapshot의 00, 조회별 코드가 없는 snapshot의 모든 조회).
 // 승강기·휠체어리프트는 목록에 없을 때, 그 역의 팩 역-노선이 모두 조회됐고 어느 조회에도 없어야 부재다.
 function assertKricEvidenceMatchesRawRules({ snapshot, pack }) {
-  const result = withCapitalKricStandardFacilities({ pack, snapshot });
+  const result = withCapitalKricFacilities({ pack, snapshot });
   const queried = snapshot.queries.filter((query) => query.providerResultCode !== "03");
   const queriedLinesAt = (stationId) => new Set(queried.filter((query) => query.stationId === stationId).map((query) => query.lineId));
   const listedAt = (stationId, code) => queried.some((query) => query.stationId === stationId && query.rows.some((row) => row.gubun === code));
@@ -2195,6 +2198,153 @@ test("#3036 조회별 코드를 쓰지 않는 snapshot 모양의 636개 KRIC 증
   assertKricEvidenceMatchesRawRules({ snapshot: nonMixedKricSnapshot(snapshot), pack });
 });
 
+// #3036 QA 승인 2026-10-23: 에스컬레이터 증거는 stationEscalator snapshot에서 온다. 표준 원천이 남긴 "원천 밖 유형" UNKNOWN 칸은
+// 같은 역-노선을 결과 00으로 조회한 에스컬레이터 증거로 바뀌고, 결과 03·조회 누락 역-노선은 표준의 UNKNOWN 그대로다.
+const KRIC_ESCALATOR = "kric-station-escalator-detailed";
+const isKricEscalator = ({ sourceId }) => sourceId === KRIC_ESCALATOR;
+const ESCALATOR_FIELDS = ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "updnDvNm"];
+const escalatorRowFor = ({ railOprIsttCd, lnCd, stinCd }, dtlLoc) => ({
+  ...Object.fromEntries(ESCALATOR_FIELDS.map((field) => [field, "1"])), dtlLoc, railOprIsttCd, lnCd, stinCd,
+});
+
+// 실제 수집기(가짜 fetch)로 만든 에스컬레이터 snapshot이다. respond(tuple)이 "03" 또는 행 목록을 돌려준다.
+async function collectedEscalatorSnapshot(roster, respond) {
+  const { snapshot } = await collectKricStandardAccessibilityObservation({
+    sourceId: KRIC_ESCALATOR, roster, serviceKey: "fixture-only-key", now: new Date("2026-10-23T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      const tuple = Object.fromEntries(["railOprIsttCd", "lnCd", "stinCd"].map((field) => [field, url.searchParams.get(field)]));
+      const answer = respond(tuple);
+      const payload = answer === "03" ? { header: { resultCode: "03" }, body: [] } : { header: { resultCode: "00" }, body: answer };
+      return { ok: true, status: 200, json: async () => payload };
+    },
+  });
+  return snapshot;
+}
+
+const escalatorRosterFor = (queries) => queries.map(({ stationId, lineId, railOprIsttCd, lnCd, stinCd }) => ({
+  stationId, lineId, railOprIsttCd, lnCd, stinCd, canonicalMappings: [{ artifactId: "bundled-capital", stationId, lineId }],
+}));
+
+test("#3036 에스컬레이터 snapshot은 결과 00 역-노선의 원천 밖 UNKNOWN 칸을 존재·부재 증거로 바꾸고 결과 03 역-노선은 그대로 둔다", async () => {
+  const { snapshot, pack, rows } = kricStandardFixture();
+  const standard = withCapitalKricFacilities({ pack, snapshot });
+  const escalator = await collectedEscalatorSnapshot(escalatorRosterFor(snapshot.queries), (tuple) => ({
+    101: [escalatorRowFor(tuple, "1번 출구")], 102: "03", 103: [],
+  })[tuple.stinCd]);
+  const result = withCapitalKricFacilities({ pack: { ...pack, ...standard }, snapshot: escalator });
+
+  const escalatorFacilities = result.facilities.filter(isKricEscalator);
+  assert.deepEqual(escalatorFacilities.map(({ id, stationId, type, sourceSnapshotId, installationStatus }) => [id, stationId, type, sourceSnapshotId, installationStatus]), [[
+    `facility-station-a-escalator-kric-escalator-${sha256(JSON.stringify(escalator.queries[0].rows[0])).slice(0, 16)}`,
+    "station-a", "ESCALATOR", escalator.snapshotId, "INSTALLED",
+  ]]);
+  const cellStates = (rows) => rows.map((row) => `${row.stationId}|${row.facilityType}|${row.sourceId}:${row.evidenceKind}:${row.statusMeaning}`).sort();
+  const expectedCells = [
+    `station-a|ELEVATOR|${KRIC_STANDARD}:EXISTS:STATIC_LOCATION`,
+    `station-a|ESCALATOR|${KRIC_ESCALATOR}:EXISTS:STATIC_LOCATION`,
+    `station-a|WHEELCHAIR_LIFT|${KRIC_STANDARD}:NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE`,
+    `station-b|ELEVATOR|${KRIC_STANDARD}:NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE`,
+    `station-b|ESCALATOR|${KRIC_STANDARD}:UNKNOWN:SOURCE_DOES_NOT_COVER_TYPE`,
+    `station-b|WHEELCHAIR_LIFT|${KRIC_STANDARD}:EXISTS:STATIC_LOCATION`,
+    "station-i|ELEVATOR|incheon-transit-accessibility:EXISTS:undefined",
+    `station-t|ESCALATOR|${KRIC_ESCALATOR}:NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE`,
+  ];
+  assert.deepEqual(cellStates(result.stationFacilityEvidence), expectedCells);
+  const expectedFacilityIds = [
+    escalatorFacilities[0].id, "facility-incheon-1",
+    kricStandardFacilityId("station-a", "ELEVATOR", rows.ev1), kricStandardFacilityId("station-a", "ELEVATOR", rows.ev2),
+    kricStandardFacilityId("station-b", "WHEELCHAIR_LIFT", rows.lift),
+  ].sort();
+  assert.deepEqual(result.facilities.map(({ id }) => id).sort(), expectedFacilityIds);
+  const reapplied = withCapitalKricFacilities({ pack: { ...pack, ...result }, snapshot: escalator });
+  assert.deepEqual(cellStates(reapplied.stationFacilityEvidence), expectedCells, "같은 snapshot을 다시 적용해도 칸은 같다");
+  assert.deepEqual(reapplied.facilities.map(({ id }) => id).sort(), expectedFacilityIds);
+});
+
+test("#3036 에스컬레이터 증거가 원천 밖 UNKNOWN이 아닌 다른 원천 증거와 같은 칸에 오면 덮지 않고 실패한다", async () => {
+  const { snapshot, pack } = kricStandardFixture();
+  const standard = withCapitalKricFacilities({ pack, snapshot });
+  const escalator = await collectedEscalatorSnapshot(escalatorRosterFor(snapshot.queries.slice(0, 1)), () => []);
+  const occupied = (fields) => ({
+    ...pack, ...standard,
+    stationFacilityEvidence: standard.stationFacilityEvidence.map((row) => (row.stationId === "station-a" && row.facilityType === "ESCALATOR"
+      ? { ...row, ...fields } : row)),
+  });
+  for (const fields of [
+    { evidenceKind: "EXISTS", statusMeaning: "STATIC_LOCATION" },
+    { evidenceKind: "UNKNOWN", statusMeaning: "STATION_LINE_NOT_QUERIED" },
+    { evidenceKind: "NOT_EXISTS", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE" },
+    { sourceId: "seoul-metro-accessibility", evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE" },
+  ]) {
+    assert.throws(() => withCapitalKricFacilities({ pack: occupied(fields), snapshot: escalator }),
+      new RegExp(`facility evidence conflict: station-a:line-1:ESCALATOR \\(${fields.sourceId ?? KRIC_STANDARD} ${fields.evidenceKind}:${fields.statusMeaning}\\)`), JSON.stringify(fields));
+  }
+  assert.doesNotThrow(() => withCapitalKricFacilities({ pack: occupied({ sourceId: "seoul-metro-accessibility" }), snapshot: escalator }),
+    "다른 원천이라도 원천 밖 UNKNOWN 칸이면 바꾼다");
+});
+
+// 구현(lib)을 거치지 않고 원문 행에서 직접 쓴 에스컬레이터 규칙이다. 결과 03이 아닌 조회가 조회된 것이다.
+// 행이 있으면 존재, 같은 역 다른 노선 조회에 행이 있으면 UNKNOWN, 그 역의 팩 역-노선이 모두 조회됐으면 부재, 아니면 UNKNOWN이다.
+function expectedEscalatorStates({ snapshot, pack }) {
+  const queried = snapshot.queries.filter((query) => query.providerResultCode !== "03");
+  const queriedLinesAt = (stationId) => new Set(queried.filter((query) => query.stationId === stationId).map((query) => query.lineId));
+  const listedAt = (stationId) => queried.some((query) => query.stationId === stationId && query.rows.length > 0);
+  const stateOf = (query) => {
+    if (query.rows.length > 0) return "EXISTS:STATIC_LOCATION";
+    if (listedAt(query.stationId)) return "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY";
+    const everyStationLineQueried = pack.stationLines.filter((line) => line.stationId === query.stationId)
+      .every((line) => queriedLinesAt(query.stationId).has(line.lineId));
+    return everyStationLineQueried ? "NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE" : "UNKNOWN:STATION_LINE_NOT_QUERIED";
+  };
+  return new Map(queried.map((query) => [`${query.stationId}|${query.lineId}`, stateOf(query)]));
+}
+
+// 고정 수도권 snapshot의 조회 tuple(213개, 환승역·형제 노선 포함)에 결정적 응답을 붙인 에스컬레이터 수집본이다.
+// stinCd hash 첫 글자로 행 유무를 고르고 17번째 조회마다 결과 03을 돌려 네 상태와 결과 03을 모두 만든다.
+async function pinnedTopologyEscalatorInputs() {
+  const { snapshot: standard, pack } = await pinnedCapitalKricInputs();
+  const terminalKeys = new Set(standard.queries.filter((_, index) => index % 17 === 0).map(({ railOprIsttCd, lnCd, stinCd }) => `${railOprIsttCd}/${lnCd}/${stinCd}`));
+  const snapshot = await collectedEscalatorSnapshot(escalatorRosterFor(standard.queries), (tuple) => {
+    if (terminalKeys.has(`${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}`)) return "03";
+    return Number.parseInt(sha256(tuple.stinCd)[0], 16) < 8 ? [escalatorRowFor(tuple, "대합실"), escalatorRowFor(tuple, "승강장")] : [];
+  });
+  return { standard, pack, snapshot };
+}
+
+test("#3036 고정 수도권 조회 tuple의 에스컬레이터 증거는 원문 행에서 직접 쓴 규칙과 모두 같다(혼합 snapshot)", async () => {
+  const { standard, pack, snapshot } = await pinnedTopologyEscalatorInputs();
+  const result = withCapitalKricFacilities({ pack: { ...pack, ...withCapitalKricFacilities({ pack, snapshot: standard }) }, snapshot });
+  const expected = expectedEscalatorStates({ snapshot, pack });
+  const actual = new Map(result.stationFacilityEvidence.filter(isKricEscalator)
+    .map((row) => [`${row.stationId}|${row.lineId}`, `${row.evidenceKind}:${row.statusMeaning}`]));
+
+  assert.equal(snapshot.providerResultCode, "MIXED");
+  assert.deepEqual(new Set(expected.values()), new Set([
+    "EXISTS:STATIC_LOCATION", "NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE", "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY", "UNKNOWN:STATION_LINE_NOT_QUERIED",
+  ]), "고정 topology가 네 상태를 모두 만든다");
+  assert.deepEqual([...actual].sort(), [...expected].sort());
+  const escalatorCells = result.stationFacilityEvidence.filter(({ facilityType }) => facilityType === "ESCALATOR");
+  assert.equal(new Set(escalatorCells.map(({ stationId, lineId }) => `${stationId}|${lineId}`)).size, escalatorCells.length, "칸마다 증거는 하나다");
+  for (const { stationId, lineId } of snapshot.queries.filter(({ providerResultCode }) => providerResultCode === "03")) {
+    assert.equal(escalatorCells.filter((row) => row.stationId === stationId && row.lineId === lineId).every((row) => !isKricEscalator(row)), true,
+      `${stationId}|${lineId} 결과 03은 에스컬레이터 원천 증거를 만들지 않는다`);
+  }
+});
+
+test("#3036 결과 03이 없는 에스컬레이터 snapshot(조회별 코드 없음)도 원문 규칙과 모두 같다", async () => {
+  const { standard, pack } = await pinnedTopologyEscalatorInputs();
+  const snapshot = await collectedEscalatorSnapshot(escalatorRosterFor(standard.queries),
+    (tuple) => (Number.parseInt(sha256(tuple.stinCd)[0], 16) < 8 ? [escalatorRowFor(tuple, "대합실")] : []));
+  const result = withCapitalKricFacilities({ pack: { ...pack, ...withCapitalKricFacilities({ pack, snapshot: standard }) }, snapshot });
+  const actual = new Map(result.stationFacilityEvidence.filter(isKricEscalator)
+    .map((row) => [`${row.stationId}|${row.lineId}`, `${row.evidenceKind}:${row.statusMeaning}`]));
+
+  assert.equal(snapshot.providerResultCode, "00");
+  assert.equal(snapshot.queries.some((query) => "providerResultCode" in query), false);
+  assert.equal(actual.size, standard.queries.length);
+  assert.deepEqual([...actual].sort(), [...expectedEscalatorStates({ snapshot, pack })].sort());
+});
+
 test("#3036 전국 후보 팩의 KRIC 시설·증거는 fan-in head snapshot 하나만 가리키고 에스컬레이터 부재를 싣지 않는다", async () => {
   const { finalPack } = await prepareNationwideCandidate({
     readRepositoryFile: pinnedRead, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122,
@@ -2208,4 +2358,144 @@ test("#3036 전국 후보 팩의 KRIC 시설·증거는 fan-in head snapshot 하
     .filter((row) => isKricStandard(row) && row.facilityType === "ESCALATOR" && row.evidenceKind !== "UNKNOWN"), []);
   const ids = finalPack.facilities.map(({ id }) => id);
   assert.equal(new Set(ids).size, ids.length);
+});
+
+// #3036: 에스컬레이터 원천은 fan-in 밖(requiredForProductionPack=false, #876 실측 환승 원천과 같은 방식)이다.
+// 후보는 inventory 증거가 원장 head와 같고 snapshot 바이트·원장 영수증·신선도·약관이 결속될 때만 고른다.
+// 첫 등록 전(inventory 항목이 없거나 증거가 없음)에는 고르지 않고, 그때 원장 행이 있으면 실패한다.
+const ESCALATOR_LICENSE_URL = "https://www.data.go.kr/data/15041683/openapi.do";
+const ESCALATOR_STORED_AT = "2026-10-23T00:05:00.000Z";
+async function escalatorCandidateInputs({ register = true, snapshotShape = "MIXED" } = {}) {
+  const { standard, pack, snapshot: mixed } = await pinnedTopologyEscalatorInputs();
+  const snapshot = snapshotShape === "MIXED" ? mixed : await collectedEscalatorSnapshot(escalatorRosterFor(standard.queries),
+    (tuple) => (Number.parseInt(sha256(tuple.stinCd)[0], 16) < 8 ? [escalatorRowFor(tuple, "대합실")] : []));
+  const [inventory, ledger, freshness] = await Promise.all(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+    "release/product-gates/datapack-freshness-sla.json"].map((relative) => candidatePinnedJson(pinnedRead, relative)));
+  const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  const standardSource = inventory.sources.find(({ id }) => id === KRIC_STANDARD);
+  const license = { ...structuredClone(standardSource.license), type: "PUBLIC_DATA_FREE_USE", evidenceUrl: ESCALATOR_LICENSE_URL };
+  const entry = {
+    ...structuredClone(standardSource), id: KRIC_ESCALATOR, requiredForProductionPack: false, datasetUrl: ESCALATOR_LICENSE_URL, license, fieldsProvided: ESCALATOR_FIELDS,
+    admissionEvidence: { candidateId: KRIC_ESCALATOR, sourceId: KRIC_ESCALATOR, issue: 3036, decision: "APPROVED", licenseEvidenceHash: sha256(canonicalJson(license)) },
+  };
+  delete entry.accessibilityAdmissionEvidence;
+  inventory.sources.push(entry);
+  freshness.sourceClasses.find(({ id }) => id === "static_accessibility_facility").sourceIds.push(KRIC_ESCALATOR);
+  let row = null;
+  if (register) {
+    entry.accessibilityAdmissionEvidence = {
+      issue: 3036, decision: "APPROVED", productionUseAllowed: true, licenseEvidenceHash: entry.admissionEvidence.licenseEvidenceHash,
+      snapshotId: snapshot.snapshotId, snapshotPath, capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil,
+      rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint,
+      snapshotFileSha256: sha256(snapshotBytes), absenceEvidenceMode: snapshot.absenceEvidenceMode,
+    };
+    const standardRow = ledger.find(({ snapshotId }) => snapshotId === validateLineage(ledger).headsBySource[KRIC_STANDARD]);
+    const { diffSummary: _diff, ...template } = structuredClone(standardRow);
+    row = {
+      ...template, sourceId: KRIC_ESCALATOR, snapshotId: snapshot.snapshotId, previousSnapshotId: null, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.observedAt,
+      rowCount: snapshot.rowCount, coverageCount: snapshot.queryCount, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint,
+      redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
+      freshnessExpiresAt: deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: "static_accessibility_facility", basisAt: snapshot.capturedAt, evaluationAt: snapshot.capturedAt }),
+      rawReceipt: { ...template.rawReceipt, sourceId: KRIC_ESCALATOR, snapshotId: snapshot.snapshotId, snapshotRawSha256: snapshot.rawSha256, capturedAt: snapshot.capturedAt, snapshotFileSha256: sha256(snapshotBytes), storedAt: ESCALATOR_STORED_AT },
+    };
+    ledger.push(row);
+  }
+  const overrides = new Map([
+    ["tools/datapack/source-inventory.json", Buffer.from(JSON.stringify(inventory))],
+    ["tools/datapack/release/source-snapshots.json", Buffer.from(JSON.stringify(ledger))],
+    ["release/product-gates/datapack-freshness-sla.json", Buffer.from(JSON.stringify(freshness))],
+    [snapshotPath, snapshotBytes],
+  ]);
+  const read = async (relative) => overrides.get(relative) ?? pinnedRead(relative);
+  return { read, inventory, ledger, freshness, snapshot, snapshotBytes, snapshotPath, standard, pack, row, entry };
+}
+const escalatorClock = "2026-10-23T12:29:43.916Z";
+const resolveWith = (inputs, overrides = {}) => resolveKricEscalatorSnapshot({
+  sourceInventory: inputs.inventory, sourceSnapshots: inputs.ledger, freshnessPolicy: inputs.freshness, evaluatedAt: escalatorClock, read: inputs.read, ...overrides,
+});
+
+test("#3036 에스컬레이터 원천은 등록 전에는 후보 입력이 아니고, 등록되면 원장 head·snapshot·영수증·신선도·약관에 결속된 snapshot을 쓴다", async () => {
+  const [inventory, ledger, freshness] = await Promise.all(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+    "release/product-gates/datapack-freshness-sla.json"].map((relative) => candidatePinnedJson(pinnedRead, relative)));
+  assert.equal(await resolveKricEscalatorSnapshot({ sourceInventory: inventory, sourceSnapshots: ledger, freshnessPolicy: freshness, evaluatedAt: escalatorClock, read: pinnedRead }), null, "inventory 항목이 없는 후보 입력");
+  const staged = await escalatorCandidateInputs({ register: false });
+  assert.equal(await resolveWith(staged), null, "첫 등록 전 항목");
+  for (const shape of ["MIXED", "00"]) {
+    const registered = await escalatorCandidateInputs({ snapshotShape: shape });
+    const resolved = await resolveWith(registered);
+    assert.deepEqual(resolved.snapshot, registered.snapshot, shape);
+    assert.equal(resolved.snapshot.providerResultCode, shape);
+    assert.deepEqual(resolved.row, registered.row, shape);
+  }
+});
+
+test("#3036 반증: 에스컬레이터 원천 결속의 각 항을 어기면 후보 입력 선택이 실패한다", async () => {
+  const cases = [
+    ["첫 등록 전 항목에 원장 행", async () => { const staged = await escalatorCandidateInputs({ register: false }); const registered = await escalatorCandidateInputs(); return [staged, { sourceSnapshots: registered.ledger }]; }, /nationwide candidate KRIC escalator first registration state is invalid/],
+    ["증거가 원장 head가 아님", async (inputs) => { inputs.entry.accessibilityAdmissionEvidence.snapshotId = `${KRIC_ESCALATOR}-20261022T000000000Z`; }, /nationwide candidate KRIC escalator admission is not the ledger head/],
+    ["snapshot 경로가 정본 경로가 아님", async (inputs) => { inputs.entry.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/other.json"; }, /nationwide candidate KRIC escalator snapshot path mismatch/],
+    ["snapshot 파일 바이트", async (inputs) => { inputs.entry.accessibilityAdmissionEvidence.snapshotFileSha256 = "0".repeat(64); }, /nationwide candidate KRIC escalator snapshot does not match its admission/],
+    ["증거 raw hash", async (inputs) => { inputs.entry.accessibilityAdmissionEvidence.rawSha256 = "0".repeat(64); }, /nationwide candidate KRIC escalator snapshot does not match its admission/],
+    ["원장 영수증 raw hash", async (inputs) => { inputs.row.rawReceipt.snapshotRawSha256 = "0".repeat(64); }, /nationwide candidate KRIC escalator snapshot does not match the ledger head/],
+    ["원장 content hash", async (inputs) => { inputs.row.contentSha256 = "0".repeat(64); }, /nationwide candidate KRIC escalator snapshot does not match the ledger head/],
+    ["원장 신선도가 정책과 다름", async (inputs) => { inputs.row.freshnessExpiresAt = "2027-12-31T00:00:00.000Z"; }, /nationwide candidate KRIC escalator freshness does not match the freshness policy/],
+    ["만료", async () => [await escalatorCandidateInputs(), { evaluatedAt: "2027-02-01T00:00:00.000Z" }], /nationwide candidate KRIC escalator snapshot is expired/],
+    ["후보 시계 뒤의 관측", async () => [await escalatorCandidateInputs(), { evaluatedAt: "2026-10-22T23:59:59.999Z" }], /nationwide candidate KRIC escalator snapshot is observed after the candidate clock/],
+    ["원문 저장 전 후보 시계", async () => [await escalatorCandidateInputs(), { evaluatedAt: "2026-10-23T00:04:59.999Z" }], /nationwide candidate clock precedes the raw object storage of a cited source: kric-station-escalator-detailed/],
+    ["약관 해시", async (inputs) => { inputs.entry.license.attribution = "tampered"; }, /nationwide candidate KRIC escalator license evidence does not match the inventory license/],
+    ["시설 사용 불허", async (inputs) => { inputs.entry.capabilities.facility.productionUseAllowed = false; }, /nationwide candidate KRIC escalator is not admitted for production facility use/],
+    ["필수 원천으로 표시", async (inputs) => { inputs.entry.requiredForProductionPack = true; }, /nationwide candidate KRIC escalator is not admitted for production facility use/],
+  ];
+  for (const [term, tamper, pattern] of cases) {
+    const inputs = await escalatorCandidateInputs();
+    const result = await tamper(inputs);
+    const [target, overrides] = Array.isArray(result) ? result : [inputs, {}];
+    await assert.rejects(resolveWith(target, overrides), pattern, term);
+  }
+});
+
+test("#3036 등록된 에스컬레이터 원천은 전국 후보에서 원천 밖 UNKNOWN 칸만 원문 규칙대로 바꾸고 팩 원천 목록에 실린다", async () => {
+  const inputs = await escalatorCandidateInputs();
+  const prepare = (readRepositoryFile) => prepareNationwideCandidate({ readRepositoryFile, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122 });
+  const [{ finalPack: before }, { finalPack: after }] = [await prepare(pinnedRead), await prepare(inputs.read)];
+  const cell = ({ stationId, lineId, facilityType }) => `${stationId}|${lineId}|${facilityType}`;
+  const beforeCells = new Map(before.stationFacilityEvidence.map((row) => [cell(row), row]));
+  const expected = expectedEscalatorStates({ snapshot: inputs.snapshot, pack: after });
+  const escalatorEvidence = after.stationFacilityEvidence.filter(isKricEscalator);
+  assert.deepEqual(escalatorEvidence.map((row) => [`${row.stationId}|${row.lineId}`, `${row.evidenceKind}:${row.statusMeaning}`]).sort(), [...expected].sort());
+  for (const row of after.stationFacilityEvidence.filter((evidence) => !isKricEscalator(evidence))) {
+    assert.deepEqual(row, beforeCells.get(cell(row)), `${cell(row)}: 에스컬레이터가 쓰지 않은 칸은 그대로다`);
+  }
+  // 바뀐 칸은 표준의 원천 밖 UNKNOWN이었거나, 표준 조회가 결과 03이라 증거가 없던 칸(까치산 2호선)이다.
+  const opened = escalatorEvidence.filter((row) => !beforeCells.has(cell(row)));
+  for (const row of escalatorEvidence.filter((evidence) => beforeCells.has(cell(evidence)))) {
+    assert.deepEqual([beforeCells.get(cell(row)).evidenceKind, beforeCells.get(cell(row)).statusMeaning], ["UNKNOWN", "SOURCE_DOES_NOT_COVER_TYPE"], `${cell(row)}: 바뀐 칸은 원천 밖 UNKNOWN이었다`);
+  }
+  const standardTerminal = inputs.standard.queries.filter(({ providerResultCode }) => providerResultCode === "03").map(({ stationId, lineId }) => `${stationId}|${lineId}|ESCALATOR`);
+  assert.deepEqual(opened.map(cell), standardTerminal.filter((key) => escalatorEvidence.some((row) => cell(row) === key)));
+  assert.deepEqual(opened.map(cell), ["station-b35616704ce3|seoul-2|ESCALATOR"]);
+  assert.equal(after.stationFacilityEvidence.length, before.stationFacilityEvidence.length + opened.length);
+  assert.deepEqual(after.facilities.filter((facility) => !isKricEscalator(facility)), before.facilities);
+  assert.equal(after.facilities.filter(isKricEscalator).length, inputs.snapshot.queries.reduce((sum, { rows }) => sum + rows.length, 0));
+  assert.ok(escalatorEvidence.some(({ evidenceKind }) => evidenceKind === "NOT_EXISTS") && escalatorEvidence.some(({ evidenceKind }) => evidenceKind === "EXISTS"));
+
+  // build-datapack은 시설·부재 증거 행의 원천을 팩 원천 목록의 coverageScope로 출처 기록에 묶는다. 인용한 원천은 모두 목록에 있어야 한다.
+  const packSourceIds = new Set(after.sourceInventory.map(({ id }) => id));
+  const cited = new Set([...after.facilities, ...after.stationFacilityEvidence].map(({ sourceId }) => sourceId));
+  assert.deepEqual([...cited].filter((sourceId) => !packSourceIds.has(sourceId)), []);
+  const packSource = after.sourceInventory.find(({ id }) => id === KRIC_ESCALATOR);
+  assert.deepEqual(packSource.coverageScope, inputs.entry.coverageScope);
+  assert.equal(packSource.updatedAt, inputs.snapshot.capturedAt);
+  assert.deepEqual(packSource.fields, ESCALATOR_FIELDS);
+  assert.equal(before.sourceInventory.some(({ id }) => id === KRIC_ESCALATOR), false);
+});
+
+test("#3036 첫 등록 전 에스컬레이터 항목은 전국 후보 팩을 바꾸지 않는다", async () => {
+  const staged = await escalatorCandidateInputs({ register: false });
+  const prepare = (readRepositoryFile) => prepareNationwideCandidate({ readRepositoryFile, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122 });
+  const [{ finalPack: before }, { finalPack: after }] = [await prepare(pinnedRead), await prepare(staged.read)];
+  assert.deepEqual(after.facilities, before.facilities);
+  assert.deepEqual(after.stationFacilityEvidence, before.stationFacilityEvidence);
+  assert.deepEqual(after.sourceInventory, before.sourceInventory);
 });

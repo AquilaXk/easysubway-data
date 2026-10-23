@@ -8539,6 +8539,105 @@
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
       }
+    },
+    {
+      "id": "kric-station-escalator-detailed",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "catalogProviderId": "provider:kric-station-escalator",
+      "displayName": "국가철도공단_역사별 에스컬레이터 현황",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=190&service=convenientInfo&operation=stationEscalator",
+      "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+        "auth": {
+          "env": "KRIC_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey",
+          "valueEncoding": "url-search-params-once",
+          "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": [
+          "serviceKey",
+          "format",
+          "railOprIsttCd",
+          "lnCd",
+          "stinCd"
+        ],
+        "responseEnvelope": "JSON array | XML root.body.items.item",
+        "runner": {
+          "command": "node tools/datapack/run-current-capital-facility-operation.mjs",
+          "arguments": [
+            "--phase",
+            "prepare",
+            "--source-id",
+            "kric-station-escalator-detailed"
+          ],
+          "requiredEnv": [
+            "KRIC_SERVICE_KEY",
+            "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"
+          ]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "pending_first_workflow_collection",
+      "admissionStatus": "admitted_pending_first_registration",
+      "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=190&service=convenientInfo&operation=stationEscalator",
+        "datasetUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+        "provider": "국가철도공단",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "dtlLoc",
+          "exitNo",
+          "grndDvNmFr",
+          "grndDvNmTo",
+          "lnCd",
+          "railOprIsttCd",
+          "runStinFlorFr",
+          "runStinFlorTo",
+          "stinCd",
+          "updnDvNm"
+        ],
+        "reviewAdmissionPath": "tools/datapack/release/kric-station-escalator-detailed-review-admission.json"
+      },
+      "nextAction": "첫 정기 KRIC 시설 갱신 run이 213 역-노선을 수집·게시·등록하면 전국 후보가 ESCALATOR 증거를 싣는다(#3036).",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "SOURCE_INVENTORY_COVERED",
+          "updateFrequency": "daily",
+          "unsupportedNotes": "production use is limited to ESCALATOR evidence from the fresh exhaustive stationEscalator query snapshot; result 03 and unqueried station-lines stay UNKNOWN"
+        }
+      },
+      "productionInventoryReferenceId": "kric-station-escalator-detailed",
+      "productionInventoryRelationship": "staged_inventory_entry_registered_by_first_kric_facility_refresh_issue_3036"
     }
   ]
 }

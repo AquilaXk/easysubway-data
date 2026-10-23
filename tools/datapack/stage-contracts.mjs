@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 
 import { TOPOLOGY_REVERIFICATION_CADENCE } from "./lib/topology-freshness-cutover.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/4888b8b74d6b7c16c39cd2fcadedea3035f1895f/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/54a2719638910f30ad7da2a4493d286fafb7ffca/contracts/bundles/data-contracts-v1.0.0.json";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
@@ -20,6 +20,7 @@ const staticAccessibilitySourceIds = [
   "daejeon-transportation-accessibility",
   "gwangju-transportation-accessibility",
   "busan-transportation-accessibility",
+  "kric-station-escalator-detailed",
 ];
 const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
 const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
