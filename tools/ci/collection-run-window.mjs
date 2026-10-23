@@ -168,12 +168,10 @@ async function getGithubJson({ requestUrl, token, fetchImpl, workflow }) {
   return readResponse(response, workflow);
 }
 
-// 이 run이 collector에 들어갔다면 그 결과({ outcome, completedAt }), 공급자를 부르지 않았다면 null.
-// run이 아직 끝나지 않았으면 collector step이 이미 실패했어도 진행 중이다: 뒤따르는 증거 artifact 업로드가 끝나기 전에는 쓴 요청 수를 증명할 수 없다.
-async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
-  const runId = run.id;
+// run의 job 목록. job이 하나도 만들어지지 않고 끝난 run(취소된 대기 run)이면 빈 목록이다. 목록이 한도를 넘거나 모양이 다르면 읽지 않는다.
+async function listRunJobs({ run, token, fetchImpl, context }) {
   const requestUrl = new URL(
-    `https://api.github.com/repos/${COLLECTION_REPOSITORY}/actions/runs/${runId}/jobs`,
+    `https://api.github.com/repos/${COLLECTION_REPOSITORY}/actions/runs/${run.id}/jobs`,
   );
   requestUrl.searchParams.set("filter", "all");
   requestUrl.searchParams.set("per_page", String(MAX_JOBS));
@@ -184,17 +182,24 @@ async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
     throw failure(COLLECTION_WINDOW_REASON.GITHUB_API_BODY_INVALID, { workflow });
   }
   if (body.total_count < 1) {
-    if (body.jobs.length === 0 && neverEnteredAnyJob(run)) return null;
+    if (body.jobs.length === 0 && neverEnteredAnyJob(run)) return [];
     throw failure(COLLECTION_WINDOW_REASON.JOB_LIST_EMPTY, { workflow });
   }
   if (body.total_count > MAX_JOBS) throw failure(COLLECTION_WINDOW_REASON.JOB_LIST_LIMIT, { workflow });
   if (body.jobs.length !== body.total_count) throw failure(COLLECTION_WINDOW_REASON.GITHUB_API_BODY_INVALID, { workflow });
+  return body.jobs;
+}
+
+// 이 run이 collector에 들어갔다면 그 결과({ outcome, completedAt }), 공급자를 부르지 않았다면 null.
+// run이 아직 끝나지 않았으면 collector step이 이미 실패했어도 진행 중이다: 뒤따르는 증거 artifact 업로드가 끝나기 전에는 쓴 요청 수를 증명할 수 없다.
+async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
+  const jobs = await listRunJobs({ run, token, fetchImpl, context });
   const jobIds = new Set();
   const results = [];
-  for (const job of body.jobs) {
-    if (jobIds.has(job?.id)) throw failure(COLLECTION_WINDOW_REASON.JOB_RECORD_INVALID, { workflow });
+  for (const job of jobs) {
+    if (jobIds.has(job?.id)) throw failure(COLLECTION_WINDOW_REASON.JOB_RECORD_INVALID, { workflow: context.workflowFile });
     jobIds.add(job?.id);
-    results.push(collectorJobOutcome(job, runId, context));
+    results.push(collectorJobOutcome(job, run.id, context));
   }
   for (const outcome of OUTCOME_PRECEDENCE) {
     const result = results.find((candidate) => candidate?.outcome === outcome);
