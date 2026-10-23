@@ -22,7 +22,8 @@ export function verifySourceReverificationReplayRun({ sourceRunId, repository, r
   verifyReplaySourceRun({ sourceRunId, repository, run, workflowPath: SOURCE_REVERIFICATION_WORKFLOW_PATH, code: CODE });
   const steps = replaySourceJobSteps({ sourceRunId, jobs, jobName: SOURCE_REVERIFICATION_JOB, code: CODE });
   const unfinished = SOURCE_REVERIFICATION_REPLAY_SOURCE_STEPS.filter((name) => stepConclusion(steps, name) !== "success");
-  if (unfinished.length > 0) fail(`${CODE}_STEP_NOT_SUCCESS`, `run ${sourceRunId} did not pass ${unfinished.map((name) => `"${name}"`).join(", ")}`);
+  const listed = unfinished.map((name) => JSON.stringify(name)).join(", ");
+  if (unfinished.length > 0) fail(`${CODE}_STEP_NOT_SUCCESS`, `run ${sourceRunId} did not pass ${listed}`);
 }
 
 function parseArgs(argv) {

@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { isObject } from "../lib/is-object.mjs";
 
-const RUN_ID = /^[1-9][0-9]{0,15}$/u;
+const RUN_ID = /^[1-9]\d{0,15}$/u;
 const SOURCE_EVENTS = Object.freeze(["workflow_dispatch", "schedule"]);
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 

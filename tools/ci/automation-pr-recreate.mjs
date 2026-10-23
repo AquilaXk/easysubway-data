@@ -127,16 +127,7 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
   const countFrom = Math.max(windowStart, tipCommittedAt);
 
   const ours = (pull) => pull?.head?.repo?.full_name === repository && isAutomationApp(pull.user) ? automationStageForBranch(pull.head.ref) : null;
-  // closures: 같은 main tip에서 닫힌 횟수(루프 상한). windowClosures: tip과 관계없이 24시간 안에 닫힌 횟수(starvation 상한).
-  const closures = new Map();
-  const windowClosures = new Map();
-  for (const pull of closedPulls) {
-    const stage = ours(pull);
-    const closedAt = Date.parse(pull?.closed_at);
-    if (stage === null || (pull.merged_at ?? null) !== null || !Number.isFinite(closedAt)) continue;
-    if (closedAt > windowStart) windowClosures.set(stage, (windowClosures.get(stage) ?? 0) + 1);
-    if (closedAt > countFrom) closures.set(stage, (closures.get(stage) ?? 0) + 1);
-  }
+  const { closures, windowClosures } = countClosures({ closedPulls, ours, windowStart, countFrom });
 
   // 재생 run은 다른 원장 쓰기 PR이 열려 있으면 ITX_PROMOTION_REPLAY_BLOCKED·REVERIFICATION_REPLAY_BLOCKED로 실패한다.
   // 그때 PR은 이미 닫힌 뒤라서, 재생 run의 판정과 같은 기준으로 열린 원장 쓰기 PR이 있는 동안은 재생을 미룬다(원장 쓰기 PR은 한 번에 하나다).
@@ -153,67 +144,73 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
   for (const pull of openPulls) {
     const stage = ours(pull);
     if (stage === null) continue;
-    const compare = await api(`repos/${repository}/compare/${MAIN}...${pull.head.sha}?per_page=1`);
-    if (!Number.isSafeInteger(compare?.behind_by) || compare.behind_by < 0) throw inputError(`compare behind_by of #${pull.number}`);
-    if (compare.behind_by === 0) continue;
-    const mode = STAGE_RECREATE_MODE[stage];
-    if (mode === RECREATE_MODE.HOLD_SAME_KST_DAY) {
-      const createdAt = Date.parse(pull.created_at);
-      if (!Number.isFinite(createdAt)) throw inputError(`created_at of #${pull.number}`);
-      // 그날 만들어졌고 ITX admission을 실제로 담고 있을 때만 대기한다. ITX를 수집하지 않은 topology PR은 평소처럼 닫고 다시 만든다.
-      if (createdAt >= kstDayStart(now) && await carriesItxCollection({ repository, api, number: pull.number })) {
-        deferred.push({ stage, number: pull.number, reason: "SAME_KST_DAY_ITX_COLLECTION" });
-        continue;
-      }
-    }
     const used = closures.get(stage) ?? 0;
-    if (used >= RECREATE_DAILY_LIMIT) {
-      anomalies.push({ stage, number: pull.number, closures: used, reason: "LOOP" });
-      continue;
-    }
-    // 같은 tip 루프는 아니지만 main이 계속 전진해 한 단계가 병합되지 못하는 경우(starvation)도 이상으로 드러낸다.
     const usedInWindow = windowClosures.get(stage) ?? 0;
-    if (usedInWindow >= RECREATE_STARVATION_LIMIT) {
-      anomalies.push({ stage, number: pull.number, closures: usedInWindow, reason: "STARVATION" });
-      continue;
+    const planned = await planPull({ pull, stage, used, usedInWindow, repository, api, now, gateEnabled, ledgerWritersBlocking }); // NOSONAR -- 앞선 PR이 올린 단계별 닫힘 횟수(closures)로 이 PR의 상한 판정이 달라져 PR을 순서대로 판정한다
+    if (planned.deferred) deferred.push(planned.deferred);
+    if (planned.anomaly) anomalies.push(planned.anomaly);
+    if (planned.action) {
+      closures.set(stage, used + 1);
+      windowClosures.set(stage, usedInWindow + 1);
+      actions.push({ number: pull.number, branch: pull.head.ref, stage, workflow: AUTOMATION_STAGE_WORKFLOWS[stage], ...planned.action });
     }
-    let replayRunId;
-    let recollect;
-    if (REPLAY_MODES.includes(mode)) {
-      const { code } = STAGE_REPLAY[stage];
-      // 단계 workflow는 변수 게이트(gateVariable)가 true일 때만 github-actions[bot] dispatch를 받는다. 꺼져 있으면 재생이든 다시 수집이든 dispatch는 성공해도
-      // job이 건너뛰어져 조용히 수집분을 잃는다.
-      if (!gateEnabled[stage]) {
-        anomalies.push({ stage, number: pull.number, closures: used, reason: gateDisabled(stage) });
-        continue;
-      }
-      const runId = REPLAY_RUN_SUFFIX.exec(pull.head.ref)?.[1];
-      const alive = isReplayRunId(runId) && await replaySourceAlive({ repository, api, stage, runId }); // NOSONAR -- 앞선 PR이 올린 단계별 닫힘 횟수(closures)로 이 PR의 상한 판정이 달라져 PR을 순서대로 판정한다
-      if (alive) {
-        const blockedBy = ledgerWritersBlocking(stage);
-        if (blockedBy.length > 0) {
-          deferred.push({ stage, number: pull.number, reason: `${code}_WAITS_FOR_LEDGER_WRITERS`, blockedBy });
-          continue;
-        }
-        replayRunId = runId;
-      } else if (mode === RECREATE_MODE.REPLAY) {
-        // 닫으면 그날 수집분은 이 artifact에만 남는다. 읽을 수 없으면 닫지 않는다.
-        anomalies.push({ stage, number: pull.number, closures: used, reason: `${code}_SOURCE_MISSING` });
-        continue;
-      } else {
-        recollect = "REPLAY_SOURCE_MISSING";
-      }
-    }
-    closures.set(stage, used + 1);
-    windowClosures.set(stage, usedInWindow + 1);
-    actions.push({
-      number: pull.number, branch: pull.head.ref, stage, workflow: AUTOMATION_STAGE_WORKFLOWS[stage],
-      ...(replayRunId === undefined ? {} : { replayRunId }), ...(recollect === undefined ? {} : { recollect }),
-    });
   }
   // 재생 dispatch는 실행의 마지막이다. 앞선 쓰기가 실패하면 ITX PR은 닫히지 않은 채 남는다.
   const ordered = [...actions.filter(({ replayRunId }) => replayRunId === undefined), ...actions.filter(({ replayRunId }) => replayRunId !== undefined)];
   return { actions: ordered, anomalies, deferred };
+}
+
+// closures: 같은 main tip에서 닫힌 횟수(루프 상한). windowClosures: tip과 관계없이 24시간 안에 닫힌 횟수(starvation 상한).
+function countClosures({ closedPulls, ours, windowStart, countFrom }) {
+  const closures = new Map();
+  const windowClosures = new Map();
+  for (const pull of closedPulls) {
+    const stage = ours(pull);
+    const closedAt = Date.parse(pull?.closed_at);
+    if (stage === null || (pull.merged_at ?? null) !== null || !Number.isFinite(closedAt)) continue;
+    if (closedAt > windowStart) windowClosures.set(stage, (windowClosures.get(stage) ?? 0) + 1);
+    if (closedAt > countFrom) closures.set(stage, (closures.get(stage) ?? 0) + 1);
+  }
+  return { closures, windowClosures };
+}
+
+/** 열린 PR 하나의 처리: 최신이면 {}, 아니면 action·anomaly·deferred 중 하나를 돌려준다. */
+async function planPull({ pull, stage, used, usedInWindow, repository, api, now, gateEnabled, ledgerWritersBlocking }) {
+  const compare = await api(`repos/${repository}/compare/${MAIN}...${pull.head.sha}?per_page=1`);
+  if (!Number.isSafeInteger(compare?.behind_by) || compare.behind_by < 0) throw inputError(`compare behind_by of #${pull.number}`);
+  if (compare.behind_by === 0) return {};
+  const mode = STAGE_RECREATE_MODE[stage];
+  if (mode === RECREATE_MODE.HOLD_SAME_KST_DAY && await carriesSameDayItxCollection({ pull, repository, api, now })) {
+    return { deferred: { stage, number: pull.number, reason: "SAME_KST_DAY_ITX_COLLECTION" } };
+  }
+  if (used >= RECREATE_DAILY_LIMIT) return { anomaly: { stage, number: pull.number, closures: used, reason: "LOOP" } };
+  // 같은 tip 루프는 아니지만 main이 계속 전진해 한 단계가 병합되지 못하는 경우(starvation)도 이상으로 드러낸다.
+  if (usedInWindow >= RECREATE_STARVATION_LIMIT) return { anomaly: { stage, number: pull.number, closures: usedInWindow, reason: "STARVATION" } };
+  if (!REPLAY_MODES.includes(mode)) return { action: {} };
+  return planReplay({ pull, stage, mode, used, repository, api, gateEnabled, ledgerWritersBlocking });
+}
+
+// 그날 만들어졌고 ITX admission을 실제로 담고 있을 때만 대기한다. ITX를 수집하지 않은 topology PR은 평소처럼 닫고 다시 만든다.
+async function carriesSameDayItxCollection({ pull, repository, api, now }) {
+  const createdAt = Date.parse(pull.created_at);
+  if (!Number.isFinite(createdAt)) throw inputError(`created_at of #${pull.number}`);
+  return createdAt >= kstDayStart(now) && carriesItxCollection({ repository, api, number: pull.number });
+}
+
+async function planReplay({ pull, stage, mode, used, repository, api, gateEnabled, ledgerWritersBlocking }) {
+  const { code } = STAGE_REPLAY[stage];
+  // 단계 workflow는 변수 게이트(gateVariable)가 true일 때만 github-actions[bot] dispatch를 받는다. 꺼져 있으면 재생이든 다시 수집이든 dispatch는 성공해도
+  // job이 건너뛰어져 조용히 수집분을 잃는다.
+  if (!gateEnabled[stage]) return { anomaly: { stage, number: pull.number, closures: used, reason: gateDisabled(stage) } };
+  const runId = REPLAY_RUN_SUFFIX.exec(pull.head.ref)?.[1];
+  if (isReplayRunId(runId) && await replaySourceAlive({ repository, api, stage, runId })) {
+    const blockedBy = ledgerWritersBlocking(stage);
+    if (blockedBy.length > 0) return { deferred: { stage, number: pull.number, reason: `${code}_WAITS_FOR_LEDGER_WRITERS`, blockedBy } };
+    return { action: { replayRunId: runId } };
+  }
+  // 닫으면 그날 수집분은 이 artifact에만 남는다. 읽을 수 없으면 닫지 않는다.
+  if (mode === RECREATE_MODE.REPLAY) return { anomaly: { stage, number: pull.number, closures: used, reason: `${code}_SOURCE_MISSING` } };
+  return { action: { recollect: "REPLAY_SOURCE_MISSING" } };
 }
 
 async function carriesItxCollection({ repository, api, number }) {
@@ -237,22 +234,23 @@ export async function recreateBehindPullRequests({
     log(`closed #${action.number} (${action.stage}) and removed ${action.branch}`);
     if (action.recollect !== undefined) log(`${action.recollect}: #${action.number} (${action.stage}) has no live replay artifact, so the stage collects again from the providers`);
     if (STAGE_REDISPATCH[action.stage] && !dispatched.has(action.workflow)) {
-      if (action.replayRunId === undefined) {
-        await dispatchWorkflow(action.workflow);
-      } else {
-        // 수집분은 원본 run의 artifact에 남아 있다. 이 dispatch가 실패해도 같은 입력으로 다시 dispatch하면 복구된다.
-        try {
-          await dispatchWorkflow(action.workflow, { replay_run_id: action.replayRunId });
-        } catch (error) {
-          throw new Error(`${STAGE_REPLAY[action.stage].code}_DISPATCH_FAILED: replay_run_id=${action.replayRunId} 로 ${action.workflow}을 다시 dispatch하면 복구된다: ${message(error)}`, { cause: error });
-        }
-      }
+      await dispatchAgain({ action, dispatchWorkflow }); // NOSONAR -- 재생 dispatch는 실행의 마지막이고, 앞선 쓰기가 실패하면 이후 쓰기를 하지 않으므로 순서대로 실행한다
       dispatched.add(action.workflow);
       log(`dispatched ${action.workflow} from ${MAIN}${action.replayRunId === undefined ? "" : ` replaying run ${action.replayRunId}`}`);
     }
   }
   if (anomalies.length > 0) {
     throw new Error(anomalies.map(anomalyMessage).join("\n"));
+  }
+}
+
+async function dispatchAgain({ action, dispatchWorkflow }) {
+  if (action.replayRunId === undefined) return dispatchWorkflow(action.workflow);
+  // 수집분은 원본 run의 artifact에 남아 있다. 이 dispatch가 실패해도 같은 입력으로 다시 dispatch하면 복구된다.
+  try {
+    return await dispatchWorkflow(action.workflow, { replay_run_id: action.replayRunId });
+  } catch (error) {
+    throw new Error(`${STAGE_REPLAY[action.stage].code}_DISPATCH_FAILED: replay_run_id=${action.replayRunId} 로 ${action.workflow}을 다시 dispatch하면 복구된다: ${message(error)}`, { cause: error });
   }
 }
 

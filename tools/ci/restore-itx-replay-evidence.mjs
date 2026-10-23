@@ -123,8 +123,9 @@ function parseArgs(argv) {
 export async function main(argv, { now = new Date(), log = (line) => process.stdout.write(`${line}\n`) } = {}) {
   const values = parseArgs(argv);
   const readJson = async (file) => JSON.parse((await readReplaySourceFile(file, "ITX_REPLAY_INPUT_INVALID")).toString("utf8"));
-  const files = {};
-  for (const name of await readdir(values.artifactDir)) files[name] = await readReplaySourceFile(path.join(values.artifactDir, name), "ITX_REPLAY_ARTIFACT_INVALID");
+  const names = await readdir(values.artifactDir);
+  const contents = await Promise.all(names.map((name) => readReplaySourceFile(path.join(values.artifactDir, name), "ITX_REPLAY_ARTIFACT_INVALID")));
+  const files = Object.fromEntries(names.map((name, index) => [name, contents[index]]));
   const result = verifyItxReplaySource({
     sourceRunId: values.sourceRunId,
     repository: values.repository,
