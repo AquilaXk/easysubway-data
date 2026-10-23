@@ -103,7 +103,7 @@ const BLOCK_MARKER = /^<!-- reverification-blocked:([a-z][a-z0-9-]{0,63}):([A-Z]
 const blockMarker = ({ recipeId, code }) => `<!-- reverification-blocked:${recipeId}:${code} -->`;
 // 원천별 마지막 실패 시각 표지(#3036). 시각은 보고기가 쓴 ISO 순간(밀리초 포함)만 받는다.
 const SOURCE_ID = FAILURE_RECIPE_ID;
-const SOURCE_MARKER = /^<!-- refresh-source-failed:(\S+?):(\S+) -->$/gmu;
+const SOURCE_MARKER = /^<!-- refresh-source-failed:([^:\s]+):(\S+) -->$/gmu;
 const sourceMarker = ({ sourceId, failedAt }) => `<!-- refresh-source-failed:${sourceId}:${failedAt} -->`;
 const blocksOf = (text) => [...text.matchAll(BLOCK_MARKER)].map(([, recipeId, code]) => ({ recipeId, code })).filter(({ code }) => REVERIFICATION_BLOCKING_CODES.includes(code));
 
