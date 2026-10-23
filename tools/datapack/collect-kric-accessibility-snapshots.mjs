@@ -10,17 +10,45 @@ import { gunzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isRetryAfterExceedsCap, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 
+// 결과 03 조회를 혼합 snapshot에 남기는 operation별 규칙. 표준(stationCnvFacl)은 실측된 정확 tuple 하나만,
+// 에스컬레이터(stationEscalator, #3036 QA 승인 2026-10-23)는 어느 tuple이든 받아 그 역-노선을 조회되지 않은 것으로 둔다.
+const EXACT_TUPLE_TERMINAL_POLICY = "EXACT_TUPLE_PROVIDER_RESULT_03";
+const ANY_TUPLE_TERMINAL_POLICY = "ANY_TUPLE_PROVIDER_RESULT_03";
+
 export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([{
   sourceId: "kric-station-convenience-standard",
   endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
   responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
   tupleIdentityFields: [],
-}]);
+  terminalResult03Policy: EXACT_TUPLE_TERMINAL_POLICY,
+}, {
+  sourceId: "kric-station-escalator-detailed",
+  endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+  responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "updnDvNm"],
+  tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  terminalResult03Policy: ANY_TUPLE_TERMINAL_POLICY,
+}].map((operation) => Object.freeze(operation)));
 
 export const KRIC_TERMINAL_RESULT_03 = Object.freeze({
   stationId: "station-b35616704ce3", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4",
 });
-const TERMINAL_POLICY = "EXACT_TUPLE_PROVIDER_RESULT_03";
+
+function registeredOperation(sourceId) {
+  return KRIC_ACCESSIBILITY_OPERATIONS.find((operation) => operation.sourceId === sourceId);
+}
+
+const isExactTerminalTuple = (tuple) => Object.entries(KRIC_TERMINAL_RESULT_03).every(([field, value]) => tuple?.[field] === value);
+
+// 결과 03 tuple이 이 원천의 혼합 snapshot에 남을 수 있는지. 등록되지 않은 operation은 혼합 snapshot을 만들지 않는다.
+function terminalTupleAllowed(sourceId, tuple) {
+  const policy = registeredOperation(sourceId)?.terminalResult03Policy;
+  return policy === ANY_TUPLE_TERMINAL_POLICY || (policy === EXACT_TUPLE_TERMINAL_POLICY && isExactTerminalTuple(tuple));
+}
+
+function terminalCountAllowed(sourceId, count) {
+  const policy = registeredOperation(sourceId)?.terminalResult03Policy;
+  return policy === ANY_TUPLE_TERMINAL_POLICY ? count > 0 : policy === EXACT_TUPLE_TERMINAL_POLICY && count === 1;
+}
 
 // Provider roster의 개명·오기만 exact tuple로 결속한다. 이름 유사도 fallback은 두지 않는다.
 export const KRIC_STATION_TUPLE_MAPPINGS = Object.freeze([
@@ -114,17 +142,16 @@ async function collectKricAccessibilitySnapshotResults({
       if (response.providerResultCode === "03") providerGaps.push(tuple);
       collected.push({ tuple, response });
     }
-    const isExactTerminal = (tuple) => Object.entries(KRIC_TERMINAL_RESULT_03).every(([field, value]) => tuple?.[field] === value);
-    const isMixed = providerGaps.length === 1 && allowTerminalResult03 === true
-      && operation.sourceId === "kric-station-convenience-standard"
-      && isExactTerminal(providerGaps[0]);
+    const isMixed = allowTerminalResult03 === true && terminalCountAllowed(operation.sourceId, providerGaps.length)
+      && providerGaps.every((tuple) => terminalTupleAllowed(operation.sourceId, tuple));
+    const terminalPolicy = registeredOperation(operation.sourceId)?.terminalResult03Policy;
     if (providerGaps.length > 0 && !isMixed) {
       const gaps = providerGaps.map((tuple) => `${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}/03`);
       throw new Error(`KRIC accessibility provider gaps: count=${gaps.length}; tuples=${gaps.sort(compare).join(",")}`);
     }
     const queries = collected.map(({ tuple, response }) => {
       if (isMixed && response.providerResultCode === "03") return {
-        ...tuple, providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", terminalPolicy: TERMINAL_POLICY,
+        ...tuple, providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", terminalPolicy,
         rawResponseSha256: response.rawResponseSha256, providerRecordHash: null, rows: [],
       };
       const { rows, rawResponseSha256 } = response;
@@ -165,10 +192,12 @@ async function collectKricAccessibilitySnapshotResults({
   return { snapshots, rawCollections };
 }
 
-export async function collectKricStandardAccessibilityObservation(options = {}) {
+export async function collectKricStandardAccessibilityObservation({ sourceId = "kric-station-convenience-standard", ...options } = {}) {
+  const operation = registeredOperation(sourceId);
+  if (!operation) throw new Error(`KRIC accessibility operation is not registered: ${sourceId}`);
   const { snapshots, rawCollections } = await collectKricAccessibilitySnapshotResults({
     ...options,
-    operations: KRIC_ACCESSIBILITY_OPERATIONS,
+    operations: [operation],
     retainRawResponses: true,
     allowTerminalResult03: true,
   });
@@ -306,7 +335,7 @@ export async function writeKricStandardAccessibilityObservation({ outputRoot, ob
 }
 
 export function validateKricAccessibilitySnapshotIdentity(snapshot) {
-  const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
+  const operation = registeredOperation(snapshot?.sourceId);
   const isMixed = snapshot?.providerResultCode === "MIXED";
   if (!operation || snapshot?.schemaVersion !== 1 || snapshot?.artifactKind !== "kric-accessibility-snapshot"
     || !(snapshot.providerResultCode === "00" || isMixed) || snapshot.schemaStatus !== "PASS"
@@ -338,11 +367,10 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
         || operation.tupleIdentityFields.some((field) => row[field] !== query[field]))) {
       throw new Error("KRIC accessibility snapshot identity is invalid");
     }
-    const isTerminal = isMixed && Object.entries(KRIC_TERMINAL_RESULT_03).every(([field, value]) => query[field] === value)
-      && query.providerResultCode === "03";
+    const isTerminal = isMixed && query.providerResultCode === "03" && terminalTupleAllowed(snapshot.sourceId, query);
     if (isTerminal) {
       terminalCount += 1;
-      if (query.status !== "UNVERIFIED_EVIDENCE_BLOCKED" || query.terminalPolicy !== TERMINAL_POLICY
+      if (query.status !== "UNVERIFIED_EVIDENCE_BLOCKED" || query.terminalPolicy !== operation.terminalResult03Policy
         || query.rows.length !== 0 || query.providerRecordHash !== null) {
         throw new Error("KRIC accessibility snapshot identity is invalid");
       }
@@ -362,7 +390,7 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
     if (tupleKeys.has(tupleKey)) throw new Error("KRIC accessibility snapshot identity is invalid");
     tupleKeys.add(tupleKey);
   }
-  if (isMixed && (snapshot.sourceId !== "kric-station-convenience-standard" || terminalCount !== 1)) {
+  if (isMixed && !terminalCountAllowed(snapshot.sourceId, terminalCount)) {
     throw new Error("KRIC accessibility snapshot identity is invalid");
   }
   const contentSha256 = hash(snapshot.queries.map(({ rawResponseSha256: _, ...query }) => query));
