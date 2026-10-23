@@ -139998,5 +139998,43 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "snapshotId": "kric-station-escalator-detailed-20261023T201740246Z",
+    "sourceId": "kric-station-escalator-detailed",
+    "provider": "국가철도공단",
+    "retrievedAt": "2026-10-23T20:17:40.246Z",
+    "sourceUpdatedAt": "2026-10-23T20:17:40.246Z",
+    "rowCount": 1599,
+    "coverageCount": 213,
+    "rawSha256": "35e3fb0e07d91c78cb550402b50920fafb08459aec668c56c75923fda399db98",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-escalator-detailed/20261023/35e3fb0e07d91c78cb550402b50920fafb08459aec668c56c75923fda399db98.json",
+    "rawReceipt": {
+      "sourceId": "kric-station-escalator-detailed",
+      "snapshotId": "kric-station-escalator-detailed-20261023T201740246Z",
+      "snapshotRawSha256": "385620d7341835dc78ed775ee1e90c3c8e615286f287eeac26437b93101b7bd3",
+      "capturedAt": "2026-10-23T20:17:40.246Z",
+      "snapshotFileSha256": "af19e861081666b718fb4f93ca5f8d6464f2af9f5dada0cef32a974b64d65a5e",
+      "rawObjectSha256": "35e3fb0e07d91c78cb550402b50920fafb08459aec668c56c75923fda399db98",
+      "byteSize": 506261,
+      "storedAt": "2026-10-23T20:19:23.537Z"
+    },
+    "contentSha256": "62d15d5e35bd6240a276c513bfd3b394341766221bb357a7e8c1a5e910c8d187",
+    "redactedRequestFingerprint": "b4d6c43bef8b384534ac901f55c93fe7ee9c480c1270c82c1ace6494bac18979",
+    "schemaFingerprint": "bf492f17cab7aa5ff8bb4ca4426162d6833bb6de639d1c3613d4ec2e47f892ab",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "previousSnapshotId": null,
+    "freshnessExpiresAt": "2027-01-21T20:17:40.246Z",
+    "rawRetentionExpiresAt": "2027-01-21T20:17:40.246Z",
+    "adminReviewRecordHash": "c665271c6ffa6ca4ff43e50f259b77580bbdfe8531d7a11925aba7a62da9a38b",
+    "governancePolicySha256": "8977e8bd737d84ac0e88a2c6da010795c7b828a3d9975a7314fbc27eeaf6b810",
+    "governancePolicyVersion": "2026-08-29"
   }
 ]
