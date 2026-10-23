@@ -255,11 +255,13 @@ test("퇴역한 원천은 inventory와 freshness 결합 검증 대상이 아니�
   assert.doesNotThrow(() => validateSourceGovernancePolicy({ policy: retired.policy, inventory, freshnessPolicy }));
 });
 
+// #3036: 퇴역 단계 뒤에 에스컬레이터 새 원천 등록 단계가 붙었다. 퇴역 단계는 lineage 안에서 그대로 찾고 검증한다.
 test("추적 중인 정책은 KRIC 접근성 퇴역 원천 5건을 원문과 함께 퇴역 단계로 기록한다", async () => {
   const bytes = await readFile(path.join(root, "tools/datapack/source-governance-policy.json"));
   const policy = JSON.parse(bytes);
   const ids = RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS;
-  const lineage = policy.registrationLineage;
+  assert.deepEqual(policy.registrationLineage.addedSourceIds, ["kric-station-escalator-detailed"]);
+  const lineage = policy.registrationLineage.predecessorLineage;
   assert.deepEqual(lineage.retiredSourceIds, ids);
   assert.deepEqual(lineage.retiredSources.map(({ source }) => source.sourceId), ids);
   assert.deepEqual(policy.sources.filter(({ sourceId }) => ids.includes(sourceId)), []);
