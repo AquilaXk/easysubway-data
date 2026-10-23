@@ -8,11 +8,7 @@ import { gunzipSync } from "node:zlib";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
-import {
-  KRIC_STANDARD_SOURCE_ID,
-  kricStandardStationContexts,
-  kricStandardQueryFacilities,
-} from "./lib/kric-standard-facilities.mjs";
+import { kricQueryFacilities, kricStationContexts } from "./lib/kric-standard-facilities.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
@@ -748,11 +744,24 @@ export function busanFacilityState(observedRow) {
   });
 }
 
-// #3036: 수도권 KRIC 편의시설 표준 snapshot의 결과 00 조회를 모두 팩 시설·증거로 싣는다.
-// 기반 팩의 KRIC 행(pilot 2역, 이전 snapshot)은 같은 결정적 id 규칙으로 다시 만들어지므로 이 snapshot의 행으로 바꾼다.
+// 원천이 다루지 않는 유형이라 남긴 UNKNOWN 칸이다. 그 유형을 다루는 원천의 증거가 같은 칸에 오면 그 증거로 바뀐다.
+const isUncoveredTypePlaceholder = ({ evidenceKind, statusMeaning }) => evidenceKind === "UNKNOWN" && statusMeaning === "SOURCE_DOES_NOT_COVER_TYPE";
+const facilityEvidenceKey = ({ stationId, lineId, facilityType }) => `${stationId}\0${lineId}\0${facilityType}`;
+
+// 이 snapshot이 채우는 칸의 기존 증거 중 다른 원천의 원천 밖 UNKNOWN만 빼고, 그 밖의 증거와 겹치면 덮지 않고 실패한다.
+function supersedeFacilityEvidence(rows, claimed, sourceId) {
+  return rows.filter((row) => {
+    if (!claimed.has(facilityEvidenceKey(row))) return true;
+    if (isUncoveredTypePlaceholder(row)) return false;
+    throw new Error(`facility evidence conflict: ${row.stationId}:${row.lineId}:${row.facilityType} (${row.sourceId} ${row.evidenceKind}:${row.statusMeaning}) by ${sourceId}`);
+  });
+}
+
+// #3036: 수도권 KRIC 시설 snapshot(편의시설 표준, 에스컬레이터)의 결과 00 조회를 모두 팩 시설·증거로 싣는다.
+// 기반 팩의 같은 원천 행(pilot 2역, 이전 snapshot)은 같은 결정적 id 규칙으로 다시 만들어지므로 이 snapshot의 행으로 바꾼다.
 // 결과 00 조회의 (역, 노선, 유형)마다 EXISTS·NOT_EXISTS·UNKNOWN 증거 하나를 싣는다(QA 승인 2026-10-23).
 // 결과 03 조회(UNVERIFIED_EVIDENCE_BLOCKED)는 시설도 부재도 만들지 않는다. 팩 역-노선에 없는 조회는 실패한다.
-export function withCapitalKricStandardFacilities({ pack, snapshot }) {
+export function withCapitalKricFacilities({ pack, snapshot }) {
   const stationNames = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
   const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
   const queries = snapshot.queries.filter(({ status }) => status !== "UNVERIFIED_EVIDENCE_BLOCKED");
@@ -761,11 +770,11 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
     const labels = unmapped.map(({ railOprIsttCd, lnCd, stinCd, stationId, lineId }) => `${railOprIsttCd}/${lnCd}/${stinCd} ${stationId}:${lineId}`);
     throw new Error(`nationwide candidate KRIC facility station-line missing: ${unmapped.length} queries (${labels.slice(0, 5).join(", ")})`);
   }
-  const stationContexts = kricStandardStationContexts(snapshot, queries, pack.stationLines);
+  const stationContexts = kricStationContexts(snapshot, queries, pack.stationLines);
   const facilities = [];
   const evidence = [];
   for (const query of queries) {
-    const observed = kricStandardQueryFacilities({ snapshot, query, stationName: stationNames.get(query.stationId), stationContexts });
+    const observed = kricQueryFacilities({ snapshot, query, stationName: stationNames.get(query.stationId), stationContexts });
     const rows = observed.facilities.map(({ id, type, name, floorFrom, description, providerFacilityRef, providerRecordHash, evidenceHash }) => ({
       id,
       stationId: query.stationId,
@@ -777,7 +786,7 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
       floorFrom,
       floorTo: "",
       description,
-      sourceId: KRIC_STANDARD_SOURCE_ID,
+      sourceId: snapshot.sourceId,
       sourceSnapshotId: snapshot.snapshotId,
       providerFacilityRef,
       providerRecordHash,
@@ -830,10 +839,11 @@ export function withCapitalKricStandardFacilities({ pack, snapshot }) {
     if (facilityIds.has(id)) throw new Error(`facility identity collision: ${id}`);
     facilityIds.add(id);
   }
-  const isOtherSource = ({ sourceId }) => sourceId !== KRIC_STANDARD_SOURCE_ID;
+  const isOtherSource = ({ sourceId }) => sourceId !== snapshot.sourceId;
+  const claimed = new Set(evidence.map(facilityEvidenceKey));
   return {
     facilities: [...pack.facilities.filter(isOtherSource), ...facilities],
-    stationFacilityEvidence: [...pack.stationFacilityEvidence.filter(isOtherSource), ...evidence],
+    stationFacilityEvidence: [...supersedeFacilityEvidence(pack.stationFacilityEvidence.filter(isOtherSource), claimed, snapshot.sourceId), ...evidence],
   };
 }
 
@@ -1601,7 +1611,7 @@ export async function prepareNationwideCandidate({
 
   finalPack.facilities.push(...regionalFacilities);
   finalPack.stationFacilityEvidence.push(...regionalEvidence);
-  Object.assign(finalPack, withCapitalKricStandardFacilities({
+  Object.assign(finalPack, withCapitalKricFacilities({
     pack: finalPack, snapshot: validateKricAccessibilitySnapshotIdentity(kricConvenience),
   }));
 
