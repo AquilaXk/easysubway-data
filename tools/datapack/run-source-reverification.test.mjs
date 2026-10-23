@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { classifyRecipeFailure, defaultExecute, evaluateEvidenceChange, runSourceReverification } from "./run-source-reverification.mjs";
+import { countTelemetryRequests } from "../ci/provider-call-ledger.mjs";
 import { reportReverificationFailures } from "../ci/source-reverification-failures.mjs";
 import { REVERIFICATION_RECIPES, dependencyGroups } from "./source-reverification-recipes.mjs";
 
@@ -146,6 +147,19 @@ test("기본 실행기는 KRIC 키를 상속시키지 않고 명시한 단계의
   const execute = defaultExecute(root, { PATH: process.env.PATH, KRIC_SERVICE_KEY: KRIC_TEST_KEY });
   assert.deepEqual(JSON.parse((await execute("print-env.mjs", [])).stdout), []);
   assert.deepEqual(JSON.parse((await execute("print-env.mjs", [], { env: { KRIC_SERVICE_KEY: KRIC_TEST_KEY } })).stdout), ["KRIC_SERVICE_KEY"]);
+});
+
+// PR #1452 F3: 하루 호출 예산은 자식 collector가 SOURCE_FETCH_TELEMETRY_PATH 파일에 남긴 시도 기록을 다음 run이 센 값으로 정한다.
+// 기본 실행기가 이 변수를 자식에게 넘기지 않으면 기록이 하나도 남지 않아 모든 run이 0건으로 읽히고 예산이 풀린다. 자식이 실제로 쓴 파일을 호출 기록이 세는 것까지 끝에서 끝으로 고정한다.
+test("기본 실행기는 계측 파일 경로를 자식 collector에 넘겨 시도 기록이 호출 기록에 센다 (#3036)", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "reverification-telemetry-")); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, "tools/datapack"), { recursive: true });
+  const telemetryModule = JSON.stringify(new URL("./lib/source-fetch-telemetry.mjs", import.meta.url).href);
+  await writeFile(path.join(root, "tools/datapack/emit-attempt.mjs"), `import { emitAttemptRecord } from ${telemetryModule};\nemitAttemptRecord({ sourceId: "child-source", host: "example.test", attempt: 1, outcome: "success" });\n`);
+  const telemetryFile = path.join(root, "telemetry.jsonl");
+  await writeFile(telemetryFile, "");
+  await defaultExecute(root, { PATH: process.env.PATH, SOURCE_FETCH_TELEMETRY_PATH: telemetryFile })("emit-attempt.mjs", []);
+  assert.deepEqual(countTelemetryRequests(await readFile(telemetryFile)), { "child-source": 1 });
 });
 
 // #1122: 공급처 기대 관측이 바뀐 것은 전송 실패가 아니라 사람이 기대값을 고쳐야 풀리는 이상이다. 별도 코드로 드러나 판정이 같은 원인의 재수집을 건너뛴다.
