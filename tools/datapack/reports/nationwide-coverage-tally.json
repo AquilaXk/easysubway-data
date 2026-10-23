@@ -1079,9 +1079,9 @@
     },
     "resolutions": {
       "entryCount": 4,
-      "generatedAt": "2026-07-25T09:12:39.105Z",
+      "generatedAt": "2026-10-23T10:18:48.032Z",
       "path": "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
-      "sha256": "22b3e2a09a4855a593ef70491f2f9797a69a27407a1d3782fc41792341c88e14"
+      "sha256": "20233bed53047e7557badc5ccb358d2493fbe5f4fd73cf3d86dc87417008676d"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
@@ -1109,7 +1109,7 @@
         "totalCount": 45
       },
       {
-        "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
+        "earliestResolutionNextReviewAt": "2027-01-21T10:18:48.032Z",
         "explicitlyUnsupportedWithEvidenceCount": 4,
         "inventoryAdmittedCount": 0,
         "inventoryAdmittedRatio": 0,
@@ -1191,7 +1191,7 @@
     ],
     "byRegion": [
       {
-        "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
+        "earliestResolutionNextReviewAt": "2027-01-21T10:18:48.032Z",
         "explicitlyUnsupportedWithEvidenceCount": 1,
         "inventoryAdmittedCount": 17,
         "inventoryAdmittedRatio": 0.4722,
@@ -1223,7 +1223,7 @@
         "totalCount": 198
       },
       {
-        "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
+        "earliestResolutionNextReviewAt": "2027-01-21T10:18:48.032Z",
         "explicitlyUnsupportedWithEvidenceCount": 3,
         "inventoryAdmittedCount": 17,
         "inventoryAdmittedRatio": 0.7083,
@@ -1271,7 +1271,7 @@
         "totalCount": 6
       }
     ],
-    "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
+    "earliestResolutionNextReviewAt": "2027-01-21T10:18:48.032Z",
     "explicitlyUnsupportedWithEvidenceCount": 4,
     "inventoryAdmittedCount": 87,
     "inventoryAdmittedRatio": 0.3222,
@@ -1938,9 +1938,9 @@
         "resolution": {
           "evidenceHash": "378d349c5936090927cf1b8ac894c3377b9beaef3e7377c7cdcbeb3b09bfd022",
           "fallback": "UNSUPPORTED_REGION",
-          "nextReviewAt": "2026-10-23T09:12:39.105Z",
+          "nextReviewAt": "2027-01-21T10:18:48.032Z",
           "reasonCode": "PUBLIC_API_NO_DATA",
-          "reviewedAt": "2026-07-25T09:12:39.105Z",
+          "reviewedAt": "2026-10-23T10:18:48.032Z",
           "supportStartedAt": null
         },
         "resolutionReviewStatus": "CURRENT",
@@ -6370,11 +6370,11 @@
         "releaseTier": "LAUNCH_REQUIRED",
         "requiredFieldCount": 1,
         "resolution": {
-          "evidenceHash": "4172a7a23d6f750635069410446c52feeb9b1c161147e1bd6336d5918a4d6192",
+          "evidenceHash": "23c72474498d04419fcbf097cfaf6d5838935131cc4a10c9c6ba31bb689d7753",
           "fallback": "UNSUPPORTED_REGION",
-          "nextReviewAt": "2026-10-23T09:12:39.105Z",
+          "nextReviewAt": "2027-01-21T10:18:48.032Z",
           "reasonCode": "PUBLIC_API_NO_DATA",
-          "reviewedAt": "2026-07-25T09:12:39.105Z",
+          "reviewedAt": "2026-10-23T10:18:48.032Z",
           "supportStartedAt": null
         },
         "resolutionReviewStatus": "CURRENT",
@@ -6498,11 +6498,11 @@
         "releaseTier": "LAUNCH_REQUIRED",
         "requiredFieldCount": 1,
         "resolution": {
-          "evidenceHash": "ec86a05d8149d7b617a744f092df6825ab0880e2b0d11e424e2eb93eb527c2e3",
+          "evidenceHash": "3cf853f2cd0a7ea4f7e096219421422178956f2175b626f2f614e80b5da88709",
           "fallback": "UNSUPPORTED_REGION",
-          "nextReviewAt": "2026-10-23T09:12:39.105Z",
+          "nextReviewAt": "2027-01-21T10:18:48.032Z",
           "reasonCode": "PUBLIC_API_NO_DATA",
-          "reviewedAt": "2026-07-25T09:12:39.105Z",
+          "reviewedAt": "2026-10-23T10:18:48.032Z",
           "supportStartedAt": null
         },
         "resolutionReviewStatus": "CURRENT",
@@ -6626,11 +6626,11 @@
         "releaseTier": "LAUNCH_REQUIRED",
         "requiredFieldCount": 1,
         "resolution": {
-          "evidenceHash": "9ffbc62f470c64b38f7b3ed3129610d15fd64f19727a7212e38d45527ee0fe8b",
+          "evidenceHash": "b35b9a0311bf83c87e7b7aa06602c1308633d1f266d881455baa84940cb4d233",
           "fallback": "UNSUPPORTED_REGION",
-          "nextReviewAt": "2026-10-23T09:12:39.105Z",
+          "nextReviewAt": "2027-01-21T10:18:48.032Z",
           "reasonCode": "PUBLIC_API_NO_DATA",
-          "reviewedAt": "2026-07-25T09:12:39.105Z",
+          "reviewedAt": "2026-10-23T10:18:48.032Z",
           "supportStartedAt": null
         },
         "resolutionReviewStatus": "CURRENT",
