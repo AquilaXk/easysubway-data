@@ -336,7 +336,7 @@ function applyCoverageResolutions(targets, requirements, document, searchPlan, n
 
 function assertCoverageResolutionsDocument(document, targets) {
   if (typeof document !== "object" || Array.isArray(document)) {
-    throw new Error("coverage resolutions must be an object");
+    throw new TypeError("coverage resolutions must be an object");
   }
   if (document.schemaVersion !== 1) throw new Error("coverage resolutions schemaVersion must be 1");
   if (document.artifactKind !== "nationwide-coverage-resolutions") {
