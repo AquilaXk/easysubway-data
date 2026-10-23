@@ -9,7 +9,9 @@
 //   CLAIM_IN_PROGRESS       PR 전의 claim을 만든 run이 아직 돈다. 기다린다.
 //   BLOCKED_BY_PENDING_PR   DUE인데 같은 원장 파일을 쓰는 다른 자동화 PR·claim이 있다. 이상이 아니라 대기다.
 //
-// 재생 run(--replay-run-id, #3036)은 뒤처져 닫힌 재확인 PR의 수집분을 공급자 호출 없이 다시 등록하므로 DUE가 아니어도 RUN이고, 막는 조건은 정상 run과 같다.
+// 재생 run(--replay-run-id, #3036)은 뒤처져 닫힌 재확인 PR의 수집분을 공급자 호출 없이 다시 등록하므로 DUE가 아니어도 RUN이다.
+//   다른 원장 쓰기 PR·claim에 막히면 기다리지 않고 REVERIFICATION_REPLAY_BLOCKED로 실패한다(ITX_PROMOTION_REPLAY_BLOCKED와 같다).
+//   재생 입력은 이 dispatch에만 있어, 대기로 끝나면 막힘 재dispatch가 입력 없이 다시 돌려 공급자에서 다시 수집한다. 같은 replay_run_id로 다시 dispatch하면 복구된다.
 // DUE 기준(정책에서 읽는다, 코드에 기간을 두지 않는다):
 //   dueAt = min(기준 시각 + scheduledPipeline.cadence, freshUntil - monitoring.alertBeforePackExpiry)
 //   기준 시각 = 원천 등급(sourceClass)의 basisField. 원장 head 행에서, 원장 행이 없는 KRIC 시간표 projection은 inventory 증거에서 읽는다.
@@ -239,6 +241,10 @@ export function decideSourceReverification({ inventory, ledger, policy, pullRequ
   if (replayRunId === undefined && recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, cleanupClaims, overdue };
   const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow: SOURCE_REVERIFICATION_WORKFLOW });
   const blockedBy = [...pending.pullRequests, ...pending.branches];
+  if (blockedBy.length > 0 && replayRunId !== undefined) {
+    const blockers = blockedBy.map((blocker) => (typeof blocker === "number" ? `#${blocker}` : blocker)).join(", ");
+    fail("REVERIFICATION_REPLAY_BLOCKED", `replay of run ${replayRunId} is blocked by ${blockers}; dispatch ${SOURCE_REVERIFICATION_WORKFLOW} again with replay_run_id=${replayRunId} once they are merged or closed`);
+  }
   return blockedBy.length > 0
     ? { state: "BLOCKED_BY_PENDING_PR", blockedBy, ...work, cleanupClaims, overdue, ...replay }
     : { state: "RUN", ...work, cleanupClaims, overdue, ...replay };

@@ -1,5 +1,5 @@
 // GitHub Actions `if` 식의 작은 부분집합 평가기(#1001). 계약 테스트가 식 문자열이 아니라 actor·event·변수 조합의 결과를 검증하게 한다.
-// 지원: || && ! == != 괄호, 문자열·불리언 리터럴, 컨텍스트 경로(github.actor 등), endsWith(). 그 밖의 문법은 거절한다(조용히 넘기지 않는다).
+// 지원: || && ! == != 괄호, 문자열·불리언 리터럴, 컨텍스트 경로(github·vars·inputs·env·steps), endsWith(). 그 밖의 문법은 거절한다(조용히 넘기지 않는다).
 // GitHub 의미를 따른다: 문자열 비교는 대소문자를 구분하지 않고, 빈 문자열·false는 거짓이며, &&와 ||는 피연산자 값을 돌려준다.
 const TOKEN = /\s*(\|\||&&|==|!=|!|\(|\)|,|'(?:[^']|'')*'|[A-Za-z_][\w.]*)/uy;
 
@@ -76,7 +76,7 @@ export function evaluateGithubExpression(expression, context) {
       take(")");
       return String(subject).toLowerCase().endsWith(String(suffix).toLowerCase());
     }
-    if (/^[A-Za-z_][\w]*(\.[\w]+)*$/u.test(token) && /^(github|vars|inputs|env)\./u.test(token)) return lookup(token);
+    if (/^[A-Za-z_][\w]*(\.[\w]+)*$/u.test(token) && /^(github|vars|inputs|env|steps)\./u.test(token)) return lookup(token);
     throw new Error(`GITHUB_EXPRESSION_UNSUPPORTED: ${token}`);
   };
   const result = parseOr();

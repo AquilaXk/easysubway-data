@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
+import { evaluateGithubExpression } from "./github-expression.mjs";
 import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 import { SOURCE_REVERIFICATION_JOB, SOURCE_REVERIFICATION_REPLAY_SOURCE_STEPS, SOURCE_REVERIFICATION_WORKFLOW_PATH } from "./verify-source-reverification-replay-run.mjs";
 
@@ -280,6 +281,26 @@ test("재생이 남긴 등록이 없으면 push·PR 없이 이유를 notice로 �
   assert.match(note.block, /::notice title=Source reverification::/u);
   assert.match(step("Reverify due P7D sources").block, /jq -r '\.dropped\[\]\? \| /u);
   before("Reverify due P7D sources", note.name);
+});
+
+test("재생 run이 main 이동이나 다른 원장 쓰기 자동화 때문에 push하지 못하면 대기로 끝내지 않고 REVERIFICATION_REPLAY_BLOCKED로 실패한다 (#3036)", () => {
+  const fail = step("Fail a replay that could not open its pull request");
+  const runs = (outputs) => evaluateGithubExpression(ifCondition(fail.block), { steps: outputs });
+  const replay = (more) => ({ decision: { outputs: { state: "RUN", replay_run_id: "39369279984" } }, ...more });
+  const collect = (more) => ({ decision: { outputs: { state: "RUN", replay_run_id: "" } }, ...more });
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "false" } } })), true, "판정 뒤 main이 움직였다");
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "true" } }, reverify: { outputs: { registered: "3" } }, recheck: { outputs: { idle: "false" } } })), true, "다른 원장 쓰기가 시작됐다");
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "true" } }, recheck: { outputs: { idle: "true" } }, push: { outputs: { pushed: "false" } } })), true, "push 전에 main이 움직였다");
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "true" } }, recheck: { outputs: { idle: "true" } }, push: { outputs: { pushed: "true" } } })), false, "push됐다");
+  assert.equal(runs(replay({ claim: { outputs: { claimed: "true" } }, reverify: { outputs: { registered: "0" } } })), false, "main이 이미 최신이라 등록할 것이 없다");
+  for (const outputs of [{ claim: { outputs: { claimed: "false" } } }, { claim: { outputs: { claimed: "true" } }, recheck: { outputs: { idle: "false" } } }, { push: { outputs: { pushed: "false" } } }]) {
+    assert.equal(runs(collect(outputs)), false, `수집 run은 지금처럼 다음 실행에 맡긴다 ${JSON.stringify(outputs)}`);
+  }
+  assert.match(fail.block, /\n          REPLAY_RUN_ID: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
+  assert.match(fail.block, /::error title=Source reverification::REVERIFICATION_REPLAY_BLOCKED: [^\n]*replay_run_id=\$\{REPLAY_RUN_ID\}/u);
+  assert.match(fail.block, /\n          exit 1\n/u);
+  before("Verify the reverification is based on the current main and push its branch", fail.name);
+  before(fail.name, "Report refresh failure as an issue");
 });
 
 test("재생 묶음은 push 뒤·PR 생성 전에 run id 이름의 artifact로 7일 보관한다 (#3036)", () => {

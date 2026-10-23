@@ -22,6 +22,14 @@ test("논리 연산과 괄호·endsWith를 우선순위대로 계산한다", () 
   assert.equal(run("vars.FLAG == 'true' && github.ref == 'refs/heads/main'"), true);
 });
 
+test("앞 step의 출력(steps.<id>.outputs.<name>)을 읽고, 돌지 않은 step의 출력은 빈 문자열이다", () => {
+  const steps = { claim: { outputs: { claimed: "false" } } };
+  const evaluate = (expression) => evaluateGithubExpression(`\${{ ${expression} }}`, { ...context, steps });
+  assert.equal(evaluate("steps.claim.outputs.claimed == 'false'"), true);
+  assert.equal(evaluate("steps.push.outputs.pushed == 'false'"), false);
+  assert.equal(evaluate("steps.push.outputs.pushed == ''"), true);
+});
+
 test("지원하지 않는 문법은 거절한다", () => {
   assert.throws(() => run("contains(github.actor, 'a')"), /GITHUB_EXPRESSION_UNSUPPORTED/u);
   assert.throws(() => run("github.actor =="), /GITHUB_EXPRESSION_SYNTAX/u);

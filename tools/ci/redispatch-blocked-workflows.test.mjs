@@ -417,8 +417,10 @@ test("대상 표는 workflow 파일의 note step과 판정 도구가 쓰는 차�
       assert.match(block, /\n        if: \$\{\{ [^\n]*(?:steps\.recheck\.outputs\.idle == 'false'|steps\.push\.outputs\.pushed == 'false')[^\n]* \}\}\n/u, `${workflow}: "${name}" condition`);
       assert.match(block, /nothing was pushed|was dropped/u, `${workflow}: "${name}" says nothing was pushed`);
     }
-    // 이 workflow에서 쓰지 않고 끝나는 note는 표가 전부 알고 있어야 한다: 'nothing was pushed'/'dropped' 계열 note step 수와 표가 같다.
-    const droppedNotes = blocks.filter((block) => /\n        if: [^\n]*(?:steps\.recheck\.outputs\.idle == 'false'|steps\.push\.outputs\.pushed == 'false')/u.test(block)).map((block) => block.split("\n")[0]);
+    // 이 workflow에서 쓰지 않고 success로 끝나는 note는 표가 전부 알고 있어야 한다: 'nothing was pushed'/'dropped' 계열 note step 수와 표가 같다.
+    // 같은 조건에서 run을 실패시키는 step(재확인 재생의 REVERIFICATION_REPLAY_BLOCKED)은 note가 아니다. 재dispatch는 success run만 본다.
+    const failsRun = (block) => /\n          exit 1\n/u.test(block);
+    const droppedNotes = blocks.filter((block) => /\n        if: [^\n]*(?:steps\.recheck\.outputs\.idle == 'false'|steps\.push\.outputs\.pushed == 'false')/u.test(block) && !failsRun(block)).map((block) => block.split("\n")[0]);
     assert.deepEqual(droppedNotes.sort(), [...superseded].sort(), `${workflow}: every note that ends a run without writing is in the table`);
     const [decideFile, fn] = decideFiles[workflow];
     const decide = readFileSync(path.join(root, "tools/ci", decideFile), "utf8");

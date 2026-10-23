@@ -285,13 +285,32 @@ test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으�
   assert.equal(decideSourceReverification(input({ ledger: stale, pullRequests: [writer(973, "automation/927-nationwide-candidate-refresh-"), writer(974, "feat/x")] })).state, "RUN");
 });
 
-test("재생 run은 DUE가 아니어도 RUN이고 recipe 목록은 비며, 직렬화 대기는 정상 run과 같다 (#3036)", () => {
+test("재생 run은 DUE가 아니어도 RUN이고 recipe 목록은 비며, 이 workflow의 열린 PR이 있으면 정상 run처럼 OPEN_PR이다 (#3036)", () => {
   assert.deepEqual(decideSourceReverification(input({ replayRunId: "39369279984" })), { state: "RUN", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [], replayRunId: "39369279984" });
-  const waiting = decideSourceReverification(input({ replayRunId: "39369279984", pullRequests: [writer(971)] }));
-  assert.equal(waiting.state, "BLOCKED_BY_PENDING_PR");
-  assert.deepEqual(waiting.blockedBy, [971]);
   assert.equal(decideSourceReverification(input({ replayRunId: "39369279984", pullRequests: [pr("OPEN", 77)], automationBranches: [`${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`] })).state, "OPEN_PR");
   for (const bad of ["", "0", "abc", "12345678901234567890"]) assert.throws(() => decideSourceReverification(input({ replayRunId: bad })), /REVERIFICATION_INPUT_INVALID/u, bad);
+});
+
+test("재생 run이 다른 원장 쓰기 PR·claim에 막히면 기다리지 않고 REVERIFICATION_REPLAY_BLOCKED로 실패하며 같은 replay_run_id로 다시 dispatch하라고 알린다 (#3036)", () => {
+  // 재생 입력은 이 dispatch에만 있다. 대기로 끝나면 막힘 재dispatch가 입력 없이 다시 돌려 공급자에서 다시 수집한다.
+  const DUE_LEDGER = ledgerAt(dueAgo(DAY + HOUR));
+  for (const [label, blockers, expected] of [
+    ["열린 PR", { pullRequests: [writer(971)] }, "#971"],
+    ["PR 전의 claim", { automationBranches: ["automation/639-seoul-accessibility-refresh-9"] }, "automation/639-seoul-accessibility-refresh-9"],
+    ["ITX 승격 PR", { pullRequests: [writer(980, "automation/977-itx-promotion-")] }, "#980"],
+  ]) {
+    for (const ledger of [ledgerAt(FRESH), DUE_LEDGER]) {
+      assert.throws(
+        () => decideSourceReverification(input({ replayRunId: "39369279984", ledger, ...blockers })),
+        new RegExp(`^Error: REVERIFICATION_REPLAY_BLOCKED: replay of run 39369279984 is blocked by ${expected}; dispatch source-reverification\\.yml again with replay_run_id=39369279984 once they are merged or closed$`, "u"),
+        label,
+      );
+    }
+  }
+  // 재생이 아닌 run은 지금처럼 기다린다(이상이 아니다).
+  const waiting = decideSourceReverification(input({ ledger: DUE_LEDGER, pullRequests: [writer(971)] }));
+  assert.equal(waiting.state, "BLOCKED_BY_PENDING_PR");
+  assert.deepEqual(waiting.blockedBy, [971]);
 });
 
 // #972 리뷰 F3: 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다.
