@@ -804,6 +804,8 @@ test("coverage gap 스텝은 release 모드에서만 production provenance와 re
   const baseArgs = coverageStep.match(/coverage_args=\([\s\S]*?\n\s*\)/)?.[0];
   assert.ok(baseArgs, "coverage_args 기본 배열을 찾지 못함");
   assert.doesNotMatch(baseArgs, /--manifest|--provenance|--release-scope/);
+  // 게이트는 실행 시각으로 nextReviewAt 만료를 판정한다. --now는 테스트 전용 주입이라 workflow 스텝이 고정 시각을 넘기면 만료 판정이 멎는다.
+  assert.doesNotMatch(coverageStep, /--now/);
   // release 모드 --allow-gaps 금지 로직은 불변이어야 한다.
   assert.match(yml, /release mode cannot use --allow-gaps/);
 });

@@ -324,7 +324,10 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
     });
     assert.equal(ledger.launchRequired.terminalCount, expected.length - missing.length);
     assert.equal(ledger.launchRequired.supportStartedResolutionCount, 0);
-    assert.equal(ledger.launchRequired.earliestResolutionNextReviewAt, "2026-10-23T09:12:39.105Z");
+    assert.equal(
+      ledger.launchRequired.earliestResolutionNextReviewAt,
+      new Date(Math.min(...resolutions.entries.map(({ nextReviewAt }) => Date.parse(nextReviewAt)))).toISOString(),
+    );
     assert.equal(ledger.launchRequired.requirements.length, 270);
     assert.equal(ledger.enhancement.totalCount, 45);
     assert.equal(ledger.enhancement.earliestResolutionNextReviewAt, null);

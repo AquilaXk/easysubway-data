@@ -19,6 +19,7 @@ import {
   materializedDaeguAccessibilityPackContentHash,
   daeguAccessibilityTopologyLineageIdentity,
 } from "./materialize-daegu-accessibility.mjs";
+import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
@@ -304,6 +305,7 @@ test("materialized SQLite와 provenance가 대구 accessibility_facilities 3건�
     "--provenance", path.join(packOutput, "current.provenance.json"),
     "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
     "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
+    "--now", COVERAGE_REVIEW_NOW,
     "--output", reportPath,
     "--allow-gaps",
   ], { cwd: root });

@@ -26,6 +26,7 @@ import {
   projectRetainedGwangjuTimetable,
   runGwangjuTimetableMaterializer,
 } from "./materialize-gwangju-timetable.mjs";
+import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 
 const retainedServices = { "평일": "weekday", "토요일": "saturday", "휴일": "holiday", "명절": "special" };
 
@@ -609,6 +610,7 @@ test("retained Gwangju SQLite preserves native stops, provenance, and coverage",
     "--inventory", inventoryPath, "--manifest", manifestPath, "--provenance", provenancePath,
     "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
     "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
+    "--now", COVERAGE_REVIEW_NOW,
     "--output", reportPath, "--allow-gaps"], { cwd: root });
   const report = JSON.parse(await readFile(reportPath, "utf8"));
   const requirements = report.requirements.filter(({ regionId, operatorId, lineId }) =>

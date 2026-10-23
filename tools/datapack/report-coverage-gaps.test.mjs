@@ -7,6 +7,7 @@ import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-m
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
 import { execFileAsync } from "./test-fixtures/datapack-tools-support.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { COVERAGE_REVIEW_DUE_AT, COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 import {
   completeCoverageInventory,
   completeCoverageProvenance,
@@ -155,6 +156,7 @@ test("전국 coverage report는 공공기관 API 실제 부재만 공식 미지�
       "--inventory", "tools/datapack/source-inventory.json",
       "--resolutions", resolutionsPath,
       "--resolution-plan", resolutionPlanPath,
+      "--now", COVERAGE_REVIEW_NOW,
       "--output", reportPath,
       "--allow-gaps",
     ],
@@ -271,6 +273,7 @@ test("전국 coverage report는 불완전하거나 만료된 공공 API 미지�
           "--inventory", "tools/datapack/source-inventory.json",
           "--resolutions", resolutionsPath,
           "--resolution-plan", resolutionPlanPath,
+          "--now", COVERAGE_REVIEW_NOW,
           "--output", path.join(outputDir, "report.json"),
           "--allow-gaps",
         ],
@@ -279,41 +282,116 @@ test("전국 coverage report는 불완전하거나 만료된 공공 API 미지�
     });
   }
 
-  await context.test("expired evidence returns to MISSING", async () => {
-    const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-resolution-expired-"));
-    const resolutionsPath = path.join(outputDir, "resolutions.json");
-    const resolutionPlanPath = path.join(outputDir, "resolution-plan.json");
-    const reportPath = path.join(outputDir, "report.json");
-    await writeFile(resolutionPlanPath, `${JSON.stringify(resolutionPlan)}\n`);
-    await writeFile(resolutionsPath, `${JSON.stringify({
+});
+
+const REVIEW_BOUNDARY = COVERAGE_REVIEW_DUE_AT;
+const plusMillis = (instant, millis) => new Date(Date.parse(instant) + millis).toISOString();
+
+async function reportRequirementAt({ nextReviewAt, now }) {
+  const publicApiQueries = [{
+    providerId: "kric",
+    endpoint: "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+    operation: "subwayTimetable",
+    query: { railOprIsttCd: "B1", lnCd: "1" },
+    httpStatus: 200,
+    providerResultCode: "00",
+    schemaStatus: "EXPECTED",
+    matchCount: 0,
+    responseSha256: "c".repeat(64),
+  }];
+  const entry = {
+    regionId: "busan",
+    operatorId: "busan-transportation",
+    lineId: "line-ab1a041f6266",
+    sourceDomain: "schedule_timetable",
+    state: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+    reasonCode: "PUBLIC_API_NO_DATA",
+    userMessageKo: "공공기관 API에서 시간표 데이터를 제공하지 않습니다.",
+    fallback: "STATIC_LOCAL",
+    checkedAt: "2026-07-25T09:12:39.105Z",
+    reviewedAt: "2026-07-25T09:12:39.105Z",
+    reviewerRole: "DATA_STEWARD",
+    nextReviewAt,
+    requiredProviderIds: ["kric"],
+    publicApiQueries,
+    evidenceHash: sha256(JSON.stringify(publicApiQueries)),
+  };
+  const plan = coverageResolutionSearchPlan(entry, publicApiQueries);
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-review-boundary-"));
+  try {
+    await writeFile(path.join(outputDir, "plan.json"), `${JSON.stringify(plan)}\n`);
+    await writeFile(path.join(outputDir, "resolutions.json"), `${JSON.stringify({
       schemaVersion: 1,
       artifactKind: "nationwide-coverage-resolutions",
       targetVersion: "2026-07-13",
-      searchPlanSha256: sha256(JSON.stringify(resolutionPlan)),
-      entries: [{ ...baseEntry, nextReviewAt: "2026-07-12T00:00:00.000Z" }],
+      searchPlanSha256: sha256(JSON.stringify(plan)),
+      entries: [entry],
     })}\n`);
-    await execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/report-coverage-gaps.mjs",
-        "--targets", "tools/datapack/nationwide-coverage-targets.json",
-        "--inventory", "tools/datapack/source-inventory.json",
-        "--resolutions", resolutionsPath,
-        "--resolution-plan", resolutionPlanPath,
-        "--output", reportPath,
-        "--allow-gaps",
-      ],
-      { cwd: root },
-    );
-    const report = JSON.parse(await readFile(reportPath, "utf8"));
-    const requirement = report.requirements.find((entry) =>
-      entry.regionId === baseEntry.regionId &&
-      entry.operatorId === baseEntry.operatorId &&
-      entry.lineId === baseEntry.lineId &&
-      entry.sourceDomain === baseEntry.sourceDomain);
-    assert.equal(requirement.status, "MISSING");
-    assert.equal(requirement.resolutionReviewStatus, "EXPIRED");
+    await execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", "tools/datapack/source-inventory.json",
+      "--resolutions", path.join(outputDir, "resolutions.json"),
+      "--resolution-plan", path.join(outputDir, "plan.json"),
+      "--now", now,
+      "--output", path.join(outputDir, "report.json"),
+      "--allow-gaps",
+    ], { cwd: root });
+    const report = JSON.parse(await readFile(path.join(outputDir, "report.json"), "utf8"));
+    return {
+      requirement: report.requirements.find((candidate) =>
+        ["regionId", "operatorId", "lineId", "sourceDomain"].every((key) => candidate[key] === entry[key])),
+      transitions: report.transitions,
+    };
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+}
+
+test("공식 미지원 evidence는 nextReviewAt 직전까지 terminal이고 그 시각부터 MISSING(EXPIRED)이다", async (context) => {
+  await context.test("nextReviewAt 1ms 전에는 공식 미지원이 유지된다", async () => {
+    const { requirement, transitions } = await reportRequirementAt({
+      nextReviewAt: REVIEW_BOUNDARY, now: plusMillis(REVIEW_BOUNDARY, -1),
+    });
+    assert.equal(requirement.status, "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE");
+    assert.equal(requirement.resolutionReviewStatus, "CURRENT");
+    assert.equal(transitions.length, 1);
   });
+
+  for (const [label, offsetMillis] of [["정확히 그 시각", 0], ["1ms 뒤", 1], ["하루 뒤", 86_400_000]]) {
+    await context.test(`nextReviewAt ${label}에는 MISSING으로 되돌아가고 재검토 필요로 남는다`, async () => {
+      const { requirement, transitions } = await reportRequirementAt({
+        nextReviewAt: REVIEW_BOUNDARY, now: plusMillis(REVIEW_BOUNDARY, offsetMillis),
+      });
+      assert.equal(requirement.status, "MISSING");
+      assert.equal(requirement.resolutionReviewStatus, "EXPIRED");
+      assert.deepEqual(transitions, []);
+    });
+  }
+});
+
+test("--now는 밀리초까지 있는 ISO 시각만 받는다", async (context) => {
+  for (const [label, value] of [["날짜만", "2026-10-01"], ["밀리초 없음", "2026-10-01T00:00:00Z"], ["문자열", "yesterday"]]) {
+    await context.test(label, async () => {
+      await assert.rejects(reportRequirementAt({ nextReviewAt: REVIEW_BOUNDARY, now: value }), /--now must be an ISO timestamp/);
+    });
+  }
+});
+
+test("--now는 --resolutions 없이 쓰면 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-now-without-resolutions-"));
+  try {
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", "tools/datapack/source-inventory.json",
+      "--now", COVERAGE_REVIEW_NOW,
+      "--output", path.join(outputDir, "report.json"),
+      "--allow-gaps",
+    ], { cwd: root }), /--resolutions is required with --now/);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });
 
 test("전국 coverage v2는 LAUNCH_REQUIRED domain이 없는 target을 거부한다", async () => {
