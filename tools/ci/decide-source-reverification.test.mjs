@@ -285,8 +285,6 @@ test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으�
   assert.equal(decideSourceReverification(input({ ledger: stale, pullRequests: [writer(973, "automation/927-nationwide-candidate-refresh-"), writer(974, "feat/x")] })).state, "RUN");
 });
 
-// #3036: 재생 run(replay_run_id)은 DUE 판정이 아니라 보관한 수집분을 다시 등록하는 run이다. 다른 원장 쓰기가 없으면 DUE가 아니어도 RUN이고,
-// 열린 PR·진행 중 claim·다른 원장 쓰기 대기는 정상 run과 똑같이 막는다(재생도 같은 원장을 쓴다).
 test("재생 run은 DUE가 아니어도 RUN이고 recipe 목록은 비며, 직렬화 대기는 정상 run과 같다 (#3036)", () => {
   assert.deepEqual(decideSourceReverification(input({ replayRunId: "39369279984" })), { state: "RUN", due: [], recipes: [], blocked: [], cleanupClaims: [], overdue: [], replayRunId: "39369279984" });
   const waiting = decideSourceReverification(input({ replayRunId: "39369279984", pullRequests: [writer(971)] }));
@@ -396,7 +394,6 @@ test("CLI는 판정을 GITHUB_OUTPUT 값으로 남긴다", async () => {
   assert.deepEqual(overdueReverificationRecipes({ inventory: files["inv.json"], ledger: files["led.json"], policy: files["pol.json"], now: NOW }), overdueRecipes.split(","));
   assert.equal(JSON.parse(logs[0]).state, "BLOCKED_BY_PENDING_PR");
   await assert.rejects(main(["--inventory", "inv.json"], { now: NOW, log() {}, readText: async () => "{}" }), /REVERIFICATION_INPUT_INVALID/u);
-  // 재생 입력은 빈 값이면 정상 run이고, 값이 있으면 판정과 출력에 그대로 실린다(#3036).
   const replayed = [];
   const replay = await main([
     "--inventory", "inv.json", "--ledger", "led.json", "--policy", "pol.json", "--prs", "prs.json", "--automation-branches", "claims.txt",

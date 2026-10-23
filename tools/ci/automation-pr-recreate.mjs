@@ -18,9 +18,7 @@
 //   close   다시 실행하면 같은 값을 얻는다(main에서 결정되거나 호출 횟수 제한이 없는 원천). 닫고 지우고 재실행한다.
 //   replay  ITX 승격: 닫기 전에 원본 run의 artifact(itx-current-promotion-<run id>)가 살아 있는지 읽고, 닫은 뒤 replay_run_id로 재실행해 같은 수집분을 최신 main 위에 다시 승격한다.
 //           원본이 없으면 닫지 않고 이상으로 보고한다. 재생 run도 같은 artifact를 올리므로 다시 뒤처져도 그 PR의 branch 접미사(run id)가 다음 재생의 원본이다.
-//   replay-or-recollect  P7D 원천 재확인(#3036): replay와 같이 원본 run의 artifact(source-reverification-<run id>)로 같은 수집분을 최신 main 위에 다시 등록한다.
-//           공급자 하루 호출 한도(부산 개발 계정 operation별 1,000회/일)를 다시 쓰지 않기 위해서다. 원본이 없거나 만료됐으면 재확인은 다시 수집할 수 있으므로
-//           이상이 아니라 close처럼 닫고 새로 dispatch하며, 그 사실을 로그(REPLAY_SOURCE_MISSING)로 남긴다.
+//   replay-or-recollect  P7D 원천 재확인(#3036): replay와 같이 재생하되, 원본이 없거나 만료되면 이상이 아니라 close처럼 닫고 새로 dispatch한다(REPLAY_SOURCE_MISSING).
 //   hold    수도권 topology 갱신: 같은 KST 날 만들어진 PR은 그날 ITX 수집분을 들고 있을 수 있어 닫지 않고 기다린다. 다음 KST 날부터는 수집 예산이 되살아나므로 닫고 다시 만든다.
 // - 읽기는 github.token, PR 닫기만 App 토큰이다. 쓰기가 실패하면 이후 쓰기를 하지 않고 그대로 실패한다.
 import { execFile } from "node:child_process";
@@ -72,7 +70,6 @@ const REPLAY_RUN_SUFFIX = /-([1-9][0-9]*)$/u;
 const ITX_ADMISSION_FILE = /^tools\/datapack\/itx-current-network-edge-admission-\d{8}\.json$/u;
 const ITX_PROMOTION_STAGE = "itx-promotion";
 
-/** 재생 단계의 원본 artifact 이름 접두사(<접두사>-<run id>)와 이상 코드 접두사. artifact는 각 단계 workflow가 run id로 올린다. */
 const STAGE_REPLAY = Object.freeze({
   "itx-promotion": Object.freeze({ artifactPrefix: "itx-current-promotion", code: "ITX_REPLAY" }),
   "source-reverification": Object.freeze({ artifactPrefix: "source-reverification", code: "SOURCE_REVERIFICATION_REPLAY" }),
@@ -133,7 +130,7 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
     if (closedAt > countFrom) closures.set(stage, (closures.get(stage) ?? 0) + 1);
   }
 
-  // 재생 run은 다른 원장 쓰기 PR이 열려 있으면 실행되지 못한다(ITX는 ITX_PROMOTION_REPLAY_BLOCKED로 실패, 재확인은 대기하다 재생 입력을 잃고 다시 수집한다).
+  // 재생 run은 다른 원장 쓰기 PR이 열려 있으면 실행되지 못한다(ITX는 실패하고, 재확인은 대기하다 재생 입력을 잃고 다시 수집한다).
   // 그때 PR은 이미 닫힌 뒤라서, 열린 원장 쓰기 PR이 있는 동안은 재생을 미룬다.
   // 뒤처진 형제 PR도 같은 실행에서 닫고 다시 dispatch하므로 열린 PR로 센다(재dispatch한 형제가 재생 판정보다 먼저 PR을 열 수 있다).
   // 재확인 재생은 ITX 승격 PR을 기다리지 않는다. ITX 재생이 재확인 PR을 기다리므로 서로 기다리면 둘 다 닫히지 않는다(하루 한 번 수집분인 ITX가 뒤에 재생된다).
@@ -183,7 +180,7 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
         continue;
       }
       const runId = REPLAY_RUN_SUFFIX.exec(pull.head.ref)?.[1];
-      const alive = isReplayRunId(runId) && await replaySourceAlive({ repository, api, stage, runId });
+      const alive = isReplayRunId(runId) && await replaySourceAlive({ repository, api, stage, runId }); // NOSONAR -- 앞선 PR이 올린 단계별 닫힘 횟수(closures)로 이 PR의 상한 판정이 달라져 PR을 순서대로 판정한다
       if (alive) {
         const blockedBy = ledgerWritersBlocking(stage);
         if (blockedBy.length > 0) {

@@ -10,9 +10,6 @@ import { fileURLToPath } from "node:url";
 import { RECIPE_STEPS, REPLAY_MANIFEST_FILE, replaySourceReverification, runSourceReverification } from "./run-source-reverification.mjs";
 import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
 
-// #3036: 뒤처진 재확인 PR을 공급자 재호출 없이 최신 main 위에 다시 만든다. 정상 run은 재생 가능한 묶음의 수집 출력과 게시 영수증을 재생 묶음으로 남기고,
-// 재생 run은 수집을 건너뛰고 같은 등록기를 게시 없이(register 모드) 불러 같은 snapshot을 같은 수집 시각으로 등록한다.
-// main이 이미 같거나 더 새 snapshot을 가진 묶음은 통째로 뺀다(부산 묶음은 원자적이다). 묶음이 어긋나면 추정하지 않고 실패한다.
 const LEDGER = "tools/datapack/release/source-snapshots.json";
 const INVENTORY = "tools/datapack/source-inventory.json";
 const POLICY = { schemaVersion: 1, issue: 969, allowContentChange: true, maxRowDeltaRatio: 0.05, allowCoverageDecrease: false, sourceOverrides: {} };
@@ -75,7 +72,6 @@ const headOf = (ledger, sourceId) => {
 };
 const argAfter = (args, flag) => args[args.indexOf(flag) + 1];
 
-// 등록기 흉내: --snapshot의 수집 출력을 원장 head 뒤에 잇는다. 원장 행의 수집 시각은 snapshot의 capturedAt이다(실제 등록기와 같다).
 async function fakeRegister(root, args, { snapshotSuffix = "" } = {}) {
   const snapshot = JSON.parse(await readFile(argAfter(args, "--snapshot"), "utf8"));
   if (args[0] === "publish-register") await writeFile(argAfter(args, "--receipt"), `${JSON.stringify({ snapshotId: snapshot.snapshotId })}\n`, { flag: "wx" });
@@ -106,7 +102,6 @@ function recordingExecute(root, options = {}) {
 
 const common = (root, operationRoot, execute) => ({ repositoryRoot: root, operationRoot, env: {}, policy: POLICY, now: new Date("2026-10-07T01:00:00.000Z"), execute });
 
-// 부산 묶음을 실제 recipe 표·단계로 한 번 수집·등록하고 재생 묶음을 남긴다.
 async function collectBusanBundle(t) {
   const original = await fixtureRepository(t);
   const work = await scratch(t, "original");
@@ -157,7 +152,6 @@ test("재생은 수집기를 부르지 않고 등록기를 게시 없이(registe
   }
   assert.equal(git(main, "log", "--format=%s", "-4").split("\n").at(-1), "base");
   assert.equal(git(main, "status", "--porcelain"), "");
-  // 재생 run도 같은 묶음을 남겨, 재생한 PR이 다시 뒤처지면 그 run이 다음 재생의 원본이 된다.
   assert.deepEqual(JSON.parse(await readFile(path.join(nextBundle, REPLAY_MANIFEST_FILE), "utf8")).recipes.map(({ sources }) => sources), JSON.parse(await readFile(path.join(bundle, REPLAY_MANIFEST_FILE), "utf8")).recipes.map(({ sources }) => sources));
 });
 
@@ -177,7 +171,6 @@ test("main이 이미 같거나 더 새 snapshot을 가진 원천이 하나라도
   }
 });
 
-// 의존 묶음은 원자적이다: 부산 시간표만 main에 더 새 행이 있어도 topology·접근성까지 함께 뺀다. 독립 묶음은 서로 영향이 없다.
 const fakeMeta = (id, dependsOn = []) => ({ id, message: `[Data] ${id} 재확인`, sourceIds: [`${id}-source`], dependsOn, due: null });
 const replayable = (id) => [
   { id: "collect", kind: "collect", run: async (ctx) => { await writeFile(ctx.file("out.json"), `${JSON.stringify({ sourceId: `${id}-source`, snapshotId: `${id}-collected`, capturedAt: COLLECTED })}\n`); }, retains: ["out.json"] },
@@ -239,13 +232,11 @@ test("묶음 파일이 manifest의 sha256과 다르거나 재생할 수 없는 r
   assert.equal(git(main, "log", "--format=%s"), "base");
 });
 
-// 실제 recipe 표: 재생 가능한 묶음은 수집 → 게시·등록 두 단계로 이루어진 묶음이다(부산·대전). 광주·대구 topology, KRIC, 코레일은 입력 조립·결합 도구라 재생하지 않고 다음 정기 실행이 다시 수집한다.
 test("실제 recipe 표에서 재생 가능한 recipe는 부산·대전 묶음과 광주·대구 접근성이다", () => {
   const replayableIds = REVERIFICATION_RECIPES.map(({ id }) => id).filter((id) => RECIPE_STEPS[id].every(({ retains }) => Array.isArray(retains)));
   assert.deepEqual(replayableIds, ["gwangju-accessibility", ...BUSAN, "daejeon-topology", "daejeon-accessibility", "daejeon-timetable", "daegu-accessibility"]);
 });
 
-// 인자 계약: 재생이 만드는 register 모드 명령을 실제 도구가 받아들인다. 네트워크는 막는다. 가짜 입력이라 등록 전에 멈춘다.
 const NETWORK_BLOCK = "data:text/javascript,globalThis.fetch=async()=>{throw new Error('NETWORK_BLOCKED')}";
 const USAGE_ERROR = /usage:|_CLI\b|_ARGUMENTS?\b|arguments mismatch/iu;
 const repositoryRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));

@@ -23,8 +23,8 @@
 //   REVERIFICATION_REPLAY_MISMATCH 재생 등록이 묶음에 적힌 snapshot·수집 시각과 다른 원장 head를 만들었다(#3036).
 //
 // 사용(깨끗한 작업 트리, origin/main의 후손 HEAD에서):
-//   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...> [--replay-bundle <absolute directory>]
-//   재생(#3036): --recipes 대신 --replay-from <앞선 run이 남긴 재생 묶음>. 수집 단계를 건너뛰어 공급자를 부르지 않는다.
+//   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> (--recipes <id,id,...> | --replay-from <absolute bundle directory>) [--replay-bundle <absolute directory>]
+//   --replay-from은 앞선 run이 남긴 재생 묶음을 읽어 수집 없이 공급자를 부르지 않고 다시 등록하고(#3036), --replay-bundle은 이 run의 재생 묶음을 쓸 위치다.
 //   환경: data.go.kr 서비스 키(부산·대전 topology·KASI 공휴일), KRIC 서비스 키(역별 시간표), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -188,8 +188,7 @@ async function registerWithHead(ctx, script, args) {
 
 const RECEIPT_FILE = "raw-receipt.json";
 
-// 수집 출력 하나와 게시 영수증만으로 다시 등록할 수 있는 recipe(#3036). retains는 재생에 필요한 파일이고 재생 묶음에는 이 파일만 담는다.
-// 재생(ctx.replay)은 수집 단계를 건너뛰고, 같은 등록기를 게시 없이(register 모드) 불러 보관한 수집 출력과 원래 게시 영수증으로 등록한다.
+// 재생 가능 = 수집 출력 하나와 게시 영수증만으로 재등록할 수 있는 recipe. retains는 재생 묶음에 담는 파일.
 function collectThenRegister({ output, collect, script, registerArgs = async () => [] }) {
   return [
     step("collect", "collect", (ctx) => collect(ctx, ctx.file(output)), { retains: Object.freeze([output]) }),
@@ -690,61 +689,69 @@ async function prepareRun({ repositoryRoot, operationRoot, policy, env, lib, now
   };
 }
 
-// 의존 묶음마다 recipe를 순서대로 실행하고 묶음 단위로 등록하거나 되돌린다(#1102). 재생은 수집 단계를 건너뛴다(#3036).
-async function runGroups({ groups, common, steps, ledgerPolicy, ledgerPath, verify }) {
+function dependencySkipped(recipe, failedId) {
+  const reason = recipe.dependsOn.includes(failedId) ? `its dependency ${failedId}` : `${failedId} of its dependency group`;
+  return { recipeId: recipe.id, code: DEPENDENCY_FAILED, detail: `${recipe.id} was not run because ${reason} failed` };
+}
+
+function stepsOf({ recipe, steps, replay }) {
+  const recipeSteps = steps[recipe.id] ?? fail(`REVERIFICATION_RECIPE_UNKNOWN: ${recipe.id} has no steps`);
+  return replay ? recipeSteps.filter(({ kind }) => kind !== "collect") : recipeSteps;
+}
+
+async function runGroup({ group, common, steps, ledgerPolicy, ledgerPath, verify }) {
   const { repositoryRoot } = common;
+  const groupStart = (await git(repositoryRoot, ["rev-parse", "HEAD"])).trim();
+  const base = { ...common, shared: new Map() };
   const results = [];
   const evidenceSources = [];
   const failures = [];
-  for (const group of groups) {
-    const groupStart = (await git(repositoryRoot, ["rev-parse", "HEAD"])).trim();
-    const base = { ...common, shared: new Map() };
-    const groupResults = [];
-    const groupEvidence = [];
-    let failedId = null;
-    for (const recipe of group) {
-      if (failedId !== null) {
-        // 묶음 안에서 실패가 났으면 나머지는 실행하지 않는다. 실패한 recipe에 의존하면 그 사실을 이유로 남긴다.
-        const reason = recipe.dependsOn.includes(failedId) ? `its dependency ${failedId}` : `${failedId} of its dependency group`;
-        failures.push({ recipeId: recipe.id, code: DEPENDENCY_FAILED, detail: `${recipe.id} was not run because ${reason} failed` });
-        continue;
-      }
-      const allSteps = steps[recipe.id] ?? fail(`REVERIFICATION_RECIPE_UNKNOWN: ${recipe.id} has no steps`);
-      const recipeSteps = common.replay ? allSteps.filter(({ kind }) => kind !== "collect") : allSteps;
-      const ctx = recipeContext({ recipe, ...base });
-      try {
-        await mkdir(ctx.operationDir, { recursive: true }); // NOSONAR -- recipe는 앞 recipe의 커밋 위에서 순서대로 실행한다
-        const { result, evidenceRows } = await runRecipe({ recipe, recipeSteps, ctx, policy: ledgerPolicy, ledgerPath, verify }); // NOSONAR -- 위와 같다
-        groupResults.push(result);
-        groupEvidence.push(...evidenceRows);
-      } catch (error) {
-        await rollbackTo(repositoryRoot, groupStart); // NOSONAR -- 실패한 recipe의 변경은 다음 recipe 전에 되돌린다
-        for (const done of groupResults) {
-          failures.push({ recipeId: done.id, code: GROUP_ROLLED_BACK, detail: `${done.id} was registered but its dependent ${recipe.id} failed, so the whole group was rolled back` });
-        }
-        groupResults.length = 0;
-        groupEvidence.length = 0;
-        failures.push(failureOf(recipe, error));
-        failedId = recipe.id;
-      }
+  let failedId = null;
+  for (const recipe of group) {
+    if (failedId !== null) {
+      // 묶음 안에서 실패가 났으면 나머지는 실행하지 않는다. 실패한 recipe에 의존하면 그 사실을 이유로 남긴다.
+      failures.push(dependencySkipped(recipe, failedId));
+      continue;
     }
-    results.push(...groupResults);
-    evidenceSources.push(...groupEvidence);
+    const recipeSteps = stepsOf({ recipe, steps, replay: common.replay });
+    const ctx = recipeContext({ recipe, ...base });
+    try {
+      await mkdir(ctx.operationDir, { recursive: true }); // NOSONAR -- recipe는 앞 recipe의 커밋 위에서 순서대로 실행한다
+      const { result, evidenceRows } = await runRecipe({ recipe, recipeSteps, ctx, policy: ledgerPolicy, ledgerPath, verify }); // NOSONAR -- 등록·게이트·커밋이 앞 recipe가 쌓은 HEAD와 작업 트리를 이어받으므로 순서대로 실행한다
+      results.push(result);
+      evidenceSources.push(...evidenceRows);
+    } catch (error) {
+      await rollbackTo(repositoryRoot, groupStart); // NOSONAR -- 실패한 recipe의 변경은 다음 recipe 전에 되돌린다
+      for (const done of results) {
+        failures.push({ recipeId: done.id, code: GROUP_ROLLED_BACK, detail: `${done.id} was registered but its dependent ${recipe.id} failed, so the whole group was rolled back` });
+      }
+      results.length = 0;
+      evidenceSources.length = 0;
+      failures.push(failureOf(recipe, error));
+      failedId = recipe.id;
+    }
   }
   return { results, evidenceSources, failures };
 }
 
-// 실패 이슈 보고가 읽는 실패 목록. controller가 멈춰도(등록된 recipe 없음) 남는다. 실패가 없으면 만들지 않는다.
+async function runGroups({ groups, ...groupContext }) {
+  const results = [];
+  const evidenceSources = [];
+  const failures = [];
+  for (const group of groups) {
+    const done = await runGroup({ group, ...groupContext }); // NOSONAR -- 묶음은 앞 묶음이 쌓은 커밋 위에서 시작하므로 순서대로 실행한다
+    results.push(...done.results);
+    evidenceSources.push(...done.evidenceSources);
+    failures.push(...done.failures);
+  }
+  return { results, evidenceSources, failures };
+}
+
 async function finishRun({ operationRoot, results, failures }) {
   if (failures.length > 0) await writeFile(path.join(operationRoot, FAILURES_FILE), jsonText(failures.map(({ recipeId, code }) => ({ recipeId, code }))));
   if (results.length === 0 && failures.length > 0) throw stopError(failures);
 }
 
-// ---------------------------------------------------------------------------
-// 재생 묶음(#3036): 뒤처진 재확인 PR을 공급자 재호출 없이 최신 main 위에 다시 만든다.
-// 정상 run과 재생 run은 PR이 된 등록 중 재생 가능한 의존 묶음의 보관 파일(retains)과 원장 head를 묶음으로 남긴다. workflow가 run artifact로 올린다.
-// 재생 run은 main이 같거나 더 새 snapshot을 가진 묶음을 통째로 빼고, 남은 묶음을 수집 없이 등록한 뒤 원장 head가 묶음과 같은지 확인한다.
-// ---------------------------------------------------------------------------
 export const REPLAY_MANIFEST_FILE = "manifest.json";
 const REPLAY_BUNDLE_KIND = "source-reverification-replay-bundle";
 const REPLAY_UP_TO_DATE = "UP_TO_DATE_ON_MAIN";
@@ -756,25 +763,21 @@ async function writeReplayBundle({ bundleRoot, operationRoot, repositoryRoot, le
   if (bundleRoot === null) return;
   const registered = ran.filter(({ id }) => results.some((result) => result.id === id));
   const ledger = JSON.parse(await readFile(path.join(repositoryRoot, ledgerPath), "utf8"));
-  const entries = [];
-  for (const group of dependencyGroups(registered)) {
-    // 묶음은 원자적이다. 재생할 수 없는 recipe가 하나라도 있으면 묶음 전체를 담지 않는다(다음 정기 실행이 다시 수집한다).
-    if (!group.every((recipe) => replayable(steps[recipe.id]))) continue;
-    for (const recipe of group) {
-      await mkdir(path.join(bundleRoot, recipe.id), { recursive: true });
-      const files = [];
-      for (const name of retainedFiles(steps[recipe.id])) {
-        const bytes = await readFile(path.join(operationRoot, recipe.id, name));
-        await writeFile(path.join(bundleRoot, recipe.id, name), bytes, { flag: "wx" });
-        files.push({ name, sha256: sha256(bytes) });
-      }
-      const sources = recipe.sourceIds.map((sourceId) => {
-        const { snapshotId, capturedAt } = ledgerHead(ledger, sourceId);
-        return { sourceId, snapshotId, capturedAt };
-      });
-      entries.push({ recipeId: recipe.id, files, sources });
-    }
-  }
+  // 묶음은 원자적이다. 재생할 수 없는 recipe가 하나라도 있으면 묶음 전체를 담지 않는다.
+  const bundled = dependencyGroups(registered).filter((group) => group.every((recipe) => replayable(steps[recipe.id]))).flat();
+  const entries = await Promise.all(bundled.map(async (recipe) => {
+    await mkdir(path.join(bundleRoot, recipe.id), { recursive: true });
+    const files = await Promise.all(retainedFiles(steps[recipe.id]).map(async (name) => {
+      const bytes = await readFile(path.join(operationRoot, recipe.id, name));
+      await writeFile(path.join(bundleRoot, recipe.id, name), bytes, { flag: "wx" });
+      return { name, sha256: sha256(bytes) };
+    }));
+    const sources = recipe.sourceIds.map((sourceId) => {
+      const { snapshotId, capturedAt } = ledgerHead(ledger, sourceId);
+      return { sourceId, snapshotId, capturedAt };
+    });
+    return { recipeId: recipe.id, files, sources };
+  }));
   if (entries.length === 0) return;
   await writeFile(path.join(bundleRoot, REPLAY_MANIFEST_FILE), jsonText({ schemaVersion: 1, artifactKind: REPLAY_BUNDLE_KIND, recipes: entries }), { flag: "wx" });
 }
@@ -801,16 +804,18 @@ async function readReplayManifest(replayFrom, recipes, steps) {
   return new Map(manifest.recipes.map((entry) => [entry.recipeId, entry]));
 }
 
-async function restoreRetainedFiles({ replayFrom, operationRoot, entry }) {
-  await mkdir(path.join(operationRoot, entry.recipeId), { recursive: true });
-  for (const { name, sha256: digest } of entry.files) {
-    const bytes = await readFile(path.join(replayFrom, entry.recipeId, name));
-    if (sha256(bytes) !== digest) replayInvalid(`${entry.recipeId}/${name} does not match its sha256`);
-    await writeFile(path.join(operationRoot, entry.recipeId, name), bytes, { flag: "wx" });
+async function restoreRetainedFiles({ replayFrom, operationRoot, entries }) {
+  await Promise.all(entries.map(({ recipeId }) => mkdir(path.join(operationRoot, recipeId), { recursive: true })));
+  const retained = await Promise.all(entries.flatMap(({ recipeId, files }) => files.map(async ({ name, sha256: digest }) => (
+    { recipeId, name, digest, bytes: await readFile(path.join(replayFrom, recipeId, name)) }
+  ))));
+  for (const { recipeId, name, digest, bytes } of retained) {
+    if (sha256(bytes) !== digest) replayInvalid(`${recipeId}/${name} does not match its sha256`);
   }
+  await Promise.all(retained.map(({ recipeId, name, bytes }) => writeFile(path.join(operationRoot, recipeId, name), bytes, { flag: "wx" })));
 }
 
-/** main이 같거나 더 새 snapshot을 가진 원천이 하나라도 있는 의존 묶음은 통째로 뺀다(freshness 정직성, 묶음 원자성). */
+/** main이 같거나 더 새 snapshot을 가진 원천이 있으면 그 묶음을 통째로 뺀다. */
 function planReplay({ ordered, entries, ledger }) {
   const replay = [];
   const dropped = [];
@@ -851,10 +856,7 @@ export async function runSourceReverification({
   return { steps: results, evidenceSources, failures };
 }
 
-/**
- * 재생 묶음(replayFrom)의 수집 출력으로 공급자 호출 없이 다시 등록한다. dropped는 main이 이미 같거나 더 새 snapshot을 가져 뺀 묶음이다.
- * 남은 묶음이 없으면 아무것도 등록하지 않고 steps가 빈 결과를 돌려준다(workflow는 PR을 만들지 않는다).
- */
+/** 재생 묶음(replayFrom)의 수집 출력으로 공급자 호출 없이 다시 등록하고, main이 이미 같거나 더 새 snapshot을 가진 묶음은 dropped로 돌려준다. */
 export async function replaySourceReverification({
   repositoryRoot = ROOT, operationRoot, replayFrom, recipes = REVERIFICATION_RECIPES, steps = RECIPE_STEPS, env = process.env,
   policy = null, ledgerPath = LEDGER_PATH, now = () => new Date(), execute = null, lib = defaultLib, replayBundle = null,
@@ -865,7 +867,7 @@ export async function replaySourceReverification({
   const ordered = orderedRecipes([...entries.keys()], recipes);
   const { ledgerPolicy, common } = await prepareRun({ repositoryRoot, operationRoot, policy, env, lib, now, execute, replay: true });
   const { replay, dropped } = planReplay({ ordered, entries, ledger: JSON.parse(await readFile(path.join(repositoryRoot, ledgerPath), "utf8")) });
-  for (const recipe of replay) await restoreRetainedFiles({ replayFrom, operationRoot, entry: entries.get(recipe.id) });
+  await restoreRetainedFiles({ replayFrom, operationRoot, entries: replay.map(({ id }) => entries.get(id)) });
   const verify = verifyReplayed({ repositoryRoot, ledgerPath, entries });
   const { results, evidenceSources, failures } = await runGroups({ groups: dependencyGroups(replay), common, steps, ledgerPolicy, ledgerPath, verify });
   await finishRun({ operationRoot, results, failures });

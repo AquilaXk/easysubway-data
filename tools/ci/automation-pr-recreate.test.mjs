@@ -659,10 +659,7 @@ test("워크플로 머리말은 상한의 의미(같은 main tip에서 24시간 
   assert.doesNotMatch(header, /같은 단계가 24시간 안에/u);
 });
 
-// ---------------------------------------------------------------------------
-// #3036: 뒤처진 재확인 PR은 다시 수집하지 않고 같은 수집분을 재생한다(공급자 하루 호출 한도, 부산 개발 계정 1,000회/일/operation).
-// 원본 artifact(source-reverification-<run id>)가 없거나 만료됐으면 재확인은 다시 수집할 수 있으므로 지금처럼 닫고 새로 dispatch한다(이상이 아니다, 로그로 드러낸다).
-// ---------------------------------------------------------------------------
+// #3036 replay
 const reverificationArtifact = (runId, prefix) => [liveArtifact(runId, {}, prefix)];
 
 test("뒤처진 재확인 PR은 원본 artifact가 살아 있으면 닫고 replay_run_id로 같은 수집분을 재생한다. ITX 변수 게이트와는 무관하다 (#3036)", async () => {
@@ -706,7 +703,6 @@ test("다른 원장 쓰기 PR이 열려 있으면 재확인 재생을 미룬다.
   assert.deepEqual(plan.deferred.map(({ stage, number, reason, blockedBy }) => ({ stage, number, reason, blockedBy })), [
     { stage: "source-reverification", number: 5, reason: "SOURCE_REVERIFICATION_REPLAY_WAITS_FOR_LEDGER_WRITERS", blockedBy: [3] },
   ]);
-  // 둘 다 뒤처졌으면: 재확인은 닫고 재생하고, ITX는 재확인 PR이 열려 있던 이번 실행에서 기다린다(다음 실행이 재생한다).
   const both = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"]), open(5, BRANCHES["source-reverification"])], behind: { [sha(2)]: 1, [sha(5)]: 1 }, artifacts: (runId, prefix) => [liveArtifact(runId, {}, prefix)] });
   const mutual = await ITX_PLAN({ api: both.api });
   assert.deepEqual(mutual.actions.map(({ stage, replayRunId }) => ({ stage, replayRunId })), [{ stage: "source-reverification", replayRunId: "9005" }]);

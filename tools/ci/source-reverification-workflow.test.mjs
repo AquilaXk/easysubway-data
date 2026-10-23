@@ -119,7 +119,6 @@ test("controller는 claim 뒤에만 돌고 비밀은 이 step의 env로만 받�
   const { block } = step("Reverify due P7D sources");
   assert.equal(ifCondition(block), CLAIMED);
   assert.match(block, /\n        id: reverify\n/u);
-  // #3036: 재생은 공급자를 부르지 않는다. 공급자 키는 재생이 아닐 때만 받는다. OCI 주소는 등록기가 영수증 결속(namespace·bucket)을 확인하는 데 쓴다.
   assert.match(block, /\n          DATA_GO_KR_SERVICE_KEY: \$\{\{ steps\.decision\.outputs\.replay_run_id == '' && secrets\.DATA_GO_KR_SERVICE_KEY \|\| '' \}\}\n/u);
   assert.match(block, /\n          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}\n/u);
   assert.match(block, /\n          KRIC_SERVICE_KEY: \$\{\{ steps\.decision\.outputs\.replay_run_id == '' && secrets\.KRIC_SERVICE_KEY \|\| '' \}\}\n/u);
@@ -244,8 +243,6 @@ test("action은 SHA로 고정하고 광역 스테이징·강제 push를 쓰지 �
   assert.doesNotMatch(yml, /git add -A|git add \.|--force|push -f/u);
 });
 
-// #3036: 뒤처진 재확인 PR은 automation-pr-behind-recreate가 닫고 replay_run_id로 이 workflow를 다시 부른다. 재생은 원본 run의 artifact를 받아 공급자 호출 없이
-// 같은 등록·게이트·PR 단계를 거친다. 남는 것이 없으면(main이 같거나 더 새 snapshot) PR을 만들지 않고 이유를 notice로 남긴다.
 test("dispatch는 재생할 원본 run id(replay_run_id)를 선택 입력으로 받는다 (#3036)", () => {
   assert.match(yml, /\n  workflow_dispatch:\n    inputs:\n      replay_run_id:\n        description: [^\n]+\n        required: false\n        default: ""\n        type: string\n/u);
 });
@@ -277,7 +274,6 @@ test("재생이 남긴 등록이 없으면 push·PR 없이 이유를 notice로 �
   before("Reverify due P7D sources", note.name);
 });
 
-// 재생 묶음은 PR이 열리기 전에 올린다. PR이 열리자마자 main이 움직여 recreate가 돌아도 artifact가 이미 있어야 다시 수집하지 않는다.
 test("재생 묶음은 push 뒤·PR 생성 전에 run id 이름의 artifact로 7일 보관한다 (#3036)", () => {
   const upload = step("Upload the retained collection for a later replay");
   assert.equal(ifCondition(upload.block), PUSHED);
