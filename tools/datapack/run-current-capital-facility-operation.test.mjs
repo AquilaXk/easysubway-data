@@ -11,6 +11,7 @@ import {
 } from "./build-current-capital-facility-collection-plan.mjs";
 import { KRIC_ACCESSIBILITY_OPERATIONS, writeKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
 import { publishKricAccessibilityRawArtifact } from "./publish-kric-accessibility-raw.mjs";
+import { REFRESH_STAGES } from "../ci/refresh-stage-contracts.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
@@ -1237,6 +1238,12 @@ test("#3036 the first escalator refresh collects, publishes under its own id and
     schemaFingerprint: snapshot.schemaFingerprint, snapshotFileSha256: sha(snapshotBytes), absenceEvidenceMode: "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED",
   });
   assert.equal(source.requiredForProductionPack, false);
+  // 자동 갱신 PR 게이트가 이 원천에 허용하는 필드 안에서만 바뀐다(관측일이 staged 날짜와 같으면 날짜 필드는 그대로다).
+  const before = inventoryBefore.sources.find(({ id }) => id === ESCALATOR_SOURCE_ID);
+  const changedFields = [...new Set([...Object.keys(before), ...Object.keys(source)])].filter((field) => JSON.stringify(before[field]) !== JSON.stringify(source[field])).sort();
+  const owned = REFRESH_STAGES["kric-facility-refresh"].owned[ESCALATOR_SOURCE_ID];
+  assert.deepEqual(changedFields.filter((field) => !owned.includes(field)), []);
+  assert.ok(changedFields.includes("accessibilityAdmissionEvidence") && changedFields.includes("admissionEvidence"));
   const unchanged = (sources) => sources.filter(({ id }) => id !== ESCALATOR_SOURCE_ID);
   assert.deepEqual(unchanged(inventory.sources), unchanged(inventoryBefore.sources));
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "FINALIZED");

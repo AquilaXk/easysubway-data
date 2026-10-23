@@ -31,6 +31,7 @@ import { materializeAccessibilitySourceInput, seoulEdgeEvidenceHash, seoulStatus
 import { inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
+import { KRIC_ESCALATOR_SOURCE_ID, KRIC_STANDARD_SOURCE_ID } from "../datapack/lib/kric-standard-facilities.mjs";
 import { isObject } from "../lib/is-object.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -47,6 +48,8 @@ const family = (id, regex, status) => Object.freeze({ id, regex, status, optiona
 const D8 = String.raw`[0-9]{8}`;
 const STAMP = String.raw`[0-9]{8}T[0-9]{9}Z`;
 const snapshotFamily = (name, stamp, status = "added") => family(name, new RegExp(String.raw`^${escapeRegex(SNAPSHOT_DIR)}/${escapeRegex(name)}-${stamp}\.json$`, "u"), status);
+// 원천 여럿 중 하나의 새 snapshot 파일. 어느 원천의 파일인지는 새 원장 행과 inventory 증거 결속(verifyAccessibilityBinding)이 정한다.
+const oneOfSnapshotFamily = (id, names, stamp) => family(id, new RegExp(String.raw`^${escapeRegex(SNAPSHOT_DIR)}/(?:${names.map(escapeRegex).join("|")})-${stamp}\.json$`, "u"), "added");
 
 const sortCodepoint = (values) => [...values].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 const message = (error) => (error instanceof Error ? error.message : String(error));
@@ -85,7 +88,8 @@ const LEDGER_RULES = [exact(LEDGER_PATH, "modified"), exact(INVENTORY_PATH, "mod
  *  stepId            증거 블록의 단계 id.
  *  ledger            "append" 원장에 새 행 하나를 덧붙인다 / "unchanged" 원장을 바꾸지 않는다.
  *  expectedSourceIds 증거 sources에 있어야 하는 원천(정렬). append는 새 원장 행의 원천, unchanged는 증거 전후 비교 행의 원천이다.
- *  owned             inventory에서 바꿔도 되는 항목 id -> 필드(최상위 키).
+ *  sourceSelection   "ALL"이면 expectedSourceIds 전부가, "ONE_OF"이면 그중 정확히 하나가 원천 행이다(KRIC 시설은 run 하나가 원천 하나를 갱신한다, #3036).
+ *  owned             inventory에서 바꿔도 되는 항목 id -> 필드(최상위 키). ONE_OF 단계는 이번에 갱신한 원천의 항목만 바꿀 수 있다.
  *  rules             API diff의 파일 규칙: 파일마다 정확히 한 규칙에 맞아야 하고 규칙마다 정확히 하나가 있어야 한다.
  */
 export const REFRESH_STAGES = Object.freeze({
@@ -94,6 +98,7 @@ export const REFRESH_STAGES = Object.freeze({
     stepId: "gwangju-timetable-refresh",
     ledger: "append",
     expectedSourceIds: Object.freeze(["kric-nationwide-timetable-file"]),
+    sourceSelection: "ALL",
     owned: freezeFields({ "kric-nationwide-timetable-file": ["retrievedAt", "retainedScheduleAdmissionEvidence"] }),
     rules: Object.freeze([...LEDGER_RULES]),
   }),
@@ -102,6 +107,7 @@ export const REFRESH_STAGES = Object.freeze({
     stepId: "capital-topology-refresh",
     ledger: "unchanged",
     expectedSourceIds: Object.freeze(["capital-route-topology", "incheon-line1-train-timetable", "incheon-line2-train-timetable", "incheon-transit-station-info"]),
+    sourceSelection: "ALL",
     owned: TOPOLOGY_OWNED,
     rules: Object.freeze([
       snapshotFamily("capital-route-topology", D8),
@@ -119,21 +125,32 @@ export const REFRESH_STAGES = Object.freeze({
     workflow: "kric-current-facility-refresh.yml",
     stepId: "kric-facility-refresh",
     ledger: "append",
-    expectedSourceIds: Object.freeze(["kric-station-convenience-standard"]),
-    owned: freezeFields({ "kric-station-convenience-standard": ["observedDataUpdatedAt", "retrievedAt", "admissionEvidence", "accessibilityAdmissionEvidence"] }),
-    rules: Object.freeze([...LEDGER_RULES, snapshotFamily("kric-station-convenience-standard", STAMP)]),
+    expectedSourceIds: Object.freeze([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID]),
+    sourceSelection: "ONE_OF",
+    owned: freezeFields(Object.fromEntries([KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID].map((id) => [id, ["observedDataUpdatedAt", "retrievedAt", "admissionEvidence", "accessibilityAdmissionEvidence"]]))),
+    rules: Object.freeze([...LEDGER_RULES, oneOfSnapshotFamily("kric-facility-snapshot", [KRIC_STANDARD_SOURCE_ID, KRIC_ESCALATOR_SOURCE_ID], STAMP)]),
   }),
   "seoul-accessibility-refresh": Object.freeze({
     workflow: "seoul-current-accessibility-refresh.yml",
     stepId: "seoul-accessibility-refresh",
     ledger: "append",
     expectedSourceIds: Object.freeze(["seoul-metro-accessibility"]),
+    sourceSelection: "ALL",
     owned: freezeFields({ "seoul-metro-accessibility": ["observedDataUpdatedAt", "retrievedAt", "accessibilityAdmissionEvidence"] }),
     rules: Object.freeze([...LEDGER_RULES, exact(SEOUL_INPUT_PATH, "modified"), snapshotFamily("seoul-metro-accessibility", STAMP)]),
   }),
 });
 
 export const REFRESH_STAGE_IDS = Object.freeze(Object.keys(REFRESH_STAGES));
+
+/** 원천 행의 원천 id 목록이 단계가 기대한 원천과 맞는지 본다. 증거 검증(automation-pr-evidence)과 게이트 재계산이 같이 쓴다. */
+export function refreshSourceRowsMatch(stage, sourceIds) {
+  const spec = REFRESH_STAGES[stage];
+  if (spec.sourceSelection === "ONE_OF") return sourceIds.length === 1 && spec.expectedSourceIds.includes(sourceIds[0]);
+  return sameJson(sourceIds, spec.expectedSourceIds);
+}
+
+const sourceRowsExpectation = (spec) => (spec.sourceSelection === "ONE_OF" ? `exactly one of ${spec.expectedSourceIds.join(", ")}` : spec.expectedSourceIds.join(", "));
 
 export function isRefreshStage(stage) {
   return typeof stage === "string" && Object.hasOwn(REFRESH_STAGES, stage);
@@ -187,13 +204,14 @@ const topLevel = (inventory) => Object.fromEntries(Object.entries(inventory).fil
 const entryOf = (inventory, id) => inventory.sources.find((entry) => entry?.id === id);
 
 /** 소유 항목 바깥에서 inventory가 바뀌었는지 본다. 원천 재확인·등록 단계와 같은 inventoryScopeViolations를 쓴다. */
-function inventoryViolations({ spec, baseInventory, headInventory }) {
+function inventoryViolations({ spec, baseInventory, headInventory, refreshedSourceIds }) {
   if (!Array.isArray(baseInventory?.sources) || !Array.isArray(headInventory?.sources)) throw new Error("inventory sources must be an array");
   if (!sameJson(topLevel(baseInventory), topLevel(headInventory))) throw new Error("inventory top-level fields changed");
-  const allowed = new Map(Object.entries(spec.owned).map(([id, fields]) => [id, new Set(fields)]));
+  const ownedIds = Object.keys(spec.owned).filter((id) => spec.sourceSelection !== "ONE_OF" || refreshedSourceIds.includes(id));
+  const allowed = new Map(ownedIds.map((id) => [id, new Set(spec.owned[id])]));
   const outside = inventoryScopeViolations({ base: baseInventory, head: headInventory, allowed });
   if (outside.length > 0) throw new Error(`inventory changed outside the refresh stage's scope: ${outside.slice(0, 6).join(" | ")}`);
-  for (const id of Object.keys(spec.owned)) {
+  for (const id of ownedIds) {
     const count = headInventory.sources.filter((entry) => entry?.id === id).length;
     if (count !== 1) throw new Error(`inventory must have exactly one entry for ${id} (found ${count})`);
   }
@@ -251,11 +269,11 @@ async function readJson(reader, what, violate) {
   }
 }
 
-/** Seoul·KRIC: inventory 증거 <-> 새 snapshot 파일 <-> 새 원장 행을 묶는다. */
-async function verifyAccessibilityBinding({ spec, paths, rows, newLedgerRows, headInventory, files, violate }) {
+/** Seoul·KRIC: inventory 증거 <-> 새 snapshot 파일 <-> 새 원장 행을 묶는다. 원천은 새 원장 행의 원천이다(원천 행 검사가 단계의 기대 원천인지 먼저 본다). */
+async function verifyAccessibilityBinding({ paths, rows, newLedgerRows, headInventory, files, violate }) {
   const [row] = rows;
   const ledgerRow = newLedgerRows.get(row.snapshotId);
-  const sourceId = spec.expectedSourceIds[0];
+  const { sourceId } = row;
   const evidence = entryOf(headInventory, sourceId)?.accessibilityAdmissionEvidence;
   if (!isObject(evidence)) { violate("REFRESH_GATE", `${sourceId}: accessibilityAdmissionEvidence is missing`); return; }
   const snapshotPath = `${SNAPSHOT_DIR}/${row.snapshotId}.json`;
@@ -826,7 +844,7 @@ export async function evaluateRefreshStage({ stage, paths, baseSha, policy, file
       const known = new Set(baseLedger.map((row) => row?.snapshotId));
       newLedgerRows = new Map(headLedger.filter((row) => !known.has(row?.snapshotId)).map((row) => [row.snapshotId, row]));
       const found = rows.map(({ sourceId }) => sourceId);
-      if (!sameJson(found, spec.expectedSourceIds)) violateLedger(`the ledger must gain exactly one new row for ${spec.expectedSourceIds.join(", ")} (found ${found.length === 0 ? "none" : found.join(", ")})`);
+      if (!refreshSourceRowsMatch(stage, found)) violateLedger(`the ledger must gain exactly one new row for ${sourceRowsExpectation(spec)} (found ${found.length === 0 ? "none" : found.join(", ")})`);
     }
   } catch (error) {
     violateLedger(message(error));
@@ -837,7 +855,7 @@ export async function evaluateRefreshStage({ stage, paths, baseSha, policy, file
   try {
     baseInventory = JSON.parse(await files.readBase(baseSha, INVENTORY_PATH));
     headInventory = JSON.parse(await files.readTree(INVENTORY_PATH));
-    inventoryViolations({ spec, baseInventory, headInventory });
+    inventoryViolations({ spec, baseInventory, headInventory, refreshedSourceIds: rows.map(({ sourceId }) => sourceId) });
     if (stage === "capital-topology-refresh") {
       const nested = routeMapNestedViolations({ baseInventory, headInventory });
       if (nested.length > 0) throw new Error(`inventory changed outside the route-map admission scope: ${nested.slice(0, 6).join(" | ")}`);
