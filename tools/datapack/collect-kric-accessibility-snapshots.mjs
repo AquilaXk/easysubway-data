@@ -46,6 +46,11 @@ function terminalTupleAllowed(sourceId, tuple) {
   return policy === ANY_TUPLE_TERMINAL_POLICY || (policy === EXACT_TUPLE_TERMINAL_POLICY && isExactTerminalTuple(tuple));
 }
 
+// 결과 00 조회가 하나도 없는 수집은 증거가 없다. 공급자 전체 03 회귀가 조용히 전부 UNKNOWN이 되지 않게 이름 있는 코드로 실패한다.
+function assertSomeResult00(sourceId, queryCount, terminalCount) {
+  if (queryCount > 0 && terminalCount === queryCount) throw new Error(`KRIC_ACCESSIBILITY_ALL_RESULT_03: ${sourceId} count=${queryCount}`);
+}
+
 // Provider roster의 개명·오기만 exact tuple로 결속한다. 이름 유사도 fallback은 두지 않는다.
 export const KRIC_STATION_TUPLE_MAPPINGS = Object.freeze([
   { stationId: "station-47b514f305d8", lineId: "seoul-4", railOprIsttCd: "KR", lnCd: "4", stinCd: "454" },
@@ -145,6 +150,7 @@ async function collectKricAccessibilitySnapshotResults({
       const gaps = providerGaps.map((tuple) => `${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}/03`);
       throw new Error(`KRIC accessibility provider gaps: count=${gaps.length}; tuples=${gaps.sort(compare).join(",")}`);
     }
+    assertSomeResult00(operation.sourceId, collected.length, providerGaps.length);
     const queries = collected.map(({ tuple, response }) => {
       if (isMixed && response.providerResultCode === "03") return {
         ...tuple, providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", terminalPolicy,
@@ -389,6 +395,7 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
   if (isMixed && terminalCount === 0) {
     throw new Error("KRIC accessibility snapshot identity is invalid");
   }
+  assertSomeResult00(snapshot.sourceId, snapshot.queries.length, terminalCount);
   const contentSha256 = hash(snapshot.queries.map(({ rawResponseSha256: _, ...query }) => query));
   const rawSha256 = hash(snapshot.queries.map((query) => snapshotRawQueryIdentity(query, isMixed)));
   const schemaFingerprint = hash([...operation.responseFields].sort(compare));

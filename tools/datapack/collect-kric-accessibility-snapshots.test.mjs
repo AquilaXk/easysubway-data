@@ -953,3 +953,18 @@ test("#3036 표준 원천은 결과 03을 정확 tuple 하나에만 허용하고
   await assert.rejects(collectKricStandardAccessibilityObservation({ sourceId: "kric-station-escalator", roster: [terminal], serviceKey: "key", fetchImpl: escalatorFetch() }),
     /KRIC accessibility operation is not registered: kric-station-escalator/);
 });
+
+// #3036: 에스컬레이터 원천은 어느 tuple의 결과 03이든 받지만, 모든 조회가 03이면 증거가 하나도 없는 수집이다.
+// 조용히 전부 UNKNOWN이 되지 않게 이름 있는 코드로 실패하고, 이미 만들어진 snapshot도 식별 검증에서 거부한다.
+test("#3036 모든 조회가 결과 03인 수집은 KRIC_ACCESSIBILITY_ALL_RESULT_03으로 실패하고 그런 snapshot은 식별 검증에서 거부한다", async () => {
+  await assert.rejects(collectEscalator({ fetchImpl: escalatorFetch(["101", "102", "103"]) }),
+    /^Error: KRIC_ACCESSIBILITY_ALL_RESULT_03: kric-station-escalator-detailed count=3$/);
+
+  const { snapshot } = await collectEscalator({ fetchImpl: escalatorFetch(["102", "103"]) });
+  const allBlocked = structuredClone(snapshot);
+  Object.assign(allBlocked.queries.find(({ stinCd }) => stinCd === "101"), {
+    providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", terminalPolicy: "ANY_TUPLE_PROVIDER_RESULT_03", providerRecordHash: null, rows: [],
+  });
+  assert.throws(() => validateKricAccessibilitySnapshotIdentity(rehashedSnapshot(allBlocked)), /^Error: KRIC_ACCESSIBILITY_ALL_RESULT_03: kric-station-escalator-detailed count=3$/);
+  assert.equal(validateKricAccessibilitySnapshotIdentity(snapshot).queries.filter(({ providerResultCode }) => providerResultCode === "00").length, 1);
+});
