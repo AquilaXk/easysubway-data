@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261023-seq174",
-  "candidateBuildSpecSha256": "bf34dd9841f922fdaca9336e27f6bd6ffc9231de6e2ef7392001bf6bc78a9765",
-  "preparationSha256": "96aea31e26aabfe1e6b96aba7cfe534197ec5a63c186d976174afafbfc383f84",
-  "fanInSha256": "8a88dae77bc0f2df6eff3e2a5664ff26e05dbb014507308e57b6555009a65a37",
+  "candidateId": "nationwide-candidate-20261023-seq175",
+  "candidateBuildSpecSha256": "73036578beb18be007e8ca116b14d757b18ffd2683cfd08a429bb2d931b67813",
+  "preparationSha256": "4fa0e6b1a4970e71646933d2d326b34fdbbf06755a2dcef05d81839bf3fe8066",
+  "fanInSha256": "fda3b3027a64a6e5ffbad6dcead5183788be9af9708e4be5e5c17efc93ead0f3",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -39,8 +39,8 @@
     },
     {
       "path": "tools/datapack/release/capital-production-canonical-pack.json",
-      "sha256": "631b73f1851e3148185b07e2e6df60c8adf1608a6b7fa5e71c1583cd1e9cf374",
-      "byteSize": 27516869
+      "sha256": "20f8244e5117f5c0ecd6b290803885c172fe6fdc221516df8675eb910d317539",
+      "byteSize": 27516845
     },
     {
       "path": "tools/datapack/release/capital-topology-reverification-20261023.json",
@@ -49,22 +49,22 @@
     },
     {
       "path": "tools/datapack/release/current-busan-transfer-metrics.json",
-      "sha256": "d4737f92f2fa019d2a92e20563d13c010bc25378f31268dd4d33a3dd18202dc5",
+      "sha256": "a721aa0bf3870f6e54f35108138fc5a7ddbe1c9f5126cea9ab928b224934d215",
       "byteSize": 6452
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "8a88dae77bc0f2df6eff3e2a5664ff26e05dbb014507308e57b6555009a65a37",
+      "sha256": "fda3b3027a64a6e5ffbad6dcead5183788be9af9708e4be5e5c17efc93ead0f3",
       "byteSize": 36442
     },
     {
       "path": "tools/datapack/release/current-seoul-measured-transfer-metrics.json",
-      "sha256": "5dd58742b1a57e42104156b080681fc8874853f2f54922120393cfd99c7dd1e9",
+      "sha256": "5cdd918bd0b0da5f575405aaf4b2196c6bfc6b851916d5e6029963c66dcce63e",
       "byteSize": 181620
     },
     {
       "path": "tools/datapack/release/current-transfer-topology-metrics.json",
-      "sha256": "994281bb4f34d53f1fafae22b813ee06aa4d9c4832440cf92d3f8f784b404a50",
+      "sha256": "1dda77ec7e3e3298afa22bf2ce5a0285b400d4c0dd4dbc82637201194316c495",
       "byteSize": 86578
     },
     {
@@ -74,7 +74,7 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "93a0f0573105d8e53501378611d5a659feea724fa7b45a86719c6d2f777f1225",
+      "sha256": "496aa777767bf563a35ac8c6ba5325a639c2c70e0fea9384837f02c20dd3217b",
       "byteSize": 4970721
     },
     {
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "72a6c2e4d0993eaf1313b3b65a5219f9f8e787d3c8df46e71d48dc88f36953fc",
+      "sha256": "fe82e47d06f5a53d67406b367063d36e1bd41f5d163b34444945c820f0eabd84",
       "byteSize": 406063
     },
     {
