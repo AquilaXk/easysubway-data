@@ -198,11 +198,10 @@ function splitByPieces(blocks, maxExtent) {
     while (to > from && !unitFits(blocks.map((block) => block.slice(from, to)), maxExtent)) to -= 1;
     if (to === from) {
       for (const block of blocks) chunks.push([[block[from]]]);
-      from += 1;
     } else {
       chunks.push(blocks.map((block) => block.slice(from, to)));
-      from = to;
     }
+    from = Math.max(to, from + 1);
   }
   return chunks;
 }
