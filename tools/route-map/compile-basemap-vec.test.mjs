@@ -779,10 +779,14 @@ const expandAndStrip = (body, rule = ".r { clip-rule:evenodd; }") =>
 
 for (const { name, child } of REFERENCEABLE_DEFINITIONS) {
   test(`숨겨진 조상 안에서 남은 ${name}의 자식도 분류되지 않은 CSS 선언을 조용히 버리지 않는다`, () => {
-    for (const hider of ['<g display="none">', '<g style="opacity:0">', '<defs display="none">']) {
-      const closing = hider.slice(0, hider.indexOf(" ")).replace("<", "</") + ">";
-      const body = `${hider}<${name} id="def">${child}</${name}>${closing}`;
-      assert.throws(() => expandAndStrip(body), UNCLASSIFIED_DECLARATION, hider);
+    const hiders = [
+      ['<g display="none">', "</g>"],
+      ['<g style="opacity:0">', "</g>"],
+      ['<defs display="none">', "</defs>"],
+    ];
+    for (const [opening, closing] of hiders) {
+      const body = `${opening}<${name} id="def">${child}</${name}>${closing}`;
+      assert.throws(() => expandAndStrip(body), UNCLASSIFIED_DECLARATION, opening);
     }
   });
 
