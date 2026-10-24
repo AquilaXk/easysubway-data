@@ -2409,15 +2409,27 @@ export function markLineTerminalBadgeEntries(ownerLabels, sourceText) {
 // `<text>`의 dominant-baseline만 유효하다. 모르는 값은 던진다.
 
 // 참조 서체 파일은 mobile 픽스처가 아니라 data 레포가 소유한다(mobile #504가 번들
-// Pretendard를 지웠다). 바이트는 basemap-font-weight-gate.test.mjs가 sha256으로 고정한다.
+// Pretendard를 지웠다). 바이트는 읽는 지점(readOpenTypeMetrics)에서 sha256으로 확인한다.
 export const TEXT_FONT_FILE = path.join(
   root,
   "tools/route-map/fonts/Pretendard-Regular.otf",
 );
+export const TEXT_FONT_SHA256 =
+  "3ffbacde6ab8411f1d2db54bb9b1f0b3ee2a738932033722cf0388c06aed1c93";
 
-/** OpenType(head·hhea·OS/2) 메트릭을 읽는다. sfnt 테이블 디렉터리만 파싱한다. */
+/**
+ * OpenType(head·hhea·OS/2) 메트릭을 읽는다. sfnt 테이블 디렉터리만 파싱한다.
+ * 참조 서체 바이트가 고정 digest와 다르면 던진다(다시 인코딩한 서체는 폭과 baseline
+ * 오프셋을 바꿔 산출물이 조용히 달라진다).
+ */
 export function readOpenTypeMetrics(fontPath) {
   const buffer = readFileSync(fontPath);
+  const digest = createHash("sha256").update(buffer).digest("hex");
+  if (digest !== TEXT_FONT_SHA256) {
+    throw new Error(
+      `${fontPath}: 참조 서체 바이트가 고정 digest와 다릅니다(sha256 ${digest}, 기대 ${TEXT_FONT_SHA256}).`,
+    );
+  }
   const tableCount = buffer.readUInt16BE(4);
   const offsets = new Map();
   for (let index = 0; index < tableCount; index += 1) {

@@ -13,14 +13,11 @@
 // pubspec·서체 번들에 기대면 픽스처를 올릴 때 컴파일러와 이 게이트가 함께 깨진다.
 //
 // 서체 이름은 정규화하지 않는다(#1488 결정). 컴파일된 `.vec`에는 오너 SVG의
-// `font-family`("Pretendard", 대전·광주는 `Pretendard, "Noto Sans CJK KR", sans-serif`
-// 문자열 전체)가 그대로 남는다. Flutter는 등록되지 않은 family를 기기 기본 서체로
-// 그리므로 이름을 지워도 픽셀이 같다(Android 에뮬레이터·iOS 시뮬레이터에서 mobile과
-// 같은 `loadPicture`+`drawPicture` 경로로 실측: 이름 있음/없음 0픽셀 차이). 이름을
-// 지우면 바탕 `.vec` 5개와 노선별 강조 레이어 36개의 바이트·manifest sha가 바뀌고
-// mobile이 41개 파일과 `line-overlays.json`을 다시 반입해야 하는데, 기기에서 보이는
-// 변화가 없다. 같은 사유로 이미 mobile 재반입이 필요한 변경(오너 SVG 개정, 파이프라인
-// 개정)이 생기면 그때 컴파일러 정규화로 함께 지운다.
+// `font-family`가 그대로 남는다. Flutter는 등록되지 않은 family를 기기 기본 서체로
+// 그리므로 이름을 지워도 픽셀이 같고(에뮬레이터·시뮬레이터 실측 0픽셀 차이), 지우면
+// 바탕 `.vec`와 노선별 강조 레이어 전체의 바이트가 바뀌어 mobile이 다시 반입해야 한다.
+// 오너 SVG나 파이프라인 개정으로 mobile 재반입이 어차피 필요해지면 그때 컴파일러
+// 정규화로 함께 지운다. 재검토 조건과 후속 행은 #1488에 있다.
 //
 // 이 게이트는 **정규화된 컴파일 입력**(실제로 .vec가 되는 바로 그 마크업)에서
 // 렌더에 쓰이는 font-weight를 전부 모은다. 새 굵기가 오너 SVG에 등장해도 매칭이
@@ -42,6 +39,7 @@ import {
   PAINT_ORDER_STROKE_COPY_ATTR,
   REFERENCE_TEXT_FONT_WEIGHTS,
   TEXT_FONT_FILE,
+  TEXT_FONT_SHA256,
   unrepresentableTextDeclarations,
 } from "./compile-basemap-vec.mjs";
 
@@ -152,15 +150,12 @@ test("속성·style·class·키워드 선언이 모두 참조 페이스로 확�
 // 참조 서체 파일은 폭(svg-ink-bbox)과 dominant-baseline 오프셋의 입력이다. mobile
 // 픽스처에서 읽으면 mobile이 서체를 바꿀 때마다 같은 SVG의 컴파일 결과가 달라지거나
 // 컴파일러가 로드 중에 죽는다. data가 바이트를 고정해 소유한다.
-const REFERENCE_FONT_SHA256 =
-  "3ffbacde6ab8411f1d2db54bb9b1f0b3ee2a738932033722cf0388c06aed1c93";
-
 test("참조 서체 파일은 data 레포가 소유한 고정 바이트다(mobile 픽스처 의존 없음)", () => {
   const relative = path.relative(root, TEXT_FONT_FILE).replaceAll(path.sep, "/");
   assert.equal(relative, "tools/route-map/fonts/Pretendard-Regular.otf");
   assert.equal(
     createHash("sha256").update(readFileSync(TEXT_FONT_FILE)).digest("hex"),
-    REFERENCE_FONT_SHA256,
+    TEXT_FONT_SHA256,
   );
   const license = readFileSync(
     path.join(path.dirname(TEXT_FONT_FILE), "OFL.txt"),
