@@ -218,7 +218,7 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
 // 이름·값 쌍으로 풀어 비교한다. 숨김 형태는 SVG 사양이 정하는 세 가지다: display가 none,
 // opacity가 0, 그리고 그 요소의 서브트리 전체. 오라클이 놓치는 형태(예: `<style>` 클래스가 준
 // display:none)는 원본에서 안 보이는 요소를 기대에 남겨 테스트가 실패하는 쪽이라 안전한 방향이다.
-const TAG_TOKEN = /<(\/?)([A-Za-z][\w:.-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>/g;
+const TAG_TOKEN = /<!--[\s\S]*?-->|<(\/?)([A-Za-z][\w:.-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>/g;
 const ATTRIBUTE_TOKEN = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 function declarationsOf(attributeText) {
@@ -246,10 +246,10 @@ function isInvisible(declarations) {
 
 /** 오너 SVG에서 display:none·opacity 0 서브트리를 뺀 뒤 남는 요소의 여는 태그들. */
 function visibleOpenTags(svgText) {
-  const markup = svgText.replaceAll(/<!--[\s\S]*?-->/g, "");
   const tags = [];
   let hiddenDepth = 0;
-  for (const [tag, closing, , attributeText] of markup.matchAll(TAG_TOKEN)) {
+  for (const [tag, closing, name, attributeText] of svgText.matchAll(TAG_TOKEN)) {
+    if (name === undefined) continue;
     if (closing) {
       if (hiddenDepth > 0) hiddenDepth -= 1;
       continue;
@@ -272,6 +272,7 @@ const SHOWN_IDS = ["shown-1", "shown-2", "shown-3", "shown-4", "shown-5", "shown
 
 test("가시성 오라클은 사양이 정하는 숨김 형태를 모두 알아본다", () => {
   assert.deepEqual(idsOf(visibleOpenTags(HIDDEN_FORMS_SVG)), SHOWN_IDS);
+  assert.deepEqual(idsOf(visibleOpenTags('<svg><!-- <path id="commented"/> --><path id="real"/></svg>')), ["real"]);
 });
 
 test("컴파일러의 숨김 제거는 오라클과 같은 요소를 남긴다", async () => {

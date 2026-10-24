@@ -162,7 +162,7 @@ test("표에 없는 텍스트 계열 선언은 text·tspan·조상 어디에 있
     for (const [where, markup] of [["text", onText], ["tspan", onTspan], ["조상", onAncestor]]) {
       assert.throws(
         () => outlineBasemapText(markup),
-        new RegExp(`${property.replace(/[-]/g, "\\$&")}.*알지 못하는 텍스트`),
+        (error) => error.message.includes(`: ${property}은 `) && error.message.includes("알지 못하는 텍스트 property"),
         `${where}: ${declaration}`,
       );
     }
