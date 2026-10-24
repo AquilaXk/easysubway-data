@@ -695,6 +695,72 @@ test("clipPath와 그 자식의 불투명도는 SVG가 무시하므로 지우지
   for (const id of ["hidden-child", "outside", "clipped"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
 });
 
+test("style 속성의 display:none도 서브트리째 빠지고, display의 다른 값과 이름이 겹치는 선언은 남는다", () => {
+  const stripped = stripWithoutThrowing(
+    '<svg><rect id="only" style="display:none"/><rect id="spaced" style="fill:red; display : none ;stroke:none"/>' +
+      '<g id="group" style="stroke:red;display:none !important"><path id="inner" d="M0 0L1 1"/></g>' +
+      '<rect id="inline" style="display:inline"/><rect id="similar" style="font-display:none"/>' +
+      '<rect id="longer" style="display:nonexistent"/><rect id="attr-value" style="fill:none"/></svg>',
+  );
+  for (const id of ["only", "spaced", "group", "inner"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+  for (const id of ["inline", "similar", "longer", "attr-value"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+});
+
+test("숨겨진 조상 안의 clipPath는 SVG에서 계속 참조할 수 있으므로 정의를 남기고 나머지만 지운다", () => {
+  const stripped = stripWithoutThrowing(
+    '<svg><defs opacity="0"><clipPath id="in-defs"><rect id="in-defs-child" width="9" height="9"/></clipPath>' +
+      '<rect id="junk-in-defs" width="1" height="1"/></defs>' +
+      '<g id="faded" style="opacity:0"><rect id="junk-in-group" width="1" height="1"/>' +
+      '<g id="deep"><clipPath id="in-group"><path id="in-group-child" d="M0 0L9 9"/></clipPath></g>' +
+      '<clipPath id="second"><rect id="second-child" width="2" height="2"/></clipPath></g>' +
+      '<g id="gone" display="none"><clipPath id="in-display"><rect id="in-display-child" width="3" height="3"/></clipPath></g>' +
+      '<rect id="user" clip-path="url(#in-defs)" width="9" height="9"/></svg>',
+  );
+  for (const id of ["in-defs", "in-defs-child", "in-group", "in-group-child", "second", "second-child", "in-display", "in-display-child", "user"]) {
+    assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+  }
+  for (const id of ["junk-in-defs", "junk-in-group", "faded", "deep", "gone"]) {
+    assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+  }
+  assert.ok(stripped.indexOf('id="in-group"') < stripped.indexOf('id="second"'), "clipPath 정의의 문서 순서가 바뀌었다");
+});
+
+test("display:none인 clipPath 정의도 참조할 수 있으므로 남기고, 그 자식의 display:none은 오려내기에 기여하지 않아 지운다", () => {
+  const stripped = stripWithoutThrowing(
+    '<svg><clipPath id="hidden-def" display="none"><rect id="kept-child" width="9" height="9"/>' +
+      '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath></svg>',
+  );
+  assert.ok(stripped.includes('id="hidden-def"') && stripped.includes('id="kept-child"'));
+  assert.ok(!stripped.includes('id="hidden-child"'));
+});
+
+test("닫는 태그가 없는 숨김 요소는 조용히 넘기지 않고 실패한다", () => {
+  assert.throws(() => stripHiddenElements('<svg><g id="open" opacity="0"><rect/></svg>'), /g의 닫는 태그를 찾지 못했습니다/);
+});
+
+test("숨김 요소 제거는 입력 크기에 선형인 시간에 끝난다(이차 시간 회귀 방지)", () => {
+  const pairs = 20000;
+  const clips = 2000;
+  let markup = "<svg>";
+  for (let index = 0; index < clips; index += 1) {
+    markup += `<clipPath id="c${index}"><rect width="9" height="9"/></clipPath>`;
+  }
+  for (let index = 0; index < pairs; index += 1) {
+    markup +=
+      `<path id="h${index}" display="none" d="M0 0L1 1"/>` +
+      `<rect id="o${index}" opacity="0" width="1" height="1"/><rect id="v${index}" width="1" height="1"/>`;
+  }
+  markup += "</svg>";
+  const started = performance.now();
+  const stripped = stripWithoutThrowing(markup);
+  const elapsedMs = performance.now() - started;
+  assert.equal(stripped.split('id="v').length - 1, pairs, "보이는 요소는 모두 남아야 한다");
+  assert.equal(stripped.split("<clipPath").length - 1, clips, "clipPath 정의는 모두 남아야 한다");
+  assert.ok(!stripped.includes('id="h') && !stripped.includes('id="o'), "숨김 요소가 남았다");
+  // 선형이면 수십 ms, 이차이면 같은 입력에서 10초를 넘는다(실측). 느린 CI도 넘지 않을 상한이다.
+  assert.ok(elapsedMs < 3000, `${elapsedMs.toFixed(0)}ms`);
+});
+
 test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const manifest = JSON.parse(

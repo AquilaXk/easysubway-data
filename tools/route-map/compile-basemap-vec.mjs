@@ -3023,31 +3023,6 @@ export function completePartialTextPositions(svgText) {
   return result;
 }
 
-// 여는 태그 [startIndex]에 대응하는 요소 끝 인덱스(자기폐쇄면 그 태그 끝).
-// matchingGroupEnd의 태그명 일반화판 — display:none 제거가 `<g>`뿐 아니라
-// `<text>`·`<path>` 등 어떤 요소에도 적용돼야 하기 때문이다.
-function matchingElementEnd(text, startIndex, tagName) {
-  const openTag = text.slice(startIndex).match(/^<[A-Za-z][\w:.-]*\b[^>]*>/)?.[0];
-  if (!openTag) {
-    throw new Error(`${tagName} 여는 태그를 해석하지 못했습니다.`);
-  }
-  if (openTag.endsWith("/>")) return startIndex + openTag.length;
-  const tagRe = new RegExp(`<${tagName}\\b[^>]*>|</${tagName}>`, "g");
-  tagRe.lastIndex = startIndex;
-  let depth = 0;
-  for (let m = tagRe.exec(text); m; m = tagRe.exec(text)) {
-    if (m[0].startsWith("</")) {
-      depth -= 1;
-      if (depth === 0) return tagRe.lastIndex;
-    } else if (!m[0].endsWith("/>")) {
-      depth += 1;
-    }
-  }
-  throw new Error(
-    `${tagName}의 닫는 태그를 찾지 못했습니다 — 조용히 건너뛰지 않고 실패합니다.`,
-  );
-}
-
 // #2068 SVG 충실도(2026-07-26): display:none 요소를 컴파일 입력에서 제거한다.
 // 오너가 숨긴 요소는 오너 도식에 **보이지 않는다** — 바탕층에도 없어야 한다.
 // 역명 라벨 레이어를 반입하면서 대구 역번호 라벨 17건(class="station-code"
@@ -3061,10 +3036,12 @@ function matchingElementEnd(text, startIndex, tagName) {
 // 오너 SVG의 캔버스 격자(background-grid-overlay)가 opacity 0인데, 컴파일러는 이를 무늬 정의 +
 // 알파 0 paint의 전면 채우기로 남겨 기기가 매 프레임 지도 전체를 무늬로 칠했다.
 // 다만 clipPath 자식은 fill·stroke 같은 렌더링 속성을 뺀 원본 도형으로 오려내기 영역을 정한다
-// (SVG 1.1 14.3.5절). opacity는 그 영역에 기여하지 않으므로 opacity 0은 clipPath 안과 clipPath
-// 자체에서 지우지 않는다. display:none은 오려내기에도 기여하지 않으므로 어디서든 지운다.
+// (SVG 1.1 14.3.5절). opacity는 그 영역에 기여하지 않으므로 opacity 0은 clipPath 안에서 지우지
+// 않는다. display:none은 오려내기에도 기여하지 않으므로 clipPath 안에서도 지운다. 반대로 clipPath
+// 정의 자체는 자신과 어떤 조상에 display:none이나 opacity 0이 있어도 `clip-path` 참조가 계속
+// 유효하다(같은 절). 그래서 숨겨진 요소를 지울 때 그 안의 clipPath 정의는 문서 순서대로 남긴다.
 const DISPLAY_NONE_ATTRIBUTE = /\sdisplay="none"/;
-const DISPLAY_NONE_STYLE = /style="[^"]*display\s*:\s*none/;
+const DISPLAY_NONE_STYLE = /\sstyle="[^"]*(?<![\w-])display\s*:\s*none\s*(?:!important\s*)?[;"]/;
 const OPACITY_ZERO_ATTRIBUTE = /\sopacity="0(?:\.0+)?"/;
 const OPACITY_ZERO_STYLE = /\sstyle="[^"]*(?<![\w-])opacity\s*:\s*0(?:\.0+)?\s*(?:!important\s*)?[;"]/;
 
@@ -3079,28 +3056,72 @@ const HIDDEN_ELEMENT_RULES = [
   },
 ];
 
-function isClipPathOrDescendant(markup, index, tagName) {
-  if (tagName === "clipPath") return true;
-  const openings = /<clipPath\b[^>]*>/g;
-  for (let open = openings.exec(markup); open && open.index < index; open = openings.exec(markup)) {
-    if (matchingElementEnd(markup, open.index, "clipPath") > index) return true;
-  }
-  return false;
+function isDroppedHiddenElement(openTag, name, insideClipPath) {
+  if (name === "clipPath") return false;
+  return HIDDEN_ELEMENT_RULES.some(
+    ({ isHidden, ignoredByClipPath }) => isHidden(openTag) && !(ignoredByClipPath && insideClipPath),
+  );
 }
 
+// 태그를 한 번만 훑는다. 열린 요소를 스택으로 세므로 숨김 요소 수나 clipPath 수에 입력 크기가
+// 곱해지지 않는다. 지우는 중(suppressed)에는 글자와 태그를 내보내지 않고, 그 안의 clipPath
+// 정의를 만나면 지우는 상태를 풀고 내보낸다.
 export function stripHiddenElements(markup) {
-  let result = markup;
-  for (const { isHidden, ignoredByClipPath } of HIDDEN_ELEMENT_RULES) {
-    const openTags = /<([A-Za-z][\w:.-]*)\b[^>]*>/g;
-    for (let match = openTags.exec(result); match; match = openTags.exec(result)) {
-      if (!isHidden(match[0])) continue;
-      if (ignoredByClipPath && isClipPathOrDescendant(result, match.index, match[1])) continue;
-      const end = matchingElementEnd(result, match.index, match[1]);
-      result = result.slice(0, match.index) + result.slice(end);
-      openTags.lastIndex = match.index;
+  const tagRe = /<(\/?)([A-Za-z][\w:.-]*)\b[^>]*>/g;
+  const frames = [];
+  const openCounts = new Map();
+  let output = "";
+  let copiedUntil = 0;
+  let suppressed = false;
+  let clipDepth = 0;
+
+  const closeFrame = () => {
+    const frame = frames.pop();
+    openCounts.set(frame.name, openCounts.get(frame.name) - 1);
+    if (frame.name === "clipPath" && frame.emitted) clipDepth -= 1;
+    suppressed = frame.suppressedBefore;
+    return frame;
+  };
+  const openFrame = (frame) => {
+    frames.push(frame);
+    openCounts.set(frame.name, (openCounts.get(frame.name) ?? 0) + 1);
+    if (frame.name === "clipPath" && frame.emitted) clipDepth += 1;
+  };
+
+  for (let match = tagRe.exec(markup); match; match = tagRe.exec(markup)) {
+    const [tag, closing, name] = match;
+    if (!suppressed) output += markup.slice(copiedUntil, match.index);
+    copiedUntil = match.index + tag.length;
+
+    if (closing) {
+      if (!(openCounts.get(name) > 0)) {
+        if (!suppressed) output += tag;
+        continue;
+      }
+      let frame = closeFrame();
+      while (frame.name !== name) {
+        if (frame.hiddenStart) throw unclosedHiddenElement(frame.name);
+        frame = closeFrame();
+      }
+      if (frame.emitted) output += tag;
+      continue;
     }
+
+    const dropped = suppressed
+      ? name !== "clipPath"
+      : isDroppedHiddenElement(tag, name, clipDepth > 0);
+    if (!dropped) output += tag;
+    if (tag.endsWith("/>")) continue;
+    openFrame({ name, emitted: !dropped, hiddenStart: dropped && !suppressed, suppressedBefore: suppressed });
+    suppressed = dropped;
   }
-  return result;
+  const unclosed = frames.find(({ hiddenStart }) => hiddenStart);
+  if (unclosed) throw unclosedHiddenElement(unclosed.name);
+  return output + markup.slice(copiedUntil);
+}
+
+function unclosedHiddenElement(name) {
+  return new Error(`${name}의 닫는 태그를 찾지 못했습니다 — 조용히 건너뛰지 않고 실패합니다.`);
 }
 
 // ── SVG paint-order 지원(#2068 오너 실기기 회귀, 2026-07-26) ────────────────
