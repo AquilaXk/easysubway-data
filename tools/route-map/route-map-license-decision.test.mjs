@@ -213,6 +213,72 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
   assert.ok(decision.references.length >= 3);
 });
 
+// 컴파일러의 숨김 제거와 독립인 오라클. 컴파일러는 여는 태그를 정규식으로 읽고 속성 문자열에
+// 정규식을 대는 반면, 여기서는 태그를 따옴표를 존중하는 토큰으로 읽고 속성과 `style` 선언을
+// 이름·값 쌍으로 풀어 비교한다. 숨김 형태는 SVG 사양이 정하는 세 가지다: display가 none,
+// opacity가 0, 그리고 그 요소의 서브트리 전체. 오라클이 놓치는 형태(예: `<style>` 클래스가 준
+// display:none)는 원본에서 안 보이는 요소를 기대에 남겨 테스트가 실패하는 쪽이라 안전한 방향이다.
+const TAG_TOKEN = /<(\/?)([A-Za-z][\w:.-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>/g;
+const ATTRIBUTE_TOKEN = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+
+function declarationsOf(attributeText) {
+  const declarations = new Map();
+  for (const [, name, double, single] of attributeText.matchAll(ATTRIBUTE_TOKEN)) {
+    const value = double ?? single;
+    if (name === "style") {
+      for (const item of value.split(";")) {
+        const colon = item.indexOf(":");
+        if (colon > 0) {
+          declarations.set(item.slice(0, colon).trim().toLowerCase(), item.slice(colon + 1).replace(/!important\s*$/i, "").trim());
+        }
+      }
+    } else if (!declarations.has(name)) {
+      declarations.set(name, value.trim());
+    }
+  }
+  return declarations;
+}
+
+function isInvisible(declarations) {
+  const opacity = declarations.get("opacity");
+  return declarations.get("display") === "none" || (opacity !== undefined && opacity !== "" && Number(opacity) === 0);
+}
+
+/** 오너 SVG에서 display:none·opacity 0 서브트리를 뺀 뒤 남는 요소의 여는 태그들. */
+function visibleOpenTags(svgText) {
+  const markup = svgText.replaceAll(/<!--[\s\S]*?-->/g, "");
+  const tags = [];
+  let hiddenDepth = 0;
+  for (const [tag, closing, , attributeText] of markup.matchAll(TAG_TOKEN)) {
+    if (closing) {
+      if (hiddenDepth > 0) hiddenDepth -= 1;
+      continue;
+    }
+    const selfClosing = attributeText.trimEnd().endsWith("/");
+    if (hiddenDepth === 0 && !isInvisible(declarationsOf(attributeText))) tags.push(tag);
+    else if (!selfClosing) hiddenDepth += 1;
+  }
+  return tags.join("");
+}
+
+const HIDDEN_FORMS_SVG =
+  '<svg><path id="a" display="none"/><path id="b" style="display:none"/><path id="c" style="fill:red; display : none !important"/>' +
+  '<path id="d" opacity="0"/><path id="e" opacity="0.0"/><path id="f" style="opacity:0"/><path id="g" style="opacity : 0.0 !important"/>' +
+  '<g id="h" opacity="0"><path id="inner-h" d="M0 0"/></g><g id="i" style="display:none"><g><path id="inner-i"/></g></g>' +
+  '<path id="shown-1" opacity="0.5"/><path id="shown-2" style="opacity:.05"/><path id="shown-3" style="display:inline"/>' +
+  '<path id="shown-4" fill-opacity="0" stroke-opacity="0"/><g id="shown-5"><path id="shown-6"/></g></svg>';
+const idsOf = (markup) => [...markup.matchAll(/id="([^"]+)"/g)].map(([, id]) => id);
+const SHOWN_IDS = ["shown-1", "shown-2", "shown-3", "shown-4", "shown-5", "shown-6"];
+
+test("가시성 오라클은 사양이 정하는 숨김 형태를 모두 알아본다", () => {
+  assert.deepEqual(idsOf(visibleOpenTags(HIDDEN_FORMS_SVG)), SHOWN_IDS);
+});
+
+test("컴파일러의 숨김 제거는 오라클과 같은 요소를 남긴다", async () => {
+  const { stripHiddenElements } = await import("./compile-basemap-vec.mjs");
+  assert.deepEqual(idsOf(stripHiddenElements(HIDDEN_FORMS_SVG)), SHOWN_IDS);
+});
+
 // #2068 전량 반입 계약(2026-07-26 오너 최종 지시) — 배포 basemap 콘텐츠 정책을
 // **실제 컴파일 입력·배포 바이트와 대조해** 고정한다. 정책이 "오너 SVG 렌더 대상
 // 전량"으로 바뀌었으므로, 종전처럼 장식 id 부재를 확인하는 대신 **선별 없음**을
@@ -245,45 +311,14 @@ test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다
 
   // 렌더 대상 요소의 id 전수를 오너 SVG에서 뽑아 컴파일 입력에 그대로 있는지 본다.
   // display:none·opacity 0 서브트리(비렌더)는 SVG 사양대로 제외 대상이라 기대에서 뺀다.
-  const HIDDEN_SUBTREE = /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|\sopacity="0(?:\.0+)?"|style="[^"]*display\s*:\s*none))[^>]*>/;
-
-  function stripHiddenSubtrees(markup) {
-    let result = markup;
-    for (;;) {
-      const match = result.match(HIDDEN_SUBTREE);
-      if (!match) return result;
-      const tagName = match[1];
-      const openTag = result.slice(match.index).match(/^<[A-Za-z][\w:.-]*\b[^>]*>/)[0];
-      if (openTag.endsWith("/>")) {
-        result = result.slice(0, match.index) + result.slice(match.index + openTag.length);
-        continue;
-      }
-      const tagRe = new RegExp(`<${tagName}\\b[^>]*>|</${tagName}>`, "g");
-      tagRe.lastIndex = match.index;
-      let depth = 0;
-      let end = -1;
-      for (let m = tagRe.exec(result); m; m = tagRe.exec(result)) {
-        if (m[0].startsWith("</")) {
-          depth -= 1;
-          if (depth === 0) {
-            end = tagRe.lastIndex;
-            break;
-          }
-        } else if (!m[0].endsWith("/>")) {
-          depth += 1;
-        }
-      }
-      if (end < 0) throw new Error(`${tagName} 닫는 태그를 찾지 못했습니다.`);
-      result = result.slice(0, match.index) + result.slice(end);
-    }
-  }
-
+  // 기대 집합은 컴파일러의 숨김 제거(stripHiddenElements)와 코드를 공유하지 않는 아래
+  // 오라클(visibleOpenTags)이 정한다.
   const RENDERABLE = /<(path|circle|rect|line|polyline|polygon|text|image|use|ellipse)\b[^>]*\bid="([^"]+)"/g;
 
   for (const file of regionSvgs) {
     const svgText = readFileSync(path.join(sources, file), "utf8");
     const normalized = normalizeSvgForCompile(svgText);
-    const visibleSource = stripHiddenSubtrees(svgText);
+    const visibleSource = visibleOpenTags(svgText);
 
     const missing = [];
     for (const match of visibleSource.matchAll(RENDERABLE)) {
