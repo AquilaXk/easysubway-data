@@ -226,7 +226,6 @@ const checkedElements = new WeakSet();
 function rejectUnknownTextProperties(node) {
   for (let element = node; element && element.name !== "#root"; element = element.parent) {
     if (checkedElements.has(element)) continue;
-    checkedElements.add(element);
     for (const name of declaredPropertyNames(element.openTag)) {
       const family = name.toLowerCase().split("-", 1)[0];
       if (TEXT_PROPERTY_FAMILIES.has(family) && !TEXT_PROPERTY_POLICY.has(name)) {
@@ -236,6 +235,7 @@ function rejectUnknownTextProperties(node) {
         );
       }
     }
+    checkedElements.add(element);
   }
 }
 
