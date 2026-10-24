@@ -347,6 +347,7 @@ test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다
   //       <text>는 한 개도 남지 않으며, 배포 .vec에는 그 역명의 UTF-8 바이트가 없다
   //       (기기 서체에 기대는 글자 그리기가 배포물에 없다).
   const { outlineBasemapText } = await import("./outline-basemap-text.mjs");
+  const { basemapVariant } = await import("./basemap-variants.mjs");
   const { decodeVec } = await import("./vec-codec.mjs");
   const manifest = readJson("tools/route-map/basemap-build-manifest.json");
   assert.deepEqual(manifest.content.labels, { outlined: "outlined-into-vec", text: "text-into-vec" });
@@ -380,8 +381,8 @@ test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다
 
     assert.equal(
       map.variants.text.compileInputSvgSha256,
-      sha256Of(normalized),
-      `${id}: 텍스트 변형 컴파일 입력이 오너 SVG에서 다시 만든 정규화 입력과 다릅니다.`,
+      sha256Of(basemapVariant("text").compileInput(normalized)),
+      `${id}: 텍스트 변형 컴파일 입력이 오너 SVG에서 다시 만든 서체 목록 정리 입력과 다릅니다.`,
     );
     const textVecBytes = readFileSync(path.join(basemapDir, `${id}.text.vec`));
     assert.equal(

@@ -98,6 +98,48 @@ export function decodeXmlText(value) {
   return result.replaceAll("&amp;", "&");
 }
 
+/** XML 속성값 안에 쓸 수 있게 `& < > "`를 엔티티로 바꾼다. */
+export function encodeXmlAttributeValue(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+/** font-family 목록의 첫 서체 이름(따옴표 제거). 윤곽선 단계와 텍스트 변형이 같은 규칙을 쓴다. */
+export function firstFamilyOf(list) {
+  const first = list.split(",")[0].trim();
+  return first.replace(/^(['"])(.*)\1$/, "$2").trim();
+}
+
+// 텍스트 property의 CSS 초기값. 초기값은 렌더 차이가 없다. 윤곽선 단계는 letter-spacing을
+// 배치에 쓰고 나머지는 초기값만 받으며(outline-basemap-text.mjs TEXT_PROPERTY_POLICY),
+// 텍스트 변형은 초기값이 아닌 선언만 `.vec`가 담지 못하는 선언으로 센다
+// (compile-basemap-vec.mjs unrepresentableTextDeclarations). 두 쪽이 이 표 하나를 읽는다.
+export const TEXT_PROPERTY_INITIAL_VALUES = new Map(
+  Object.entries({
+    "letter-spacing": ["normal", "0", "0px"],
+    "font-style": ["normal"],
+    "font-variant": ["normal"],
+    "font-stretch": ["normal"],
+    "font-kerning": ["auto", "normal"],
+    "font-feature-settings": ["normal"],
+    "font-variant-ligatures": ["normal"],
+    kerning: ["auto"],
+    "word-spacing": ["normal", "0", "0px"],
+    "writing-mode": ["lr-tb", "lr", "horizontal-tb"],
+    direction: ["ltr"],
+    "baseline-shift": ["baseline", "0", "0px"],
+    "dominant-baseline": ["auto"],
+    "alignment-baseline": ["auto", "baseline"],
+    "text-decoration": ["none"],
+    rotate: [],
+    textLength: [],
+    lengthAdjust: [],
+  }).map(([name, values]) => [name, new Set(values)]),
+);
+
 export function firstAttr(tag, name) {
   const match = tag.match(new RegExp(String.raw`\s${name}="([^"]*)"`));
   return match ? match[1] : null;

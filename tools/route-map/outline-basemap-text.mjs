@@ -34,11 +34,13 @@ import {
   buildSvgTree,
   decodeXmlText,
   firstAttr,
+  firstFamilyOf,
   inheritedStyleOrAttr,
   parseSvgLength,
   readReferenceFontBytes,
   REFERENCE_TEXT_FACES,
   roundCoord,
+  TEXT_PROPERTY_INITIAL_VALUES,
 } from "./basemap-svg-core.mjs";
 
 const VENDOR_DIR = path.join(import.meta.dirname, "vendor/harfbuzzjs");
@@ -109,7 +111,9 @@ const FACES = new Map(
 //   layout   — 배치에 쓰고 지운다.
 //   authoring — 렌더에 영향이 없는 저작 도구 정보(Inkscape 줄 상자 등). 배포 중인
 //               `.vec` 경로도 읽지 않는다. 지운다.
-//   initial  — 초기값만 받는다. 다른 값은 이 단계가 그리지 못하므로 던진다.
+//   initial  — 초기값만 받는다. 다른 값은 이 단계가 그리지 못하므로 던진다. 초기값 표는
+//              텍스트 변형과 함께 쓰는 TEXT_PROPERTY_INITIAL_VALUES이고, 배치에 쓰는
+//              letter-spacing은 layout이라 뺀다.
 const TEXT_PROPERTY_POLICY = new Map([
   ...["x", "y", "dx", "dy", "font-family", "font-size", "font-weight", "letter-spacing", "text-anchor"]
     .map((name) => [name, { kind: "layout" }]),
@@ -124,25 +128,9 @@ const TEXT_PROPERTY_POLICY = new Map([
     "-inkscape-font-specification",
     "text-rendering",
   ].map((name) => [name, { kind: "authoring" }]),
-  ...Object.entries({
-    "font-style": ["normal"],
-    "font-variant": ["normal"],
-    "font-stretch": ["normal"],
-    "font-kerning": ["auto", "normal"],
-    "font-feature-settings": ["normal"],
-    "font-variant-ligatures": ["normal"],
-    kerning: ["auto"],
-    "word-spacing": ["normal", "0", "0px"],
-    "writing-mode": ["lr-tb", "lr", "horizontal-tb"],
-    direction: ["ltr"],
-    "baseline-shift": ["baseline", "0", "0px"],
-    "dominant-baseline": ["auto"],
-    "alignment-baseline": ["auto", "baseline"],
-    "text-decoration": ["none"],
-    rotate: [],
-    textLength: [],
-    lengthAdjust: [],
-  }).map(([name, values]) => [name, { kind: "initial", values: new Set(values) }]),
+  ...[...TEXT_PROPERTY_INITIAL_VALUES]
+    .filter(([name]) => name !== "letter-spacing")
+    .map(([name, values]) => [name, { kind: "initial", values }]),
 ]);
 
 // 표에 없는 property도 이름이 CSS 텍스트·서체 계열이면(`font`, `text-transform`,
@@ -194,11 +182,6 @@ function parseLength(raw, property, node) {
 function optionalNumber(node, name) {
   const raw = firstAttr(node.openTag, name);
   return raw == null ? null : parseLength(raw, name, node);
-}
-
-function firstFamilyOf(list) {
-  const first = list.split(",")[0].trim();
-  return first.replace(/^(['"])(.*)\1$/, "$2").trim();
 }
 
 const ATTRIBUTE_RE = /\s([A-Za-z_:-][\w:.-]*)="([^"]*)"/g;

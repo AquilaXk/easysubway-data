@@ -13,6 +13,9 @@
 //   4) 배포 텍스트 변형 .vec의 텍스트 굵기도 참조 페이스 집합 안이다.
 //   5) .vec 텍스트 형식이 담지 못하는 선언(letter-spacing 등)의 구성이 기준선과 같다.
 //      텍스트 변형은 그만큼 글자 간격이 오너 도식과 다르게 그려진다.
+//   6) 텍스트 변형 .vec의 모든 텍스트 설정이 서체 이름 Pretendard 하나를 가리킨다. 런타임은
+//      font-family 문자열 전체를 서체 이름 하나로 쓰므로(vector_graphics 1.2.3 listener.dart
+//      686-698행 → dart:ui TextStyle.fontFamily) CSS 목록을 담으면 서체가 풀리지 않는다.
 //
 // 이 게이트는 **정규화된 컴파일 입력**(실제로 .vec가 되는 바로 그 마크업)에서
 // 렌더에 쓰이는 font-weight를 전부 모은다. 새 굵기가 오너 SVG에 등장해도 매칭이
@@ -24,14 +27,16 @@
 // `font-weight="…"` 속성과 `style="…font-weight:…"` 선언만 세면 된다.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { basemapVariant } from "./basemap-variants.mjs";
 import {
   readReferenceFontBytes,
   REFERENCE_TEXT_FACES,
   REFERENCE_TEXT_FONT_WEIGHTS,
+  TEXT_PROPERTY_INITIAL_VALUES,
 } from "./basemap-svg-core.mjs";
 import {
   normalizeSvgForCompile,
@@ -40,6 +45,7 @@ import {
   TEXT_FONT_FILE,
   TEXT_FONT_METRICS,
   unrepresentableTextDeclarations,
+  VEC_UNCARRIED_TEXT_PROPERTIES,
 } from "./compile-basemap-vec.mjs";
 import { decodeVec } from "./vec-codec.mjs";
 
@@ -236,5 +242,55 @@ test("텍스트 변형에서 표현 불가 텍스트 선언(letter-spacing 등) 
       `${region.id}: 텍스트 변형 .vec가 담지 못하는 텍스트 선언 구성이 바뀌었습니다. ` +
         "글자 간격이 오너 도식과 달라지는 범위가 변했다는 뜻입니다.",
     );
+  }
+});
+
+// 런타임은 TextConfig.fontFamily를 서체 이름 하나로 쓴다(vector_graphics 1.2.3 listener.dart 686-698행,
+// Flutter 3.44 dart:ui text.dart 3613-3618행). `Pretendard, "Noto Sans CJK KR", sans-serif` 같은
+// CSS 목록은 없는 서체로 풀려 기기 서체로 대체되고, 윤곽선 변형(첫 서체 Pretendard 글리프)과 다르게 그려진다.
+// 윤곽선 단계는 첫 서체가 Pretendard가 아니면 던진다. 텍스트 변형은 그 검사를 거치지 않으므로
+// 배포 바이트에서 직접 확인한다.
+test("배포 텍스트 변형 .vec의 모든 텍스트 설정 서체는 Pretendard 하나다", () => {
+  const basemapDir = path.join(root, "apps/mobile/assets/datapacks/metro_map_pack/basemap");
+  const files = readdirSync(basemapDir).filter((name) => name.endsWith(".text.vec")).sort();
+  assert.ok(files.length >= REGIONS.length, "텍스트 변형 .vec가 없습니다");
+  const families = new Map();
+  for (const name of files) {
+    const { texts } = decodeVec(new Uint8Array(readFileSync(path.join(basemapDir, name))));
+    for (const { fontFamily } of texts) families.set(fontFamily, (families.get(fontFamily) ?? 0) + 1);
+  }
+  assert.deepEqual([...families.keys()], ["Pretendard"]);
+});
+
+/** 정규화된 컴파일 입력의 font-family 선언 값(속성과 style 선언) 전부. */
+function fontFamilyDeclarations(markup) {
+  return [
+    ...[...markup.matchAll(/\sfont-family="([^"]*)"/g)].map((match) => match[1]),
+    ...[...markup.matchAll(/font-family\s*:\s*([^;"}]+)/g)].map((match) => match[1].trim()),
+  ];
+}
+
+test("텍스트 변형 컴파일 입력의 font-family 선언은 서체 이름 하나다", () => {
+  const { compileInput } = basemapVariant("text");
+  for (const region of REGIONS) {
+    const normalized = normalizeSvgForCompile(readFileSync(path.join(sourcesDir, region.svg), "utf8"));
+    const declared = fontFamilyDeclarations(compileInput(normalized));
+    assert.ok(declared.length > 0, `${region.id}: font-family 선언이 없습니다`);
+    const lists = declared.filter((value) => value.includes(","));
+    assert.deepEqual(lists, [], `${region.id}: CSS 서체 목록이 남았습니다`);
+  }
+});
+
+// 초기값은 렌더 차이가 없으므로 세지 않는다. 초기값 표는 윤곽선 단계와 공유하는 하나다
+// (TEXT_PROPERTY_INITIAL_VALUES). 표의 초기값은 모두 빠지고 그 밖의 값은 센다.
+test("표현 불가 텍스트 선언 계측은 초기값 표의 값만 빼고 센다", () => {
+  assert.deepEqual([...VEC_UNCARRIED_TEXT_PROPERTIES].filter((name) => !TEXT_PROPERTY_INITIAL_VALUES.has(name)), []);
+  for (const property of VEC_UNCARRIED_TEXT_PROPERTIES) {
+    const initials = [...TEXT_PROPERTY_INITIAL_VALUES.get(property)];
+    assert.ok(initials.length > 0, `${property}: 초기값이 없습니다`);
+    const markup =
+      initials.map((value) => `<text ${property}="${value}">a</text>`).join("") +
+      `<tspan style="${property}:7px">b</tspan><text ${property}="7px">c</text>`;
+    assert.deepEqual([...unrepresentableTextDeclarations(markup)], [[`${property}:7px`, 2]], property);
   }
 });

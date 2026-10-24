@@ -5,13 +5,14 @@ import path from "node:path";
 import test from "node:test";
 
 import { resolveLineMap } from "./apply-sma-svg-positions.mjs";
-import { basemapVectorFileName, BASEMAP_VARIANTS, parseBasemapVectorFileName } from "./basemap-variants.mjs";
+import { basemapVariant, basemapVectorFileName, BASEMAP_VARIANTS, parseBasemapVectorFileName } from "./basemap-variants.mjs";
 import {
   LINE_OVERLAY_INDEX_FILE,
   basemapCompileJobs,
   buildBasemapLineOverlays,
   buildLineOverlayIndex,
   normalizeSvgForCompile,
+  variantManifestEntry,
 } from "./compile-basemap-vec.mjs";
 import { cleanupPackDir, openPack } from "./pack-io.mjs";
 import { REGION_CONFIGS } from "./sma-region-configs.mjs";
@@ -392,6 +393,82 @@ test("변형과 노선을 합친 컴파일 파일 이름이 겹치면 작업을 
     ],
   );
   assert.throws(() => basemapCompileJobs([prepared("text")], outline), /seoul\.text\.vec/);
+});
+
+// 파일 이름 `<권역>.<노선>.text.vec`는 점으로 나뉘고 `.text`로 변형을 가린다. 점이나 변형 접미가 든 id는
+// 되읽을 때 다른 권역·노선·변형으로 읽히므로 작업을 만들 때 실패한다.
+test("권역·노선 id에 점이 있으면 되읽을 때 틀리게 읽히므로 컴파일 작업을 만들지 않고 실패한다", () => {
+  const outline = (svg) => ({ svg });
+  const prepared = (regionId, lineId) => ({
+    region: { id: regionId },
+    normalizedSvg: "<svg/>",
+    lineOverlays: lineId === null ? [] : [{ lineId, svgLineSlug: "x", svg: "<svg/>" }],
+  });
+  for (const lineId of ["line.a", "line-a.text", "", "Line-A", "-a"]) {
+    assert.throws(() => basemapCompileJobs([prepared("seoul", lineId)], outline), /노선 id/, `노선 id ${JSON.stringify(lineId)}`);
+  }
+  for (const regionId of ["seoul.text", "se.oul", ""]) {
+    assert.throws(() => basemapCompileJobs([prepared(regionId, null)], outline), /권역 id/, `권역 id ${JSON.stringify(regionId)}`);
+  }
+  let jobs;
+  assert.doesNotThrow(() => {
+    jobs = basemapCompileJobs([prepared("seoul", "seoul-2"), prepared("busan", "line-ab1a041f6266")], outline);
+  });
+  assert.equal(jobs.length, 8, "정상 id는 변형 2 × 권역 2 × (바탕 1 + 노선 1)만큼 작업이 된다");
+});
+
+// 텍스트 변형은 .vec 텍스트 설정이 서체 이름 하나만 담으므로 CSS 서체 목록을 첫 서체로 줄인다.
+// 윤곽선 단계(outline-basemap-text.mjs)가 쓰는 규칙과 같다. 속성과 style 선언을 모두 줄이고
+// 서체 목록이 아닌 마크업은 그대로 둔다.
+test("텍스트 변형은 컴파일 입력의 CSS 서체 목록을 첫 서체 하나로 줄이고 나머지 마크업은 그대로 둔다", () => {
+  const { compileInput } = basemapVariant("text");
+  const reduced = compileInput(
+    '<svg><g font-family="Pretendard, &quot;Noto Sans CJK KR&quot;, sans-serif">' +
+      '<text x="1" font-family="\'Pretendard\', sans-serif">a</text>' +
+      '<text style="fill:#000;font-family:Pretendard, \'Noto Sans\', sans-serif;font-size:9px">b</text>' +
+      '<text font-family="Pretendard">c</text></g></svg>',
+  );
+  assert.equal(
+    reduced,
+    '<svg><g font-family="Pretendard">' +
+      '<text x="1" font-family="Pretendard">a</text>' +
+      '<text style="fill:#000;font-family:Pretendard;font-size:9px">b</text>' +
+      '<text font-family="Pretendard">c</text></g></svg>',
+  );
+});
+
+test("텍스트 변형은 첫 서체 이름에 XML 특수문자가 있으면 이스케이프하고, 서체 선언이 없으면 입력을 그대로 둔다", () => {
+  const { compileInput } = basemapVariant("text");
+  assert.equal(compileInput("<svg><text>a</text></svg>"), "<svg><text>a</text></svg>");
+  assert.equal(
+    compileInput('<svg><text font-family="&quot;A &amp; B&quot;, serif">a</text></svg>'),
+    '<svg><text font-family="A &amp; B">a</text></svg>',
+  );
+});
+
+// manifest 항목은 변형·파일 이름으로 sha를 조회한다. 조회가 비면 undefined가 JSON에서 사라져
+// 항목이 조용히 불완전해지므로 색인(buildLineOverlayIndex)처럼 실패한다.
+test("변형 manifest 항목은 컴파일 입력·산출 sha256이 없는 파일이 있으면 빈 값으로 두지 않고 실패한다", () => {
+  const region = { id: "seoul" };
+  const overlays = [{ lineId: "seoul-2" }];
+  const names = ["seoul.text.vec", "seoul.seoul-2.text.vec"];
+  const full = (extra) => new Map(names.map((name) => [name, `${name}-${extra}`]));
+  const entry = variantManifestEntry("text", region, overlays, full("input"), full("vec"));
+  assert.equal(entry.compileInputSvgSha256, "seoul.text.vec-input");
+  assert.equal(entry.lineOverlays[0].compiledVectorSha256, "seoul.seoul-2.text.vec-vec");
+
+  const noInput = full("input");
+  noInput.delete("seoul.seoul-2.text.vec");
+  assert.throws(
+    () => variantManifestEntry("text", region, overlays, noInput, full("vec")),
+    /seoul\.seoul-2\.text\.vec: 컴파일 입력 sha256이 없습니다/,
+  );
+  const noVec = full("vec");
+  noVec.delete("seoul.text.vec");
+  assert.throws(
+    () => variantManifestEntry("text", region, overlays, full("input"), noVec),
+    /seoul\.text\.vec: 컴파일 산출 sha256이 없습니다/,
+  );
 });
 
 // 커밋된 manifest sha는 이전 컴파일 실행이 고정한 값이라, 다시 만든 레이어 입력과

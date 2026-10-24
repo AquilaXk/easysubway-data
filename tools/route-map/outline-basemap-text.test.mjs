@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { BASEMAP_VARIANTS } from "./basemap-variants.mjs";
 import {
   buildBasemapLineOverlays,
   normalizeSvgForCompile,
@@ -88,9 +89,11 @@ test("노선 강조 레이어의 윤곽선 마크업은 바탕 윤곽선 마크�
 });
 
 // 두 변형은 같은 정규화·강조 레이어 분할에서 나온다. 윤곽선 변형만 윤곽선 단계를 거치고, 텍스트
-// 변형은 정규화 입력을 그대로 굽는다(#1495).
-test("build manifest의 변형별 컴파일 입력 sha가 윤곽선 변형은 다시 구운 윤곽선 입력, 텍스트 변형은 정규화 입력과 같다", () => {
-  const compileInputOf = { outlined: (svg) => outlineBasemapText(svg).svg, text: (svg) => svg };
+// 변형은 정규화 입력의 서체 목록만 첫 서체로 줄여 굽는다(#1495).
+test("build manifest의 변형별 컴파일 입력 sha가 윤곽선 변형은 다시 구운 윤곽선 입력, 텍스트 변형은 서체 목록을 줄인 정규화 입력과 같다", () => {
+  const compileInputOf = Object.fromEntries(
+    BASEMAP_VARIANTS.map(({ id, compileInput }) => [id, (svg) => compileInput(svg, outlineBasemapText)]),
+  );
   for (const map of manifest.maps) {
     const normalized = normalizedByRegion.get(map.id);
     const overlays = buildBasemapLineOverlays(normalized, REGION_CONFIGS[map.id]);

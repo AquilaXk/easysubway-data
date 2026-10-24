@@ -42,11 +42,12 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { BASEMAP_VARIANTS, basemapVectorFileName } from "./basemap-variants.mjs";
+import { BASEMAP_VARIANTS, basemapVectorFileName, TEXT_VARIANT_ID } from "./basemap-variants.mjs";
 import {
   buildSvgTree,
   declaredStyleOrAttr,
   decodeXmlText,
+  encodeXmlAttributeValue,
   firstAttr,
   inheritedStyleOrAttr,
   parseSvgLength,
@@ -54,6 +55,7 @@ import {
   REFERENCE_TEXT_FACES,
   REFERENCE_TEXT_FONT_WEIGHTS,
   roundCoord,
+  TEXT_PROPERTY_INITIAL_VALUES,
 } from "./basemap-svg-core.mjs";
 import { mergeBasemapDraws } from "./merge-basemap-vec-draws.mjs";
 import {
@@ -238,14 +240,14 @@ const supportedClassStyleProperties = new Set([
   "vector-effect",
 ]);
 
-// ── 윤곽선 단계가 해석하는 글자 간격·스타일 property(#2593 리뷰, #1488) ─────────
+// ── `.vec` 텍스트 형식이 담지 못하는 글자 간격·스타일 property(#2593 리뷰, #1488) ─────────
 //
 // `.vec` 텍스트 형식에는 letter-spacing·word-spacing·font-style 자리가 없다. 윤곽선 변형은
 // 라벨을 윤곽선으로 굽기 때문에(outline-basemap-text.mjs) 이 값들은 텍스트 draw가
 // 아니라 윤곽선 단계가 읽는다. 캐스케이드는 유효값을 요소에 그대로 인라인하고, 윤곽선
 // 단계가 letter-spacing을 배치에 쓰고 초기값이 아닌 word-spacing·font-style은 던진다.
 // 텍스트 변형(#1495)에서는 인코딩에서 사라지므로 unrepresentableTextDeclarations가 센다.
-export const OUTLINE_STAGE_TEXT_PROPERTIES = new Set([
+export const VEC_UNCARRIED_TEXT_PROPERTIES = new Set([
   "letter-spacing",
   "word-spacing",
   "font-style",
@@ -717,14 +719,6 @@ function extractMapSvg(svgText) {
 
 const CSS_COMBINATORS = new Set([" ", ">"]);
 
-function encodeXmlAttributeValue(value) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
 /** 따옴표 안의 구분자를 건너뛰며 자른다(`font-family:"a; b", c` 안전). */
 function splitTopLevel(value, separator) {
   const parts = [];
@@ -1047,7 +1041,7 @@ export function parseStylesheet(svgText) {
       if (
         !neutral &&
         !supportedClassStyleProperties.has(property) &&
-        !OUTLINE_STAGE_TEXT_PROPERTIES.has(property)
+        !VEC_UNCARRIED_TEXT_PROPERTIES.has(property)
       ) {
         // 실제로 요소에 적용될 때 던진다(적용되지 않는 규칙은 무해하다).
         declarations.push({ property, value, important, unsupported: true });
@@ -3404,21 +3398,14 @@ export function decomposePaintOrder(markup) {
   return result;
 }
 
-// 텍스트 선언의 초기값. 초기값은 렌더 차이가 없어 표현 불가 선언으로 세지 않는다.
-const TEXT_PROPERTY_INITIAL_VALUES = new Map([
-  ["letter-spacing", new Set(["normal", "0", "0px"])],
-  ["word-spacing", new Set(["normal", "0", "0px"])],
-  ["font-style", new Set(["normal"])],
-]);
-
 /**
  * 텍스트 변형 컴파일 입력에서 **.vec 텍스트 형식이 담지 못하는 선언이 실제로 걸린 텍스트 요소**를
- * `"property:value"` → 요소 수로 센다(#2593 리뷰, #1495). 초기값은 제외한다.
+ * `"property:value"` → 요소 수로 센다(#2593 리뷰, #1495). 초기값(TEXT_PROPERTY_INITIAL_VALUES)은 제외한다.
  */
 export function unrepresentableTextDeclarations(normalizedSvg) {
   const counts = new Map();
   for (const tag of normalizedSvg.matchAll(/<(?:text|tspan)\b[^>]*>/g)) {
-    for (const property of OUTLINE_STAGE_TEXT_PROPERTIES) {
+    for (const property of VEC_UNCARRIED_TEXT_PROPERTIES) {
       const value = declaredStyleOrAttr(tag[0], property)?.trim();
       if (value == null || TEXT_PROPERTY_INITIAL_VALUES.get(property).has(value)) continue;
       const key = `${property}:${value}`;
@@ -3762,6 +3749,12 @@ export function buildBasemapLineOverlays(normalizedSvg, config) {
     .sort((a, b) => codepointCompare(a.lineId, b.lineId));
 }
 
+function requireSha256(shaByFileName, fileName, what) {
+  const sha256 = shaByFileName.get(fileName);
+  if (sha256 === undefined) throw new Error(`${fileName}: ${what} sha256이 없습니다.`);
+  return sha256;
+}
+
 function regionIndexEntry(variantId, { id, overlays }, digestOf) {
   const baseVector = basemapVectorFileName(variantId, id);
   return {
@@ -3783,11 +3776,7 @@ function regionIndexEntry(variantId, { id, overlays }, digestOf) {
  * 변형 하나를 골라 그 아래만 읽는다.
  */
 export function buildLineOverlayIndex(regions, digests) {
-  const digestOf = (fileName) => {
-    const digest = digests.get(fileName);
-    if (digest === undefined) throw new Error(`${fileName}: 컴파일 산출 sha256이 없습니다.`);
-    return digest;
-  };
+  const digestOf = (fileName) => requireSha256(digests, fileName, "컴파일 산출");
   const sorted = [...regions].sort((a, b) => codepointCompare(a.id, b.id));
   const variants = Object.fromEntries(
     BASEMAP_VARIANTS.map(({ id: variantId, labels }) => [
@@ -3939,7 +3928,7 @@ function logUnrepresentableText(regionId, normalizedSvg) {
   const unrepresentable = unrepresentableTextDeclarations(normalizedSvg);
   if (unrepresentable.size === 0) return;
   process.stdout.write(
-    `${basemapVectorFileName("text", regionId)}  .vec 형식이 담지 못하는 텍스트 선언: ` +
+    `${basemapVectorFileName(TEXT_VARIANT_ID, regionId)}  .vec 형식이 담지 못하는 텍스트 선언: ` +
       `${[...unrepresentable]
         .sort((a, b) => b[1] - a[1])
         .map(([key, count]) => `${key} ×${count}`)
@@ -3948,13 +3937,13 @@ function logUnrepresentableText(regionId, normalizedSvg) {
 }
 
 // manifest maps[].variants의 한 변형. 파일 이름은 compileAll이 쓴 이름 그대로다.
-function variantManifestEntry(variantId, region, lineOverlays, compileInputSha256, digests) {
+export function variantManifestEntry(variantId, region, lineOverlays, compileInputSha256, digests) {
   const entryOf = (lineId) => {
     const fileName = basemapVectorFileName(variantId, region.id, lineId);
     return {
       compiledVector: relativeToRoot(path.join(outDir, fileName)),
-      compileInputSvgSha256: compileInputSha256.get(fileName),
-      compiledVectorSha256: digests.get(fileName),
+      compileInputSvgSha256: requireSha256(compileInputSha256, fileName, "컴파일 입력"),
+      compiledVectorSha256: requireSha256(digests, fileName, "컴파일 산출"),
     };
   };
   return {
