@@ -3063,17 +3063,18 @@ function matchingElementEnd(text, startIndex, tagName) {
 // 다만 clipPath 자식은 fill·stroke 같은 렌더링 속성을 뺀 원본 도형으로 오려내기 영역을 정한다
 // (SVG 1.1 14.3.5절). opacity는 그 영역에 기여하지 않으므로 opacity 0은 clipPath 안과 clipPath
 // 자체에서 지우지 않는다. display:none은 오려내기에도 기여하지 않으므로 어디서든 지운다.
-const HIDDEN_OPEN_TAG_PATTERNS = [
+const DISPLAY_NONE_ATTRIBUTE = /\sdisplay="none"/;
+const DISPLAY_NONE_STYLE = /style="[^"]*display\s*:\s*none/;
+const OPACITY_ZERO_ATTRIBUTE = /\sopacity="0(?:\.0+)?"/;
+const OPACITY_ZERO_STYLE = /\sstyle="[^"]*(?<![\w-])opacity\s*:\s*0(?:\.0+)?\s*(?:!important\s*)?[;"]/;
+
+const HIDDEN_ELEMENT_RULES = [
   {
-    pattern: /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|style="[^"]*display\s*:\s*none))[^>]*>/g,
+    isHidden: (openTag) => DISPLAY_NONE_ATTRIBUTE.test(openTag) || DISPLAY_NONE_STYLE.test(openTag),
     ignoredByClipPath: false,
   },
   {
-    pattern: /<([A-Za-z][\w:.-]*)\b(?=[^>]*\sopacity="0(?:\.0+)?")[^>]*>/g,
-    ignoredByClipPath: true,
-  },
-  {
-    pattern: /<([A-Za-z][\w:.-]*)\b(?=[^>]*\sstyle="[^"]*(?<![\w-])opacity\s*:\s*0(?:\.0+)?\s*(?:!important\s*)?(?:;|"))[^>]*>/g,
+    isHidden: (openTag) => OPACITY_ZERO_ATTRIBUTE.test(openTag) || OPACITY_ZERO_STYLE.test(openTag),
     ignoredByClipPath: true,
   },
 ];
@@ -3089,13 +3090,14 @@ function isClipPathOrDescendant(markup, index, tagName) {
 
 export function stripHiddenElements(markup) {
   let result = markup;
-  for (const { pattern, ignoredByClipPath } of HIDDEN_OPEN_TAG_PATTERNS) {
-    pattern.lastIndex = 0;
-    for (let match = pattern.exec(result); match; match = pattern.exec(result)) {
+  for (const { isHidden, ignoredByClipPath } of HIDDEN_ELEMENT_RULES) {
+    const openTags = /<([A-Za-z][\w:.-]*)\b[^>]*>/g;
+    for (let match = openTags.exec(result); match; match = openTags.exec(result)) {
+      if (!isHidden(match[0])) continue;
       if (ignoredByClipPath && isClipPathOrDescendant(result, match.index, match[1])) continue;
       const end = matchingElementEnd(result, match.index, match[1]);
       result = result.slice(0, match.index) + result.slice(end);
-      pattern.lastIndex = match.index;
+      openTags.lastIndex = match.index;
     }
   }
   return result;
