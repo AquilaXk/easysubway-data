@@ -193,15 +193,17 @@ function unitFits(blocks, maxExtent) {
 function splitByPieces(blocks, maxExtent) {
   const pieceCount = blocks[0].length;
   const chunks = [];
-  for (let from = 0; from < pieceCount; ) {
+  let covered = 0;
+  for (let from = 0; from < pieceCount; from += 1) {
+    if (from < covered) continue;
     let to = pieceCount;
     while (to > from && !unitFits(blocks.map((block) => block.slice(from, to)), maxExtent)) to -= 1;
     if (to === from) {
       for (const block of blocks) chunks.push([[block[from]]]);
     } else {
       chunks.push(blocks.map((block) => block.slice(from, to)));
+      covered = to;
     }
-    from = Math.max(to, from + 1);
   }
   return chunks;
 }
