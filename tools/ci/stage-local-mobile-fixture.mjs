@@ -10,7 +10,7 @@ const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TAR_EXECUTABLE = "/usr/bin/tar";
 
 // #979: fixture 커밋은 ITX topology 적용 전 입력 팩을 담는다. 승격마다 mobile 커밋이 바뀌지 않고, 출력 팩은 커밋된 증거에서 결정적으로 파생한다.
-export const PINNED_MOBILE_REVISION = "b9791c0144f91f193b839c786937b34f335d8e36";
+export const PINNED_MOBILE_REVISION = "d4155d147f2210c017bfd6f5b4720b542f4ef58b";
 export const INPUT_CAPITAL_GZIP_SHA256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
 
 /** 파생된 팩의 기대 sha256은 커밋된 증거가 정한다. */
