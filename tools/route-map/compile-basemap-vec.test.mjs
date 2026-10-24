@@ -832,6 +832,18 @@ test("지워질 요소의 분류되지 않은 CSS 선언은 던지지 않고, �
   }
 });
 
+test("clipPath 안에서는 불투명도 0 요소가 남으므로(깊이와 무관) 분류되지 않은 선언이 던지고, 밖에서는 지워져 던지지 않는다", () => {
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><path class="r" opacity="0" d="M0 0L1 1"/></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><g><path class="r" style="opacity:0" d="M0 0L1 1"/></g></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.doesNotThrow(() => expandAndStrip('<g><path class="r" opacity="0" d="M0 0L1 1"/></g>'));
+});
+
 test("클래스가 준 display:none은 그 요소에서 선언을 버려도 던지지 않고, 인라인 display가 이기면 던진다", () => {
   assert.doesNotThrow(() =>
     expandAndStrip('<path class="h" d="M0 0L1 1"/>', ".h { display:none; clip-rule:evenodd; }"),
