@@ -392,6 +392,10 @@
     "data1278": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1278",
       "title": "[Refactor] 데이터 도구 핫스팟 클린코드 정비 에픽"
+    },
+    "data1484": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1484",
+      "title": "[Feat] 노선도 바탕층이 노선별 강조 레이어와 데이터팩 노선 id 색인을 함께 내보낸다"
     }
   },
   "workflows": {
@@ -899,6 +903,7 @@
     {"path":"tools/route-map/audit-transfer-groups.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":10},
     {"path":"tools/route-map/basemap-font-weight-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":9377},
     {"path":"tools/route-map/basemap-ink-within-viewbox-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":16434},
+    {"path":"tools/route-map/basemap-line-overlays.test.mjs","semanticOwner":"data1484","classes":["required-pr"],"durationMs":1190},
     {"path":"tools/route-map/basemap-paint-order-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":42},
     {"path":"tools/route-map/basemap-svg-fidelity-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":9431},
     {"path":"tools/route-map/build-polyline-pack.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":507},

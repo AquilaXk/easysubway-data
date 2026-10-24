@@ -27,12 +27,26 @@
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { DAEJEON, DAEGU, BUSAN, GWANGJU, SEOUL } from "./sma-region-configs.mjs";
+import {
+  BUSAN,
+  DAEGU,
+  DAEJEON,
+  GWANGJU,
+  REGION_CONFIGS,
+  SEOUL,
+} from "./sma-region-configs.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const svgSourceDir = path.join(
@@ -52,7 +66,8 @@ const compilerVersion = "1.3.0";
 //   1 — 노선 형상 + 역 심벌만 굽던 시기(라벨은 앱 솔버가 그림)
 //   2 — 지도 본문 레이어 전수(역명 라벨·표장·중간표기·노선번호 배지 포함)를 굽고
 //       캔버스 장식은 명시 계약으로 제외(오너 결정 "글자도 복붙"·"장식 제거")
-const basemapPipelineRevision = 2;
+//   3 — 바탕은 그대로 두고 노선별 강조 레이어(.vec)와 노선 id 색인을 함께 굽는다(#1484)
+const basemapPipelineRevision = 3;
 const buildManifestPath = path.join(
   root,
   "tools/route-map/basemap-build-manifest.json",
@@ -3354,29 +3369,431 @@ export function normalizeSvgForCompile(svgText) {
   return decomposePaintOrder(positioned);
 }
 
+// ── 노선별 강조 레이어(#1484) ─────────────────────────────────────────────────
+//
+// 앱이 고른 노선만 원래 색으로 그리고 나머지를 흐리게 그리려면 노선 단위 그림이
+// 따로 있어야 한다. 바탕 .vec는 그대로 두고, 노선마다 "바탕 컴파일 입력에서 그
+// 노선에 속하지 않는 요소를 지운 부분 문서"를 굽는다. 앱은 바탕을 흐리게 그린 뒤
+// 고른 노선 레이어를 위에 그린다. 요소를 지우기만 하므로 레이어의 요소는 바탕과
+// 같은 마크업·같은 순서로 그려진다.
+//
+// 요소의 노선 소속은 오너 SVG가 단 속성으로 정한다(위에서부터 먼저 맞는 규칙):
+//   1) 그리지 않는 요소(defs·metadata 등)와 내용 없는 요소 → 모든 레이어에 남긴다.
+//   2) KTX·SRT 표장 → 어느 레이어에도 넣지 않는다(노선이 아니라 철도 서비스 표시).
+//   3) data-transfer-lines → 나열된 노선.
+//   4) 역 이름이 역 심벌 색인에 있으면 → 그 역 심벌의 노선. 같은 이름 심벌이 서로
+//      다른 노선으로 둘 이상이면(양평·좌천 같은 동명 별개역) 가장 가까운 심벌을
+//      따른다. 오너 SVG는 심벌 이름을 가장 가까운 역명 라벨에서 붙였다
+//      (data-name-source="nearest-rendered-station-label") — 그 관례를 거꾸로 쓴다.
+//   5) data-line → 그 노선.
+//   6) 권역 설정 basemapElementRules(id·class) → 규칙의 노선.
+//   7) 자식이 있는 컨테이너 → 자식마다 다시 판정.
+// 어디에도 맞지 않는 그려지는 요소, 등록되지 않은 슬러그, 아무 요소에도 맞지 않는
+// 규칙, 요소가 하나도 없는 노선은 실패한다.
+
+export const LINE_OVERLAY_INDEX_FILE = "line-overlays.json";
+
+export function lineOverlayVectorFileName(regionId, lineId) {
+  return `${regionId}.${lineId}.vec`;
+}
+
+const NON_RENDERING_ELEMENTS = new Set([
+  "clipPath",
+  "defs",
+  "desc",
+  "filter",
+  "inkscape:path-effect",
+  "linearGradient",
+  "marker",
+  "mask",
+  "metadata",
+  "pattern",
+  "radialGradient",
+  "sodipodi:namedview",
+  "style",
+  "symbol",
+  "title",
+]);
+const CONTAINER_ELEMENTS = new Set(["a", "g", "svg", "switch", "text"]);
+const STATION_KEY_ATTRIBUTES = [
+  "data-station",
+  "data-station-name",
+  "data-full-official-name",
+];
+
+function presentAttr(node, name) {
+  return nodeAttr(node, name) || undefined;
+}
+
+function describeNode(node) {
+  const id = presentAttr(node, "id");
+  return id ? `<${node.name} id="${id}">` : node.openTag.slice(0, 120);
+}
+
+// 역 신원 키. 오너 라벨 sidecar와 같은 규칙(ownerLabelStationKey + 권역
+// canonicalRules)을 쓴다 — 속성이 없는 역명 <text>(대구 등)는 글자가 신원이다.
+function stationKeyOf(svgText, node, config) {
+  const hasStationAttribute = STATION_KEY_ATTRIBUTES.some((name) => presentAttr(node, name));
+  if (!hasStationAttribute && node.name !== "text") return undefined;
+  return ownerLabelStationKey(
+    node.openTag,
+    svgText.slice(node.start, node.end),
+    config.canonicalRules,
+  );
+}
+
+function registeredSlugs(slugs, config, node) {
+  for (const slug of slugs) {
+    if (!Object.hasOwn(config.slugToLineId, slug)) {
+      throw new Error(
+        `${config.id}: ${describeNode(node)}의 노선 슬러그 "${slug}"가 ` +
+          "slugToLineId에 등록되지 않았습니다.",
+      );
+    }
+  }
+  return slugs;
+}
+
+function declaredLineSlugs(node, config) {
+  const transferLines = presentAttr(node, "data-transfer-lines");
+  if (transferLines) {
+    return registeredSlugs(transferLines.trim().split(/\s+/), config, node);
+  }
+  const line = presentAttr(node, "data-line");
+  return line ? registeredSlugs([line], config, node) : undefined;
+}
+
+// 도형은 그 자체로 그린다. 컨테이너·텍스트는 자식이나 글자가 있어야 그린다.
+function drawsNothing(svgText, node) {
+  return (
+    NON_RENDERING_ELEMENTS.has(node.name) ||
+    (CONTAINER_ELEMENTS.has(node.name) &&
+      node.children.length === 0 &&
+      nodeInnerText(svgText, node).trim() === "")
+  );
+}
+
+function shapeCenter(svgText, node) {
+  let box = null;
+  collectShapeBoundsRecursive(
+    svgText.slice(node.start, node.end),
+    ancestorMatrixOf(node),
+    (x, y) => {
+      box ??= { minX: x, minY: y, maxX: x, maxY: y };
+      box.minX = Math.min(box.minX, x);
+      box.minY = Math.min(box.minY, y);
+      box.maxX = Math.max(box.maxX, x);
+      box.maxY = Math.max(box.maxY, y);
+    },
+  );
+  if (!box) throw new Error(`${describeNode(node)}: 역 심벌 도형 좌표가 없습니다.`);
+  return [(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2];
+}
+
+function firstTextNode(node) {
+  if (node.name === "text") return node;
+  for (const child of node.children) {
+    const found = firstTextNode(child);
+    if (found) return found;
+  }
+  return null;
+}
+
+function firstPositionedNode(node, axis) {
+  if (firstCoordinateToken(nodeAttr(node, axis)) != null) return node;
+  for (const child of node.children) {
+    const found = firstPositionedNode(child, axis);
+    if (found) return found;
+  }
+  return null;
+}
+
+// 역명 글자 기준점(첫 글자 위치)을 루트 좌표로.
+function labelAnchor(node) {
+  const text = firstTextNode(node);
+  const xNode = text && firstPositionedNode(text, "x");
+  const yNode = text && firstPositionedNode(text, "y");
+  if (!xNode || !yNode) {
+    throw new Error(`${describeNode(node)}: 같은 이름 역이 여럿인데 역명 위치를 읽을 수 없습니다.`);
+  }
+  let matrix = ancestorMatrixOf(text);
+  const transform = nodeAttr(text, "transform");
+  if (transform) matrix = composeMatrix(matrix, parseTransformChain(transform));
+  return applyMatrix(
+    matrix,
+    Number(firstCoordinateToken(nodeAttr(xNode, "x"))),
+    Number(firstCoordinateToken(nodeAttr(yNode, "y"))),
+  );
+}
+
+// 역 이름 → 그 이름을 단 역 심벌들(data-node-role)과 각 심벌의 노선.
+function buildStationSymbolIndex(svgText, root, config) {
+  const index = new Map();
+  (function walk(node) {
+    for (const child of node.children) {
+      const key = presentAttr(child, "data-node-role") && stationKeyOf(svgText, child, config);
+      if (key) {
+        const hint = config.missingLineHint?.[key];
+        const slugs = declaredLineSlugs(child, config) ??
+          (hint ? registeredSlugs([hint], config, child) : undefined);
+        if (!slugs) {
+          throw new Error(`${config.id}: 역 심벌 ${describeNode(child)}에 노선이 없습니다.`);
+        }
+        if (!index.has(key)) index.set(key, []);
+        index.get(key).push({ node: child, slugs });
+      }
+      walk(child);
+    }
+  })(root);
+  return index;
+}
+
+function slugsFromStationSymbols(svgText, node, symbols) {
+  const own = symbols.find((symbol) => symbol.node === node);
+  if (own) return own.slugs;
+  const distinctLineSets = new Set(symbols.map(({ slugs }) => [...slugs].sort().join(" ")));
+  if (distinctLineSets.size === 1) return symbols[0].slugs;
+  const [x, y] = labelAnchor(node);
+  const ranked = symbols
+    .map((symbol) => {
+      const [sx, sy] = shapeCenter(svgText, symbol.node);
+      return { symbol, distance: Math.hypot(sx - x, sy - y) };
+    })
+    .sort((a, b) => a.distance - b.distance);
+  if (ranked[0].distance === ranked[1].distance) {
+    throw new Error(`${describeNode(node)}: 가장 가까운 같은 이름 역 심벌이 둘입니다.`);
+  }
+  return ranked[0].symbol.slugs;
+}
+
+function matchesElementRule(node, match) {
+  if (match.id != null) return presentAttr(node, "id") === match.id;
+  const classes = (presentAttr(node, "class") ?? "").split(/\s+/);
+  return classes.includes(match.className);
+}
+
+/**
+ * 정규화된 바탕 컴파일 입력을 노선 소속 단위로 나눈다. 반환한 각 단위는 문서
+ * 순서의 겹치지 않는 [start, end) 구간과 그 구간이 속한 슬러그 집합이다(빈 집합 =
+ * 어느 노선 레이어에도 넣지 않음). 단위 밖 마크업은 모든 레이어에 남는다.
+ */
+function classifyLineMembership(svgText, config) {
+  const root = buildSvgTree(svgText);
+  const stationSymbols = buildStationSymbolIndex(svgText, root, config);
+  const rules = (config.basemapElementRules ?? []).map((rule) => ({ ...rule, uses: 0 }));
+  const units = [];
+  const unclassified = [];
+
+  function membershipOf(node) {
+    if (node.name === "g" && isServiceMarkOpenTag(node.openTag)) return [];
+    if (presentAttr(node, "data-transfer-lines")) return declaredLineSlugs(node, config);
+    const symbols = stationSymbols.get(stationKeyOf(svgText, node, config));
+    if (symbols) return slugsFromStationSymbols(svgText, node, symbols);
+    const declared = declaredLineSlugs(node, config);
+    if (declared) return declared;
+    const rule = rules.find(({ match }) => matchesElementRule(node, match));
+    if (!rule) return undefined;
+    rule.uses += 1;
+    return registeredSlugs(rule.lines, config, node);
+  }
+
+  (function walk(node) {
+    for (const child of node.children) {
+      if (drawsNothing(svgText, child)) continue;
+      const slugs = membershipOf(child);
+      if (slugs) {
+        units.push({ start: child.start, end: child.end, slugs: new Set(slugs) });
+      } else if (CONTAINER_ELEMENTS.has(child.name) && child.children.length > 0) {
+        walk(child);
+      } else {
+        unclassified.push(describeNode(child));
+      }
+    }
+  })(root);
+
+  if (unclassified.length > 0) {
+    throw new Error(
+      `${config.id}: 노선 소속을 정할 수 없는 그려지는 요소 ${unclassified.length}건 — ` +
+        `${unclassified.slice(0, 10).join(", ")}. data-line을 달거나 ` +
+        "basemapElementRules에 사유와 함께 분류하세요.",
+    );
+  }
+  const unusedRules = rules.filter(({ uses }) => uses === 0);
+  if (unusedRules.length > 0) {
+    throw new Error(
+      `${config.id}: 아무 요소에도 맞지 않는 basemapElementRules — ` +
+        unusedRules.map(({ match }) => JSON.stringify(match)).join(", "),
+    );
+  }
+  return units;
+}
+
+function withoutRanges(svgText, ranges) {
+  let cursor = 0;
+  let result = "";
+  for (const { start, end } of ranges) {
+    result += svgText.slice(cursor, start);
+    cursor = end;
+  }
+  return result + svgText.slice(cursor);
+}
+
+/**
+ * 정규화된 바탕 컴파일 입력([normalizedSvg])에서 노선마다 강조 레이어 컴파일
+ * 입력을 만든다. 반환은 lines.id 코드포인트 순 `{ lineId, svgLineSlug, svg }[]`.
+ */
+export function buildBasemapLineOverlays(normalizedSvg, config) {
+  const units = classifyLineMembership(normalizedSvg, config);
+  const emptySlugs = Object.keys(config.slugToLineId).filter(
+    (slug) => !units.some(({ slugs }) => slugs.has(slug)),
+  );
+  if (emptySlugs.length > 0) {
+    throw new Error(
+      `${config.id}: 그려지는 요소가 하나도 없는 노선 슬러그 — ${emptySlugs.join(", ")}`,
+    );
+  }
+  return Object.entries(config.slugToLineId)
+    .map(([svgLineSlug, lineId]) => ({
+      lineId,
+      svgLineSlug,
+      svg: withoutRanges(
+        normalizedSvg,
+        units.filter(({ slugs }) => !slugs.has(svgLineSlug)),
+      ),
+    }))
+    .sort((a, b) => codepointCompare(a.lineId, b.lineId));
+}
+
+/**
+ * 앱이 읽는 강조 레이어 색인(line-overlays.json) 본문. [regions]는
+ * `{ id, overlays: { lineId, svgLineSlug }[] }[]`.
+ */
+export function buildLineOverlayIndex(regions) {
+  const byRegion = {};
+  for (const { id, overlays } of [...regions].sort((a, b) => codepointCompare(a.id, b.id))) {
+    byRegion[id] = {
+      baseVector: `${id}.vec`,
+      lines: Object.fromEntries(
+        overlays.map(({ lineId, svgLineSlug }) => [
+          lineId,
+          { svgLineSlug, vector: lineOverlayVectorFileName(id, lineId) },
+        ]),
+      ),
+    };
+  }
+  return `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      artifactKind: "route-map-basemap-line-overlays",
+      regions: byRegion,
+    },
+    null,
+    2,
+  )}\n`;
+}
+
 // vector_graphics_compiler를 apps/mobile 컨텍스트에서 실행한다. `--packages`가
 // 자동 해석되도록 cwd를 apps/mobile로 둔다. 경로는 전부 절대경로로 넘긴다.
-// 원본 SVG를 정규화한 임시 사본을 컴파일 입력으로 쓴다(원본 불변).
-function compile(inputSvg, outputVec, normalizedSvgDir) {
-  const normalizedSvg = path.join(
-    normalizedSvgDir,
-    `${path.basename(outputVec, ".vec")}.svg`,
-  );
-  writeFileSync(
-    normalizedSvg,
-    normalizeSvgForCompile(readFileSync(inputSvg, "utf8")),
-  );
+// 정규화된 컴파일 입력([jobs]: { fileName, normalizedSvg }[])을 임시 SVG로 써서
+// 한 번에 굽는다(원본 불변). 컴파일러의 --input-dir 모드는 한 프로세스 안에서
+// isolate로 나눠 구워, 파일마다 dart를 다시 띄우는 비용(1회 약 0.27초)을 한 번으로
+// 줄인다. 산출 바이트는 파일 단위(-i/-o) 모드와 같다(#1484 실측 36/36 sha256 동일).
+// 반환은 fileName → 산출 .vec sha256.
+function compileAll(jobs, outputDir, workDir) {
+  const inputDir = path.join(workDir, "svg");
+  const compiledDir = path.join(workDir, "vec");
+  mkdirSync(inputDir, { recursive: true });
+  for (const { fileName, normalizedSvg } of jobs) {
+    writeFileSync(path.join(inputDir, `${path.basename(fileName, ".vec")}.svg`), normalizedSvg);
+  }
   execFileSync(dartBin, [
     "run",
     "vector_graphics_compiler",
-    "-i",
-    normalizedSvg,
-    "-o",
-    outputVec,
+    "--input-dir",
+    inputDir,
+    "--out-dir",
+    compiledDir,
   ], { cwd: mobileDir, stdio: ["ignore", "inherit", "inherit"] });
+  mkdirSync(outputDir, { recursive: true });
+  return new Map(
+    jobs.map(({ fileName }) => {
+      const outputVec = path.join(outputDir, fileName);
+      renameSync(
+        path.join(compiledDir, `${path.basename(fileName, ".vec")}.svg.vec`),
+        outputVec,
+      );
+      return [fileName, sha256(outputVec)];
+    }),
+  );
+}
+
+function relativeToRoot(file) {
+  return path.relative(root, file).replaceAll(path.sep, "/");
+}
+
+function readViewBox(sourceText, svgName) {
+  const viewBox = sourceText
+    .match(/\bviewBox="([^"]+)"/)?.[1]
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (viewBox?.length !== 4 || viewBox.some((value) => !Number.isFinite(value))) {
+    throw new Error(`${svgName}: 유효한 viewBox를 찾지 못했습니다.`);
+  }
+  return viewBox;
+}
+
+// 한 권역의 컴파일 입력·sidecar 재료를 만든다(컴파일 전 단계, 파일 쓰기 없음).
+function prepareRegion(region) {
+  const inputSvg = path.join(svgSourceDir, region.svg);
+  const sourceSvg = readFileSync(inputSvg);
+  const sourceText = sourceSvg.toString("utf8");
+  const normalizedSvg = normalizeSvgForCompile(sourceText);
+  return {
+    region,
+    inputSvg,
+    sourceSvg,
+    normalizedSvg,
+    viewBox: readViewBox(sourceText, region.svg),
+    ownerLabels: markLineTerminalBadgeEntries(
+      extractOwnerLabels(sourceText, region.id),
+      sourceText,
+    ),
+    // 부산·대구형(service-tag) + 대전·광주형(rail chip) 표장 장애물을 합쳐
+    // 단일 회피 목록으로 낸다 — 앱·게이트는 origin 구분 없이 rect로 소비한다.
+    serviceTagObstacles: [
+      ...extractServiceTagObstacles(sourceText),
+      ...extractRailTransferChipObstacles(sourceText),
+    ],
+    lineOverlays: buildBasemapLineOverlays(normalizedSvg, REGION_CONFIGS[region.id]),
+  };
+}
+
+function compileJobsOf({ region, normalizedSvg, lineOverlays }) {
+  return [
+    { fileName: `${region.id}.vec`, normalizedSvg },
+    ...lineOverlays.map(({ lineId, svg }) => ({
+      fileName: lineOverlayVectorFileName(region.id, lineId),
+      normalizedSvg: svg,
+    })),
+  ];
+}
+
+function logUnrepresentableText(regionId, normalizedSvg) {
+  // 표현 불가 property는 조용히 사라지지 않고 산출 로그에 드러낸다(#2593 리뷰).
+  const unrepresentable = unrepresentableTextDeclarations(normalizedSvg);
+  if (unrepresentable.size === 0) return;
+  process.stdout.write(
+    `${regionId}.vec  .vec 형식이 담지 못하는 텍스트 선언: ` +
+      `${[...unrepresentable]
+        .sort((a, b) => b[1] - a[1])
+        .map(([key, count]) => `${key} ×${count}`)
+        .join(", ")}\n`,
+  );
 }
 
 const labelsSidecarPath = path.join(outDir, "labels.json");
+const lineOverlaysSidecarPath = path.join(outDir, LINE_OVERLAY_INDEX_FILE);
 
 function main() {
   const verify = process.argv.slice(2).includes("--verify");
@@ -3384,99 +3801,76 @@ function main() {
 
   // 정규화 임시 SVG·재현검증 산출물은 커밋 대상 밖(.tmp)에 둔다.
   const tmpDir = path.join(outDir, ".tmp");
-  const normalizedSvgDir = path.join(tmpDir, "svg");
-  const verifyDir = path.join(tmpDir, "verify");
-  mkdirSync(normalizedSvgDir, { recursive: true });
+  const prepared = regions.map(prepareRegion);
+  const jobs = prepared.flatMap(compileJobsOf);
+  let digests;
+  let mismatched = [];
+  try {
+    digests = compileAll(jobs, outDir, path.join(tmpDir, "compile"));
+    if (verify) {
+      const second = compileAll(jobs, path.join(tmpDir, "verify"), path.join(tmpDir, "verify-work"));
+      mismatched = jobs
+        .map(({ fileName }) => fileName)
+        .filter((fileName) => second.get(fileName) !== digests.get(fileName));
+    }
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
   if (verify) {
-    mkdirSync(verifyDir, { recursive: true });
+    if (mismatched.length > 0) {
+      process.stderr.write(
+        `컴파일 산출이 비결정적입니다(2회 sha256 불일치: ${mismatched.join(", ")}). 실패로 종료합니다.\n`,
+      );
+      process.exit(1);
+    }
+    process.stdout.write(`재현검증 통과: ${jobs.length}개 .vec 2회 컴파일 sha256 동일.\n`);
   }
 
-  let allMatch = true;
-  const buildMaps = [];
-  const labelsByRegion = {};
-  const serviceTagObstaclesByRegion = {};
-  try {
-    for (const region of regions) {
-      const inputSvg = path.join(svgSourceDir, region.svg);
+  const buildMaps = prepared.map(
+    ({ region, inputSvg, sourceSvg, normalizedSvg, viewBox, ownerLabels, lineOverlays }) => {
       const outputVec = path.join(outDir, `${region.id}.vec`);
       const outputDisplaySvg = path.join(outDir, `${region.id}.svg`);
-      const sourceSvg = readFileSync(inputSvg);
-      const sourceText = sourceSvg.toString("utf8");
-      const normalizedSvg = normalizeSvgForCompile(sourceText);
-      const viewBox = sourceText
-        .match(/\bviewBox="([^"]+)"/)?.[1]
-        .trim()
-        .split(/[\s,]+/)
-        .map(Number);
-      if (viewBox?.length !== 4 || viewBox.some((value) => !Number.isFinite(value))) {
-        throw new Error(`${region.svg}: 유효한 viewBox를 찾지 못했습니다.`);
-      }
-      compile(inputSvg, outputVec, normalizedSvgDir);
       copyFileSync(inputSvg, outputDisplaySvg);
-      const digest = sha256(outputVec);
-      const ownerLabels = markLineTerminalBadgeEntries(
-        extractOwnerLabels(sourceText, region.id),
-        sourceText,
+      const digest = digests.get(`${region.id}.vec`);
+      process.stdout.write(
+        `${region.id}.vec  sha256=${digest}  ownerLabels=${ownerLabels.length}  ` +
+          `노선 강조 레이어 ${lineOverlays.length}개\n`,
       );
-      labelsByRegion[region.id] = ownerLabels;
-      // 부산·대구형(service-tag) + 대전·광주형(rail chip) 표장 장애물을 합쳐
-      // 단일 회피 목록으로 낸다 — 앱·게이트는 origin 구분 없이 rect로 소비한다.
-      serviceTagObstaclesByRegion[region.id] = [
-        ...extractServiceTagObstacles(sourceText),
-        ...extractRailTransferChipObstacles(sourceText),
-      ];
-      buildMaps.push({
+      logUnrepresentableText(region.id, normalizedSvg);
+      return {
         id: region.id,
-        source: path.relative(root, inputSvg).replaceAll(path.sep, "/"),
-        compiledVector: path.relative(root, outputVec).replaceAll(path.sep, "/"),
-        displaySvg: path.relative(root, outputDisplaySvg).replaceAll(path.sep, "/"),
+        source: relativeToRoot(inputSvg),
+        compiledVector: relativeToRoot(outputVec),
+        displaySvg: relativeToRoot(outputDisplaySvg),
         sourceSvgSha256: sha256Value(sourceSvg),
         displaySvgSha256: sha256(outputDisplaySvg),
         normalizedSvgSha256: sha256Value(normalizedSvg),
         compiledVectorSha256: digest,
         viewBox,
         ownerLabelCount: ownerLabels.length,
-      });
-      process.stdout.write(
-        `${region.id}.vec  sha256=${digest}  ownerLabels=${ownerLabels.length}\n`,
-      );
-      // 표현 불가 property는 조용히 사라지지 않고 산출 로그에 드러낸다(#2593 리뷰).
-      const unrepresentable = unrepresentableTextDeclarations(normalizedSvg);
-      if (unrepresentable.size > 0) {
-        process.stdout.write(
-          `${region.id}.vec  .vec 형식이 담지 못하는 텍스트 선언: ` +
-            `${[...unrepresentable]
-              .sort((a, b) => b[1] - a[1])
-              .map(([key, count]) => `${key} ×${count}`)
-              .join(", ")}\n`,
-        );
-      }
-
-      if (verify) {
-        const secondVec = path.join(verifyDir, `${region.id}.vec`);
-        compile(inputSvg, secondVec, normalizedSvgDir);
-        const secondDigest = sha256(secondVec);
-        const match = secondDigest === digest;
-        allMatch &&= match;
-        process.stdout.write(
-          `${region.id}.vec  재현검증(2회) ${match ? "일치" : "불일치"}` +
-            `${match ? "" : ` (${secondDigest})`}\n`,
-        );
-      }
-    }
-  } finally {
-    rmSync(tmpDir, { recursive: true, force: true });
-  }
-
-  if (verify) {
-    if (!allMatch) {
-      process.stderr.write(
-        "컴파일 산출이 비결정적입니다(2회 sha256 불일치). 실패로 종료합니다.\n",
-      );
-      process.exit(1);
-    }
-    process.stdout.write("전 권역 재현검증 통과: 2회 컴파일 sha256 동일.\n");
-  }
+        lineOverlays: lineOverlays.map(({ lineId, svgLineSlug, svg }) => {
+          const fileName = lineOverlayVectorFileName(region.id, lineId);
+          return {
+            lineId,
+            svgLineSlug,
+            compiledVector: relativeToRoot(path.join(outDir, fileName)),
+            normalizedSvgSha256: sha256Value(svg),
+            compiledVectorSha256: digests.get(fileName),
+          };
+        }),
+      };
+    },
+  );
+  const labelsByRegion = Object.fromEntries(
+    prepared.map(({ region, ownerLabels }) => [region.id, ownerLabels]),
+  );
+  const serviceTagObstaclesByRegion = Object.fromEntries(
+    prepared.map(({ region, serviceTagObstacles }) => [region.id, serviceTagObstacles]),
+  );
+  const lineOverlayRegions = prepared.map(({ region, lineOverlays }) => ({
+    id: region.id,
+    overlays: lineOverlays,
+  }));
 
   // 오너 라벨 sidecar(#2068 6차): basemap 모드가 자동 솔버 대신 참조하는 SVG
   // 실측 앵커. 5권역 결합 단일 파일 — metro_map_pack/basemap/ 디렉터리는
@@ -3497,6 +3891,13 @@ function main() {
   const labelsSidecarSha256 = sha256Value(labelsSidecarJson);
   process.stdout.write(
     `labels.json  sha256=${labelsSidecarSha256}  regions=${Object.keys(labelsByRegion).length}\n`,
+  );
+
+  const lineOverlaysJson = buildLineOverlayIndex(lineOverlayRegions);
+  writeFileSync(lineOverlaysSidecarPath, lineOverlaysJson);
+  const lineOverlaysSidecarSha256 = sha256Value(lineOverlaysJson);
+  process.stdout.write(
+    `${LINE_OVERLAY_INDEX_FILE}  sha256=${lineOverlaysSidecarSha256}\n`,
   );
 
   writeFileSync(
@@ -3526,12 +3927,16 @@ function main() {
           // (EXCLUDED_DECOR_LAYERS 명시 계약 + 분류 완전성 게이트).
           decoration: "excluded",
           interaction: "route_map_positions",
+          // 앱은 바탕을 흐리게 그리고 고른 노선 레이어를 위에 그린다(#1484).
+          lineOverlays: "per-line-vec-over-faded-basemap",
         },
         ownerLabelsSidecar: {
-          path: path
-            .relative(root, labelsSidecarPath)
-            .replaceAll(path.sep, "/"),
+          path: relativeToRoot(labelsSidecarPath),
           sha256: labelsSidecarSha256,
+        },
+        lineOverlaysSidecar: {
+          path: relativeToRoot(lineOverlaysSidecarPath),
+          sha256: lineOverlaysSidecarSha256,
         },
         maps: buildMaps,
       },

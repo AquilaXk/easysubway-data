@@ -9,6 +9,13 @@
 //   - lineNamePrefix : lines.name_ko 접두(예: "수도권 1호선"의 "수도권",
 //                      "부산 1호선"의 "부산"). regionKey와 다를 수 있다(부산).
 //   - slugToSuffix : SVG data-line 슬러그 → lines.name_ko 접미.
+//   - slugToLineId : SVG data-line 슬러그 → 데이터팩 lines.id. 바탕층 노선별 강조
+//                    레이어 색인의 키다. 전국 팩은 인천 1·2호선 이름이 바뀌어 이름
+//                    규칙으로는 id를 못 찾으므로 id를 직접 등록하고, 테스트가 이름
+//                    규칙 결과·전국 정본 팩 노선도 트랙과 일대일인지 확인한다.
+//   - basemapElementRules : 바탕층 강조 레이어에서 노선 속성(data-line 등)이 없는
+//                    그려지는 요소의 명시 분류. lines가 빈 배열이면 어느 노선
+//                    레이어에도 넣지 않는다. 아무 요소에도 맞지 않는 규칙은 실패한다.
 //   - colorToSlug  : SVG 노선 stroke 색(소문자 hex) → 슬러그(build-sma-tracks용).
 //   - canonicalRules : SVG data-station 문자열 → canonical station 이름 정규화.
 //   - missingLineHint / markerlessFallback / topologyExceptions / excludedStations :
@@ -24,6 +31,12 @@
 // 콜론을 걷어냈다 — 목록을 넓힐 때는 반드시 카탈로그 실측(동일 이름 2행이 서로
 // 다른 물리역인지)으로 확인한다.
 const SEOUL_DISTINCT_SAME_NAME_STATIONS = new Set(["신촌", "양평"]);
+
+// 오너 SVG 패밀리 공통 캔버스 배경. 지도 본문이 아니라 어느 노선 레이어에도 넣지 않는다.
+const CANVAS_BACKGROUND_RULES = [
+  { match: { id: "page-background" }, lines: [], reason: "캔버스 배경" },
+  { match: { id: "background-grid-overlay" }, lines: [], reason: "캔버스 격자" },
+];
 
 // ── 수도권(seoul): #1950/#2011 정본. #2068 오너 재제작 v4로 교체. ─────────────
 const SEOUL = {
@@ -58,6 +71,33 @@ const SEOUL = {
     "sillim": "신림선",
     "gtx-a": "GTX-A",
   },
+  slugToLineId: {
+    "1": "line-472a81add377",
+    "2": "seoul-2",
+    "3": "line-41a8c75ec9d8",
+    "4": "seoul-4",
+    "5": "line-80fc4d5350d4",
+    "6": "line-3f41718e0833",
+    "7": "line-15b3b8a93259",
+    "8": "line-2b2d9eaa53d0",
+    "9": "line-f0e747248a31",
+    "airport-railroad": "line-e9e9a5b520a4",
+    "gyeongui-jungang": "line-6e39be0cb6e2",
+    "gyeongchun": "line-54a7b980b7c3",
+    "suin-bundang": "line-558d0bd8312d",
+    "shinbundang": "shinbundang",
+    "gyeonggang": "line-e4939a4b4713",
+    "seohae": "line-051552e50435",
+    "incheon-1": "line-98718184f016",
+    "incheon-2": "line-42b5805f3b5a",
+    "uijeongbu-lrt": "line-62096860ab09",
+    "everline": "line-828f04afc588",
+    "ui-sinseol": "line-30886152e4f8",
+    "gimpo-goldline": "line-5500c1600f71",
+    "sillim": "line-aefa08ccc0a9",
+    "gtx-a": "line-8604048b6430",
+  },
+  basemapElementRules: CANVAS_BACKGROUND_RULES,
   colorToSlug: {
     "#004a85": "1", "#00a23f": "2", "#ed6c00": "3", "#009bce": "4", "#794698": "5",
     "#7c4932": "6", "#6e7e31": "7", "#d11d70": "8", "#a49d87": "9",
@@ -155,6 +195,15 @@ const BUSAN = {
     donghae: "동해",
     bgl: "부산김해경전철",
   },
+  slugToLineId: {
+    line1: "line-ab1a041f6266",
+    line2: "line-eb7b47920390",
+    line3: "line-d74614a04530",
+    line4: "line-d812a5bc1e5f",
+    donghae: "line-f52eb59d8497",
+    bgl: "line-e4cce88f0d7f",
+  },
+  basemapElementRules: [],
   colorToSlug: {
     "#f68712": "line1", "#a6da53": "line2", "#d49329": "line3",
     "#7189c5": "line4", "#1c63b7": "donghae", "#854eac": "bgl",
@@ -218,6 +267,13 @@ const DAEGU = {
     line1: "1호선", line2: "2호선", line3: "3호선",
     daegyeong: "대경선",
   },
+  slugToLineId: {
+    line1: "line-5b8d9b05e7e6",
+    line2: "line-e2938a4cc492",
+    line3: "line-0ffaa95b1b5d",
+    daegyeong: "line-8f7ed01f290a",
+  },
+  basemapElementRules: [],
   colorToSlug: {
     "#ee265b": "line1", "#00b794": "line2", "#ffc513": "line3", "#0066b3": "daegyeong",
   },
@@ -280,6 +336,15 @@ const DAEJEON = {
   slugToSuffix: {
     "1": "1호선",
   },
+  slugToLineId: {
+    "1": "line-7051a9c2525c",
+  },
+  // v3는 1호선 종점 배지·노선 번호 배지에 data-line을 달지 않았다.
+  basemapElementRules: [
+    ...CANVAS_BACKGROUND_RULES,
+    { match: { className: "line-terminal-badge" }, lines: ["1"], reason: "1호선 종점 배지" },
+    { match: { className: "map-line-number-badge" }, lines: ["1"], reason: "1호선 노선 번호 배지" },
+  ],
   // 대전 1호선 색(#00975a)만 카탈로그 대상. 2호선·광역철도 색은 배제(build-sma-tracks
   // 는 colorToSlug 미등록 stroke를 자연 배제한다).
   colorToSlug: {
@@ -365,6 +430,14 @@ const GWANGJU = {
   slugToSuffix: {
     "1": "1호선",
   },
+  slugToLineId: {
+    "1": "line-e57a361e8892",
+  },
+  // v3는 1호선 종점 배지에 data-line을 달지 않았다.
+  basemapElementRules: [
+    ...CANVAS_BACKGROUND_RULES,
+    { match: { className: "line-terminal-badge" }, lines: ["1"], reason: "1호선 종점 배지" },
+  ],
   // 광주 1호선 색(#009088)만 카탈로그 대상. 2호선(phase1/2/3) 색은 배제.
   colorToSlug: {
     "#009088": "1",
