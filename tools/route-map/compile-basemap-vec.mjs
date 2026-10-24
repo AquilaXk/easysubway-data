@@ -89,7 +89,9 @@ const compilerFlags = ["--no-optimize-clips"];
 //   4 — 라벨을 참조 서체의 글리프 윤곽선으로 굽는다(#1488). `.vec`에 텍스트 draw가 없다.
 //   5 — 같은 그림을 더 적은 그리기 명령으로 낸다(#1495). 불투명도 0 요소를 지우고, clip
 //       최적화를 끄고, 컴파일 뒤 같은 paint 그리기를 합친다(merge-basemap-vec-draws.mjs).
-const basemapPipelineRevision = 5;
+//   6 — 묶음 상한이나 겹침 때문에 한 단위가 되지 못하는 여러 줄 라벨을 줄 열로 잘라, 줄마다
+//       테두리와 글자가 path 하나를 나눠 쓴다.
+const basemapPipelineRevision = 6;
 const buildManifestPath = path.join(
   root,
   "tools/route-map/basemap-build-manifest.json",
@@ -455,9 +457,7 @@ function nodeAttr(node, name) {
 }
 
 function isHiddenNode(node) {
-  if (nodeAttr(node, "display") === "none") return true;
-  const style = nodeAttr(node, "style") ?? "";
-  return /display\s*:\s*none/.test(style);
+  return declaresDisplayNone(node.openTag);
 }
 
 /** 조상(자기 자신 제외) transform 체인을 합성한 행렬. */
@@ -1130,12 +1130,6 @@ function expandNonScalingStroke(svgText) {
   return applyOpenTagEdits(svgText, edits);
 }
 
-/** 여는 태그 자체가 display:none을 선언하는지(속성형·인라인 style형). */
-function isHiddenOpenTag(openTag) {
-  if (firstAttr(openTag, "display") === "none") return true;
-  return /display\s*:\s*none/.test(firstAttr(openTag, "style") ?? "");
-}
-
 /** 인라인 `style="…"` 선언을 `Map(property → value)`으로 읽는다. */
 function parseInlineStyle(openTag) {
   const style = firstAttr(openTag, "style");
@@ -1162,6 +1156,67 @@ function withInlineStyle(openTag, declarations) {
   return `${openTag.replace(/\s*\/?>$/, "")} style="${serialized}"${selfClosing ? " />" : ">"}`;
 }
 
+// 캐스케이드: !important → 특이도 → 소스 순서. 뒤에 오는 것이 이긴다.
+function compareCascadeOrder(a, b) {
+  if (a.important !== b.important) return a.important ? 1 : -1;
+  for (let index = 0; index < 3; index += 1) {
+    if (a.specificity[index] !== b.specificity[index]) {
+      return a.specificity[index] - b.specificity[index];
+    }
+  }
+  return a.order - b.order;
+}
+
+// presentation attribute는 CSS에 지므로 같은 이름의 속성을 덮어쓰고, 없으면 여는 태그 끝에 붙인다.
+function setPresentationAttribute(openTag, property, value) {
+  const pattern = new RegExp(`\\s${property}="[^"]*"`);
+  const attribute = ` ${property}="${encodeXmlAttributeValue(value)}"`;
+  if (pattern.test(openTag)) return openTag.replace(pattern, attribute);
+  let head = openTag.slice(0, -1).trimEnd();
+  if (head.endsWith("/")) head = head.slice(0, -1).trimEnd();
+  return `${head}${attribute}${/\/\s*>$/.test(openTag) ? " />" : ">"}`;
+}
+
+// 요소에 걸린 선언을 캐스케이드(!important → 특이도 → 소스 순서, 뒤에 오는 것이 이긴다)로 가려
+// 요소 속성·인라인 style로 펼친 여는 태그와, 어디에도 펼 수 없어 버려질 첫 선언(없으면 null)을 낸다.
+function expandMatchedDeclarations(openTagBefore, matched) {
+  matched.sort(compareCascadeOrder);
+  const winners = new Map();
+  for (const declaration of matched) winners.set(declaration.property, declaration);
+  let openTag = openTagBefore;
+  let dropped = null;
+  const inline = parseInlineStyle(openTag);
+  let inlineChanged = false;
+  for (const [property, declaration] of winners) {
+    if (declaration.unsupported) {
+      // `!important`는 인라인 style도 이기므로 인라인 선언 유무와 무관하게 버려진다.
+      if (declaration.important || !inline.has(property)) dropped ??= declaration;
+      continue;
+    }
+    if (declaration.important) {
+      // !important는 인라인 style도 이긴다 → style 선언 자체를 교체한다.
+      inline.set(property, declaration.value);
+      inlineChanged = true;
+      continue;
+    }
+    if (inline.has(property)) continue; // 인라인 style이 일반 CSS를 이긴다.
+    openTag = setPresentationAttribute(openTag, property, declaration.value);
+  }
+  if (inlineChanged) openTag = withInlineStyle(openTag, inline);
+  return { openTag, dropped };
+}
+
+function matchedDeclarationsOf(rules, element) {
+  const matched = [];
+  for (const rule of rules) {
+    if (!matchesSelector(element, rule.selector)) continue;
+    for (const declaration of rule.declarations) {
+      matched.push({ ...declaration, specificity: rule.selector.specificity, order: rule.order });
+    }
+  }
+  return matched;
+}
+
 /**
  * `<style>` 규칙을 SVG/CSS 캐스케이드대로 요소 속성·인라인 style로 전개한다.
  * 텍스트 내용·요소 순서는 불변이며 원본 SVG는 건드리지 않는다(컴파일 입력 사본).
@@ -1171,82 +1226,29 @@ export function applyStylesheet(svgText) {
   if (rules.length === 0) return svgText;
   const root = buildSvgTree(svgText);
   const edits = [];
-  (function walk(node, hiddenAncestor) {
+  (function walk(node, scope) {
     for (const child of node.children) {
-      const matched = [];
-      for (const rule of rules) {
-        if (!matchesSelector(child, rule.selector)) continue;
-        for (const declaration of rule.declarations) {
-          matched.push({
-            ...declaration,
-            specificity: rule.selector.specificity,
-            order: rule.order,
-          });
-        }
+      const matched = matchedDeclarationsOf(rules, child);
+      const { openTag, dropped } =
+        matched.length > 0
+          ? expandMatchedDeclarations(child.openTag, matched)
+          : { openTag: child.openTag, dropped: null };
+      if (openTag !== child.openTag) {
+        edits.push({ start: child.start, length: child.openTag.length, openTag });
       }
-      if (matched.length > 0) {
-        // 캐스케이드: !important → 특이도 → 소스 순서. 뒤에 오는 것이 이긴다.
-        matched.sort((a, b) => {
-          if (a.important !== b.important) return a.important ? 1 : -1;
-          for (let index = 0; index < 3; index += 1) {
-            if (a.specificity[index] !== b.specificity[index]) {
-              return a.specificity[index] - b.specificity[index];
-            }
-          }
-          return a.order - b.order;
-        });
-        const winners = new Map();
-        for (const declaration of matched) winners.set(declaration.property, declaration);
-        // 캐스케이드 결과가 display:none이면(조상 포함) 이 요소는 렌더되지 않는다 —
-        // stripHiddenElements가 곧 지우므로 미지원 선언이 있어도 산출에 영향이 없다.
-        const hidden =
-          hiddenAncestor ||
-          winners.get("display")?.value === "none" ||
-          isHiddenOpenTag(child.openTag);
-        let openTag = child.openTag;
-        const inline = parseInlineStyle(openTag);
-        let inlineChanged = false;
-        for (const [property, declaration] of winners) {
-          // `!important`는 인라인 style도 이기므로 인라인 선언 유무와 무관하게 던진다.
-          if (
-            declaration.unsupported &&
-            (declaration.important || !inline.has(property)) &&
-            !hidden
-          ) {
-            throw new Error(
-              `분류되지 않은 CSS 선언이 실제 요소에 적용됩니다: "${property}: ${declaration.value}" ` +
-                `(${child.openTag.slice(0, 120)}). 렌더에 영향이 있으면 ` +
-                "supportedClassStyleProperties에, 없으면 RENDER_NEUTRAL_STYLE_PROPERTIES에 " +
-                "등재하세요 — 조용히 버리지 않고 실패합니다.",
-            );
-          }
-          if (declaration.unsupported) continue;
-          if (declaration.important) {
-            // !important는 인라인 style도 이긴다 → style 선언 자체를 교체한다.
-            inline.set(property, declaration.value);
-            inlineChanged = true;
-            continue;
-          }
-          if (inline.has(property)) continue; // 인라인 style이 일반 CSS를 이긴다.
-          // presentation attribute는 CSS에 지므로 덮어쓴다.
-          const pattern = new RegExp(`\\s${property}="[^"]*"`);
-          const attribute = ` ${property}="${encodeXmlAttributeValue(declaration.value)}"`;
-          openTag = pattern.test(openTag)
-            ? openTag.replace(pattern, attribute)
-            : `${openTag.replace(/\s*(\/?)>$/, "")}${attribute}${
-                /\/\s*>$/.test(openTag) ? " />" : ">"
-              }`;
-        }
-        if (inlineChanged) openTag = withInlineStyle(openTag, inline);
-        if (openTag !== child.openTag) {
-          edits.push({ start: child.start, length: child.openTag.length, openTag });
-        }
-        walk(child, hidden);
-        continue;
+      // 숨김 제거기가 지울 요소는 선언을 버려도 산출이 같다. 살아남는 요소만 던진다.
+      const removed = isRemovedByHiddenRules(openTag, child.name, scope);
+      if (dropped && !removed) {
+        throw new Error(
+          `분류되지 않은 CSS 선언이 실제 요소에 적용됩니다: "${dropped.property}: ${dropped.value}" ` +
+            `(${child.openTag.slice(0, 120)}). 렌더에 영향이 있으면 ` +
+            "supportedClassStyleProperties에, 없으면 RENDER_NEUTRAL_STYLE_PROPERTIES에 " +
+            "등재하세요 — 조용히 버리지 않고 실패합니다.",
+        );
       }
-      walk(child, hiddenAncestor || isHiddenOpenTag(child.openTag));
+      walk(child, hiddenScopeOfChildren(child.name, scope, removed));
     }
-  })(root, false);
+  })(root, ROOT_HIDDEN_SCOPE);
   let result = svgText;
   for (const edit of edits.sort((a, b) => b.start - a.start)) {
     result = result.slice(0, edit.start) + edit.openTag + result.slice(edit.start + edit.length);
@@ -3023,31 +3025,6 @@ export function completePartialTextPositions(svgText) {
   return result;
 }
 
-// 여는 태그 [startIndex]에 대응하는 요소 끝 인덱스(자기폐쇄면 그 태그 끝).
-// matchingGroupEnd의 태그명 일반화판 — display:none 제거가 `<g>`뿐 아니라
-// `<text>`·`<path>` 등 어떤 요소에도 적용돼야 하기 때문이다.
-function matchingElementEnd(text, startIndex, tagName) {
-  const openTag = text.slice(startIndex).match(/^<[A-Za-z][\w:.-]*\b[^>]*>/)?.[0];
-  if (!openTag) {
-    throw new Error(`${tagName} 여는 태그를 해석하지 못했습니다.`);
-  }
-  if (openTag.endsWith("/>")) return startIndex + openTag.length;
-  const tagRe = new RegExp(`<${tagName}\\b[^>]*>|</${tagName}>`, "g");
-  tagRe.lastIndex = startIndex;
-  let depth = 0;
-  for (let m = tagRe.exec(text); m; m = tagRe.exec(text)) {
-    if (m[0].startsWith("</")) {
-      depth -= 1;
-      if (depth === 0) return tagRe.lastIndex;
-    } else if (!m[0].endsWith("/>")) {
-      depth += 1;
-    }
-  }
-  throw new Error(
-    `${tagName}의 닫는 태그를 찾지 못했습니다 — 조용히 건너뛰지 않고 실패합니다.`,
-  );
-}
-
 // #2068 SVG 충실도(2026-07-26): display:none 요소를 컴파일 입력에서 제거한다.
 // 오너가 숨긴 요소는 오너 도식에 **보이지 않는다** — 바탕층에도 없어야 한다.
 // 역명 라벨 레이어를 반입하면서 대구 역번호 라벨 17건(class="station-code"
@@ -3061,46 +3038,150 @@ function matchingElementEnd(text, startIndex, tagName) {
 // 오너 SVG의 캔버스 격자(background-grid-overlay)가 opacity 0인데, 컴파일러는 이를 무늬 정의 +
 // 알파 0 paint의 전면 채우기로 남겨 기기가 매 프레임 지도 전체를 무늬로 칠했다.
 // 다만 clipPath 자식은 fill·stroke 같은 렌더링 속성을 뺀 원본 도형으로 오려내기 영역을 정한다
-// (SVG 1.1 14.3.5절). opacity는 그 영역에 기여하지 않으므로 opacity 0은 clipPath 안과 clipPath
-// 자체에서 지우지 않는다. display:none은 오려내기에도 기여하지 않으므로 어디서든 지운다.
+// (SVG 1.1 14.3.5절). opacity는 그 영역에 기여하지 않으므로 opacity 0은 clipPath 안에서 지우지
+// 않는다. display:none은 오려내기에도 기여하지 않으므로 clipPath 안에서도 지운다.
+//
+// 참조할 수 있는 정의(clipPath·mask·pattern·marker·symbol·linearGradient·radialGradient)는
+// 반대로 숨겨진 조상 안에서도 `clip-path`·`mask`·`fill`·`marker`·`use` 참조가 계속 유효하다.
+// 사양이 이 일곱 요소에 'display'가 적용되지 않으며 자신이나 어떤 조상이 display:none이어도
+// 참조할 수 있다고 적기 때문이다(5.5 symbol, 11.6.2 marker, 13.2.2 linearGradient, 13.2.3
+// radialGradient, 13.3 pattern, 14.3.5 clipPath, 14.4 mask). 그래서 숨겨진 요소를 지울 때 그
+// 안의 정의는 문서 순서대로 남기고, 정의 안의 자식은 다시 일반 요소처럼 판정한다. 'opacity'는
+// 14.5가 "컨테이너 요소(mask 제외)와 그래픽 요소"에만 적용된다고 적는다. clipPath·gradient는
+// 어느 쪽도 아니라 자기 opacity가 적용되지 않고, pattern·marker·symbol은 컨테이너 요소라
+// 자기 opacity가 0이면 일반 요소처럼 지운다.
+//
+// "이 요소가 컴파일 입력에서 지워지는가"는 `isRemovedByHiddenRules` 하나가 답한다. 숨김 제거기와
+// 스타일시트 전개(분류되지 않은 선언을 버리는 요소는 던진다)가 모두 이 판정을 쓰므로, 제거기가
+// 남기는 요소에서 선언이 조용히 사라지는 틈이 없다.
 const DISPLAY_NONE_ATTRIBUTE = /\sdisplay="none"/;
-const DISPLAY_NONE_STYLE = /style="[^"]*display\s*:\s*none/;
+const DISPLAY_NONE_STYLE = /\sstyle="[^"]*(?<![\w-])display\s*:\s*none\s*(?:!important\s*)?[;"]/;
 const OPACITY_ZERO_ATTRIBUTE = /\sopacity="0(?:\.0+)?"/;
 const OPACITY_ZERO_STYLE = /\sstyle="[^"]*(?<![\w-])opacity\s*:\s*0(?:\.0+)?\s*(?:!important\s*)?[;"]/;
 
+/** 여는 태그 자체가 display:none을 선언하는지(속성형·인라인 style형). `font-display:none`은 아니다. */
+function declaresDisplayNone(openTag) {
+  return DISPLAY_NONE_ATTRIBUTE.test(openTag) || DISPLAY_NONE_STYLE.test(openTag);
+}
+
+function declaresOpacityZero(openTag) {
+  return OPACITY_ZERO_ATTRIBUTE.test(openTag) || OPACITY_ZERO_STYLE.test(openTag);
+}
+
+// 참조할 수 있는 정의 → 자기 자신의 opacity가 적용되는지(위 설명).
+const REFERENCEABLE_DEFINITIONS = new Map([
+  ["clipPath", { opacityApplies: false }],
+  ["mask", { opacityApplies: false }],
+  ["linearGradient", { opacityApplies: false }],
+  ["radialGradient", { opacityApplies: false }],
+  ["pattern", { opacityApplies: true }],
+  ["marker", { opacityApplies: true }],
+  ["symbol", { opacityApplies: true }],
+]);
+
 const HIDDEN_ELEMENT_RULES = [
   {
-    isHidden: (openTag) => DISPLAY_NONE_ATTRIBUTE.test(openTag) || DISPLAY_NONE_STYLE.test(openTag),
+    declares: declaresDisplayNone,
+    appliesTo: (name) => !REFERENCEABLE_DEFINITIONS.has(name),
     ignoredByClipPath: false,
   },
   {
-    isHidden: (openTag) => OPACITY_ZERO_ATTRIBUTE.test(openTag) || OPACITY_ZERO_STYLE.test(openTag),
+    declares: declaresOpacityZero,
+    appliesTo: (name) => REFERENCEABLE_DEFINITIONS.get(name)?.opacityApplies ?? true,
     ignoredByClipPath: true,
   },
 ];
 
-function isClipPathOrDescendant(markup, index, tagName) {
-  if (tagName === "clipPath") return true;
-  const openings = /<clipPath\b[^>]*>/g;
-  for (let open = openings.exec(markup); open && open.index < index; open = openings.exec(markup)) {
-    if (matchingElementEnd(markup, open.index, "clipPath") > index) return true;
+// 요소가 놓인 자리: 지워지는 서브트리 안인지, 남은 clipPath 안인지.
+const ROOT_HIDDEN_SCOPE = { inRemovedSubtree: false, insideClipPath: false };
+
+function hiddenScopeOfChildren(name, scope, removed) {
+  return {
+    inRemovedSubtree: removed,
+    insideClipPath: scope.insideClipPath || (name === "clipPath" && !removed),
+  };
+}
+
+function isRemovedByHiddenRules(openTag, name, { inRemovedSubtree, insideClipPath }) {
+  if (inRemovedSubtree && !REFERENCEABLE_DEFINITIONS.has(name)) return true;
+  return HIDDEN_ELEMENT_RULES.some(
+    ({ declares, appliesTo, ignoredByClipPath }) =>
+      appliesTo(name) && declares(openTag) && !(ignoredByClipPath && insideClipPath),
+  );
+}
+
+// 태그를 한 번만 훑는다. 열린 요소를 스택으로 세므로 숨김 요소 수나 clipPath 수에 입력 크기가
+// 곱해지지 않는다. 지우는 중(suppressed)에는 글자와 태그를 내보내지 않고, 그 안의 clipPath
+// 정의를 만나면 지우는 상태를 풀고 내보낸다.
+class HiddenElementStripper {
+  #markup;
+  #frames = [];
+  #openCounts = new Map();
+  #output = "";
+  #copiedUntil = 0;
+  #suppressed = false;
+  #clipDepth = 0;
+
+  constructor(markup) {
+    this.#markup = markup;
   }
-  return false;
+
+  run() {
+    const tagRe = /<(\/?)([A-Za-z][\w:.-]*)\b[^>]*>/g;
+    for (let match = tagRe.exec(this.#markup); match; match = tagRe.exec(this.#markup)) {
+      const [tag, closing, name] = match;
+      if (!this.#suppressed) this.#output += this.#markup.slice(this.#copiedUntil, match.index);
+      this.#copiedUntil = match.index + tag.length;
+      if (closing) this.#close(tag, name);
+      else this.#open(tag, name);
+    }
+    const unclosed = this.#frames.find(({ hiddenStart }) => hiddenStart);
+    if (unclosed) throw unclosedHiddenElement(unclosed.name);
+    return this.#output + this.#markup.slice(this.#copiedUntil);
+  }
+
+  #open(tag, name) {
+    const dropped = isRemovedByHiddenRules(tag, name, {
+      inRemovedSubtree: this.#suppressed,
+      insideClipPath: this.#clipDepth > 0,
+    });
+    if (!dropped) this.#output += tag;
+    if (tag.endsWith("/>")) return;
+    const frame = { name, emitted: !dropped, hiddenStart: dropped && !this.#suppressed, suppressedBefore: this.#suppressed };
+    this.#frames.push(frame);
+    this.#openCounts.set(name, (this.#openCounts.get(name) ?? 0) + 1);
+    if (name === "clipPath" && frame.emitted) this.#clipDepth += 1;
+    this.#suppressed = dropped;
+  }
+
+  #close(tag, name) {
+    if ((this.#openCounts.get(name) ?? 0) === 0) {
+      if (!this.#suppressed) this.#output += tag;
+      return;
+    }
+    let frame = this.#pop();
+    while (frame.name !== name) {
+      if (frame.hiddenStart) throw unclosedHiddenElement(frame.name);
+      frame = this.#pop();
+    }
+    if (frame.emitted) this.#output += tag;
+  }
+
+  #pop() {
+    const frame = this.#frames.pop();
+    this.#openCounts.set(frame.name, this.#openCounts.get(frame.name) - 1);
+    if (frame.name === "clipPath" && frame.emitted) this.#clipDepth -= 1;
+    this.#suppressed = frame.suppressedBefore;
+    return frame;
+  }
 }
 
 export function stripHiddenElements(markup) {
-  let result = markup;
-  for (const { isHidden, ignoredByClipPath } of HIDDEN_ELEMENT_RULES) {
-    const openTags = /<([A-Za-z][\w:.-]*)\b[^>]*>/g;
-    for (let match = openTags.exec(result); match; match = openTags.exec(result)) {
-      if (!isHidden(match[0])) continue;
-      if (ignoredByClipPath && isClipPathOrDescendant(result, match.index, match[1])) continue;
-      const end = matchingElementEnd(result, match.index, match[1]);
-      result = result.slice(0, match.index) + result.slice(end);
-      openTags.lastIndex = match.index;
-    }
-  }
-  return result;
+  return new HiddenElementStripper(markup).run();
+}
+
+function unclosedHiddenElement(name) {
+  return new Error(`${name}의 닫는 태그를 찾지 못했습니다 — 조용히 건너뛰지 않고 실패합니다.`);
 }
 
 // ── SVG paint-order 지원(#2068 오너 실기기 회귀, 2026-07-26) ────────────────

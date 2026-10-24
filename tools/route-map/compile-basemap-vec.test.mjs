@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   applyStylesheet,
   baselineShiftRatio,
+  decorLayerBoundsOf,
   expandDominantBaseline,
   extractOwnerLabels,
   flattenTextScale,
@@ -673,26 +674,255 @@ function stripWithoutThrowing(markup) {
   return stripped;
 }
 
+function assertStripped(markup, { removed = [], kept = [] }) {
+  const stripped = stripWithoutThrowing(markup);
+  for (const id of removed) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+  for (const id of kept) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+  return stripped;
+}
+
 test("style 속성의 opacity:0도 서브트리째 빠지고, 0이 아닌 값과 fill-opacity·stroke-opacity는 남는다", () => {
-  const stripped = stripWithoutThrowing(
+  assertStripped(
     '<svg><rect id="only" style="opacity:0"/><rect id="spaced" style="fill:red; opacity : 0.0 ;stroke:none"/>' +
       '<g id="group" style="stroke:red;opacity:0 !important"><path id="inner" d="M0 0L1 1"/></g>' +
       '<rect id="faint" style="opacity:0.3"/><rect id="dense" style="opacity:0.05"/>' +
       '<rect id="fill-only" style="fill-opacity:0"/><rect id="stroke-only" style="stroke-opacity:0;opacity:.5"/></svg>',
+    { removed: ["only", "spaced", "group", "inner"], kept: ["faint", "dense", "fill-only", "stroke-only"] },
   );
-  for (const id of ["only", "spaced", "group", "inner"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
-  for (const id of ["faint", "dense", "fill-only", "stroke-only"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
 });
 
 test("clipPath와 그 자식의 불투명도는 SVG가 무시하므로 지우지 않지만, display:none은 지우고 clipPath 밖의 불투명도 0은 지운다", () => {
-  const stripped = stripWithoutThrowing(
+  assertStripped(
     '<svg><clipPath id="attr" opacity="0"><rect id="attr-child" opacity="0" width="9" height="9"/></clipPath>' +
       '<clipPath id="styled"><rect id="styled-child" style="opacity:0" width="9" height="9"/>' +
       '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath>' +
       '<rect id="outside" opacity="0"/><g id="clipped" clip-path="url(#attr)" style="opacity:0"/></svg>',
+    { removed: ["hidden-child", "outside", "clipped"], kept: ["attr", "attr-child", "styled", "styled-child"] },
   );
-  for (const id of ["attr", "attr-child", "styled", "styled-child"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
-  for (const id of ["hidden-child", "outside", "clipped"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+});
+
+test("style 속성의 display:none도 서브트리째 빠지고, display의 다른 값과 이름이 겹치는 선언은 남는다", () => {
+  assertStripped(
+    '<svg><rect id="only" style="display:none"/><rect id="spaced" style="fill:red; display : none ;stroke:none"/>' +
+      '<g id="group" style="stroke:red;display:none !important"><path id="inner" d="M0 0L1 1"/></g>' +
+      '<rect id="inline" style="display:inline"/><rect id="similar" style="font-display:none"/>' +
+      '<rect id="longer" style="display:nonexistent"/><rect id="attr-value" style="fill:none"/></svg>',
+    { removed: ["only", "spaced", "group", "inner"], kept: ["inline", "similar", "longer", "attr-value"] },
+  );
+});
+
+test("숨겨진 조상 안의 clipPath는 SVG에서 계속 참조할 수 있으므로 정의를 남기고 나머지만 지운다", () => {
+  const stripped = assertStripped(
+    '<svg><defs opacity="0"><clipPath id="in-defs"><rect id="in-defs-child" width="9" height="9"/></clipPath>' +
+      '<rect id="junk-in-defs" width="1" height="1"/></defs>' +
+      '<g id="faded" style="opacity:0"><rect id="junk-in-group" width="1" height="1"/>' +
+      '<g id="deep"><clipPath id="in-group"><path id="in-group-child" d="M0 0L9 9"/></clipPath></g>' +
+      '<clipPath id="second"><rect id="second-child" width="2" height="2"/></clipPath></g>' +
+      '<g id="gone" display="none"><clipPath id="in-display"><rect id="in-display-child" width="3" height="3"/></clipPath></g>' +
+      '<rect id="user" clip-path="url(#in-defs)" width="9" height="9"/></svg>',
+    {
+      removed: ["junk-in-defs", "junk-in-group", "faded", "deep", "gone"],
+      kept: ["in-defs", "in-defs-child", "in-group", "in-group-child", "second", "second-child", "in-display", "in-display-child", "user"],
+    },
+  );
+  assert.ok(stripped.indexOf('id="in-group"') < stripped.indexOf('id="second"'), "clipPath 정의의 문서 순서가 바뀌었다");
+});
+
+test("display:none인 clipPath 정의도 참조할 수 있으므로 남기고, 그 자식의 display:none은 오려내기에 기여하지 않아 지운다", () => {
+  assertStripped(
+    '<svg><clipPath id="hidden-def" display="none"><rect id="kept-child" width="9" height="9"/>' +
+      '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath></svg>',
+    { removed: ["hidden-child"], kept: ["hidden-def", "kept-child"] },
+  );
+});
+
+test("닫는 태그가 없는 숨김 요소는 조용히 넘기지 않고 실패한다", () => {
+  assert.throws(() => stripHiddenElements('<svg><g id="open" opacity="0"><rect/></svg>'), /g의 닫는 태그를 찾지 못했습니다/);
+});
+
+test("짝이 없는 닫는 태그와 닫히지 않은 보이는 요소는 건드리지 않고, 위쪽이 닫히면 함께 닫힌다", () => {
+  assert.equal(stripWithoutThrowing('<svg><rect id="a"/></g><rect id="b"></svg>'), '<svg><rect id="a"/></g><rect id="b"></svg>');
+  assert.equal(stripWithoutThrowing('<svg><g id="a"></g></g></svg>'), '<svg><g id="a"></g></g></svg>');
+  assert.equal(
+    stripWithoutThrowing('<svg><clipPath id="c"><g id="inner"></g><rect id="kept" opacity="0"/></clipPath></svg>'),
+    '<svg><clipPath id="c"><g id="inner"></g><rect id="kept" opacity="0"/></clipPath></svg>',
+  );
+  const stripped = stripWithoutThrowing('<svg><g id="faded" opacity="0"><rect id="inner"></g><rect id="after"/></svg>');
+  assert.equal(stripped, '<svg><rect id="after"/></svg>');
+});
+
+test("자기폐쇄 clipPath도 숨겨진 조상 안에서 남고, 숨겨진 요소의 글자와 자식 요소는 남지 않는다", () => {
+  const stripped = stripWithoutThrowing(
+    '<svg><g opacity="0">글자<clipPath id="empty"/><rect id="gone"/></g>뒤<rect id="shown"/></svg>',
+  );
+  assert.equal(stripped, '<svg><clipPath id="empty"/>뒤<rect id="shown"/></svg>');
+});
+
+// 참조할 수 있는 정의 일곱 가지(SVG 1.1 5.5 symbol, 11.6.2 marker, 13.2.2 linearGradient,
+// 13.2.3 radialGradient, 13.3 pattern, 14.3.5 clipPath, 14.4 mask). 사양은 이 요소들에 'display'가
+// 적용되지 않으며 자신이나 어떤 조상이 display:none이어도 참조할 수 있다고 적는다.
+const REFERENCEABLE_DEFINITIONS = [
+  { name: "clipPath", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "mask", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "pattern", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "marker", child: '<path class="r" d="M0 0L1 1"/>' },
+  { name: "symbol", child: '<path class="r" d="M0 0L1 1"/>' },
+  { name: "linearGradient", child: '<stop class="r" offset="0"/>' },
+  { name: "radialGradient", child: '<stop class="r" offset="0"/>' },
+];
+const UNCLASSIFIED_DECLARATION = /분류되지 않은 CSS 선언/;
+
+// 컴파일 입력이 되는 순서(스타일 전개 뒤 숨김 제거) 그대로 지나간다. 던지거나 선언을 버리는 쪽이
+// 어디서 갈리는지는 두 단계의 합이 정하므로 한 단계씩이 아니라 합을 본다.
+const expandAndStrip = (body, rule = ".r { clip-rule:evenodd; }") =>
+  stripHiddenElements(applyStylesheet(cssSvg(body, rule)));
+
+for (const { name, child } of REFERENCEABLE_DEFINITIONS) {
+  test(`숨겨진 조상 안에서 남은 ${name}의 자식도 분류되지 않은 CSS 선언을 조용히 버리지 않는다`, () => {
+    const hiders = [
+      ['<g display="none">', "</g>"],
+      ['<g style="opacity:0">', "</g>"],
+      ['<defs display="none">', "</defs>"],
+    ];
+    for (const [opening, closing] of hiders) {
+      const body = `${opening}<${name} id="def">${child}</${name}>${closing}`;
+      assert.throws(() => expandAndStrip(body), UNCLASSIFIED_DECLARATION, opening);
+    }
+  });
+
+  test(`숨겨진 조상 안에서 ${name} 정의는 남고 그 밖의 분류되지 않은 선언은 요소째 지워져 던지지 않는다`, () => {
+    const out = expandAndStrip(
+      `<g display="none"><${name} id="def">${child.replace(' class="r"', "")}</${name}>` +
+        '<path id="junk" class="r" d="M0 0L1 1"/></g>',
+    );
+    assert.ok(out.includes('id="def"'), `${name} 정의가 빠졌다`);
+    assert.ok(!out.includes('id="junk"'), "숨겨진 조상의 일반 요소가 남았다");
+  });
+}
+
+test("보이는 clipPath 자식의 분류되지 않은 CSS 선언은 던진다(숨김 판정 이전의 기준선)", () => {
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><rect class="r" width="9" height="9"/></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("display:none 이름이 겹치는 font-display:none 요소는 남으므로 분류되지 않은 선언이 던진다", () => {
+  assert.throws(
+    () => expandAndStrip('<path class="r" style="font-display:none" d="M0 0L1 1"/>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () => expandAndStrip('<g style="fill:red;font-display:none"><path class="r" d="M0 0L1 1"/></g>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("지워질 요소의 분류되지 않은 CSS 선언은 던지지 않고, 요소와 자손이 함께 빠진다", () => {
+  const hiddenForms = [
+    '<path id="gone" class="r" display="none" d="M0 0L1 1"/>',
+    '<path id="gone" class="r" style="display : none !important" d="M0 0L1 1"/>',
+    '<path id="gone" class="r" opacity="0" d="M0 0L1 1"/>',
+    '<g display="none"><path id="gone" class="r" d="M0 0L1 1"/></g>',
+    '<g style="opacity:0"><g><path id="gone" class="r" d="M0 0L1 1"/></g></g>',
+    '<g display="none"><clipPath id="c"><g display="none"><path id="gone" class="r" d="M0 0L1 1"/></g></clipPath></g>',
+  ];
+  for (const body of hiddenForms) {
+    let out;
+    assert.doesNotThrow(() => {
+      out = expandAndStrip(body);
+    }, body);
+    assert.ok(!out.includes('id="gone"'), `${body} 요소가 남았다`);
+  }
+});
+
+test("clipPath 안에서는 불투명도 0 요소가 남으므로(깊이와 무관) 분류되지 않은 선언이 던지고, 밖에서는 지워져 던지지 않는다", () => {
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><path class="r" opacity="0" d="M0 0L1 1"/></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><g><path class="r" style="opacity:0" d="M0 0L1 1"/></g></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.doesNotThrow(() => expandAndStrip('<g><path class="r" opacity="0" d="M0 0L1 1"/></g>'));
+});
+
+test("클래스가 준 display:none은 그 요소에서 선언을 버려도 던지지 않고, 인라인 display가 이기면 던진다", () => {
+  assert.doesNotThrow(() =>
+    expandAndStrip('<path class="h" d="M0 0L1 1"/>', ".h { display:none; clip-rule:evenodd; }"),
+  );
+  assert.throws(
+    () => expandAndStrip('<path class="h" style="display:inline" d="M0 0L1 1"/>', ".h { display:none; clip-rule:evenodd; }"),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("정의 일곱 가지는 자신의 display:none이 사양상 적용되지 않으므로 보이는 자리에서도 남는다", () => {
+  for (const { name } of REFERENCEABLE_DEFINITIONS) {
+    assertStripped(`<svg><${name} id="def" display="none"><rect id="inner" width="1" height="1"/></${name}></svg>`, {
+      kept: ["def", "inner"],
+    });
+    assertStripped(`<svg><${name} id="def" style="display:none"/></svg>`, { kept: ["def"] });
+  }
+});
+
+test("정의 자신의 opacity 0은 컨테이너 요소(pattern·marker·symbol)만 지우고 mask·gradient·clipPath는 사양상 적용되지 않아 남는다", () => {
+  for (const name of ["clipPath", "mask", "linearGradient", "radialGradient"]) {
+    assertStripped(`<svg><${name} id="def" opacity="0"/><${name} id="styled" style="opacity:0"></${name}></svg>`, {
+      kept: ["def", "styled"],
+    });
+  }
+  for (const name of ["pattern", "marker", "symbol"]) {
+    assertStripped(`<svg><${name} id="def" opacity="0"/><${name} id="styled" style="opacity:0"></${name}></svg>`, {
+      removed: ["def", "styled"],
+    });
+  }
+});
+
+test("clipPath 밖의 정의는 자식의 불투명도 0과 display:none을 일반 요소처럼 지운다", () => {
+  for (const name of ["mask", "pattern", "marker", "symbol"]) {
+    assertStripped(
+      `<svg><g display="none"><${name} id="def"><rect id="faint" opacity="0"/><rect id="off" display="none"/>` +
+        `<rect id="shown"/></${name}></g></svg>`,
+      { removed: ["faint", "off"], kept: ["def", "shown"] },
+    );
+  }
+});
+
+test("장식 영역 판정도 같은 display:none 판정을 쓴다: 숨긴 레이어는 영역에서 빼고 font-display:none은 보이는 레이어다", () => {
+  const boundsOf = (attributes) =>
+    decorLayerBoundsOf(
+      `<svg viewBox="0 0 100 100"><g id="legend-layer" ${attributes}><rect x="1" y="2" width="30" height="40"/></g></svg>`,
+    );
+  const box = { minX: 1, minY: 2, maxX: 31, maxY: 42 };
+  assert.deepEqual(boundsOf(""), [box]);
+  assert.deepEqual(boundsOf('style="font-display:none"'), [box]);
+  assert.deepEqual(boundsOf('display="none"'), []);
+  assert.deepEqual(boundsOf('style="fill:red; display : none !important"'), []);
+});
+
+test("숨김 요소 제거는 입력 크기에 선형인 시간에 끝난다(이차 시간 회귀 방지)", () => {
+  const pairs = 20000;
+  const clips = 2000;
+  let markup = "<svg>";
+  for (let index = 0; index < clips; index += 1) {
+    markup += `<clipPath id="c${index}"><rect width="9" height="9"/></clipPath>`;
+  }
+  for (let index = 0; index < pairs; index += 1) {
+    markup +=
+      `<path id="h${index}" display="none" d="M0 0L1 1"/>` +
+      `<rect id="o${index}" opacity="0" width="1" height="1"/><rect id="v${index}" width="1" height="1"/>`;
+  }
+  markup += "</svg>";
+  const started = performance.now();
+  const stripped = stripWithoutThrowing(markup);
+  const elapsedMs = performance.now() - started;
+  assert.equal(stripped.split('id="v').length - 1, pairs, "보이는 요소는 모두 남아야 한다");
+  assert.equal(stripped.split("<clipPath").length - 1, clips, "clipPath 정의는 모두 남아야 한다");
+  assert.ok(!stripped.includes('id="h') && !stripped.includes('id="o'), "숨김 요소가 남았다");
+  // 선형이면 수십 ms, 이차이면 같은 입력에서 10초를 넘는다(실측). 느린 CI도 넘지 않을 상한이다.
+  assert.ok(elapsedMs < 3000, `${elapsedMs.toFixed(0)}ms`);
 });
 
 test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다", () => {
@@ -716,7 +946,7 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
     lockedCompilerVersion,
     "manifest.compiler.version은 pubspec.lock의 vector_graphics_compiler 버전과 같아야 합니다.",
   );
-  assert.equal(manifest.pipelineRevision, 5);
+  assert.equal(manifest.pipelineRevision, 6);
   assert.deepEqual(manifest.content, {
     svgLayer: "owner-svg-map-body-layers",
     stationSymbols: "owner-svg",

@@ -328,13 +328,56 @@ test("레이어 집합이 다른 그리기가 낀 라벨은 단위로 묶지 않
   );
 });
 
-test("출하 상한 256을 넘는 여러 줄 라벨은 줄을 한 path로 잇지 않고, 안이면 잇는다", () => {
+test("출하 상한 256을 넘는 여러 줄 라벨은 한 path로 잇지 않고 줄 단위로 자르며, 안이면 잇는다", () => {
   const label = (gap) => {
     const lines = [rect(0, 0, 30, 10), rect(1, gap, 30, 10)];
     return docOf([...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])]);
   };
   assert.deepEqual(drawsOf(mergeDraws(label(200)).base), [[HALO, [0, 1]], [RED, [0, 1]]]);
-  assert.deepEqual(drawsOf(mergeDraws(label(300)).base), [[HALO, [0]], [HALO, [1]], [RED, [0]], [RED, [1]]]);
+  assert.deepEqual(drawsOf(mergeDraws(label(300)).base), [[HALO, [0]], [RED, [0]], [HALO, [1]], [RED, [1]]]);
+});
+
+const SMALL = { maxExtent: { width: 100, height: 100 } };
+
+// 줄 둘의 테두리가 서로 겹쳐도(줄 간격 13 < 테두리 폭을 더한 키) 한 줄의 글자는 다른 줄의 테두리와
+// 겹치지 않으면 줄마다 테두리와 글자를 한 단위로 자른다. 그러면 줄마다 path 하나를 테두리와 글자가
+// 나눠 쓴다.
+test("줄 테두리가 서로 겹치는 여러 줄 라벨도 줄마다 테두리와 글자가 path 하나를 나눠 쓴다", () => {
+  const lines = [rect(0, 0, 30, 10), rect(1, 13, 30, 10)];
+  const draws = [...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])];
+  const { base } = mergeDraws(docOf(draws), [], SMALL);
+  assert.deepEqual(drawsOf(base), [[HALO, [0]], [RED, [0]], [HALO, [1]], [RED, [1]]]);
+  assert.equal(base.paths.length, 2, "줄 path는 테두리와 글자가 나눠 쓴다");
+  assertSamePicture(draws.map(([paint, path]) => ({ paint, path })), base, "겹치는 테두리 줄");
+});
+
+test("한 줄의 글자가 다른 줄의 테두리와 겹치면 그리는 순서가 바뀌므로 자르지 않는다", () => {
+  const lines = [rect(0, 0, 30, 10), rect(1, 11, 30, 10)];
+  const draws = [...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])];
+  const { base } = mergeDraws(docOf(draws), [], SMALL);
+  assertSamePicture(draws.map(([paint, path]) => ({ paint, path })), base, "글자와 테두리가 겹치는 줄");
+  assert.equal(base.commands.length, 3, "테두리 둘은 겹쳐 따로, 글자 둘은 하나로 남는다");
+});
+
+test("자른 줄 단위는 이웃 라벨의 같은 줄 단위와 묶인다", () => {
+  const label = (x) => {
+    const lines = [rect(x, 0, 30, 10), rect(x + 1, 120, 30, 10)];
+    return [...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])];
+  };
+  const { base } = mergeDraws(docOf([...label(0), ...label(40)]), [], SMALL);
+  assert.deepEqual(drawsOf(base), [[HALO, [0, 40]], [RED, [0, 40]], [HALO, [1, 41]], [RED, [1, 41]]]);
+});
+
+test("혼자서도 상한을 넘는 줄은 단위로 묶지 않고 앞 줄만 단위로 둔다", () => {
+  const lines = [rect(0, 0, 100, 10), rect(1, 20, 300, 10)];
+  const draws = [...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])];
+  const { base } = mergeDraws(docOf(draws));
+  assert.deepEqual(
+    base.commands.map((command) => base.paints[command.paintId].style),
+    ["stroke", "fill", "stroke", "fill"],
+  );
+  assert.deepEqual(base.commands.map((command) => base.paths[command.pathId].points.length), [8, 8, 8, 8]);
+  assertSamePicture(draws.map(([paint, path]) => ({ paint, path })), base, "넓은 둘째 줄");
 });
 
 // ── 무작위 문서로 렌더 동등 계약을 확인한다 ─────────────────────────────────────
@@ -370,7 +413,7 @@ function randomScene(seed) {
     if (roll < 0.4) {
       draws.push({ paint: second, path, lines });
     } else if (roll < 0.6) {
-      const nextLine = rect(x + 0.5, y + 50, 4 + next() * 40, 4 + next() * 40);
+      const nextLine = rect(x + 0.5, y + 8 + next() * 50, 4 + next() * 40, 4 + next() * 40);
       draws.push({ paint: palette[paintIndex], path: nextLine, lines });
       draws.push({ paint: second, path, lines }, { paint: second, path: nextLine, lines });
     }

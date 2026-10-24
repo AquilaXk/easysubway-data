@@ -141,7 +141,7 @@ test("속성·style·class·키워드 선언이 모두 참조 페이스로 확�
   );
 });
 
-// 참조 서체 파일은 윤곽선·폭(svg-ink-bbox)·dominant-baseline 오프셋의 입력이다. mobile
+// 참조 서체 파일은 윤곽선·dominant-baseline 오프셋의 입력이다. mobile
 // 픽스처에서 읽으면 mobile이 서체를 바꿀 때마다 같은 SVG의 컴파일 결과가 달라진다.
 // data가 바이트를 고정해 소유한다.
 test("참조 페이스는 굵기마다 data 레포가 소유한 고정 바이트이고 OS/2 굵기가 같다", () => {

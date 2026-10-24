@@ -20,6 +20,11 @@
 // impeller/display_list/dl_dispatcher.cc 815-826행 cull_rect로 Dispatch), 묶음 크기에
 // 상한(MAX_GROUP_EXTENT)을 둬 확대 상태에서 건너뛰던 일을 크게 되살리지 않는다.
 //
+// 한 요소를 paint마다 다시 그리는 단위(채우기와 선, 여러 줄 라벨)가 묶음 크기 상한이나 조각
+// 겹침 때문에 한 단위가 되지 못하면 줄(조각) 열로 잘라, 앞에서부터 가장 길게 맞는 열을 단위로
+// 둔다. 자르면 그리는 순서가 줄 단위로 바뀌므로 순서가 바뀐 그리기끼리 영역이 겹치지 않을
+// 때만 자른다(OpsTask::recordOp이 새 명령을 앞 묶음으로 옮기는 조건과 같다).
+//
 // 노선 강조 레이어는 바탕 그리기 순서의 부분 수열이다. 바탕에서 정한 묶음을 레이어에도
 // 그대로 쓰고, 한 묶음은 같은 레이어 집합에 속한 명령으로만 만든다. 그래서 합친 뒤에도
 // 레이어는 바탕의 부분 수열이고 앱이 흐린 바탕 위에 겹쳐 그리는 위치가 그대로다.
@@ -178,18 +183,59 @@ function piecesDisjoint(block) {
   return block.every((a, i) => block.slice(i + 1).every((b) => !rectsOverlap(a.bounds, b.bounds)));
 }
 
-// 머리 draw의 path가 처음 다시 나오는 거리가 블록 크기다(블록 안 path는 서로 다르다).
-// 단위 하나도 묶음 하나처럼 최대 크기를 넘지 않는다. 넘으면 단위로 묶지 않고 draw를 하나씩 둔다.
+// 단위 하나도 묶음 하나처럼 최대 크기를 넘지 않고, 이어 칠하는 조각끼리 겹치지 않아야 한다.
+function unitFits(blocks, maxExtent) {
+  return blocks.every(piecesDisjoint) && withinExtent(unionAll(blocks.flat().map(({ bounds }) => bounds)), maxExtent);
+}
+
+// 블록 열(paint마다 같은 조각 열)을 조각 단위로 앞에서부터 가장 길게 맞는 조각 열로 자른다.
+// 혼자서도 맞지 않는 조각은 단위로 묶지 않고 그리기 하나씩 둔다.
+function splitByPieces(blocks, maxExtent) {
+  const pieceCount = blocks[0].length;
+  const chunks = [];
+  let covered = 0;
+  for (let from = 0; from < pieceCount; from += 1) {
+    if (from < covered) continue;
+    let to = pieceCount;
+    while (to > from && !unitFits(blocks.map((block) => block.slice(from, to)), maxExtent)) to -= 1;
+    if (to === from) {
+      for (const block of blocks) chunks.push([[block[from]]]);
+    } else {
+      chunks.push(blocks.map((block) => block.slice(from, to)));
+      covered = to;
+    }
+  }
+  return chunks;
+}
+
+// 자르면 그리는 순서가 줄 단위로 바뀐다(테두리 줄들, 글자 줄들 → 줄마다 테두리와 글자). 순서가
+// 바뀐 두 그리기의 영역이 겹치지 않을 때만 그림이 같다. OpsTask::recordOp이 새 명령을 앞 묶음
+// 으로 옮기는 조건(영역이 겹치지 않을 때만)과 같다.
+function reorderKeepsPicture(chunks, blocks) {
+  const originalOrder = new Map(blocks.flat().map((draw, index) => [draw, index]));
+  const emitted = chunks.flatMap((chunk) => chunk.flat());
+  return emitted.every((first, i) =>
+    emitted.slice(i + 1).every(
+      (second) => originalOrder.get(first) < originalOrder.get(second) || !rectsOverlap(first.bounds, second.bounds),
+    ),
+  );
+}
+
+const singleDraw = (head) => ({ units: [[[head]]], length: 1 });
+
+// 머리 draw의 path가 처음 다시 나오는 거리가 블록 크기다(블록 안 path는 서로 다르다). 반환은
+// 만들 단위들(각각 블록 열)과 그 단위들이 먹는 draw 수다. 단위 전체가 맞지 않으면 맞는 가장
+// 긴 조각 열로 자르고, 자를 수 없으면 단위로 묶지 않고 draw를 하나씩 둔다.
 function repeatedBlocks(draws, start, maxExtent) {
   const head = draws[start];
   const inHeadBlock = sameBlockPaint(head);
   let size = 1;
   while (start + size < draws.length && draws[start + size].command.pathId !== head.command.pathId) {
-    if (!inHeadBlock(draws[start + size])) return [[head]];
+    if (!inHeadBlock(draws[start + size])) return singleDraw(head);
     size += 1;
   }
   const pathIds = draws.slice(start, start + size).map(({ command }) => command.pathId);
-  if (new Set(pathIds).size !== size) return [[head]];
+  if (new Set(pathIds).size !== size) return singleDraw(head);
   const blocks = [draws.slice(start, start + size)];
   for (let next = start + size; next + size <= draws.length; next += size) {
     const block = draws.slice(next, next + size);
@@ -200,8 +246,12 @@ function repeatedBlocks(draws, start, maxExtent) {
     if (!repeats) break;
     blocks.push(block);
   }
-  const bounds = unionAll(blocks.flat().map((draw) => draw.bounds));
-  return blocks.length >= 2 && blocks.every(piecesDisjoint) && withinExtent(bounds, maxExtent) ? blocks : [[head]];
+  if (blocks.length < 2) return singleDraw(head);
+  const length = blocks.length * size;
+  if (unitFits(blocks, maxExtent)) return { units: [blocks], length };
+  const chunks = splitByPieces(blocks, maxExtent);
+  const keepsUnit = chunks.some((chunk) => chunk.length > 1);
+  return keepsUnit && reorderKeepsPicture(chunks, blocks) ? { units: chunks, length } : singleDraw(head);
 }
 
 function buildUnits(draws, maxExtent) {
@@ -212,17 +262,18 @@ function buildUnits(draws, maxExtent) {
       start += 1;
       continue;
     }
-    const blocks = repeatedBlocks(draws, start, maxExtent);
-    const members = blocks.flat();
-    units.push({
-      barrier: false,
-      mergeKey: blocks.map(([first]) => first.mergeKey).join("\n"),
-      layers: blocks[0][0].layers,
-      bounds: unionAll(members.map(({ bounds }) => bounds)),
-      pathIds: blocks[0].map(({ command }) => command.pathId),
-      commands: blocks.map(([first]) => first.command),
-    });
-    start += members.length;
+    const repeated = repeatedBlocks(draws, start, maxExtent);
+    for (const blocks of repeated.units) {
+      units.push({
+        barrier: false,
+        mergeKey: blocks.map(([first]) => first.mergeKey).join("\n"),
+        layers: blocks[0][0].layers,
+        bounds: unionAll(blocks.flat().map(({ bounds }) => bounds)),
+        pathIds: blocks[0].map(({ command }) => command.pathId),
+        commands: blocks.map(([first]) => first.command),
+      });
+    }
+    start += repeated.length;
   }
   return units;
 }

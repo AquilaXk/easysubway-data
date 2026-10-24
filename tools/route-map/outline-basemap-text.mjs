@@ -145,6 +145,32 @@ const TEXT_PROPERTY_POLICY = new Map([
   }).map(([name, values]) => [name, { kind: "initial", values: new Set(values) }]),
 ]);
 
+// 표에 없는 property도 이름이 CSS 텍스트·서체 계열이면(`font`, `text-transform`,
+// `font-variation-settings`, `unicode-bidi`, 벤더 접두 `-webkit-text-stroke` 등) 이 단계가
+// 그리는 모양에 영향을 줄 수 있다. 그런 선언은 표에 올릴 때까지 조용히 통과시키지 않는다.
+// fill·stroke·transform·id·data-* 같은 계열 밖 선언은 윤곽선을 감싸는 `<g>`에 남는다.
+const TEXT_PROPERTY_FAMILIES = new Set([
+  "", // 벤더 접두(`-webkit-`, `-inkscape-`)
+  "font",
+  "text",
+  "line",
+  "word",
+  "letter",
+  "white",
+  "unicode",
+  "writing",
+  "glyph",
+  "baseline",
+  "dominant",
+  "alignment",
+  "kerning",
+  "direction",
+  "hyphens",
+  "hyphenate",
+  "tab",
+  "ruby",
+]);
+
 const TEXT_ANCHOR_MULTIPLIERS = new Map([
   ["start", 0],
   ["middle", 0.5],
@@ -175,8 +201,47 @@ function firstFamilyOf(list) {
   return first.replace(/^(['"])(.*)\1$/, "$2").trim();
 }
 
+const ATTRIBUTE_RE = /\s([A-Za-z_:-][\w:.-]*)="([^"]*)"/g;
+
+// 여는 태그가 선언한 property 이름. presentation attribute와 `style` 선언을 함께 센다.
+function declaredPropertyNames(openTag) {
+  const names = [];
+  for (const [, name, value] of openTag.matchAll(ATTRIBUTE_RE)) {
+    if (name !== "style") {
+      names.push(name);
+      continue;
+    }
+    for (const declaration of decodeXmlText(value).split(";")) {
+      const colon = declaration.indexOf(":");
+      if (colon > 0) names.push(declaration.slice(0, colon).trim());
+    }
+  }
+  return names;
+}
+
+const checkedElements = new WeakSet();
+
+// 글자가 상속받는 요소 체인(자기 자신부터 문서 루트 바로 아래까지)에서 알지 못하는 텍스트
+// 계열 선언을 찾아 던진다. 요소마다 한 번만 읽는다.
+function rejectUnknownTextProperties(node) {
+  for (let element = node; element && element.name !== "#root"; element = element.parent) {
+    if (checkedElements.has(element)) continue;
+    for (const name of declaredPropertyNames(element.openTag)) {
+      const family = name.toLowerCase().split("-", 1)[0];
+      if (TEXT_PROPERTY_FAMILIES.has(family) && !TEXT_PROPERTY_POLICY.has(name)) {
+        throw new Error(
+          `${describeElement(element)}: ${name}은 윤곽선 굽기가 알지 못하는 텍스트 property입니다. ` +
+            "표(TEXT_PROPERTY_POLICY)에 없는 텍스트 선언은 조용히 넘기지 않고 실패합니다.",
+        );
+      }
+    }
+    checkedElements.add(element);
+  }
+}
+
 // 텍스트 노드가 속한 요소에서 상속까지 반영한 글자 속성.
 function textStyleOf(node) {
+  rejectUnknownTextProperties(node);
   for (const [property, policy] of TEXT_PROPERTY_POLICY) {
     if (policy.kind !== "initial") continue;
     const value = inheritedStyleOrAttr(node, property);
@@ -443,8 +508,6 @@ function layoutText(svgText, textNode, context) {
   flush();
   return paths;
 }
-
-const ATTRIBUTE_RE = /\s([A-Za-z_:-][\w:.-]*)="([^"]*)"/g;
 
 function withoutTextProperties(openTag) {
   const kept = [];

@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import path from "node:path";
 
 import { normalizeSvgForCompile } from "../compile-basemap-vec.mjs";
+import { outlineBasemapText } from "../outline-basemap-text.mjs";
 import { FULL_CANVAS_DECOR_IDS, inkBBoxOf, viewBoxOf } from "../svg-ink-bbox.mjs";
 import { outDir, REGIONS as REGION_FILES, svgPathFor } from "./regions.mjs";
 
@@ -144,7 +145,7 @@ for (const region of targets) {
   const normalized = normalizeSvgForCompile(raw);
   const [vx, vy, vw, vh] = viewBoxOf(raw);
   const chrome = chromeInkBBox(raw);
-  const pure = inkBBoxOf(normalized, { excludeIds: FULL_CANVAS_DECOR_IDS });
+  const pure = inkBBoxOf(outlineBasemapText(normalized).svg, { excludeIds: FULL_CANVAS_DECOR_IDS });
   console.log(
     region.id.padEnd(10) +
       `[${vx} ${vy} ${vw} ${vh}]`.padEnd(24) +
