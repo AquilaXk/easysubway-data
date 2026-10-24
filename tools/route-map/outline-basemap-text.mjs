@@ -35,10 +35,11 @@ import {
   decodeXmlText,
   firstAttr,
   inheritedStyleOrAttr,
+  parseSvgLength,
   readReferenceFontBytes,
   REFERENCE_TEXT_FACES,
   roundCoord,
-} from "./compile-basemap-vec.mjs";
+} from "./basemap-svg-core.mjs";
 
 const VENDOR_DIR = path.join(import.meta.dirname, "vendor/harfbuzzjs");
 
@@ -155,12 +156,13 @@ function describeElement(node) {
 }
 
 function parseLength(raw, property, node) {
-  const value = String(raw).trim();
-  const match = /^(-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(px)?$/i.exec(value);
-  if (!match) {
-    throw new Error(`${describeElement(node)}: ${property}="${value}"를 길이로 읽지 못했습니다.`);
+  const length = parseSvgLength(raw);
+  if (length == null) {
+    throw new Error(
+      `${describeElement(node)}: ${property}="${String(raw).trim()}"를 길이로 읽지 못했습니다.`,
+    );
   }
-  return Number(match[1]);
+  return length.number;
 }
 
 function optionalNumber(node, name) {

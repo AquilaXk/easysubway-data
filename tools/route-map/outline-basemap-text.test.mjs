@@ -10,10 +10,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { buildSvgTree, inheritedStyleOrAttr } from "./basemap-svg-core.mjs";
 import {
   buildBasemapLineOverlays,
-  buildSvgTree,
-  inheritedStyleOrAttr,
   normalizeSvgForCompile,
   TEXT_FONT_METRICS,
 } from "./compile-basemap-vec.mjs";
@@ -368,24 +367,25 @@ test("기본 입력 상한 16MiB를 넘는 SVG는 실패한다", () => {
 
 // 길이 문법은 `<number>` 뒤에 선택적 `px`다. 숫자 앞뒤 공백은 무시한다.
 test("길이 값은 유효한 표기만 읽고 나머지는 대체 없이 실패한다", () => {
-  const withX = (x) => svgOf(`<text id="t" x="${x}" y="9" ${LABEL}>가</text>`);
-  for (const [written, equivalent] of [
-    ["12", "12"],
-    ["1.5", "1.5"],
-    ["-.5", "-0.5"],
-    ["1e3", "1000"],
-    ["1E3", "1000"],
-    ["2px", "2"],
-    ["2PX", "2"],
-    ["1.", "1"],
-    ["-3.25e-1px", "-0.325"],
-    ["  7  ", "7"],
+  const withX = (x) => `<text id="t" x="${x}" y="9" ${LABEL}>가</text>`;
+  const originX = inkOf(withX("0")).minX;
+  for (const [written, expected] of [
+    ["12", 12],
+    ["1.5", 1.5],
+    ["-.5", -0.5],
+    ["1e3", 1000],
+    ["1E3", 1000],
+    ["2px", 2],
+    ["2PX", 2],
+    ["1.", 1],
+    ["-3.25e-1px", -0.325],
+    ["  7  ", 7],
   ]) {
-    assert.equal(outlineBasemapText(withX(written)).svg, outlineBasemapText(withX(equivalent)).svg, written);
+    assert.ok(Math.abs(inkOf(withX(written)).minX - originX - expected) < 1e-3, written);
   }
   for (const written of ["", "px", "1.2.3", "1e", "--1", "+5", "1 2", "1pt", "abc", "1e3.5", ".", "-"]) {
     assert.throws(
-      () => outlineBasemapText(withX(written)),
+      () => outlineBasemapText(svgOf(withX(written))),
       /<text>\(t\): x=".*"를 길이로 읽지 못했습니다/,
       JSON.stringify(written),
     );

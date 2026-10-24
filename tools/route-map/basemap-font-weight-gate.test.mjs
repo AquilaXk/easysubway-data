@@ -25,12 +25,14 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  normalizeSvgForCompile,
-  PAINT_ORDER_STROKE_COPY_ATTR,
-  readOpenTypeMetrics,
   readReferenceFontBytes,
   REFERENCE_TEXT_FACES,
   REFERENCE_TEXT_FONT_WEIGHTS,
+} from "./basemap-svg-core.mjs";
+import {
+  normalizeSvgForCompile,
+  PAINT_ORDER_STROKE_COPY_ATTR,
+  readOpenTypeMetrics,
   TEXT_FONT_FILE,
   TEXT_FONT_METRICS,
 } from "./compile-basemap-vec.mjs";

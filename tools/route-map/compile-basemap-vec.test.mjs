@@ -1475,6 +1475,47 @@ test("텍스트 스케일 평탄화: 선언·상속 letter-spacing도 s배한다
   assert.match(out, /<tspan[^>]*letter-spacing:-1px/);
 });
 
+// 길이 문법은 윤곽선 굽기(parseSvgLength)와 같다. 지수 표기와 대문자 단위도 읽고,
+// 숫자가 아닌 값은 조용히 넘기지 않고 던진다.
+test("텍스트 스케일 평탄화: 선언·상속 길이를 윤곽선 굽기와 같은 문법으로 s배한다", () => {
+  const out = flattenTextScale(
+    '<svg><g transform="scale(0.5)" letter-spacing="1E1PX" stroke="#FFF" stroke-width="2e1">' +
+      '<text x="10" y="20" font-size="1.2e1">가</text>' +
+      '<text x="10" y="40" font-size="12" letter-spacing=".5px">나</text></g></svg>',
+  );
+  assert.match(out, /<text[^>]*font-size="6"[^>]*letter-spacing="5px"/);
+  assert.match(out, /<text[^>]*stroke-width="10"/);
+  assert.match(out, /<text[^>]*font-size="6"[^>]*letter-spacing="0.25px"/);
+  for (const [property, declaration] of [
+    ["letter-spacing", 'letter-spacing="1.2.3"'],
+    ["stroke-width", 'stroke="#FFF" stroke-width="1.2.3"'],
+  ]) {
+    assert.throws(
+      () =>
+        flattenTextScale(
+          `<svg><g transform="scale(0.5)" font-size="12" ${declaration}><text x="1" y="1">가</text></g></svg>`,
+        ),
+      new RegExp(`${property} "1\\.2\\.3"를 해석하지 못했습니다`),
+      property,
+    );
+  }
+});
+
+// `normal`은 간격 없음이라 명시할 값이 없다. letter-spacing 선언이 아예 없는 텍스트도
+// 같다. 둘 다 던지거나 letter-spacing을 만들어 내면 안 된다.
+test("텍스트 스케일 평탄화: letter-spacing이 normal이거나 없으면 그대로 두고 던지지 않는다", () => {
+  for (const spacing of ['letter-spacing="normal"', ""]) {
+    let out;
+    assert.doesNotThrow(() => {
+      out = flattenTextScale(
+        `<svg><g transform="scale(0.5)" ${spacing}><text x="10" y="20" font-size="12">가</text></g></svg>`,
+      );
+    }, spacing);
+    assert.match(out, /<text[^>]*font-size="6"/, spacing);
+    assert.doesNotMatch(out.match(/<text[^>]*>/)[0], /letter-spacing/, spacing);
+  }
+});
+
 test("텍스트 스케일 평탄화: 상속 font-size조차 없으면 조용히 넘기지 않고 던진다", () => {
   assert.throws(
     () => flattenTextScale('<svg><g transform="scale(0.5)"><text x="1" y="1">가</text></g></svg>'),

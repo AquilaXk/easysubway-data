@@ -40,6 +40,19 @@ import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
+  buildSvgTree,
+  declaredStyleOrAttr,
+  decodeXmlText,
+  firstAttr,
+  inheritedStyleOrAttr,
+  parseSvgLength,
+  readReferenceFontBytes,
+  REFERENCE_TEXT_FACES,
+  REFERENCE_TEXT_FONT_WEIGHTS,
+  roundCoord,
+  SVG_LENGTH_SOURCE,
+} from "./basemap-svg-core.mjs";
+import {
   BUSAN,
   DAEGU,
   DAEJEON,
@@ -106,47 +119,9 @@ function sha256Value(value) {
 // 여기서는 사양의 매칭 알고리즘을 **참조 Pretendard 페이스 집합**에 그대로
 // 적용해, 준수 렌더러가 고를 페이스의 굵기를 확정 값으로 적는다. 실측 계수가
 // 아니라 사양 + 참조 페이스 목록에서 유도된 값이다.
-// 참조 페이스는 오너가 도식을 설계한 Pretendard의 Regular·SemiBold·Bold·ExtraBold·
-// Black이다. 바탕층은 라벨을 이 페이스의 글리프 윤곽선으로 굽는다
-// (outline-basemap-text.mjs, #1488). 그래서 기기 서체와 무관하게 오너 도식의 글자
-// 모양이 그대로 그려진다. 게이트(basemap-font-weight-gate.test.mjs)가 컴파일 입력이
-// 이 집합 안에서만 확정되는지 지킨다.
-// 매칭이 불가능하면(참조 굵기 0건 등) 조용히 넘기지 않고 던진다.
-//
-// 페이스 파일은 Pretendard v1.3.9 배포본(public/static)과 바이트가 같은 무수정
-// 사본이고 OFL.txt와 함께 둔다. 이 서체로 그린 노선도 그림은 OFL이 말하는 "서체로
-// 만든 문서"라 서체 라이선스의 적용 대상이 아니다(OFL.txt "does not apply to any
-// document created using the fonts"). 서체 이름이나 파일을 고치지 않는다.
-// 바이트는 읽는 지점에서 sha256으로 확인한다. 다시 인코딩한 서체는 폭·윤곽선을 바꿔
-// 산출물이 조용히 달라진다.
-function referenceFace(fileName, sha256) {
-  return Object.freeze({
-    file: path.join(root, "tools/route-map/fonts", fileName),
-    sha256,
-  });
-}
-
-export const REFERENCE_TEXT_FACES = new Map([
-  [400, referenceFace("Pretendard-Regular.otf", "3ffbacde6ab8411f1d2db54bb9b1f0b3ee2a738932033722cf0388c06aed1c93")],
-  [600, referenceFace("Pretendard-SemiBold.otf", "c89bc43027dc7cde5726e96223376f8eec09302b2fc1f8147fd5b57cfc376118")],
-  [700, referenceFace("Pretendard-Bold.otf", "2e91915fab54df71cc9598ebf608b2bdb54c6fe3c066ac61dff0bc44fca71cc7")],
-  [800, referenceFace("Pretendard-ExtraBold.otf", "c35fe941b7568d52a96010561540e47f9d3948dfde66ba25bc1908233e0a40cd")],
-  [900, referenceFace("Pretendard-Black.otf", "94628b0bcea8936b6e5c30d98d685eb9bbaffb0fe2ed255542ecc656c248e021")],
-]);
-export const REFERENCE_TEXT_FONT_WEIGHTS = [...REFERENCE_TEXT_FACES.keys()];
-
-/** 참조 페이스 바이트를 읽는다. 고정 digest와 다르면 던진다. */
-export function readReferenceFontBytes(fontPath, expectedSha256) {
-  const buffer = readFileSync(fontPath);
-  const digest = createHash("sha256").update(buffer).digest("hex");
-  if (digest !== expectedSha256) {
-    throw new Error(
-      `${fontPath}: 참조 서체 바이트가 고정 digest와 다릅니다(sha256 ${digest}, 기대 ${expectedSha256}).`,
-    );
-  }
-  return buffer;
-}
-
+// 참조 페이스 집합과 바이트 검증은 basemap-svg-core.mjs에 있고, 게이트
+// (basemap-font-weight-gate.test.mjs)가 컴파일 입력이 이 집합 안에서만 확정되는지
+// 지킨다. 매칭이 불가능하면(참조 굵기 0건 등) 조용히 넘기지 않고 던진다.
 /**
  * CSS Fonts 4 §5.2 "font-weight 매칭"을 [available]에 적용한다.
  *   - 목표가 정확히 있으면 그것.
@@ -465,43 +440,6 @@ function isServiceMarkOpenTag(openTag) {
   return className.split(/\s+/).some((name) => MARK_CLASS_NAMES.includes(name));
 }
 
-// SVG 요소 트리(여는 태그 스트림 기반). 표장 전수 수집과 장식 bbox 판정만
-// 사용한다 — 기존 레이어 슬라이스 경로(extractGroup)는 그대로 둔다.
-export function buildSvgTree(svgText) {
-  const root = {
-    name: "#root",
-    openTag: "",
-    start: 0,
-    end: svgText.length,
-    children: [],
-    parent: null,
-  };
-  const stack = [root];
-  for (const match of svgText.matchAll(
-    /<(\/?)([A-Za-z][\w:.-]*)\b([^>]*?)(\/?)>/g,
-  )) {
-    const [full, closing, name, , selfClosing] = match;
-    if (closing) {
-      if (stack.length > 1) {
-        stack[stack.length - 1].end = match.index + full.length;
-        stack.pop();
-      }
-      continue;
-    }
-    const node = {
-      name,
-      openTag: full,
-      start: match.index,
-      end: match.index + full.length,
-      children: [],
-      parent: stack[stack.length - 1],
-    };
-    stack[stack.length - 1].children.push(node);
-    if (!selfClosing) stack.push(node);
-  }
-  return root;
-}
-
 // 속성명 앞을 공백/태그시작으로 앵커한다. `\b`는 `-`와 문자 사이에서도 성립해
 // `data-curve-style="round"`(daegu v3 실재)가 `style` 조회에 잡힌다(#2593 리뷰).
 function nodeAttr(node, name) {
@@ -763,22 +701,6 @@ function extractMapSvg(svgText) {
 // 지원하지 않는 선택자·at-rule·property를 만나면 **던진다** — 조용한 유실 금지.
 
 const CSS_COMBINATORS = new Set([" ", ">"]);
-
-// XML 엔티티 ↔ 평문. `<style>` 내용은 XML 텍스트라 `&quot;` 같은 엔티티가 그대로
-// 들어온다(오너 SVG의 `[data-label-role=&quot;ordinary&quot;]`·font-family 목록).
-// 디코드하지 않으면 선택자 파싱과 `;` 분리가 모두 깨진다.
-const XML_ENTITIES = [
-  ["&lt;", "<"],
-  ["&gt;", ">"],
-  ["&quot;", '"'],
-  ["&apos;", "'"],
-];
-
-export function decodeXmlText(value) {
-  let result = value;
-  for (const [entity, plain] of XML_ENTITIES) result = result.replaceAll(entity, plain);
-  return result.replaceAll("&amp;", "&");
-}
 
 function encodeXmlAttributeValue(value) {
   return value
@@ -1200,18 +1122,6 @@ function expandNonScalingStroke(svgText) {
   return applyOpenTagEdits(svgText, edits);
 }
 
-/**
- * 조상 체인까지 거슬러 상속 property의 유효 선언을 찾는다.
- * (font-size·stroke-width·letter-spacing 등 SVG 상속 property용.)
- */
-export function inheritedStyleOrAttr(node, property) {
-  for (let current = node; current && current.name !== "#root"; current = current.parent) {
-    const value = declaredStyleOrAttr(current.openTag, property);
-    if (value != null && value !== "" && value !== "inherit") return value;
-  }
-  return null;
-}
-
 /** 여는 태그 자체가 display:none을 선언하는지(속성형·인라인 style형). */
 function isHiddenOpenTag(openTag) {
   if (firstAttr(openTag, "display") === "none") return true;
@@ -1353,11 +1263,6 @@ function scaleFromMapTransform(transform) {
   return Number.isFinite(k) ? k : 1;
 }
 
-// 결정성 유지를 위해 고정 소수 4자리로 직렬화(trailing zero는 Number가 정리).
-export function roundCoord(value) {
-  return Number(value.toFixed(4));
-}
-
 // 오너 SVG 라벨 실측 좌표 추출(#2068 6차) — 자동 솔버가 밀집부에서 선을
 // 가로지르는 한계를, 오너가 SVG에서 손으로 배치한 역명 라벨 앵커로 대체한다.
 // station-name-labels-layer(및 gwangju의 동등 레이어)는 컴파일 대상(.vec)에서
@@ -1407,11 +1312,6 @@ function parseTranslate(transformValue) {
     dy += Number(m[2]);
   }
   return { dx, dy };
-}
-
-export function firstAttr(tag, name) {
-  const match = tag.match(new RegExp(`\\s${name}="([^"]*)"`));
-  return match ? match[1] : null;
 }
 
 // SVG path `d` number 토큰 렉서(#2068 ITX-청춘 chip 반입 대비 파서 강화 —
@@ -2501,27 +2401,15 @@ export function baselineShiftRatio(value, metrics = TEXT_FONT_METRICS) {
   }
 }
 
-/** 여는 태그에 선언된 property 값(인라인 style이 동명 presentation attribute를 이긴다). */
-function declaredStyleOrAttr(openTag, property) {
-  const style = firstAttr(openTag, "style");
-  if (style) {
-    const declared = style.match(
-      new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`),
-    )?.[1];
-    if (declared != null) return declared.trim();
-  }
-  return firstAttr(openTag, property);
-}
-
-/** 여는 태그의 수치 property(font-size·stroke-width)를 factor배 한다(px 접미사 유지). */
+/** 여는 태그의 길이 property(font-size·stroke-width·letter-spacing)를 factor배 한다(px 접미사 유지). */
 function scaleLengthDeclaration(openTag, property, factor) {
   let result = openTag.replace(
-    new RegExp(`\\s${property}="(-?[\\d.]+)(px)?"`),
+    new RegExp(String.raw`\s${property}="${SVG_LENGTH_SOURCE}"`),
     (_m, num, px) => ` ${property}="${roundCoord(Number(num) * factor)}${px ?? ""}"`,
   );
   result = result.replace(/\sstyle="([^"]*)"/, (_m, styleValue) => {
     const scaled = styleValue.replace(
-      new RegExp(`(^|;)(\\s*${property}\\s*:\\s*)(-?[\\d.]+)(px)?`),
+      new RegExp(String.raw`(^|;)(\s*${property}\s*:\s*)${SVG_LENGTH_SOURCE}`),
       (_sm, head, label, num, px) =>
         `${head}${label}${roundCoord(Number(num) * factor)}${px ?? ""}`,
     );
@@ -2541,21 +2429,16 @@ function scaleCoordinateDeclaration(openTag, name, factor) {
 /** 조상 체인에서 상속되는 font-size(로컬 단위). 없으면 null. */
 function inheritedFontSizeOf(node) {
   for (let current = node; current && current.name !== "#root"; current = current.parent) {
-    const declared = declaredStyleOrAttr(current.openTag, "font-size");
-    if (declared != null) {
-      const value = Number(String(declared).replace(/px$/, ""));
-      if (Number.isFinite(value)) return value;
-    }
+    const length = parseSvgLength(declaredStyleOrAttr(current.openTag, "font-size") ?? "");
+    if (length != null) return length.number;
   }
   return null;
 }
 
 /** `<text>` 자신·자손의 유효 font-size(로컬 단위). 없으면 null. */
 function effectiveFontSize(openTag, inherited) {
-  const declared = declaredStyleOrAttr(openTag, "font-size");
-  if (declared == null) return inherited;
-  const value = Number(String(declared).replace(/px$/, ""));
-  return Number.isFinite(value) ? value : inherited;
+  const length = parseSvgLength(declaredStyleOrAttr(openTag, "font-size") ?? "");
+  return length == null ? inherited : length.number;
 }
 
 // ── per-glyph 좌표 리스트 해소(#2068 오너 지적, 2026-07-26) ──────────────────
@@ -2856,47 +2739,56 @@ function declaresLength(openTag, property) {
   return new RegExp(`(?:^|;)\\s*${property}\\s*:`).test(firstAttr(openTag, "style") ?? "");
 }
 
+/** 조상에서 해석한 길이 값을 scale배한다. 길이 문법(parseSvgLength)에 맞지 않으면 던진다. */
+function scaleInheritedLength(raw, property, scale, describe) {
+  const length = parseSvgLength(raw);
+  if (length == null) {
+    throw new Error(`${describe}: ${property} "${raw}"를 해석하지 못했습니다.`);
+  }
+  return { number: roundCoord(length.number * scale), unit: length.unit };
+}
+
+function materializeFontSize(node, openTag, describe, scale) {
+  if (declaresLength(openTag, "font-size")) return openTag;
+  const inherited = inheritedFontSizeOf(node.parent);
+  if (inherited == null) {
+    throw new Error(
+      `${describe}: font-size 선언을 요소에서도 조상에서도 찾지 못해 스케일 ` +
+        "흡수 후 렌더 크기를 확정할 수 없습니다 — 조용히 어긋난 크기를 내지 않고 실패합니다.",
+    );
+  }
+  return withProperty(openTag, "font-size", String(roundCoord(inherited * scale)));
+}
+
+// stroke-width는 stroke가 실제로 보일 때만 의미가 있다. 그때 아무도 선언하지 않았다면
+// SVG 초기값 1을 쓴다.
+function materializeStrokeWidth(node, openTag, describe, scale) {
+  if (declaresLength(openTag, "stroke-width")) return openTag;
+  const stroke = inheritedStyleOrAttr(node, "stroke");
+  if (stroke == null || !isVisiblePaint(stroke)) return openTag;
+  const width = inheritedStyleOrAttr(node, "stroke-width") ?? "1";
+  const { number } = scaleInheritedLength(width, "stroke-width", scale, describe);
+  return withProperty(openTag, "stroke-width", String(number));
+}
+
+// letter-spacing은 `normal`(간격 없음)이거나 길이다. `normal`은 명시할 값이 없다.
+function materializeLetterSpacing(node, openTag, describe, scale) {
+  if (declaresLength(openTag, "letter-spacing")) return openTag;
+  const spacing = inheritedStyleOrAttr(node.parent, "letter-spacing");
+  if (spacing == null || spacing.trim() === "normal") return openTag;
+  const { number, unit } = scaleInheritedLength(spacing, "letter-spacing", scale, describe);
+  return withProperty(openTag, "letter-spacing", `${number}${unit}`);
+}
+
 /**
- * `<text>`가 스스로 선언하지 않은 font-size·stroke-width를 조상에서 해석해
- * **s배한 값으로 요소에 명시**한다. 해석할 수 없으면 던진다.
- *
- * stroke-width는 stroke가 실제로 보일 때만 의미가 있다(보이지 않으면 그리지
- * 않으므로 명시할 값도 없다). 그때 아무도 선언하지 않았다면 SVG 초기값 1을 쓴다.
+ * `<text>`가 스스로 선언하지 않은 font-size·stroke-width·letter-spacing을 조상에서
+ * 해석해 **s배한 값으로 요소에 명시**한다. 해석할 수 없으면 던진다.
  */
 function withInheritedLengthMaterialized(node, openTag, describe, scale) {
-  let result = openTag;
-  if (!declaresLength(result, "font-size")) {
-    const inherited = inheritedFontSizeOf(node.parent);
-    if (inherited == null) {
-      throw new Error(
-        `${describe}: font-size 선언을 요소에서도 조상에서도 찾지 못해 스케일 ` +
-          "흡수 후 렌더 크기를 확정할 수 없습니다 — 조용히 어긋난 크기를 내지 않고 실패합니다.",
-      );
-    }
-    result = withProperty(result, "font-size", String(roundCoord(inherited * scale)));
-  }
-  if (!declaresLength(result, "stroke-width")) {
-    const stroke = inheritedStyleOrAttr(node, "stroke");
-    if (stroke != null && isVisiblePaint(stroke)) {
-      const width = inheritedStyleOrAttr(node, "stroke-width") ?? "1";
-      const value = Number(String(width).replace(/px$/, ""));
-      if (!Number.isFinite(value)) {
-        throw new Error(`${describe}: stroke-width "${width}"를 해석하지 못했습니다.`);
-      }
-      result = withProperty(result, "stroke-width", String(roundCoord(value * scale)));
-    }
-  }
-  if (!declaresLength(result, "letter-spacing")) {
-    const spacing = inheritedStyleOrAttr(node.parent, "letter-spacing");
-    if (spacing != null && spacing.trim() !== "normal") {
-      const [, number, unit] = spacing.trim().match(/^(-?[\d.]+)(px)?$/) ?? [];
-      if (number == null) {
-        throw new Error(`${describe}: letter-spacing "${spacing}"를 해석하지 못했습니다.`);
-      }
-      result = withProperty(result, "letter-spacing", `${roundCoord(Number(number) * scale)}${unit ?? ""}`);
-    }
-  }
-  return result;
+  return [materializeFontSize, materializeStrokeWidth, materializeLetterSpacing].reduce(
+    (tag, materialize) => materialize(node, tag, describe, scale),
+    openTag,
+  );
 }
 
 export function flattenTextScale(svgText) {
@@ -3981,9 +3873,10 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  // 윤곽선 단계가 이 모듈을 다시 불러오므로 모듈 평가가 끝난 뒤에 굽는다.
-  main().catch((error) => {
+  try {
+    await main();
+  } catch (error) {
     process.stderr.write(`${error.stack ?? error}\n`);
     process.exitCode = 1;
-  });
+  }
 }
