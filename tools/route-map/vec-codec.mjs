@@ -6,7 +6,7 @@
 // (VectorGraphicsBuffer), 읽는 쪽은 166-239행과 1378-1506행(_ReadBuffer)이다.
 // 바탕층 컴파일러가 실제로 내는 기록(크기, fill·stroke paint, 단정밀도 path, drawPath,
 // saveLayer·restore·clipPath·mask·pattern)만 다룬다. 그 밖의 태그는 조용히 넘기지 않고 던진다.
-// id는 코덱과 같이 uint16이고 kMaxId(65535, 113행)는 "없음" 표시라 쓸 수 없다.
+// id는 코덱과 같이 uint16이고 kMaxId(65535, vector_graphics_codec.dart 109행)는 "없음" 표시라 id로 쓸 수 없다(id는 0..65534).
 
 const MAGIC_NUMBER = 0x00882d62;
 const VERSION = 1;
@@ -312,8 +312,10 @@ class Writer {
   }
 }
 
+// 코덱은 id를 0부터 매기고 id가 kMaxId 미만이어야 한다(vector_graphics_codec 1.1.13
+// vector_graphics_codec.dart 327·438·732행 assert). 그래서 기록은 kMaxId개까지다.
 function checkIdSpace(count, kind) {
-  if (count >= VEC_MAX_ID) throw new Error(`${kind} ${count}개는 코덱 id 상한 ${VEC_MAX_ID - 1}을 넘습니다.`);
+  if (count > VEC_MAX_ID) throw new Error(`${kind} ${count}개는 코덱 id 상한 ${VEC_MAX_ID - 1}을 넘습니다.`);
 }
 
 /** decodeVec가 읽은 모양을 코덱과 같은 바이트 순서로 쓴다. */

@@ -67,9 +67,31 @@ test("잘린 바이트·모르는 태그·없는 id 참조는 읽기를 실패�
   assert.throws(() => decodeVec(encodeVec(strayPath)), /path id 7/);
 });
 
-test(`id는 코덱 상한(${VEC_MAX_ID}은 "없음" 표시)을 넘겨 쓸 수 없다`, () => {
-  const tooMany = { ...sample(), paints: Array.from({ length: VEC_MAX_ID }, () => FILL), commands: [] };
-  assert.throws(() => encodeVec(tooMany), /id 상한/);
-  const atLimit = { ...sample(), paints: Array.from({ length: VEC_MAX_ID - 1 }, () => FILL), commands: [] };
-  assert.equal(decodeVec(encodeVec(atLimit)).paints.length, VEC_MAX_ID - 1);
+// vector_graphics_codec 1.1.13 lib/vector_graphics_codec.dart: kMaxId 65535(109행)는 "없음" 표시라
+// id는 0..65534이고(paint 327·438행, path 732행 `assert(nextId < kMaxId)`) 기록은 65535개까지 쓴다.
+test(`paint·path는 코덱처럼 ${VEC_MAX_ID}개까지 쓰고 한 개 더는 id 상한으로 거부한다`, () => {
+  const paintsOf = (count) => Array.from({ length: count }, () => FILL);
+  const pathsOf = (count) => Array.from({ length: count }, () => sample().paths[1]);
+  const atLimit = { ...sample(), paints: paintsOf(VEC_MAX_ID), paths: pathsOf(VEC_MAX_ID), commands: [] };
+  let bytes;
+  assert.doesNotThrow(() => {
+    bytes = encodeVec(atLimit);
+  });
+  const decoded = decodeVec(bytes);
+  assert.equal(decoded.paints.length, VEC_MAX_ID);
+  assert.equal(decoded.paths.length, VEC_MAX_ID);
+  assert.throws(() => encodeVec({ ...atLimit, paints: paintsOf(VEC_MAX_ID + 1) }), /paint .*id 상한 65534/);
+  assert.throws(() => encodeVec({ ...atLimit, paths: pathsOf(VEC_MAX_ID + 1) }), /path .*id 상한 65534/);
+});
+
+test("가장 큰 id 65534를 참조하는 그리기는 다시 읽으면 같은 id다", () => {
+  const paints = Array.from({ length: VEC_MAX_ID }, () => FILL);
+  const paths = Array.from({ length: VEC_MAX_ID }, () => sample().paths[1]);
+  const last = VEC_MAX_ID - 1;
+  const doc = { ...sample(), paints, paths, commands: [{ op: "drawPath", pathId: last, paintId: last, patternId: null }] };
+  let bytes;
+  assert.doesNotThrow(() => {
+    bytes = encodeVec(doc);
+  });
+  assert.deepEqual(decodeVec(bytes).commands, doc.commands);
 });
