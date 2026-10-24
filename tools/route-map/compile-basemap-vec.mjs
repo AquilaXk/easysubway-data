@@ -3068,58 +3068,70 @@ function isDroppedHiddenElement(openTag, name, insideClipPath) {
 // 태그를 한 번만 훑는다. 열린 요소를 스택으로 세므로 숨김 요소 수나 clipPath 수에 입력 크기가
 // 곱해지지 않는다. 지우는 중(suppressed)에는 글자와 태그를 내보내지 않고, 그 안의 clipPath
 // 정의를 만나면 지우는 상태를 풀고 내보낸다.
-export function stripHiddenElements(markup) {
-  const tagRe = /<(\/?)([A-Za-z][\w:.-]*)\b[^>]*>/g;
-  const frames = [];
-  const openCounts = new Map();
-  let output = "";
-  let copiedUntil = 0;
-  let suppressed = false;
-  let clipDepth = 0;
+class HiddenElementStripper {
+  #markup;
+  #frames = [];
+  #openCounts = new Map();
+  #output = "";
+  #copiedUntil = 0;
+  #suppressed = false;
+  #clipDepth = 0;
 
-  const closeFrame = () => {
-    const frame = frames.pop();
-    openCounts.set(frame.name, openCounts.get(frame.name) - 1);
-    if (frame.name === "clipPath" && frame.emitted) clipDepth -= 1;
-    suppressed = frame.suppressedBefore;
-    return frame;
-  };
-  const openFrame = (frame) => {
-    frames.push(frame);
-    openCounts.set(frame.name, (openCounts.get(frame.name) ?? 0) + 1);
-    if (frame.name === "clipPath" && frame.emitted) clipDepth += 1;
-  };
-
-  for (let match = tagRe.exec(markup); match; match = tagRe.exec(markup)) {
-    const [tag, closing, name] = match;
-    if (!suppressed) output += markup.slice(copiedUntil, match.index);
-    copiedUntil = match.index + tag.length;
-
-    if (closing) {
-      if (!(openCounts.get(name) > 0)) {
-        if (!suppressed) output += tag;
-        continue;
-      }
-      let frame = closeFrame();
-      while (frame.name !== name) {
-        if (frame.hiddenStart) throw unclosedHiddenElement(frame.name);
-        frame = closeFrame();
-      }
-      if (frame.emitted) output += tag;
-      continue;
-    }
-
-    const dropped = suppressed
-      ? name !== "clipPath"
-      : isDroppedHiddenElement(tag, name, clipDepth > 0);
-    if (!dropped) output += tag;
-    if (tag.endsWith("/>")) continue;
-    openFrame({ name, emitted: !dropped, hiddenStart: dropped && !suppressed, suppressedBefore: suppressed });
-    suppressed = dropped;
+  constructor(markup) {
+    this.#markup = markup;
   }
-  const unclosed = frames.find(({ hiddenStart }) => hiddenStart);
-  if (unclosed) throw unclosedHiddenElement(unclosed.name);
-  return output + markup.slice(copiedUntil);
+
+  run() {
+    const tagRe = /<(\/?)([A-Za-z][\w:.-]*)\b[^>]*>/g;
+    for (let match = tagRe.exec(this.#markup); match; match = tagRe.exec(this.#markup)) {
+      const [tag, closing, name] = match;
+      if (!this.#suppressed) this.#output += this.#markup.slice(this.#copiedUntil, match.index);
+      this.#copiedUntil = match.index + tag.length;
+      if (closing) this.#close(tag, name);
+      else this.#open(tag, name);
+    }
+    const unclosed = this.#frames.find(({ hiddenStart }) => hiddenStart);
+    if (unclosed) throw unclosedHiddenElement(unclosed.name);
+    return this.#output + this.#markup.slice(this.#copiedUntil);
+  }
+
+  #open(tag, name) {
+    const dropped = this.#suppressed
+      ? name !== "clipPath"
+      : isDroppedHiddenElement(tag, name, this.#clipDepth > 0);
+    if (!dropped) this.#output += tag;
+    if (tag.endsWith("/>")) return;
+    const frame = { name, emitted: !dropped, hiddenStart: dropped && !this.#suppressed, suppressedBefore: this.#suppressed };
+    this.#frames.push(frame);
+    this.#openCounts.set(name, (this.#openCounts.get(name) ?? 0) + 1);
+    if (name === "clipPath" && frame.emitted) this.#clipDepth += 1;
+    this.#suppressed = dropped;
+  }
+
+  #close(tag, name) {
+    if ((this.#openCounts.get(name) ?? 0) === 0) {
+      if (!this.#suppressed) this.#output += tag;
+      return;
+    }
+    let frame = this.#pop();
+    while (frame.name !== name) {
+      if (frame.hiddenStart) throw unclosedHiddenElement(frame.name);
+      frame = this.#pop();
+    }
+    if (frame.emitted) this.#output += tag;
+  }
+
+  #pop() {
+    const frame = this.#frames.pop();
+    this.#openCounts.set(frame.name, this.#openCounts.get(frame.name) - 1);
+    if (frame.name === "clipPath" && frame.emitted) this.#clipDepth -= 1;
+    this.#suppressed = frame.suppressedBefore;
+    return frame;
+  }
+}
+
+export function stripHiddenElements(markup) {
+  return new HiddenElementStripper(markup).run();
 }
 
 function unclosedHiddenElement(name) {

@@ -673,41 +673,45 @@ function stripWithoutThrowing(markup) {
   return stripped;
 }
 
+function assertStripped(markup, { removed = [], kept = [] }) {
+  const stripped = stripWithoutThrowing(markup);
+  for (const id of removed) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+  for (const id of kept) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+  return stripped;
+}
+
 test("style 속성의 opacity:0도 서브트리째 빠지고, 0이 아닌 값과 fill-opacity·stroke-opacity는 남는다", () => {
-  const stripped = stripWithoutThrowing(
+  assertStripped(
     '<svg><rect id="only" style="opacity:0"/><rect id="spaced" style="fill:red; opacity : 0.0 ;stroke:none"/>' +
       '<g id="group" style="stroke:red;opacity:0 !important"><path id="inner" d="M0 0L1 1"/></g>' +
       '<rect id="faint" style="opacity:0.3"/><rect id="dense" style="opacity:0.05"/>' +
       '<rect id="fill-only" style="fill-opacity:0"/><rect id="stroke-only" style="stroke-opacity:0;opacity:.5"/></svg>',
+    { removed: ["only", "spaced", "group", "inner"], kept: ["faint", "dense", "fill-only", "stroke-only"] },
   );
-  for (const id of ["only", "spaced", "group", "inner"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
-  for (const id of ["faint", "dense", "fill-only", "stroke-only"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
 });
 
 test("clipPath와 그 자식의 불투명도는 SVG가 무시하므로 지우지 않지만, display:none은 지우고 clipPath 밖의 불투명도 0은 지운다", () => {
-  const stripped = stripWithoutThrowing(
+  assertStripped(
     '<svg><clipPath id="attr" opacity="0"><rect id="attr-child" opacity="0" width="9" height="9"/></clipPath>' +
       '<clipPath id="styled"><rect id="styled-child" style="opacity:0" width="9" height="9"/>' +
       '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath>' +
       '<rect id="outside" opacity="0"/><g id="clipped" clip-path="url(#attr)" style="opacity:0"/></svg>',
+    { removed: ["hidden-child", "outside", "clipped"], kept: ["attr", "attr-child", "styled", "styled-child"] },
   );
-  for (const id of ["attr", "attr-child", "styled", "styled-child"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
-  for (const id of ["hidden-child", "outside", "clipped"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
 });
 
 test("style 속성의 display:none도 서브트리째 빠지고, display의 다른 값과 이름이 겹치는 선언은 남는다", () => {
-  const stripped = stripWithoutThrowing(
+  assertStripped(
     '<svg><rect id="only" style="display:none"/><rect id="spaced" style="fill:red; display : none ;stroke:none"/>' +
       '<g id="group" style="stroke:red;display:none !important"><path id="inner" d="M0 0L1 1"/></g>' +
       '<rect id="inline" style="display:inline"/><rect id="similar" style="font-display:none"/>' +
       '<rect id="longer" style="display:nonexistent"/><rect id="attr-value" style="fill:none"/></svg>',
+    { removed: ["only", "spaced", "group", "inner"], kept: ["inline", "similar", "longer", "attr-value"] },
   );
-  for (const id of ["only", "spaced", "group", "inner"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
-  for (const id of ["inline", "similar", "longer", "attr-value"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
 });
 
 test("숨겨진 조상 안의 clipPath는 SVG에서 계속 참조할 수 있으므로 정의를 남기고 나머지만 지운다", () => {
-  const stripped = stripWithoutThrowing(
+  const stripped = assertStripped(
     '<svg><defs opacity="0"><clipPath id="in-defs"><rect id="in-defs-child" width="9" height="9"/></clipPath>' +
       '<rect id="junk-in-defs" width="1" height="1"/></defs>' +
       '<g id="faded" style="opacity:0"><rect id="junk-in-group" width="1" height="1"/>' +
@@ -715,23 +719,20 @@ test("숨겨진 조상 안의 clipPath는 SVG에서 계속 참조할 수 있으�
       '<clipPath id="second"><rect id="second-child" width="2" height="2"/></clipPath></g>' +
       '<g id="gone" display="none"><clipPath id="in-display"><rect id="in-display-child" width="3" height="3"/></clipPath></g>' +
       '<rect id="user" clip-path="url(#in-defs)" width="9" height="9"/></svg>',
+    {
+      removed: ["junk-in-defs", "junk-in-group", "faded", "deep", "gone"],
+      kept: ["in-defs", "in-defs-child", "in-group", "in-group-child", "second", "second-child", "in-display", "in-display-child", "user"],
+    },
   );
-  for (const id of ["in-defs", "in-defs-child", "in-group", "in-group-child", "second", "second-child", "in-display", "in-display-child", "user"]) {
-    assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
-  }
-  for (const id of ["junk-in-defs", "junk-in-group", "faded", "deep", "gone"]) {
-    assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
-  }
   assert.ok(stripped.indexOf('id="in-group"') < stripped.indexOf('id="second"'), "clipPath 정의의 문서 순서가 바뀌었다");
 });
 
 test("display:none인 clipPath 정의도 참조할 수 있으므로 남기고, 그 자식의 display:none은 오려내기에 기여하지 않아 지운다", () => {
-  const stripped = stripWithoutThrowing(
+  assertStripped(
     '<svg><clipPath id="hidden-def" display="none"><rect id="kept-child" width="9" height="9"/>' +
       '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath></svg>',
+    { removed: ["hidden-child"], kept: ["hidden-def", "kept-child"] },
   );
-  assert.ok(stripped.includes('id="hidden-def"') && stripped.includes('id="kept-child"'));
-  assert.ok(!stripped.includes('id="hidden-child"'));
 });
 
 test("닫는 태그가 없는 숨김 요소는 조용히 넘기지 않고 실패한다", () => {
