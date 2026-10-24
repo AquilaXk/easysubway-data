@@ -3056,21 +3056,46 @@ function matchingElementEnd(text, startIndex, tagName) {
 // (수도권 경의중앙선 숨김 path 2건·환승 베이스 레이어도 같은 처리). CSS 클래스가
 // 준 display:none도 잡히도록 inlineSimpleClassStyles 뒤에 적용한다.
 // `<style>`/`<defs>` 자체는 속성에 display가 없어 대상이 아니다.
-// 불투명도 0(`opacity="0"`)도 같은 처리다(#1495). SVG 1.1 14.5절대로 opacity는 요소를
-// 그룹으로 합성한 뒤 곱하므로 0이면 서브트리가 아무것도 그리지 않는다. 수도권 오너 SVG의
-// 캔버스 격자(background-grid-overlay)가 opacity 0인데, 컴파일러는 이를 무늬 정의 +
+// 불투명도 0(`opacity="0"` 속성과 `style="opacity:0"`)도 같은 처리다(#1495). SVG 1.1 14.5절대로
+// opacity는 요소를 그룹으로 합성한 뒤 곱하므로 0이면 서브트리가 아무것도 그리지 않는다. 수도권
+// 오너 SVG의 캔버스 격자(background-grid-overlay)가 opacity 0인데, 컴파일러는 이를 무늬 정의 +
 // 알파 0 paint의 전면 채우기로 남겨 기기가 매 프레임 지도 전체를 무늬로 칠했다.
+// 다만 clipPath 자식은 fill·stroke 같은 렌더링 속성을 뺀 원본 도형으로 오려내기 영역을 정한다
+// (SVG 1.1 14.3.5절). opacity는 그 영역에 기여하지 않으므로 opacity 0은 clipPath 안과 clipPath
+// 자체에서 지우지 않는다. display:none은 오려내기에도 기여하지 않으므로 어디서든 지운다.
 const HIDDEN_OPEN_TAG_PATTERNS = [
-  /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|style="[^"]*display\s*:\s*none))[^>]*>/,
-  /<([A-Za-z][\w:.-]*)\b(?=[^>]*\sopacity="0(?:\.0+)?")[^>]*>/,
+  {
+    pattern: /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|style="[^"]*display\s*:\s*none))[^>]*>/g,
+    ignoredByClipPath: false,
+  },
+  {
+    pattern: /<([A-Za-z][\w:.-]*)\b(?=[^>]*\sopacity="0(?:\.0+)?")[^>]*>/g,
+    ignoredByClipPath: true,
+  },
+  {
+    pattern: /<([A-Za-z][\w:.-]*)\b(?=[^>]*\sstyle="[^"]*(?<![\w-])opacity\s*:\s*0(?:\.0+)?\s*(?:!important\s*)?(?:;|"))[^>]*>/g,
+    ignoredByClipPath: true,
+  },
 ];
+
+function isClipPathOrDescendant(markup, index, tagName) {
+  if (tagName === "clipPath") return true;
+  const openings = /<clipPath\b[^>]*>/g;
+  for (let open = openings.exec(markup); open && open.index < index; open = openings.exec(markup)) {
+    if (matchingElementEnd(markup, open.index, "clipPath") > index) return true;
+  }
+  return false;
+}
 
 export function stripHiddenElements(markup) {
   let result = markup;
-  for (const pattern of HIDDEN_OPEN_TAG_PATTERNS) {
-    for (let match = result.match(pattern); match; match = result.match(pattern)) {
+  for (const { pattern, ignoredByClipPath } of HIDDEN_OPEN_TAG_PATTERNS) {
+    pattern.lastIndex = 0;
+    for (let match = pattern.exec(result); match; match = pattern.exec(result)) {
+      if (ignoredByClipPath && isClipPathOrDescendant(result, match.index, match[1])) continue;
       const end = matchingElementEnd(result, match.index, match[1]);
       result = result.slice(0, match.index) + result.slice(end);
+      pattern.lastIndex = match.index;
     }
   }
   return result;
