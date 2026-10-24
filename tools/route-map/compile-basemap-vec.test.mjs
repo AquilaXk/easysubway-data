@@ -666,11 +666,11 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
     lockedCompilerVersion,
     "manifest.compiler.version은 pubspec.lock의 vector_graphics_compiler 버전과 같아야 합니다.",
   );
-  assert.equal(manifest.pipelineRevision, 3);
+  assert.equal(manifest.pipelineRevision, 4);
   assert.deepEqual(manifest.content, {
     svgLayer: "owner-svg-map-body-layers",
     stationSymbols: "owner-svg",
-    labels: "baked-into-vec",
+    labels: "outlined-into-vec",
     decoration: "excluded",
     interaction: "route_map_positions",
     lineOverlays: "per-line-vec-over-faded-basemap",
@@ -1462,6 +1462,17 @@ test("텍스트 스케일 평탄화: 상속 font-size·stroke-width도 s배해 �
   // 원본 렌더 크기 12 × 0.5 = 6. 상속을 놓치면 12로 그려진다(2배).
   assert.match(out, /<text[^>]*font-size="6"/);
   assert.match(out, /<text[^>]*stroke-width="2"/);
+});
+
+// letter-spacing은 텍스트 좌표계의 길이다. 스케일을 좌표·font-size로 흡수하면 글자
+// 간격도 같이 s배해야 윤곽선이 오너 도식과 같은 간격을 낸다(#1488).
+test("텍스트 스케일 평탄화: 선언·상속 letter-spacing도 s배한다", () => {
+  const out = flattenTextScale(
+    '<svg><g transform="scale(0.5)" letter-spacing="4px"><text x="10" y="20" font-size="12">가' +
+      '<tspan style="letter-spacing:-2px">나</tspan></text></g></svg>',
+  );
+  assert.match(out, /<text[^>]*letter-spacing="2px"/);
+  assert.match(out, /<tspan[^>]*letter-spacing:-1px/);
 });
 
 test("텍스트 스케일 평탄화: 상속 font-size조차 없으면 조용히 넘기지 않고 던진다", () => {

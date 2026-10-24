@@ -1017,9 +1017,9 @@ jobs:
         run: |
           set -euo pipefail
           # 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 checkout이 불투명하게 실패하므로 먼저 원인을 드러낸다.
-          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/itx-979^{}' | awk '{print $1}')"
-          if [[ "${peeled}" != "573aefdbbf2e639d28de18697eb449da85415353" ]]; then
-            echo "pinned Mobile fixture tag data-fixture/itx-979 must point to 573aefdbbf2e639d28de18697eb449da85415353 (found '${peeled}'); do not delete or move this tag" >&2
+          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/basemap-1488^{}' | awk '{print $1}')"
+          if [[ "${peeled}" != "9f9c2963a5dc4a619c4a88888c0b8fd11157253b" ]]; then
+            echo "pinned Mobile fixture tag data-fixture/basemap-1488 must point to 9f9c2963a5dc4a619c4a88888c0b8fd11157253b (found '${peeled}'); do not delete or move this tag" >&2
             exit 1
           fi
 
@@ -1028,7 +1028,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: data-fixture/itx-979
+          ref: data-fixture/basemap-1488
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -1038,7 +1038,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="573aefdbbf2e639d28de18697eb449da85415353"
+          expected_revision="9f9c2963a5dc4a619c4a88888c0b8fd11157253b"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
           index="${source}/assets/datapacks/index.json"

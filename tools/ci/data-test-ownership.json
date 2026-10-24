@@ -396,6 +396,10 @@
     "data1484": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1484",
       "title": "[Feat] 노선도 바탕층이 노선별 강조 레이어와 데이터팩 노선 id 색인을 함께 내보낸다"
+    },
+    "data1488": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1488",
+      "title": "[Fix] mobile 시스템 서체 전환 뒤 basemap 서체 계약과 컴파일러가 mobile 번들 Pretendard에 기대는 문제"
     }
   },
   "workflows": {
@@ -418,7 +422,7 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"573aefdbbf2e639d28de18697eb449da85415353\"",
+          "expected_revision=\"9f9c2963a5dc4a619c4a88888c0b8fd11157253b\"",
           "expected_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
@@ -447,7 +451,7 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"573aefdbbf2e639d28de18697eb449da85415353\"",
+          "expected_revision=\"9f9c2963a5dc4a619c4a88888c0b8fd11157253b\"",
           "expected_capital_gzip_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
           "expected_index_sha256=\"a39031e0e588508b1d111c830ef19441740ca15de6cad62ef9e9e8f5654468bf\"",
           "expected_source_inventory_sha256=\"69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2\"",
@@ -925,6 +929,7 @@
     {"path":"tools/route-map/octolinearize-line-tracks.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":3},
     {"path":"tools/route-map/octolinearize-svg-route-lines.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":5},
     {"path":"tools/route-map/oracle-metrics.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":2},
+    {"path":"tools/route-map/outline-basemap-text.test.mjs","semanticOwner":"data1488","classes":["required-pr"],"durationMs":2200},
     {"path":"tools/route-map/project-nodes-to-tracks.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":3},
     {"path":"tools/route-map/relayout-svg-route-lines.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":12},
     {"path":"tools/route-map/respace-route-map.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":20},
@@ -945,10 +950,10 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "573aefdbbf2e639d28de18697eb449da85415353"
+        "mobile-v19": "9f9c2963a5dc4a619c4a88888c0b8fd11157253b"
       },
       "profileRef": {
-        "mobile-v19": "data-fixture/itx-979"
+        "mobile-v19": "data-fixture/basemap-1488"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
