@@ -19,10 +19,10 @@
 
 import { readFileSync } from "node:fs";
 
+import { firstAttr } from "./basemap-svg-core.mjs";
 import {
   applyMatrix,
   composeMatrix,
-  firstAttr,
   parseTransformChain,
   TEXT_FONT_FILE,
   TEXT_FONT_METRICS,
