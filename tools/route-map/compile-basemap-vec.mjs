@@ -1172,7 +1172,9 @@ function setPresentationAttribute(openTag, property, value) {
   const pattern = new RegExp(`\\s${property}="[^"]*"`);
   const attribute = ` ${property}="${encodeXmlAttributeValue(value)}"`;
   if (pattern.test(openTag)) return openTag.replace(pattern, attribute);
-  return `${openTag.replace(/\s*(\/?)>$/, "")}${attribute}${/\/\s*>$/.test(openTag) ? " />" : ">"}`;
+  let head = openTag.slice(0, -1).trimEnd();
+  if (head.endsWith("/")) head = head.slice(0, -1).trimEnd();
+  return `${head}${attribute}${/\/\s*>$/.test(openTag) ? " />" : ">"}`;
 }
 
 // 요소에 걸린 선언을 캐스케이드(!important → 특이도 → 소스 순서, 뒤에 오는 것이 이긴다)로 가려
