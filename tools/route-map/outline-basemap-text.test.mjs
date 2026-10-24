@@ -111,7 +111,7 @@ test("한글 역명 라벨의 윤곽선 잉크가 오너 도식 서체 모델 �
           continue;
         }
         const markup = normalized.slice(child.start, child.end);
-        const content = markup.replace(/<[^>]*>/g, "");
+        const content = markup.replaceAll(/<[^>]*>/g, "").replaceAll(/[<>]/g, "");
         if (!/^[가-힣\s]*[가-힣][가-힣\s]*$/.test(content)) continue;
         const spacing = inheritedStyleOrAttr(child, "letter-spacing");
         const stroke = inheritedStyleOrAttr(child, "stroke");
