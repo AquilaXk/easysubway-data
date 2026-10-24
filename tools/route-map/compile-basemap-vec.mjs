@@ -3551,7 +3551,7 @@ function buildStationSymbolIndex(svgText, root, config) {
 function slugsFromStationSymbols(svgText, node, symbols) {
   const own = symbols.find((symbol) => symbol.node === node);
   if (own) return own.slugs;
-  const distinctLineSets = new Set(symbols.map(({ slugs }) => [...slugs].sort().join(" ")));
+  const distinctLineSets = new Set(symbols.map(({ slugs }) => [...slugs].sort(codepointCompare).join(" ")));
   if (distinctLineSets.size === 1) return symbols[0].slugs;
   const [x, y] = labelAnchor(node);
   const ranked = symbols
