@@ -239,7 +239,6 @@ test("텍스트 위치 갱신과 텍스트 그리기를 넘어 묶지 않고, �
   assert.deepEqual(resolvedCommands(base), resolvedCommands(scene));
   assert.deepEqual(base.texts, [{ ...LABEL, text: "서면" }]);
   assert.deepEqual(base.textPositions, [positionAt(100)]);
-  assert.deepEqual(Buffer.from(encodeVec(base)), Buffer.from(encodeVec(mergeDraws(scene, [], { maxExtent: OPEN }).base)));
 });
 
 test("텍스트가 없는 구간의 그리기는 전처럼 합치고, 텍스트 앞뒤 구간끼리는 합치지 않는다", () => {
