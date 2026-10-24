@@ -38,16 +38,20 @@ function svgOf(body) {
 }
 
 // 그려져야 하는 입력이 던지면 예외가 아니라 단언 실패로 드러나게 한다.
-function glyphsDrawn(svg) {
-  let drawn;
+function outlined(svg, limits = OUTLINE_LIMITS) {
+  let result;
   assert.doesNotThrow(() => {
-    drawn = outlineBasemapText(svg).glyphCount;
+    result = outlineBasemapText(svg, limits);
   });
-  return drawn;
+  return result;
+}
+
+function glyphsDrawn(svg) {
+  return outlined(svg).glyphCount;
 }
 
 function inkOf(body) {
-  return inkBBoxOf(outlineBasemapText(svgOf(body)).svg);
+  return inkBBoxOf(outlined(svgOf(body)).svg);
 }
 
 // 마크업에서 문자 데이터만 남긴다(태그 안 글자를 건너뛰는 선형 스캔).
@@ -341,19 +345,26 @@ test("텍스트 노드가 코드포인트 상한을 넘으면 셰이핑 전에 �
 });
 
 // 중첩 깊이는 `<text>`가 1이고 tspan 하나마다 1씩 는다. 상한 64단은 허용하고 65단부터 막는다.
+test("텍스트 노드의 코드포인트 수는 상한까지 허용하고 하나 더 많으면 실패한다", () => {
+  const limits = { ...OUTLINE_LIMITS, maxRunCodePoints: 3 };
+  const labelOf = (text) => svgOf(`<text x="0" y="50" ${LABEL}>${text}</text>`);
+  assert.equal(outlined(labelOf("가나다"), limits).glyphCount, 3);
+  assert.throws(() => outlineBasemapText(labelOf("가나다라"), limits), /4자가 상한 3자를 넘습니다/);
+});
+
 // 입력 SVG의 UTF-8 바이트 수를 센다(HarfBuzz는 data_len 바이트를 비교한다).
 test("입력 SVG가 바이트 상한을 넘으면 파싱 전에 실패한다", () => {
   const empty = svgOf("");
   const emptyBytes = Buffer.byteLength(empty);
   const limits = (maxInputBytes) => ({ ...OUTLINE_LIMITS, maxInputBytes });
-  assert.deepEqual(outlineBasemapText(empty, limits(emptyBytes)).svg, empty);
+  assert.equal(outlined(empty, limits(emptyBytes)).svg, empty);
   assert.throws(
     () => outlineBasemapText(empty, limits(emptyBytes - 1)),
     new RegExp(`입력 SVG ${emptyBytes}바이트가 상한 ${emptyBytes - 1}바이트를 넘습니다`),
   );
   const multibyte = svgOf("<!--가-->");
   assert.equal(Buffer.byteLength(multibyte), multibyte.length + 2, "가는 UTF-8로 3바이트다");
-  assert.deepEqual(outlineBasemapText(multibyte, limits(Buffer.byteLength(multibyte))).svg, multibyte);
+  assert.equal(outlined(multibyte, limits(Buffer.byteLength(multibyte))).svg, multibyte);
   assert.throws(
     () => outlineBasemapText(multibyte, limits(multibyte.length)),
     /입력 SVG \d+바이트가 상한 \d+바이트를 넘습니다/,
@@ -429,6 +440,23 @@ test("문서의 윤곽선 데이터가 상한을 넘으면 실패한다", () => 
     () => outlineBasemapText(svgOf(body), { ...OUTLINE_LIMITS, maxGlyphCommands: 3 }),
     /상한 3을 넘습니다/,
   );
+});
+
+// 글리프 하나의 명령 수가 상한과 같으면 그리고, 하나 더 많으면 던진다.
+test("글리프 윤곽선 명령 수는 상한까지 허용하고 하나 더 많으면 실패한다", () => {
+  const svg = svgOf(`<text x="0" y="50" ${LABEL}>가</text>`);
+  const withCap = (maxGlyphCommands) => () =>
+    outlineBasemapText(svg, { ...OUTLINE_LIMITS, maxGlyphCommands });
+  let overflow = "";
+  try {
+    withCap(0)();
+  } catch (error) {
+    overflow = error.message;
+  }
+  const commands = Number(/윤곽선 명령이 (\d+)개로/.exec(overflow)?.[1]);
+  assert.ok(commands > 1, overflow);
+  outlined(svg, { ...OUTLINE_LIMITS, maxGlyphCommands: commands });
+  assert.throws(withCap(commands - 1), new RegExp(`${commands}개로 상한 ${commands - 1}을 넘습니다`));
 });
 
 test("같은 라벨이 반복돼도 글리프 윤곽선은 한 번만 꺼낸다", () => {

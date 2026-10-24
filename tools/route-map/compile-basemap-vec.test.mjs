@@ -1481,8 +1481,10 @@ test("텍스트 스케일 평탄화: 선언·상속 길이를 윤곽선 굽기�
   const out = flattenTextScale(
     '<svg><g transform="scale(0.5)" letter-spacing="1E1PX" stroke="#FFF" stroke-width="2e1">' +
       '<text x="10" y="20" font-size="1.2e1">가</text>' +
-      '<text x="10" y="40" font-size="12" letter-spacing=".5px">나</text></g></svg>',
+      '<text x="10" y="40" font-size="12" letter-spacing=".5px">나</text>' +
+      '<text x="10" y="60" style="font-size:1.2e1;letter-spacing:1e1PX">다</text></g></svg>',
   );
+  assert.match(out, /<text[^>]*style="font-size:6;letter-spacing:5PX"/);
   assert.match(out, /<text[^>]*font-size="6"[^>]*letter-spacing="5px"/);
   assert.match(out, /<text[^>]*stroke-width="10"/);
   assert.match(out, /<text[^>]*font-size="6"[^>]*letter-spacing="0.25px"/);
