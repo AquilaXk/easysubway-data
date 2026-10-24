@@ -738,6 +738,19 @@ test("닫는 태그가 없는 숨김 요소는 조용히 넘기지 않고 실패
   assert.throws(() => stripHiddenElements('<svg><g id="open" opacity="0"><rect/></svg>'), /g의 닫는 태그를 찾지 못했습니다/);
 });
 
+test("짝이 없는 닫는 태그와 닫히지 않은 보이는 요소는 건드리지 않고, 위쪽이 닫히면 함께 닫힌다", () => {
+  assert.equal(stripWithoutThrowing('<svg><rect id="a"/></g><rect id="b"></svg>'), '<svg><rect id="a"/></g><rect id="b"></svg>');
+  const stripped = stripWithoutThrowing('<svg><g id="faded" opacity="0"><rect id="inner"></g><rect id="after"/></svg>');
+  assert.equal(stripped, '<svg><rect id="after"/></svg>');
+});
+
+test("자기폐쇄 clipPath도 숨겨진 조상 안에서 남고, 숨겨진 요소의 글자와 자식 요소는 남지 않는다", () => {
+  const stripped = stripWithoutThrowing(
+    '<svg><g opacity="0">글자<clipPath id="empty"/><rect id="gone"/></g>뒤<rect id="shown"/></svg>',
+  );
+  assert.equal(stripped, '<svg><clipPath id="empty"/>뒤<rect id="shown"/></svg>');
+});
+
 test("숨김 요소 제거는 입력 크기에 선형인 시간에 끝난다(이차 시간 회귀 방지)", () => {
   const pairs = 20000;
   const clips = 2000;
