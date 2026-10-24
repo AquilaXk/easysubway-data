@@ -244,8 +244,8 @@ test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다
   ];
 
   // 렌더 대상 요소의 id 전수를 오너 SVG에서 뽑아 컴파일 입력에 그대로 있는지 본다.
-  // display:none 서브트리(비렌더)는 SVG 사양대로 제외 대상이라 기대에서 뺀다.
-  const HIDDEN_SUBTREE = /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|style="[^"]*display\s*:\s*none))[^>]*>/;
+  // display:none·opacity 0 서브트리(비렌더)는 SVG 사양대로 제외 대상이라 기대에서 뺀다.
+  const HIDDEN_SUBTREE = /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|\sopacity="0(?:\.0+)?"|style="[^"]*display\s*:\s*none))[^>]*>/;
 
   function stripHiddenSubtrees(markup) {
     let result = markup;

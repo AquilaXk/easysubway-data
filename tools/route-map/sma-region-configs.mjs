@@ -38,8 +38,9 @@ const SEOUL_DISTINCT_SAME_NAME_STATIONS = new Set(["신촌", "양평"]);
 const BUSAN_DISTINCT_SAME_NAME_STATIONS = new Set(["좌천", "부전", "동래"]);
 
 // 오너 SVG 패밀리 공통 캔버스 배경. 지도 본문이 아니라 어느 노선 레이어에도 넣지 않는다.
+const PAGE_BACKGROUND_RULE = { match: { id: "page-background" }, lines: [], reason: "캔버스 배경" };
 const CANVAS_BACKGROUND_RULES = [
-  { match: { id: "page-background" }, lines: [], reason: "캔버스 배경" },
+  PAGE_BACKGROUND_RULE,
   { match: { id: "background-grid-overlay" }, lines: [], reason: "캔버스 격자" },
 ];
 
@@ -102,7 +103,8 @@ const SEOUL = {
     "sillim": "line-aefa08ccc0a9",
     "gtx-a": "line-8604048b6430",
   },
-  basemapElementRules: CANVAS_BACKGROUND_RULES,
+  // 수도권 v4의 캔버스 격자는 opacity 0이라 정규화(stripHiddenElements)가 지운다(#1495).
+  basemapElementRules: [PAGE_BACKGROUND_RULE],
   colorToSlug: {
     "#004a85": "1", "#00a23f": "2", "#ed6c00": "3", "#009bce": "4", "#794698": "5",
     "#7c4932": "6", "#6e7e31": "7", "#d11d70": "8", "#a49d87": "9",
