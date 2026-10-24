@@ -42,6 +42,18 @@ function inkOf(body) {
   return inkBBoxOf(outlineBasemapText(svgOf(body)).svg);
 }
 
+// 마크업에서 문자 데이터만 남긴다(태그 안 글자를 건너뛰는 선형 스캔).
+function characterDataOf(markup) {
+  let text = "";
+  let insideTag = false;
+  for (const character of markup) {
+    if (character === "<") insideTag = true;
+    else if (character === ">") insideTag = false;
+    else if (!insideTag) text += character;
+  }
+  return text;
+}
+
 const LABEL = 'font-family="Pretendard" font-size="20px" font-weight="700"';
 
 test("5권역 바탕과 노선 강조 레이어의 컴파일 입력에 <text>·<tspan>이 남지 않는다", () => {
@@ -111,7 +123,7 @@ test("한글 역명 라벨의 윤곽선 잉크가 오너 도식 서체 모델 �
           continue;
         }
         const markup = normalized.slice(child.start, child.end);
-        const content = markup.replaceAll(/<[^>]*>/g, "").replaceAll(/[<>]/g, "");
+        const content = characterDataOf(markup);
         if (!/^[가-힣\s]*[가-힣][가-힣\s]*$/.test(content)) continue;
         const spacing = inheritedStyleOrAttr(child, "letter-spacing");
         const stroke = inheritedStyleOrAttr(child, "stroke");
