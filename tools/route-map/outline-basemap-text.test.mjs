@@ -87,17 +87,21 @@ test("노선 강조 레이어의 윤곽선 마크업은 바탕 윤곽선 마크�
   }
 });
 
-test("build manifest의 컴파일 입력 sha가 다시 구운 윤곽선 입력과 같다", () => {
+// 두 변형은 같은 정규화·강조 레이어 분할에서 나온다. 윤곽선 변형만 윤곽선 단계를 거치고, 텍스트
+// 변형은 정규화 입력을 그대로 굽는다(#1495).
+test("build manifest의 변형별 컴파일 입력 sha가 윤곽선 변형은 다시 구운 윤곽선 입력, 텍스트 변형은 정규화 입력과 같다", () => {
+  const compileInputOf = { outlined: (svg) => outlineBasemapText(svg).svg, text: (svg) => svg };
   for (const map of manifest.maps) {
     const normalized = normalizedByRegion.get(map.id);
-    assert.equal(map.compileInputSvgSha256, sha256(outlineBasemapText(normalized).svg), map.id);
     const overlays = buildBasemapLineOverlays(normalized, REGION_CONFIGS[map.id]);
-    for (const [index, entry] of map.lineOverlays.entries()) {
-      assert.equal(
-        entry.compileInputSvgSha256,
-        sha256(outlineBasemapText(overlays[index].svg).svg),
-        `${map.id}/${entry.lineId}`,
-      );
+    assert.deepEqual(Object.keys(map.variants), Object.keys(compileInputOf));
+    for (const [variantId, variant] of Object.entries(map.variants)) {
+      const label = `${map.id}/${variantId}`;
+      const compileInput = compileInputOf[variantId];
+      assert.equal(variant.compileInputSvgSha256, sha256(compileInput(normalized)), label);
+      for (const [index, entry] of variant.lineOverlays.entries()) {
+        assert.equal(entry.compileInputSvgSha256, sha256(compileInput(overlays[index].svg)), `${label}/${entry.lineId}`);
+      }
     }
   }
 });

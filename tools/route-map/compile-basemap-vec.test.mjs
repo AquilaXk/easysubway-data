@@ -26,6 +26,7 @@ import {
   parseSvgNumbers,
   stripHiddenElements,
 } from "./compile-basemap-vec.mjs";
+import { basemapVectorFileName, BASEMAP_VARIANTS } from "./basemap-variants.mjs";
 import { viewBoxOf } from "./svg-ink-bbox.mjs";
 
 // 평탄화되어야 하는 입력이 던지면 예외가 아니라 단언 실패로 드러나게 한다. 문법을 좁히는
@@ -946,11 +947,11 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
     lockedCompilerVersion,
     "manifest.compiler.version은 pubspec.lock의 vector_graphics_compiler 버전과 같아야 합니다.",
   );
-  assert.equal(manifest.pipelineRevision, 6);
+  assert.equal(manifest.pipelineRevision, 7);
   assert.deepEqual(manifest.content, {
     svgLayer: "owner-svg-map-body-layers",
     stationSymbols: "owner-svg",
-    labels: "outlined-into-vec",
+    labels: { outlined: "outlined-into-vec", text: "text-into-vec" },
     decoration: "excluded",
     interaction: "route_map_positions",
     lineOverlays: "per-line-vec-over-faded-basemap",
@@ -960,11 +961,17 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
   for (const map of manifest.maps) {
     const source = readFileSync(path.join(root, map.source));
     const normalized = normalizeSvgForCompile(source.toString("utf8"));
-    const vec = readFileSync(path.join(root, map.compiledVector));
     const hash = (value) => createHash("sha256").update(value).digest("hex");
     assert.equal(map.sourceSvgSha256, hash(source));
     assert.equal(map.normalizedSvgSha256, hash(normalized));
-    assert.equal(map.compiledVectorSha256, hash(vec));
+    assert.deepEqual(Object.keys(map.variants), BASEMAP_VARIANTS.map(({ id }) => id));
+    for (const [variantId, variant] of Object.entries(map.variants)) {
+      assert.equal(
+        variant.compiledVector,
+        `apps/mobile/assets/datapacks/metro_map_pack/basemap/${basemapVectorFileName(variantId, map.id)}`,
+      );
+      assert.equal(variant.compiledVectorSha256, hash(readFileSync(path.join(root, variant.compiledVector))), `${map.id}/${variantId}`);
+    }
     // manifest viewBox는 원본 SVG의 viewBox와 **값까지** 같아야 한다. 길이(4)만
     // 보면 크롭·캔버스 변경 뒤 값이 낡아도 그대로 통과한다(#2603).
     assert.deepEqual(
