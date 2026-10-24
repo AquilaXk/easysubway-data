@@ -426,7 +426,7 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"ef852d1749da9de0601fb5b178f5f1abda9daa0c\"",
+          "expected_revision=\"e29d73d7329517b8643d8eefb75dca451da782ca\"",
           "expected_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
@@ -455,7 +455,7 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"ef852d1749da9de0601fb5b178f5f1abda9daa0c\"",
+          "expected_revision=\"e29d73d7329517b8643d8eefb75dca451da782ca\"",
           "expected_capital_gzip_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
           "expected_index_sha256=\"a39031e0e588508b1d111c830ef19441740ca15de6cad62ef9e9e8f5654468bf\"",
           "expected_source_inventory_sha256=\"69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2\"",
@@ -957,10 +957,10 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "ef852d1749da9de0601fb5b178f5f1abda9daa0c"
+        "mobile-v19": "e29d73d7329517b8643d8eefb75dca451da782ca"
       },
       "profileRef": {
-        "mobile-v19": "data-fixture/basemap-opt-1495b"
+        "mobile-v19": "data-fixture/basemap-cleanup-1488"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
