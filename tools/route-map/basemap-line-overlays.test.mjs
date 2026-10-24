@@ -212,6 +212,81 @@ test("data-transfer-lines는 같은 이름 역 심벌의 노선보다 먼저 쓴
   assert.ok(!hasElement(lineB.svg, "sym"), "b 레이어에 a 전용 심벌이 있다");
 });
 
+// 한 역을 심벌 둘로 그린 경우(김포공항: 5개 노선 캡슐 + 공항철도만 든 픽토그램)다.
+// 심벌이 둘이어도 역은 하나라, 역명은 두 심벌의 노선 합집합 레이어에 모두 있어야 한다.
+// 라벨이 단일 노선 심벌 쪽으로 옮겨져도 다른 노선 레이어에서 사라지면 안 된다.
+function oneStationTwoSymbolsSvg(labelX) {
+  return syntheticSvg(
+    '<g data-line="a"><path d="M0 0L1 1"/></g><g data-line="b"><path d="M0 0L1 2"/></g>' +
+      '<g id="capsule" data-node-role="transfer" data-station="X" data-transfer-lines="a b"><circle cx="0" cy="0" r="1"/></g>' +
+      '<g id="pictogram" data-node-role="transfer" data-station="X" data-transfer-lines="a"><circle cx="8" cy="0" r="1"/></g>' +
+      `<text id="label-X" data-station="X" x="${labelX}" y="0">X</text>`,
+  );
+}
+
+function layerOf(overlays, slug) {
+  return overlays.find(({ svgLineSlug }) => svgLineSlug === slug).svg;
+}
+
+test("등록되지 않은 같은 이름 심벌은 한 역이라 역명이 라벨 위치와 상관없이 두 심벌 노선의 합집합 레이어에 있다", () => {
+  for (const labelX of [0.5, 7.5]) {
+    const overlays = buildBasemapLineOverlays(oneStationTwoSymbolsSvg(labelX), SYNTHETIC_CONFIG);
+    for (const slug of ["a", "b"]) {
+      assert.ok(hasElement(layerOf(overlays, slug), "label-X"), `라벨 x=${labelX}: ${slug} 레이어에 역명이 없다`);
+    }
+  }
+});
+
+test("동명 별개역으로 등록된 이름은 가장 가까운 심벌의 노선 레이어에만 역명이 들어간다", () => {
+  const config = { ...SYNTHETIC_CONFIG, distinctSameNameStations: new Set(["X"]) };
+  const nearPictogram = buildBasemapLineOverlays(oneStationTwoSymbolsSvg(7.5), config);
+  assert.ok(hasElement(layerOf(nearPictogram, "a"), "label-X"));
+  assert.ok(!hasElement(layerOf(nearPictogram, "b"), "label-X"));
+  const nearCapsule = buildBasemapLineOverlays(oneStationTwoSymbolsSvg(0.5), config);
+  assert.ok(hasElement(layerOf(nearCapsule, "a"), "label-X"));
+  assert.ok(hasElement(layerOf(nearCapsule, "b"), "label-X"));
+});
+
+test("동명 별개역으로 등록된 이름의 심벌이 둘 미만이면 빌드를 실패시킨다", () => {
+  const config = { ...SYNTHETIC_CONFIG, distinctSameNameStations: new Set(["X"]) };
+  const oneSymbol = syntheticSvg(
+    '<g data-line="a"><path d="M0 0L1 1"/></g><g data-line="b"><path d="M0 0L1 2"/></g>' +
+      '<g id="capsule" data-node-role="transfer" data-station="X" data-transfer-lines="a b"><circle cx="0" cy="0" r="1"/></g>' +
+      '<text id="label-X" data-station="X" x="0.5" y="0">X</text>',
+  );
+  assert.throws(() => buildBasemapLineOverlays(oneSymbol, config), /"X"/);
+});
+
+// 기대값은 오너 SVG 실측이다. 김포공항 캡슐(transfer-station-symbol-김포공항)의
+// data-transfer-lines가 역의 노선 정본이고, 신촌은 라벨이 달고 있는 data-station
+// ("신촌(경의중앙선)")과 심벌 data-line이 가리키는 노선이 정본이다.
+test("수도권 김포공항 역명은 캡슐이 나열한 모든 노선 레이어에 있고 그 밖의 노선에는 없다", () => {
+  const source = readFileSync(path.join(root, manifest.maps.find(({ id }) => id === "seoul").source), "utf8");
+  const capsule = source.match(/id="transfer-station-symbol-김포공항"[^>]*?data-transfer-lines="([^"]+)"/s);
+  assert.ok(capsule, "SVG에 김포공항 캡슐이 없다");
+  const capsuleLines = new Set(capsule[1].trim().split(/\s+/));
+  assert.equal(capsuleLines.size, 5);
+  for (const slug of Object.keys(REGION_CONFIGS.seoul.slugToLineId)) {
+    assert.equal(
+      hasElement(overlayOf("seoul", slug), "station-label-김포공항"),
+      capsuleLines.has(slug),
+      `seoul/${slug}: 김포공항 역명 소속`,
+    );
+  }
+});
+
+test("수도권 신촌 두 역의 역명은 각자 노선 레이어에만 있다", () => {
+  const cases = [
+    ["2", "station-label-신촌-2호선", "station-label-신촌-경의중앙선"],
+    ["gyeongui-jungang", "station-label-신촌-경의중앙선", "station-label-신촌-2호선"],
+  ];
+  for (const [slug, present, absent] of cases) {
+    const overlay = overlayOf("seoul", slug);
+    assert.ok(hasElement(overlay, present), `seoul/${slug}: ${present}가 없다`);
+    assert.ok(!hasElement(overlay, absent), `seoul/${slug}: ${absent}가 있다`);
+  }
+});
+
 test("아무 요소에도 맞지 않는 명시 분류 규칙은 빌드를 실패시킨다", () => {
   const svg = syntheticSvg('<g data-line="a"><path d="M0 0L1 1"/></g><g data-line="b"><path d="M0 0L1 2"/></g>');
   const config = {

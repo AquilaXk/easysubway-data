@@ -3382,9 +3382,12 @@ export function normalizeSvgForCompile(svgText) {
 //   2) KTX·SRT 표장 → 어느 레이어에도 넣지 않는다(노선이 아니라 철도 서비스 표시).
 //   3) data-transfer-lines → 나열된 노선.
 //   4) 역 이름이 역 심벌 색인에 있으면 → 그 역 심벌의 노선. 같은 이름 심벌이 서로
-//      다른 노선으로 둘 이상이면(양평·좌천 같은 동명 별개역) 가장 가까운 심벌을
-//      따른다. 오너 SVG는 심벌 이름을 가장 가까운 역명 라벨에서 붙였다
-//      (data-name-source="nearest-rendered-station-label") — 그 관례를 거꾸로 쓴다.
+//      다른 노선으로 둘 이상일 때, 권역 설정 distinctSameNameStations에 등록된
+//      동명 별개역(양평·좌천 등)이면 가장 가까운 심벌을 따른다. 오너 SVG는 심벌
+//      이름을 가장 가까운 역명 라벨에서 붙였다(data-name-source=
+//      "nearest-rendered-station-label") — 그 관례를 거꾸로 쓴다. 등록되지 않은
+//      이름은 한 역을 심벌 둘로 그린 것(김포공항: 캡슐 + 공항철도 픽토그램)이라
+//      심벌 노선의 합집합을 따른다. 등록된 이름의 심벌이 둘 미만이면 실패한다.
 //   5) data-line → 그 노선.
 //   6) 권역 설정 basemapElementRules(id·class) → 규칙의 노선.
 //   7) 자식이 있는 컨테이너 → 자식마다 다시 판정.
@@ -3545,12 +3548,23 @@ function buildStationSymbolIndex(svgText, root, config) {
       walk(child);
     }
   })(root);
+  for (const name of config.distinctSameNameStations ?? []) {
+    if ((index.get(name)?.length ?? 0) < 2) {
+      throw new Error(
+        `${config.id}: 동명 별개역 "${name}"의 역 심벌이 둘 미만입니다. ` +
+          "distinctSameNameStations 등록과 SVG가 어긋났습니다.",
+      );
+    }
+  }
   return index;
 }
 
-function slugsFromStationSymbols(svgText, node, symbols) {
+function slugsFromStationSymbols(svgText, node, stationKey, symbols, config) {
   const own = symbols.find((symbol) => symbol.node === node);
   if (own) return own.slugs;
+  if (!config.distinctSameNameStations?.has(stationKey)) {
+    return [...new Set(symbols.flatMap(({ slugs }) => slugs))];
+  }
   const distinctLineSets = new Set(symbols.map(({ slugs }) => [...slugs].sort(codepointCompare).join(" ")));
   if (distinctLineSets.size === 1) return symbols[0].slugs;
   const [x, y] = labelAnchor(node);
@@ -3587,8 +3601,9 @@ function classifyLineMembership(svgText, config) {
   function membershipOf(node) {
     if (node.name === "g" && isServiceMarkOpenTag(node.openTag)) return [];
     if (presentAttr(node, "data-transfer-lines")) return declaredLineSlugs(node, config);
-    const symbols = stationSymbols.get(stationKeyOf(svgText, node, config));
-    if (symbols) return slugsFromStationSymbols(svgText, node, symbols);
+    const stationKey = stationKeyOf(svgText, node, config);
+    const symbols = stationSymbols.get(stationKey);
+    if (symbols) return slugsFromStationSymbols(svgText, node, stationKey, symbols, config);
     const declared = declaredLineSlugs(node, config);
     if (declared) return declared;
     const rule = rules.find(({ match }) => matchesElementRule(node, match));

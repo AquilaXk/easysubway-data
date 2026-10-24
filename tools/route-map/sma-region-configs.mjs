@@ -32,6 +32,11 @@
 // 다른 물리역인지)으로 확인한다.
 const SEOUL_DISTINCT_SAME_NAME_STATIONS = new Set(["신촌", "양평"]);
 
+// 부산 동명 별개역(좌천·부전·동래): 도시철도와 동해선이 서로 다른 물리역이다.
+// 노선 1:1 정합(canonicalRules)과 바탕층 노선별 강조 레이어(distinctSameNameStations)가
+// 같은 목록을 읽는다.
+const BUSAN_DISTINCT_SAME_NAME_STATIONS = new Set(["좌천", "부전", "동래"]);
+
 // 오너 SVG 패밀리 공통 캔버스 배경. 지도 본문이 아니라 어느 노선 레이어에도 넣지 않는다.
 const CANVAS_BACKGROUND_RULES = [
   { match: { id: "page-background" }, lines: [], reason: "캔버스 배경" },
@@ -204,6 +209,7 @@ const BUSAN = {
     bgl: "line-e4cce88f0d7f",
   },
   basemapElementRules: [],
+  distinctSameNameStations: BUSAN_DISTINCT_SAME_NAME_STATIONS,
   colorToSlug: {
     "#f68712": "line1", "#a6da53": "line2", "#d49329": "line3",
     "#7189c5": "line4", "#1c63b7": "donghae", "#854eac": "bgl",
@@ -229,7 +235,7 @@ const BUSAN = {
     // 역 접미 제거(부산역→부산). 카탈로그는 접미 없는 표기.
     if (name.length > 1 && name.endsWith("역")) name = name.slice(0, -1);
     // 좌천·부전·동래는 동명 별개역이므로 노선으로 1:1 정합한다(broadcast 금지).
-    if (["좌천", "부전", "동래"].includes(name)) {
+    if (BUSAN_DISTINCT_SAME_NAME_STATIONS.has(name)) {
       return { name, disambiguateByLine: true };
     }
     return { name };
