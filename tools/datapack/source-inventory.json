@@ -8431,7 +8431,7 @@
             "schedule_timetable"
           ]
         },
-        "observedAt": "2026-10-23T18:23:47.982Z",
+        "observedAt": "2026-10-24T18:52:32.168Z",
         "reverifications": [
           {
             "observedAt": "2026-10-02T15:57:05.773Z",
@@ -8522,6 +8522,11 @@
             "observedAt": "2026-10-23T18:23:47.982Z",
             "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
             "collectionReceiptSha256": "4a49c63b10c1fd331a8ec9216af31278ee58e27a1689643f71bca6f8af3118be"
+          },
+          {
+            "observedAt": "2026-10-24T18:52:32.168Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "7742a263e91cb5a582da8c6646332d7d6d6a6155413ef653098ce380fbb7e51c"
           }
         ]
       },
@@ -8609,7 +8614,7 @@
             "schedule_timetable"
           ]
         },
-        "observedAt": "2026-10-23T18:23:47.982Z",
+        "observedAt": "2026-10-24T18:52:32.168Z",
         "reverifications": [
           {
             "observedAt": "2026-10-03T00:11:32.831Z",
@@ -8695,6 +8700,11 @@
             "observedAt": "2026-10-23T18:23:47.982Z",
             "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
             "collectionReceiptSha256": "4a49c63b10c1fd331a8ec9216af31278ee58e27a1689643f71bca6f8af3118be"
+          },
+          {
+            "observedAt": "2026-10-24T18:52:32.168Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "7742a263e91cb5a582da8c6646332d7d6d6a6155413ef653098ce380fbb7e51c"
           }
         ]
       },
@@ -9020,8 +9030,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "provider-documented-on-change",
-      "observedDataUpdatedAt": "2026-10-23",
-      "retrievedAt": "2026-10-23",
+      "observedDataUpdatedAt": "2026-10-24",
+      "retrievedAt": "2026-10-24",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -9065,10 +9075,10 @@
         "issue": 903,
         "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
         "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
-        "snapshotId": "kric-subway-timetable-station-lines-20261023",
-        "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261023.json",
-        "capturedAt": "2026-10-23T18:24:39.146Z",
-        "freshUntil": "2026-11-22T18:26:31.710Z",
+        "snapshotId": "kric-subway-timetable-station-lines-20261024",
+        "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261024.json",
+        "capturedAt": "2026-10-24T18:53:12.302Z",
+        "freshUntil": "2026-11-23T18:55:19.536Z",
         "lineIds": [
           "line-8604048b6430",
           "line-828f04afc588",
@@ -9078,9 +9088,9 @@
         ],
         "tripCount": 3956,
         "stopTimeCount": 50754,
-        "rawSha256": "7552d13b63d3e62a0d54f93307b0a0a969442556d696615650f23843965f24e1",
+        "rawSha256": "3d355afae1f83060b71a513b1aa4a5dd833a74bccd1fbdeea8b820b0058099ed",
         "tripsSha256": "0511c2b1e7c4e1481940b5978568249c25d2f5e7f18bcfc171f6d4a97e1fb99b",
-        "contentSha256": "ec099675524487daff5623af268b4d70e8968c124789a7b709a571da5792448a"
+        "contentSha256": "00b5e6c279d14dfb69a1b26bc2e4aa2383a5a69ce014596474ee86cae9cf5122"
       },
       "admissionEvidence": {
         "candidateId": "kric-subway-timetable-station-lines",
