@@ -740,6 +740,11 @@ test("닫는 태그가 없는 숨김 요소는 조용히 넘기지 않고 실패
 
 test("짝이 없는 닫는 태그와 닫히지 않은 보이는 요소는 건드리지 않고, 위쪽이 닫히면 함께 닫힌다", () => {
   assert.equal(stripWithoutThrowing('<svg><rect id="a"/></g><rect id="b"></svg>'), '<svg><rect id="a"/></g><rect id="b"></svg>');
+  assert.equal(stripWithoutThrowing('<svg><g id="a"></g></g></svg>'), '<svg><g id="a"></g></g></svg>');
+  assert.equal(
+    stripWithoutThrowing('<svg><clipPath id="c"><g id="inner"></g><rect id="kept" opacity="0"/></clipPath></svg>'),
+    '<svg><clipPath id="c"><g id="inner"></g><rect id="kept" opacity="0"/></clipPath></svg>',
+  );
   const stripped = stripWithoutThrowing('<svg><g id="faded" opacity="0"><rect id="inner"></g><rect id="after"/></svg>');
   assert.equal(stripped, '<svg><rect id="after"/></svg>');
 });
