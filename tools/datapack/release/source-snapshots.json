@@ -141563,5 +141563,49 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "busan-transportation-timetable",
+    "snapshotId": "busan-transportation-timetable-20261025",
+    "previousSnapshotId": "busan-transportation-timetable-20261023",
+    "capturedAt": "2026-10-24T16:25:47.374Z",
+    "retrievedAt": "2026-10-24T16:25:47.374Z",
+    "sourceUpdatedAt": null,
+    "provider": "부산교통공사",
+    "rowCount": 106828,
+    "coverageCount": 3733,
+    "rawSha256": "a05cfa01678de1ade026230dbdb3f6280c1d77c8d8ad480ec0ef9cd5ede8e54a",
+    "contentSha256": "bcf0961dfa122f5bd78259dbd250a9fb9537ec316437a48259c4d25281ab9f8b",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/busan-transportation-timetable/20261025/502d5a1a39e9562e6c7b2b72458222bdd7f64624d348954518b2318821bd30ec.json",
+    "rawObjectSha256": "502d5a1a39e9562e6c7b2b72458222bdd7f64624d348954518b2318821bd30ec",
+    "rawReceiptSha256": "e10507e7aa2e76c6315c8aa668b090508b86aec39b914528b30fa1858fd33f85",
+    "byteSize": 33794168,
+    "freshUntil": "2026-10-25T16:25:47.374Z",
+    "freshnessExpiresAt": "2026-11-23T16:25:47.374Z",
+    "rawRetentionExpiresAt": "2027-01-22T16:25:47.374Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "8977e8bd737d84ac0e88a2c6da010795c7b828a3d9975a7314fbc27eeaf6b810",
+    "schemaFingerprint": "10b23935c461efb4fe3ac83c20bf5767592d75cb25ac5c6afbf5c76f97b6c3a4",
+    "redactedRequestFingerprint": "c884becfcefc0b39c5e607b657f770e0085ff4e1489183cd92df896e3142eab7",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "da99648cbd80d9263482ae707dfcf6cd11c19c50461bf60cbad85183ff45dec1"
+    },
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
