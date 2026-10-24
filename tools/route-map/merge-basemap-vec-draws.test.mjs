@@ -197,12 +197,12 @@ const moveTo = (textPositionId) => ({ op: "updateTextPosition", textPositionId }
 const haloText = (textId) => ({ op: "drawText", textId, fillId: null, strokeId: 1, patternId: null });
 const fillText = (textId) => ({ op: "drawText", textId, fillId: 0, strokeId: null, patternId: null });
 
-function labeledScene(commands) {
+function labeledScene(commands, paints = [RED, HALO]) {
   return decodeVec(
     encodeVec({
       width: 1000,
       height: 1000,
-      paints: [RED, HALO],
+      paints,
       paths: [rect(0, 0, 10, 10), rect(20, 0, 10, 10), rect(40, 0, 10, 10)],
       textPositions: [positionAt(100), positionAt(200)],
       texts: [{ ...LABEL, text: "서면" }, { ...LABEL, text: "부전" }],
@@ -264,6 +264,8 @@ test("바탕 순서에 없는 텍스트를 그리는 레이어는 실패한다",
   const scene = labeledScene([moveTo(0), fillText(0), drawAt(0)]);
   const layer = labeledScene([moveTo(0), fillText(1), drawAt(0)]);
   assert.throws(() => mergeBasemapDraws(scene, [{ name: "b", doc: layer }]), /b: 그리기 명령 1번이 바탕 순서에 없습니다/);
+  const recolored = labeledScene([moveTo(0), fillText(0), drawAt(0)], [BLUE, HALO]);
+  assert.throws(() => mergeBasemapDraws(scene, [{ name: "b", doc: recolored }]), /b: 그리기 명령 1번이 바탕 순서에 없습니다/);
 });
 
 test("무늬 정의(pattern ~ restore) 안의 그리기는 밖의 그리기와 묶지 않는다", () => {
