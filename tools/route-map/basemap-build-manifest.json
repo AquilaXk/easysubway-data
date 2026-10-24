@@ -5,17 +5,22 @@
     "package": "vector_graphics_compiler",
     "version": "1.3.0"
   },
-  "pipelineRevision": 2,
+  "pipelineRevision": 3,
   "content": {
     "svgLayer": "owner-svg-map-body-layers",
     "stationSymbols": "owner-svg",
     "labels": "baked-into-vec",
     "decoration": "excluded",
-    "interaction": "route_map_positions"
+    "interaction": "route_map_positions",
+    "lineOverlays": "per-line-vec-over-faded-basemap"
   },
   "ownerLabelsSidecar": {
     "path": "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
     "sha256": "d9744505b0c954aa6a611bf7dac1a6f96ef3f5b13e4c665eeece7c44e6835833"
+  },
+  "lineOverlaysSidecar": {
+    "path": "apps/mobile/assets/datapacks/metro_map_pack/basemap/line-overlays.json",
+    "sha256": "c936cb85a858bb55e5c38a53f6201fbe42c48632d1d85c2fbca8439b0b201122"
   },
   "maps": [
     {
@@ -33,7 +38,177 @@
         3688,
         2972
       ],
-      "ownerLabelCount": 655
+      "ownerLabelCount": 655,
+      "lineOverlays": [
+        {
+          "lineId": "line-051552e50435",
+          "svgLineSlug": "seohae",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-051552e50435.vec",
+          "normalizedSvgSha256": "90391f7d0723958276a99dafcc49f6a243c68879056b4631c8b130031e12639f",
+          "compiledVectorSha256": "1224b70e909b4a0f380d68861101063558634ade22016b87f1a75411e3d1d41f"
+        },
+        {
+          "lineId": "line-15b3b8a93259",
+          "svgLineSlug": "7",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-15b3b8a93259.vec",
+          "normalizedSvgSha256": "8eacc8c556878bba998ace1d960933783afdf47b9031494a9917bd6b269a4e92",
+          "compiledVectorSha256": "4e9d1a47aed2b5d9749bfc6c86206c9f28f1150b4e5251180f6c147f8792e952"
+        },
+        {
+          "lineId": "line-2b2d9eaa53d0",
+          "svgLineSlug": "8",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-2b2d9eaa53d0.vec",
+          "normalizedSvgSha256": "200028882845b75b4cf0a86845507a464026cd04f663abecf7fce16574494094",
+          "compiledVectorSha256": "42189114f91f9a7e0e3d6d97c1380ceeb4931541c4675e37b5bc977bd7454827"
+        },
+        {
+          "lineId": "line-30886152e4f8",
+          "svgLineSlug": "ui-sinseol",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-30886152e4f8.vec",
+          "normalizedSvgSha256": "b2ebcaec0e2471a671d67ec1da0d7cd7ab82c4c26b895705d807b946f9cc4e9b",
+          "compiledVectorSha256": "31e6c9bc140005b2c353bdbf23c9c8a4f35a1d6a95bb35d4959e86b42c90c7e2"
+        },
+        {
+          "lineId": "line-3f41718e0833",
+          "svgLineSlug": "6",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-3f41718e0833.vec",
+          "normalizedSvgSha256": "b749e23e8957c0635fe1b3515776f48658899a1d92ab5b7ce4b0a0decc89fb09",
+          "compiledVectorSha256": "91212a9441c49fcb47ff6aaa6f7e37ccca0b03a7fa61207002c20e6e48711af9"
+        },
+        {
+          "lineId": "line-41a8c75ec9d8",
+          "svgLineSlug": "3",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-41a8c75ec9d8.vec",
+          "normalizedSvgSha256": "9383396e849fdf8df878a8bcb7fcf314bd4df970f7e481543bbe675ef9aa3329",
+          "compiledVectorSha256": "963e73aae4efd9ddea1c837f302537cdd4ee89c01f7c5486c6d4477560886dbf"
+        },
+        {
+          "lineId": "line-42b5805f3b5a",
+          "svgLineSlug": "incheon-2",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-42b5805f3b5a.vec",
+          "normalizedSvgSha256": "8a631f20615bbdc8e294518eb904df20d7dc9d60c6bfa25e6a0d9abf2e472139",
+          "compiledVectorSha256": "52e77a1d474845f671413eb7e8a7c2ee6470583548e513c6a71fe3a72fb4a77e"
+        },
+        {
+          "lineId": "line-472a81add377",
+          "svgLineSlug": "1",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-472a81add377.vec",
+          "normalizedSvgSha256": "f7687cc3272930b68f28800581b862746de785af993627e036fef86fde923157",
+          "compiledVectorSha256": "869aabce462f56efa1d8a8eb17fbcaac42542f52b2b84ecff9b7092c6344f890"
+        },
+        {
+          "lineId": "line-54a7b980b7c3",
+          "svgLineSlug": "gyeongchun",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-54a7b980b7c3.vec",
+          "normalizedSvgSha256": "cdc7662414626cca0a3e1a4fd9599c434c709c9f0411663589e214e0ed989382",
+          "compiledVectorSha256": "026eb79fa8264e6109bfb8ac2890f5649fa9fe5a3e200dc90bc070d8139174b0"
+        },
+        {
+          "lineId": "line-5500c1600f71",
+          "svgLineSlug": "gimpo-goldline",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-5500c1600f71.vec",
+          "normalizedSvgSha256": "01dcbc3107af3113e6e32789802b2a00a3c3856ca21fe3c2bcdff41a5cf3d99e",
+          "compiledVectorSha256": "216233c53a9581bbdf130238c8271460269895c88cec2f368d7ee2bfd1f51d36"
+        },
+        {
+          "lineId": "line-558d0bd8312d",
+          "svgLineSlug": "suin-bundang",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-558d0bd8312d.vec",
+          "normalizedSvgSha256": "e36e0d9c92de10bb6dee6c1e1762fb9c27aba15718800d36347991e16a97841c",
+          "compiledVectorSha256": "a0ddab7b41802198a3ca2ac8d8a622abdbf71fd49469db2c03e106dde7ae2a64"
+        },
+        {
+          "lineId": "line-62096860ab09",
+          "svgLineSlug": "uijeongbu-lrt",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-62096860ab09.vec",
+          "normalizedSvgSha256": "cd051335b07556f3b7e0257e4faf4c6d56c52a8994e0627faea521b139edf733",
+          "compiledVectorSha256": "2d36a0f2d410a7ff3f431cdde98812a661cf3a14f7992a29380f49948076d97b"
+        },
+        {
+          "lineId": "line-6e39be0cb6e2",
+          "svgLineSlug": "gyeongui-jungang",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-6e39be0cb6e2.vec",
+          "normalizedSvgSha256": "5499d9131f4fcb29e16f7431cf424c5892a3a7b7fdb1d3d5f1cba0a122d717ac",
+          "compiledVectorSha256": "66d7556eab1605d6d216bf48cd32132c279b98fe14e020fc7203162d5b725d6b"
+        },
+        {
+          "lineId": "line-80fc4d5350d4",
+          "svgLineSlug": "5",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-80fc4d5350d4.vec",
+          "normalizedSvgSha256": "2f6ac5a5f886e048c9524f95386ec52704e3f2475cf0edf15423c70b2cf07c3b",
+          "compiledVectorSha256": "1280fab1f98846f8394920fb1972df377794450a1189b9b6ddf1647ed542c45b"
+        },
+        {
+          "lineId": "line-828f04afc588",
+          "svgLineSlug": "everline",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-828f04afc588.vec",
+          "normalizedSvgSha256": "6f198af0ec118e4910dfded38ac652e59e407bc77de79050844b3441ba92c942",
+          "compiledVectorSha256": "9027422874cbe202b93ab1535a98c406986bc88478a4ebc89c8895df3a331289"
+        },
+        {
+          "lineId": "line-8604048b6430",
+          "svgLineSlug": "gtx-a",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-8604048b6430.vec",
+          "normalizedSvgSha256": "ee9f68fce518e79aad823e81fae78eb2b3d161efe5c6925f07bf8cc679f14d6a",
+          "compiledVectorSha256": "680d5b1f692d509104585ab4c7f6459555c4cda4a038892d3215f5a1cf0aab4b"
+        },
+        {
+          "lineId": "line-98718184f016",
+          "svgLineSlug": "incheon-1",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-98718184f016.vec",
+          "normalizedSvgSha256": "4590a1f65b61a64f20c681632a3a41d66254b1ffee6aa697344e907f2721b21f",
+          "compiledVectorSha256": "ad4c0a24056195cf1e5538f2d01f2d6106fa29225b6e80d25980864a5cacbc4d"
+        },
+        {
+          "lineId": "line-aefa08ccc0a9",
+          "svgLineSlug": "sillim",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-aefa08ccc0a9.vec",
+          "normalizedSvgSha256": "bb96974eefa77bbadaa4fb0f70edf47e0f3b8562af28907627899bcbcd0ee177",
+          "compiledVectorSha256": "fca53696e4cf9d84fab6fbd4dfee1885f8e7d8a11b42ac461b4ad9ccb57bc67b"
+        },
+        {
+          "lineId": "line-e4939a4b4713",
+          "svgLineSlug": "gyeonggang",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-e4939a4b4713.vec",
+          "normalizedSvgSha256": "c07bb4f68fa859b92980862fc7d752a8f606649f0845f2b2395d20a697159afc",
+          "compiledVectorSha256": "cdfa474417887a07e0448c2e7fe2959a77108420eb47e5a1025abbe93e3be2b0"
+        },
+        {
+          "lineId": "line-e9e9a5b520a4",
+          "svgLineSlug": "airport-railroad",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-e9e9a5b520a4.vec",
+          "normalizedSvgSha256": "650994081f0f31bbd8867f9cdd558d88f6eebe3fade6d49ddbcbb8e9923b80b2",
+          "compiledVectorSha256": "b2994115bcdf0eb78178576b064d2be03aff9311578b3ae59b7dd50a68e1cdf0"
+        },
+        {
+          "lineId": "line-f0e747248a31",
+          "svgLineSlug": "9",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.line-f0e747248a31.vec",
+          "normalizedSvgSha256": "e2d06b83d9f562ce5a1e41132b4f4486f05c6443398a56c11392a08568bd7c28",
+          "compiledVectorSha256": "d6a6fcd5ad5db2bbc3a340e6af124180a0cc15a3c21757a174079d86a5217ae7"
+        },
+        {
+          "lineId": "seoul-2",
+          "svgLineSlug": "2",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.seoul-2.vec",
+          "normalizedSvgSha256": "4f6984023357a52983ed2ce831782c6e580711680047921e9564a6ce60e7138d",
+          "compiledVectorSha256": "2e9b1c93f5f1030a13129acdec5fbfa4699e40b6029e0659a7103be6a625a1f0"
+        },
+        {
+          "lineId": "seoul-4",
+          "svgLineSlug": "4",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.seoul-4.vec",
+          "normalizedSvgSha256": "0fedf44dbe5620577f39f53e1e99ae7f6c291d7d549dc8b7aee1a36d469276f4",
+          "compiledVectorSha256": "541856226c69b6daa5dd6d26dde870f005ad13bfe8def47b20646a7aa101bd42"
+        },
+        {
+          "lineId": "shinbundang",
+          "svgLineSlug": "shinbundang",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.shinbundang.vec",
+          "normalizedSvgSha256": "00f3e5a27e2a4dbf0ccf1f9ffc6caa0528fd9ec8288ab2dcc54abf08eb472e63",
+          "compiledVectorSha256": "542c845d803295b5f58cfdabdc82e10035ee5d1b4cab6c1c9c0ca21b0477f1fe"
+        }
+      ]
     },
     {
       "id": "busan",
@@ -50,7 +225,51 @@
         11156,
         5980
       ],
-      "ownerLabelCount": 147
+      "ownerLabelCount": 147,
+      "lineOverlays": [
+        {
+          "lineId": "line-ab1a041f6266",
+          "svgLineSlug": "line1",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.line-ab1a041f6266.vec",
+          "normalizedSvgSha256": "3a2c03ad1bc5e52c756c1ee1442ae2947c8631b26209f9daee51be5fd1bac02b",
+          "compiledVectorSha256": "463ddadb7170782114646eafce3e70d23941248d909885a2d6a5ad419c0e1f2b"
+        },
+        {
+          "lineId": "line-d74614a04530",
+          "svgLineSlug": "line3",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.line-d74614a04530.vec",
+          "normalizedSvgSha256": "ae0ab375573a4e92b6ca5f12e3f9df29f09e9b57df02a804a1c41c0091e9a7df",
+          "compiledVectorSha256": "37ff65a38a335f74641e1a5cddbed05a2430284cbf007204751ddc3bc62b109c"
+        },
+        {
+          "lineId": "line-d812a5bc1e5f",
+          "svgLineSlug": "line4",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.line-d812a5bc1e5f.vec",
+          "normalizedSvgSha256": "66bf593f6dc548668c512522870d36ea8abed2e73da0ebfcf3373c9d1f10b36a",
+          "compiledVectorSha256": "7bd27edde5562745204e17e181a16518c84f78f0faf3acf5e22735d664d13779"
+        },
+        {
+          "lineId": "line-e4cce88f0d7f",
+          "svgLineSlug": "bgl",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.line-e4cce88f0d7f.vec",
+          "normalizedSvgSha256": "1c86dc3921867dc62f9cf12c340f389094011c2fc9bc72fed0913236f68635f8",
+          "compiledVectorSha256": "7c67cea67951206a61e526f26e6d7530561e12e5b3678599541c4d3eb453bde0"
+        },
+        {
+          "lineId": "line-eb7b47920390",
+          "svgLineSlug": "line2",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.line-eb7b47920390.vec",
+          "normalizedSvgSha256": "cb76e380ebfc94d5f1aa8efed3e9f4e6a254ac85151a8e84b6ee1de076f7ee3e",
+          "compiledVectorSha256": "fd63ad6690da77cc666cfb2517970344a19f799745563f3ec231f369fa7abf71"
+        },
+        {
+          "lineId": "line-f52eb59d8497",
+          "svgLineSlug": "donghae",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.line-f52eb59d8497.vec",
+          "normalizedSvgSha256": "fe30585c5339b3b123dcf723cba81663a76b1f49a1676aa6952c1a0203fd3754",
+          "compiledVectorSha256": "5bee96b7f0a921284efb04e1aa92449cf8538a9159b351be84861b231926a170"
+        }
+      ]
     },
     {
       "id": "daegu",
@@ -67,7 +286,37 @@
         4560,
         2268
       ],
-      "ownerLabelCount": 97
+      "ownerLabelCount": 97,
+      "lineOverlays": [
+        {
+          "lineId": "line-0ffaa95b1b5d",
+          "svgLineSlug": "line3",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daegu.line-0ffaa95b1b5d.vec",
+          "normalizedSvgSha256": "28d7215accb776aef91c62c70cad5e99a241c95856b47fd0df62de844771a488",
+          "compiledVectorSha256": "b18c68cd190aea3d89b4c1f616412d5932d475556fd426081a98b212277a6a32"
+        },
+        {
+          "lineId": "line-5b8d9b05e7e6",
+          "svgLineSlug": "line1",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daegu.line-5b8d9b05e7e6.vec",
+          "normalizedSvgSha256": "4d5001bda37118eae20492de7daadfabd42cf26b442a2466a374d6e0db71aee8",
+          "compiledVectorSha256": "d5464cc752c44a9d8ee8ca0cab6dc6d1aaa2935eaac12bfce62b27cc9bca5773"
+        },
+        {
+          "lineId": "line-8f7ed01f290a",
+          "svgLineSlug": "daegyeong",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daegu.line-8f7ed01f290a.vec",
+          "normalizedSvgSha256": "367f30eff733493ef54f1a9431f5c6abdaf473ed7760e24cc2a50377a523bb75",
+          "compiledVectorSha256": "40845720f818e7656d3e73dd558505e10cd3152d18837685e9732fd51ec98002"
+        },
+        {
+          "lineId": "line-e2938a4cc492",
+          "svgLineSlug": "line2",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daegu.line-e2938a4cc492.vec",
+          "normalizedSvgSha256": "ff1752f4fc4b8fff38963ed7c5f59443267e386006cfb4fbf89379188765e6ac",
+          "compiledVectorSha256": "8d7c140e9beccfe74eb64fceb1a9a0df86fdee6aefd845e17c3dd37b33697bff"
+        }
+      ]
     },
     {
       "id": "daejeon",
@@ -84,7 +333,16 @@
         1828,
         1748
       ],
-      "ownerLabelCount": 22
+      "ownerLabelCount": 22,
+      "lineOverlays": [
+        {
+          "lineId": "line-7051a9c2525c",
+          "svgLineSlug": "1",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daejeon.line-7051a9c2525c.vec",
+          "normalizedSvgSha256": "af4bc517dff7c6c35aebdf60fe6c111a0854f5780259724c733cc93a861e794c",
+          "compiledVectorSha256": "6435d7caeb9fc70a28fdee45ab066e6d4134ed81c4ddeac08ef01874c45664d1"
+        }
+      ]
     },
     {
       "id": "gwangju",
@@ -101,7 +359,16 @@
         2016,
         1628
       ],
-      "ownerLabelCount": 20
+      "ownerLabelCount": 20,
+      "lineOverlays": [
+        {
+          "lineId": "line-e57a361e8892",
+          "svgLineSlug": "1",
+          "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/gwangju.line-e57a361e8892.vec",
+          "normalizedSvgSha256": "37995fe438ddfd294b617e9ac945641dbada37f1ae0407e8e920070b8ddb9e03",
+          "compiledVectorSha256": "6dbb04299af885b268a5d5b516a17525aba6d556086b04e75e70f07094017429"
+        }
+      ]
     }
   ]
 }

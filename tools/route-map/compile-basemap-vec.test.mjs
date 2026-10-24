@@ -663,13 +663,14 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
     lockedCompilerVersion,
     "manifest.compiler.version은 pubspec.lock의 vector_graphics_compiler 버전과 같아야 합니다.",
   );
-  assert.equal(manifest.pipelineRevision, 2);
+  assert.equal(manifest.pipelineRevision, 3);
   assert.deepEqual(manifest.content, {
     svgLayer: "owner-svg-map-body-layers",
     stationSymbols: "owner-svg",
     labels: "baked-into-vec",
     decoration: "excluded",
     interaction: "route_map_positions",
+    lineOverlays: "per-line-vec-over-faded-basemap",
   });
   assert.equal(manifest.maps.length, 5);
 
