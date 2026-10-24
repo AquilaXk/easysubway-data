@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   applyStylesheet,
   baselineShiftRatio,
+  decorLayerBoundsOf,
   expandDominantBaseline,
   extractOwnerLabels,
   flattenTextScale,
@@ -755,6 +756,134 @@ test("자기폐쇄 clipPath도 숨겨진 조상 안에서 남고, 숨겨진 요�
     '<svg><g opacity="0">글자<clipPath id="empty"/><rect id="gone"/></g>뒤<rect id="shown"/></svg>',
   );
   assert.equal(stripped, '<svg><clipPath id="empty"/>뒤<rect id="shown"/></svg>');
+});
+
+// 참조할 수 있는 정의 일곱 가지(SVG 1.1 5.5 symbol, 11.6.2 marker, 13.2.2 linearGradient,
+// 13.2.3 radialGradient, 13.3 pattern, 14.3.5 clipPath, 14.4 mask). 사양은 이 요소들에 'display'가
+// 적용되지 않으며 자신이나 어떤 조상이 display:none이어도 참조할 수 있다고 적는다.
+const REFERENCEABLE_DEFINITIONS = [
+  { name: "clipPath", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "mask", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "pattern", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "marker", child: '<path class="r" d="M0 0L1 1"/>' },
+  { name: "symbol", child: '<path class="r" d="M0 0L1 1"/>' },
+  { name: "linearGradient", child: '<stop class="r" offset="0"/>' },
+  { name: "radialGradient", child: '<stop class="r" offset="0"/>' },
+];
+const UNCLASSIFIED_DECLARATION = /분류되지 않은 CSS 선언/;
+
+// 컴파일 입력이 되는 순서(스타일 전개 뒤 숨김 제거) 그대로 지나간다. 던지거나 선언을 버리는 쪽이
+// 어디서 갈리는지는 두 단계의 합이 정하므로 한 단계씩이 아니라 합을 본다.
+const expandAndStrip = (body, rule = ".r { clip-rule:evenodd; }") =>
+  stripHiddenElements(applyStylesheet(cssSvg(body, rule)));
+
+for (const { name, child } of REFERENCEABLE_DEFINITIONS) {
+  test(`숨겨진 조상 안에서 남은 ${name}의 자식도 분류되지 않은 CSS 선언을 조용히 버리지 않는다`, () => {
+    for (const hider of ['<g display="none">', '<g style="opacity:0">', '<defs display="none">']) {
+      const closing = hider.slice(0, hider.indexOf(" ")).replace("<", "</") + ">";
+      const body = `${hider}<${name} id="def">${child}</${name}>${closing}`;
+      assert.throws(() => expandAndStrip(body), UNCLASSIFIED_DECLARATION, hider);
+    }
+  });
+
+  test(`숨겨진 조상 안에서 ${name} 정의는 남고 그 밖의 분류되지 않은 선언은 요소째 지워져 던지지 않는다`, () => {
+    const out = expandAndStrip(
+      `<g display="none"><${name} id="def">${child.replace(' class="r"', "")}</${name}>` +
+        '<path id="junk" class="r" d="M0 0L1 1"/></g>',
+    );
+    assert.ok(out.includes('id="def"'), `${name} 정의가 빠졌다`);
+    assert.ok(!out.includes('id="junk"'), "숨겨진 조상의 일반 요소가 남았다");
+  });
+}
+
+test("보이는 clipPath 자식의 분류되지 않은 CSS 선언은 던진다(숨김 판정 이전의 기준선)", () => {
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><rect class="r" width="9" height="9"/></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("display:none 이름이 겹치는 font-display:none 요소는 남으므로 분류되지 않은 선언이 던진다", () => {
+  assert.throws(
+    () => expandAndStrip('<path class="r" style="font-display:none" d="M0 0L1 1"/>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () => expandAndStrip('<g style="fill:red;font-display:none"><path class="r" d="M0 0L1 1"/></g>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("지워질 요소의 분류되지 않은 CSS 선언은 던지지 않고, 요소와 자손이 함께 빠진다", () => {
+  const hiddenForms = [
+    '<path id="gone" class="r" display="none" d="M0 0L1 1"/>',
+    '<path id="gone" class="r" style="display : none !important" d="M0 0L1 1"/>',
+    '<path id="gone" class="r" opacity="0" d="M0 0L1 1"/>',
+    '<g display="none"><path id="gone" class="r" d="M0 0L1 1"/></g>',
+    '<g style="opacity:0"><g><path id="gone" class="r" d="M0 0L1 1"/></g></g>',
+    '<g display="none"><clipPath id="c"><g display="none"><path id="gone" class="r" d="M0 0L1 1"/></g></clipPath></g>',
+  ];
+  for (const body of hiddenForms) {
+    let out;
+    assert.doesNotThrow(() => {
+      out = expandAndStrip(body);
+    }, body);
+    assert.ok(!out.includes('id="gone"'), `${body} 요소가 남았다`);
+  }
+});
+
+test("클래스가 준 display:none은 그 요소에서 선언을 버려도 던지지 않고, 인라인 display가 이기면 던진다", () => {
+  assert.doesNotThrow(() =>
+    expandAndStrip('<path class="h" d="M0 0L1 1"/>', ".h { display:none; clip-rule:evenodd; }"),
+  );
+  assert.throws(
+    () => expandAndStrip('<path class="h" style="display:inline" d="M0 0L1 1"/>', ".h { display:none; clip-rule:evenodd; }"),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("정의 일곱 가지는 자신의 display:none이 사양상 적용되지 않으므로 보이는 자리에서도 남는다", () => {
+  for (const { name } of REFERENCEABLE_DEFINITIONS) {
+    assertStripped(`<svg><${name} id="def" display="none"><rect id="inner" width="1" height="1"/></${name}></svg>`, {
+      kept: ["def", "inner"],
+    });
+    assertStripped(`<svg><${name} id="def" style="display:none"/></svg>`, { kept: ["def"] });
+  }
+});
+
+test("정의 자신의 opacity 0은 컨테이너 요소(pattern·marker·symbol)만 지우고 mask·gradient·clipPath는 사양상 적용되지 않아 남는다", () => {
+  for (const name of ["clipPath", "mask", "linearGradient", "radialGradient"]) {
+    assertStripped(`<svg><${name} id="def" opacity="0"/><${name} id="styled" style="opacity:0"></${name}></svg>`, {
+      kept: ["def", "styled"],
+    });
+  }
+  for (const name of ["pattern", "marker", "symbol"]) {
+    assertStripped(`<svg><${name} id="def" opacity="0"/><${name} id="styled" style="opacity:0"></${name}></svg>`, {
+      removed: ["def", "styled"],
+    });
+  }
+});
+
+test("clipPath 밖의 정의는 자식의 불투명도 0과 display:none을 일반 요소처럼 지운다", () => {
+  for (const name of ["mask", "pattern", "marker", "symbol"]) {
+    assertStripped(
+      `<svg><g display="none"><${name} id="def"><rect id="faint" opacity="0"/><rect id="off" display="none"/>` +
+        `<rect id="shown"/></${name}></g></svg>`,
+      { removed: ["faint", "off"], kept: ["def", "shown"] },
+    );
+  }
+});
+
+test("장식 영역 판정도 같은 display:none 판정을 쓴다: 숨긴 레이어는 영역에서 빼고 font-display:none은 보이는 레이어다", () => {
+  const boundsOf = (attributes) =>
+    decorLayerBoundsOf(
+      `<svg viewBox="0 0 100 100"><g id="legend-layer" ${attributes}><rect x="1" y="2" width="30" height="40"/></g></svg>`,
+    );
+  const box = { minX: 1, minY: 2, maxX: 31, maxY: 42 };
+  assert.deepEqual(boundsOf(""), [box]);
+  assert.deepEqual(boundsOf('style="font-display:none"'), [box]);
+  assert.deepEqual(boundsOf('display="none"'), []);
+  assert.deepEqual(boundsOf('style="fill:red; display : none !important"'), []);
 });
 
 test("숨김 요소 제거는 입력 크기에 선형인 시간에 끝난다(이차 시간 회귀 방지)", () => {
