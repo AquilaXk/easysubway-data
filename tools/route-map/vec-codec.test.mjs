@@ -12,6 +12,15 @@ const basemapDir = path.join(root, "apps/mobile/assets/datapacks/metro_map_pack/
 const FILL = { style: "fill", color: 0xff112233, blendMode: 3, shaderId: null };
 const STROKE = { style: "stroke", color: 0x80ffffff, cap: 2, join: 0, blendMode: 3, miterLimit: 4, width: 1.5, shaderId: null };
 
+// 읽혀야 하는 바이트가 던지면 예외가 아니라 단언 실패로 드러나게 한다.
+function decoded(bytes) {
+  let doc;
+  assert.doesNotThrow(() => {
+    doc = decodeVec(bytes);
+  });
+  return doc;
+}
+
 function sample() {
   return {
     width: 100.5,
@@ -58,7 +67,7 @@ test("vector_graphics_compiler가 쓴 텍스트 .vec(위치·설정·선만·채
   // fixtures/vec-codec-golden-text.vec는 같은 이름 .svg를 vector_graphics_compiler 1.3.0
   // --no-optimize-clips로 구운 산출이다.
   const golden = new Uint8Array(readFileSync(path.join(import.meta.dirname, "fixtures/vec-codec-golden-text.vec")));
-  const doc = decodeVec(golden);
+  const doc = decoded(golden);
   const drawTexts = [
     "updateTextPosition", "drawText", "updateTextPosition", "drawText",
     "updateTextPosition", "drawText", "updateTextPosition", "drawText",
@@ -102,7 +111,7 @@ function textSample() {
 }
 
 test("텍스트 위치·설정·그리기를 쓰고 다시 읽으면 같은 문서다", () => {
-  assert.deepEqual(decodeVec(encodeVec(textSample())), textSample());
+  assert.deepEqual(decoded(encodeVec(textSample())), textSample());
 });
 
 // 런타임(vector_graphics 1.2.3 listener.dart 580-614행)은 굵기·장식 모양을 FontWeight.values·
@@ -161,7 +170,7 @@ test("고정 mobile 픽스처의 두 변형 바탕·강조 레이어 .vec가 모
   const files = readdirSync(basemapDir).filter((name) => name.endsWith(".vec"));
   assert.equal(files.length, 82);
   for (const name of files) {
-    const doc = decodeVec(new Uint8Array(readFileSync(path.join(basemapDir, name))));
+    const doc = decoded(new Uint8Array(readFileSync(path.join(basemapDir, name))));
     assert.ok(doc.commands.some(({ op }) => op === "drawPath"), name);
     const drawsText = doc.commands.some(({ op }) => op === "drawText");
     assert.equal(drawsText, parseBasemapVectorFileName(name).variantId === "text", name);
