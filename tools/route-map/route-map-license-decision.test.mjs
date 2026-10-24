@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -298,22 +299,64 @@ test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다
   }
 
   // 컴파일 입력뿐 아니라 **실제 배포 바이트(.vec)** 로도 확인한다 — 정책이
-  // 기술하는 대상은 배포물이다. 전량 반입이므로 종전 "장식 텍스트 부재" 대신
-  // 오너 도식의 대표 텍스트가 실제로 담겼는지만 본다.
+  // 기술하는 대상은 배포물이다. 라벨은 참조 서체 글리프 윤곽선으로 구워져(#1488)
+  // 배포 .vec에 텍스트 바이트가 없으므로, 종전 "역명 UTF-8이 .vec에 있다" 검사를
+  // 같은 성질의 세 단계로 옮긴다.
+  //   (1) 오너 SVG → 윤곽선 컴파일 입력을 지금 코드로 다시 만든 sha256이 manifest가
+  //       고정한 compileInputSvgSha256과 같다(배포 입력이 오너 도식 전량에서 나왔다).
+  //   (2) 배포 .vec의 sha256이 manifest의 compiledVectorSha256과 같다(배포 바이트가
+  //       그 입력에서 나왔다).
+  //   (3) 오너 도식의 대표 역명이 윤곽선 그룹(data-label-role 그룹 안의 path)으로 입력에 있고,
+  //       <text>는 한 개도 남지 않으며, 배포 .vec에는 그 역명의 UTF-8 바이트가 없다
+  //       (기기 서체에 기대는 글자 그리기가 배포물에 없다).
+  const { outlineBasemapText } = await import("./outline-basemap-text.mjs");
+  const manifest = readJson("tools/route-map/basemap-build-manifest.json");
+  assert.equal(manifest.content.labels, "outlined-into-vec");
   const basemapDir = path.join(
     root,
     "apps/mobile/assets/datapacks/metro_map_pack/basemap",
   );
   const distributed = {
-    "seoul.vec": ["전곡", "뚝섬"],
-    "busan.vec": ["벡스코", "서면"],
+    seoul: { svg: "easy-subway-sma-v4.svg", stations: ["전곡", "뚝섬"] },
+    busan: { svg: "easy-subway-busan-v3.svg", stations: ["벡스코(시립미술관)", "서면"] },
   };
-  for (const [vecName, present] of Object.entries(distributed)) {
-    const bytes = readFileSync(path.join(basemapDir, vecName), "latin1");
-    for (const text of present) {
+  const sha256Of = (value) => createHash("sha256").update(value).digest("hex");
+  for (const [id, { svg, stations }] of Object.entries(distributed)) {
+    const map = manifest.maps.find((entry) => entry.id === id);
+    assert.ok(map, `${id}: build manifest에 권역이 있어야 합니다.`);
+
+    const outlined = outlineBasemapText(
+      normalizeSvgForCompile(readFileSync(path.join(sources, svg), "utf8")),
+    ).svg;
+    assert.equal(
+      sha256Of(outlined),
+      map.compileInputSvgSha256,
+      `${id}: 오너 SVG에서 다시 만든 윤곽선 컴파일 입력이 manifest 기록과 다릅니다.`,
+    );
+
+    const vecBytes = readFileSync(path.join(basemapDir, `${id}.vec`));
+    assert.equal(
+      sha256Of(vecBytes),
+      map.compiledVectorSha256,
+      `${id}.vec: 배포 바이트가 manifest가 고정한 컴파일 산출과 다릅니다.`,
+    );
+
+    assert.ok(!/<text\b/.test(outlined), `${id}: 윤곽선 입력에 <text>가 남았습니다.`);
+    const outlinedStations = new Set(
+      [
+        ...outlined.matchAll(
+          /<g\b[^>]*\bdata-label-role="[^"]*"[^>]*>(?:\s*<g\b[^>]*>)*\s*<path d="M/g,
+        ),
+      ].map((match) => match[0].match(/\bdata-station="([^"]*)"/)?.[1]),
+    );
+    for (const station of stations) {
       assert.ok(
-        bytes.includes(Buffer.from(text, "utf8").toString("latin1")),
-        `${vecName}: 오너 도식의 역명 "${text}"가 배포 .vec에 없습니다.`,
+        outlinedStations.has(station),
+        `${id}: 오너 도식의 역명 "${station}"가 윤곽선 그룹으로 입력에 없습니다.`,
+      );
+      assert.ok(
+        !vecBytes.includes(Buffer.from(station.split("(")[0], "utf8")),
+        `${id}.vec: 역명 "${station}"가 텍스트 바이트로 남아 기기 서체에 기대고 있습니다.`,
       );
     }
   }
