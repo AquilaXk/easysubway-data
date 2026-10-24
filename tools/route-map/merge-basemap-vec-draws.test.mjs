@@ -328,6 +328,15 @@ test("레이어 집합이 다른 그리기가 낀 라벨은 단위로 묶지 않
   );
 });
 
+test("출하 상한 256을 넘는 여러 줄 라벨은 줄을 한 path로 잇지 않고, 안이면 잇는다", () => {
+  const label = (gap) => {
+    const lines = [rect(0, 0, 30, 10), rect(1, gap, 30, 10)];
+    return docOf([...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])]);
+  };
+  assert.deepEqual(drawsOf(mergeDraws(label(200)).base), [[HALO, [0, 1]], [RED, [0, 1]]]);
+  assert.deepEqual(drawsOf(mergeDraws(label(300)).base), [[HALO, [0]], [HALO, [1]], [RED, [0]], [RED, [1]]]);
+});
+
 // ── 무작위 문서로 렌더 동등 계약을 확인한다 ─────────────────────────────────────
 
 function random(seed) {

@@ -102,6 +102,14 @@ function union(a, b) {
   };
 }
 
+function withinExtent(box, maxExtent) {
+  return box.maxX - box.minX <= maxExtent.width && box.maxY - box.minY <= maxExtent.height;
+}
+
+function unionAll(boxes) {
+  return boxes.slice(1).reduce(union, boxes[0]);
+}
+
 function paintKey(paint) {
   return JSON.stringify(paint);
 }
@@ -171,7 +179,8 @@ function piecesDisjoint(block) {
 }
 
 // 머리 draw의 path가 처음 다시 나오는 거리가 블록 크기다(블록 안 path는 서로 다르다).
-function repeatedBlocks(draws, start) {
+// 단위 하나도 묶음 하나처럼 최대 크기를 넘지 않는다. 넘으면 단위로 묶지 않고 draw를 하나씩 둔다.
+function repeatedBlocks(draws, start, maxExtent) {
   const head = draws[start];
   const inHeadBlock = sameBlockPaint(head);
   let size = 1;
@@ -191,10 +200,11 @@ function repeatedBlocks(draws, start) {
     if (!repeats) break;
     blocks.push(block);
   }
-  return blocks.length >= 2 && blocks.every(piecesDisjoint) ? blocks : [[head]];
+  const bounds = unionAll(blocks.flat().map((draw) => draw.bounds));
+  return blocks.length >= 2 && blocks.every(piecesDisjoint) && withinExtent(bounds, maxExtent) ? blocks : [[head]];
 }
 
-function buildUnits(draws) {
+function buildUnits(draws, maxExtent) {
   const units = [];
   for (let start = 0; start < draws.length; ) {
     if (draws[start].barrier) {
@@ -202,13 +212,13 @@ function buildUnits(draws) {
       start += 1;
       continue;
     }
-    const blocks = repeatedBlocks(draws, start);
+    const blocks = repeatedBlocks(draws, start, maxExtent);
     const members = blocks.flat();
     units.push({
       barrier: false,
       mergeKey: blocks.map(([first]) => first.mergeKey).join("\n"),
       layers: blocks[0][0].layers,
-      bounds: members.slice(1).reduce((box, { bounds }) => union(box, bounds), members[0].bounds),
+      bounds: unionAll(members.map(({ bounds }) => bounds)),
       pathIds: blocks[0].map(({ command }) => command.pathId),
       commands: blocks.map(([first]) => first.command),
     });
@@ -219,10 +229,7 @@ function buildUnits(draws) {
 
 function canJoin(group, unit, maxExtent) {
   if (group.barrier || group.mergeKey !== unit.mergeKey || group.layers !== unit.layers) return false;
-  const merged = union(group.bounds, unit.bounds);
-  if (merged.maxX - merged.minX > maxExtent.width || merged.maxY - merged.minY > maxExtent.height) {
-    return false;
-  }
+  if (!withinExtent(union(group.bounds, unit.bounds), maxExtent)) return false;
   return group.units.every((member) => !rectsOverlap(member.bounds, unit.bounds));
 }
 
@@ -336,7 +343,7 @@ export function mergeBasemapDraws(base, layers = [], { maxExtent = MAX_GROUP_EXT
   const draws = base.commands
     .map((command, index) => ({ ...classes[index], command, layers: membership[index].join("\n") }))
     .filter(({ paintsNothing }) => !paintsNothing);
-  const groups = planGroups(buildUnits(draws), maxExtent);
+  const groups = planGroups(buildUnits(draws, maxExtent), maxExtent);
   return {
     base: emitDoc(base, groups),
     layers: layers.map(({ name }) => ({
