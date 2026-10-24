@@ -403,8 +403,7 @@ test("텍스트 변형 .vec에는 채우기와 선을 한 번에 그리는 텍�
       assert.ok(fill > index, `${region.id}: ${key.slice(0, 120)} 테두리 뒤에 같은 글자 채우기가 없습니다`);
     });
   }
-  assert.equal(haloCounts.seoul, 0, "수도권 역명 라벨은 테두리가 없다");
-  for (const regionId of ["busan", "daegu", "daejeon", "gwangju"]) {
-    assert.ok(haloCounts[regionId] > 0, `${regionId}: 테두리 텍스트가 없습니다`);
-  }
+  // 세는 단위는 텍스트 런이다. 여러 줄 라벨은 tspan마다 그리기가 하나라 요소 수(부산 147·대구 97)보다
+  // 크다. 윤곽선 굽기 전 텍스트 .vec의 짝 수와 같다. 수도권 역명 라벨은 CSS가 stroke를 주지 않는다.
+  assert.deepEqual(haloCounts, { seoul: 0, busan: 155, daegu: 104, daejeon: 22, gwangju: 20 });
 });
