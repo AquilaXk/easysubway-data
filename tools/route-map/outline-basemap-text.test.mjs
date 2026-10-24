@@ -143,6 +143,45 @@ test("윤곽선으로 그리지 못하는 텍스트 선언과 요소는 실패�
   );
 });
 
+// 표(TEXT_PROPERTY_POLICY)에 없는 텍스트 계열 선언은 이 단계가 어떻게 그릴지 모른다. 조용히
+// 통과시키면 글자 모양이 오너 도식과 달라진 채 .vec가 만들어진다.
+test("표에 없는 텍스트 계열 선언은 text·tspan·조상 어디에 있어도 조용히 통과하지 않고 실패한다", () => {
+  for (const [declaration, property] of [
+    ['font="italic 20px Pretendard"', "font"],
+    ['text-transform="uppercase"', "text-transform"],
+    ["style=\"font-variation-settings:'wght' 700\"", "font-variation-settings"],
+    ['text-orientation="upright"', "text-orientation"],
+    ['unicode-bidi="bidi-override"', "unicode-bidi"],
+    ['font-size-adjust="0.5"', "font-size-adjust"],
+    ['style="-webkit-text-stroke:1px"', "-webkit-text-stroke"],
+    ['style="hyphens:auto"', "hyphens"],
+  ]) {
+    const onText = svgOf(`<text x="1" y="9" ${LABEL} ${declaration}>가</text>`);
+    const onTspan = svgOf(`<text x="1" y="9" ${LABEL}><tspan ${declaration}>가</tspan></text>`);
+    const onAncestor = svgOf(`<g ${declaration}><text x="1" y="9" ${LABEL}>가</text></g>`);
+    for (const [where, markup] of [["text", onText], ["tspan", onTspan], ["조상", onAncestor]]) {
+      assert.throws(
+        () => outlineBasemapText(markup),
+        new RegExp(`${property.replace(/[-]/g, "\\$&")}.*알지 못하는 텍스트`),
+        `${where}: ${declaration}`,
+      );
+    }
+  }
+});
+
+test("텍스트 계열이 아닌 선언은 표에 없어도 윤곽선 그룹에 그대로 남는다", () => {
+  const { svg } = outlined(
+    svgOf(
+      `<text id="t" x="1" y="9" ${LABEL} mix-blend-mode="multiply" pointer-events="none" stroke-linecap="round" ` +
+        'style="isolation:isolate" aria-label="양재" data-role="ordinary">양재</text>',
+    ),
+  );
+  const group = svg.match(/<g [^>]*>/)[0];
+  for (const kept of ["mix-blend-mode=\"multiply\"", "pointer-events=\"none\"", "stroke-linecap=\"round\"", "isolation:isolate", "aria-label=\"양재\""]) {
+    assert.ok(group.includes(kept), `${kept}가 남지 않았습니다: ${group}`);
+  }
+});
+
 test("윤곽선 그룹은 paint·transform·id를 남기고 텍스트 배치 선언을 지운다", () => {
   const { svg } = outlineBasemapText(
     svgOf(
