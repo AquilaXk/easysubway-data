@@ -93,5 +93,5 @@ test("가장 큰 id 65534를 참조하는 그리기는 다시 읽으면 같은 i
   assert.doesNotThrow(() => {
     bytes = encodeVec(doc);
   });
-  assert.deepEqual(decodeVec(bytes).commands, doc.commands);
+  assert.deepEqual(decodeVec(bytes).commands, [{ op: "drawPath", pathId: 65534, paintId: 65534, patternId: null }]);
 });
