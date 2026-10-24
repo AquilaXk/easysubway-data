@@ -40,6 +40,15 @@ function docOf(draws, extra = []) {
   return decodeVec(encodeVec({ width: 1000, height: 1000, paints, paths, commands }));
 }
 
+// 이 장면들에서 합치기는 던지지 않는다. 던지면 호출한 테스트가 단언 실패로 끝나게 감싼다.
+function mergeDraws(doc, layers = [], options = {}) {
+  let merged;
+  assert.doesNotThrow(() => {
+    merged = mergeBasemapDraws(doc, layers, options);
+  });
+  return merged;
+}
+
 // 출력 draw마다 [paint, path 안 윤곽선 시작점 x 목록]. 시작점 x가 입력 도형을 가리킨다.
 function drawsOf(doc) {
   return doc.commands
@@ -57,13 +66,13 @@ function drawsOf(doc) {
 }
 
 test("겹치지 않는 같은 paint 도형 둘은 path 하나·그리기 하나가 되고 두 윤곽선이 순서대로 남는다", () => {
-  const { base } = mergeBasemapDraws(docOf([[RED, rect(0, 0, 10, 10)], [RED, rect(20, 0, 10, 10)]]), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf([[RED, rect(0, 0, 10, 10)], [RED, rect(20, 0, 10, 10)]]), [], { maxExtent: OPEN });
   assert.deepEqual(drawsOf(base), [[RED, [0, 20]]]);
 });
 
 test("다른 paint가 사이에 있어도 겹치지 않으면 앞 묶음에 붙는다", () => {
   const draws = [[RED, rect(0, 0, 10, 10)], [BLUE, rect(0, 20, 10, 10)], [RED, rect(20, 0, 10, 10)]];
-  const { base } = mergeBasemapDraws(docOf(draws), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf(draws), [], { maxExtent: OPEN });
   assert.deepEqual(drawsOf(base), [[RED, [0, 20]], [BLUE, [0]]]);
 });
 
@@ -72,7 +81,7 @@ test("라벨 테두리·글자 교대는 두 그리기가 되고 둘이 이은 p
     const glyphs = rect(x, 0, 30, 10);
     return [[HALO, glyphs], [RED, glyphs]];
   });
-  const { base } = mergeBasemapDraws(docOf(labels), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf(labels), [], { maxExtent: OPEN });
   assert.deepEqual(drawsOf(base), [[HALO, [0, 100, 200]], [RED, [0, 100, 200]]]);
   assert.equal(base.paths.length, 1);
 });
@@ -82,7 +91,7 @@ test("여러 줄 라벨(줄마다 테두리, 다음에 줄마다 글자)은 줄�
     const lines = [rect(x, 0, 30, 10), rect(x + 1, 20, 30, 10)];
     return [...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])];
   };
-  const { base } = mergeBasemapDraws(docOf([...label(0), ...label(100)]), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf([...label(0), ...label(100)]), [], { maxExtent: OPEN });
   assert.deepEqual(drawsOf(base), [[HALO, [0, 1, 100, 101]], [RED, [0, 1, 100, 101]]]);
   assert.equal(base.paths.length, 1);
 });
@@ -90,34 +99,34 @@ test("여러 줄 라벨(줄마다 테두리, 다음에 줄마다 글자)은 줄�
 test("줄끼리 겹치는 여러 줄 라벨은 줄을 한 path로 잇지 않는다", () => {
   const lines = [rect(0, 0, 30, 10), rect(1, 9, 30, 10)];
   const draws = [...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])];
-  assert.equal(mergeBasemapDraws(docOf(draws), [], { maxExtent: OPEN }).base.commands.length, 4);
+  assert.equal(mergeDraws(docOf(draws), [], { maxExtent: OPEN }).base.commands.length, 4);
 });
 
 test("사이의 다른 paint 도형과 겹치는 그리기는 앞으로 넘어가지 않는다(그리는 순서 보존)", () => {
   const draws = [[RED, rect(0, 0, 10, 10)], [BLUE, rect(15, 0, 10, 10)], [RED, rect(20, 0, 10, 10)]];
-  const { base } = mergeBasemapDraws(docOf(draws), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf(draws), [], { maxExtent: OPEN });
   assert.deepEqual(drawsOf(base), [[RED, [0]], [BLUE, [15]], [RED, [20]]]);
 });
 
 test("같은 paint라도 영역이 겹치는 도형은 한 path로 잇지 않는다(감김수·반투명 겹침 보존)", () => {
-  const { base } = mergeBasemapDraws(docOf([[RED, rect(0, 0, 10, 10)], [RED, rect(5, 5, 10, 10)]]), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf([[RED, rect(0, 0, 10, 10)], [RED, rect(5, 5, 10, 10)]]), [], { maxExtent: OPEN });
   assert.equal(base.commands.length, 2);
 });
 
 test("변만 맞닿은 도형은 겹침이 아니다(넓이 있는 겹침만 막는다)", () => {
-  const { base } = mergeBasemapDraws(docOf([[RED, rect(0, 0, 10, 10)], [RED, rect(10, 0, 10, 10)]]), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf([[RED, rect(0, 0, 10, 10)], [RED, rect(10, 0, 10, 10)]]), [], { maxExtent: OPEN });
   assert.equal(base.commands.length, 1);
 });
 
 test("선 영역은 선 굵기만큼 넓혀 겹침을 본다", () => {
   const strokes = [[HALO, rect(0, 0, 10, 10)], [BLUE, rect(13, 0, 5, 5)], [HALO, rect(20, 0, 10, 10)]];
-  const { base } = mergeBasemapDraws(docOf(strokes), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf(strokes), [], { maxExtent: OPEN });
   // HALO 반폭 2 × miterLimit 무관(round join) → [−2,12]와 BLUE [13,18]은 안 겹치고
   // [18,32]와는 변만 닿는다. 첫째 HALO 묶음에 셋째가 붙는다.
   assert.deepEqual(drawsOf(base), [[HALO, [0, 20]], [BLUE, [13]]]);
   // BLUE [13,19]는 셋째 HALO의 path [20,30]과는 떨어져 있지만 선 영역 [18,32]와 겹친다.
   const touching = [[HALO, rect(0, 0, 10, 10)], [BLUE, rect(13, 0, 6, 5)], [HALO, rect(20, 0, 10, 10)]];
-  assert.equal(mergeBasemapDraws(docOf(touching), [], { maxExtent: OPEN }).base.commands.length, 3);
+  assert.equal(mergeDraws(docOf(touching), [], { maxExtent: OPEN }).base.commands.length, 3);
 });
 
 test("사각 끝 선은 반폭의 √2배까지 넓혀 겹침을 본다", () => {
@@ -125,13 +134,35 @@ test("사각 끝 선은 반폭의 √2배까지 넓혀 겹침을 본다", () => 
   // 셋째 선 [20,30]은 반폭 2로는 [18,32]라 BLUE [16,17.5]를 넘어 첫째와 묶이지만,
   // 사각 끝 2√2로는 [17.17,32.83]이라 BLUE와 겹쳐 넘어가지 못한다.
   const draws = [[square, line(0, 5, 10, 5)], [BLUE, rect(16, 0, 1.5, 10)], [square, line(20, 5, 30, 5)]];
-  assert.equal(mergeBasemapDraws(docOf(draws), [], { maxExtent: OPEN }).base.commands.length, 3);
+  assert.equal(mergeDraws(docOf(draws), [], { maxExtent: OPEN }).base.commands.length, 3);
 });
 
-test("묶음은 최대 줌 한 화면보다 넓어지지 않는다", () => {
-  const draws = [[RED, rect(0, 0, 10, 10)], [RED, rect(50, 0, 10, 10)], [RED, rect(95, 0, 10, 10)]];
-  const { base } = mergeBasemapDraws(docOf(draws), [], { maxExtent: { width: 100, height: 100 } });
-  assert.deepEqual(drawsOf(base), [[RED, [0, 50]], [RED, [95]]]);
+// 원점이 0이 아닌 장면에서도 크기는 (끝 − 시작)이다. 양수·음수 원점 모두에서 확인한다.
+const ORIGINS = [[500, 500], [-200, -200], [500, -200], [-200, 500]];
+
+test("묶음 크기는 끝에서 시작을 뺀 값으로 재며 원점이 어디든 같다(가로)", () => {
+  for (const [ox, oy] of ORIGINS) {
+    const draws = [[RED, rect(ox, oy, 10, 10)], [RED, rect(ox + 50, oy, 10, 10)], [RED, rect(ox + 95, oy, 10, 10)]];
+    const { base } = mergeDraws(docOf(draws), [], { maxExtent: { width: 100, height: 100 } });
+    assert.deepEqual(drawsOf(base), [[RED, [ox, ox + 50]], [RED, [ox + 95]]], `원점 ${ox},${oy}`);
+  }
+});
+
+test("묶음 크기는 끝에서 시작을 뺀 값으로 재며 원점이 어디든 같다(세로)", () => {
+  for (const [ox, oy] of ORIGINS) {
+    const draws = [[RED, rect(ox, oy, 10, 10)], [RED, rect(ox + 20, oy + 50, 10, 10)], [RED, rect(ox + 40, oy + 95, 10, 10)]];
+    const { base } = mergeDraws(docOf(draws), [], { maxExtent: { width: 100, height: 100 } });
+    assert.deepEqual(drawsOf(base), [[RED, [ox, ox + 20]], [RED, [ox + 40]]], `원점 ${ox},${oy}`);
+  }
+});
+
+test("출하하는 묶음 상한 256은 가로·세로 모두 256까지는 묶고 넘으면 가른다", () => {
+  const horizontal = (right) => docOf([[RED, rect(500, 0, 10, 10)], [RED, rect(right - 10, 0, 10, 10)]]);
+  const vertical = (bottom) => docOf([[RED, rect(0, 500, 10, 10)], [RED, rect(20, bottom - 10, 10, 10)]]);
+  assert.equal(mergeDraws(horizontal(756)).base.commands.length, 1);
+  assert.equal(mergeDraws(horizontal(757)).base.commands.length, 2);
+  assert.equal(mergeDraws(vertical(756)).base.commands.length, 1);
+  assert.equal(mergeDraws(vertical(757)).base.commands.length, 2);
 });
 
 test(`앞으로 거슬러 보는 묶음 수는 Skia kMaxOpChainDistance(${MAX_OP_CHAIN_DISTANCE})까지다`, () => {
@@ -141,9 +172,9 @@ test(`앞으로 거슬러 보는 묶음 수는 Skia kMaxOpChainDistance(${MAX_OP
       rect(100 + 20 * index, 0, 10, 10),
     ]);
   const within = [[RED, rect(0, 0, 10, 10)], ...between(MAX_OP_CHAIN_DISTANCE - 1), [RED, rect(0, 50, 10, 10)]];
-  assert.equal(mergeBasemapDraws(docOf(within), [], { maxExtent: OPEN }).base.commands.length, MAX_OP_CHAIN_DISTANCE);
+  assert.equal(mergeDraws(docOf(within), [], { maxExtent: OPEN }).base.commands.length, MAX_OP_CHAIN_DISTANCE);
   const beyond = [[RED, rect(0, 0, 10, 10)], ...between(MAX_OP_CHAIN_DISTANCE), [RED, rect(0, 50, 10, 10)]];
-  assert.equal(mergeBasemapDraws(docOf(beyond), [], { maxExtent: OPEN }).base.commands.length, MAX_OP_CHAIN_DISTANCE + 2);
+  assert.equal(mergeDraws(docOf(beyond), [], { maxExtent: OPEN }).base.commands.length, MAX_OP_CHAIN_DISTANCE + 2);
 });
 
 test("clip·restore를 넘어 묶지 않는다", () => {
@@ -152,7 +183,7 @@ test("clip·restore를 넘어 묶지 않는다", () => {
     { at: 1, command: { op: "clipPath", pathId: 0 } },
     { at: 3, command: { op: "restore" } },
   ];
-  const { base } = mergeBasemapDraws(docOf(draws, extra), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf(draws, extra), [], { maxExtent: OPEN });
   assert.deepEqual(base.commands.map(({ op }) => op), ["drawPath", "clipPath", "drawPath", "restore"]);
 });
 
@@ -163,7 +194,7 @@ test("무늬 정의(pattern ~ restore) 안의 그리기는 밖의 그리기와 �
     { at: 0, command: { op: "pattern", x: 0, y: 0, width: 44, height: 44, transform: identity } },
     { at: 2, command: { op: "restore" } },
   ];
-  const { base } = mergeBasemapDraws(docOf(draws, extra), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf(draws, extra), [], { maxExtent: OPEN });
   assert.deepEqual(base.commands.map(({ op }) => op), ["pattern", "drawPath", "restore", "drawPath"]);
 });
 
@@ -175,7 +206,7 @@ test("무늬를 쓰는 그리기는 같은 paint라도 묶지 않고 무늬 id�
   ];
   const doc = docOf([[RED, rect(0, 0, 10, 10)], [RED, rect(20, 0, 10, 10)], [RED, rect(40, 0, 10, 10)]], extra);
   doc.commands[3].patternId = 0;
-  const { base } = mergeBasemapDraws(doc, [], { maxExtent: OPEN });
+  const { base } = mergeDraws(doc, [], { maxExtent: OPEN });
   assert.deepEqual(
     base.commands.filter(({ op }) => op === "drawPath").map(({ patternId }) => patternId),
     [null, 0, null],
@@ -184,7 +215,7 @@ test("무늬를 쓰는 그리기는 같은 paint라도 묶지 않고 무늬 id�
 
 test("넓이가 없는 채우기는 아무것도 칠하지 않으므로 빠지고, 같은 path의 선은 남는다", () => {
   const segment = line(0, 0, 0, 40);
-  const { base } = mergeBasemapDraws(docOf([[RED, segment], [HALO, segment]]), [], { maxExtent: OPEN });
+  const { base } = mergeDraws(docOf([[RED, segment], [HALO, segment]]), [], { maxExtent: OPEN });
   assert.deepEqual(drawsOf(base), [[HALO, [0]]]);
 });
 
@@ -197,7 +228,7 @@ test("다른 노선 레이어 집합에 속한 그리기는 묶지 않고, 레�
     { name: "line-1", doc: docOf([a, c]) },
     { name: "line-2", doc: docOf([b]) },
   ];
-  const merged = mergeBasemapDraws(base, layers, { maxExtent: OPEN });
+  const merged = mergeDraws(base, layers, { maxExtent: OPEN });
   assert.deepEqual(drawsOf(merged.base), [[RED, [0, 40]], [RED, [20]]]);
   assert.deepEqual(drawsOf(merged.layers[0].doc), [[RED, [0, 40]]]);
   assert.deepEqual(drawsOf(merged.layers[1].doc), [[RED, [20]]]);
@@ -210,7 +241,7 @@ test("레이어에 있는 clip·restore는 합친 레이어에도 같은 자리�
     { at: 0, command: { op: "clipPath", pathId: 0 } },
     { at: 3, command: { op: "restore" } },
   ];
-  const merged = mergeBasemapDraws(docOf([a, b], clip), [{ name: "line-1", doc: docOf([a, b], clip) }], { maxExtent: OPEN });
+  const merged = mergeDraws(docOf([a, b], clip), [{ name: "line-1", doc: docOf([a, b], clip) }], { maxExtent: OPEN });
   assert.deepEqual(merged.layers[0].doc.commands.map(({ op }) => op), ["clipPath", "drawPath", "restore"]);
 });
 
@@ -218,6 +249,83 @@ test("바탕 순서에 없는 그리기가 있는 레이어는 실패한다", ()
   const base = docOf([[RED, rect(0, 0, 10, 10)]]);
   const stray = { name: "line-x", doc: docOf([[BLUE, rect(0, 0, 10, 10)]]) };
   assert.throws(() => mergeBasemapDraws(base, [stray], { maxExtent: OPEN }), /line-x/);
+});
+
+// ── 장벽: 합칠 수 없는 그리기는 그 너머로 아무것도 옮기지 않는다 ─────────────────
+
+const MULTIPLY = { ...RED, blendMode: 12 };
+const HAIRLINE = { ...HALO, width: 0 };
+
+test("기본 합성(srcOver)이 아닌 그리기는 장벽이라 같은 paint 도형이 그 너머로 붙지 않고 순서가 남는다", () => {
+  for (const fill of [MULTIPLY, { ...HALO, blendMode: 12 }]) {
+    const draws = [[RED, rect(0, 0, 10, 10)], [fill, rect(100, 0, 10, 10)], [RED, rect(200, 0, 10, 10)]];
+    const merged = mergeDraws(docOf(draws), [], { maxExtent: OPEN });
+    assert.deepEqual(drawsOf(merged.base), [[RED, [0]], [fill, [100]], [RED, [200]]]);
+  }
+});
+
+test("기본 합성이 아닌 같은 paint 그리기끼리도 합치지 않는다", () => {
+  const merged = mergeDraws(docOf([[MULTIPLY, rect(0, 0, 10, 10)], [MULTIPLY, rect(20, 0, 10, 10)]]), [], { maxExtent: OPEN });
+  assert.deepEqual(drawsOf(merged.base), [[MULTIPLY, [0]], [MULTIPLY, [20]]]);
+});
+
+test("영역을 알 수 없는 hairline(굵기 0) 선은 장벽이라 같은 paint 선이 그 너머로 붙지 않고 순서가 남는다", () => {
+  const draws = [[HALO, rect(0, 0, 10, 10)], [HAIRLINE, rect(100, 0, 10, 10)], [HALO, rect(200, 0, 10, 10)]];
+  const merged = mergeDraws(docOf(draws), [], { maxExtent: OPEN });
+  assert.deepEqual(drawsOf(merged.base), [[HALO, [0]], [HAIRLINE, [100]], [HALO, [200]]]);
+});
+
+test("hairline 선끼리도 합치지 않는다", () => {
+  const merged = mergeDraws(docOf([[HAIRLINE, rect(0, 0, 10, 10)], [HAIRLINE, rect(20, 0, 10, 10)]]), [], { maxExtent: OPEN });
+  assert.deepEqual(drawsOf(merged.base), [[HAIRLINE, [0]], [HAIRLINE, [20]]]);
+});
+
+// ── 단위: 한 요소의 채우기와 선, 여러 줄 라벨의 테두리와 글자는 한 묶음으로 옮긴다 ──
+
+function otherPaints(count) {
+  return Array.from({ length: count }, (_, index) => [{ ...BLUE, color: 0xff000000 + index }, rect(100 + 20 * index, 0, 10, 10)]);
+}
+
+test("한 요소의 채우기와 선은 한 단위라 다른 그리기 9개를 건너 앞 묶음에 붙는다(단위가 아니면 거슬러 보는 거리 10을 넘는다)", () => {
+  const element = (x) => {
+    const outline = rect(x, 0, 30, 10);
+    return [[RED, outline], [HALO, outline]];
+  };
+  const draws = [...element(0), ...otherPaints(MAX_OP_CHAIN_DISTANCE - 1), ...element(500)];
+  const { base } = mergeDraws(docOf(draws), [], { maxExtent: OPEN });
+  assert.equal(base.commands.length, MAX_OP_CHAIN_DISTANCE + 1);
+  assert.deepEqual(drawsOf(base).slice(0, 2), [[RED, [0, 500]], [HALO, [0, 500]]]);
+});
+
+test("여러 줄 라벨은 한 단위라 다른 그리기 9개를 건너 앞 묶음에 붙는다(단위가 아니면 거슬러 보는 거리 10을 넘는다)", () => {
+  const label = (x) => {
+    const lines = [rect(x, 0, 30, 10), rect(x + 1, 20, 30, 10)];
+    return [...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])];
+  };
+  const draws = [...label(0), ...otherPaints(MAX_OP_CHAIN_DISTANCE - 1), ...label(500)];
+  const { base } = mergeDraws(docOf(draws), [], { maxExtent: OPEN });
+  assert.equal(base.commands.length, MAX_OP_CHAIN_DISTANCE + 1);
+  assert.deepEqual(drawsOf(base).slice(0, 2), [[HALO, [0, 1, 500, 501]], [RED, [0, 1, 500, 501]]]);
+});
+
+test("한 블록 안에 같은 path가 두 번 있으면(겹쳐 두 번 칠한다) 그 path들을 한 path로 잇지 않는다", () => {
+  const first = rect(0, 0, 10, 10);
+  const second = rect(20, 0, 10, 10);
+  const draws = [[RED, first], [RED, second], [RED, second], [RED, first], [RED, second], [RED, second]];
+  const { base } = mergeDraws(docOf(draws), [], { maxExtent: OPEN });
+  assert.deepEqual(drawsOf(base), draws.map(([paint, path]) => [paint, [path.points[0]]]));
+});
+
+test("레이어 집합이 다른 그리기가 낀 라벨은 단위로 묶지 않는다", () => {
+  const lines = [rect(0, 0, 30, 10), rect(1, 20, 30, 10)];
+  const draws = [...lines.map((line) => [HALO, line]), ...lines.map((line) => [RED, line])];
+  const layered = mergeDraws(docOf(draws), [{ name: "line-1", doc: docOf([draws[1], draws[3]]) }], { maxExtent: OPEN });
+  assert.deepEqual(drawsOf(layered.layers[0].doc), [[HALO, [1]], [RED, [1]]]);
+  assertSamePicture(
+    draws.map(([paint, path]) => ({ paint, path })),
+    layered.base,
+    "레이어가 낀 라벨",
+  );
 });
 
 // ── 무작위 문서로 렌더 동등 계약을 확인한다 ─────────────────────────────────────
@@ -300,7 +408,7 @@ test("무작위 장면 20개에서 바탕과 레이어 모두 같은 그림이�
     const scene = randomScene(seed);
     const toDoc = (draws) => docOf(draws.map(({ paint, path }) => [paint, path]));
     const layerB = scene.filter(({ lines }) => lines.includes("b"));
-    const merged = mergeBasemapDraws(toDoc(scene), [{ name: "b", doc: toDoc(layerB) }], {
+    const merged = mergeDraws(toDoc(scene), [{ name: "b", doc: toDoc(layerB) }], {
       maxExtent: { width: 300, height: 300 },
     });
     assertSamePicture(scene, merged.base, `seed ${seed} 바탕`);
