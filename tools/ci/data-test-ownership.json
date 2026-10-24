@@ -400,6 +400,10 @@
     "data1488": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1488",
       "title": "[Fix] mobile 시스템 서체 전환 뒤 basemap 서체 계약과 컴파일러가 mobile 번들 Pretendard에 기대는 문제"
+    },
+    "data1495": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1495",
+      "title": "[Perf] 노선도 바탕층 .vec의 그리기 명령과 바이트를 렌더 동등하게 줄인다"
     }
   },
   "workflows": {
@@ -921,7 +925,9 @@
     {"path":"tools/route-map/export-loom-geojson.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":3},
     {"path":"tools/route-map/fix-svg-station-line-membership.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":3},
     {"path":"tools/route-map/line-branches.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":29},
+    {"path":"tools/route-map/measure-basemap-vec.test.mjs","semanticOwner":"data1495","classes":["required-pr"],"durationMs":91},
     {"path":"tools/route-map/merge-alias-stations.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":2},
+    {"path":"tools/route-map/merge-basemap-vec-draws.test.mjs","semanticOwner":"data1495","classes":["required-pr"],"durationMs":1317},
     {"path":"tools/route-map/merge-busan-transfers.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":7},
     {"path":"tools/route-map/merge-oversplit-transfers.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":2},
     {"path":"tools/route-map/nationwide-route-map-official-rename.test.mjs","semanticOwner":"data854","classes":["required-pr"],"durationMs":700},
@@ -942,6 +948,7 @@
     {"path":"tools/route-map/splice-transfer-convergence.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":5},
     {"path":"tools/route-map/split-mismerged-stations.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":2},
     {"path":"tools/route-map/station-surgery.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":10},
+    {"path":"tools/route-map/vec-codec.test.mjs","semanticOwner":"data1495","classes":["required-pr"],"durationMs":241},
     {"path":"tools/route-map/verify-display-svg-provenance.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":68},
     {"path":"tools/routes/build-route-graph-coverage-report.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":37}
   ],
