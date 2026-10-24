@@ -10,11 +10,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { buildSvgTree, inheritedStyleOrAttr } from "./basemap-svg-core.mjs";
 import {
   buildBasemapLineOverlays,
   normalizeSvgForCompile,
-  TEXT_FONT_METRICS,
 } from "./compile-basemap-vec.mjs";
 import { OUTLINE_LIMITS, outlineBasemapText } from "./outline-basemap-text.mjs";
 import { REGION_CONFIGS } from "./sma-region-configs.mjs";
@@ -52,18 +50,6 @@ function glyphsDrawn(svg) {
 
 function inkOf(body) {
   return inkBBoxOf(outlined(svgOf(body)).svg);
-}
-
-// 마크업에서 문자 데이터만 남긴다(태그 안 글자를 건너뛰는 선형 스캔).
-function characterDataOf(markup) {
-  let text = "";
-  let insideTag = false;
-  for (const character of markup) {
-    if (character === "<") insideTag = true;
-    else if (character === ">") insideTag = false;
-    else if (!insideTag) text += character;
-  }
-  return text;
 }
 
 const LABEL = 'font-family="Pretendard" font-size="20px" font-weight="700"';
@@ -114,49 +100,6 @@ test("build manifest의 컴파일 입력 sha가 다시 구운 윤곽선 입력�
       );
     }
   }
-});
-
-// 오너 도식 서체 모델(svg-ink-bbox: Regular advance 합 × 앵커, ascender~descender)과
-// 대조한다. 한글 advance는 다섯 페이스 모두 1770/2048em이라 이 모델이 한글 라벨의
-// 펜 위치를 정확히 낸다. 잉크는 advance 상자 안에서 좌우 사이드베어링만큼 들어온다.
-// 허용 오차는 가로 0.12em이다. 오너 SVG가 쓰는 한글 335자의 다섯 페이스 사이드베어링
-// 최대값(왼쪽 0.092em, 오른쪽 0.117em)이다. 세로는 0.01em이다. letter-spacing과 halo
-// stroke가 있는 라벨은 모델이 다루지 않아 뺀다.
-test("한글 역명 라벨의 윤곽선 잉크가 오너 도식 서체 모델 상자와 맞는다", () => {
-  const emPerBoxHeight = TEXT_FONT_METRICS.unitsPerEm /
-    (TEXT_FONT_METRICS.ascender - TEXT_FONT_METRICS.descender);
-  let compared = 0;
-  for (const [regionId, normalized] of normalizedByRegion) {
-    const tree = buildSvgTree(normalized);
-    (function walk(node, chain) {
-      for (const child of node.children) {
-        if (child.name !== "text") {
-          walk(child, [...chain, child]);
-          continue;
-        }
-        const markup = normalized.slice(child.start, child.end);
-        const content = characterDataOf(markup);
-        if (!/^[가-힣\s]*[가-힣][가-힣\s]*$/.test(content)) continue;
-        const spacing = inheritedStyleOrAttr(child, "letter-spacing");
-        const stroke = inheritedStyleOrAttr(child, "stroke");
-        if ((spacing && Number.parseFloat(spacing) !== 0) || (stroke && stroke !== "none")) continue;
-        const doc =
-          chain.map((ancestor) => ancestor.openTag).join("") +
-          markup +
-          chain.map((ancestor) => `</${ancestor.name}>`).reverse().join("");
-        const model = inkBBoxOf(doc);
-        const outlined = inkBBoxOf(outlineBasemapText(doc).svg);
-        const em = (model.maxY - model.minY) * emPerBoxHeight;
-        const label = `${regionId}:${content.trim()}`;
-        assert.ok(Math.abs(outlined.minX - model.minX) <= 0.12 * em, `${label} 왼쪽`);
-        assert.ok(Math.abs(outlined.maxX - model.maxX) <= 0.12 * em, `${label} 오른쪽`);
-        assert.ok(outlined.minY >= model.minY - 0.01 * em, `${label} 위`);
-        assert.ok(outlined.maxY <= model.maxY + 0.01 * em, `${label} 아래`);
-        compared += 1;
-      }
-    })(tree, []);
-  }
-  assert.ok(compared > 500, `비교한 라벨 ${compared}개`);
 });
 
 test("서체에 없는 글자는 대체 글리프로 넘기지 않고 실패한다", () => {

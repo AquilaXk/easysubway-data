@@ -13,9 +13,9 @@
       ],
       "fullInkBounds": {
         "minX": 114.21684062500071,
-        "minY": 309.5063286718897,
-        "maxX": 3608.8837050752736,
-        "maxY": 2892.0747332008973
+        "minY": 311.87816500001236,
+        "maxX": 3608.687299997149,
+        "maxY": 2889.733099997775
       },
       "extractorVersion": "route-map-svg-geometry-v3",
       "geometrySha256": "60b4f7f7b3932b27dde1c2169a0b918189279d384d1897cb7a6e4d2787ec478a",
@@ -24,7 +24,7 @@
       "routeMapPositionsSha256": "8c0a7fde1d7efe982b7a315400ca1b559d89d03ab9ab444c127adc26a7fda188",
       "labelSourceCount": 967,
       "stationNodeCount": 655,
-      "generatorContractVersion": 3
+      "generatorContractVersion": 4
     },
     "busan": {
       "sourceSvgSha256": "8bd04aa7e94c8e6cd5c1a2dd83fda605e7d892bc66078db57ba8291cee80cdb0",
@@ -39,7 +39,7 @@
         "minX": 725.4487999999997,
         "minY": 976.8334699999999,
         "maxX": 11009.098357,
-        "maxY": 5833.8928731640635
+        "maxY": 5826.498184000001
       },
       "extractorVersion": "route-map-svg-geometry-v3",
       "geometrySha256": "0c448836327ac7afc254b8f0dbf37b445415c920808a053920e3c53203946531",
@@ -48,7 +48,7 @@
       "routeMapPositionsSha256": "972053ccab6d2f8f7d7a131e3a6bfccebf94618d422c072902846b85bc73096e",
       "labelSourceCount": 179,
       "stationNodeCount": 147,
-      "generatorContractVersion": 3
+      "generatorContractVersion": 4
     },
     "daegu": {
       "sourceSvgSha256": "145804d2c9d1de679d7d63937c942b714af02a6ed58562969b5ace5a0f077874",
@@ -63,7 +63,7 @@
         "minX": 34.54506699999999,
         "minY": 30,
         "maxX": 4510,
-        "maxY": 2191.870270875
+        "maxY": 2186.757
       },
       "extractorVersion": "route-map-svg-geometry-v3",
       "geometrySha256": "a51d697222e96c7bd84c457e33c460465967542e7210f6dbf2965cb6a8f063a2",
@@ -72,7 +72,7 @@
       "routeMapPositionsSha256": "775465da141bd2c85957ad7f8fa53c061fbaa749c1e54c9f79f6085a5bd8fde6",
       "labelSourceCount": 115,
       "stationNodeCount": 97,
-      "generatorContractVersion": 3
+      "generatorContractVersion": 4
     },
     "daejeon": {
       "sourceSvgSha256": "f0b1c04e6f5ee390738414702e9a4b60fd6e77ddcc775eb08b66e740af5839b8",
@@ -85,9 +85,9 @@
       ],
       "fullInkBounds": {
         "minX": 513,
-        "minY": 273.806353125,
-        "maxX": 1786.71259375,
-        "maxY": 1703.534171875
+        "minY": 279.0192,
+        "maxX": 1785.181,
+        "maxY": 1698.4209
       },
       "extractorVersion": "route-map-svg-geometry-v3",
       "geometrySha256": "146d705b303f47ac09d4a2865e7d3718ba0d380f2ebeb41a23ca3a3f56e188d1",
@@ -96,7 +96,7 @@
       "routeMapPositionsSha256": "b703f88f1eefa5218ce158ab6d96cdead36b28d6e15f27e7d3222483e71aea5f",
       "labelSourceCount": 25,
       "stationNodeCount": 22,
-      "generatorContractVersion": 3
+      "generatorContractVersion": 4
     },
     "gwangju": {
       "sourceSvgSha256": "3cb836387f9be56398a9a8d09ea85c3af142140182daddca24a1a7385645d7a7",
@@ -109,9 +109,9 @@
       ],
       "fullInkBounds": {
         "minX": 443,
-        "minY": 252.626953125,
-        "maxX": 1976.869140625,
-        "maxY": 1587.201171875
+        "minY": 257.8398,
+        "maxX": 1975.7732,
+        "maxY": 1581.5234
       },
       "extractorVersion": "route-map-svg-geometry-v3",
       "geometrySha256": "3fb1ee8016fad12ff4dba8c8bcaabe85068235a7b21e6cb96d0d4631ef14d868",
@@ -120,7 +120,7 @@
       "routeMapPositionsSha256": "30dd2f204f52c2b142d4d49b4139a607512e44f2d6c8a4bcac6c3ccc76b0a12e",
       "labelSourceCount": 22,
       "stationNodeCount": 20,
-      "generatorContractVersion": 3
+      "generatorContractVersion": 4
     }
   }
 }

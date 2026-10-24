@@ -23,6 +23,7 @@ import {
   EXCLUDED_DECOR_LAYER_ID_SET,
   normalizeSvgForCompile,
 } from "./compile-basemap-vec.mjs";
+import { outlineBasemapText } from "./outline-basemap-text.mjs";
 import {
   FULL_CANVAS_DECOR_IDS,
   inkBBoxOf,
@@ -82,7 +83,7 @@ test("5권역 geometry provenance manifest가 current source·pack과 exact matc
     assert.equal(sourceElementKeys.toString("base64"), region.sourceElementKeysBase64);
     assert.equal(sourceElementKeys.length % 32, 0);
     assert.ok(sourceElementKeys.length > 0);
-    assert.equal(region.generatorContractVersion, 3);
+    assert.equal(region.generatorContractVersion, 4);
   }
 });
 
@@ -279,21 +280,21 @@ test("geometry provenance는 configured region과 geometry metadata를 exact mat
  * 크롭 결과 여유(단위: source px) 기준선.
  *
  * 우·하단은 #2603 크롭이 `max(잉크 짧은변 3%, 최대 라벨 1줄 높이)`로 정한 값이고,
- * 좌·상단은 크롭하지 않아 원본 여백이 그대로 남은 값이다(후속 과제). 이 표가
- * 흔들리면 잉크나 캔버스 중 하나가 바뀐 것이므로 의도된 변경인지 확인해야 한다.
+ * 좌·상단은 크롭하지 않아 원본 여백이 그대로 남은 값이다(후속 과제). 잉크는 라벨을
+ * 윤곽선 path로 구운 컴파일 입력에서 잰다. 이 표가 흔들리면 잉크나 캔버스 중 하나가 바뀐 것이므로 의도된 변경인지 확인해야 한다.
  *
  * 대구는 잉크가 원본 캔버스를 이미 x=4510까지 채우고 있어 목표 여유(75)를 넣지
  * 못하고 원본 경계로 클램프했다 — 그래서 우측이 50이다.
  */
 const EXPECTED_MARGINS = {
-  seoul: { left: 114.22, top: 309.51, right: 79.12, bottom: 79.93 },
-  busan: { left: 725.45, top: 976.83, right: 146.9, bottom: 146.11 },
-  daegu: { left: 34.55, top: 30.0, right: 50.0, bottom: 76.13 },
-  daejeon: { left: 513.0, top: 273.81, right: 41.29, bottom: 44.47 },
-  gwangju: { left: 443.0, top: 252.63, right: 39.13, bottom: 40.8 },
+  seoul: { left: 114.22, top: 311.88, right: 79.31, bottom: 82.27 },
+  busan: { left: 725.45, top: 976.83, right: 146.9, bottom: 153.5 },
+  daegu: { left: 34.55, top: 30.0, right: 50.0, bottom: 81.24 },
+  daejeon: { left: 513.0, top: 279.02, right: 42.82, bottom: 49.58 },
+  gwangju: { left: 443.0, top: 257.84, right: 40.23, bottom: 46.48 },
 };
 
-/** 기준선 허용 오차. 폰트 advance·곡선 극값 계산의 미세 변동만 흡수한다. */
+/** 기준선 허용 오차. 곡선 극값 계산의 미세 변동만 흡수한다. */
 const MARGIN_TOLERANCE = 1.0;
 
 function normalizedOf(region) {
@@ -302,13 +303,17 @@ function normalizedOf(region) {
   );
 }
 
+// 잉크는 `.vec`로 가는 컴파일 입력, 곧 라벨이 윤곽선 path가 된 SVG에서 잰다.
+function compileInputOf(region) {
+  return outlineBasemapText(normalizedOf(region)).svg;
+}
+
 function measure(region) {
-  const normalized = normalizedOf(region);
+  const normalized = compileInputOf(region);
   const viewBox = viewBoxOf(normalized);
   const ink = inkBBoxOf(normalized, { excludeIds: FULL_CANVAS_DECOR_IDS });
   const [vx, vy, vw, vh] = viewBox;
   return {
-    normalized,
     viewBox,
     ink,
     margins: {
@@ -389,7 +394,7 @@ test("viewBox 원점은 5권역 모두 0 0이다(#2603 .vec 앵커 이탈 방지
 
 test("경계 밖 요소를 넣으면 게이트가 실패한다(게이트 실효성 실증)", () => {
   const region = REGIONS.find((r) => r.id === "gwangju");
-  const normalized = normalizedOf(region);
+  const normalized = compileInputOf(region);
   const [vx, vy, vw, vh] = viewBoxOf(normalized);
 
   // 현행은 통과한다.
@@ -424,14 +429,53 @@ test("회전 도형은 변환된 네 모서리의 외곽으로 판정한다", ()
   );
 });
 
-test("텍스트 stroke 외곽이 viewBox를 넘으면 게이트가 실패한다", () => {
-  const svg =
-    '<svg viewBox="0 0 10 10"><text x="8" y="5" font-size="1" ' +
-    'stroke="#000" stroke-width="4">A</text></svg>';
-  assert.ok(
-    inkBBoxOf(svg).maxX > 10,
-    "텍스트 fill이 안쪽이어도 stroke 외곽이 경계를 넘으면 잡아야 합니다.",
+const LABEL_FONT = 'font-family="Pretendard" font-size="20" font-weight="400"';
+
+function labelInkOf(attributes, content = "HIT") {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><text x="300" y="50" ${LABEL_FONT} ${attributes}>${content}</text></svg>`;
+  return inkBBoxOf(outlineBasemapText(svg).svg);
+}
+
+test("굽기 전 <text>는 폭을 어림해야 하므로 재지 않고 던진다", () => {
+  assert.throws(
+    () => inkBBoxOf(`<svg viewBox="0 0 10 10"><text x="8" y="5" font-size="1">A</text></svg>`),
+    /<text>는 글자 폭을 어림해야 해서 재지 않습니다/,
   );
+});
+
+// 글리프 윤곽선 path의 실제 좌표로 잰다. 폭을 어림하던 모델은 letter-spacing이 항상
+// 음수라 가정했지만 수도권 오너 SVG에는 양수 라벨이 있다(+0.32967px 9건, +0.15px 1건).
+test("양수 letter-spacing이 만드는 글리프 간격을 윤곽선 실측으로 잰다", () => {
+  const tight = labelInkOf("");
+  const spaced = labelInkOf('letter-spacing="6"');
+  assert.ok(
+    spaced.maxX - spaced.minX > tight.maxX - tight.minX + 2 * 6 - 1,
+    `HIT 세 글자의 잉크 폭이 6단위 간격 두 번만큼 늘어야 합니다(${tight.maxX - tight.minX} → ${spaced.maxX - spaced.minX}).`,
+  );
+});
+
+test("텍스트 stroke 외곽이 viewBox를 넘으면 게이트가 실패한다", () => {
+  const plain = labelInkOf("");
+  const haloed = labelInkOf('stroke="#fff" stroke-width="8"');
+  assert.ok(
+    Math.abs(haloed.maxX - (plain.maxX + 4)) < 0.01 &&
+      Math.abs(haloed.minY - (plain.minY - 4)) < 0.01,
+    "윤곽선 path가 g의 stroke를 물려받아 외곽이 반폭(4)만큼 부풀어야 합니다.",
+  );
+});
+
+test("윤곽선 잉크의 끝은 글리프 path 좌표의 최대값이다(직선 글리프로 독립 검산)", () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><text x="300" y="50" ${LABEL_FONT} letter-spacing="3">HIT</text></svg>`;
+  const outlined = outlineBasemapText(svg).svg;
+  const numbers = [...outlined.matchAll(/ d="([^"]+)"/g)]
+    .flatMap(([, d]) => d.match(/-?\d+(?:\.\d+)?/g).map(Number));
+  const xs = numbers.filter((_, index) => index % 2 === 0);
+  const ys = numbers.filter((_, index) => index % 2 === 1);
+  const ink = inkBBoxOf(outlined);
+  assert.equal(ink.minX, Math.min(...xs));
+  assert.equal(ink.maxX, Math.max(...xs));
+  assert.equal(ink.minY, Math.min(...ys));
+  assert.equal(ink.maxY, Math.max(...ys));
 });
 
 test("crop-viewbox는 유한한 양수 width/height만 허용한다", () => {

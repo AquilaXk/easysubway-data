@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { canonicalJson } from "../datapack/lib/manifest-validation.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { normalizeSvgForCompile } from "./compile-basemap-vec.mjs";
+import { outlineBasemapText } from "./outline-basemap-text.mjs";
 import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
 import { FULL_CANVAS_DECOR_IDS, inkBBoxOf, viewBoxOf } from "./svg-ink-bbox.mjs";
 import { sha256 } from "../lib/hash.mjs";
@@ -107,7 +108,7 @@ export function buildRegionProvenance({
       `geometry sourceViewBox mismatch: ${JSON.stringify(geometry.sourceViewBox)} != ${JSON.stringify(sourceViewBox)}`,
     );
   }
-  const ink = inkBBoxOf(normalized, { excludeIds: FULL_CANVAS_DECOR_IDS });
+  const ink = inkBBoxOf(outlineBasemapText(normalized).svg, { excludeIds: FULL_CANVAS_DECOR_IDS });
   const rows = routeMapPositionRows.slice().sort(compareRows);
   const sourceElementKeys = sourceElementKeysOf(geometry);
 
@@ -130,7 +131,7 @@ export function buildRegionProvenance({
       ({ classification }) => classification === "STATION_LABEL",
     ).length,
     stationNodeCount: (geometry.stationNodes ?? []).length,
-    generatorContractVersion: 3,
+    generatorContractVersion: 4,
   };
 }
 
