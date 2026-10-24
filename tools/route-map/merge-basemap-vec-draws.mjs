@@ -63,7 +63,7 @@ export function commandBounds(doc, command) {
   const box = pointBounds(doc.paths[command.pathId].points);
   if (!box) return null;
   if (paint.style === "fill") return box;
-  if (!(paint.width > 0)) return null;
+  if (paint.width <= 0) return null;
   const outset = strokeInflation(paint);
   return { minX: box.minX - outset, minY: box.minY - outset, maxX: box.maxX + outset, maxY: box.maxY + outset };
 }
@@ -208,7 +208,7 @@ function buildUnits(draws) {
       barrier: false,
       mergeKey: blocks.map(([first]) => first.mergeKey).join("\n"),
       layers: blocks[0][0].layers,
-      bounds: members.map(({ bounds }) => bounds).reduce(union),
+      bounds: members.slice(1).reduce((box, { bounds }) => union(box, bounds), members[0].bounds),
       pathIds: blocks[0].map(({ command }) => command.pathId),
       commands: blocks.map(([first]) => first.command),
     });
@@ -226,26 +226,27 @@ function canJoin(group, unit, maxExtent) {
   return group.units.every((member) => !rectsOverlap(member.bounds, unit.bounds));
 }
 
-// OpsTask::recordOp(1097-1118행)의 뒤로 붙이기.
+// OpsTask::recordOp(1097-1118행)의 뒤로 붙이기. 붙일 묶음이 없으면 null.
+function joinTarget(groups, unit, maxExtent) {
+  const lookback = Math.min(MAX_OP_CHAIN_DISTANCE, groups.length);
+  for (let i = 1; i <= lookback; i += 1) {
+    const candidate = groups[groups.length - i];
+    if (canJoin(candidate, unit, maxExtent)) return candidate;
+    if (candidate.barrier || rectsOverlap(candidate.bounds, unit.bounds)) return null;
+  }
+  return null;
+}
+
 function planGroups(units, maxExtent) {
   const groups = [];
   for (const unit of units) {
-    if (!unit.barrier) {
-      const lookback = Math.min(MAX_OP_CHAIN_DISTANCE, groups.length);
-      let joined = false;
-      for (let i = 1; i <= lookback; i += 1) {
-        const candidate = groups[groups.length - i];
-        if (canJoin(candidate, unit, maxExtent)) {
-          candidate.units.push(unit);
-          candidate.bounds = union(candidate.bounds, unit.bounds);
-          joined = true;
-          break;
-        }
-        if (candidate.barrier || rectsOverlap(candidate.bounds, unit.bounds)) break;
-      }
-      if (joined) continue;
+    const target = unit.barrier ? null : joinTarget(groups, unit, maxExtent);
+    if (target) {
+      target.units.push(unit);
+      target.bounds = union(target.bounds, unit.bounds);
+    } else {
+      groups.push({ ...unit, units: [unit] });
     }
-    groups.push({ ...unit, units: [unit] });
   }
   return groups;
 }

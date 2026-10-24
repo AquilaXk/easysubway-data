@@ -3060,16 +3060,20 @@ function matchingElementEnd(text, startIndex, tagName) {
 // 그룹으로 합성한 뒤 곱하므로 0이면 서브트리가 아무것도 그리지 않는다. 수도권 오너 SVG의
 // 캔버스 격자(background-grid-overlay)가 opacity 0인데, 컴파일러는 이를 무늬 정의 +
 // 알파 0 paint의 전면 채우기로 남겨 기기가 매 프레임 지도 전체를 무늬로 칠했다.
+const HIDDEN_OPEN_TAG_PATTERNS = [
+  /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|style="[^"]*display\s*:\s*none))[^>]*>/,
+  /<([A-Za-z][\w:.-]*)\b(?=[^>]*\sopacity="0(?:\.0+)?")[^>]*>/,
+];
+
 export function stripHiddenElements(markup) {
   let result = markup;
-  for (;;) {
-    const match = result.match(
-      /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|\sopacity="0(?:\.0+)?"|style="[^"]*display\s*:\s*none))[^>]*>/,
-    );
-    if (!match) return result;
-    const end = matchingElementEnd(result, match.index, match[1]);
-    result = result.slice(0, match.index) + result.slice(end);
+  for (const pattern of HIDDEN_OPEN_TAG_PATTERNS) {
+    for (let match = result.match(pattern); match; match = result.match(pattern)) {
+      const end = matchingElementEnd(result, match.index, match[1]);
+      result = result.slice(0, match.index) + result.slice(end);
+    }
   }
+  return result;
 }
 
 // ── SVG paint-order 지원(#2068 오너 실기기 회귀, 2026-07-26) ────────────────

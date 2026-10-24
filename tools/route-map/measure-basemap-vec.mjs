@@ -25,6 +25,17 @@ export const MAX_ZOOM_VIEWPORT = Object.freeze({
   height: 1420 / DEVICE_PIXEL_RATIO / MAX_MAP_SCALE,
 });
 
+function windowLoad(draws, window) {
+  let drawCount = 0;
+  let pointCount = 0;
+  for (const draw of draws) {
+    if (draw.bounds && !rectsOverlap(draw.bounds, window)) continue;
+    drawCount += 1;
+    pointCount += draw.points;
+  }
+  return { draws: drawCount, points: pointCount };
+}
+
 // 최대 줌 화면 크기의 창을 반 화면씩 옮기며, 창에 걸리는 그리기 명령과 그 path 좌표 수의
 // 최댓값을 센다. 래스터 엔진은 화면과 겹치는 명령만 처리하므로 확대 상태의 일이다.
 function maxZoomWindowLoad(doc) {
@@ -38,16 +49,8 @@ function maxZoomWindowLoad(doc) {
   let worst = { draws: 0, points: 0 };
   for (let y = 0; y < doc.height; y += height / 2) {
     for (let x = 0; x < doc.width; x += width / 2) {
-      const window = { minX: x, minY: y, maxX: x + width, maxY: y + height };
-      let drawCount = 0;
-      let pointCount = 0;
-      for (const draw of draws) {
-        if (draw.bounds && !rectsOverlap(draw.bounds, window)) continue;
-        drawCount += 1;
-        pointCount += draw.points;
-      }
-      if (drawCount > worst.draws) worst = { ...worst, draws: drawCount };
-      if (pointCount > worst.points) worst = { ...worst, points: pointCount };
+      const load = windowLoad(draws, { minX: x, minY: y, maxX: x + width, maxY: y + height });
+      worst = { draws: Math.max(worst.draws, load.draws), points: Math.max(worst.points, load.points) };
     }
   }
   return worst;
