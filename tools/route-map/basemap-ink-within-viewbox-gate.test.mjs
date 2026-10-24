@@ -432,7 +432,7 @@ test("회전 도형은 변환된 네 모서리의 외곽으로 판정한다", ()
 const LABEL_FONT = 'font-family="Pretendard" font-size="20" font-weight="400"';
 
 function labelInkOf(attributes, content = "HIT") {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><text x="300" y="50" ${LABEL_FONT} ${attributes}>${content}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><text id="label" x="300" y="50" ${LABEL_FONT} ${attributes}>${content}</text></svg>`;
   return inkBBoxOf(outlineBasemapText(svg).svg);
 }
 
@@ -445,6 +445,12 @@ test("굽기 전 <text>는 폭을 어림해야 하므로 재지 않고 던진다
 
 // 글리프 윤곽선 path의 실제 좌표로 잰다. 폭을 어림하던 모델은 letter-spacing이 항상
 // 음수라 가정했지만 수도권 오너 SVG에는 양수 라벨이 있다(+0.32967px 9건, +0.15px 1건).
+test("게이트 실패 메시지는 넘친 글리프 path가 속한 라벨 id를 짚는다", () => {
+  const ink = labelInkOf("");
+  assert.equal(ink.edges.maxX, "<path> in #label");
+  assert.equal(ink.edges.minY, "<path> in #label");
+});
+
 test("양수 letter-spacing이 만드는 글리프 간격을 윤곽선 실측으로 잰다", () => {
   const tight = labelInkOf("");
   const spaced = labelInkOf('letter-spacing="6"');
