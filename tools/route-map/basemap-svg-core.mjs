@@ -63,7 +63,7 @@ export function buildSvgTree(svgText) {
     const [full, closing, name, , selfClosing] = match;
     if (closing) {
       if (stack.length > 1) {
-        stack[stack.length - 1].end = match.index + full.length;
+        stack.at(-1).end = match.index + full.length;
         stack.pop();
       }
       continue;
@@ -74,9 +74,9 @@ export function buildSvgTree(svgText) {
       start: match.index,
       end: match.index + full.length,
       children: [],
-      parent: stack[stack.length - 1],
+      parent: stack.at(-1),
     };
-    stack[stack.length - 1].children.push(node);
+    stack.at(-1).children.push(node);
     if (!selfClosing) stack.push(node);
   }
   return root;
@@ -139,7 +139,7 @@ export function roundCoord(value) {
 const SVG_NUMBER_SOURCE = String.raw`-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?`;
 
 /** 길이를 숫자(그룹 1)와 px 접미사(그룹 2)로 나누는 정규식 조각. 호출자가 앞뒤를 붙인다. */
-export const SVG_LENGTH_SOURCE = String.raw`(${SVG_NUMBER_SOURCE})([pP][xX])?`;
+export const SVG_LENGTH_SOURCE = `(${SVG_NUMBER_SOURCE})([pP][xX])?`;
 const SVG_LENGTH_RE = new RegExp(`^${SVG_LENGTH_SOURCE}$`);
 
 /** 길이 문자열을 `{ number, unit }`(unit은 "px" 또는 "")로 읽는다. 문법에 맞지 않으면 null. */
