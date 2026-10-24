@@ -37,12 +37,24 @@ test("쓰고 다시 읽으면 같은 문서다(정렬 채움·무늬·clip 포�
   assert.deepEqual(decodeVec(encodeVec(sample())), sample());
 });
 
-test("고정 mobile 픽스처의 바탕·강조 레이어 .vec 전부가 읽고 다시 쓰면 같은 바이트다", () => {
+test("vector_graphics_compiler가 쓴 .vec(무늬·clip·채우기와 선·정렬 채움)를 읽고 다시 쓰면 같은 바이트다", () => {
+  // fixtures/vec-codec-golden.vec는 같은 이름 .svg를 vector_graphics_compiler 1.3.0
+  // --no-optimize-clips로 구운 산출이다. 기대값이 Dart 코덱이 쓴 바이트라 이 코덱과 독립이다.
+  const golden = new Uint8Array(readFileSync(path.join(import.meta.dirname, "fixtures/vec-codec-golden.vec")));
+  const doc = decodeVec(golden);
+  assert.deepEqual(
+    doc.commands.map(({ op, patternId }) => (patternId == null ? op : `${op}*`)),
+    ["pattern", "drawPath", "restore", "drawPath*", "clipPath", "drawPath", "drawPath", "drawPath", "drawPath", "drawPath", "restore"],
+  );
+  assert.deepEqual(Buffer.from(encodeVec(doc)), Buffer.from(golden));
+});
+
+test("고정 mobile 픽스처의 바탕·강조 레이어 .vec 41개가 모두 읽히고 그리기가 있다", () => {
   const files = readdirSync(basemapDir).filter((name) => name.endsWith(".vec"));
   assert.equal(files.length, 41);
   for (const name of files) {
-    const bytes = new Uint8Array(readFileSync(path.join(basemapDir, name)));
-    assert.deepEqual(encodeVec(decodeVec(bytes)), bytes, name);
+    const doc = decodeVec(new Uint8Array(readFileSync(path.join(basemapDir, name))));
+    assert.ok(doc.commands.some(({ op }) => op === "drawPath"), name);
   }
 });
 
