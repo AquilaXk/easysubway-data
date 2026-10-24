@@ -89,7 +89,9 @@ const compilerFlags = ["--no-optimize-clips"];
 //   4 — 라벨을 참조 서체의 글리프 윤곽선으로 굽는다(#1488). `.vec`에 텍스트 draw가 없다.
 //   5 — 같은 그림을 더 적은 그리기 명령으로 낸다(#1495). 불투명도 0 요소를 지우고, clip
 //       최적화를 끄고, 컴파일 뒤 같은 paint 그리기를 합친다(merge-basemap-vec-draws.mjs).
-const basemapPipelineRevision = 5;
+//   6 — 묶음 상한이나 겹침 때문에 한 단위가 되지 못하는 여러 줄 라벨을 줄 열로 잘라, 줄마다
+//       테두리와 글자가 path 하나를 나눠 쓴다.
+const basemapPipelineRevision = 6;
 const buildManifestPath = path.join(
   root,
   "tools/route-map/basemap-build-manifest.json",

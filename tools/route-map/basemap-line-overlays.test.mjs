@@ -343,7 +343,7 @@ test("색인은 권역별 데이터팩 노선 id를 강조 레이어 파일에 �
 // 커밋된 manifest sha는 이전 컴파일 실행이 고정한 값이라, 다시 만든 레이어 입력과
 // 색인이 바이트 단위로 같다는 결정성 검사도 겸한다.
 test("build manifest가 기록한 강조 레이어 컴파일 입력 sha·색인 sha와 다시 만든 결과가 같다", () => {
-  assert.equal(manifest.pipelineRevision, 5);
+  assert.equal(manifest.pipelineRevision, 6);
   assert.equal(manifest.content.lineOverlays, "per-line-vec-over-faded-basemap");
   const basemapDir = "apps/mobile/assets/datapacks/metro_map_pack/basemap";
   for (const map of manifest.maps) {
