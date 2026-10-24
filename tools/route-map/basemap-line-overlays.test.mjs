@@ -200,6 +200,18 @@ test("data-line·data-transfer-lines의 등록되지 않은 슬러그는 빌드�
   assert.throws(() => buildBasemapLineOverlays(unknownLine, SYNTHETIC_CONFIG), /zz/);
 });
 
+test("data-transfer-lines는 같은 이름 역 심벌의 노선보다 먼저 쓴다", () => {
+  const svg = syntheticSvg(
+    '<g data-line="b"><path d="M0 0L1 2"/></g>' +
+      '<circle id="sym" data-node-role="ordinary" data-station="X" data-line="a" r="1"/>' +
+      '<g id="capsule" data-station="X" data-transfer-lines="a b"><circle r="1"/></g>',
+  );
+  const overlays = buildBasemapLineOverlays(svg, SYNTHETIC_CONFIG);
+  const lineB = overlays.find(({ svgLineSlug }) => svgLineSlug === "b");
+  assert.ok(hasElement(lineB.svg, "capsule"), "b 레이어에 a·b 환승 심벌이 없다");
+  assert.ok(!hasElement(lineB.svg, "sym"), "b 레이어에 a 전용 심벌이 있다");
+});
+
 test("아무 요소에도 맞지 않는 명시 분류 규칙은 빌드를 실패시킨다", () => {
   const svg = syntheticSvg('<g data-line="a"><path d="M0 0L1 1"/></g><g data-line="b"><path d="M0 0L1 2"/></g>');
   const config = {
