@@ -1156,18 +1156,29 @@ function withInlineStyle(openTag, declarations) {
   return `${openTag.replace(/\s*\/?>$/, "")} style="${serialized}"${selfClosing ? " />" : ">"}`;
 }
 
+// 캐스케이드: !important → 특이도 → 소스 순서. 뒤에 오는 것이 이긴다.
+function compareCascadeOrder(a, b) {
+  if (a.important !== b.important) return a.important ? 1 : -1;
+  for (let index = 0; index < 3; index += 1) {
+    if (a.specificity[index] !== b.specificity[index]) {
+      return a.specificity[index] - b.specificity[index];
+    }
+  }
+  return a.order - b.order;
+}
+
+// presentation attribute는 CSS에 지므로 같은 이름의 속성을 덮어쓰고, 없으면 여는 태그 끝에 붙인다.
+function setPresentationAttribute(openTag, property, value) {
+  const pattern = new RegExp(`\\s${property}="[^"]*"`);
+  const attribute = ` ${property}="${encodeXmlAttributeValue(value)}"`;
+  if (pattern.test(openTag)) return openTag.replace(pattern, attribute);
+  return `${openTag.replace(/\s*(\/?)>$/, "")}${attribute}${/\/\s*>$/.test(openTag) ? " />" : ">"}`;
+}
+
 // 요소에 걸린 선언을 캐스케이드(!important → 특이도 → 소스 순서, 뒤에 오는 것이 이긴다)로 가려
 // 요소 속성·인라인 style로 펼친 여는 태그와, 어디에도 펼 수 없어 버려질 첫 선언(없으면 null)을 낸다.
 function expandMatchedDeclarations(openTagBefore, matched) {
-  matched.sort((a, b) => {
-    if (a.important !== b.important) return a.important ? 1 : -1;
-    for (let index = 0; index < 3; index += 1) {
-      if (a.specificity[index] !== b.specificity[index]) {
-        return a.specificity[index] - b.specificity[index];
-      }
-    }
-    return a.order - b.order;
-  });
+  matched.sort(compareCascadeOrder);
   const winners = new Map();
   for (const declaration of matched) winners.set(declaration.property, declaration);
   let openTag = openTagBefore;
@@ -1187,14 +1198,7 @@ function expandMatchedDeclarations(openTagBefore, matched) {
       continue;
     }
     if (inline.has(property)) continue; // 인라인 style이 일반 CSS를 이긴다.
-    // presentation attribute는 CSS에 지므로 덮어쓴다.
-    const pattern = new RegExp(`\\s${property}="[^"]*"`);
-    const attribute = ` ${property}="${encodeXmlAttributeValue(declaration.value)}"`;
-    openTag = pattern.test(openTag)
-      ? openTag.replace(pattern, attribute)
-      : `${openTag.replace(/\s*(\/?)>$/, "")}${attribute}${
-          /\/\s*>$/.test(openTag) ? " />" : ">"
-        }`;
+    openTag = setPresentationAttribute(openTag, property, declaration.value);
   }
   if (inlineChanged) openTag = withInlineStyle(openTag, inline);
   return { openTag, dropped };
