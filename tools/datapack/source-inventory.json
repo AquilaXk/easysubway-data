@@ -8109,8 +8109,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "P7D",
-      "observedDataUpdatedAt": "2026-10-23",
-      "retrievedAt": "2026-10-23",
+      "observedDataUpdatedAt": "2026-10-24",
+      "retrievedAt": "2026-10-24",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 제1유형",
@@ -8161,10 +8161,10 @@
         "status": "APPROVED",
         "issue": 456,
         "sourceId": "capital-route-topology",
-        "snapshotId": "capital-route-topology-20261023",
-        "snapshotPath": "tools/datapack/sources/capital-route-topology-20261023.json",
-        "snapshotFileSha256": "58fc488347ac82f2dbf084bb61d4c1ebcff122f0690c81196cae9996905e25fe",
-        "snapshotRawSha256": "58fc488347ac82f2dbf084bb61d4c1ebcff122f0690c81196cae9996905e25fe",
+        "snapshotId": "capital-route-topology-20261024",
+        "snapshotPath": "tools/datapack/sources/capital-route-topology-20261024.json",
+        "snapshotFileSha256": "a8e08030e00a5fd3fdf99d46ac71f61ac9c5c6b3f5d89ad917521141c6674e2d",
+        "snapshotRawSha256": "a8e08030e00a5fd3fdf99d46ac71f61ac9c5c6b3f5d89ad917521141c6674e2d",
         "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
         "lineIds": [
           "line-472a81add377",
@@ -8178,16 +8178,16 @@
         ],
         "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
         "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
-        "rawReceiptSha256": "be2b4d5ed997c9ec5879780dcd9d19e7e9bf55f188f096100ed31f615a9b6c36",
-        "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261023/58fc488347ac82f2dbf084bb61d4c1ebcff122f0690c81196cae9996905e25fe.json",
-        "rawObjectSha256": "58fc488347ac82f2dbf084bb61d4c1ebcff122f0690c81196cae9996905e25fe",
+        "rawReceiptSha256": "335055b59ce1e1af36660dda61d2fb4fc0117c06bc072bb865767e82672407bb",
+        "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261024/a8e08030e00a5fd3fdf99d46ac71f61ac9c5c6b3f5d89ad917521141c6674e2d.json",
+        "rawObjectSha256": "a8e08030e00a5fd3fdf99d46ac71f61ac9c5c6b3f5d89ad917521141c6674e2d",
         "byteSize": 260470,
         "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
         "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
         "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
-        "evaluatedAt": "2026-10-23T01:14:11.740Z",
+        "evaluatedAt": "2026-10-24T02:05:49.062Z",
         "predecessorSnapshotIds": [
-          "capital-route-topology-20261022"
+          "capital-route-topology-20261023"
         ]
       }
     },
