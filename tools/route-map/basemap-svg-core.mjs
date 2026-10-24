@@ -138,12 +138,16 @@ export function roundCoord(value) {
 // 이 모호함이 있으면(`\d+\.?\d*`) 긴 숫자열 거부에서 역추적이 제곱 시간이 된다.
 const SVG_NUMBER_SOURCE = String.raw`-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?`;
 
-/** 길이를 숫자(그룹 1)와 px 접미사(그룹 2)로 나누는 정규식 조각. 호출자가 앞뒤를 붙인다. */
-export const SVG_LENGTH_SOURCE = `(${SVG_NUMBER_SOURCE})([pP][xX])?`;
+/** 길이를 숫자(그룹 1)와 px 접미사(그룹 2)로 나누는 정규식 조각. */
+const SVG_LENGTH_SOURCE = `(${SVG_NUMBER_SOURCE})([pP][xX])?`;
 const SVG_LENGTH_RE = new RegExp(`^${SVG_LENGTH_SOURCE}$`);
 
-/** 길이 문자열을 `{ number, unit }`(unit은 "px" 또는 "")로 읽는다. 문법에 맞지 않으면 null. */
+/**
+ * 길이 문자열을 `{ number, unit }`(unit은 "px" 또는 "")로 읽는다. 문법에 맞지 않거나
+ * Number()가 Infinity로 넘치는 값(`1e999`, 수백 자리 숫자열)이면 null이다.
+ */
 export function parseSvgLength(raw) {
   const match = SVG_LENGTH_RE.exec(String(raw).trim());
-  return match && { number: Number(match[1]), unit: match[2]?.toLowerCase() ?? "" };
+  const number = match && Number(match[1]);
+  return Number.isFinite(number) ? { number, unit: match[2]?.toLowerCase() ?? "" } : null;
 }

@@ -403,6 +403,29 @@ test("길이 값은 유효한 표기만 읽고 나머지는 대체 없이 실패
   }
 });
 
+// 문법에 맞아도 Number()가 Infinity로 넘치는 값(지수 초과, 수백 자리 숫자열)은 길이가 아니다.
+// 읽어 들이면 윤곽선 좌표가 NaN이 되므로 어떤 속성에서든 대체 없이 실패한다.
+test("유한하지 않은 길이는 어느 속성에서도 NaN 윤곽선 대신 실패한다", () => {
+  const overflows = ["1e999", "-1e999", "9".repeat(400), `${"9".repeat(400)}px`];
+  const labelWith = (attribute, written) => {
+    const declared = { x: "0", "font-size": "20px", "letter-spacing": "0", [attribute]: written };
+    return (
+      `<text id="t" x="${declared.x}" y="9" font-family="Pretendard" font-weight="700" ` +
+      `font-size="${declared["font-size"]}" letter-spacing="${declared["letter-spacing"]}">가</text>`
+    );
+  };
+  for (const attribute of ["x", "font-size", "letter-spacing"]) {
+    for (const written of overflows) {
+      assert.throws(
+        () => outlineBasemapText(svgOf(labelWith(attribute, written))),
+        new RegExp(`${attribute}=".*"를 길이로 읽지 못했습니다`),
+        `${attribute}=${written.slice(0, 12)}`,
+      );
+    }
+  }
+  assert.doesNotThrow(() => outlineBasemapText(svgOf(labelWith("x", "0"))));
+});
+
 // 숫자열에서 정규식이 역추적으로 제곱 시간을 쓰면 안 된다. 같은 입력이 이전 문법에서는
 // 64,000자에 수 초였고 선형 문법에서는 1ms 안쪽이다. 경계는 느린 CI에서도 흔들리지 않게 크게 둔다.
 test("긴 숫자열 길이는 입력 크기에 선형인 시간에 거부한다", () => {

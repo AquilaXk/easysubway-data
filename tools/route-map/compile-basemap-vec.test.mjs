@@ -26,6 +26,16 @@ import {
 } from "./compile-basemap-vec.mjs";
 import { viewBoxOf } from "./svg-ink-bbox.mjs";
 
+// 평탄화되어야 하는 입력이 던지면 예외가 아니라 단언 실패로 드러나게 한다. 문법을 좁히는
+// 변이가 던진 예외로 죽지 않고 단언으로 죽어야 어떤 입력을 읽어야 하는지 테스트가 말해 준다.
+function flattened(svg) {
+  let result;
+  assert.doesNotThrow(() => {
+    result = flattenTextScale(svg);
+  });
+  return result;
+}
+
 // #2068 오너 v3 반입 회귀: 빈 레이어를 자기폐쇄 태그로 마감한 SVG(busan v3의
 // service-tags-layer)에서 extractGroup의 depth 카운터가 다음 형제 레이어를 삼켜
 // allow-list 밖 레이어(역명 라벨)가 바탕층에 딸려 들어갔다.
@@ -1411,7 +1421,7 @@ test("dominant-baseline: 참조 서체 메트릭에서 유도한 비율로 y를 
 });
 
 test("텍스트 스케일 평탄화: 좌표·font-size·stroke-width를 s배하고 잔여 transform에는 스케일이 없다", () => {
-  const out = flattenTextScale(
+  const out = flattened(
     '<svg><g transform="scale(0.5)"><text x="10" y="20" font-size="12" stroke-width="2">가</text></g></svg>',
   );
   assert.match(out, /x="5"/);
@@ -1425,7 +1435,7 @@ test("텍스트 스케일 평탄화: 좌표·font-size·stroke-width를 s배하�
 
 test("텍스트 스케일 평탄화: 스케일이 1이면 마크업을 건드리지 않는다(산출 불변)", () => {
   const input = '<svg><g transform="translate(3 4)"><text x="10" y="20" font-size="12">가</text></g></svg>';
-  assert.equal(flattenTextScale(input), input);
+  assert.equal(flattened(input), input);
 });
 
 test("텍스트 스케일 평탄화: 비균일·기울임 transform은 조용히 넘기지 않고 던진다", () => {
@@ -1455,7 +1465,7 @@ test("좌표 리스트: 자식 tspan 안의 글자까지 세어 조용한 절단
 });
 
 test("텍스트 스케일 평탄화: 상속 font-size·stroke-width도 s배해 요소에 명시한다(#2593 리뷰)", () => {
-  const out = flattenTextScale(
+  const out = flattened(
     '<svg><g transform="scale(0.5)" font-size="12" stroke="#FFFFFF" stroke-width="4">' +
       '<text x="10" y="20">가</text></g></svg>',
   );
@@ -1467,7 +1477,7 @@ test("텍스트 스케일 평탄화: 상속 font-size·stroke-width도 s배해 �
 // letter-spacing은 텍스트 좌표계의 길이다. 스케일을 좌표·font-size로 흡수하면 글자
 // 간격도 같이 s배해야 윤곽선이 오너 도식과 같은 간격을 낸다(#1488).
 test("텍스트 스케일 평탄화: 선언·상속 letter-spacing도 s배한다", () => {
-  const out = flattenTextScale(
+  const out = flattened(
     '<svg><g transform="scale(0.5)" letter-spacing="4px"><text x="10" y="20" font-size="12">가' +
       '<tspan style="letter-spacing:-2px">나</tspan></text></g></svg>',
   );
@@ -1478,7 +1488,7 @@ test("텍스트 스케일 평탄화: 선언·상속 letter-spacing도 s배한다
 // 길이 문법은 윤곽선 굽기(parseSvgLength)와 같다. 지수 표기와 대문자 단위도 읽고,
 // 숫자가 아닌 값은 조용히 넘기지 않고 던진다.
 test("텍스트 스케일 평탄화: 선언·상속 길이를 윤곽선 굽기와 같은 문법으로 s배한다", () => {
-  const out = flattenTextScale(
+  const out = flattened(
     '<svg><g transform="scale(0.5)" letter-spacing="1E1PX" stroke="#FFF" stroke-width="2e1">' +
       '<text x="10" y="20" font-size="1.2e1">가</text>' +
       '<text x="10" y="40" font-size="12" letter-spacing=".5px">나</text>' +
@@ -1503,16 +1513,62 @@ test("텍스트 스케일 평탄화: 선언·상속 길이를 윤곽선 굽기�
   }
 });
 
+// 문법을 어긴 선언은 요소가 직접 쓴 것이든 style 안에 있든 조상에서 온 것이든 같은 파서로
+// 걸러 던진다. 앞쪽만 읽고 `.3`을 남기거나 아예 건너뛰어 스케일 없는 값이 남아서는 안 된다.
+test("텍스트 스케일 평탄화: 요소가 직접 선언한 길이도 문법에 맞지 않으면 던진다", () => {
+  for (const property of ["font-size", "stroke-width", "letter-spacing"]) {
+    const others = `${property === "font-size" ? "" : 'font-size="12" '}${
+      property === "stroke-width" ? 'stroke="#FFF" ' : ""
+    }`;
+    for (const written of ["1.2.3", "1pt", "abc", ""]) {
+      const message = new RegExp(`${property} "${written}"를 해석하지 못했습니다`);
+      for (const [where, markup] of [
+        ["속성", `<text x="1" y="1" ${others}${property}="${written}">가</text>`],
+        ["style", `<text x="1" y="1" ${others}style="${property}:${written}">가</text>`],
+        ["tspan", `<text x="1" y="1" ${others}><tspan ${property}="${written}">가</tspan></text>`],
+      ]) {
+        assert.throws(
+          () => flattenTextScale(`<svg><g transform="scale(0.5)" font-size="12">${markup}</g></svg>`),
+          message,
+          `${property} ${where} ${JSON.stringify(written)}`,
+        );
+      }
+    }
+  }
+});
+
+// 문법에 맞아도 Number()가 Infinity로 넘치는 값은 길이가 아니다. 그대로 s배해 쓰면
+// `letter-spacing="Infinity"` 같은 선언이 컴파일러에 넘어간다.
+test("텍스트 스케일 평탄화: 유한하지 않은 길이는 선언·style·상속 어디서든 던진다", () => {
+  const overflows = ["1e999", "-1e999", "9".repeat(400), `${"9".repeat(400)}px`];
+  for (const property of ["font-size", "stroke-width", "letter-spacing"]) {
+    const stroke = property === "stroke-width" ? 'stroke="#FFF" ' : "";
+    const fontSize = property === "font-size" ? "" : 'font-size="12" ';
+    for (const written of overflows) {
+      const message = new RegExp(`${property} ".*"를 해석하지 못했습니다`);
+      for (const [where, markup] of [
+        ["속성", `<g transform="scale(0.5)" font-size="12"><text x="1" y="1" ${stroke}${property}="${written}">가</text></g>`],
+        ["style", `<g transform="scale(0.5)" font-size="12"><text x="1" y="1" ${stroke}style="${property}:${written}">가</text></g>`],
+        ["tspan", `<g transform="scale(0.5)" font-size="12"><text x="1" y="1" ${stroke}><tspan ${property}="${written}">가</tspan></text></g>`],
+        ["상속", `<g transform="scale(0.5)" ${fontSize}${stroke}${property}="${written}"><text x="1" y="1">가</text></g>`],
+      ]) {
+        assert.throws(
+          () => flattenTextScale(`<svg>${markup}</svg>`),
+          message,
+          `${property} ${where} ${written.slice(0, 8)}`,
+        );
+      }
+    }
+  }
+});
+
 // `normal`은 간격 없음이라 명시할 값이 없다. letter-spacing 선언이 아예 없는 텍스트도
 // 같다. 둘 다 던지거나 letter-spacing을 만들어 내면 안 된다.
 test("텍스트 스케일 평탄화: letter-spacing이 normal이거나 없으면 그대로 두고 던지지 않는다", () => {
   for (const spacing of ['letter-spacing="normal"', ""]) {
-    let out;
-    assert.doesNotThrow(() => {
-      out = flattenTextScale(
-        `<svg><g transform="scale(0.5)" ${spacing}><text x="10" y="20" font-size="12">가</text></g></svg>`,
-      );
-    }, spacing);
+    const out = flattened(
+      `<svg><g transform="scale(0.5)" ${spacing}><text x="10" y="20" font-size="12">가</text></g></svg>`,
+    );
     assert.match(out, /<text[^>]*font-size="6"/, spacing);
     assert.doesNotMatch(out.match(/<text[^>]*>/)[0], /letter-spacing/, spacing);
   }
@@ -1523,6 +1579,37 @@ test("텍스트 스케일 평탄화: 상속 font-size조차 없으면 조용히 
     () => flattenTextScale('<svg><g transform="scale(0.5)"><text x="1" y="1">가</text></g></svg>'),
     /font-size 선언을 요소에서도 조상에서도 찾지 못해/,
   );
+});
+
+// baseline 이동량은 유효 font-size에 비례한다. 선언된 font-size를 읽지 못하면 다른 조상의
+// 값으로 조용히 갈아 끼우지 않고 던진다.
+test("dominant-baseline: 읽지 못하는 font-size는 조상 값으로 대체하지 않고 던진다", () => {
+  const message = /font-size ".*"를 해석하지 못했습니다/;
+  for (const written of ["1e999", "-1e999", "9".repeat(400), "1.2.3"]) {
+    for (const [where, markup] of [
+      ["자기 선언", `<g font-size="12"><text x="5" font-size="${written}" dominant-baseline="central">1</text></g>`],
+      ["자기 선언, 조상 없음", `<text x="5" font-size="${written}" dominant-baseline="central">1</text>`],
+      ["조상 선언", `<g font-size="${written}"><text x="5" dominant-baseline="central">1</text></g>`],
+      [
+        "tspan 선언",
+        `<text x="5" font-size="12" dominant-baseline="central"><tspan font-size="${written}">1</tspan></text>`,
+      ],
+    ]) {
+      assert.throws(
+        () => expandDominantBaseline(`<svg>${markup}</svg>`),
+        message,
+        `${where} ${written.slice(0, 8)}`,
+      );
+    }
+  }
+  // 요소가 자기 font-size를 선언하면 조상의 선언은 쓰이지 않으므로 읽지 못해도 던지지 않는다.
+  let out;
+  assert.doesNotThrow(() => {
+    out = expandDominantBaseline(
+      '<svg><g font-size="1.2.3"><text x="5" font-size="20" dominant-baseline="alphabetic">1</text></g></svg>',
+    );
+  });
+  assert.doesNotMatch(out, /dominant-baseline/);
 });
 
 test("dominant-baseline: y 미선언 <text>에도 명시적 y를 붙인다(#2593 리뷰)", () => {
@@ -1558,6 +1645,38 @@ test("non-scaling-stroke: 상속 stroke-width를 해석하고 컨테이너 선�
       '<path stroke="#000000" stroke-width="2" d="M0 0 L1 1" /></g></svg>',
   );
   assert.match(container, /<path[^>]*stroke-width="2"/);
+});
+
+// 상속값이든 요소가 직접 쓴 값이든 길이 문법에 맞고 유한할 때만 스케일의 역수로 나눈다.
+// 아니면 `stroke-width="NaN"`·`"Infinity"`가 컴파일러에 넘어가므로 던진다.
+test("non-scaling-stroke: 읽지 못하거나 넘치는 stroke-width는 NaN·Infinity로 내지 않고 던진다", () => {
+  const message = /stroke-width ".*"를 해석하지 못했습니다/;
+  for (const written of ["1e999", "9".repeat(400), "1.2.3", "2pt"]) {
+    for (const [where, markup] of [
+      [
+        "상속",
+        `<g transform="scale(0.5)" stroke-width="${written}"><path vector-effect="non-scaling-stroke" stroke="#000000" d="M0 0 L1 1" /></g>`,
+      ],
+      [
+        "속성",
+        `<g transform="scale(0.5)"><path vector-effect="non-scaling-stroke" stroke="#000000" stroke-width="${written}" d="M0 0 L1 1" /></g>`,
+      ],
+    ]) {
+      assert.throws(
+        () => normalizeSvgForCompile(`<svg viewBox="0 0 10 10">${markup}</svg>`),
+        message,
+        `${where} ${written.slice(0, 8)}`,
+      );
+    }
+  }
+  let out;
+  assert.doesNotThrow(() => {
+    out = normalizeSvgForCompile(
+      '<svg viewBox="0 0 10 10"><g transform="scale(0.5)" stroke-width="2PX">' +
+        '<path vector-effect="non-scaling-stroke" stroke="#000000" d="M0 0 L1 1" /></g></svg>',
+    );
+  });
+  assert.match(out, /<path[^>]*stroke-width="4"/);
 });
 
 test("matchFontWeight: 400~500 구간은 사양대로 500 이하를 먼저 본다(450 경계 없음)", () => {

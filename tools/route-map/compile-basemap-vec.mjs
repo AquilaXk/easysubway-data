@@ -50,7 +50,6 @@ import {
   REFERENCE_TEXT_FACES,
   REFERENCE_TEXT_FONT_WEIGHTS,
   roundCoord,
-  SVG_LENGTH_SOURCE,
 } from "./basemap-svg-core.mjs";
 import {
   BUSAN,
@@ -1098,11 +1097,11 @@ function expandNonScalingStroke(svgText) {
         const width = inheritedStyleOrAttr(child, "stroke-width") ?? "1";
         let openTag = /\sstroke-width="[^"]*"/.test(child.openTag) ||
           /stroke-width\s*:/.test(firstAttr(child.openTag, "style") ?? "")
-          ? scaleLengthDeclaration(child.openTag, "stroke-width", 1 / scale)
+          ? scaleLengthDeclaration(child.openTag, "stroke-width", 1 / scale, describe)
           : withProperty(
               child.openTag,
               "stroke-width",
-              String(roundCoord(Number(String(width).replace(/px$/, "")) / scale)),
+              String(roundCoord(parseLengthOrThrow(width, "stroke-width", describe).number / scale)),
             );
         openTag = openTag
           .replace(/\svector-effect="[^"]*"/g, "")
@@ -2401,21 +2400,36 @@ export function baselineShiftRatio(value, metrics = TEXT_FONT_METRICS) {
   }
 }
 
-/** 여는 태그의 길이 property(font-size·stroke-width·letter-spacing)를 factor배 한다(px 접미사 유지). */
-function scaleLengthDeclaration(openTag, property, factor) {
-  let result = openTag.replace(
-    new RegExp(String.raw`\s${property}="${SVG_LENGTH_SOURCE}"`),
-    (_m, num, px) => ` ${property}="${roundCoord(Number(num) * factor)}${px ?? ""}"`,
+/** 선언된 길이를 parseSvgLength로 읽는다. 문법에 맞지 않거나 유한하지 않으면 던진다. */
+function parseLengthOrThrow(raw, property, describe) {
+  const length = parseSvgLength(raw);
+  if (length == null) {
+    throw new Error(`${describe}: ${property} "${String(raw).trim()}"를 해석하지 못했습니다.`);
+  }
+  return length;
+}
+
+/**
+ * 여는 태그의 길이 property(font-size·stroke-width·letter-spacing)를 factor배 한다(px 접미사와
+ * 쓴 대소문자 유지). 선언된 값이 길이 문법(parseSvgLength)에 맞지 않으면 던진다.
+ */
+function scaleLengthDeclaration(openTag, property, factor, describe) {
+  const scaleWritten = (written) => {
+    const length = parseLengthOrThrow(written, property, describe);
+    const unit = length.unit && written.trim().slice(-length.unit.length);
+    return written.replace(/\S(?:.*\S)?/s, `${roundCoord(length.number * factor)}${unit}`);
+  };
+  const result = openTag.replace(
+    new RegExp(String.raw`(\s${property}=")([^"]*)(")`),
+    (_m, head, written, tail) => `${head}${scaleWritten(written)}${tail}`,
   );
-  result = result.replace(/\sstyle="([^"]*)"/, (_m, styleValue) => {
+  return result.replace(/\sstyle="([^"]*)"/, (_m, styleValue) => {
     const scaled = styleValue.replace(
-      new RegExp(String.raw`(^|;)(\s*${property}\s*:\s*)${SVG_LENGTH_SOURCE}`),
-      (_sm, head, label, num, px) =>
-        `${head}${label}${roundCoord(Number(num) * factor)}${px ?? ""}`,
+      new RegExp(String.raw`(^|;)(\s*${property}\s*:)([^;]*)`),
+      (_sm, head, label, written) => `${head}${label}${scaleWritten(written)}`,
     );
     return ` style="${scaled}"`;
   });
-  return result;
 }
 
 /** 여는 태그의 좌표 property를 factor배 한다(단일 토큰 전제 — 리스트는 앞 단계가 해소). */
@@ -2426,19 +2440,25 @@ function scaleCoordinateDeclaration(openTag, name, factor) {
   );
 }
 
+/**
+ * 여는 태그가 선언한 font-size(로컬 단위). 선언이 없거나 `inherit`면 null이고, 선언했는데
+ * 길이 문법(parseSvgLength)에 맞지 않으면 다른 값으로 대체하지 않고 던진다.
+ */
+function declaredFontSizeOf(openTag) {
+  const declared = declaredStyleOrAttr(openTag, "font-size");
+  if (declared == null || declared === "" || declared === "inherit") return null;
+  const name = /^<([^\s/>]+)/.exec(openTag)?.[1];
+  const describe = `<${name}>(${firstAttr(openTag, "id") ?? "id 없음"})`;
+  return parseLengthOrThrow(declared, "font-size", describe).number;
+}
+
 /** 조상 체인에서 상속되는 font-size(로컬 단위). 없으면 null. */
 function inheritedFontSizeOf(node) {
   for (let current = node; current && current.name !== "#root"; current = current.parent) {
-    const length = parseSvgLength(declaredStyleOrAttr(current.openTag, "font-size") ?? "");
-    if (length != null) return length.number;
+    const size = declaredFontSizeOf(current.openTag);
+    if (size != null) return size;
   }
   return null;
-}
-
-/** `<text>` 자신·자손의 유효 font-size(로컬 단위). 없으면 null. */
-function effectiveFontSize(openTag, inherited) {
-  const length = parseSvgLength(declaredStyleOrAttr(openTag, "font-size") ?? "");
-  return length == null ? inherited : length.number;
 }
 
 // ── per-glyph 좌표 리스트 해소(#2068 오너 지적, 2026-07-26) ──────────────────
@@ -2576,10 +2596,8 @@ export function expandDominantBaseline(svgText) {
             return kept.length ? ` style="${kept.join(";")}"` : "";
           });
       // font-size는 상속 property다 — 자기 선언이 없으면 조상까지 본다.
-      const textFontSize = effectiveFontSize(
-        child.openTag,
-        inheritedFontSizeOf(child.parent),
-      );
+      const textFontSize =
+        declaredFontSizeOf(child.openTag) ?? inheritedFontSizeOf(child.parent);
       const push = (node_, openTag) => {
         if (openTag !== node_.openTag) {
           edits.push({ start: node_.start, length: node_.openTag.length, openTag });
@@ -2617,7 +2635,7 @@ export function expandDominantBaseline(svgText) {
               );
             }
           }
-          const own = effectiveFontSize(tspan.openTag, inheritedFontSize);
+          const own = declaredFontSizeOf(tspan.openTag) ?? inheritedFontSize;
           if (ratio !== 0) {
             push(tspan, shiftDeclaredY(tspan.openTag, ratio * own));
           }
@@ -2741,10 +2759,7 @@ function declaresLength(openTag, property) {
 
 /** 조상에서 해석한 길이 값을 scale배한다. 길이 문법(parseSvgLength)에 맞지 않으면 던진다. */
 function scaleInheritedLength(raw, property, scale, describe) {
-  const length = parseSvgLength(raw);
-  if (length == null) {
-    throw new Error(`${describe}: ${property} "${raw}"를 해석하지 못했습니다.`);
-  }
+  const length = parseLengthOrThrow(raw, property, describe);
   return { number: roundCoord(length.number * scale), unit: length.unit };
 }
 
@@ -2809,7 +2824,7 @@ export function flattenTextScale(svgText) {
       const residual = composeMatrix(invertMatrix(ancestor), translateRotate);
       let openTag = child.openTag;
       for (const property of TEXT_SCALED_LENGTH_PROPERTIES) {
-        openTag = scaleLengthDeclaration(openTag, property, scale);
+        openTag = scaleLengthDeclaration(openTag, property, scale, describe);
       }
       for (const name of TEXT_SCALED_COORDINATES) {
         openTag = scaleCoordinateDeclaration(openTag, name, scale);
@@ -2837,7 +2852,7 @@ export function flattenTextScale(svgText) {
           }
           let tag = tspan.openTag;
           for (const property of TEXT_SCALED_LENGTH_PROPERTIES) {
-            tag = scaleLengthDeclaration(tag, property, scale);
+            tag = scaleLengthDeclaration(tag, property, scale, describe);
           }
           for (const name of TEXT_SCALED_COORDINATES) {
             tag = scaleCoordinateDeclaration(tag, name, scale);
