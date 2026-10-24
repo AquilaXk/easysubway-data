@@ -38,6 +38,15 @@ function svgOf(body) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${body}</svg>`;
 }
 
+// 그려져야 하는 입력이 던지면 예외가 아니라 단언 실패로 드러나게 한다.
+function glyphsDrawn(svg) {
+  let drawn;
+  assert.doesNotThrow(() => {
+    drawn = outlineBasemapText(svg).glyphCount;
+  });
+  return drawn;
+}
+
 function inkOf(body) {
   return inkBBoxOf(outlineBasemapText(svgOf(body)).svg);
 }
@@ -267,6 +276,52 @@ test("tspan 사이 공백은 배포 중인 컴파일러 규칙대로 한 칸이 
   assert.ok(joined.maxX < spaced.maxX);
 });
 
+// ── 윤곽선 굽기가 그리지 못하는 입력은 대체 없이 실패한다 ─────────────────────
+// 브라우저는 letter-spacing이 있으면 선택 합자를 끈다. 그 대체 규칙은 재현하지 않으므로
+// 글자와 글리프가 일대일이 아닌 라벨(GTX-A의 calt 하이픈)은 던지고, 대체가 없는 라벨은
+// 같은 letter-spacing으로 그려진다.
+test("letter-spacing이 있는 라벨에 글리프 대체가 생기면 실패한다", () => {
+  const spaced = (label) => svgOf(`<text id="t" x="0" y="50" ${LABEL} letter-spacing="1px">${label}</text>`);
+  assert.throws(
+    () => outlineBasemapText(spaced("GTX-A")),
+    /<text>\(t\): letter-spacing이 있는 "GTX-A"에 글리프 대체가 생겨 브라우저와 같은 배치를 낼 수 없습니다/,
+  );
+  assert.equal(glyphsDrawn(spaced("GTX")), 3);
+  assert.equal(
+    glyphsDrawn(svgOf(`<text x="0" y="50" ${LABEL}>GTX-A</text>`)),
+    5,
+    "letter-spacing이 없으면 같은 라벨의 글리프 대체를 그대로 그린다",
+  );
+});
+
+test("숫자 문자 참조는 글자로 읽지 않고 실패한다", () => {
+  for (const reference of ["&#44032;", "&#x1F600;", "가&#10;나"]) {
+    assert.throws(
+      () => outlineBasemapText(svgOf(`<text id="t" x="0" y="50" ${LABEL}>${reference}</text>`)),
+      /<text>\(t\): 숫자 문자 참조는 해석하지 않습니다/,
+      reference,
+    );
+  }
+  assert.equal(
+    glyphsDrawn(svgOf(`<text x="0" y="50" ${LABEL}>A &amp; B</text>`)),
+    5,
+    "이름 있는 엔티티는 해석한다",
+  );
+});
+
+test("<text> 밖의 tspan은 어디에 있든 실패한다", () => {
+  for (const body of [
+    '<tspan id="s">가</tspan>',
+    '<g><g><tspan id="s">가</tspan></g></g>',
+  ]) {
+    assert.throws(
+      () => outlineBasemapText(svgOf(body)),
+      /<tspan>\(s\)가 <text> 밖에 있습니다/,
+      body,
+    );
+  }
+});
+
 // ── 악의적 입력(상한은 HarfBuzz 14.5.0 hb-limits.hh) ─────────────────────────
 test("상한값은 HarfBuzz hb-limits.hh와 같다", () => {
   assert.deepEqual(OUTLINE_LIMITS, {
@@ -285,12 +340,15 @@ test("텍스트 노드가 코드포인트 상한을 넘으면 셰이핑 전에 �
   );
 });
 
-test("tspan 중첩이 상한을 넘으면 실패한다", () => {
-  const depth = OUTLINE_LIMITS.maxTextNesting;
-  const nested = "<tspan>".repeat(depth) + "가" + "</tspan>".repeat(depth);
+// 중첩 깊이는 `<text>`가 1이고 tspan 하나마다 1씩 는다. 상한 64단은 허용하고 65단부터 막는다.
+test("tspan 중첩이 상한 64단까지는 허용하고 65단부터 실패한다", () => {
+  const nestedLabel = (tspans) =>
+    svgOf(`<text x="0" y="50" ${LABEL}>${"<tspan>".repeat(tspans)}가${"</tspan>".repeat(tspans)}</text>`);
+  const atLimit = OUTLINE_LIMITS.maxTextNesting - 1;
+  assert.equal(glyphsDrawn(nestedLabel(atLimit)), 1);
   assert.throws(
-    () => outlineBasemapText(svgOf(`<text x="0" y="50" ${LABEL}>${nested}</text>`)),
-    /중첩이 상한 64단을 넘습니다/,
+    () => outlineBasemapText(nestedLabel(atLimit + 1)),
+    /<text>\(id 없음\): 텍스트 요소 중첩이 상한 64단을 넘습니다/,
   );
 });
 
