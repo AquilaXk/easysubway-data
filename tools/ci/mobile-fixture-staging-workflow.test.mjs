@@ -13,9 +13,9 @@ const ownership = JSON.parse(
 );
 const mobileRepository = "AquilaXk/easysubway-mobile";
 // #979: fixture 커밋은 ITX topology 적용 전 입력 팩을 담고, 출력 팩은 staging 뒤 커밋된 증거에서 파생한다.
-const ciMobileRevision = "e29d73d7329517b8643d8eefb75dca451da782ca";
+const ciMobileRevision = "b9791c0144f91f193b839c786937b34f335d8e36";
 const ciCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
-const releaseMobileRevision = "e29d73d7329517b8643d8eefb75dca451da782ca";
+const releaseMobileRevision = "b9791c0144f91f193b839c786937b34f335d8e36";
 const releaseCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
 const releaseIndexSha256 = "a39031e0e588508b1d111c830ef19441740ca15de6cad62ef9e9e8f5654468bf";
 const releaseSourceInventorySha256 = "69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2";
@@ -72,7 +72,7 @@ function fixtureStep(workflow) {
   test(`${workflow}: pinned Mobile fixture는 immutable checkout을 credentials 없이 수행한다`, () => {
     const { yml, block, stage } = fixtureStep(workflow);
     assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
-    assert.match(block, /ref:\s*data-fixture\/basemap-cleanup-1488\n/); // 커밋 고정은 아래 stage의 rev-parse가, 커밋이 사라지지 않게 붙드는 것은 태그가 맡는다(#980 F6)
+    assert.match(block, /ref:\s*data-fixture\/basemap-variants-1495\n/); // 커밋 고정은 아래 stage의 rev-parse가, 커밋이 사라지지 않게 붙드는 것은 태그가 맡는다(#980 F6)
     assert.match(block, /path:\s*\.external\/mobile/);
     assert.match(block, /persist-credentials:\s*false/);
     assert.match(block, /fetch-depth:\s*0/);
@@ -305,7 +305,7 @@ function assertPinnedFixtureJob(job, timeoutMinutes = 30) {
   assert.match(repository, /ref:\s*\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(repository, /persist-credentials:\s*false/);
   assert.match(fixture, new RegExp(`repository:\\s*${mobileRepository}`));
-  assert.match(fixture, /ref:\s*data-fixture\/basemap-cleanup-1488\n/);
+  assert.match(fixture, /ref:\s*data-fixture\/basemap-variants-1495\n/);
   assert.match(fixture, /path:\s*\.external\/mobile/);
   assert.match(fixture, /persist-credentials:\s*false/);
   assert.match(fixture, /fetch-depth:\s*0/);
@@ -426,7 +426,7 @@ test("Data Pack Release는 deterministic-release 전에 immutable Mobile fixture
 
   assert.match(block, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
   assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
-  assert.match(block, /ref:\s*data-fixture\/basemap-cleanup-1488\n/);
+  assert.match(block, /ref:\s*data-fixture\/basemap-variants-1495\n/);
   assert.match(block, /path:\s*\.external\/mobile/);
   assert.match(block, /persist-credentials:\s*false/);
   assert.match(block, /fetch-depth:\s*0/);
@@ -557,7 +557,7 @@ test("Data Pack Release도 deterministic-release 전에 같은 방식으로 파�
 
 // #980 F6: 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 모든 required job의 checkout이 불투명하게 실패하므로,
 // checkout 전에 태그가 기대 커밋을 가리키는지 먼저 확인해 원인을 드러낸다. 보호 규칙 대신 CI가 존재를 검사한다.
-const fixtureTag = "data-fixture/basemap-cleanup-1488";
+const fixtureTag = "data-fixture/basemap-variants-1495";
 const verifyRefStep = "Verify pinned Mobile fixture ref exists";
 
 function assertFixtureRefGuard(yml, { verifyName, checkoutName, where }) {

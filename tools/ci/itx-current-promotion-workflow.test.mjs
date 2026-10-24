@@ -279,7 +279,7 @@ test("재결속은 CI와 같은 고정 mobile 입력 fixture에서 돌고 증거
   const ciStage = /- name: Stage pinned Mobile fixture[\s\S]*?\n      - name:/u.exec(ci)[0];
   assert.equal(pin(stage, "expected_revision"), pin(ciStage, "expected_revision"));
   assert.equal(pin(stage, "expected_sha256"), pin(ciStage, "expected_sha256"));
-  assert.match(step("Checkout pinned Mobile input fixture").block, /ref: data-fixture\/basemap-cleanup-1488\n/u);
+  assert.match(step("Checkout pinned Mobile input fixture").block, /ref: data-fixture\/basemap-variants-1495\n/u);
   assert.match(step("Checkout pinned Mobile input fixture").block, /persist-credentials: false/u);
   for (const name of ["Verify pinned Mobile fixture ref exists", "Checkout pinned Mobile input fixture", "Stage pinned Mobile input fixture"]) {
     assert.equal(ifCondition(step(name).block), COLLECT, name);
