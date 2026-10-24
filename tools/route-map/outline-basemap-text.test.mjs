@@ -325,9 +325,10 @@ test("<text> 밖의 tspan은 어디에 있든 실패한다", () => {
 // ── 악의적 입력(상한은 HarfBuzz 14.5.0 hb-limits.hh) ─────────────────────────
 test("상한값은 HarfBuzz hb-limits.hh와 같다", () => {
   assert.deepEqual(OUTLINE_LIMITS, {
+    maxInputBytes: 16 << 20,
     maxTextNesting: 64,
     maxRunCodePoints: 65536,
-    maxGlyphSegments: 262144,
+    maxGlyphCommands: 200000,
     maxOutlineBytes: 16 << 20,
   });
 });
@@ -341,6 +342,72 @@ test("텍스트 노드가 코드포인트 상한을 넘으면 셰이핑 전에 �
 });
 
 // 중첩 깊이는 `<text>`가 1이고 tspan 하나마다 1씩 는다. 상한 64단은 허용하고 65단부터 막는다.
+// 입력 SVG의 UTF-8 바이트 수를 센다(HarfBuzz는 data_len 바이트를 비교한다).
+test("입력 SVG가 바이트 상한을 넘으면 파싱 전에 실패한다", () => {
+  const empty = svgOf("");
+  const emptyBytes = Buffer.byteLength(empty);
+  const limits = (maxInputBytes) => ({ ...OUTLINE_LIMITS, maxInputBytes });
+  assert.deepEqual(outlineBasemapText(empty, limits(emptyBytes)).svg, empty);
+  assert.throws(
+    () => outlineBasemapText(empty, limits(emptyBytes - 1)),
+    new RegExp(`입력 SVG ${emptyBytes}바이트가 상한 ${emptyBytes - 1}바이트를 넘습니다`),
+  );
+  const multibyte = svgOf("<!--가-->");
+  assert.equal(Buffer.byteLength(multibyte), multibyte.length + 2, "가는 UTF-8로 3바이트다");
+  assert.deepEqual(outlineBasemapText(multibyte, limits(Buffer.byteLength(multibyte))).svg, multibyte);
+  assert.throws(
+    () => outlineBasemapText(multibyte, limits(multibyte.length)),
+    /입력 SVG \d+바이트가 상한 \d+바이트를 넘습니다/,
+  );
+});
+
+test("기본 입력 상한 16MiB를 넘는 SVG는 실패한다", () => {
+  const oversized = svgOf(`<!--${"a".repeat(OUTLINE_LIMITS.maxInputBytes)}-->`);
+  assert.throws(() => outlineBasemapText(oversized), /입력 SVG \d+바이트가 상한 16777216바이트를 넘습니다/);
+});
+
+// 길이 문법은 `<number>` 뒤에 선택적 `px`다. 숫자 앞뒤 공백은 무시한다.
+test("길이 값은 유효한 표기만 읽고 나머지는 대체 없이 실패한다", () => {
+  const withX = (x) => svgOf(`<text id="t" x="${x}" y="9" ${LABEL}>가</text>`);
+  for (const [written, equivalent] of [
+    ["12", "12"],
+    ["1.5", "1.5"],
+    ["-.5", "-0.5"],
+    ["1e3", "1000"],
+    ["1E3", "1000"],
+    ["2px", "2"],
+    ["2PX", "2"],
+    ["1.", "1"],
+    ["-3.25e-1px", "-0.325"],
+    ["  7  ", "7"],
+  ]) {
+    assert.equal(outlineBasemapText(withX(written)).svg, outlineBasemapText(withX(equivalent)).svg, written);
+  }
+  for (const written of ["", "px", "1.2.3", "1e", "--1", "+5", "1 2", "1pt", "abc", "1e3.5", ".", "-"]) {
+    assert.throws(
+      () => outlineBasemapText(withX(written)),
+      /<text>\(t\): x=".*"를 길이로 읽지 못했습니다/,
+      JSON.stringify(written),
+    );
+  }
+});
+
+// 숫자열에서 정규식이 역추적으로 제곱 시간을 쓰면 안 된다. 같은 입력이 이전 문법에서는
+// 64,000자에 수 초였고 선형 문법에서는 1ms 안쪽이다. 경계는 느린 CI에서도 흔들리지 않게 크게 둔다.
+test("긴 숫자열 길이는 입력 크기에 선형인 시간에 거부한다", () => {
+  const bad = `${"1".repeat(64_000)}x`;
+  for (const [attribute, body] of [
+    ["x", `<text id="t" x="${bad}" y="9" ${LABEL}>가</text>`],
+    ["font-size", `<text id="t" x="0" y="9" font-family="Pretendard" font-size="${bad}">가</text>`],
+    ["letter-spacing", `<text id="t" x="0" y="9" ${LABEL} letter-spacing="${bad}">가</text>`],
+  ]) {
+    const started = performance.now();
+    assert.throws(() => outlineBasemapText(svgOf(body)), /길이로 읽지 못했습니다/, attribute);
+    const elapsedMs = performance.now() - started;
+    assert.ok(elapsedMs < 1000, `${attribute}: ${bad.length}자 거부에 ${elapsedMs.toFixed(0)}ms`);
+  }
+});
+
 test("tspan 중첩이 상한 64단까지는 허용하고 65단부터 실패한다", () => {
   const nestedLabel = (tspans) =>
     svgOf(`<text x="0" y="50" ${LABEL}>${"<tspan>".repeat(tspans)}가${"</tspan>".repeat(tspans)}</text>`);
@@ -359,7 +426,7 @@ test("문서의 윤곽선 데이터가 상한을 넘으면 실패한다", () => 
     /문서 상한 10000바이트를 넘습니다/,
   );
   assert.throws(
-    () => outlineBasemapText(svgOf(body), { ...OUTLINE_LIMITS, maxGlyphSegments: 3 }),
+    () => outlineBasemapText(svgOf(body), { ...OUTLINE_LIMITS, maxGlyphCommands: 3 }),
     /상한 3을 넘습니다/,
   );
 });

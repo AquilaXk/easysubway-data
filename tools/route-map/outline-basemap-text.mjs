@@ -75,12 +75,17 @@ if (hb.versionString() !== HARFBUZZJS_VENDOR.harfbuzzVersion) {
 }
 
 export const OUTLINE_LIMITS = Object.freeze({
+  // hb-limits.hh:132-133 HB_SVG_MAX_DOCUMENT_SIZE. 입력 SVG 문서 하나의 바이트 수.
+  // 적용은 src/OT/Color/svg/svg.hh:78-79(`data_len > HB_SVG_MAX_DOCUMENT_SIZE`면 거부)와 같다.
+  maxInputBytes: 16 << 20,
   // hb-limits.hh:53 HB_MAX_NESTING_LEVEL. `<tspan>` 중첩 깊이.
   maxTextNesting: 64,
   // hb-limits.hh:35 HB_BUFFER_MAX_LEN_MIN. 텍스트 노드 하나의 코드포인트 수.
   maxRunCodePoints: 65536,
-  // hb-limits.hh:116 HB_SVG_MAX_PATH_SEGMENTS. 글리프 하나의 윤곽선 명령 수.
-  maxGlyphSegments: 262144,
+  // hb-limits.hh:107-108 HB_CFF_MAX_OPS. 참조 페이스 5종이 모두 CFF(OTTO)라 글리프 하나는
+  // charstring 하나이고, HarfBuzz가 그 연산자 수를 이 값으로 끊는다
+  // (hb-cff-interp-cs-common.hh:898-906). 여기서는 꺼낸 윤곽선 명령 수에 같은 값을 건다.
+  maxGlyphCommands: 200000,
   // hb-limits.hh:143 HB_VECTOR_MAX_DOCUMENT_SIZE. 문서 하나에 더하는 path 데이터 바이트.
   maxOutlineBytes: 16 << 20,
 });
@@ -151,7 +156,7 @@ function describeElement(node) {
 
 function parseLength(raw, property, node) {
   const value = String(raw).trim();
-  const match = value.match(/^(-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(px)?$/i);
+  const match = /^(-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(px)?$/i.exec(value);
   if (!match) {
     throw new Error(`${describeElement(node)}: ${property}="${value}"를 길이로 읽지 못했습니다.`);
   }
@@ -256,10 +261,10 @@ function glyphOutline(face, glyphId, context) {
   if (!commands) {
     commands = face.font.glyphToJson(glyphId);
     context.outlineDraws += 1;
-    if (commands.length > context.limits.maxGlyphSegments) {
+    if (commands.length > context.limits.maxGlyphCommands) {
       throw new Error(
         `페이스 ${face.weight} 글리프 ${glyphId}의 윤곽선 명령이 ${commands.length}개로 ` +
-          `상한 ${context.limits.maxGlyphSegments}을 넘습니다.`,
+          `상한 ${context.limits.maxGlyphCommands}을 넘습니다.`,
       );
     }
     context.cache.set(key, commands);
@@ -481,6 +486,10 @@ function serializeOutlined(svgText, node, paths) {
  * distinctGlyphOutlines는 실제로 HarfBuzz에서 꺼낸 윤곽선 수(같은 글리프는 한 번)다.
  */
 export function outlineBasemapText(svgText, limits = OUTLINE_LIMITS) {
+  const inputBytes = Buffer.byteLength(svgText);
+  if (inputBytes > limits.maxInputBytes) {
+    throw new Error(`입력 SVG ${inputBytes}바이트가 상한 ${limits.maxInputBytes}바이트를 넘습니다.`);
+  }
   const root = buildSvgTree(svgText);
   const context = { limits, cache: new Map(), glyphCount: 0, outlineBytes: 0, outlineDraws: 0 };
   const replacements = [];
