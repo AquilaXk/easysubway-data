@@ -1366,7 +1366,7 @@ test("CSS 캐스케이드: var()는 정의 값으로 치환하고, 정의가 없
   );
 });
 
-test("font-weight: CSS Fonts 4 매칭으로 번들 페이스를 고른다(반올림 아님)", () => {
+test("font-weight: CSS Fonts 4 매칭으로 참조 페이스를 고른다(반올림 아님)", () => {
   // 720은 "가장 가까운 100배수"면 700이지만, 사양은 목표 이상을 오름차순 우선한다.
   assert.equal(matchFontWeight(720), 800);
   assert.equal(matchFontWeight(650), 700);
@@ -1393,7 +1393,7 @@ test("per-glyph 좌표 리스트: 접을 수 없으면 조용히 자르지 않�
   );
 });
 
-test("dominant-baseline: 번들 폰트 메트릭에서 유도한 비율로 y를 전개한다", () => {
+test("dominant-baseline: 참조 서체 메트릭에서 유도한 비율로 y를 전개한다", () => {
   const metrics = TEXT_FONT_METRICS;
   const central = (metrics.ascender + metrics.descender) / 2 / metrics.unitsPerEm;
   assert.ok(Math.abs(baselineShiftRatio("central") - central) < 1e-12);

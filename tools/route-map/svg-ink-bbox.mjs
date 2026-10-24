@@ -11,7 +11,7 @@
 // `<style>` 캐스케이드를 요소 선언으로 펼치고 텍스트 위치를 절대값으로
 // 완결해 두므로, 여기서는 CSS를 다시 해석할 필요가 없다.
 //
-// 텍스트 폭은 번들 Pretendard의 **실제 glyph advance**(cmap+hmtx)로 잰다.
+// 텍스트 폭은 참조 서체 Pretendard의 **실제 glyph advance**(cmap+hmtx)로 잰다.
 // 세로 범위는 같은 폰트의 ascender·descender를 쓴다.
 //
 // 알 수 없는 그리기 태그를 만나면 **던진다** — 조용히 빠뜨리면 게이트가 잉크를
@@ -31,7 +31,7 @@ import {
 const IDENTITY = [1, 0, 0, 1, 0, 0];
 
 /**
- * 번들 폰트의 **실제 glyph advance**를 읽는다(cmap format 12 → 4, hmtx).
+ * 참조 서체의 **실제 glyph advance**를 읽는다(cmap format 12 → 4, hmtx).
  *
  * `글자수 × font-size` 근사는 괄호·숫자가 섞인 라벨에서 35%까지 과대평가해
  * (실측: 광주 "문화전당(구도청)" 306 vs 실제 227) 포함 검사가 오탐한다.
