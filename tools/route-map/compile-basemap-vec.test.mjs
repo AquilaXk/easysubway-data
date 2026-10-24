@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -12,7 +13,9 @@ import {
   flattenTextScale,
   matchFontWeight,
   resolveFontWeightValue,
+  readOpenTypeMetrics,
   resolveGlyphCoordinateLists,
+  TEXT_FONT_FILE,
   TEXT_FONT_METRICS,
   extractRailTransferChipObstacles,
   extractServiceTagObstacles,
@@ -1366,7 +1369,7 @@ test("CSS 캐스케이드: var()는 정의 값으로 치환하고, 정의가 없
   );
 });
 
-test("font-weight: CSS Fonts 4 매칭으로 번들 페이스를 고른다(반올림 아님)", () => {
+test("font-weight: CSS Fonts 4 매칭으로 참조 페이스를 고른다(반올림 아님)", () => {
   // 720은 "가장 가까운 100배수"면 700이지만, 사양은 목표 이상을 오름차순 우선한다.
   assert.equal(matchFontWeight(720), 800);
   assert.equal(matchFontWeight(650), 700);
@@ -1393,7 +1396,7 @@ test("per-glyph 좌표 리스트: 접을 수 없으면 조용히 자르지 않�
   );
 });
 
-test("dominant-baseline: 번들 폰트 메트릭에서 유도한 비율로 y를 전개한다", () => {
+test("dominant-baseline: 참조 서체 메트릭에서 유도한 비율로 y를 전개한다", () => {
   const metrics = TEXT_FONT_METRICS;
   const central = (metrics.ascender + metrics.descender) / 2 / metrics.unitsPerEm;
   assert.ok(Math.abs(baselineShiftRatio("central") - central) < 1e-12);
@@ -1507,4 +1510,25 @@ test("matchFontWeight: 400~500 구간은 사양대로 500 이하를 먼저 본�
   assert.equal(matchFontWeight(430, [300, 500, 600]), 500);
   assert.equal(matchFontWeight(460, [300, 500, 600]), 500);
   assert.equal(matchFontWeight(430, [300, 600]), 300);
+});
+
+test("matchFontWeight: 가벼운 후보가 여럿이면 목표에 가까운 쪽부터 고른다", () => {
+  // 가벼운 후보가 둘 이상일 때 내림차순 정렬이 깨지면(가장 가벼운 것이 먼저 오면) 달라진다.
+  assert.equal(matchFontWeight(350, [100, 200, 300]), 300);
+  assert.equal(matchFontWeight(650, [100, 300, 500]), 500);
+  assert.equal(matchFontWeight(450, [100, 200, 300]), 300);
+});
+
+test("참조 서체 읽기: 바이트가 고정 digest와 다르면 메트릭을 내지 않고 던진다", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "reference-font-test-"));
+  try {
+    assert.deepEqual(readOpenTypeMetrics(TEXT_FONT_FILE), TEXT_FONT_METRICS);
+    const bytes = readFileSync(TEXT_FONT_FILE);
+    bytes[bytes.length - 1] ^= 0x01;
+    const tampered = path.join(dir, "Pretendard-Regular.otf");
+    writeFileSync(tampered, bytes);
+    assert.throws(() => readOpenTypeMetrics(tampered), /참조 서체 바이트가 고정 digest와 다릅니다/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

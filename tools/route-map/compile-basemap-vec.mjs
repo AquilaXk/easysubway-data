@@ -102,11 +102,17 @@ function sha256Value(value) {
 // 우선"이라 실제 렌더 페이스는 800이다. 즉 준수 렌더러(브라우저·Inkscape)와
 // 우리 산출물이 서로 다른 페이스를 골랐다.
 //
-// 여기서는 사양의 매칭 알고리즘을 **번들된 Pretendard 페이스 집합**에 그대로
+// 여기서는 사양의 매칭 알고리즘을 **참조 Pretendard 페이스 집합**에 그대로
 // 적용해, 준수 렌더러가 고를 페이스의 굵기를 확정 값으로 적는다. 실측 계수가
-// 아니라 사양 + pubspec 번들 목록에서 유도된 값이다(게이트가 목록 일치를 강제).
-// 매칭이 불가능하면(번들 굵기 0건 등) 조용히 넘기지 않고 던진다.
-const BUNDLED_TEXT_FONT_WEIGHTS = [400, 600, 700, 800, 900];
+// 아니라 사양 + 참조 페이스 목록에서 유도된 값이다.
+// 참조 페이스는 오너가 도식을 설계한 Pretendard의 Regular·SemiBold·Bold·ExtraBold·
+// Black이다. mobile은 번들 Pretendard를 걷어내(mobile #504) 기기 시스템 서체로
+// 그리므로, 이 집합은 앱 번들이 아니라 오너 설계 의도의 기준이다. 기기가 이 굵기를
+// 어느 페이스로 그리는지는 시스템 서체가 정한다. 게이트
+// (basemap-font-weight-gate.test.mjs)가 컴파일 입력이 이 집합 안에서만 확정되는지
+// 지킨다.
+// 매칭이 불가능하면(참조 굵기 0건 등) 조용히 넘기지 않고 던진다.
+export const REFERENCE_TEXT_FONT_WEIGHTS = [400, 600, 700, 800, 900];
 
 /**
  * CSS Fonts 4 §5.2 "font-weight 매칭"을 [available]에 적용한다.
@@ -116,10 +122,10 @@ const BUNDLED_TEXT_FONT_WEIGHTS = [400, 600, 700, 800, 900];
  *   - 목표 < 400: 목표 미만 내림차순, 그다음 목표 초과 오름차순.
  *   - 목표 > 500: 목표 초과 오름차순, 그다음 목표 미만 내림차순.
  */
-export function matchFontWeight(target, available = BUNDLED_TEXT_FONT_WEIGHTS) {
+export function matchFontWeight(target, available = REFERENCE_TEXT_FONT_WEIGHTS) {
   const pool = [...new Set(available)].sort((a, b) => a - b);
   if (pool.length === 0) {
-    throw new Error("font-weight 매칭 대상(번들 굵기)이 비어 있습니다.");
+    throw new Error("font-weight 매칭 대상(참조 굵기)이 비어 있습니다.");
   }
   if (pool.includes(target)) return target;
   const below = pool.filter((w) => w < target).sort((a, b) => b - a);
@@ -139,7 +145,7 @@ export function matchFontWeight(target, available = BUNDLED_TEXT_FONT_WEIGHTS) {
   }
   const matched = order.find((w) => pool.includes(w));
   if (matched == null) {
-    throw new Error(`font-weight ${target}에 매칭되는 번들 굵기가 없습니다.`);
+    throw new Error(`font-weight ${target}에 매칭되는 참조 굵기가 없습니다.`);
   }
   return matched;
 }
@@ -151,7 +157,7 @@ const FONT_WEIGHT_KEYWORDS = new Map([
   ["bold", 700],
 ]);
 
-/** 선언된 font-weight 값을 번들 페이스 굵기 문자열로 확정한다. */
+/** 선언된 font-weight 값을 참조 페이스 굵기 문자열로 확정한다. */
 export function resolveFontWeightValue(raw) {
   const value = String(raw).trim();
   if (FONT_WEIGHT_KEYWORDS.has(value)) {
@@ -167,7 +173,7 @@ export function resolveFontWeightValue(raw) {
   return String(matchFontWeight(n));
 }
 
-/** 마크업 전체의 font-weight(속성형·style 선언형)를 번들 페이스 굵기로 확정한다. */
+/** 마크업 전체의 font-weight(속성형·style 선언형)를 참조 페이스 굵기로 확정한다. */
 function resolveFontWeights(markup) {
   return markup
     .replace(
@@ -221,7 +227,7 @@ const supportedClassStyleProperties = new Set([
 //      잃지 않게 하고(원본이 정본),
 //   ② `unrepresentableTextDeclarations()`가 건수를 세어 산출 로그·게이트에 드러낸다
 //      — 조용한 유실을 금지한다.
-// 재현하려면 글자별 x 좌표로 펼쳐야 하는데, 번들 폰트의 advance·커닝을 해석해
+// 재현하려면 글자별 x 좌표로 펼쳐야 하는데, 참조 서체의 advance·커닝을 해석해
 // 텍스트마다 글리프 수만큼 `<tspan>`을 만들어야 한다(텍스트 draw 3~4배 증가,
 // text-anchor 청크 의미 변경). 비용·회귀 위험이 커서 #2571에 후속으로 남긴다.
 export const UNREPRESENTABLE_TEXT_PROPERTIES = new Set([
@@ -2395,18 +2401,35 @@ export function markLineTerminalBadgeEntries(ownerLabels, sourceText) {
 // text-before-edge(ascender)와 text-after-edge(descender)의 중점이므로, alphabetic
 // baseline 기준 (ascender + descender)/2 만큼 위에 있다. 그 중점을 y에 맞추려면
 // baseline을 같은 양만큼 **아래로** 옮기면 된다. `middle`은 x-height의 절반이다.
-// 계수는 **번들 폰트 파일에서 읽은 메트릭**에서 유도한다(맞춘 값이 아니다):
+// 계수는 **참조 서체 파일에서 읽은 메트릭**에서 유도한다(맞춘 값이 아니다):
 //   Pretendard unitsPerEm=2048, hhea ascender=1950, descender=-494, sxHeight=1086
 //   → central=(1950-494)/2/2048=0.355469em, middle=1086/2/2048=0.265137em
 // SVG 1.1에서 `alignment-baseline`은 tspan/tref/altGlyph/textPath에만 적용되고
 // `<text>`에는 적용되지 않는다 — 실측상 5권역 tspan에는 baseline 속성이 0건이라
 // `<text>`의 dominant-baseline만 유효하다. 모르는 값은 던진다.
 
-export const TEXT_FONT_FILE = path.join(mobileDir, "fonts/Pretendard-Regular.otf");
+// 참조 서체 파일은 mobile 픽스처가 아니라 data 레포가 소유한다(mobile #504가 번들
+// Pretendard를 지웠다). 바이트는 읽는 지점(readOpenTypeMetrics)에서 sha256으로 확인한다.
+export const TEXT_FONT_FILE = path.join(
+  root,
+  "tools/route-map/fonts/Pretendard-Regular.otf",
+);
+export const TEXT_FONT_SHA256 =
+  "3ffbacde6ab8411f1d2db54bb9b1f0b3ee2a738932033722cf0388c06aed1c93";
 
-/** OpenType(head·hhea·OS/2) 메트릭을 읽는다. sfnt 테이블 디렉터리만 파싱한다. */
+/**
+ * OpenType(head·hhea·OS/2) 메트릭을 읽는다. sfnt 테이블 디렉터리만 파싱한다.
+ * 참조 서체 바이트가 고정 digest와 다르면 던진다(다시 인코딩한 서체는 폭과 baseline
+ * 오프셋을 바꿔 산출물이 조용히 달라진다).
+ */
 export function readOpenTypeMetrics(fontPath) {
   const buffer = readFileSync(fontPath);
+  const digest = createHash("sha256").update(buffer).digest("hex");
+  if (digest !== TEXT_FONT_SHA256) {
+    throw new Error(
+      `${fontPath}: 참조 서체 바이트가 고정 digest와 다릅니다(sha256 ${digest}, 기대 ${TEXT_FONT_SHA256}).`,
+    );
+  }
   const tableCount = buffer.readUInt16BE(4);
   const offsets = new Map();
   for (let index = 0; index < tableCount; index += 1) {
@@ -3347,7 +3370,7 @@ export function normalizeSvgForCompile(svgText) {
   const styled = applyStylesheet(extractMapSvg(svgText));
   // ② 오너가 숨긴 요소 제거(class가 준 display:none도 ①이 펼친 뒤라야 잡힌다).
   const visible = stripHiddenElements(styled);
-  // ③ font-weight를 번들 페이스 굵기로 확정(컴파일러가 100배수만 받는다).
+  // ③ font-weight를 참조 페이스 굵기로 확정(컴파일러가 100배수만 받는다).
   const weighted = resolveFontWeights(visible);
   // ④ per-glyph 좌표 리스트를 단일 값으로 해소(동치가 아니면 fail-closed).
   const coordinated = resolveGlyphCoordinateLists(weighted);
