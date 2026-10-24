@@ -51,6 +51,7 @@ import {
   REFERENCE_TEXT_FONT_WEIGHTS,
   roundCoord,
 } from "./basemap-svg-core.mjs";
+import { mergeBasemapDraws } from "./merge-basemap-vec-draws.mjs";
 import {
   BUSAN,
   DAEGU,
@@ -59,6 +60,7 @@ import {
   REGION_CONFIGS,
   SEOUL,
 } from "./sma-region-configs.mjs";
+import { decodeVec, encodeVec } from "./vec-codec.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const svgSourceDir = path.join(
@@ -72,6 +74,11 @@ const outDir = path.join(
 );
 const dartBin = process.env.DART_BIN ?? "dart";
 const compilerVersion = "1.3.0";
+// 컴파일러의 clip 최적화(vector_graphics_compiler 1.3.0 clipping_optimizer.dart)는 clip
+// 안 채우기 path를 path_ops로 clip과 교차시켜 다시 쓰지만, 선(stroke)이 섞인 clip은 지우지
+// 못해 런타임 clip도 그대로 남는다. 다시 쓴 채우기는 같은 요소의 선과 path를 함께 쓰지
+// 못해 따로 적힌다. 끄면 그리기 수는 같고 대전·광주 .vec 좌표가 44% 준다(#1495 실측).
+const compilerFlags = ["--no-optimize-clips"];
 // 바탕층 컴파일 파이프라인의 산출 의미 개정 번호(#2068 리뷰 M2, 2026-07-26).
 // compiler.version(=pubspec.lock에 잠긴 vector_graphics_compiler 패키지 버전)과
 // 분리해, "무엇을 굽는가"가 바뀔 때만 올린다.
@@ -80,7 +87,9 @@ const compilerVersion = "1.3.0";
 //       캔버스 장식은 명시 계약으로 제외(오너 결정 "글자도 복붙"·"장식 제거")
 //   3 — 바탕은 그대로 두고 노선별 강조 레이어(.vec)와 노선 id 색인을 함께 굽는다(#1484)
 //   4 — 라벨을 참조 서체의 글리프 윤곽선으로 굽는다(#1488). `.vec`에 텍스트 draw가 없다.
-const basemapPipelineRevision = 4;
+//   5 — 같은 그림을 더 적은 그리기 명령으로 낸다(#1495). 불투명도 0 요소를 지우고, clip
+//       최적화를 끄고, 컴파일 뒤 같은 paint 그리기를 합친다(merge-basemap-vec-draws.mjs).
+const basemapPipelineRevision = 5;
 const buildManifestPath = path.join(
   root,
   "tools/route-map/basemap-build-manifest.json",
@@ -3047,16 +3056,51 @@ function matchingElementEnd(text, startIndex, tagName) {
 // (수도권 경의중앙선 숨김 path 2건·환승 베이스 레이어도 같은 처리). CSS 클래스가
 // 준 display:none도 잡히도록 inlineSimpleClassStyles 뒤에 적용한다.
 // `<style>`/`<defs>` 자체는 속성에 display가 없어 대상이 아니다.
+// 불투명도 0(`opacity="0"` 속성과 `style="opacity:0"`)도 같은 처리다(#1495). SVG 1.1 14.5절대로
+// opacity는 요소를 그룹으로 합성한 뒤 곱하므로 0이면 서브트리가 아무것도 그리지 않는다. 수도권
+// 오너 SVG의 캔버스 격자(background-grid-overlay)가 opacity 0인데, 컴파일러는 이를 무늬 정의 +
+// 알파 0 paint의 전면 채우기로 남겨 기기가 매 프레임 지도 전체를 무늬로 칠했다.
+// 다만 clipPath 자식은 fill·stroke 같은 렌더링 속성을 뺀 원본 도형으로 오려내기 영역을 정한다
+// (SVG 1.1 14.3.5절). opacity는 그 영역에 기여하지 않으므로 opacity 0은 clipPath 안과 clipPath
+// 자체에서 지우지 않는다. display:none은 오려내기에도 기여하지 않으므로 어디서든 지운다.
+const DISPLAY_NONE_ATTRIBUTE = /\sdisplay="none"/;
+const DISPLAY_NONE_STYLE = /style="[^"]*display\s*:\s*none/;
+const OPACITY_ZERO_ATTRIBUTE = /\sopacity="0(?:\.0+)?"/;
+const OPACITY_ZERO_STYLE = /\sstyle="[^"]*(?<![\w-])opacity\s*:\s*0(?:\.0+)?\s*(?:!important\s*)?[;"]/;
+
+const HIDDEN_ELEMENT_RULES = [
+  {
+    isHidden: (openTag) => DISPLAY_NONE_ATTRIBUTE.test(openTag) || DISPLAY_NONE_STYLE.test(openTag),
+    ignoredByClipPath: false,
+  },
+  {
+    isHidden: (openTag) => OPACITY_ZERO_ATTRIBUTE.test(openTag) || OPACITY_ZERO_STYLE.test(openTag),
+    ignoredByClipPath: true,
+  },
+];
+
+function isClipPathOrDescendant(markup, index, tagName) {
+  if (tagName === "clipPath") return true;
+  const openings = /<clipPath\b[^>]*>/g;
+  for (let open = openings.exec(markup); open && open.index < index; open = openings.exec(markup)) {
+    if (matchingElementEnd(markup, open.index, "clipPath") > index) return true;
+  }
+  return false;
+}
+
 export function stripHiddenElements(markup) {
   let result = markup;
-  for (;;) {
-    const match = result.match(
-      /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|style="[^"]*display\s*:\s*none))[^>]*>/,
-    );
-    if (!match) return result;
-    const end = matchingElementEnd(result, match.index, match[1]);
-    result = result.slice(0, match.index) + result.slice(end);
+  for (const { isHidden, ignoredByClipPath } of HIDDEN_ELEMENT_RULES) {
+    const openTags = /<([A-Za-z][\w:.-]*)\b[^>]*>/g;
+    for (let match = openTags.exec(result); match; match = openTags.exec(result)) {
+      if (!isHidden(match[0])) continue;
+      if (ignoredByClipPath && isClipPathOrDescendant(result, match.index, match[1])) continue;
+      const end = matchingElementEnd(result, match.index, match[1]);
+      result = result.slice(0, match.index) + result.slice(end);
+      openTags.lastIndex = match.index;
+    }
   }
+  return result;
 }
 
 // ── SVG paint-order 지원(#2068 오너 실기기 회귀, 2026-07-26) ────────────────
@@ -3644,7 +3688,6 @@ export function buildLineOverlayIndex(regions) {
 // 한 번에 굽는다(원본 불변). 컴파일러의 --input-dir 모드는 한 프로세스 안에서
 // isolate로 나눠 구워, 파일마다 dart를 다시 띄우는 비용(1회 약 0.27초)을 한 번으로
 // 줄인다. 산출 바이트는 파일 단위(-i/-o) 모드와 같다(#1484 실측 36/36 sha256 동일).
-// 반환은 fileName → 산출 .vec sha256.
 function compileAll(jobs, outputDir, workDir) {
   const inputDir = path.join(workDir, "svg");
   const compiledDir = path.join(workDir, "vec");
@@ -3655,22 +3698,41 @@ function compileAll(jobs, outputDir, workDir) {
   execFileSync(dartBin, [
     "run",
     "vector_graphics_compiler",
+    ...compilerFlags,
     "--input-dir",
     inputDir,
     "--out-dir",
     compiledDir,
   ], { cwd: mobileDir, stdio: ["ignore", "inherit", "inherit"] });
   mkdirSync(outputDir, { recursive: true });
-  return new Map(
-    jobs.map(({ fileName }) => {
-      const outputVec = path.join(outputDir, fileName);
-      renameSync(
-        path.join(compiledDir, `${path.basename(fileName, ".vec")}.svg.vec`),
-        outputVec,
-      );
-      return [fileName, sha256(outputVec)];
-    }),
-  );
+  for (const { fileName } of jobs) {
+    renameSync(
+      path.join(compiledDir, `${path.basename(fileName, ".vec")}.svg.vec`),
+      path.join(outputDir, fileName),
+    );
+  }
+}
+
+// 권역마다 바탕과 노선 강조 레이어를 함께 읽어 그리기를 합치고 같은 자리에 다시 쓴다.
+// 레이어는 바탕의 부분 수열로 남는다. 반환은 fileName → 최종 .vec sha256.
+function mergeRegionDraws(prepared, dir) {
+  const digests = new Map();
+  const read = (fileName) => decodeVec(new Uint8Array(readFileSync(path.join(dir, fileName))));
+  const write = (fileName, doc) => {
+    const bytes = encodeVec(doc);
+    writeFileSync(path.join(dir, fileName), bytes);
+    digests.set(fileName, sha256Value(bytes));
+  };
+  for (const { region, lineOverlays } of prepared) {
+    const layerFiles = lineOverlays.map(({ lineId }) => lineOverlayVectorFileName(region.id, lineId));
+    const merged = mergeBasemapDraws(
+      read(`${region.id}.vec`),
+      layerFiles.map((name) => ({ name, doc: read(name) })),
+    );
+    write(`${region.id}.vec`, merged.base);
+    for (const { name, doc } of merged.layers) write(name, doc);
+  }
+  return digests;
 }
 
 function relativeToRoot(file) {
@@ -3745,9 +3807,12 @@ async function main() {
   let digests;
   let mismatched = [];
   try {
-    digests = compileAll(jobs, outDir, path.join(tmpDir, "compile"));
+    compileAll(jobs, outDir, path.join(tmpDir, "compile"));
+    digests = mergeRegionDraws(prepared, outDir);
     if (verify) {
-      const second = compileAll(jobs, path.join(tmpDir, "verify"), path.join(tmpDir, "verify-work"));
+      const verifyDir = path.join(tmpDir, "verify");
+      compileAll(jobs, verifyDir, path.join(tmpDir, "verify-work"));
+      const second = mergeRegionDraws(prepared, verifyDir);
       mismatched = jobs
         .map(({ fileName }) => fileName)
         .filter((fileName) => second.get(fileName) !== digests.get(fileName));
@@ -3849,6 +3914,7 @@ async function main() {
         compiler: {
           package: "vector_graphics_compiler",
           version: compilerVersion,
+          flags: compilerFlags,
         },
         // #2068 리뷰 M2(2026-07-26): compiler.version은 pubspec.lock에 잠긴
         // **패키지 버전 그대로**를 적는 필드다(현재 1.3.0). 컴파일 의미가 바뀌었다고

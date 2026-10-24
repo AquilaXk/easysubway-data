@@ -23,6 +23,7 @@ import {
   matchingGroupEnd,
   normalizeSvgForCompile,
   parseSvgNumbers,
+  stripHiddenElements,
 } from "./compile-basemap-vec.mjs";
 import { viewBoxOf } from "./svg-ink-bbox.mjs";
 
@@ -655,6 +656,45 @@ test("대전·광주 sidecar 키는 마크업 원문이 아니라 카탈로그 �
   assert.equal(sidecar.regions.gwangju.length, 20);
 });
 
+test("불투명도 0인 요소는 서브트리째 컴파일 입력에서 빠지고, 0이 아닌 불투명도는 남는다", () => {
+  const stripped = stripHiddenElements(
+    '<svg><rect id="grid" opacity="0" fill="url(#p)"/><g id="group" opacity="0.0"><path id="inner" d="M0 0L1 1"/></g>' +
+      '<rect id="faint" opacity="0.52"/><rect id="fill-only" fill-opacity="0"/><rect id="dense" opacity="0.05"/></svg>',
+  );
+  for (const id of ["grid", "group", "inner"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+  for (const id of ["faint", "fill-only", "dense"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+});
+
+function stripWithoutThrowing(markup) {
+  let stripped;
+  assert.doesNotThrow(() => {
+    stripped = stripHiddenElements(markup);
+  });
+  return stripped;
+}
+
+test("style 속성의 opacity:0도 서브트리째 빠지고, 0이 아닌 값과 fill-opacity·stroke-opacity는 남는다", () => {
+  const stripped = stripWithoutThrowing(
+    '<svg><rect id="only" style="opacity:0"/><rect id="spaced" style="fill:red; opacity : 0.0 ;stroke:none"/>' +
+      '<g id="group" style="stroke:red;opacity:0 !important"><path id="inner" d="M0 0L1 1"/></g>' +
+      '<rect id="faint" style="opacity:0.3"/><rect id="dense" style="opacity:0.05"/>' +
+      '<rect id="fill-only" style="fill-opacity:0"/><rect id="stroke-only" style="stroke-opacity:0;opacity:.5"/></svg>',
+  );
+  for (const id of ["only", "spaced", "group", "inner"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+  for (const id of ["faint", "dense", "fill-only", "stroke-only"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+});
+
+test("clipPath와 그 자식의 불투명도는 SVG가 무시하므로 지우지 않지만, display:none은 지우고 clipPath 밖의 불투명도 0은 지운다", () => {
+  const stripped = stripWithoutThrowing(
+    '<svg><clipPath id="attr" opacity="0"><rect id="attr-child" opacity="0" width="9" height="9"/></clipPath>' +
+      '<clipPath id="styled"><rect id="styled-child" style="opacity:0" width="9" height="9"/>' +
+      '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath>' +
+      '<rect id="outside" opacity="0"/><g id="clipped" clip-path="url(#attr)" style="opacity:0"/></svg>',
+  );
+  for (const id of ["attr", "attr-child", "styled", "styled-child"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+  for (const id of ["hidden-child", "outside", "clipped"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+});
+
 test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const manifest = JSON.parse(
@@ -676,7 +716,7 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
     lockedCompilerVersion,
     "manifest.compiler.version은 pubspec.lock의 vector_graphics_compiler 버전과 같아야 합니다.",
   );
-  assert.equal(manifest.pipelineRevision, 4);
+  assert.equal(manifest.pipelineRevision, 5);
   assert.deepEqual(manifest.content, {
     svgLayer: "owner-svg-map-body-layers",
     stationSymbols: "owner-svg",
