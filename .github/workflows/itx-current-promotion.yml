@@ -201,9 +201,9 @@ jobs:
         run: |
           set -euo pipefail
           # 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 checkout이 불투명하게 실패하므로 먼저 원인을 드러낸다.
-          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/basemap-variants-1495b^{}' | awk '{print $1}')"
-          if [[ "${peeled}" != "d4155d147f2210c017bfd6f5b4720b542f4ef58b" ]]; then
-            echo "pinned Mobile fixture tag data-fixture/basemap-variants-1495b must point to d4155d147f2210c017bfd6f5b4720b542f4ef58b (found '${peeled}'); do not delete or move this tag" >&2
+          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/basemap-textnomerge-1495^{}' | awk '{print $1}')"
+          if [[ "${peeled}" != "d3694c0fe1d15e9ee7854cba14e9120fd8ade9da" ]]; then
+            echo "pinned Mobile fixture tag data-fixture/basemap-textnomerge-1495 must point to d3694c0fe1d15e9ee7854cba14e9120fd8ade9da (found '${peeled}'); do not delete or move this tag" >&2
             exit 1
           fi
 
@@ -212,7 +212,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: data-fixture/basemap-variants-1495b
+          ref: data-fixture/basemap-textnomerge-1495
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -222,7 +222,7 @@ jobs:
         run: |
           set -euo pipefail
           # ci.yml의 Stage pinned Mobile fixture와 같은 고정 커밋·입력 팩 sha256이다(workflow 계약 테스트가 두 곳의 일치를 본다).
-          expected_revision="d4155d147f2210c017bfd6f5b4720b542f4ef58b"
+          expected_revision="d3694c0fe1d15e9ee7854cba14e9120fd8ade9da"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
           expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
