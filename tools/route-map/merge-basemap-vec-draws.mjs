@@ -339,7 +339,7 @@ function planGroups(units, maxExtent) {
       target.units.push(unit);
       target.bounds = union(target.bounds, unit.bounds);
     } else {
-      groups.push({ ...unit, units: [unit] });
+      groups.push(standaloneGroup(unit));
     }
   }
   return groups;
