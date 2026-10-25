@@ -42,7 +42,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { BASEMAP_VARIANTS, basemapVectorFileName, TEXT_VARIANT_ID } from "./basemap-variants.mjs";
+import { BASEMAP_VARIANTS, basemapVariant, basemapVectorFileName, TEXT_VARIANT_ID } from "./basemap-variants.mjs";
 import {
   buildSvgTree,
   declaredStyleOrAttr,
@@ -99,7 +99,9 @@ const compilerFlags = ["--no-optimize-clips"];
 //       테두리와 글자가 path 하나를 나눠 쓴다.
 //   7 — 같은 입력에서 라벨을 윤곽선으로 구운 변형과 텍스트 그리기로 둔 변형을 함께 굽는다(#1495).
 //       색인은 변형마다 바탕·강조 레이어 파일과 sha256을 싣는다(schemaVersion 2).
-const basemapPipelineRevision = 7;
+//   8 — 텍스트 변형은 그리기를 합치지 않는다(basemap-variants.mjs mergeDraws, 측정 기록은 그 머리
+//       주석). 불투명도 0 요소와 넓이 없는 채우기는 두 변형 모두 덜어낸다.
+const basemapPipelineRevision = 8;
 const buildManifestPath = path.join(
   root,
   "tools/route-map/basemap-build-manifest.json",
@@ -3829,9 +3831,14 @@ function compileAll(jobs, outputDir, workDir) {
   }
 }
 
-// 변형·권역마다 바탕과 노선 강조 레이어를 함께 읽어 그리기를 합치고 같은 자리에 다시 쓴다.
+/** 변형 등록부의 mergeDraws에 따라 한 변형의 바탕과 강조 레이어를 정리한다(합치기는 윤곽선 변형만). */
+export function mergeVariantDraws(variantId, base, layers) {
+  return mergeBasemapDraws(base, layers, { mergeDraws: basemapVariant(variantId).mergeDraws });
+}
+
+// 변형·권역마다 바탕과 노선 강조 레이어를 함께 읽어 그리기를 정리하고 같은 자리에 다시 쓴다.
 // 레이어는 같은 변형 바탕의 부분 수열로 남는다. 반환은 fileName → 최종 .vec sha256.
-function mergeRegionDraws(jobs, dir) {
+export function mergeRegionDraws(jobs, dir) {
   const digests = new Map();
   const read = (fileName) => decodeVec(new Uint8Array(readFileSync(path.join(dir, fileName))));
   const write = (fileName, doc) => {
@@ -3842,7 +3849,8 @@ function mergeRegionDraws(jobs, dir) {
   const groups = Map.groupBy(jobs, ({ variantId, regionId }) => `${variantId}/${regionId}`);
   for (const group of groups.values()) {
     const [base, ...layers] = group;
-    const merged = mergeBasemapDraws(
+    const merged = mergeVariantDraws(
+      base.variantId,
       read(base.fileName),
       layers.map(({ fileName }) => ({ name: fileName, doc: read(fileName) })),
     );

@@ -4,6 +4,15 @@
 //   text      라벨을 .vec 텍스트 그리기로 둔다. 런타임이 기기 서체로 글자를 그린다.
 // 앱은 렌더러에 맞는 변형을 고른다. Skia OpenGL 렌더러에서는 윤곽선 path가 텍스트보다 느리다.
 // outlined 파일 이름은 변형을 나누기 전 이름 그대로다.
+//
+// 변형마다 합치기(mergeDraws)가 다르다. 같은 paint 그리기를 이어 명령 수를 줄이는 합치기는
+// Impeller에서 이득이 측정됐고 Skia OpenGL에서는 합치기 전보다 느렸다. 그래서 Skia 변형(text)은
+// 합치지 않고, 두 변형 모두 불투명도 0 요소와 넓이 없는 채우기를 덜어낸다.
+// 측정은 이 주석이 유일한 기록이다(다른 주석은 여기를 가리킨다). Galaxy A17 한 대, Skia OpenGL에서
+// mobile main(합치기 전 텍스트 .vec)과 mobile #519(합친 텍스트 .vec)를 5회 교대로 실행했다. 라벨 수와
+// 점 수는 같았고 2호선 40%의 래스터 p50 중앙값이 11.95 ms에서 74.75 ms가 됐다. 다른 기기와 렌더러에서는
+// 재지 않았다. 느려진 원인은 확인하지 못했다. 이은 다중 윤곽선 path를 Skia가 매 프레임 다시 처리한다는
+// 설명은 추정이다.
 
 import { decodeXmlText, encodeXmlAttributeValue, firstFamilyOf } from "./basemap-svg-core.mjs";
 
@@ -36,12 +45,14 @@ export const BASEMAP_VARIANTS = Object.freeze([
     id: OUTLINED_VARIANT_ID,
     labels: "outlined-into-vec",
     fileSuffix: "",
+    mergeDraws: true,
     compileInput: (normalizedSvg, outlineBasemapText) => outlineBasemapText(normalizedSvg).svg,
   }),
   Object.freeze({
     id: TEXT_VARIANT_ID,
     labels: "text-into-vec",
     fileSuffix: ".text",
+    mergeDraws: false,
     compileInput: reduceFontFamiliesToFirst,
   }),
 ]);

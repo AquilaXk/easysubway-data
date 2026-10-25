@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -11,11 +12,14 @@ import {
   basemapCompileJobs,
   buildBasemapLineOverlays,
   buildLineOverlayIndex,
+  mergeRegionDraws,
+  mergeVariantDraws,
   normalizeSvgForCompile,
   variantManifestEntry,
 } from "./compile-basemap-vec.mjs";
 import { cleanupPackDir, openPack } from "./pack-io.mjs";
 import { REGION_CONFIGS } from "./sma-region-configs.mjs";
+import { decodeVec, encodeVec, VERB } from "./vec-codec.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const manifest = JSON.parse(
@@ -417,6 +421,73 @@ test("권역·노선 id에 점이 있으면 되읽을 때 틀리게 읽히므로
   assert.equal(jobs.length, 8, "정상 id는 변형 2 × 권역 2 × (바탕 1 + 노선 1)만큼 작업이 된다");
 });
 
+// 그리기 합치기는 렌더러에 따라 이득이 갈린다(측정 기록은 basemap-variants.mjs 머리 주석).
+// 변형 등록부의 mergeDraws 하나가 컴파일 파이프라인의 합치기 여부를 정한다.
+const FILL = { style: "fill", color: 0xff112233, blendMode: 3, shaderId: null };
+const square = (x) => ({
+  fillType: 0,
+  verbs: Uint8Array.of(VERB.moveTo, VERB.lineTo, VERB.lineTo, VERB.lineTo, VERB.close),
+  points: Float32Array.of(x, 0, x + 10, 0, x + 10, 10, x, 10),
+});
+const disjointSquares = () =>
+  decodeVec(
+    encodeVec({
+      width: 100,
+      height: 100,
+      paints: [FILL],
+      paths: [square(0), square(20), square(40)],
+      commands: [0, 1, 2].map((pathId) => ({ op: "drawPath", pathId, paintId: 0, patternId: null })),
+    }),
+  );
+
+test("변형 등록부의 mergeDraws가 합치기 여부를 정한다(윤곽선은 합치고 텍스트는 합치지 않는다)", () => {
+  assert.deepEqual(
+    BASEMAP_VARIANTS.map(({ id, mergeDraws }) => [id, mergeDraws]),
+    [["outlined", true], ["text", false]],
+  );
+  for (const { id, mergeDraws } of BASEMAP_VARIANTS) {
+    const { base, layers } = mergeVariantDraws(id, disjointSquares(), [{ name: "line", doc: disjointSquares() }]);
+    const expected = mergeDraws ? 1 : 3;
+    assert.equal(base.commands.length, expected, `${id} 바탕 그리기 수`);
+    assert.equal(layers[0].doc.commands.length, expected, `${id} 강조 레이어 그리기 수`);
+  }
+});
+
+// 컴파일 단계가 구운 .vec를 변형마다 다시 쓰는 진입점이다. 실제 파일을 읽고 쓴다.
+test("구운 .vec는 윤곽선 변형만 합치고 텍스트 변형은 합치지 않은 채 같은 자리에 다시 쓰며 최종 sha256을 낸다", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "merge-region-draws-"));
+  try {
+    const baked = encodeVec(disjointSquares());
+    const jobs = BASEMAP_VARIANTS.flatMap(({ id }) => [
+      { variantId: id, regionId: "seoul", fileName: basemapVectorFileName(id, "seoul") },
+      { variantId: id, regionId: "seoul", fileName: basemapVectorFileName(id, "seoul", "seoul-2") },
+    ]);
+    for (const { fileName } of jobs) writeFileSync(path.join(dir, fileName), baked);
+
+    const digests = mergeRegionDraws(jobs, dir);
+
+    const drawCountOf = (fileName) => decodeVec(new Uint8Array(readFileSync(path.join(dir, fileName)))).commands.length;
+    assert.equal(drawCountOf("seoul.vec"), 1, "윤곽선 바탕: 겹치지 않는 같은 paint 도형 3개가 그리기 1개로 합쳐진다");
+    assert.equal(drawCountOf("seoul.seoul-2.vec"), 1, "윤곽선 강조 레이어");
+    assert.equal(drawCountOf("seoul.text.vec"), 3, "텍스트 바탕: 합치지 않아 도형마다 그리기 하나");
+    assert.equal(drawCountOf("seoul.seoul-2.text.vec"), 3, "텍스트 강조 레이어");
+    assert.deepEqual(
+      [...digests.keys()].sort(),
+      ["seoul.seoul-2.text.vec", "seoul.seoul-2.vec", "seoul.text.vec", "seoul.vec"],
+    );
+    for (const [fileName, digest] of digests) {
+      assert.equal(digest, sha256(readFileSync(path.join(dir, fileName))), `${fileName}: 반환 sha256이 다시 쓴 파일 바이트와 같다`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("모든 변형의 mergeDraws는 불리언이고, 알 수 없는 변형은 실패한다", () => {
+  for (const { id, mergeDraws } of BASEMAP_VARIANTS) assert.equal(typeof mergeDraws, "boolean", id);
+  assert.throws(() => mergeVariantDraws("unknown", disjointSquares(), []), /알 수 없는 바탕층 변형/);
+});
+
 // 텍스트 변형은 .vec 텍스트 설정이 서체 이름 하나만 담으므로 CSS 서체 목록을 첫 서체로 줄인다.
 // 윤곽선 단계(outline-basemap-text.mjs)가 쓰는 규칙과 같다. 속성과 style 선언을 모두 줄이고
 // 서체 목록이 아닌 마크업은 그대로 둔다.
@@ -474,7 +545,7 @@ test("변형 manifest 항목은 컴파일 입력·산출 sha256이 없는 파일
 // 커밋된 manifest sha는 이전 컴파일 실행이 고정한 값이라, 다시 만든 레이어 입력과
 // 색인이 바이트 단위로 같다는 결정성 검사도 겸한다.
 test("build manifest가 기록한 변형별 강조 레이어 파일·색인 sha와 다시 만든 결과가 같다", () => {
-  assert.equal(manifest.pipelineRevision, 7);
+  assert.equal(manifest.pipelineRevision, 8);
   assert.equal(manifest.content.lineOverlays, "per-line-vec-over-faded-basemap");
   const basemapDir = "apps/mobile/assets/datapacks/metro_map_pack/basemap";
   const digests = new Map();
