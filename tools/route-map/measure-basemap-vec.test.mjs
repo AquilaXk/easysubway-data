@@ -87,6 +87,26 @@ test("배포 바탕·강조 레이어 .vec의 최대 줌 한 화면 좌표 수�
   }
 });
 
+// 변형마다 합치기 여부가 달라(basemap-variants.mjs mergeDraws) path 그리기 수의 기준선이 다르다. 윤곽선
+// 변형은 합쳐 줄고, 텍스트 변형은 합치지 않아 컴파일러가 낸 그리기에서 불투명도 0 요소와 넓이 없는 채우기만
+// 빠진다. 근거 있는 변경만 값을 바꾸도록 부등호 없이 정확히 같은지 본다. 값은 이 PR이 compile-basemap-vec.mjs
+// 로 다시 구운 산출물을 measure-basemap-vec.mjs로 잰 것이다(강조 레이어는 권역 안 파일의 합).
+const DRAW_PATH_BASELINE = Object.freeze({
+  outlined: { seoul: [1652, 2730], busan: [562, 647], daegu: [283, 320], daejeon: [65, 60], gwangju: [60, 55] },
+  text: { seoul: [1697, 2313], busan: [340, 379], daegu: [219, 236], daejeon: [54, 49], gwangju: [48, 43] },
+});
+
+test("배포 변형별 path 그리기 수(바탕, 강조 레이어 합)는 기준선과 정확히 같다", () => {
+  const counts = {};
+  for (const name of readdirSync(basemapDir).filter((file) => file.endsWith(".vec"))) {
+    const { variantId, regionId, lineId } = parseBasemapVectorFileName(name);
+    const { commands } = measureVec(new Uint8Array(readFileSync(path.join(basemapDir, name))));
+    const entry = ((counts[variantId] ??= {})[regionId] ??= [0, 0]);
+    entry[lineId === null ? 0 : 1] += commands.drawPath ?? 0;
+  }
+  assert.deepEqual(counts, DRAW_PATH_BASELINE);
+});
+
 function grid() {
   const paths = Array.from({ length: 40 }, (_, index) => square(20 * index, 0));
   const commands = paths.map((_, pathId) => ({ op: "drawPath", pathId, paintId: 0, patternId: null }));

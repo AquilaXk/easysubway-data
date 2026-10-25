@@ -1,7 +1,9 @@
 // 바탕층 `.vec`의 그리기 명령을 렌더 결과를 바꾸지 않고 합친다(#1495).
 //
 // 기기 래스터 스레드는 매 프레임 그리기 명령을 하나씩 다시 처리한다(mobile #517).
-// 같은 paint로 그리는 path 여럿을 path 하나로 이으면 같은 그림을 명령 하나로 그린다.
+// 같은 paint로 그리는 path 여럿을 path 하나로 이으면 같은 그림을 명령 하나로 그린다. 이득은
+// 렌더러마다 다르다. Impeller는 명령 수가 줄어 빨라지지만 Skia OpenGL은 이은 다중 윤곽선 path를
+// 매 프레임 다시 처리해 느려진다(Galaxy A17 실측). 그래서 변형이 합치기 여부를 고른다.
 //
 // 합치는 규칙은 Skia Ganesh의 연산 묶기를 옮긴다(google/skia a625b534, BSD-3-Clause,
 // Copyright 2019 Google LLC).
@@ -25,7 +27,7 @@
 // 둔다. 자르면 그리는 순서가 줄 단위로 바뀌므로 순서가 바뀐 그리기끼리 영역이 겹치지 않을
 // 때만 자른다(OpsTask::recordOp이 새 명령을 앞 묶음으로 옮기는 조건과 같다).
 //
-// 텍스트 라벨 변형의 텍스트 위치 갱신과 텍스트 그리기는 장벽이다. 텍스트는 기기 서체로 그려 칠할
+// 텍스트 그리기를 담은 .vec에서 텍스트 위치 갱신과 텍스트 그리기는 장벽이다. 텍스트는 기기 서체로 그려 칠할
 // 영역을 알 수 없고, 런타임은 글자 덩이를 다음 위치 갱신까지 미뤄 그린다(vector_graphics 1.2.3
 // listener.dart 629-750행). 그래서 path 그리기가 텍스트 명령을 넘어 옮겨지지 않는다.
 //
@@ -280,29 +282,37 @@ function repeatedBlocks(draws, start, maxExtent) {
   return keepsUnit && reorderKeepsPicture(chunks, blocks) ? { units: chunks, length } : singleDraw(head);
 }
 
+const barrierUnit = ({ layers, command }) => ({ barrier: true, layers, commands: [command] });
+
+function paintUnit(blocks) {
+  return {
+    barrier: false,
+    mergeKey: blocks.map(([first]) => first.mergeKey).join("\n"),
+    layers: blocks[0][0].layers,
+    bounds: unionAll(blocks.flat().map(({ bounds }) => bounds)),
+    pathIds: blocks[0].map(({ command }) => command.pathId),
+    commands: blocks.map(([first]) => first.command),
+  };
+}
+
 function buildUnits(draws, maxExtent) {
   const units = [];
   for (let start = 0; start < draws.length; ) {
     if (draws[start].barrier) {
-      units.push({ barrier: true, layers: draws[start].layers, commands: [draws[start].command] });
+      units.push(barrierUnit(draws[start]));
       start += 1;
       continue;
     }
     const repeated = repeatedBlocks(draws, start, maxExtent);
-    for (const blocks of repeated.units) {
-      units.push({
-        barrier: false,
-        mergeKey: blocks.map(([first]) => first.mergeKey).join("\n"),
-        layers: blocks[0][0].layers,
-        bounds: unionAll(blocks.flat().map(({ bounds }) => bounds)),
-        pathIds: blocks[0].map(({ command }) => command.pathId),
-        commands: blocks.map(([first]) => first.command),
-      });
-    }
+    units.push(...repeated.units.map(paintUnit));
     start += repeated.length;
   }
   return units;
 }
+
+// 합치지 않는 변형은 그리기 하나가 단위 하나이고 단위 하나가 묶음 하나다.
+const singleDrawUnits = (draws) => draws.map((draw) => (draw.barrier ? barrierUnit(draw) : paintUnit([[draw]])));
+const standaloneGroup = (unit) => ({ ...unit, units: [unit] });
 
 function canJoin(group, unit, maxExtent) {
   if (group.barrier || group.mergeKey !== unit.mergeKey || group.layers !== unit.layers) return false;
@@ -428,8 +438,10 @@ function emitDoc(source, groups) {
 /**
  * 바탕 [base]와 노선 강조 레이어 [layers]({ name, doc }[])의 그리기 명령을 합친다.
  * 반환은 { base, layers: { name, doc }[] }이고 레이어는 바탕의 부분 수열로 남는다.
+ * [mergeDraws]가 false이면 그리기를 합치지 않고 넓이 없는 채우기만 뺀다. 이은 다중 윤곽선
+ * path가 오히려 느린 렌더러(Skia OpenGL)를 위한 변형이 쓴다(basemap-variants.mjs).
  */
-export function mergeBasemapDraws(base, layers = [], { maxExtent = MAX_GROUP_EXTENT } = {}) {
+export function mergeBasemapDraws(base, layers = [], { maxExtent = MAX_GROUP_EXTENT, mergeDraws = true } = {}) {
   const membership = base.commands.map(() => []);
   const baseKeys = base.commands.map((command) => commandKey(base, command));
   for (const { name, doc } of layers) {
@@ -439,7 +451,9 @@ export function mergeBasemapDraws(base, layers = [], { maxExtent = MAX_GROUP_EXT
   const draws = base.commands
     .map((command, index) => ({ ...classes[index], command, layers: membership[index].join("\n") }))
     .filter(({ paintsNothing }) => !paintsNothing);
-  const groups = planGroups(buildUnits(draws, maxExtent), maxExtent);
+  const groups = mergeDraws
+    ? planGroups(buildUnits(draws, maxExtent), maxExtent)
+    : singleDrawUnits(draws).map(standaloneGroup);
   return {
     base: emitDoc(base, groups),
     layers: layers.map(({ name }) => ({

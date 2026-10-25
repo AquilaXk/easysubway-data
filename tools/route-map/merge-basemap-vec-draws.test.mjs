@@ -299,6 +299,51 @@ test("넓이가 없는 채우기는 아무것도 칠하지 않으므로 빠지�
   assert.deepEqual(drawsOf(base), [[HALO, [0]]]);
 });
 
+// 합치지 않는 변형(basemap-variants.mjs mergeDraws=false)은 넓이 없는 채우기만 빼고 그리기 명령을 그대로
+// 둔다. 합치기가 이은 path 하나를 쪼개 쓰는 Skia 래스터라이저에서 큰 다중 윤곽선 path가 느리기 때문이다.
+test("합치지 않으면 겹치지 않는 같은 paint 도형도 그리기 하나씩 같은 순서로 남는다", () => {
+  const draws = [[RED, rect(0, 0, 10, 10)], [BLUE, rect(0, 20, 10, 10)], [RED, rect(20, 0, 10, 10)]];
+  const { base } = mergeDraws(docOf(draws), [], { maxExtent: OPEN, mergeDraws: false });
+  assert.deepEqual(drawsOf(base), [[RED, [0]], [BLUE, [0]], [RED, [20]]]);
+});
+
+test("합치지 않아도 넓이가 없는 채우기는 빠지고 같은 path의 선은 남는다", () => {
+  const segment = line(0, 0, 0, 40);
+  const { base } = mergeDraws(docOf([[RED, segment], [HALO, segment], [RED, rect(20, 0, 10, 10)]]), [], {
+    maxExtent: OPEN,
+    mergeDraws: false,
+  });
+  assert.deepEqual(drawsOf(base), [[HALO, [0]], [RED, [20]]]);
+});
+
+test("합치지 않아도 한 요소의 채우기와 선, 여러 줄 라벨의 줄 path는 이어지지 않는다", () => {
+  const first = rect(0, 0, 10, 10);
+  const second = rect(0, 20, 10, 10);
+  const draws = [[HALO, first], [HALO, second], [RED, first], [RED, second]];
+  const { base } = mergeDraws(docOf(draws), [], { maxExtent: OPEN, mergeDraws: false });
+  assert.deepEqual(drawsOf(base), [[HALO, [0]], [HALO, [0]], [RED, [0]], [RED, [0]]]);
+});
+
+test("합치지 않아도 clip·restore와 텍스트 명령은 같은 자리에 남고, 레이어는 바탕의 부분 수열이다", () => {
+  const scene = labeledScene([drawAt(0), drawAt(1), moveTo(1), fillText(1), drawAt(2)]);
+  const layer = labeledScene([drawAt(1), moveTo(1), fillText(1)]);
+  const merged = mergeDraws(scene, [{ name: "b", doc: layer }], { maxExtent: OPEN, mergeDraws: false });
+  assert.deepEqual(resolvedCommands(merged.base), resolvedCommands(scene));
+  assert.deepEqual(resolvedCommands(merged.layers[0].doc), resolvedCommands(layer));
+});
+
+test("합치지 않는 레이어도 같은 레이어 집합에 속한 그리기만 남긴다", () => {
+  const a = [RED, rect(0, 0, 10, 10)];
+  const b = [RED, rect(20, 0, 10, 10)];
+  const c = [RED, rect(40, 0, 10, 10)];
+  const merged = mergeDraws(docOf([a, b, c]), [{ name: "line-1", doc: docOf([a, c]) }], {
+    maxExtent: OPEN,
+    mergeDraws: false,
+  });
+  assert.deepEqual(drawsOf(merged.base), [[RED, [0]], [RED, [20]], [RED, [40]]]);
+  assert.deepEqual(drawsOf(merged.layers[0].doc), [[RED, [0]], [RED, [40]]]);
+});
+
 test("다른 노선 레이어 집합에 속한 그리기는 묶지 않고, 레이어는 바탕의 부분 수열로 남는다", () => {
   const a = [RED, rect(0, 0, 10, 10)];
   const b = [RED, rect(20, 0, 10, 10)];
