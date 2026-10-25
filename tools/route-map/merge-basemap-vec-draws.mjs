@@ -2,8 +2,8 @@
 //
 // 기기 래스터 스레드는 매 프레임 그리기 명령을 하나씩 다시 처리한다(mobile #517).
 // 같은 paint로 그리는 path 여럿을 path 하나로 이으면 같은 그림을 명령 하나로 그린다. 이득은
-// 렌더러마다 다르다. Impeller는 명령 수가 줄어 빨라지지만 Skia OpenGL은 이은 다중 윤곽선 path를
-// 매 프레임 다시 처리해 느려진다(Galaxy A17 실측). 그래서 변형이 합치기 여부를 고른다.
+// 렌더러마다 다르다. Impeller에서는 이득이 측정됐고 Skia OpenGL에서는 느려졌다. 그래서 변형이
+// 합치기 여부를 고른다(측정 기록과 원인 미확인 여부는 basemap-variants.mjs 머리 주석).
 //
 // 합치는 규칙은 Skia Ganesh의 연산 묶기를 옮긴다(google/skia a625b534, BSD-3-Clause,
 // Copyright 2019 Google LLC).

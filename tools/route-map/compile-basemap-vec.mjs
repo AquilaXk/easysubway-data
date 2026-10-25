@@ -99,8 +99,8 @@ const compilerFlags = ["--no-optimize-clips"];
 //       테두리와 글자가 path 하나를 나눠 쓴다.
 //   7 — 같은 입력에서 라벨을 윤곽선으로 구운 변형과 텍스트 그리기로 둔 변형을 함께 굽는다(#1495).
 //       색인은 변형마다 바탕·강조 레이어 파일과 sha256을 싣는다(schemaVersion 2).
-//   8 — 텍스트 변형은 그리기를 합치지 않는다(basemap-variants.mjs mergeDraws). Skia OpenGL에서
-//       이은 다중 윤곽선 path가 합치기 전보다 느렸다. 불투명도 0 요소와 넓이 없는 채우기는 두 변형 모두 덜어낸다.
+//   8 — 텍스트 변형은 그리기를 합치지 않는다(basemap-variants.mjs mergeDraws, 측정 기록은 그 머리
+//       주석). 불투명도 0 요소와 넓이 없는 채우기는 두 변형 모두 덜어낸다.
 const basemapPipelineRevision = 8;
 const buildManifestPath = path.join(
   root,

@@ -299,7 +299,7 @@ test("넓이가 없는 채우기는 아무것도 칠하지 않으므로 빠지�
 });
 
 // 합치지 않는 변형(basemap-variants.mjs mergeDraws=false)은 넓이 없는 채우기만 빼고 그리기 명령을 그대로
-// 둔다. 합치기가 이은 path 하나를 쪼개 쓰는 Skia 래스터라이저에서 큰 다중 윤곽선 path가 느리기 때문이다.
+// 둔다(Skia OpenGL에서 합친 쪽이 느렸다는 측정 기록은 basemap-variants.mjs 머리 주석).
 test("합치지 않으면 겹치지 않는 같은 paint 도형도 그리기 하나씩 같은 순서로 남는다", () => {
   const draws = [[RED, rect(0, 0, 10, 10)], [BLUE, rect(0, 20, 10, 10)], [RED, rect(20, 0, 10, 10)]];
   const { base } = mergeDraws(docOf(draws), [], { maxExtent: OPEN, mergeDraws: false });

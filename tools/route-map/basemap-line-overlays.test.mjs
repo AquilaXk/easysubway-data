@@ -421,8 +421,7 @@ test("권역·노선 id에 점이 있으면 되읽을 때 틀리게 읽히므로
   assert.equal(jobs.length, 8, "정상 id는 변형 2 × 권역 2 × (바탕 1 + 노선 1)만큼 작업이 된다");
 });
 
-// 그리기 합치기는 렌더러에 따라 이득이 갈린다. Impeller(윤곽선 변형)는 명령 수가 줄어 빨라지지만
-// Skia OpenGL(텍스트 변형)은 이은 다중 윤곽선 path를 매 프레임 다시 처리해 느려졌다(Galaxy A17 실측).
+// 그리기 합치기는 렌더러에 따라 이득이 갈린다(측정 기록은 basemap-variants.mjs 머리 주석).
 // 변형 등록부의 mergeDraws 하나가 컴파일 파이프라인의 합치기 여부를 정한다.
 const FILL = { style: "fill", color: 0xff112233, blendMode: 3, shaderId: null };
 const square = (x) => ({
@@ -453,6 +452,7 @@ test("변형 등록부의 mergeDraws가 합치기 여부를 정한다(윤곽선�
     assert.equal(layers[0].doc.commands.length, expected, `${id} 강조 레이어 그리기 수`);
   }
 });
+
 // 컴파일 단계가 구운 .vec를 변형마다 다시 쓰는 진입점이다. 실제 파일을 읽고 쓴다.
 test("구운 .vec는 윤곽선 변형만 합치고 텍스트 변형은 합치지 않은 채 같은 자리에 다시 쓰며 최종 sha256을 낸다", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "merge-region-draws-"));
@@ -482,7 +482,6 @@ test("구운 .vec는 윤곽선 변형만 합치고 텍스트 변형은 합치지
     rmSync(dir, { recursive: true, force: true });
   }
 });
-
 
 test("모든 변형의 mergeDraws는 불리언이고, 알 수 없는 변형은 실패한다", () => {
   for (const { id, mergeDraws } of BASEMAP_VARIANTS) assert.equal(typeof mergeDraws, "boolean", id);
