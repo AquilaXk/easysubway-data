@@ -3838,7 +3838,7 @@ export function mergeVariantDraws(variantId, base, layers) {
 
 // 변형·권역마다 바탕과 노선 강조 레이어를 함께 읽어 그리기를 정리하고 같은 자리에 다시 쓴다.
 // 레이어는 같은 변형 바탕의 부분 수열로 남는다. 반환은 fileName → 최종 .vec sha256.
-function mergeRegionDraws(jobs, dir) {
+export function mergeRegionDraws(jobs, dir) {
   const digests = new Map();
   const read = (fileName) => decodeVec(new Uint8Array(readFileSync(path.join(dir, fileName))));
   const write = (fileName, doc) => {

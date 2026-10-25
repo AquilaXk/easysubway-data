@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -11,6 +12,7 @@ import {
   basemapCompileJobs,
   buildBasemapLineOverlays,
   buildLineOverlayIndex,
+  mergeRegionDraws,
   mergeVariantDraws,
   normalizeSvgForCompile,
   variantManifestEntry,
@@ -451,6 +453,36 @@ test("변형 등록부의 mergeDraws가 합치기 여부를 정한다(윤곽선�
     assert.equal(layers[0].doc.commands.length, expected, `${id} 강조 레이어 그리기 수`);
   }
 });
+// 컴파일 단계가 구운 .vec를 변형마다 다시 쓰는 진입점이다. 실제 파일을 읽고 쓴다.
+test("구운 .vec는 윤곽선 변형만 합치고 텍스트 변형은 합치지 않은 채 같은 자리에 다시 쓰며 최종 sha256을 낸다", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "merge-region-draws-"));
+  try {
+    const baked = encodeVec(disjointSquares());
+    const jobs = BASEMAP_VARIANTS.flatMap(({ id }) => [
+      { variantId: id, regionId: "seoul", fileName: basemapVectorFileName(id, "seoul") },
+      { variantId: id, regionId: "seoul", fileName: basemapVectorFileName(id, "seoul", "seoul-2") },
+    ]);
+    for (const { fileName } of jobs) writeFileSync(path.join(dir, fileName), baked);
+
+    const digests = mergeRegionDraws(jobs, dir);
+
+    const drawCountOf = (fileName) => decodeVec(new Uint8Array(readFileSync(path.join(dir, fileName)))).commands.length;
+    assert.equal(drawCountOf("seoul.vec"), 1, "윤곽선 바탕: 겹치지 않는 같은 paint 도형 3개가 그리기 1개로 합쳐진다");
+    assert.equal(drawCountOf("seoul.seoul-2.vec"), 1, "윤곽선 강조 레이어");
+    assert.equal(drawCountOf("seoul.text.vec"), 3, "텍스트 바탕: 합치지 않아 도형마다 그리기 하나");
+    assert.equal(drawCountOf("seoul.seoul-2.text.vec"), 3, "텍스트 강조 레이어");
+    assert.deepEqual(
+      [...digests.keys()].sort(),
+      ["seoul.seoul-2.text.vec", "seoul.seoul-2.vec", "seoul.text.vec", "seoul.vec"],
+    );
+    for (const [fileName, digest] of digests) {
+      assert.equal(digest, sha256(readFileSync(path.join(dir, fileName))), `${fileName}: 반환 sha256이 다시 쓴 파일 바이트와 같다`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
 test("모든 변형의 mergeDraws는 불리언이고, 알 수 없는 변형은 실패한다", () => {
   for (const { id, mergeDraws } of BASEMAP_VARIANTS) assert.equal(typeof mergeDraws, "boolean", id);
