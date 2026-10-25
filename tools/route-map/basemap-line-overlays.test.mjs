@@ -5,12 +5,14 @@ import path from "node:path";
 import test from "node:test";
 
 import { resolveLineMap } from "./apply-sma-svg-positions.mjs";
+import { basemapVariant, basemapVectorFileName, BASEMAP_VARIANTS, parseBasemapVectorFileName } from "./basemap-variants.mjs";
 import {
   LINE_OVERLAY_INDEX_FILE,
+  basemapCompileJobs,
   buildBasemapLineOverlays,
   buildLineOverlayIndex,
-  lineOverlayVectorFileName,
   normalizeSvgForCompile,
+  variantManifestEntry,
 } from "./compile-basemap-vec.mjs";
 import { cleanupPackDir, openPack } from "./pack-io.mjs";
 import { REGION_CONFIGS } from "./sma-region-configs.mjs";
@@ -320,48 +322,193 @@ test("명시 분류 규칙은 노선 없는 요소를 레이어에서 빼고, �
   assert.ok(overlay.svg.includes('<clipPath id="c">'), "그리지 않는 정의(defs)는 남는다");
 });
 
-test("색인은 권역별 데이터팩 노선 id를 강조 레이어 파일에 잇는다", () => {
+const fakeDigest = (fileName) => sha256(`vec:${fileName}`);
+
+function digestsOf(regions) {
+  return new Map(
+    BASEMAP_VARIANTS.flatMap(({ id: variantId }) =>
+      regions.flatMap(({ id, overlays }) =>
+        [null, ...overlays.map(({ lineId }) => lineId)].map((lineId) => {
+          const fileName = basemapVectorFileName(variantId, id, lineId);
+          return [fileName, fakeDigest(fileName)];
+        }),
+      ),
+    ),
+  );
+}
+
+// 앱은 렌더러에 맞는 변형을 고르고, 그 변형 아래는 변형을 나누기 전 색인(schemaVersion 1의 regions)과
+// 같은 모양에 파일 sha256을 더한 것이다. outlined 파일 이름은 나누기 전 그대로다.
+test("색인은 변형마다 권역 바탕과 데이터팩 노선 id를 강조 레이어 파일과 sha256에 잇는다", () => {
   const regions = [...overlaysByRegion].map(([id, overlays]) => ({ id, overlays }));
-  const index = JSON.parse(buildLineOverlayIndex(regions));
-  assert.equal(index.schemaVersion, 1);
+  const index = JSON.parse(buildLineOverlayIndex(regions, digestsOf(regions)));
+  assert.equal(index.schemaVersion, 2);
   assert.equal(index.artifactKind, "route-map-basemap-line-overlays");
-  assert.deepEqual(Object.keys(index.regions).sort(), Object.keys(REGION_CONFIGS).sort());
-  for (const [regionId, config] of Object.entries(REGION_CONFIGS)) {
-    const region = index.regions[regionId];
-    assert.equal(region.baseVector, `${regionId}.vec`);
-    assert.deepEqual(Object.keys(region.lines), Object.values(config.slugToLineId).sort());
-    for (const [slug, lineId] of Object.entries(config.slugToLineId)) {
-      assert.deepEqual(region.lines[lineId], {
-        svgLineSlug: slug,
-        vector: lineOverlayVectorFileName(regionId, lineId),
-      });
+  assert.deepEqual(Object.keys(index), ["schemaVersion", "artifactKind", "variants"]);
+  assert.deepEqual(
+    Object.entries(index.variants).map(([id, { labels }]) => [id, labels]),
+    [["outlined", "outlined-into-vec"], ["text", "text-into-vec"]],
+  );
+  for (const [variantId, { regions: byRegion }] of Object.entries(index.variants)) {
+    assert.deepEqual(Object.keys(byRegion), Object.keys(REGION_CONFIGS).sort());
+    for (const [regionId, config] of Object.entries(REGION_CONFIGS)) {
+      const region = byRegion[regionId];
+      const baseVector = variantId === "outlined" ? `${regionId}.vec` : `${regionId}.text.vec`;
+      assert.deepEqual([region.baseVector, region.baseVectorSha256], [baseVector, fakeDigest(baseVector)]);
+      assert.deepEqual(Object.keys(region.lines), Object.values(config.slugToLineId).sort());
+      for (const [slug, lineId] of Object.entries(config.slugToLineId)) {
+        const vector = variantId === "outlined" ? `${regionId}.${lineId}.vec` : `${regionId}.${lineId}.text.vec`;
+        assert.deepEqual(region.lines[lineId], { svgLineSlug: slug, vector, sha256: fakeDigest(vector) });
+        assert.deepEqual(parseBasemapVectorFileName(vector), { variantId, regionId, lineId });
+      }
+      assert.deepEqual(parseBasemapVectorFileName(baseVector), { variantId, regionId, lineId: null });
     }
   }
-  assert.equal(lineOverlayVectorFileName("seoul", "seoul-2"), "seoul.seoul-2.vec");
+});
+
+test("색인은 컴파일 산출 sha256이 없는 파일을 빈 값으로 두지 않고 실패한다", () => {
+  const regions = [...overlaysByRegion].map(([id, overlays]) => ({ id, overlays }));
+  const digests = digestsOf(regions);
+  digests.delete("busan.text.vec");
+  assert.throws(() => buildLineOverlayIndex(regions, digests), /busan\.text\.vec: 컴파일 산출 sha256이 없습니다/);
+});
+
+// 노선 id가 변형 접미와 같으면 텍스트 변형 바탕과 윤곽선 변형 강조 레이어가 같은 파일 이름을 쓴다.
+// 한쪽이 다른 쪽을 조용히 덮어쓰지 않게 컴파일 작업을 만들 때 실패한다.
+test("변형과 노선을 합친 컴파일 파일 이름이 겹치면 작업을 만들지 않고 실패한다", () => {
+  const prepared = (lineId) => ({
+    region: { id: "seoul" },
+    normalizedSvg: "<svg/>",
+    lineOverlays: [{ lineId, svgLineSlug: "x", svg: "<svg/>" }],
+  });
+  const outline = (svg) => ({ svg: `${svg}<!--outlined-->` });
+  const jobs = basemapCompileJobs([prepared("line-a")], outline);
+  assert.deepEqual(
+    jobs.map(({ variantId, fileName, compileInputSvg }) => [variantId, fileName, compileInputSvg]),
+    [
+      ["outlined", "seoul.vec", "<svg/><!--outlined-->"],
+      ["outlined", "seoul.line-a.vec", "<svg/><!--outlined-->"],
+      ["text", "seoul.text.vec", "<svg/>"],
+      ["text", "seoul.line-a.text.vec", "<svg/>"],
+    ],
+  );
+  assert.throws(() => basemapCompileJobs([prepared("text")], outline), /seoul\.text\.vec/);
+});
+
+// 파일 이름 `<권역>.<노선>.text.vec`는 점으로 나뉘고 `.text`로 변형을 가린다. 점이나 변형 접미가 든 id는
+// 되읽을 때 다른 권역·노선·변형으로 읽히므로 작업을 만들 때 실패한다.
+test("권역·노선 id에 점이 있으면 되읽을 때 틀리게 읽히므로 컴파일 작업을 만들지 않고 실패한다", () => {
+  const outline = (svg) => ({ svg });
+  const prepared = (regionId, lineId) => ({
+    region: { id: regionId },
+    normalizedSvg: "<svg/>",
+    lineOverlays: lineId === null ? [] : [{ lineId, svgLineSlug: "x", svg: "<svg/>" }],
+  });
+  for (const lineId of ["line.a", "line-a.text", "", "Line-A", "-a"]) {
+    assert.throws(() => basemapCompileJobs([prepared("seoul", lineId)], outline), /노선 id/, `노선 id ${JSON.stringify(lineId)}`);
+  }
+  for (const regionId of ["seoul.text", "se.oul", ""]) {
+    assert.throws(() => basemapCompileJobs([prepared(regionId, null)], outline), /권역 id/, `권역 id ${JSON.stringify(regionId)}`);
+  }
+  let jobs;
+  assert.doesNotThrow(() => {
+    jobs = basemapCompileJobs([prepared("seoul", "seoul-2"), prepared("busan", "line-ab1a041f6266")], outline);
+  });
+  assert.equal(jobs.length, 8, "정상 id는 변형 2 × 권역 2 × (바탕 1 + 노선 1)만큼 작업이 된다");
+});
+
+// 텍스트 변형은 .vec 텍스트 설정이 서체 이름 하나만 담으므로 CSS 서체 목록을 첫 서체로 줄인다.
+// 윤곽선 단계(outline-basemap-text.mjs)가 쓰는 규칙과 같다. 속성과 style 선언을 모두 줄이고
+// 서체 목록이 아닌 마크업은 그대로 둔다.
+test("텍스트 변형은 컴파일 입력의 CSS 서체 목록을 첫 서체 하나로 줄이고 나머지 마크업은 그대로 둔다", () => {
+  const { compileInput } = basemapVariant("text");
+  const reduced = compileInput(
+    '<svg><g font-family="Pretendard, &quot;Noto Sans CJK KR&quot;, sans-serif">' +
+      '<text x="1" font-family="\'Pretendard\', sans-serif">a</text>' +
+      '<text style="fill:#000;font-family:Pretendard, \'Noto Sans\', sans-serif;font-size:9px">b</text>' +
+      '<text font-family="Pretendard">c</text></g></svg>',
+  );
+  assert.equal(
+    reduced,
+    '<svg><g font-family="Pretendard">' +
+      '<text x="1" font-family="Pretendard">a</text>' +
+      '<text style="fill:#000;font-family:Pretendard;font-size:9px">b</text>' +
+      '<text font-family="Pretendard">c</text></g></svg>',
+  );
+});
+
+test("텍스트 변형은 첫 서체 이름에 XML 특수문자가 있으면 이스케이프하고, 서체 선언이 없으면 입력을 그대로 둔다", () => {
+  const { compileInput } = basemapVariant("text");
+  assert.equal(compileInput("<svg><text>a</text></svg>"), "<svg><text>a</text></svg>");
+  assert.equal(
+    compileInput('<svg><text font-family="&quot;A &amp; B&quot;, serif">a</text></svg>'),
+    '<svg><text font-family="A &amp; B">a</text></svg>',
+  );
+});
+
+// manifest 항목은 변형·파일 이름으로 sha를 조회한다. 조회가 비면 undefined가 JSON에서 사라져
+// 항목이 조용히 불완전해지므로 색인(buildLineOverlayIndex)처럼 실패한다.
+test("변형 manifest 항목은 컴파일 입력·산출 sha256이 없는 파일이 있으면 빈 값으로 두지 않고 실패한다", () => {
+  const region = { id: "seoul" };
+  const overlays = [{ lineId: "seoul-2" }];
+  const names = ["seoul.text.vec", "seoul.seoul-2.text.vec"];
+  const full = (extra) => new Map(names.map((name) => [name, `${name}-${extra}`]));
+  const entry = variantManifestEntry("text", region, overlays, full("input"), full("vec"));
+  assert.equal(entry.compileInputSvgSha256, "seoul.text.vec-input");
+  assert.equal(entry.lineOverlays[0].compiledVectorSha256, "seoul.seoul-2.text.vec-vec");
+
+  const noInput = full("input");
+  noInput.delete("seoul.seoul-2.text.vec");
+  assert.throws(
+    () => variantManifestEntry("text", region, overlays, noInput, full("vec")),
+    /seoul\.seoul-2\.text\.vec: 컴파일 입력 sha256이 없습니다/,
+  );
+  const noVec = full("vec");
+  noVec.delete("seoul.text.vec");
+  assert.throws(
+    () => variantManifestEntry("text", region, overlays, full("input"), noVec),
+    /seoul\.text\.vec: 컴파일 산출 sha256이 없습니다/,
+  );
 });
 
 // 커밋된 manifest sha는 이전 컴파일 실행이 고정한 값이라, 다시 만든 레이어 입력과
 // 색인이 바이트 단위로 같다는 결정성 검사도 겸한다.
-test("build manifest가 기록한 강조 레이어 컴파일 입력 sha·색인 sha와 다시 만든 결과가 같다", () => {
-  assert.equal(manifest.pipelineRevision, 6);
+test("build manifest가 기록한 변형별 강조 레이어 파일·색인 sha와 다시 만든 결과가 같다", () => {
+  assert.equal(manifest.pipelineRevision, 7);
   assert.equal(manifest.content.lineOverlays, "per-line-vec-over-faded-basemap");
   const basemapDir = "apps/mobile/assets/datapacks/metro_map_pack/basemap";
+  const digests = new Map();
   for (const map of manifest.maps) {
     const overlays = overlaysByRegion.get(map.id);
     assert.deepEqual(
-      map.lineOverlays.map(({ lineId, svgLineSlug }) => ({ lineId, svgLineSlug })),
-      overlays.map(({ lineId, svgLineSlug }) => ({ lineId, svgLineSlug })),
+      map.lineOverlays,
+      overlays.map(({ lineId, svgLineSlug, svg }) => ({ lineId, svgLineSlug, normalizedSvgSha256: sha256(svg) })),
       `${map.id}: manifest 강조 레이어 목록`,
     );
-    for (const [index, entry] of map.lineOverlays.entries()) {
-      assert.equal(entry.compiledVector, `${basemapDir}/${lineOverlayVectorFileName(map.id, entry.lineId)}`);
-      assert.equal(entry.normalizedSvgSha256, sha256(overlays[index].svg), `${map.id}/${entry.lineId}`);
-      assert.match(entry.compiledVectorSha256, /^[0-9a-f]{64}$/);
+    assert.deepEqual(Object.keys(map.variants), BASEMAP_VARIANTS.map(({ id }) => id));
+    for (const [variantId, variant] of Object.entries(map.variants)) {
+      assert.equal(variant.compiledVector, `${basemapDir}/${basemapVectorFileName(variantId, map.id)}`);
+      digests.set(path.basename(variant.compiledVector), variant.compiledVectorSha256);
+      assert.deepEqual(
+        variant.lineOverlays.map(({ lineId }) => lineId),
+        overlays.map(({ lineId }) => lineId),
+        `${map.id}/${variantId}: 강조 레이어 목록`,
+      );
+      for (const entry of variant.lineOverlays) {
+        assert.equal(entry.compiledVector, `${basemapDir}/${basemapVectorFileName(variantId, map.id, entry.lineId)}`);
+        assert.match(entry.compiledVectorSha256, /^[0-9a-f]{64}$/);
+        digests.set(path.basename(entry.compiledVector), entry.compiledVectorSha256);
+      }
     }
   }
   const regions = [...overlaysByRegion].map(([id, overlays]) => ({ id, overlays }));
+  const index = buildLineOverlayIndex(regions, digests);
   assert.deepEqual(manifest.lineOverlaysSidecar, {
     path: `${basemapDir}/${LINE_OVERLAY_INDEX_FILE}`,
-    sha256: sha256(buildLineOverlayIndex(regions)),
+    sha256: sha256(index),
   });
+  assert.equal(readFileSync(path.join(root, basemapDir, LINE_OVERLAY_INDEX_FILE), "utf8"), index);
+  for (const [fileName, digest] of digests) {
+    assert.equal(sha256(readFileSync(path.join(root, basemapDir, fileName))), digest, fileName);
+  }
 });

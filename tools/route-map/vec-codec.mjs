@@ -5,7 +5,8 @@
 // version)는 147-160행, 쓰는 순서와 정렬은 1202-1211행(_CurrentSection)·1267-1362행
 // (VectorGraphicsBuffer), 읽는 쪽은 166-239행과 1378-1506행(_ReadBuffer)이다.
 // 바탕층 컴파일러가 실제로 내는 기록(크기, fill·stroke paint, 단정밀도 path, drawPath,
-// saveLayer·restore·clipPath·mask·pattern)만 다룬다. 그 밖의 태그는 조용히 넘기지 않고 던진다.
+// saveLayer·restore·clipPath·mask·pattern, 텍스트 라벨 변형의 텍스트 위치·설정·그리기)만 다룬다.
+// 텍스트 기록은 쓰기 582-676행, 읽기 918-999행이다. 그 밖의 태그는 조용히 넘기지 않고 던진다.
 // id는 코덱과 같이 uint16이고 kMaxId(65535, vector_graphics_codec.dart 109행)는 "없음" 표시라 id로 쓸 수 없다(id는 0..65534).
 
 const MAGIC_NUMBER = 0x00882d62;
@@ -23,8 +24,12 @@ const TAG = Object.freeze({
   size: 41,
   clipPath: 42,
   mask: 43,
+  drawText: 44,
+  textConfig: 45,
   beginCommands: 48,
   pattern: 49,
+  textPosition: 50,
+  updateTextPosition: 51,
   pathHalfPrecision: 52,
 });
 
@@ -32,13 +37,18 @@ const UNSUPPORTED_TAGS = new Map([
   [31, "drawVertices"],
   [39, "linearGradient"],
   [40, "radialGradient"],
-  [44, "drawText"],
-  [45, "textConfig"],
   [46, "imageConfig"],
   [47, "drawImage"],
-  [50, "textPosition"],
-  [51, "updateTextPosition"],
 ]);
+
+// 런타임(vector_graphics 1.2.3 listener.dart 580-614행)이 색인으로 읽는 열거값의 개수.
+// FontWeight.values는 w100..w900, TextDecorationStyle.values는 solid·double·dotted·dashed·wavy다.
+const FONT_WEIGHT_COUNT = 9;
+const TEXT_DECORATION_STYLE_COUNT = 5;
+// 코덱은 글자열·서체 이름의 UTF-8 길이를 uint16으로 적는다(608-624행).
+export const VEC_MAX_STRING_BYTES = 0xffff;
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+const utf8Encoder = new TextEncoder();
 
 // vector_graphics_codec ControlPointTypes(15-22행)와 각 명령이 쓰는 좌표 수.
 export const VERB = Object.freeze({ moveTo: 0, lineTo: 1, cubicTo: 2, close: 3 });
@@ -108,6 +118,21 @@ class Reader {
     return list;
   }
 
+  utf8(length) {
+    const bytes = this.uint8List(length);
+    try {
+      return utf8Decoder.decode(bytes);
+    } catch {
+      throw new Error(`${this.position - length}바이트의 글자열이 올바른 UTF-8이 아닙니다.`);
+    }
+  }
+
+  // writeTextPosition(646-668행)은 없는 값을 NaN으로 적고 읽는 쪽(918-938행)은 null로 돌린다.
+  optionalFloat32() {
+    const value = this.float32();
+    return Number.isNaN(value) ? null : value;
+  }
+
   // _ReadBuffer.getTransform(1495-1503행): 길이 0이면 없음, 아니면 8바이트 정렬 float64 16개.
   transform() {
     const length = this.uint8();
@@ -171,14 +196,57 @@ function referenced(list, id, kind) {
   return id;
 }
 
-/** `.vec` 바이트를 `{ width, height, paints, paths, commands }`로 읽는다. */
+function readTextPosition(reader, textPositions) {
+  expectSequentialId(textPositions, reader.uint16(), "textPosition");
+  textPositions.push({
+    x: reader.optionalFloat32(),
+    y: reader.optionalFloat32(),
+    dx: reader.optionalFloat32(),
+    dy: reader.optionalFloat32(),
+    reset: reader.uint8() !== 0,
+    transform: reader.transform(),
+  });
+}
+
+function readTextConfig(reader, texts) {
+  expectSequentialId(texts, reader.uint16(), "text");
+  const config = {
+    xAnchorMultiplier: reader.float32(),
+    fontSize: reader.float32(),
+    fontWeight: reader.uint8(),
+    decoration: reader.uint8(),
+    decorationStyle: reader.uint8(),
+    decorationColor: reader.uint32(),
+  };
+  if (config.fontWeight >= FONT_WEIGHT_COUNT) throw new Error(`text ${texts.length}: 굵기 색인 ${config.fontWeight}는 없습니다.`);
+  if (config.decorationStyle >= TEXT_DECORATION_STYLE_COUNT) {
+    throw new Error(`text ${texts.length}: 장식 모양 색인 ${config.decorationStyle}는 없습니다.`);
+  }
+  const familyLength = reader.uint16();
+  config.fontFamily = familyLength === 0 ? null : reader.utf8(familyLength);
+  config.text = reader.utf8(reader.uint16());
+  texts.push(config);
+}
+
+function readDrawText(reader, doc, patterns) {
+  const textId = referenced(doc.texts, reader.uint16(), "text");
+  const [fillId, strokeId] = [reader.uint16(), reader.uint16()].map((id) =>
+    id === VEC_MAX_ID ? null : referenced(doc.paints, id, "paint"),
+  );
+  if (fillId === null && strokeId === null) throw new Error(`text ${textId}: 채우기도 선도 없는 텍스트 그리기입니다.`);
+  const patternId = optionalId(reader.uint16());
+  if (patternId !== null) referenced(patterns, patternId, "pattern");
+  return { op: "drawText", textId, fillId, strokeId, patternId };
+}
+
+/** `.vec` 바이트를 `{ width, height, paints, paths, textPositions, texts, commands }`로 읽는다. */
 export function decodeVec(bytes) {
   const reader = new Reader(bytes);
   if (bytes.byteLength < 5 || reader.uint32() !== MAGIC_NUMBER) {
     throw new Error("vector_graphics 바이너리가 아닙니다.");
   }
   if (reader.uint8() !== VERSION) throw new Error("지원하지 않는 vector_graphics 버전입니다.");
-  const doc = { width: null, height: null, paints: [], paths: [], commands: [] };
+  const doc = { width: null, height: null, paints: [], paths: [], textPositions: [], texts: [], commands: [] };
   const patterns = [];
   while (reader.hasRemaining) {
     const tag = reader.uint8();
@@ -233,6 +301,21 @@ export function decodeVec(bytes) {
       case TAG.mask:
         doc.commands.push({ op: "mask" });
         break;
+      case TAG.textPosition:
+        readTextPosition(reader, doc.textPositions);
+        break;
+      case TAG.textConfig:
+        readTextConfig(reader, doc.texts);
+        break;
+      case TAG.updateTextPosition:
+        doc.commands.push({
+          op: "updateTextPosition",
+          textPositionId: referenced(doc.textPositions, reader.uint16(), "textPosition"),
+        });
+        break;
+      case TAG.drawText:
+        doc.commands.push(readDrawText(reader, doc, patterns));
+        break;
       case TAG.pathHalfPrecision:
         throw new Error("반정밀도 path는 다루지 않습니다.");
       default:
@@ -280,6 +363,29 @@ class Writer {
     this.scalar("setFloat32", 4, value);
   }
 
+  optionalFloat32(value) {
+    this.float32(value ?? Number.NaN);
+  }
+
+  utf8WithLength(value, kind) {
+    const bytes = utf8Encoder.encode(value);
+    if (bytes.byteLength > VEC_MAX_STRING_BYTES) {
+      throw new Error(`${kind} ${bytes.byteLength}바이트가 상한 ${VEC_MAX_STRING_BYTES}바이트를 넘습니다.`);
+    }
+    this.uint16(bytes.byteLength);
+    this.push(bytes);
+  }
+
+  // _writeTransform(1284-1291행): 없으면 길이 0, 있으면 길이 16과 8바이트 정렬 float64.
+  transform(matrix) {
+    if (matrix === null) {
+      this.uint8(0);
+      return;
+    }
+    this.uint8(MATRIX4_LENGTH);
+    this.float64List(matrix);
+  }
+
   align(alignment) {
     const mod = this.length % alignment;
     if (mod !== 0) this.push(new Uint8Array(alignment - mod));
@@ -318,10 +424,38 @@ function checkIdSpace(count, kind) {
   if (count > VEC_MAX_ID) throw new Error(`${kind} ${count}개는 코덱 id 상한 ${VEC_MAX_ID - 1}을 넘습니다.`);
 }
 
-/** decodeVec가 읽은 모양을 코덱과 같은 바이트 순서로 쓴다. */
-export function encodeVec({ width, height, paints, paths, commands }) {
+function writeTextPositions(writer, textPositions) {
+  textPositions.forEach(({ x, y, dx, dy, reset, transform }, id) => {
+    writer.uint8(TAG.textPosition);
+    writer.uint16(id);
+    for (const value of [x, y, dx, dy]) writer.optionalFloat32(value);
+    writer.uint8(reset ? 1 : 0);
+    writer.transform(transform);
+  });
+}
+
+function writeTexts(writer, texts) {
+  texts.forEach((config, id) => {
+    writer.uint8(TAG.textConfig);
+    writer.uint16(id);
+    writer.float32(config.xAnchorMultiplier);
+    writer.float32(config.fontSize);
+    writer.uint8(config.fontWeight);
+    writer.uint8(config.decoration);
+    writer.uint8(config.decorationStyle);
+    writer.uint32(config.decorationColor);
+    if (config.fontFamily === null) writer.uint16(0);
+    else writer.utf8WithLength(config.fontFamily, "서체 이름");
+    writer.utf8WithLength(config.text, "글자열");
+  });
+}
+
+/** decodeVec가 읽은 모양을 코덱과 같은 바이트 순서로 쓴다(_CurrentSection 1202-1211행 순서). */
+export function encodeVec({ width, height, paints, paths, textPositions = [], texts = [], commands }) {
   checkIdSpace(paints.length, "paint");
   checkIdSpace(paths.length, "path");
+  checkIdSpace(textPositions.length, "textPosition");
+  checkIdSpace(texts.length, "text");
   const writer = new Writer();
   writer.uint32(MAGIC_NUMBER);
   writer.uint8(VERSION);
@@ -352,6 +486,8 @@ export function encodeVec({ width, height, paints, paths, commands }) {
     writer.uint32(points.length);
     writer.float32List(points);
   });
+  writeTextPositions(writer, textPositions);
+  writeTexts(writer, texts);
   // writePattern(691-711행)만 commands 시작 태그를 붙이지 않는다(_addCommandsTag 1267-1273행).
   let commandsTagWritten = false;
   let nextPatternId = 0;
@@ -376,8 +512,7 @@ export function encodeVec({ width, height, paints, paths, commands }) {
         writer.float32(command.y);
         writer.float32(command.width);
         writer.float32(command.height);
-        writer.uint8(MATRIX4_LENGTH);
-        writer.float64List(command.transform);
+        writer.transform(command.transform);
         break;
       case "saveLayer":
         writer.uint8(TAG.saveLayer);
@@ -392,6 +527,17 @@ export function encodeVec({ width, height, paints, paths, commands }) {
         break;
       case "mask":
         writer.uint8(TAG.mask);
+        break;
+      case "updateTextPosition":
+        writer.uint8(TAG.updateTextPosition);
+        writer.uint16(command.textPositionId);
+        break;
+      case "drawText":
+        writer.uint8(TAG.drawText);
+        writer.uint16(command.textId);
+        writer.uint16(command.fillId ?? VEC_MAX_ID);
+        writer.uint16(command.strokeId ?? VEC_MAX_ID);
+        writer.uint16(command.patternId ?? VEC_MAX_ID);
         break;
       default:
         throw new Error(`쓸 수 없는 명령 ${command.op}`);

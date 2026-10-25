@@ -4,7 +4,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { mergeBasemapDraws } from "./merge-basemap-vec-draws.mjs";
-import { MAX_ZOOM_VIEWPORT, measureVec } from "./measure-basemap-vec.mjs";
+import { parseBasemapVectorFileName } from "./basemap-variants.mjs";
+import { MAX_ZOOM_VIEWPORT, measureVec, summarizeVecMeasures } from "./measure-basemap-vec.mjs";
 import { encodeVec, VERB } from "./vec-codec.mjs";
 
 const FILL = { style: "fill", color: 0xff000000, blendMode: 3, shaderId: null };
@@ -49,14 +50,37 @@ test("명령 종류별 수, 그리는 좌표 수, 최대 줌 한 화면에 걸�
 const MAX_ZOOM_WINDOW_POINTS_BUDGET = Object.freeze({ seoul: 3100, busan: 1350, daegu: 1730, daejeon: 980, gwangju: 1330 });
 const basemapDir = path.resolve(import.meta.dirname, "../../apps/mobile/assets/datapacks/metro_map_pack/basemap");
 
-test("배포 바탕·강조 레이어 .vec의 최대 줌 한 화면 좌표 수는 권역별 예산 안이다", () => {
+// 텍스트 변형(#1495)의 글자는 기기 서체로 그려 영역을 모르므로 창 부하는 path 그리기만 센다.
+test("텍스트 그리기와 위치 갱신은 명령 수로 세고, 창 부하에는 path 그리기만 든다", () => {
+  const golden = new Uint8Array(readFileSync(path.join(import.meta.dirname, "fixtures/vec-codec-golden-text.vec")));
+  const measure = measureVec(golden);
+  assert.deepEqual(measure.commands, { drawPath: 3, updateTextPosition: 5, drawText: 5 });
+  assert.equal(measure.maxZoomWindowDraws, 3);
+});
+
+test("요약은 변형마다 바탕 한 줄과 권역 강조 레이어 합 한 줄을 낸다", () => {
+  const one = { commands: { drawPath: 2, drawText: 1, updateTextPosition: 1 }, paths: 1, controlPoints: 4, drawnPoints: 8, bytes: 10, gzipBytes: 5, maxZoomWindowDraws: 2, maxZoomWindowPoints: 8 };
+  const rows = summarizeVecMeasures(
+    new Map(["seoul.vec", "seoul.text.vec", "seoul.line-a.vec", "seoul.line-b.vec", "seoul.line-a.text.vec"].map((name) => [name, one])),
+  );
+  assert.deepEqual([...rows.keys()], ["seoul.vec", "seoul.text.vec", "seoul 강조 레이어 합", "seoul.text 강조 레이어 합"]);
+  assert.deepEqual(
+    ["files", "drawPath", "drawText", "other", "bytes", "maxZoomWindowPoints"].map((column) => rows.get("seoul 강조 레이어 합")[column]),
+    [2, 4, 2, 2, 20, 8],
+  );
+});
+
+test("배포 바탕·강조 레이어 .vec의 최대 줌 한 화면 좌표 수는 두 변형 모두 권역별 예산 안이다", () => {
   const files = readdirSync(basemapDir).filter((name) => name.endsWith(".vec"));
   const worst = {};
+  const variants = new Set();
   for (const name of files) {
-    const region = name.slice(0, name.indexOf("."));
+    const { regionId: region, variantId } = parseBasemapVectorFileName(name);
+    variants.add(variantId);
     const { maxZoomWindowPoints } = measureVec(new Uint8Array(readFileSync(path.join(basemapDir, name))));
     worst[region] = Math.max(worst[region] ?? 0, maxZoomWindowPoints);
   }
+  assert.deepEqual([...variants].sort(), ["outlined", "text"]);
   assert.deepEqual(Object.keys(worst).sort(), Object.keys(MAX_ZOOM_WINDOW_POINTS_BUDGET).sort());
   for (const [region, points] of Object.entries(worst)) {
     assert.ok(points <= MAX_ZOOM_WINDOW_POINTS_BUDGET[region], `${region}: 최대 줌 창 좌표 ${points}이 예산 ${MAX_ZOOM_WINDOW_POINTS_BUDGET[region]}을 넘었다`);

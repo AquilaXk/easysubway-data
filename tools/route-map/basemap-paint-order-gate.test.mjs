@@ -19,6 +19,11 @@
 //      halo가 없는 3권역(수도권 라벨·대전·광주)은 분해가 **텍스트에 대해 no-op**
 //      임을 함께 고정한다(라벨 산출물 불변).
 //
+// 텍스트 라벨 변형 .vec(#1495)는 라벨을 텍스트 그리기로 담는다. 런타임(vector_graphics 1.2.3
+// listener.dart 711-720행)은 한 텍스트 그리기의 채우기를 먼저, 선을 나중에 그리므로, 배포 .vec에서
+//   5) 채우기와 선을 한 번에 그리는 텍스트가 없고,
+//   6) 테두리(선만) 텍스트마다 같은 위치·같은 글자의 채우기 텍스트가 뒤에 있다.
+//
 // 픽셀 축(글자 코어 잉크가 실제로 살아있는지)은 컴파일된 .vec을 앱과 동일한
 // 런타임으로 렌더해 확인한다:
 // apps/mobile/test/features/network_map/presentation/route_map_basemap_label_paint_order_test.dart
@@ -35,6 +40,7 @@ import {
   PAINT_ORDER_STROKE_COPY_ATTR,
   PAINT_ORDER_STROKE_COPY_ID_SUFFIX,
 } from "./compile-basemap-vec.mjs";
+import { decodeVec } from "./vec-codec.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sourcesDir = path.join(
@@ -364,4 +370,40 @@ test("halo 없는 권역은 텍스트 분해가 no-op이다(라벨 산출물 불
         "산출물이 바뀌면 안 됩니다.",
     );
   }
+});
+
+// 텍스트 변형 .vec의 텍스트 그리기를 [위치·글자 키, 종류] 열로 읽는다. 위치는 바로 앞 위치 갱신이다.
+function textDrawsOf(doc) {
+  let position = null;
+  const draws = [];
+  for (const command of doc.commands) {
+    if (command.op === "updateTextPosition") {
+      const { transform, ...rest } = doc.textPositions[command.textPositionId];
+      position = JSON.stringify([rest, transform && Array.from(transform)]);
+    } else if (command.op === "drawText") {
+      const kind = [command.fillId === null ? "" : "fill", command.strokeId === null ? "" : "halo"].join("");
+      draws.push([`${position}|${JSON.stringify(doc.texts[command.textId])}`, kind]);
+    }
+  }
+  return draws;
+}
+
+test("텍스트 변형 .vec에는 채우기와 선을 한 번에 그리는 텍스트가 없고, 테두리마다 같은 글자 채우기가 뒤에 온다", () => {
+  const basemapDir = path.join(root, "apps/mobile/assets/datapacks/metro_map_pack/basemap");
+  const haloCounts = {};
+  for (const region of REGIONS) {
+    const draws = textDrawsOf(decodeVec(new Uint8Array(readFileSync(path.join(basemapDir, `${region.id}.text.vec`)))));
+    assert.ok(draws.length > 0, `${region.id}: 텍스트 그리기가 없습니다`);
+    assert.deepEqual(draws.filter(([, kind]) => kind === "fillhalo"), [], `${region.id}: 글자를 덮는 테두리`);
+    haloCounts[region.id] = 0;
+    draws.forEach(([key, kind], index) => {
+      if (kind !== "halo") return;
+      haloCounts[region.id] += 1;
+      const fill = draws.findIndex(([other, otherKind], at) => at > index && other === key && otherKind === "fill");
+      assert.ok(fill > index, `${region.id}: ${key.slice(0, 120)} 테두리 뒤에 같은 글자 채우기가 없습니다`);
+    });
+  }
+  // 세는 단위는 텍스트 런이다. 여러 줄 라벨은 tspan마다 그리기가 하나라 요소 수(부산 147·대구 97)보다
+  // 크다. 윤곽선 굽기 전 텍스트 .vec의 짝 수와 같다. 수도권 역명 라벨은 CSS가 stroke를 주지 않는다.
+  assert.deepEqual(haloCounts, { seoul: 0, busan: 155, daegu: 104, daejeon: 22, gwangju: 20 });
 });

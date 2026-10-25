@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // 바탕층 `.vec`의 그리기 구성을 잰다(#1495). 기기 래스터 스레드가 매 프레임 다시
 // 처리하는 것은 그리기 명령이므로 명령 종류별 수와, 최대 줌 한 화면에 걸리는 명령·
-// 좌표 수(엔진이 화면 밖 명령을 건너뛴 뒤 남는 일)를 함께 낸다.
+// 좌표 수(엔진이 화면 밖 명령을 건너뛴 뒤 남는 일)를 함께 낸다. 텍스트 변형의 글자는 기기 서체로
+// 그려 영역을 모르므로 창 부하는 path 그리기만 세고, 텍스트 그리기는 명령 수로만 센다.
 //
 //   node tools/route-map/measure-basemap-vec.mjs <dir> [<dir-after>]
 //
@@ -12,6 +13,7 @@ import path from "node:path";
 import { gzipSync } from "node:zlib";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { basemapVariant, parseBasemapVectorFileName } from "./basemap-variants.mjs";
 import { commandBounds, rectsOverlap } from "./merge-basemap-vec-draws.mjs";
 import { decodeVec } from "./vec-codec.mjs";
 
@@ -88,24 +90,29 @@ function measureDirectory(dir) {
   );
 }
 
-function regionOf(name) {
-  return name.slice(0, name.indexOf("."));
+function rowKeyOf(name) {
+  const { variantId, regionId, lineId } = parseBasemapVectorFileName(name);
+  if (lineId === null) return name;
+  return `${regionId}${basemapVariant(variantId).fileSuffix} 강조 레이어 합`;
 }
 
-// 바탕은 파일마다 한 줄, 노선 강조 레이어는 권역마다 합친 한 줄이다. 창 부하는 최댓값이다.
-const SUMMED_COLUMNS = ["files", "drawPath", "other", "paths", "controlPoints", "drawnPoints", "bytes", "gzipBytes"];
+// 바탕은 파일마다 한 줄, 노선 강조 레이어는 변형·권역마다 합친 한 줄이다. 창 부하는 최댓값이다.
+const SUMMED_COLUMNS = ["files", "drawPath", "drawText", "other", "paths", "controlPoints", "drawnPoints", "bytes", "gzipBytes"];
 const MAXED_COLUMNS = ["maxZoomWindowDraws", "maxZoomWindowPoints"];
 
-function summarize(measures) {
+/** 파일 이름 → measureVec 결과를 표의 줄(바탕 파일, 변형·권역별 강조 레이어 합)로 묶는다. */
+export function summarizeVecMeasures(measures) {
   const rows = new Map();
   for (const [name, measure] of measures) {
-    const key = name.split(".").length === 2 ? name : `${regionOf(name)} 강조 레이어 합`;
+    const key = rowKeyOf(name);
     const drawPath = measure.commands.drawPath ?? 0;
+    const drawText = measure.commands.drawText ?? 0;
     const values = {
       ...measure,
       files: 1,
       drawPath,
-      other: Object.values(measure.commands).reduce((sum, count) => sum + count, 0) - drawPath,
+      drawText,
+      other: Object.values(measure.commands).reduce((sum, count) => sum + count, 0) - drawPath - drawText,
     };
     const row = rows.get(key) ?? Object.fromEntries([...SUMMED_COLUMNS, ...MAXED_COLUMNS].map((column) => [column, 0]));
     for (const column of SUMMED_COLUMNS) row[column] += values[column];
@@ -117,8 +124,8 @@ function summarize(measures) {
 
 function main([beforeDir, afterDir]) {
   if (!beforeDir) throw new Error("사용법: measure-basemap-vec.mjs <dir> [<dir-after>]");
-  const before = summarize(measureDirectory(beforeDir));
-  const after = afterDir ? summarize(measureDirectory(afterDir)) : null;
+  const before = summarizeVecMeasures(measureDirectory(beforeDir));
+  const after = afterDir ? summarizeVecMeasures(measureDirectory(afterDir)) : null;
   const columns = [...SUMMED_COLUMNS, ...MAXED_COLUMNS];
   process.stdout.write(`| 대상 | ${columns.join(" | ")} |\n|${"---|".repeat(columns.length + 1)}\n`);
   for (const [key, row] of before) {

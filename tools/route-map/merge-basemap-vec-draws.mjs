@@ -25,6 +25,10 @@
 // 둔다. 자르면 그리는 순서가 줄 단위로 바뀌므로 순서가 바뀐 그리기끼리 영역이 겹치지 않을
 // 때만 자른다(OpsTask::recordOp이 새 명령을 앞 묶음으로 옮기는 조건과 같다).
 //
+// 텍스트 라벨 변형의 텍스트 위치 갱신과 텍스트 그리기는 장벽이다. 텍스트는 기기 서체로 그려 칠할
+// 영역을 알 수 없고, 런타임은 글자 덩이를 다음 위치 갱신까지 미뤄 그린다(vector_graphics 1.2.3
+// listener.dart 629-750행). 그래서 path 그리기가 텍스트 명령을 넘어 옮겨지지 않는다.
+//
 // 노선 강조 레이어는 바탕 그리기 순서의 부분 수열이다. 바탕에서 정한 묶음을 레이어에도
 // 그대로 쓰고, 한 묶음은 같은 레이어 집합에 속한 명령으로만 만든다. 그래서 합친 뒤에도
 // 레이어는 바탕의 부분 수열이고 앱이 흐린 바탕 위에 겹쳐 그리는 위치가 그대로다.
@@ -123,6 +127,18 @@ function pathKey({ fillType, verbs, points }) {
   return `${fillType}|${Array.from(verbs).join(",")}|${Array.from(points).join(",")}`;
 }
 
+function textPositionKey({ x, y, dx, dy, reset, transform }) {
+  return JSON.stringify([x, y, dx, dy, reset, transform && Array.from(transform)]);
+}
+
+function textKey(text) {
+  return JSON.stringify(text);
+}
+
+function optionalPaintKey(doc, paintId) {
+  return paintId === null ? "-" : paintKey(doc.paints[paintId]);
+}
+
 function commandKey(doc, command) {
   switch (command.op) {
     case "drawPath":
@@ -133,6 +149,16 @@ function commandKey(doc, command) {
       return `clip|${pathKey(doc.paths[command.pathId])}`;
     case "pattern":
       return `pattern|${command.x},${command.y},${command.width},${command.height}|${Array.from(command.transform).join(",")}`;
+    case "updateTextPosition":
+      return `textPosition|${textPositionKey(doc.textPositions[command.textPositionId])}`;
+    case "drawText":
+      return [
+        "text",
+        textKey(doc.texts[command.textId]),
+        optionalPaintKey(doc, command.fillId),
+        optionalPaintKey(doc, command.strokeId),
+        command.patternId,
+      ].join("|");
     default:
       return command.op;
   }
@@ -326,29 +352,31 @@ function concatPaths(paths) {
   return { fillType: paths[0].fillType, verbs, points };
 }
 
-// 컴파일러 DrawCommandBuilder(draw_command_builder.dart 27행 _getOrGenerateId)처럼 path와
-// paint를 처음 쓰는 순서대로 번호를 매기고 같은 값은 한 번만 적는다.
+// 같은 값은 한 번만 적고 처음 쓰는 순서대로 번호를 매기는 목록.
+function internTable(keyOf) {
+  const values = [];
+  const ids = new Map();
+  const intern = (value) => {
+    const key = keyOf(value);
+    if (!ids.has(key)) {
+      ids.set(key, values.length);
+      values.push(value);
+    }
+    return ids.get(key);
+  };
+  return { values, intern };
+}
+
+// 컴파일러 DrawCommandBuilder(draw_command_builder.dart 27행 _getOrGenerateId)처럼 path·paint·
+// 텍스트 위치·텍스트 설정을 처음 쓰는 순서대로 번호를 매기고 같은 값은 한 번만 적는다.
 function emitDoc(source, groups) {
-  const paints = [];
-  const paths = [];
-  const paintIds = new Map();
-  const pathIds = new Map();
-  const internPaint = (paint) => {
-    const key = paintKey(paint);
-    if (!paintIds.has(key)) {
-      paintIds.set(key, paints.length);
-      paints.push(paint);
-    }
-    return paintIds.get(key);
-  };
-  const internPath = (path) => {
-    const key = pathKey(path);
-    if (!pathIds.has(key)) {
-      pathIds.set(key, paths.length);
-      paths.push(path);
-    }
-    return pathIds.get(key);
-  };
+  const paints = internTable(paintKey);
+  const paths = internTable(pathKey);
+  const textPositions = internTable(textPositionKey);
+  const texts = internTable(textKey);
+  const internPaint = paints.intern;
+  const internPath = paths.intern;
+  const internOptionalPaint = (paintId) => (paintId === null ? null : internPaint(source.paints[paintId]));
   const remap = (command) => {
     switch (command.op) {
       case "drawPath":
@@ -361,6 +389,15 @@ function emitDoc(source, groups) {
         return { ...command, paintId: internPaint(source.paints[command.paintId]) };
       case "clipPath":
         return { ...command, pathId: internPath(source.paths[command.pathId]) };
+      case "updateTextPosition":
+        return { ...command, textPositionId: textPositions.intern(source.textPositions[command.textPositionId]) };
+      case "drawText":
+        return {
+          ...command,
+          textId: texts.intern(source.texts[command.textId]),
+          fillId: internOptionalPaint(command.fillId),
+          strokeId: internOptionalPaint(command.strokeId),
+        };
       default:
         return command;
     }
@@ -377,7 +414,15 @@ function emitDoc(source, groups) {
       commands.push({ ...command, pathId, paintId: internPaint(source.paints[command.paintId]) });
     }
   }
-  return { width: source.width, height: source.height, paints, paths, commands };
+  return {
+    width: source.width,
+    height: source.height,
+    paints: paints.values,
+    paths: paths.values,
+    textPositions: textPositions.values,
+    texts: texts.values,
+    commands,
+  };
 }
 
 /**

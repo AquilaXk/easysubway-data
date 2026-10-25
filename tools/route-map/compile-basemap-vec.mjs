@@ -19,8 +19,11 @@
 // 원본 CSS의 비표준 font-weight도 컴파일러가 파싱할 수 있도록 표준 100 배수로
 // 정규화한다. 환승 캡슐 내부 노선 표기는 유지하고 역명·제목·범례는 제외한다.
 //
+// 라벨을 담는 방식이 다른 두 변형(basemap-variants.mjs: 윤곽선·텍스트)을 같은 정규화와 같은
+// 노선 강조 레이어 분할에서 함께 굽는다(#1495). 텍스트 변형은 윤곽선 단계만 거치지 않는다.
+//
 // 사용법(apps/mobile pubspec 컨텍스트가 필요하므로 컴파일은 apps/mobile cwd에서 실행):
-//   node tools/route-map/compile-basemap-vec.mjs           # 5권역 컴파일 + sha256 출력
+//   node tools/route-map/compile-basemap-vec.mjs           # 5권역 두 변형 컴파일 + sha256 출력
 //   node tools/route-map/compile-basemap-vec.mjs --verify  # 2회 컴파일 sha256 동일 검증
 //
 // build-datapack.mjs의 결정적 빌드 관례(canonicalJson·sha256 산출)와 톤을 맞춘다.
@@ -39,10 +42,12 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { BASEMAP_VARIANTS, basemapVectorFileName, TEXT_VARIANT_ID } from "./basemap-variants.mjs";
 import {
   buildSvgTree,
   declaredStyleOrAttr,
   decodeXmlText,
+  encodeXmlAttributeValue,
   firstAttr,
   inheritedStyleOrAttr,
   parseSvgLength,
@@ -50,6 +55,7 @@ import {
   REFERENCE_TEXT_FACES,
   REFERENCE_TEXT_FONT_WEIGHTS,
   roundCoord,
+  TEXT_PROPERTY_INITIAL_VALUES,
 } from "./basemap-svg-core.mjs";
 import { mergeBasemapDraws } from "./merge-basemap-vec-draws.mjs";
 import {
@@ -91,7 +97,9 @@ const compilerFlags = ["--no-optimize-clips"];
 //       최적화를 끄고, 컴파일 뒤 같은 paint 그리기를 합친다(merge-basemap-vec-draws.mjs).
 //   6 — 묶음 상한이나 겹침 때문에 한 단위가 되지 못하는 여러 줄 라벨을 줄 열로 잘라, 줄마다
 //       테두리와 글자가 path 하나를 나눠 쓴다.
-const basemapPipelineRevision = 6;
+//   7 — 같은 입력에서 라벨을 윤곽선으로 구운 변형과 텍스트 그리기로 둔 변형을 함께 굽는다(#1495).
+//       색인은 변형마다 바탕·강조 레이어 파일과 sha256을 싣는다(schemaVersion 2).
+const basemapPipelineRevision = 7;
 const buildManifestPath = path.join(
   root,
   "tools/route-map/basemap-build-manifest.json",
@@ -232,13 +240,14 @@ const supportedClassStyleProperties = new Set([
   "vector-effect",
 ]);
 
-// ── 윤곽선 단계가 해석하는 글자 간격·스타일 property(#2593 리뷰, #1488) ─────────
+// ── `.vec` 텍스트 형식이 담지 못하는 글자 간격·스타일 property(#2593 리뷰, #1488) ─────────
 //
-// `.vec` 텍스트 형식에는 letter-spacing·word-spacing·font-style 자리가 없다. 바탕층은
+// `.vec` 텍스트 형식에는 letter-spacing·word-spacing·font-style 자리가 없다. 윤곽선 변형은
 // 라벨을 윤곽선으로 굽기 때문에(outline-basemap-text.mjs) 이 값들은 텍스트 draw가
 // 아니라 윤곽선 단계가 읽는다. 캐스케이드는 유효값을 요소에 그대로 인라인하고, 윤곽선
 // 단계가 letter-spacing을 배치에 쓰고 초기값이 아닌 word-spacing·font-style은 던진다.
-export const OUTLINE_STAGE_TEXT_PROPERTIES = new Set([
+// 텍스트 변형(#1495)에서는 인코딩에서 사라지므로 unrepresentableTextDeclarations가 센다.
+export const VEC_UNCARRIED_TEXT_PROPERTIES = new Set([
   "letter-spacing",
   "word-spacing",
   "font-style",
@@ -710,14 +719,6 @@ function extractMapSvg(svgText) {
 
 const CSS_COMBINATORS = new Set([" ", ">"]);
 
-function encodeXmlAttributeValue(value) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
 /** 따옴표 안의 구분자를 건너뛰며 자른다(`font-family:"a; b", c` 안전). */
 function splitTopLevel(value, separator) {
   const parts = [];
@@ -1040,7 +1041,7 @@ export function parseStylesheet(svgText) {
       if (
         !neutral &&
         !supportedClassStyleProperties.has(property) &&
-        !OUTLINE_STAGE_TEXT_PROPERTIES.has(property)
+        !VEC_UNCARRIED_TEXT_PROPERTIES.has(property)
       ) {
         // 실제로 요소에 적용될 때 던진다(적용되지 않는 규칙은 무해하다).
         declarations.push({ property, value, important, unsupported: true });
@@ -3397,6 +3398,23 @@ export function decomposePaintOrder(markup) {
   return result;
 }
 
+/**
+ * 텍스트 변형 컴파일 입력에서 **.vec 텍스트 형식이 담지 못하는 선언이 실제로 걸린 텍스트 요소**를
+ * `"property:value"` → 요소 수로 센다(#2593 리뷰, #1495). 초기값(TEXT_PROPERTY_INITIAL_VALUES)은 제외한다.
+ */
+export function unrepresentableTextDeclarations(normalizedSvg) {
+  const counts = new Map();
+  for (const tag of normalizedSvg.matchAll(/<(?:text|tspan)\b[^>]*>/g)) {
+    for (const property of VEC_UNCARRIED_TEXT_PROPERTIES) {
+      const value = declaredStyleOrAttr(tag[0], property)?.trim();
+      if (value == null || TEXT_PROPERTY_INITIAL_VALUES.get(property).has(value)) continue;
+      const key = `${property}:${value}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 export function normalizeSvgForCompile(svgText) {
   // ① `<style>` 캐스케이드를 요소 선언으로 전개(컴파일러가 <style>을 못 읽는다).
   //    이후 모든 단계가 "요소에 선언된 값"만 보면 되도록 가장 먼저 둔다.
@@ -3451,10 +3469,6 @@ export function normalizeSvgForCompile(svgText) {
 // 규칙, 요소가 하나도 없는 노선은 실패한다.
 
 export const LINE_OVERLAY_INDEX_FILE = "line-overlays.json";
-
-export function lineOverlayVectorFileName(regionId, lineId) {
-  return `${regionId}.${lineId}.vec`;
-}
 
 const NON_RENDERING_ELEMENTS = new Set([
   "clipPath",
@@ -3735,28 +3749,49 @@ export function buildBasemapLineOverlays(normalizedSvg, config) {
     .sort((a, b) => codepointCompare(a.lineId, b.lineId));
 }
 
+function requireSha256(shaByFileName, fileName, what) {
+  const sha256 = shaByFileName.get(fileName);
+  if (sha256 === undefined) throw new Error(`${fileName}: ${what} sha256이 없습니다.`);
+  return sha256;
+}
+
+function regionIndexEntry(variantId, { id, overlays }, digestOf) {
+  const baseVector = basemapVectorFileName(variantId, id);
+  return {
+    baseVector,
+    baseVectorSha256: digestOf(baseVector),
+    lines: Object.fromEntries(
+      overlays.map(({ lineId, svgLineSlug }) => {
+        const vector = basemapVectorFileName(variantId, id, lineId);
+        return [lineId, { svgLineSlug, vector, sha256: digestOf(vector) }];
+      }),
+    ),
+  };
+}
+
 /**
- * 앱이 읽는 강조 레이어 색인(line-overlays.json) 본문. [regions]는
- * `{ id, overlays: { lineId, svgLineSlug }[] }[]`.
+ * 앱이 읽는 바탕·강조 레이어 색인(line-overlays.json) 본문. [regions]는
+ * `{ id, overlays: { lineId, svgLineSlug }[] }[]`, [digests]는 .vec 파일 이름 → sha256이다.
+ * 변형마다 schemaVersion 1의 regions 모양에 파일 sha256을 더한다(#1495). 앱은 렌더러에 맞는
+ * 변형 하나를 골라 그 아래만 읽는다.
  */
-export function buildLineOverlayIndex(regions) {
-  const byRegion = {};
-  for (const { id, overlays } of [...regions].sort((a, b) => codepointCompare(a.id, b.id))) {
-    byRegion[id] = {
-      baseVector: `${id}.vec`,
-      lines: Object.fromEntries(
-        overlays.map(({ lineId, svgLineSlug }) => [
-          lineId,
-          { svgLineSlug, vector: lineOverlayVectorFileName(id, lineId) },
-        ]),
-      ),
-    };
-  }
+export function buildLineOverlayIndex(regions, digests) {
+  const digestOf = (fileName) => requireSha256(digests, fileName, "컴파일 산출");
+  const sorted = [...regions].sort((a, b) => codepointCompare(a.id, b.id));
+  const variants = Object.fromEntries(
+    BASEMAP_VARIANTS.map(({ id: variantId, labels }) => [
+      variantId,
+      {
+        labels,
+        regions: Object.fromEntries(sorted.map((region) => [region.id, regionIndexEntry(variantId, region, digestOf)])),
+      },
+    ]),
+  );
   return `${JSON.stringify(
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       artifactKind: "route-map-basemap-line-overlays",
-      regions: byRegion,
+      variants,
     },
     null,
     2,
@@ -3794,9 +3829,9 @@ function compileAll(jobs, outputDir, workDir) {
   }
 }
 
-// 권역마다 바탕과 노선 강조 레이어를 함께 읽어 그리기를 합치고 같은 자리에 다시 쓴다.
-// 레이어는 바탕의 부분 수열로 남는다. 반환은 fileName → 최종 .vec sha256.
-function mergeRegionDraws(prepared, dir) {
+// 변형·권역마다 바탕과 노선 강조 레이어를 함께 읽어 그리기를 합치고 같은 자리에 다시 쓴다.
+// 레이어는 같은 변형 바탕의 부분 수열로 남는다. 반환은 fileName → 최종 .vec sha256.
+function mergeRegionDraws(jobs, dir) {
   const digests = new Map();
   const read = (fileName) => decodeVec(new Uint8Array(readFileSync(path.join(dir, fileName))));
   const write = (fileName, doc) => {
@@ -3804,13 +3839,14 @@ function mergeRegionDraws(prepared, dir) {
     writeFileSync(path.join(dir, fileName), bytes);
     digests.set(fileName, sha256Value(bytes));
   };
-  for (const { region, lineOverlays } of prepared) {
-    const layerFiles = lineOverlays.map(({ lineId }) => lineOverlayVectorFileName(region.id, lineId));
+  const groups = Map.groupBy(jobs, ({ variantId, regionId }) => `${variantId}/${regionId}`);
+  for (const group of groups.values()) {
+    const [base, ...layers] = group;
     const merged = mergeBasemapDraws(
-      read(`${region.id}.vec`),
-      layerFiles.map((name) => ({ name, doc: read(name) })),
+      read(base.fileName),
+      layers.map(({ fileName }) => ({ name: fileName, doc: read(fileName) })),
     );
-    write(`${region.id}.vec`, merged.base);
+    write(base.fileName, merged.base);
     for (const { name, doc } of merged.layers) write(name, doc);
   }
   return digests;
@@ -3858,15 +3894,62 @@ function prepareRegion(region) {
   };
 }
 
-// 바탕과 노선 강조 레이어마다 라벨을 윤곽선으로 구운 컴파일 입력을 만든다.
-function compileJobsOf({ region, normalizedSvg, lineOverlays }, outlineBasemapText) {
-  return [
-    { fileName: `${region.id}.vec`, compileInputSvg: outlineBasemapText(normalizedSvg).svg },
-    ...lineOverlays.map(({ lineId, svg }) => ({
-      fileName: lineOverlayVectorFileName(region.id, lineId),
-      compileInputSvg: outlineBasemapText(svg).svg,
-    })),
-  ];
+function assertDistinctFileNames(jobs) {
+  const seen = new Set();
+  for (const { fileName } of jobs) {
+    if (seen.has(fileName)) throw new Error(`${fileName}: 두 컴파일 작업이 같은 파일 이름을 씁니다.`);
+    seen.add(fileName);
+  }
+}
+
+/**
+ * 변형마다 권역 바탕과 노선 강조 레이어의 컴파일 작업. [prepared]는 prepareRegion 결과다.
+ * 반환은 변형·권역 순으로 바탕이 먼저 오는 `{ variantId, regionId, lineId, fileName,
+ * compileInputSvg }[]`이다. 두 변형은 같은 정규화 입력과 강조 레이어 분할에서 라벨 단계만 다르다.
+ */
+export function basemapCompileJobs(prepared, outlineBasemapText) {
+  const jobs = BASEMAP_VARIANTS.flatMap((variant) =>
+    prepared.flatMap(({ region, normalizedSvg, lineOverlays }) =>
+      [{ lineId: null, svg: normalizedSvg }, ...lineOverlays].map(({ lineId, svg }) => ({
+        variantId: variant.id,
+        regionId: region.id,
+        lineId,
+        fileName: basemapVectorFileName(variant.id, region.id, lineId),
+        compileInputSvg: variant.compileInput(svg, outlineBasemapText),
+      })),
+    ),
+  );
+  assertDistinctFileNames(jobs);
+  return jobs;
+}
+
+// 텍스트 변형에서 .vec가 담지 못하는 선언은 조용히 사라지지 않고 산출 로그에 드러낸다(#2593 리뷰).
+function logUnrepresentableText(regionId, normalizedSvg) {
+  const unrepresentable = unrepresentableTextDeclarations(normalizedSvg);
+  if (unrepresentable.size === 0) return;
+  process.stdout.write(
+    `${basemapVectorFileName(TEXT_VARIANT_ID, regionId)}  .vec 형식이 담지 못하는 텍스트 선언: ` +
+      `${[...unrepresentable]
+        .sort((a, b) => b[1] - a[1])
+        .map(([key, count]) => `${key} ×${count}`)
+        .join(", ")}\n`,
+  );
+}
+
+// manifest maps[].variants의 한 변형. 파일 이름은 compileAll이 쓴 이름 그대로다.
+export function variantManifestEntry(variantId, region, lineOverlays, compileInputSha256, digests) {
+  const entryOf = (lineId) => {
+    const fileName = basemapVectorFileName(variantId, region.id, lineId);
+    return {
+      compiledVector: relativeToRoot(path.join(outDir, fileName)),
+      compileInputSvgSha256: requireSha256(compileInputSha256, fileName, "컴파일 입력"),
+      compiledVectorSha256: requireSha256(digests, fileName, "컴파일 산출"),
+    };
+  };
+  return {
+    ...entryOf(null),
+    lineOverlays: lineOverlays.map(({ lineId }) => ({ lineId, ...entryOf(lineId) })),
+  };
 }
 
 const labelsSidecarPath = path.join(outDir, "labels.json");
@@ -3881,7 +3964,7 @@ async function main() {
   const prepared = regions.map(prepareRegion);
   // 윤곽선 단계는 HarfBuzz WASM과 참조 페이스를 올리므로 굽는 실행에서만 불러온다.
   const { outlineBasemapText } = await import("./outline-basemap-text.mjs");
-  const jobs = prepared.flatMap((region) => compileJobsOf(region, outlineBasemapText));
+  const jobs = basemapCompileJobs(prepared, outlineBasemapText);
   const compileInputSha256 = new Map(
     jobs.map(({ fileName, compileInputSvg }) => [fileName, sha256Value(compileInputSvg)]),
   );
@@ -3889,11 +3972,11 @@ async function main() {
   let mismatched = [];
   try {
     compileAll(jobs, outDir, path.join(tmpDir, "compile"));
-    digests = mergeRegionDraws(prepared, outDir);
+    digests = mergeRegionDraws(jobs, outDir);
     if (verify) {
       const verifyDir = path.join(tmpDir, "verify");
       compileAll(jobs, verifyDir, path.join(tmpDir, "verify-work"));
-      const second = mergeRegionDraws(prepared, verifyDir);
+      const second = mergeRegionDraws(jobs, verifyDir);
       mismatched = jobs
         .map(({ fileName }) => fileName)
         .filter((fileName) => second.get(fileName) !== digests.get(fileName));
@@ -3913,37 +3996,36 @@ async function main() {
 
   const buildMaps = prepared.map(
     ({ region, inputSvg, sourceSvg, normalizedSvg, viewBox, ownerLabels, lineOverlays }) => {
-      const outputVec = path.join(outDir, `${region.id}.vec`);
       const outputDisplaySvg = path.join(outDir, `${region.id}.svg`);
       copyFileSync(inputSvg, outputDisplaySvg);
-      const digest = digests.get(`${region.id}.vec`);
-      process.stdout.write(
-        `${region.id}.vec  sha256=${digest}  ownerLabels=${ownerLabels.length}  ` +
-          `노선 강조 레이어 ${lineOverlays.length}개\n`,
-      );
+      for (const { id: variantId } of BASEMAP_VARIANTS) {
+        const fileName = basemapVectorFileName(variantId, region.id);
+        process.stdout.write(
+          `${fileName}  sha256=${digests.get(fileName)}  ownerLabels=${ownerLabels.length}  ` +
+            `노선 강조 레이어 ${lineOverlays.length}개\n`,
+        );
+      }
+      logUnrepresentableText(region.id, normalizedSvg);
       return {
         id: region.id,
         source: relativeToRoot(inputSvg),
-        compiledVector: relativeToRoot(outputVec),
         displaySvg: relativeToRoot(outputDisplaySvg),
         sourceSvgSha256: sha256Value(sourceSvg),
         displaySvgSha256: sha256(outputDisplaySvg),
         normalizedSvgSha256: sha256Value(normalizedSvg),
-        compileInputSvgSha256: compileInputSha256.get(`${region.id}.vec`),
-        compiledVectorSha256: digest,
         viewBox,
         ownerLabelCount: ownerLabels.length,
-        lineOverlays: lineOverlays.map(({ lineId, svgLineSlug, svg }) => {
-          const fileName = lineOverlayVectorFileName(region.id, lineId);
-          return {
-            lineId,
-            svgLineSlug,
-            compiledVector: relativeToRoot(path.join(outDir, fileName)),
-            normalizedSvgSha256: sha256Value(svg),
-            compileInputSvgSha256: compileInputSha256.get(fileName),
-            compiledVectorSha256: digests.get(fileName),
-          };
-        }),
+        lineOverlays: lineOverlays.map(({ lineId, svgLineSlug, svg }) => ({
+          lineId,
+          svgLineSlug,
+          normalizedSvgSha256: sha256Value(svg),
+        })),
+        variants: Object.fromEntries(
+          BASEMAP_VARIANTS.map(({ id: variantId }) => [
+            variantId,
+            variantManifestEntry(variantId, region, lineOverlays, compileInputSha256, digests),
+          ]),
+        ),
       };
     },
   );
@@ -3979,7 +4061,7 @@ async function main() {
     `labels.json  sha256=${labelsSidecarSha256}  regions=${Object.keys(labelsByRegion).length}\n`,
   );
 
-  const lineOverlaysJson = buildLineOverlayIndex(lineOverlayRegions);
+  const lineOverlaysJson = buildLineOverlayIndex(lineOverlayRegions, digests);
   writeFileSync(lineOverlaysSidecarPath, lineOverlaysJson);
   const lineOverlaysSidecarSha256 = sha256Value(lineOverlaysJson);
   process.stdout.write(
@@ -4008,9 +4090,9 @@ async function main() {
           svgLayer: "owner-svg-map-body-layers",
           stationSymbols: "owner-svg",
           // 앱의 오너 앵커 고정 배치도 솔버 폴백도 바탕층 모드에서 실행되지 않는다
-          // — 역명 글자는 참조 서체 윤곽선으로 .vec에 구워져 있다(오너 결정 "글자도 복붙",
-          // #1488 기기 서체 무관).
-          labels: "outlined-into-vec",
+          // — 역명 글자는 .vec에 들어 있다(오너 결정 "글자도 복붙"). 변형마다 담는 방식이 다르다.
+          // 윤곽선 변형은 참조 서체 윤곽선(#1488 기기 서체 무관), 텍스트 변형은 텍스트 그리기다(#1495).
+          labels: Object.fromEntries(BASEMAP_VARIANTS.map(({ id, labels }) => [id, labels])),
           // 캔버스 장식(헤더·범례·상단 설명 박스·카드 배경·규격 견본)은 반입 금지
           // (EXCLUDED_DECOR_LAYERS 명시 계약 + 분류 완전성 게이트).
           decoration: "excluded",

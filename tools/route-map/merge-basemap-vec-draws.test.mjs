@@ -187,6 +187,86 @@ test("clip·restore를 넘어 묶지 않는다", () => {
   assert.deepEqual(base.commands.map(({ op }) => op), ["drawPath", "clipPath", "drawPath", "restore"]);
 });
 
+// 텍스트 라벨 변형(#1495). 텍스트는 기기 서체로 그려 칠할 영역을 알 수 없고, 런타임은 글자 덩이를
+// 다음 위치 갱신까지 미뤄 그린다(vector_graphics 1.2.3 listener.dart 629-750행). 그래서 위치 갱신과
+// 텍스트 그리기는 장벽이라 아무것도 그 너머로 옮겨지지 않는다.
+const LABEL = { xAnchorMultiplier: 0.5, fontSize: 12, fontWeight: 6, decoration: 0, decorationStyle: 0, decorationColor: 0, fontFamily: "Pretendard" };
+const positionAt = (x) => ({ x, y: 30, dx: null, dy: null, reset: true, transform: null });
+const drawAt = (pathId) => ({ op: "drawPath", pathId, paintId: 0, patternId: null });
+const moveTo = (textPositionId) => ({ op: "updateTextPosition", textPositionId });
+const haloText = (textId) => ({ op: "drawText", textId, fillId: null, strokeId: 1, patternId: null });
+const fillText = (textId) => ({ op: "drawText", textId, fillId: 0, strokeId: null, patternId: null });
+
+function labeledScene(commands, paints = [RED, HALO]) {
+  return decodeVec(
+    encodeVec({
+      width: 1000,
+      height: 1000,
+      paints,
+      paths: [rect(0, 0, 10, 10), rect(20, 0, 10, 10), rect(40, 0, 10, 10)],
+      textPositions: [positionAt(100), positionAt(200)],
+      texts: [{ ...LABEL, text: "서면" }, { ...LABEL, text: "부전" }],
+      commands,
+    }),
+  );
+}
+
+// 명령마다 id가 아니라 가리키는 값. 다시 번호를 매겨도 같은 그림이면 같다.
+function resolvedCommands(doc) {
+  return doc.commands.map((command) => {
+    switch (command.op) {
+      case "drawPath":
+        return [command.op, doc.paints[command.paintId], Array.from(doc.paths[command.pathId].points), command.patternId];
+      case "updateTextPosition":
+        return [command.op, doc.textPositions[command.textPositionId]];
+      case "drawText":
+        return [
+          command.op,
+          doc.texts[command.textId],
+          doc.paints[command.fillId] ?? null,
+          doc.paints[command.strokeId] ?? null,
+          command.patternId,
+        ];
+      default:
+        return [command.op];
+    }
+  });
+}
+
+test("텍스트 위치 갱신과 텍스트 그리기를 넘어 묶지 않고, 텍스트 명령은 같은 순서·같은 값으로 남는다", () => {
+  const scene = labeledScene([drawAt(0), moveTo(0), haloText(0), drawAt(1), moveTo(0), fillText(0), drawAt(2)]);
+  const { base } = mergeDraws(scene, [], { maxExtent: OPEN });
+  assert.deepEqual(resolvedCommands(base), resolvedCommands(scene));
+  assert.deepEqual(base.texts, [{ ...LABEL, text: "서면" }]);
+  assert.deepEqual(base.textPositions, [positionAt(100)]);
+});
+
+test("텍스트가 없는 구간의 그리기는 전처럼 합치고, 텍스트 앞뒤 구간끼리는 합치지 않는다", () => {
+  const scene = labeledScene([drawAt(0), drawAt(1), moveTo(1), fillText(1), drawAt(2)]);
+  const { base } = mergeDraws(scene, [], { maxExtent: OPEN });
+  assert.deepEqual(base.commands.map(({ op }) => op), ["drawPath", "updateTextPosition", "drawText", "drawPath"]);
+  assert.deepEqual(drawsOf(base), [[RED, [0, 20]], [RED, [40]]]);
+});
+
+test("노선 강조 레이어의 텍스트는 바탕과 같은 값으로 남고, 레이어가 쓰는 텍스트만 다시 번호를 매긴다", () => {
+  const scene = labeledScene([moveTo(0), fillText(0), drawAt(0), moveTo(1), haloText(1), moveTo(1), fillText(1), drawAt(1)]);
+  const layer = labeledScene([moveTo(1), haloText(1), moveTo(1), fillText(1), drawAt(1)]);
+  const merged = mergeDraws(scene, [{ name: "b", doc: layer }], { maxExtent: OPEN });
+  const layerDoc = merged.layers[0].doc;
+  assert.deepEqual(resolvedCommands(layerDoc), resolvedCommands(layer));
+  assert.deepEqual(layerDoc.texts, [{ ...LABEL, text: "부전" }]);
+  assert.deepEqual(layerDoc.textPositions, [positionAt(200)]);
+  assert.deepEqual(resolvedCommands(merged.base), resolvedCommands(scene));
+});
+
+test("바탕 순서에 없는 텍스트를 그리는 레이어는 실패한다", () => {
+  const scene = labeledScene([moveTo(0), fillText(0), drawAt(0)]);
+  const layer = labeledScene([moveTo(0), fillText(1), drawAt(0)]);
+  assert.throws(() => mergeBasemapDraws(scene, [{ name: "b", doc: layer }]), /b: 그리기 명령 1번이 바탕 순서에 없습니다/);
+  const recolored = labeledScene([moveTo(0), fillText(0), drawAt(0)], [BLUE, HALO]);
+  assert.throws(() => mergeBasemapDraws(scene, [{ name: "b", doc: recolored }]), /b: 그리기 명령 1번이 바탕 순서에 없습니다/);
+});
+
 test("무늬 정의(pattern ~ restore) 안의 그리기는 밖의 그리기와 묶지 않는다", () => {
   const draws = [[RED, rect(0, 0, 10, 10)], [RED, rect(20, 0, 10, 10)]];
   const identity = Float64Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
@@ -482,17 +562,18 @@ test("무작위 장면 20개에서 바탕과 레이어 모두 같은 그림이�
 const basemapDir = path.resolve(import.meta.dirname, "../../apps/mobile/assets/datapacks/metro_map_pack/basemap");
 
 function drawValues(doc) {
-  return doc.commands.map((command) =>
-    command.op === "drawPath"
-      ? JSON.stringify([doc.paints[command.paintId], Array.from(doc.paths[command.pathId].points), command.patternId])
-      : command.op,
-  );
+  return resolvedCommands(doc).map((values) => JSON.stringify(values));
 }
 
-test("배포 노선 강조 레이어는 그리기 명령 단위로 바탕의 부분 수열이고, 넓이 없는 채우기가 없다", () => {
+test("두 변형 모두 배포 노선 강조 레이어는 그리기 명령 단위로 그 변형 바탕의 부분 수열이고, 넓이 없는 채우기가 없다", () => {
   const index = JSON.parse(readFileSync(path.join(basemapDir, "line-overlays.json"), "utf8"));
   const read = (name) => decodeVec(new Uint8Array(readFileSync(path.join(basemapDir, name))));
-  for (const [region, { baseVector, lines }] of Object.entries(index.regions)) {
+  assert.deepEqual(Object.keys(index.variants), ["outlined", "text"]);
+  const regions = Object.entries(index.variants).flatMap(([variantId, { regions: byRegion }]) =>
+    Object.entries(byRegion).map(([region, entry]) => [`${variantId}/${region}`, entry]),
+  );
+  assert.equal(regions.length, 10);
+  for (const [region, { baseVector, lines }] of regions) {
     const base = read(baseVector);
     const baseDraws = drawValues(base);
     for (const { vector } of Object.values(lines)) {
