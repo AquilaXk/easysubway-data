@@ -9,6 +9,7 @@ import { decodeVec, encodeVec, VERB } from "./vec-codec.mjs";
 const OPEN = { width: 10_000, height: 10_000 };
 const RED = { style: "fill", color: 0xffff0000, blendMode: 3, shaderId: null };
 const BLUE = { style: "fill", color: 0xff0000ff, blendMode: 3, shaderId: null };
+const IDENTITY = Float64Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
 const HALO = { style: "stroke", color: 0xffffffff, cap: 1, join: 1, blendMode: 3, miterLimit: 4, width: 4, shaderId: null };
 
 function rect(x, y, w, h) {
@@ -269,9 +270,8 @@ test("바탕 순서에 없는 텍스트를 그리는 레이어는 실패한다",
 
 test("무늬 정의(pattern ~ restore) 안의 그리기는 밖의 그리기와 묶지 않는다", () => {
   const draws = [[RED, rect(0, 0, 10, 10)], [RED, rect(20, 0, 10, 10)]];
-  const identity = Float64Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
   const extra = [
-    { at: 0, command: { op: "pattern", x: 0, y: 0, width: 44, height: 44, transform: identity } },
+    { at: 0, command: { op: "pattern", x: 0, y: 0, width: 44, height: 44, transform: IDENTITY } },
     { at: 2, command: { op: "restore" } },
   ];
   const { base } = mergeDraws(docOf(draws, extra), [], { maxExtent: OPEN });
@@ -279,9 +279,8 @@ test("무늬 정의(pattern ~ restore) 안의 그리기는 밖의 그리기와 �
 });
 
 test("무늬를 쓰는 그리기는 같은 paint라도 묶지 않고 무늬 id를 지킨다", () => {
-  const identity = Float64Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
   const extra = [
-    { at: 0, command: { op: "pattern", x: 0, y: 0, width: 44, height: 44, transform: identity } },
+    { at: 0, command: { op: "pattern", x: 0, y: 0, width: 44, height: 44, transform: IDENTITY } },
     { at: 1, command: { op: "restore" } },
   ];
   const doc = docOf([[RED, rect(0, 0, 10, 10)], [RED, rect(20, 0, 10, 10)], [RED, rect(40, 0, 10, 10)]], extra);
@@ -324,12 +323,30 @@ test("합치지 않아도 한 요소의 채우기와 선, 여러 줄 라벨의 �
   assert.deepEqual(drawsOf(base), [[HALO, [0]], [HALO, [0]], [RED, [0]], [RED, [0]]]);
 });
 
-test("합치지 않아도 clip·restore와 텍스트 명령은 같은 자리에 남고, 레이어는 바탕의 부분 수열이다", () => {
+test("합치지 않아도 텍스트 명령은 같은 자리에 남고, 레이어는 바탕의 부분 수열이다", () => {
   const scene = labeledScene([drawAt(0), drawAt(1), moveTo(1), fillText(1), drawAt(2)]);
   const layer = labeledScene([drawAt(1), moveTo(1), fillText(1)]);
   const merged = mergeDraws(scene, [{ name: "b", doc: layer }], { maxExtent: OPEN, mergeDraws: false });
   assert.deepEqual(resolvedCommands(merged.base), resolvedCommands(scene));
   assert.deepEqual(resolvedCommands(merged.layers[0].doc), resolvedCommands(layer));
+});
+
+test("합치지 않아도 pattern·clipPath·restore와 무늬를 쓰는 그리기는 같은 자리에 같은 값으로 남고, 레이어에도 따라온다", () => {
+  const draws = [[RED, rect(0, 0, 10, 10)], [RED, rect(20, 0, 10, 10)], [RED, rect(40, 0, 10, 10)]];
+  const extra = [
+    { at: 0, command: { op: "pattern", x: 0, y: 0, width: 44, height: 44, transform: IDENTITY } },
+    { at: 2, command: { op: "restore" } },
+    { at: 3, command: { op: "clipPath", pathId: 0 } },
+    { at: 6, command: { op: "restore" } },
+  ];
+  const scene = docOf(draws, extra);
+  scene.commands[4].patternId = 0;
+  const merged = mergeDraws(scene, [{ name: "line-1", doc: scene }], { maxExtent: OPEN, mergeDraws: false });
+  const ops = ["pattern", "drawPath", "restore", "clipPath", "drawPath", "drawPath", "restore"];
+  assert.deepEqual(merged.base.commands.map(({ op }) => op), ops);
+  assert.deepEqual(merged.layers[0].doc.commands.map(({ op }) => op), ops);
+  assert.deepEqual(resolvedCommands(merged.base), resolvedCommands(scene));
+  assert.equal(merged.base.commands[4].patternId, 0);
 });
 
 test("합치지 않는 레이어도 같은 레이어 집합에 속한 그리기만 남긴다", () => {
@@ -580,25 +597,50 @@ function assertSamePicture(input, output, label) {
   });
 }
 
+// 레이어의 그리기 열이 바탕의 그리기 열의 부분 수열인지 본다(둘 다 draw마다 paint와 윤곽선 시작점으로 비교).
+function assertDrawSubsequence(baseDoc, layerDoc, label) {
+  const keyOf = (doc, command) => JSON.stringify(drawsOf({ ...doc, commands: [command] }));
+  const baseKeys = baseDoc.commands.map((command) => keyOf(baseDoc, command));
+  let cursor = 0;
+  for (const command of layerDoc.commands) {
+    const key = keyOf(layerDoc, command);
+    while (cursor < baseKeys.length && baseKeys[cursor] !== key) cursor += 1;
+    assert.ok(cursor < baseKeys.length, `${label}: 레이어 그리기가 바탕 순서에 없다`);
+    cursor += 1;
+  }
+}
+
+const toDoc = (draws) => docOf(draws.map(({ paint, path }) => [paint, path]));
+const layerBOf = (scene) => scene.filter(({ lines }) => lines.includes("b"));
+const drawListOf = (draws) => draws.map(({ paint, path }) => [paint, [path.points[0]]]);
+
 test("무작위 장면 20개에서 바탕과 레이어 모두 같은 그림이고 그리기 수는 줄며 레이어는 바탕의 부분 수열이다", () => {
   for (let seed = 1; seed <= 20; seed += 1) {
     const scene = randomScene(seed);
-    const toDoc = (draws) => docOf(draws.map(({ paint, path }) => [paint, path]));
-    const layerB = scene.filter(({ lines }) => lines.includes("b"));
+    const layerB = layerBOf(scene);
     const merged = mergeDraws(toDoc(scene), [{ name: "b", doc: toDoc(layerB) }], {
       maxExtent: { width: 300, height: 300 },
     });
     assertSamePicture(scene, merged.base, `seed ${seed} 바탕`);
     assertSamePicture(layerB, merged.layers[0].doc, `seed ${seed} 레이어`);
     assert.ok(merged.base.commands.length < scene.length, `seed ${seed}: 그리기 수가 줄지 않았다`);
-    const baseKeys = merged.base.commands.map((command) => JSON.stringify(drawsOf({ ...merged.base, commands: [command] })));
-    let cursor = 0;
-    for (const command of merged.layers[0].doc.commands) {
-      const key = JSON.stringify(drawsOf({ ...merged.layers[0].doc, commands: [command] }));
-      while (cursor < baseKeys.length && baseKeys[cursor] !== key) cursor += 1;
-      assert.ok(cursor < baseKeys.length, `seed ${seed}: 레이어 그리기가 바탕 순서에 없다`);
-      cursor += 1;
-    }
+    assertDrawSubsequence(merged.base, merged.layers[0].doc, `seed ${seed}`);
+  }
+});
+
+test("무작위 장면 20개에서 합치지 않으면 바탕과 레이어 모두 입력 그리기를 같은 순서로 하나씩 내고 레이어는 바탕의 부분 수열이다", () => {
+  for (let seed = 1; seed <= 20; seed += 1) {
+    const scene = randomScene(seed);
+    const layerB = layerBOf(scene);
+    const merged = mergeDraws(toDoc(scene), [{ name: "b", doc: toDoc(layerB) }], {
+      maxExtent: { width: 300, height: 300 },
+      mergeDraws: false,
+    });
+    assertSamePicture(scene, merged.base, `seed ${seed} 바탕`);
+    assertSamePicture(layerB, merged.layers[0].doc, `seed ${seed} 레이어`);
+    assert.deepEqual(drawsOf(merged.base), drawListOf(scene), `seed ${seed}: 바탕이 입력 그리기를 그대로 낸다`);
+    assert.deepEqual(drawsOf(merged.layers[0].doc), drawListOf(layerB), `seed ${seed}: 레이어가 입력 그리기를 그대로 낸다`);
+    assertDrawSubsequence(merged.base, merged.layers[0].doc, `seed ${seed}`);
   }
 });
 
