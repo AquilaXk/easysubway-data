@@ -49,7 +49,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24.19.0"
       - name: Record source fetch attempts for the job summary
@@ -87,7 +87,7 @@ jobs:
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -187,7 +187,7 @@ jobs:
           node tools/ci/verify-source-reverification-replay-run.mjs --source-run-id "${REPLAY_RUN_ID}" --repository "${GITHUB_REPOSITORY}" --run "${source_root}/run.json" --jobs "${source_root}/jobs.json"
       - name: Download the retained reverification collection
         if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.decision.outputs.replay_run_id != '' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           repository: ${{ github.repository }}
           run-id: ${{ steps.decision.outputs.replay_run_id }}
@@ -287,7 +287,7 @@ jobs:
       # 재생 가능한 묶음의 등록기는 수집 시각에서 24시간이 지난 증거를 거부하므로 그 뒤의 재생은 반드시 실패한다. 보관을 1일로 두어 그 뒤에는 recreate가 다시 수집 경로를 고른다.
       - name: Upload the retained collection for a later replay
         if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' && steps.reverify.outputs.replay_bundle == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: source-reverification-${{ github.run_id }}
           path: ${{ runner.temp }}/source-reverification/${{ github.run_id }}/replay-bundle
@@ -296,7 +296,7 @@ jobs:
       - name: Mint App token for the reverification pull request
         id: app-token-pr
         if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -358,7 +358,7 @@ jobs:
       - name: Upload provider call evidence
         # #3036: 다음 run의 하루 호출 예산 판정이 이 run이 원천별로 보낸 요청 수를 센다. 실패·취소에도 올리고, KST 하루 창(최대 24시간)을 덮도록 2일 보관한다.
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: source-reverification-calls-${{ github.run_id }}
           path: ${{ runner.temp }}/source-fetch-telemetry.jsonl
