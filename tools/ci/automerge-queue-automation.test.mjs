@@ -7,9 +7,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-// #985: 코디네이터의 자동화 PR 경로. 코디네이터는 여전히 유일한 병합 주체이고, 자동화 PR은 신뢰 협력자의 사람 리뷰 대신
-// App(easysubway-release-chain[bot])이 남긴 exact-head 정책 통과 기록(attestation)으로 리뷰 게이트를 통과한다.
-// 나머지 게이트(미해결 thread, required context, 병합 상태, --match-head-commit)는 사람 PR과 같다.
 const workflowUrl = new URL('../../.github/workflows/automerge-queue.yml', import.meta.url);
 const readWorkflow = () => readFile(workflowUrl, 'utf8');
 const dedent = (block, width = 10) => block.replace(new RegExp(`^ {${width}}`, 'gm'), '');
@@ -254,7 +251,7 @@ test('반증: 신뢰 협력자의 CHANGES_REQUESTED 또는 ACT_ON이 열려 있�
   assert.equal((await runGate({ comments: [attestation()], reviews: [actOn, review(2, 'APPROVED')] })).passed, true);
   assert.equal(
     (await runGate({ comments: [attestation()], reviews: [actOn, review(2, 'CHANGES_REQUESTED'), review(3, 'DISMISSED')] })).passed,
-    true,
+    false,
   );
   assert.equal(
     (await runGate({ comments: [attestation()], reviews: [{ ...actOn, author_association: 'NONE' }] })).passed,

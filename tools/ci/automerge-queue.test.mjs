@@ -988,8 +988,8 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
         user: { login: 'reviewer-two', type: 'User' },
       }),
     ], exactMarker),
-    0,
-    'DISMISSED after intermediate CHANGES_REQUESTED must clear prior reviewer state',
+    1,
+    'DISMISSED after intermediate CHANGES_REQUESTED must not erase prior current-head ACT_ON',
   );
 
   assert.notEqual(
@@ -1050,8 +1050,6 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     0,
   );
 
-  // dismiss_stale_reviews_on_push로 무효화된 이전 head 승인도 큐를 막지 않는다.
-  // 이 저장소 main ruleset은 dismiss_stale_reviews_on_push: true다.
   assert.equal(
     runReviewFilter([
       review(1, 'DISMISSED', '2026-08-01T00:00:00Z', '', {
