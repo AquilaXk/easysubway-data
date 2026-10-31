@@ -397,12 +397,6 @@ jobs:
           }
           # fail-closed-pr-end
           # automation-policy-begin
-          # 자동화 PR(#985)은 신뢰 협력자의 Aquila 리뷰 대신 App의 exact-head 정책 통과 기록(attestation)으로 리뷰 게이트를 통과한다.
-          # 기록은 automation-pr-automerge.yml이 정책(작성자·브랜치·증거 블록·API diff 경로·커밋 신원·CI·게이트 재계산)을 모두 통과한 head에만 남긴다.
-          # 이 함수는 그 기록을 다시 검증할 뿐 정책을 되풀이하지 않는다: 스위치가 켜져 있고, PR 작성자가 신뢰 App(login·id·type)이고, 현재 head의 기록이
-          # 신뢰 App의 comment이고, 신뢰 협력자의 활성 변경 요청이 없어야 한다. 조회·형식 실패와 애매한 상태는 모두 통과하지 못한다(fail closed).
-          # 후보당 청구 모델: Aquila 판정이 실패한 후보에서만 REST 2회(PR 조회, head 커밋 조회)를 더 쓴다. marker 복구와 같은 드문 경로라 후보당 청구에 넣지 않는다.
-          # 입력: pr, head, comments, reviews(read_pages 페이지 배열). 병합은 이 함수가 아니라 아래 병합 분기가 같은 게이트 뒤에서 한다.
           automation_policy_authorized() {
             [[ "${AUTOMATION_AUTOMERGE_ENABLED:-}" == "true" ]] || return 1
             local pull author payload digest
@@ -548,8 +542,6 @@ jobs:
                 return 0
               fi
             else
-              # 게이트의 신뢰 author와 discovery 절을 그대로 복제한다. commit set 조회 전에 먼저
-              # 후보 리뷰가 있는지 보고, 없으면 요청을 쓰지 않는다.
               # shellcheck disable=SC2016
               discovery='
                 def is_coderabbit:
@@ -557,30 +549,37 @@ jobs:
                   .user.login == "coderabbitai[bot]" and
                   .user.id == 136622811 and
                   .user.type == "Bot";
+                def is_trusted_human:
+                  .author_association == "OWNER" or
+                  .author_association == "MEMBER" or
+                  .author_association == "COLLABORATOR";
                 def is_gate_discovery:
                   .state == "APPROVED" or
                   (.state == "COMMENTED" and
                     (is_coderabbit or
-                      ((.body // "" | startswith("**Actionable comments posted: ")) and
-                      ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
-                       (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->"))))));
-                [flatten[] |
+                      (($head | test("^[0-9a-f]{40}$")) and
+                       is_trusted_human and
+                       .commit_id == $head and
+                       (([(.body // "") | scan("<!-- pstack-interrogate [^>]*-->")]) as $markers |
+                         ($markers | length == 1) and
+                         $markers[0] == ("<!-- pstack-interrogate head=" + $head + " act-on=0 -->")))));
+                (([flatten[] |
                   select(
                     .author_association == "OWNER" or
                     .author_association == "MEMBER" or
                     .author_association == "COLLABORATOR" or
                     is_coderabbit
-                  )] as $trusted |
+                  )]) as $trusted |
                 any($trusted[];
                   is_gate_discovery and
-                  ($commit_ids == null or (.commit_id as $review_commit | $commit_ids | index($review_commit) != null)))
+                  ($commit_ids == null or ((.commit_id) as $review_commit | $commit_ids | index($review_commit) != null))))
               '
-              if ! jq -e --argjson commit_ids null "${discovery}" <<<"${reviews}" >/dev/null; then
+              if ! jq -e --arg head "${head}" --argjson commit_ids null "${discovery}" <<<"${reviews}" >/dev/null; then
                 echo "PR #${pr}: no authorization marker and no gate-recognized discovery review; authorization is not recovered."
                 return 0
               fi
               if ! commits="$(read_pages "repos/${repo}/pulls/${pr}/commits")" ||
-                ! jq -e --argjson commit_ids "$(jq -c '[flatten[] | .sha? | select(type == "string")]' <<<"${commits}")" "${discovery}" <<<"${reviews}" >/dev/null; then
+                ! jq -e --arg head "${head}" --argjson commit_ids "$(jq -c '[flatten[] | .sha? | select(type == "string")]' <<<"${commits}")" "${discovery}" <<<"${reviews}" >/dev/null; then
                 echo "PR #${pr}: no gate-recognized discovery review in the PR commit set; authorization is not recovered."
                 return 0
               fi
@@ -600,10 +599,10 @@ jobs:
                 if length == 1 and (.[0] | type == "string") then .[0] else "" end
               ' <<<"${commits}")"
               if ! jq -e --arg head_date "${head_date}" '
-                ([.[] | select(.event == "labeled" and .label.name? == "automerge") | .created_at | fromdateiso8601] | max) as $labeled_at |
+                (([.[] | select(.event == "labeled" and .label.name? == "automerge") | .created_at | fromdateiso8601] | max) as $labeled_at |
                 ($labeled_at | type == "number") and
                 ($head_date | fromdateiso8601) <= $labeled_at and
-                all(.[] | select(.event == "head_ref_force_pushed"); (.created_at | fromdateiso8601) < $labeled_at)
+                all(.[] | select(.event == "head_ref_force_pushed"); (.created_at | fromdateiso8601) < $labeled_at))
               ' <<<"${events}" >/dev/null 2>&1; then
                 echo "PR #${pr}: head ${head} is not proven to predate the latest automerge label; authorization is not recovered."
                 return 0
@@ -676,28 +675,29 @@ jobs:
             # 후보마다 초기화한다. 앞 후보의 자동화 통과 여부가 다음 후보로 새면 안 된다.
             automation_authorized=false
             # review-state-filter-begin
-            # 저장소 협력자 외에는 GitHub가 고정한 CodeRabbit Bot tuple만 신뢰한다.
-            # frozen discovery는 라벨 이벤트에서 GitHub Actions가 기록한 exact-head marker가
-            # 있을 때만 승계한다. 임의 author·다른 SHA·후속 push는 게이트를 통과하지 못한다.
             if ! jq -e --arg head "${head}" --argjson comments "${comments}" '
               def is_coderabbit:
                 .author_association == "NONE" and
                 .user.login == "coderabbitai[bot]" and
                 .user.id == 136622811 and
                 .user.type == "Bot";
+              def is_trusted_human:
+                .author_association == "OWNER" or
+                .author_association == "MEMBER" or
+                .author_association == "COLLABORATOR";
               def is_exact_head_marker:
                 .user.login == "github-actions[bot]" and
                 .user.id == 41898282 and
                 .user.type == "Bot" and
                 (.body // "") == ("<!-- Automerge frozen discovery authorization: " + $head + " -->");
-              [flatten[] |
+              (([flatten[] |
                 select(
                   .author_association == "OWNER" or
                   .author_association == "MEMBER" or
                   .author_association == "COLLABORATOR" or
                   is_coderabbit
-                )] as $trusted |
-              ($trusted |
+                )]) as $trusted |
+              (($trusted |
               sort_by(.submitted_at, .id) |
               reduce .[] as $review ({};
                 if $review.state == "COMMENTED" then
@@ -714,9 +714,12 @@ jobs:
                 .state == "APPROVED" or
                 (.state == "COMMENTED" and
                   (is_coderabbit or
-                    ((.body // "" | startswith("**Actionable comments posted: ")) and
-                    ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
-                     (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->")))))))
+                    (($head | test("^[0-9a-f]{40}$")) and
+                     is_trusted_human and
+                     .commit_id == $head and
+                     (([(.body // "") | scan("<!-- pstack-interrogate [^>]*-->")]) as $markers |
+                       ($markers | length == 1) and
+                       $markers[0] == ("<!-- pstack-interrogate head=" + $head + " act-on=0 -->"))))))))
             ' <<<"${reviews}" >/dev/null; then
               if automation_policy_authorized; then
                 automation_authorized=true
@@ -765,32 +768,29 @@ jobs:
               # 명시적 실패만 위반이고, 위반이든 대기든 이 후보만 건너뛴다.
               # required-context-filter-begin
               context_state="$(jq -r --argjson required_check "${required_check}" --argjson statuses "${statuses}" '
-                ($statuses | flatten) as $status_records |
-                ([.[].check_runs[] |
+                (($statuses | flatten) as $status_records |
+                (([.[].check_runs[] |
                   select(.name == $required_check.context) |
                   select($required_check.integration_id == null or .app.id == $required_check.integration_id)] |
                   sort_by(.started_at, .id) |
                   last) as $run |
-                ([$status_records[] | select(.context == $required_check.context)] |
+                (([$status_records[] | select(.context == $required_check.context)] |
                   sort_by((.updated_at // .created_at // ""), .id) |
                   last) as $status |
-                (if $run == null then null
+                ((if $run == null then null
                  elif $run.conclusion == null then "pending"
                  elif $run.conclusion == "success" then "success"
                  else "failure" end) as $run_state |
-                (if $required_check.integration_id != null or $status == null then null
+                ((if $required_check.integration_id != null or $status == null then null
                  elif $status.state == "success" then "success"
                  elif $status.state == "pending" then "pending"
                  else "failure" end) as $status_state |
-                # 같은 이름의 check run과 classic status가 함께 있으면 둘 다 봐야 한다.
-                # 하나만 보면 나머지 하나가 실패·대기여도 병합이 진행된다. 결합 규칙은
-                # "실패가 하나라도 있으면 실패, 전부 성공이어야 성공, 나머지는 대기"다.
-                [$run_state, $status_state] | map(select(. != null)) as $observed |
+                (([$run_state, $status_state] | map(select(. != null))) as $observed |
                 if ($observed | length) == 0 then "missing"
                 elif ($observed | any(. == "failure")) then "failure"
                 elif ($observed | all(. == "success")) then "success"
                 else "pending"
-                end
+                end))))))
               ' <<<"${checks}")"
               # required-context-filter-end
               context_name="$(jq -r '.context' <<<"${required_check}")"
@@ -825,10 +825,10 @@ jobs:
             if [[ "${automation_authorized:-false}" == true ]]; then
               # shellcheck disable=SC2016
               if ! jq -e '
-                ([.[].check_runs[] | select(.name == "Automation PR gates" and .app.id == 15368)] |
+                (([.[].check_runs[] | select(.name == "Automation PR gates" and .app.id == 15368)] |
                   sort_by(.started_at, .id) |
                   last) as $run |
-                $run != null and $run.status == "completed" and $run.conclusion == "success"
+                $run != null and $run.status == "completed" and $run.conclusion == "success")
               ' <<<"${checks}" >/dev/null; then
                 echo "::warning::PR #${pr}: Automation PR gates is not a completed success from github-actions on this head; skipping."
                 continue
@@ -909,11 +909,11 @@ jobs:
             # merge-state-dispatch-end
           # candidate-window-begin
           done < <(jq -r --argjson window "${window}" --argjson offset "${offset}" '
-            . as $all |
-            length as $total |
+            ((.) as $all |
+            ((length) as $total |
             if $total == 0 then empty
             else [range($offset; $offset + $window) | . % $total] | unique | map($all[.])[]
-            end
+            end))
           ' <<<"${candidates}")
           # candidate-window-end
 
@@ -1006,14 +1006,14 @@ jobs:
           # 조용히 누락되므로 변경으로 본다.
           # shellcheck disable=SC2016
           producer_paths_query='
-            (.files // []) as $files |
+            ((.files // []) as $files |
             if ($files | length) >= 300 then "yes"
             elif any($files[].filename;
               startswith("tools/datapack/") or
               startswith("tools/route-map/") or
               . == "contracts.lock.json" or
               . == ".github/workflows/datapack-release.yml") then "yes"
-            else "no" end
+            else "no" end)
           '
           # 조회는 branch=main으로 제한한다. 이 값은 "producer가 main을 마지막으로 본
           # 지점"이어야 하는데, 필터가 없으면 feature ref를 대상으로 한 dispatch 실행이

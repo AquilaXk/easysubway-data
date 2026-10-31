@@ -7,9 +7,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-// #985: 코디네이터의 자동화 PR 경로. 코디네이터는 여전히 유일한 병합 주체이고, 자동화 PR은 신뢰 협력자의 Aquila 리뷰 대신
-// App(easysubway-release-chain[bot])이 남긴 exact-head 정책 통과 기록(attestation)으로 리뷰 게이트를 통과한다.
-// 나머지 게이트(미해결 thread, required context, 병합 상태, --match-head-commit)는 사람 PR과 같다.
 const workflowUrl = new URL('../../.github/workflows/automerge-queue.yml', import.meta.url);
 const readWorkflow = () => readFile(workflowUrl, 'utf8');
 const dedent = (block, width = 10) => block.replace(new RegExp(`^ {${width}}`, 'gm'), '');
@@ -59,9 +56,10 @@ const marker = (head = HEAD) => ({
   user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
   body: `<!-- Automerge frozen discovery authorization: ${head} -->`,
 });
-const aquilaReview = (overrides = {}) =>
+const interrogateReview = (head = HEAD, overrides = {}) =>
   review(1, 'COMMENTED', {
-    body: '**Actionable comments posted: 0**\n<!-- Review source: Aquila Universal Review; engine: aquila-review -->',
+    commit_id: head,
+    body: `<!-- pstack-interrogate head=${head} act-on=0 -->`,
     ...overrides,
   });
 
@@ -179,8 +177,8 @@ test('반증: 신뢰 협력자의 CHANGES_REQUESTED가 열려 있으면 자동�
   assert.equal((await runGate({ comments: [attestation()], reviews: [review(1, 'CHANGES_REQUESTED', { author_association: 'NONE' })] })).passed, true);
 });
 
-test('사람 PR 경로는 그대로다: Aquila 리뷰와 exact-head marker가 있으면 자동화 판정을 부르지 않고, 없으면 여전히 막힌다', async () => {
-  const human = await runGate({ comments: [marker()], reviews: [aquilaReview()] });
+test('사람 PR 경로는 pstack-interrogate 리뷰와 exact-head marker가 함께 있으면 자동화 판정을 부르지 않고 없으면 막힌다', async () => {
+  const human = await runGate({ comments: [marker()], reviews: [interrogateReview()] });
   assert.equal(human.passed, true);
   assert.equal(human.automation, false);
   assert.doesNotMatch(human.calls, /pulls\/26/);
@@ -188,9 +186,21 @@ test('사람 PR 경로는 그대로다: Aquila 리뷰와 exact-head marker가 �
   const noReview = await runGate({ comments: [marker()], reviews: [] });
   assert.equal(noReview.passed, false);
   assert.equal(noReview.skipped, true);
-  const noMarker = await runGate({ comments: [], reviews: [aquilaReview()] });
+  const retiredAquila = await runGate({
+    comments: [marker()],
+    reviews: [
+      review(1, 'COMMENTED', {
+        body: '**Actionable comments posted: 0**\n<!-- Review source: Aquila Universal Review; engine: aquila-review -->',
+      }),
+    ],
+  });
+  assert.equal(retiredAquila.passed, false);
+  assert.equal(retiredAquila.skipped, true);
+  const noMarker = await runGate({ comments: [], reviews: [interrogateReview()] });
   assert.equal(noMarker.passed, false);
-  const changes = await runGate({ comments: [marker()], reviews: [aquilaReview(), review(2, 'CHANGES_REQUESTED')] });
+  const priorHeadInterrogate = await runGate({ comments: [marker()], reviews: [interrogateReview(OTHER)] });
+  assert.equal(priorHeadInterrogate.passed, false);
+  const changes = await runGate({ comments: [marker()], reviews: [interrogateReview(), review(2, 'CHANGES_REQUESTED')] });
   assert.equal(changes.passed, false);
 });
 
@@ -204,13 +214,12 @@ test('자동화 판정 함수는 github.token의 GET 조회만 쓰고 쓰기·�
   assert.ok(policy.indexOf('AUTOMATION_AUTOMERGE_ENABLED') < policy.indexOf('gh api'), 'the switch is read before any API call');
 });
 
-test('리뷰 게이트는 Aquila 판정이 실패했을 때만 자동화 판정을 부르고 통과 여부를 BEHIND 분기에 넘긴다', async () => {
+test('리뷰 게이트는 사람 리뷰 판정이 실패했을 때만 자동화 판정을 부르고 통과 여부를 BEHIND 분기에 넘긴다', async () => {
   const workflow = await readWorkflow();
   assert.match(
     workflow,
     /<<<"\$\{reviews\}" >\/dev\/null; then\n\s+if automation_policy_authorized; then\n\s+automation_authorized=true\n[^\n]*\n\s+else\n\s+echo "PR #\$\{pr\}: no trusted frozen discovery review, or an active change request is open; skipping\."\n\s+continue\n\s+fi\n\s+fi\n\s+# review-state-filter-end/,
   );
-  // 후보마다 초기화한다. 앞 후보의 통과 여부가 다음 후보로 새면 안 된다.
   const reset = workflow.indexOf('automation_authorized=false');
   assert.ok(reset !== -1 && reset < workflow.indexOf('# review-state-filter-begin'));
   assert.ok(workflow.indexOf('# automation-policy-begin') < workflow.indexOf('# review-state-filter-begin'));
