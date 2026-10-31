@@ -12,16 +12,401 @@ const workflowUrl = new URL(
   '../../.github/workflows/automerge-queue.yml',
   import.meta.url,
 );
+const automationWorkflowUrl = new URL(
+  '../../.github/workflows/automation-pr-automerge.yml',
+  import.meta.url,
+);
 const ciWorkflowUrl = new URL('../../.github/workflows/ci.yml', import.meta.url);
 const ownershipUrl = new URL('./data-test-ownership.json', import.meta.url);
 const producerWorkflowUrl = new URL(
   '../../.github/workflows/datapack-release.yml',
   import.meta.url,
 );
+const prTemplateUrls = [
+  new URL('../../.github/PULL_REQUEST_TEMPLATE/full.md', import.meta.url),
+  new URL('../../.github/PULL_REQUEST_TEMPLATE/short.md', import.meta.url),
+  new URL('../../.github/pull_request_template.md', import.meta.url),
+];
 
 const readWorkflow = () => readFile(workflowUrl, 'utf8');
 const MARKER_SYNC_RE =
   /# authorization-marker-sync-begin\n([\s\S]*?)\n\s+# authorization-marker-sync-end/;
+
+const JQ_NON_CALL_KEYWORDS = new Set([
+  'and',
+  'or',
+  'if',
+  'then',
+  'elif',
+  'else',
+  'try',
+  'catch',
+  'label',
+  'reduce',
+  'foreach',
+]);
+
+function tokenizeJq(source) {
+  const tokens = [];
+  let pos = 0;
+
+  function lexCode(stopOnInterpClose) {
+    let parenDepth = 0;
+    while (pos < source.length) {
+      const ch = source[pos];
+      if (/\s/.test(ch)) {
+        pos += 1;
+        continue;
+      }
+      if (ch === '#') {
+        while (pos < source.length && source[pos] !== '\n') pos += 1;
+        continue;
+      }
+      if (ch === '"') {
+        const strStart = pos;
+        pos += 1;
+        tokens.push({ type: 'string', value: '"', index: strStart });
+        while (pos < source.length && source[pos] !== '"') {
+          if (source[pos] === '\\') {
+            if (source[pos + 1] === '(') {
+              const interpStart = pos;
+              pos += 2;
+              tokens.push({ type: 'interp_open', value: '\\(', index: interpStart });
+              lexCode(true);
+            } else {
+              pos += 2;
+            }
+          } else {
+            pos += 1;
+          }
+        }
+        if (pos >= source.length) {
+          throw new Error(`unterminated jq string starting at offset ${strStart}`);
+        }
+        pos += 1;
+        continue;
+      }
+      if (ch === '(') {
+        parenDepth += 1;
+        tokens.push({ type: 'punct', value: '(', index: pos });
+        pos += 1;
+        continue;
+      }
+      if (ch === ')') {
+        if (stopOnInterpClose && parenDepth === 0) {
+          tokens.push({ type: 'interp_close', value: ')', index: pos });
+          pos += 1;
+          return;
+        }
+        parenDepth -= 1;
+        tokens.push({ type: 'punct', value: ')', index: pos });
+        pos += 1;
+        continue;
+      }
+      if ('[]{};,|'.includes(ch)) {
+        tokens.push({ type: 'punct', value: ch, index: pos });
+        pos += 1;
+        continue;
+      }
+      if (ch === '$') {
+        const match = source.slice(pos).match(/^\$[A-Za-z_][A-Za-z0-9_]*/);
+        if (match) {
+          tokens.push({ type: 'var', value: match[0], index: pos });
+          pos += match[0].length;
+          continue;
+        }
+      }
+      const identMatch = source.slice(pos).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+      if (identMatch) {
+        tokens.push({ type: 'ident', value: identMatch[0], index: pos });
+        pos += identMatch[0].length;
+        continue;
+      }
+      const numMatch = source.slice(pos).match(/^[0-9]+(?:\.[0-9]+)?/);
+      if (numMatch) {
+        tokens.push({ type: 'num', value: numMatch[0], index: pos });
+        pos += numMatch[0].length;
+        continue;
+      }
+      const twoChar = source.slice(pos, pos + 2);
+      if (['==', '!=', '<=', '>=', '//', '?/'].includes(twoChar)) {
+        tokens.push({ type: 'op', value: twoChar, index: pos });
+        pos += 2;
+        continue;
+      }
+      tokens.push({ type: 'op', value: ch, index: pos });
+      pos += 1;
+    }
+    if (stopOnInterpClose) {
+      throw new Error('unterminated jq string interpolation \\(...)');
+    }
+  }
+
+  lexCode(false);
+  return tokens;
+}
+
+export function validateJqAsBindings(source) {
+  const tokens = tokenizeJq(source);
+  const openToClose = new Map();
+  const closeToOpen = new Map();
+  const stack = [];
+  const expectedCloser = { '(': ')', '[': ']', '{': '}', '\\(': ')' };
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const tok = tokens[i];
+    if (
+      (tok.type === 'punct' && (tok.value === '(' || tok.value === '[' || tok.value === '{')) ||
+      tok.type === 'interp_open'
+    ) {
+      stack.push(i);
+    } else if (
+      (tok.type === 'punct' && (tok.value === ')' || tok.value === ']' || tok.value === '}')) ||
+      tok.type === 'interp_close'
+    ) {
+      const openIdx = stack.pop();
+      if (openIdx === undefined || expectedCloser[tokens[openIdx].value] !== tok.value) {
+        return [`unbalanced bracket '${tok.value}' at offset ${tok.index}`];
+      }
+      openToClose.set(openIdx, i);
+      closeToOpen.set(i, openIdx);
+    }
+  }
+  if (stack.length > 0) {
+    const openTok = tokens[stack.at(-1)];
+    return [`unclosed bracket '${openTok.value}' at offset ${openTok.index}`];
+  }
+
+  const isCallParen = (openIdx) => {
+    if (tokens[openIdx]?.type !== 'punct' || tokens[openIdx].value !== '(') {
+      return false;
+    }
+    const prev = tokens[openIdx - 1];
+    return prev?.type === 'ident' && !JQ_NON_CALL_KEYWORDS.has(prev.value);
+  };
+
+  const isReduceOrForeachBinding = (asIdx) => {
+    let cursor = asIdx - 1;
+    while (cursor >= 0) {
+      const tok = tokens[cursor];
+      if (closeToOpen.has(cursor)) {
+        cursor = closeToOpen.get(cursor) - 1;
+        continue;
+      }
+      if (openToClose.has(cursor)) {
+        return false;
+      }
+      if (tok.type === 'punct' && (tok.value === ';' || tok.value === '|' || tok.value === ',')) {
+        return false;
+      }
+      if (tok.type === 'ident' && tok.value === 'as') {
+        return false;
+      }
+      if (tok.type === 'ident' && (tok.value === 'reduce' || tok.value === 'foreach')) {
+        return true;
+      }
+      cursor -= 1;
+    }
+    return false;
+  };
+
+  const violations = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const tok = tokens[i];
+    if (tok.type !== 'ident' || tok.value !== 'as') continue;
+    const next = tokens[i + 1];
+    const isBindingTarget =
+      next?.type === 'var' ||
+      (next?.type === 'punct' && (next.value === '{' || next.value === '['));
+    if (!isBindingTarget) continue;
+    if (isReduceOrForeachBinding(i)) continue;
+
+    const lhsCloseIdx = i - 1;
+    const lhsOpenIdx = closeToOpen.get(lhsCloseIdx);
+    if (
+      tokens[lhsCloseIdx]?.type !== 'punct' ||
+      tokens[lhsCloseIdx].value !== ')' ||
+      lhsOpenIdx === undefined ||
+      tokens[lhsOpenIdx].type !== 'punct' ||
+      tokens[lhsOpenIdx].value !== '(' ||
+      isCallParen(lhsOpenIdx) ||
+      lhsCloseIdx <= lhsOpenIdx + 1
+    ) {
+      violations.push(`as binding at offset ${tok.index} lacks grouping parens around <lhs>`);
+      continue;
+    }
+
+    const outerOpenIdx = lhsOpenIdx - 1;
+    const outerCloseIdx = openToClose.get(outerOpenIdx);
+    if (
+      outerOpenIdx < 0 ||
+      tokens[outerOpenIdx].type !== 'punct' ||
+      tokens[outerOpenIdx].value !== '(' ||
+      isCallParen(outerOpenIdx) ||
+      outerCloseIdx === undefined
+    ) {
+      violations.push(`as binding at offset ${tok.index} lacks outer grouping parens ((<lhs>) as $var | <body>)`);
+      continue;
+    }
+
+    const patternEndIdx = next.type === 'var' ? i + 1 : openToClose.get(i + 1);
+    const pipeIdx = patternEndIdx + 1;
+    if (tokens[pipeIdx]?.type !== 'punct' || tokens[pipeIdx].value !== '|') {
+      violations.push(`as binding at offset ${tok.index} lacks '|' after binding pattern`);
+      continue;
+    }
+    if (outerCloseIdx <= pipeIdx + 1) {
+      violations.push(`as binding at offset ${tok.index} has empty <body>`);
+      continue;
+    }
+
+    let bodyCursor = pipeIdx + 1;
+    let hasTopLevelSemicolon = false;
+    while (bodyCursor < outerCloseIdx) {
+      if (openToClose.has(bodyCursor)) {
+        bodyCursor = openToClose.get(bodyCursor) + 1;
+        continue;
+      }
+      if (tokens[bodyCursor].type === 'punct' && tokens[bodyCursor].value === ';') {
+        hasTopLevelSemicolon = true;
+        break;
+      }
+      bodyCursor += 1;
+    }
+    if (hasTopLevelSemicolon) {
+      violations.push(`as binding at offset ${tok.index} contains ';' at outer grouping level`);
+    }
+  }
+  return violations;
+}
+
+function skipDoubleQuotedShellString(text, start) {
+  let pos = start + 1;
+  while (pos < text.length && text[pos] !== '"') {
+    if (text[pos] === '\\') {
+      pos += 2;
+      continue;
+    }
+    if (text[pos] === '$' && text[pos + 1] === '(') {
+      let depth = 1;
+      pos += 2;
+      while (pos < text.length && depth > 0) {
+        if (text[pos] === "'") {
+          pos += 1;
+          while (pos < text.length && text[pos] !== "'") pos += 1;
+          pos += 1;
+          continue;
+        }
+        if (text[pos] === '"') {
+          pos = skipDoubleQuotedShellString(text, pos);
+          continue;
+        }
+        if (text[pos] === '(') depth += 1;
+        else if (text[pos] === ')') depth -= 1;
+        pos += 1;
+      }
+      continue;
+    }
+    pos += 1;
+  }
+  return pos + 1;
+}
+
+function skipShellWord(text, start) {
+  let pos = start;
+  while (pos < text.length && !/\s/.test(text[pos]) && !';|&()<>'.includes(text[pos])) {
+    if (text[pos] === "'") {
+      pos += 1;
+      while (pos < text.length && text[pos] !== "'") pos += 1;
+      pos += 1;
+    } else if (text[pos] === '"') {
+      pos = skipDoubleQuotedShellString(text, pos);
+    } else if (text[pos] === '\\') {
+      pos += 2;
+    } else {
+      pos += 1;
+    }
+  }
+  return pos;
+}
+
+function extractWorkflowJqPrograms(workflowText) {
+  const shellVars = new Map();
+  for (const assignMatch of workflowText.matchAll(/^[ \t]*([A-Za-z_][A-Za-z0-9_]*)='([^']*)'[ \t]*$/gm)) {
+    shellVars.set(assignMatch[1], assignMatch[2]);
+  }
+
+  const programs = [];
+  const invocationRe = /(?:^|[\s(|!;])(--jq|jq)\b/gm;
+  let match;
+  while ((match = invocationRe.exec(workflowText)) !== null) {
+    const lineStart = workflowText.lastIndexOf('\n', match.index) + 1;
+    if (/^[ \t]*#/.test(workflowText.slice(lineStart, match.index + match[0].length))) {
+      continue;
+    }
+    const token = match[1];
+    let pos = match.index + match[0].length;
+    const skipWs = () => {
+      while (pos < workflowText.length) {
+        if (workflowText[pos] === '\\' && workflowText[pos + 1] === '\n') {
+          pos += 2;
+        } else if (/[ \t]/.test(workflowText[pos])) {
+          pos += 1;
+        } else {
+          break;
+        }
+      }
+    };
+    skipWs();
+    const argNames = [];
+    if (token === 'jq') {
+      while (pos < workflowText.length && workflowText[pos] === '-') {
+        const flagEnd = skipShellWord(workflowText, pos);
+        const flag = workflowText.slice(pos, flagEnd);
+        pos = flagEnd;
+        skipWs();
+        if (flag === '--arg' || flag === '--argjson' || flag === '--rawfile' || flag === '--slurpfile') {
+          const nameEnd = skipShellWord(workflowText, pos);
+          argNames.push(workflowText.slice(pos, nameEnd));
+          pos = nameEnd;
+          skipWs();
+          pos = skipShellWord(workflowText, pos);
+          skipWs();
+        }
+      }
+    }
+    const wordStart = pos;
+    const wordEnd = skipShellWord(workflowText, pos);
+    let resolved = '';
+    let canResolve = wordEnd > wordStart;
+    let cursor = wordStart;
+    while (canResolve && cursor < wordEnd) {
+      if (workflowText[cursor] === "'") {
+        const close = workflowText.indexOf("'", cursor + 1);
+        if (close === -1 || close >= wordEnd) {
+          canResolve = false;
+          break;
+        }
+        resolved += workflowText.slice(cursor + 1, close);
+        cursor = close + 1;
+      } else {
+        const varRef = workflowText.slice(cursor, wordEnd).match(/^"\$\{([A-Za-z_][A-Za-z0-9_]*)\}"/);
+        if (varRef && shellVars.has(varRef[1])) {
+          resolved += shellVars.get(varRef[1]);
+          cursor += varRef[0].length;
+        } else {
+          canResolve = false;
+        }
+      }
+    }
+    if (canResolve) {
+      const line = workflowText.slice(0, wordStart).split('\n').length;
+      programs.push({ line, source: resolved, argNames });
+      invocationRe.lastIndex = wordEnd;
+    }
+  }
+  return programs;
+}
 
 // `run: |` 블록의 본문은 10칸 들여쓰기다. 셸 블록을 그대로 실행하려면 벗겨야 한다.
 // 큐 루프 안쪽 블록은 셸 들여쓰기 2칸이 더 붙어 12칸이다.
@@ -416,7 +801,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     commit_id: HEAD,
     author_association: 'OWNER',
     body,
-    user: { login: 'reviewer' },
+    user: { login: 'reviewer', type: 'User' },
     ...overrides,
   });
   const marker = (sha = HEAD, overrides = {}) => ({
@@ -429,6 +814,8 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
       input: JSON.stringify([reviews]),
       encoding: 'utf8',
     });
+    // jq -e는 결과가 false/null이면 1, 컴파일 오류면 3, 런타임 오류면 5를 낸다.
+    // 0/1만 판정으로 인정해야 프로그램 파손이 "차단 성공"으로 새지 않는다.
     assert.ok(
       result.status === 0 || result.status === 1,
       `jq 하네스 파손 (status ${result.status}): ${result.stderr}`,
@@ -438,6 +825,8 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
 
   const exactMarker = [marker()];
 
+  // current head를 정확히 승인한 base-workflow marker가 없으면 prior-head discovery는
+  // 임의 후속 push까지 승계될 수 있으므로 fail closed다.
   assert.notEqual(
     runReviewFilter([
       review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', { commit_id: PREVIOUS_HEAD }),
@@ -462,6 +851,40 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
       0,
     );
   }
+  assert.notEqual(
+    runReviewFilter(
+      [review(1, 'APPROVED', '2026-08-01T00:00:00Z')],
+      [marker(HEAD), marker(PREVIOUS_HEAD)],
+    ),
+    0,
+    'conflicting duplicate canonical markers must fail closed',
+  );
+  assert.notEqual(
+    runReviewFilter(
+      [review(1, 'APPROVED', '2026-08-01T00:00:00Z')],
+      [marker(HEAD), marker(HEAD)],
+    ),
+    0,
+    'duplicate canonical markers must fail closed until relabeled',
+  );
+  assert.equal(
+    runReviewFilter(
+      [review(1, 'APPROVED', '2026-08-01T00:00:00Z')],
+      [
+        marker(HEAD),
+        {
+          body: '<!-- Automerge frozen discovery authorization superseded -->',
+          user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+        },
+        {
+          body: `<!-- Automerge base update requested: ${PREVIOUS_HEAD} -->`,
+          user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+        },
+      ],
+    ),
+    0,
+    'superseded marker and base-update record must not collide with the single canonical marker',
+  );
 
   assert.equal(
     runReviewFilter([
@@ -473,9 +896,30 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
   assert.notEqual(
     runReviewFilter([
       review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z'),
+    ], exactMarker),
+    0,
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
       review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody()),
     ], exactMarker),
     0,
+    'valid current-head pstack-interrogate act-on=0 must clear that reviewer prior CHANGES_REQUESTED',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody(PREVIOUS_HEAD, '0'), {
+        commit_id: PREVIOUS_HEAD,
+      }),
+      review(3, 'APPROVED', '2026-08-01T00:02:00Z', '', {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'older-commit pstack-interrogate act-on=0 must not clear that reviewer prior CHANGES_REQUESTED',
   );
 
   for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
@@ -515,6 +959,54 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     ['missing space before close', `<!-- pstack-interrogate head=${HEAD} act-on=0-->`],
     ['newline inside marker', `<!-- pstack-interrogate head=${HEAD}\nact-on=0 -->`],
     ['no space after pstack-interrogate', '<!-- pstack-interrogate-->'],
+    ['unclosed pstack-interrogate marker alone', `<!-- pstack-interrogate head=${HEAD} act-on=0`],
+    [
+      'valid act-on=0 marker alongside unclosed pstack-interrogate prefix',
+      `${interrogateBody(HEAD, '0')}\n<!-- pstack-interrogate head=${HEAD} act-on=1`,
+    ],
+  ]) {
+    assert.notEqual(
+      runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', body)], exactMarker),
+      0,
+      label,
+    );
+  }
+
+  for (const [label, body] of [
+    [
+      'fenced backtick block quoting act-on=1 before valid act-on=0 marker',
+      `\`\`\`html\n${interrogateMarker(HEAD, '1')}\n\`\`\`\n\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      '4-backtick fenced block with CRLF and 3 leading spaces quoting act-on=2',
+      `   \`\`\`\`md\r\n\`\`\`\r\n${interrogateMarker(PREVIOUS_HEAD, '2')}\r\n\`\`\`\r\n   \`\`\`\`\r\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'tilde fenced block quoting unclosed prefix before valid act-on=0 marker',
+      `~~~html\n<!-- pstack-interrogate head=${HEAD} act-on=1\n~~~\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'single and double backtick inline code spans quoting markers before valid act-on=0 marker',
+      `See \`${interrogateMarker(HEAD, '1')}\` and \`\` \` ${interrogateMarker(PREVIOUS_HEAD, '3')} \` \`\`.\n\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'valid act-on=0 marker before unclosed fenced block quoting act-on=1 to EOF',
+      `${interrogateMarker(HEAD, '0')}\n\`\`\`html\n${interrogateMarker(HEAD, '1')}`,
+    ],
+  ]) {
+    assert.equal(
+      runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', body)], exactMarker),
+      0,
+      label,
+    );
+  }
+
+  for (const [label, body] of [
+    ['act-on=0 only inside fenced backtick block', `\`\`\`html\n${interrogateMarker(HEAD, '0')}\n\`\`\``],
+    ['act-on=0 only inside tilde fenced block', `~~~\n${interrogateMarker(HEAD, '0')}\n~~~`],
+    ['act-on=0 only inside unclosed fenced block', `\`\`\`\n${interrogateMarker(HEAD, '0')}`],
+    ['act-on=0 only inside single-backtick inline code', `\`${interrogateMarker(HEAD, '0')}\``],
+    ['act-on=0 only inside multi-backtick inline code', `\`\` ${interrogateMarker(HEAD, '0')} \`\``],
   ]) {
     assert.notEqual(
       runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', body)], exactMarker),
@@ -580,6 +1072,30 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     );
   }
 
+  for (const [label, badUser] of [
+    ['null user on OWNER review', null],
+    ['empty user object on OWNER review', {}],
+    ['missing user.type on OWNER review', { login: 'reviewer' }],
+    ['empty user.login on OWNER review', { login: '', type: 'User' }],
+    ['numeric user.login on OWNER review', { login: 123, type: 'User' }],
+    ['collaborator Bot user on COMMENTED interrogate review', { login: 'helper[bot]', type: 'Bot' }],
+  ]) {
+    assert.notEqual(
+      runReviewFilter([
+        review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(), { user: badUser }),
+      ], exactMarker),
+      0,
+      label,
+    );
+    assert.notEqual(
+      runReviewFilter([
+        review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', { user: badUser }),
+      ], exactMarker),
+      0,
+      `${label} (APPROVED)`,
+    );
+  }
+
   const codeRabbit = {
     author_association: 'NONE',
     user: { login: 'coderabbitai[bot]', id: 136622811, type: 'Bot' },
@@ -627,12 +1143,98 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
 
   assert.notEqual(
     runReviewFilter([
-      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z', '', {
-        commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-one' },
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', codeRabbit),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody(HEAD, '1'), {
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(3, 'APPROVED', '2026-08-01T00:02:00Z', '', {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'active ACT_ON must block merge even alongside CodeRabbit and another reviewer APPROVED',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', `${interrogateBody(HEAD, '0')}\n<!-- pstack-interrogate`, {
+        user: { login: 'reviewer-one', type: 'User' },
       }),
       review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', {
-        user: { login: 'reviewer-two' },
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'unclosed pstack-interrogate prefix must set ACT_ON and block another reviewer APPROVED',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(HEAD, '1')),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', 'addressed in latest commit'),
+      review(3, 'APPROVED', '2026-08-01T00:02:00Z', '', {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'plain COMMENTED note must not clear that reviewer prior ACT_ON',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(PREVIOUS_HEAD, '1'), {
+        commit_id: PREVIOUS_HEAD,
+      }),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody(PREVIOUS_HEAD, '0'), {
+        commit_id: PREVIOUS_HEAD,
+      }),
+      review(3, 'APPROVED', '2026-08-01T00:02:00Z', '', {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'older-commit act-on=0 must not clear that reviewer prior ACT_ON',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(PREVIOUS_HEAD, '0'), {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', '', codeRabbit),
+    ], exactMarker),
+    0,
+    'older-commit valid act-on=0 must stay neutral alongside CodeRabbit discovery',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(HEAD, '1')),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody(HEAD, '0')),
+    ], exactMarker),
+    0,
+    'valid current-head act-on=0 must clear that reviewer prior ACT_ON',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(HEAD, '1'), {
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'DISMISSED', '2026-08-01T00:01:00Z', '', {
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', interrogateBody(HEAD, '0'), {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'DISMISSED must clear prior ACT_ON for that reviewer',
+  );
+
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z', '', {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', {
+        user: { login: 'reviewer-two', type: 'User' },
       }),
     ]),
     0,
@@ -641,10 +1243,10 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     runReviewFilter([
       review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z', '', {
         commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-one' },
+        user: { login: 'reviewer-one', type: 'User' },
       }),
       review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody(), {
-        user: { login: 'reviewer-two' },
+        user: { login: 'reviewer-two', type: 'User' },
       }),
     ]),
     0,
@@ -683,14 +1285,16 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     0,
   );
 
+  // dismiss_stale_reviews_on_push로 무효화된 이전 head 승인도 큐를 막지 않는다.
+  // 이 저장소 main ruleset은 dismiss_stale_reviews_on_push: true다.
   assert.equal(
     runReviewFilter([
       review(1, 'DISMISSED', '2026-08-01T00:00:00Z', '', {
         commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-one' },
+        user: { login: 'reviewer-one', type: 'User' },
       }),
       review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', {
-        user: { login: 'reviewer-two' },
+        user: { login: 'reviewer-two', type: 'User' },
       }),
     ]),
     0,
@@ -699,14 +1303,47 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     runReviewFilter([
       review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', {
         commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-one' },
+        user: { login: 'reviewer-one', type: 'User' },
       }),
       review(2, 'DISMISSED', '2026-08-01T00:01:00Z', '', {
         commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-one' },
+        user: { login: 'reviewer-one', type: 'User' },
       }),
       review(3, 'APPROVED', '2026-08-01T00:02:00Z', '', {
-        user: { login: 'reviewer-two' },
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ]),
+    0,
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'DISMISSED', '2026-08-01T00:01:00Z', '', {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', 'just a plain note', {
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+    ]),
+    0,
+    'a DISMISSED APPROVED review followed by a plain COMMENTED note must not satisfy discovery',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'DISMISSED', '2026-08-01T00:00:00Z', '', {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'CHANGES_REQUESTED', '2026-08-01T00:01:00Z', '', {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+      review(3, 'APPROVED', '2026-08-01T00:02:00Z', '', {
+        user: { login: 'reviewer-three', type: 'User' },
       }),
     ]),
     0,
@@ -715,30 +1352,14 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     runReviewFilter([
       review(1, 'DISMISSED', '2026-08-01T00:00:00Z', '', {
         commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-one' },
+        user: { login: 'reviewer-one', type: 'User' },
       }),
       review(2, 'CHANGES_REQUESTED', '2026-08-01T00:01:00Z', '', {
         commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-two' },
+        user: { login: 'reviewer-one', type: 'User' },
       }),
       review(3, 'APPROVED', '2026-08-01T00:02:00Z', '', {
-        user: { login: 'reviewer-three' },
-      }),
-    ]),
-    0,
-  );
-  assert.notEqual(
-    runReviewFilter([
-      review(1, 'DISMISSED', '2026-08-01T00:00:00Z', '', {
-        commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-one' },
-      }),
-      review(2, 'CHANGES_REQUESTED', '2026-08-01T00:01:00Z', '', {
-        commit_id: PREVIOUS_HEAD,
-        user: { login: 'reviewer-one' },
-      }),
-      review(3, 'APPROVED', '2026-08-01T00:02:00Z', '', {
-        user: { login: 'reviewer-two' },
+        user: { login: 'reviewer-two', type: 'User' },
       }),
     ]),
     0,
@@ -755,10 +1376,11 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
   assert.equal(
     runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(), {
-        user: { login: 'pr-author' },
+        user: { login: 'pr-author', type: 'User' },
       }),
     ]),
     0,
+    'collaborator PR author User review must satisfy pstack-interrogate discovery',
   );
 });
 
@@ -1001,6 +1623,20 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       updateStatus = 0,
       recordStatus = 0,
       baseUpdateRecords = [],
+      headSha = 'old-head',
+      reviews = [
+        [
+          {
+            id: 1,
+            state: 'APPROVED',
+            submitted_at: '2026-08-01T00:00:00Z',
+            commit_id: headSha,
+            author_association: 'OWNER',
+            body: '',
+            user: { login: 'reviewer', type: 'User' },
+          },
+        ],
+      ],
     } = {},
   ) => {
     const markerSync = workflow.match(MARKER_SYNC_RE)?.[1];
@@ -1010,6 +1646,7 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       `HAS_AUTOMERGE_PAT=${hasPat}`,
       'GH_TOKEN=github-token',
       `base_update_records=${JSON.stringify(JSON.stringify(baseUpdateRecords))}`,
+      `reviews=${JSON.stringify(JSON.stringify(reviews))}`,
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       '  case "$*" in',
@@ -1022,7 +1659,7 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       '}',
       'pr=26',
       'repo=o/r',
-      'head=old-head',
+      `head=${JSON.stringify(headSha)}`,
       `merge_state=${JSON.stringify(mergeState)}`,
       'GITHUB_SERVER_URL=https://github.example',
       'GITHUB_REPOSITORY=o/r',
@@ -1091,6 +1728,33 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
   assert.equal(behind.skipped, true);
   assert.equal(behind.warned, true);
   assert.match(behind.calls + behind.stdout, /owning SSD worktree must rebase and push/);
+  const interrogateHead = 'f'.repeat(40);
+  const behindInterrogateOnly = runDispatch('BEHIND', {
+    hasPat: true,
+    headSha: interrogateHead,
+    reviews: [
+      [
+        {
+          id: 1,
+          state: 'COMMENTED',
+          submitted_at: '2026-08-01T00:00:00Z',
+          commit_id: interrogateHead,
+          author_association: 'OWNER',
+          body: `<!-- pstack-interrogate head=${interrogateHead} act-on=0 -->`,
+          user: { login: 'reviewer', type: 'User' },
+        },
+      ],
+    ],
+  });
+  assert.equal(behindInterrogateOnly.status, 0);
+  assert.equal(behindInterrogateOnly.updatedBranch, false, 'exact-head pstack-interrogate must not trigger update-branch');
+  assert.equal(behindInterrogateOnly.calls, 'SKIPPED\n', 'BEHIND transferable guard must use zero extra gh api calls');
+  assert.equal(behindInterrogateOnly.skipped, true);
+  assert.equal(behindInterrogateOnly.warned, true);
+  assert.match(
+    behindInterrogateOnly.stdout,
+    /PR #26 is behind main without a transferable frozen discovery review; its owning SSD worktree must rebase and re-review\./,
+  );
   // PAT가 있으면 게이트를 통과한 BEHIND 후보의 base를 현재 head 고정으로 갱신하고, 수락된
   // 요청만 github.token 기록으로 남긴 뒤 그 실행을 끝낸다.
   const recordLine = 'gh api --method POST repos/o/r/issues/26/comments -f body=<!-- Automerge base update requested: old-head -->';
@@ -1253,7 +1917,7 @@ const makeRunQueue =
   // 실제로 다시 읽는지 보려면 실행 도중 값이 바뀌어야 한다.
   writeFileSync(join(dir, 'rates'), `${remaining.join('\n')}\n`);
   for (const pr of prs) {
-    const head = `head${pr.number}`;
+    const head = String(pr.number).padStart(40, '0');
     writeFileSync(
       join(dir, `pr-${pr.number}.json`),
       JSON.stringify({
@@ -1280,7 +1944,7 @@ const makeRunQueue =
                 commit_id: head,
                 author_association: 'OWNER',
                 body: '',
-                user: { login: 'reviewer' },
+                user: { login: 'reviewer', type: 'User' },
               },
             ],
       ),
@@ -1292,6 +1956,7 @@ const makeRunQueue =
           ? []
           : [
               {
+                id: 9,
                 body: `<!-- Automerge frozen discovery authorization: ${head} -->`,
                 user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
               },
@@ -1362,7 +2027,7 @@ const makeRunQueue =
     '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
     '    *issues/*/comments*) n="${all#*issues/}"; n="${n%%/comments*}"; cat "$FIX/comments-$n.json" ;;',
     // marker 복구 판정용 PR commit set. 이벤트 픽스처가 없으므로 복구는 fail-closed로 끝난다.
-    `    *pulls/*/commits*) n="\${all#*pulls/}"; n="\${n%%/commits*}"; printf '[{"sha":"head%s"}]\\n' "$n" ;;`,
+    `    *pulls/*/commits*) n="\${all#*pulls/}"; n="\${n%%/commits*}"; printf '[{"sha":"%040d"}]\\n' "$n" ;;`,
     '    *issues/*/events*) return 1 ;;',
     '    *graphql*) n="${all#*number=}"; n="${n%% *}"; cat "$FIX/threads-$n.json" ;;',
     '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
@@ -2555,7 +3220,7 @@ const interrogateReview = (commitId, overrides = {}) => ({
   commit_id: commitId,
   author_association: 'OWNER',
   body: interrogateDiscoveryBody(commitId),
-  user: { login: 'reviewer' },
+  user: { login: 'reviewer', type: 'User' },
   ...overrides,
 });
 const codeRabbitDiscoveryReview = (commitId, overrides = {}) => ({
@@ -2597,6 +3262,8 @@ const syncGhStub = [
   '}',
 ];
 
+// 워크플로의 marker 동기화 블록과 페이지 상한 조회 헬퍼를 그대로 꺼내 stub gh로 실행한다.
+// comments·reviews·commits는 read_pages가 돌려주는 모양(페이지 배열)이다.
 const runMarkerSync = (
   workflow,
   { head, comments = [], reviews = [], commits = [[]], headCommit = null, compare = null, events = null, mutation = 'ok' },
@@ -2613,18 +3280,19 @@ const runMarkerSync = (
   if (compare !== null) fixture('compare.json', compare);
   commits.forEach((page, index) => fixture(`commits-${index + 1}.json`, page));
   (events ?? []).forEach((page, index) => fixture(`events-${index + 1}.json`, page));
+  const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
   const result = spawnSync('bash', ['-c', [
     'set -euo pipefail',
-    `GH_LOG=${JSON.stringify(log)}`,
-    `FIX=${JSON.stringify(dir)}`,
+    `GH_LOG=${shellQuote(log)}`,
+    `FIX=${shellQuote(dir)}`,
     'repo=o/r',
     'pr=85',
-    `head=${JSON.stringify(head)}`,
+    `head=${shellQuote(head)}`,
     'GH_TOKEN=github-token',
     'MERGE_GH_TOKEN=merge-token',
-    `mutation=${JSON.stringify(mutation)}`,
-    `comments=${JSON.stringify(JSON.stringify([comments]))}`,
-    `reviews=${JSON.stringify(JSON.stringify([reviews]))}`,
+    `mutation=${shellQuote(mutation)}`,
+    `comments=${shellQuote(JSON.stringify([comments]))}`,
+    `reviews=${shellQuote(JSON.stringify([reviews]))}`,
     ': > "$GH_LOG"',
     ...syncGhStub,
     dedent(readPages),
@@ -2702,6 +3370,7 @@ test('marker 재발행은 코디네이터 기록이 있는 base 갱신 병합 �
     ['record for another head', [markerComment, { ...record, body: recordFor(other) }]],
     ['forged record author', [markerComment, { ...record, user: { ...actionsBotUser, id: 1 } }]],
     ['duplicated records', [markerComment, record, { ...record, id: 101 }]],
+    // 라벨 재부착 전에 쌓인 marker 여러 개는 어느 것도 고치지 않는다.
     ['accumulated canonical markers', [markerComment, { ...markerComment, id: 98, body: markerFor(other) }, record]],
   ]) {
     const kept = runMarkerSync(workflow, { ...base, comments });
@@ -2741,9 +3410,33 @@ test('marker 복구는 marker가 없고 게이트 정의의 discovery가 commit 
 
   for (const [label, options] of [
     ['pstack-interrogate discovery on the current PR head', {}],
+    // data 게이트는 신뢰 APPROVED도 discovery로 인정한다. 복구도 같은 정의를 쓴다.
     ['trusted approval on an earlier PR commit', { reviews: [interrogateReview(previous, { state: 'APPROVED', body: '' })] }],
     ['CodeRabbit discovery on an earlier PR commit', { reviews: [codeRabbitDiscoveryReview(previous)] }],
     ['CodeRabbit discovery on the current PR head', { reviews: [codeRabbitDiscoveryReview(head)] }],
+    [
+      'valid pstack-interrogate with fenced and inline quoted bad markers',
+      {
+        reviews: [
+          interrogateReview(head, {
+            body: `\`<!-- pstack-interrogate head=bad act-on=2 -->\`\n\`\`\`html\n<!-- pstack-interrogate broken\n\`\`\`\n${interrogateDiscoveryBody(head)}`,
+          }),
+        ],
+      },
+    ],
+    [
+      'prior ACT_ON cleared by current-head valid pstack-interrogate',
+      {
+        reviews: [
+          interrogateReview(previous, {
+            id: 5,
+            submitted_at: '2026-09-29T00:00:00Z',
+            body: interrogateDiscoveryBody(previous, '1'),
+          }),
+          interrogateReview(head, { id: 6, submitted_at: '2026-09-29T00:30:00Z' }),
+        ],
+      },
+    ],
     ['spoofed marker is not canonical', { comments: [{ id: 7, body: markerFor(previous), user: { ...actionsBotUser, id: 1 } }] }],
     ['head committed at the label time', { events: [[labeledAt('2026-09-29T01:00:00Z')]] }],
     ['relabel after the head', { events: [[labeledAt('2026-09-28T00:00:00Z'), labeledAt('2026-09-29T02:00:00Z')]] }],
@@ -2762,6 +3455,45 @@ test('marker 복구는 marker가 없고 게이트 정의의 discovery가 commit 
     ['retired Aquila discovery review', { reviews: [interrogateReview(head, { body: retiredUniversalDiscoveryBody })] }],
     ['pstack-interrogate on an earlier PR commit', { reviews: [interrogateReview(previous)] }],
     ['pstack-interrogate with act-on > 0', { reviews: [interrogateReview(head, { body: interrogateDiscoveryBody(head, '1') })] }],
+    [
+      'active ACT_ON alongside CodeRabbit discovery',
+      {
+        reviews: [
+          codeRabbitDiscoveryReview(head, { id: 5 }),
+          interrogateReview(head, { id: 6, body: interrogateDiscoveryBody(head, '1') }),
+        ],
+      },
+    ],
+    [
+      'unclosed pstack-interrogate prefix alongside CodeRabbit discovery',
+      {
+        reviews: [
+          codeRabbitDiscoveryReview(head, { id: 5 }),
+          interrogateReview(head, { id: 6, body: `<!-- pstack-interrogate head=${head} act-on=0` }),
+        ],
+      },
+    ],
+    [
+      'active CHANGES_REQUESTED alongside CodeRabbit discovery',
+      {
+        reviews: [
+          codeRabbitDiscoveryReview(head, { id: 5 }),
+          interrogateReview(head, { id: 6, state: 'CHANGES_REQUESTED', body: '' }),
+        ],
+      },
+    ],
+    [
+      'dismissed APPROVED followed by plain COMMENTED',
+      {
+        reviews: [
+          interrogateReview(previous, { id: 5, state: 'APPROVED', body: '' }),
+          interrogateReview(previous, { id: 6, state: 'DISMISSED', submitted_at: '2026-09-29T00:10:00Z', body: '' }),
+          interrogateReview(head, { id: 7, state: 'COMMENTED', submitted_at: '2026-09-29T00:20:00Z', body: '확인 메모' }),
+        ],
+      },
+    ],
+    ['collaborator Bot user is not trusted human', { reviews: [interrogateReview(head, { user: { login: 'helper[bot]', type: 'Bot' } })] }],
+    ['markdown code-span marker only', { reviews: [interrogateReview(head, { body: `\`<!-- pstack-interrogate head=${head} act-on=0 -->\`` })] }],
     ['untrusted author association', { reviews: [interrogateReview(head, { author_association: 'NONE' })] }],
     ['CodeRabbit impersonation', { reviews: [codeRabbitDiscoveryReview(head, { user: { login: 'coderabbitai[bot]', id: 1, type: 'Bot' } })] }],
   ]) {
@@ -2795,19 +3527,37 @@ test('marker 복구는 marker가 없고 게이트 정의의 discovery가 commit 
   assert.equal(failed.authorized, false, 'a failed recovery must not authorize the head');
 });
 
-test('marker 동기화의 discovery 판정은 리뷰 게이트와 같은 정의를 쓰고 github.token만 쓴다', async () => {
+test('marker 동기화의 discovery 판정은 리뷰 게이트·자동화 정책·BEHIND 분기와 같은 정의를 쓰고 github.token만 쓴다', async () => {
   const workflow = await readWorkflow();
   const sync = workflow.match(MARKER_SYNC_RE)?.[1];
   assert.ok(sync, 'authorization marker sync must stay testable');
+  const policy = workflow.match(/# automation-policy-begin\n([\s\S]*?)\n\s+# automation-policy-end/)?.[1];
+  assert.ok(policy, 'automation policy must stay testable');
+  const dispatch = workflow.match(/# merge-state-dispatch-begin\n([\s\S]*?)\n\s+# merge-state-dispatch-end/)?.[1];
+  assert.ok(dispatch, 'merge-state dispatch must stay testable');
   const gate = workflow.match(
     /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" --argjson comments "\$\{comments\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
   )?.[1];
   assert.ok(gate, 'review gate program must stay testable');
   const normalize = (text) => text.replace(/\s+/g, ' ').trim();
-  const definition = (source, name) => source.match(new RegExp(`def ${name}:[\\s\\S]*?;\\n`))?.[0];
-  assert.equal(normalize(definition(sync, 'is_coderabbit') ?? ''), normalize(definition(gate, 'is_coderabbit') ?? ''));
-  assert.equal(normalize(definition(sync, 'is_trusted_human') ?? ''), normalize(definition(gate, 'is_trusted_human') ?? ''));
-  assert.ok(normalize(definition(gate, 'is_trusted_human') ?? '').length > 0, 'is_trusted_human must be defined in both programs');
+  const definition = (source, header) => {
+    const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return source.match(new RegExp(`def ${escaped}:[\\s\\S]*?;\\n`))?.[0];
+  };
+  for (const sharedDef of [
+    'is_coderabbit',
+    'is_trusted_human',
+    'strip_markdown_code',
+    'has_pstack_interrogate_marker',
+    'is_valid_pstack_interrogate_on($expected_head)',
+    'reduce_review_states($current_head)',
+  ]) {
+    const canonicalDef = normalize(definition(gate, sharedDef) ?? '');
+    assert.ok(canonicalDef.length > 0, `${sharedDef} must be defined in gate`);
+    assert.equal(normalize(definition(sync, sharedDef) ?? ''), canonicalDef, `${sharedDef} must match in sync`);
+    assert.equal(normalize(definition(policy, sharedDef) ?? ''), canonicalDef, `${sharedDef} must match in policy`);
+    assert.equal(normalize(definition(dispatch, sharedDef) ?? ''), canonicalDef, `${sharedDef} must match in dispatch`);
+  }
   const anyPrefix = 'any($trusted[];';
   const anyStart = gate.lastIndexOf(anyPrefix);
   assert.notEqual(anyStart, -1, 'review gate must evaluate any($trusted[]; ...)');
@@ -2827,13 +3577,15 @@ test('marker 동기화의 discovery 판정은 리뷰 게이트와 같은 정의�
   }
   assert.equal(depth, 0, 'any($trusted[]; ...) parentheses must stay balanced');
   const gateClause = gate.slice(anyStart + anyPrefix.length, cursor - 1);
-  const syncClause = definition(sync, 'is_gate_discovery')?.replace(/^def is_gate_discovery:/, '').replace(/;\n$/, '');
-  assert.ok(syncClause, 'marker sync must define is_gate_discovery');
+  const syncClause = definition(sync, 'is_gate_discovery($states)')
+    ?.replace(/^def is_gate_discovery\(\$states\):/, '')
+    .replace(/;\n$/, '');
+  assert.ok(syncClause, 'marker sync must define is_gate_discovery($states)');
   assert.equal(normalize(syncClause), normalize(gateClause), 'recovery discovery must match the gate clause');
-  assert.ok(normalize(sync).includes(normalize(`.author_association == "OWNER" or
-                .author_association == "MEMBER" or
-                .author_association == "COLLABORATOR" or
-                is_coderabbit`)), 'recovery must trust the same authors as the gate');
+  assert.ok(
+    normalize(sync).includes(normalize('select(type == "object") | select(is_trusted_human or is_coderabbit)')),
+    'recovery must trust the same authors as the gate',
+  );
   assert.doesNotMatch(sync, /MERGE_GH_TOKEN/);
   const loop = workflow.slice(workflow.indexOf('while IFS= read -r pr; do'));
   const syncAt = loop.indexOf('\n            sync_authorization_marker\n');
@@ -2917,11 +3669,12 @@ const runSyncQueue = (workflow, prs, { hasPat = false } = {}) => {
   return { status: result.status, mergedPr: merged ? Number(merged) : null, calls, stdout: result.stdout, stderr: result.stderr };
 };
 
-test('코디네이터 base 갱신 기록 뒤 CodeRabbit은 previous 재사용으로 병합하고 pstack-interrogate는 새 head 리뷰가 있어야 병합한다', async () => {
+test('코디네이터 base 갱신 기록 뒤 승계 가능 리뷰는 previous 재사용으로 병합하고 pstack-interrogate 전용 BEHIND는 건너뛴다', async () => {
   const workflow = await readWorkflow();
   const previous = 'b'.repeat(40);
   const head = 'c'.repeat(40);
   const mainParent = 'd'.repeat(40);
+  const nextHead = 'e'.repeat(40);
   const markerComment = { id: 99, body: markerFor(previous), user: actionsBotUser };
 
   const requested = runSyncQueue(workflow, [{
@@ -2936,6 +3689,16 @@ test('코디네이터 base 갱신 기록 뒤 CodeRabbit은 previous 재사용으
   )?.[1];
   assert.equal(recordBody, recordFor(previous), 'the accepted base update must be recorded for head P');
 
+  const approvedBehind = runSyncQueue(workflow, [{
+    number: 1, head: previous, mergeStateStatus: 'BEHIND',
+    comments: [markerComment],
+    reviews: [interrogateReview(previous, { state: 'APPROVED', body: '' })],
+    commits: [{ sha: previous }],
+  }], { hasPat: true });
+  assert.equal(approvedBehind.status, 0, approvedBehind.stderr);
+  assert.equal(approvedBehind.mergedPr, null);
+  assert.match(approvedBehind.calls, new RegExp(`update-branch -f expected_head_sha=${previous}\\nTOKEN=merge-token\\n`));
+
   const candidate = {
     number: 1, head, mergeStateStatus: 'CLEAN',
     comments: [markerComment, { id: 100, body: recordBody, user: actionsBotUser }],
@@ -2949,13 +3712,25 @@ test('코디네이터 base 갱신 기록 뒤 CodeRabbit은 previous 재사용으
   assert.match(reissued.calls, new RegExp(`gh api --method PATCH repos/o/r/issues/comments/99 -f body=${markerFor(head)}\\nTOKEN=github-token\\n`));
   assert.equal(reissued.mergedPr, 1, 'CodeRabbit discovery on previous must still satisfy the gate after base-update marker reissue');
 
-  const interrogateBehind = runSyncQueue(workflow, [{
-    number: 1, head: previous, mergeStateStatus: 'BEHIND',
-    comments: [markerComment], reviews: [interrogateReview(previous)], commits: [{ sha: previous }],
-  }], { hasPat: true });
+  const interrogateBehind = runSyncQueue(workflow, [
+    {
+      number: 1, head: previous, mergeStateStatus: 'BEHIND',
+      comments: [markerComment], reviews: [interrogateReview(previous)], commits: [{ sha: previous }],
+    },
+    {
+      number: 2, head: nextHead, mergeStateStatus: 'CLEAN',
+      comments: [{ id: 101, body: markerFor(nextHead), user: actionsBotUser }],
+      reviews: [interrogateReview(nextHead)],
+      commits: [{ sha: nextHead }],
+    },
+  ], { hasPat: true });
   assert.equal(interrogateBehind.status, 0, interrogateBehind.stderr);
-  assert.equal(interrogateBehind.mergedPr, null);
-  assert.match(interrogateBehind.calls, new RegExp(`update-branch -f expected_head_sha=${previous}\\nTOKEN=merge-token\\n`));
+  assert.doesNotMatch(interrogateBehind.calls, /update-branch|--method (POST|PATCH)/);
+  assert.match(
+    interrogateBehind.stdout,
+    /PR #1 is behind main without a transferable frozen discovery review; its owning SSD worktree must rebase and re-review\./,
+  );
+  assert.equal(interrogateBehind.mergedPr, 2, 'non-transferable BEHIND candidate must not block a ready CLEAN candidate behind it');
 
   const interrogateStaleOnNewHead = runSyncQueue(workflow, [{
     ...candidate,
@@ -2994,92 +3769,97 @@ test('코디네이터 base 갱신 기록 뒤 CodeRabbit은 previous 재사용으
   assert.equal(recovered.mergedPr, 1, 'a recovered marker must satisfy the unchanged review gate in the same run');
 });
 
-test('워크플로의 모든 jq as 바인딩은 jq 1.8.1 우선순위 안전 형태를 지키고 PR 템플릿은 pstack-interrogate를 안내한다', async () => {
-  const workflow = await readWorkflow();
-  const codeOnly = workflow
-    .split('\n')
-    .filter((line) => !/^\s*#/.test(line))
-    .join('\n');
-
-  const skipStringBackward = (source, quoteIndex) => {
-    let index = quoteIndex - 1;
-    while (index >= 0) {
-      if (source[index] === '"') {
-        let backslashes = 0;
-        for (let b = index - 1; b >= 0 && source[b] === '\\'; b -= 1) backslashes += 1;
-        if (backslashes % 2 === 0) return index;
-      }
-      index -= 1;
-    }
-    return -1;
-  };
-  const skipStringForward = (source, quoteIndex) => {
-    let index = quoteIndex + 1;
-    while (index < source.length) {
-      if (source[index] === '\\') {
-        index += 2;
-        continue;
-      }
-      if (source[index] === '"') return index;
-      index += 1;
-    }
-    return source.length;
-  };
-
-  const matches = [...codeOnly.matchAll(/\bas (\$[A-Za-z_][A-Za-z0-9_]*)/g)];
-  assert.ok(matches.length >= 17, `expected all jq as-bindings to be audited, got ${matches.length}`);
-  let pipeBindings = 0;
-  for (const match of matches) {
-    const asAt = match.index;
-    const varName = match[1];
-    const lineStart = codeOnly.lastIndexOf('\n', asAt) + 1;
-    if (/\breduce\b/.test(codeOnly.slice(lineStart, asAt))) continue;
-    pipeBindings += 1;
-
-    let innerClose = asAt - 1;
-    while (innerClose >= 0 && /\s/.test(codeOnly[innerClose])) innerClose -= 1;
-    assert.equal(codeOnly[innerClose], ')', `${varName} LHS must end with ')'`);
-
-    let depth = 1;
-    let innerOpen = innerClose - 1;
-    for (; innerOpen >= 0 && depth > 0; innerOpen -= 1) {
-      if (codeOnly[innerOpen] === '"') {
-        innerOpen = skipStringBackward(codeOnly, innerOpen);
-        continue;
-      }
-      if (codeOnly[innerOpen] === ')') depth += 1;
-      else if (codeOnly[innerOpen] === '(') depth -= 1;
-    }
-    innerOpen += 1;
-    assert.equal(depth, 0, `${varName} LHS parentheses must balance`);
-
-    const outerOpen = innerOpen - 1;
-    assert.equal(codeOnly[outerOpen], '(', `${varName} binding must be wrapped in outer '((...) as ${varName} | ...)'`);
-    assert.doesNotMatch(codeOnly[outerOpen - 1] ?? '', /[A-Za-z0-9_]/, `${varName} outer '(' must be a grouping parenthesis`);
-
-    const afterVar = codeOnly.slice(asAt + match[0].length);
-    const pipeMatch = /^\s*\|/.exec(afterVar);
-    assert.ok(pipeMatch, `${varName} binding must pipe into its body`);
-
-    let outerDepth = 1;
-    let outerClose = outerOpen + 1;
-    for (; outerClose < codeOnly.length && outerDepth > 0; outerClose += 1) {
-      if (codeOnly[outerClose] === '"') {
-        outerClose = skipStringForward(codeOnly, outerClose);
-        continue;
-      }
-      if (codeOnly[outerClose] === '(') outerDepth += 1;
-      else if (codeOnly[outerClose] === ')') outerDepth -= 1;
-    }
-    assert.equal(outerDepth, 0, `${varName} outer parentheses must balance`);
-    assert.ok(outerClose - 1 > asAt + match[0].length + pipeMatch[0].length, `${varName} outer ')' must enclose the body`);
+test('모든 PR 템플릿이 현재 head의 pstack interrogate 단일 마커 계약을 안내하고 은퇴한 폴백 문구를 남기지 않는다', async () => {
+  const expectedLine =
+    '- [ ] 현재 head에 대한 `pstack` `interrogate` Review(`<!-- pstack-interrogate head=<40자 sha> act-on=0 -->`)를 단일 PR review로 게시했습니다.';
+  for (const templateUrl of prTemplateUrls) {
+    const content = await readFile(templateUrl, 'utf8');
+    assert.doesNotMatch(
+      content,
+      /aquila-review|Aquila 마커|Codex|폴백 리뷰|CodeRabbit Review 객체가 없으면/i,
+      `${templateUrl.pathname} must not contain retired fallback wording`,
+    );
+    assert.ok(
+      content.includes(expectedLine),
+      `${templateUrl.pathname} must include the exact pstack interrogate checklist item`,
+    );
   }
-  assert.ok(pipeBindings >= 15, `expected at least 15 pipe as-bindings, got ${pipeBindings}`);
+});
 
-  const prTemplate = await readFile(new URL('../../.github/PULL_REQUEST_TEMPLATE/full.md', import.meta.url), 'utf8');
-  assert.doesNotMatch(prTemplate, /aquila-review|Aquila 마커/i);
-  assert.match(prTemplate, /pstack[\s\S]*interrogate/);
-  assert.match(prTemplate, /pstack-interrogate head=<40자 sha> act-on=0/);
+test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | <body>) 형식을 지키고 jq 컴파일을 통과한다', async () => {
+  for (const [label, badSource] of [
+    ['unparenthesized lhs', '(.foo as $x | $x)'],
+    ['missing outer grouping parens', '(.foo) as $x | $x'],
+    ['nested second as without own outer parens', '((.a) as $x | (.b) as $y | $x + $y)'],
+    ['call paren masquerading as outer grouping paren', 'any((.foo) as $x | $x)'],
+    ['semicolon inside outer grouping level', 'def f(a; b): a; f((.foo) as $x | $x; 1)'],
+    ['object destructuring without outer parens', '(.foo) as {a: $a} | $a'],
+    ['array destructuring without outer parens', '(.foo) as [$a] | $a'],
+    ['string interpolation violation', '"\\((.foo) as $x | $x)"'],
+    ['as following reduce outside header', 'reduce .[] as $r ({}; .) | (.foo) as $x | $x'],
+  ]) {
+    assert.ok(
+      validateJqAsBindings(badSource).length > 0,
+      `validator must reject ${label}: ${badSource}`,
+    );
+  }
+
+  for (const [label, goodSource] of [
+    ['properly wrapped single binding', '((.foo) as $x | $x)'],
+    ['properly wrapped nested bindings', '((.a) as $x | ((.b) as $y | $x + $y))'],
+    ['reduce header binding', 'reduce (.items[] | select(.ok)) as $item ({}; . + $item)'],
+    ['foreach header binding', '[foreach .[] as $item (0; . + $item; .)]'],
+    ['destructuring wrapped properly', '((.foo) as {a: $a} | $a)'],
+    ['string interpolation wrapped properly', '"\\(((.foo) as $x | $x))"'],
+    ['literal "as $x" inside string', '"foo as $x | bar"'],
+  ]) {
+    assert.deepEqual(
+      validateJqAsBindings(goodSource),
+      [],
+      `validator must accept ${label}: ${goodSource}`,
+    );
+  }
+
+  const automergeWorkflow = await readWorkflow();
+  const automationWorkflow = await readFile(automationWorkflowUrl, 'utf8');
+  const stripDefs = [...automergeWorkflow.matchAll(/def strip_markdown_code:[\s\S]*?;\n/g)].map((m) => m[0]);
+  assert.equal(stripDefs.length, 4, 'all 4 strip_markdown_code definitions must be audited');
+  for (const stripDef of stripDefs) {
+    assert.doesNotMatch(
+      stripDef,
+      /`/,
+      'strip_markdown_code must use \\x60 instead of literal backticks',
+    );
+  }
+
+  for (const [name, workflowText, minPrograms] of [
+    ['automerge-queue.yml', automergeWorkflow, 30],
+    ['automation-pr-automerge.yml', automationWorkflow, 0],
+  ]) {
+    const programs = extractWorkflowJqPrograms(workflowText);
+    assert.ok(
+      programs.length >= minPrograms,
+      `${name}: expected at least ${minPrograms} extracted jq programs, got ${programs.length}`,
+    );
+    for (const { line, source, argNames } of programs) {
+      assert.deepEqual(
+        validateJqAsBindings(source),
+        [],
+        `${name}:${line} violates ((<lhs>) as $<var> | <body>)`,
+      );
+      const jqArgs = ['-n'];
+      for (const argName of [...new Set(argNames)]) {
+        jqArgs.push('--argjson', argName, 'null');
+      }
+      jqArgs.push(`if false then (\n${source}\n) else empty end`);
+      const compiled = spawnSync('jq', jqArgs, { encoding: 'utf8' });
+      assert.equal(
+        compiled.status,
+        0,
+        `${name}:${line} failed jq compile check:\n${compiled.stderr}`,
+      );
+    }
+  }
 });
 
 // #3036: 큐를 다시 깨울 이벤트가 오지 않는 공백을 schedule tick이 메운다. RC chain이 GITHUB_TOKEN으로 dispatch한

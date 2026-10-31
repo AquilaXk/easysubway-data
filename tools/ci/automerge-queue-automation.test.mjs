@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+// #985: 코디네이터의 자동화 PR 경로. 코디네이터는 여전히 유일한 병합 주체이고, 자동화 PR은 신뢰 협력자의 사람 리뷰 대신
+// App(easysubway-release-chain[bot])이 남긴 exact-head 정책 통과 기록(attestation)으로 리뷰 게이트를 통과한다.
+// 나머지 게이트(미해결 thread, required context, 병합 상태, --match-head-commit)는 사람 PR과 같다.
 const workflowUrl = new URL('../../.github/workflows/automerge-queue.yml', import.meta.url);
 const readWorkflow = () => readFile(workflowUrl, 'utf8');
 const dedent = (block, width = 10) => block.replace(new RegExp(`^ {${width}}`, 'gm'), '');
@@ -48,7 +51,7 @@ const review = (id, state, overrides = {}) => ({
   commit_id: HEAD,
   author_association: 'OWNER',
   body: '',
-  user: { login: 'reviewer' },
+  user: { login: 'reviewer', type: 'User' },
   ...overrides,
 });
 const marker = (head = HEAD) => ({
@@ -70,22 +73,23 @@ async function runGate({ reviews = [], comments = [], author = APP, enabled = 't
   const gate = workflow.match(/# review-state-filter-begin\n([\s\S]*?)\n\s+# review-state-filter-end/)?.[0];
   assert.ok(policy, 'automation policy block must stay testable');
   assert.ok(gate, 'review gate must stay testable');
+  const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
   const result = stubbedBash([
     'set -euo pipefail',
     `AUTOMATION_AUTOMERGE_ENABLED=${enabled}`,
     'gh() {',
     `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
     '  case "$*" in',
-    `    "api repos/o/r/pulls/26 --jq {user, body}") ${authorFails ? 'return 1' : `printf '%s' ${JSON.stringify(JSON.stringify({ user: author, body: prBody }))}`} ;;`,
-    `    "api repos/o/r/commits/${HEAD} --jq .commit.committer.date") ${headDateFails ? 'return 1' : `printf '%s' ${JSON.stringify(headCommittedAt)}`} ;;`,
+    `    "api repos/o/r/pulls/26 --jq {user, body}") ${authorFails ? 'return 1' : `printf '%s' ${shellQuote(JSON.stringify({ user: author, body: prBody }))}`} ;;`,
+    `    "api repos/o/r/commits/${HEAD} --jq .commit.committer.date") ${headDateFails ? 'return 1' : `printf '%s' ${shellQuote(headCommittedAt)}`} ;;`,
     '    *) return 99 ;;',
     '  esac',
     '}',
     'pr=26',
     'repo=o/r',
     `head=${HEAD}`,
-    `reviews=${JSON.stringify(JSON.stringify([reviews]))}`,
-    `comments=${JSON.stringify(JSON.stringify([comments]))}`,
+    `reviews=${shellQuote(JSON.stringify([reviews]))}`,
+    `comments=${shellQuote(JSON.stringify([comments]))}`,
     dedent(policy),
     'automation_authorized=false',
     'for _ in 1; do',
@@ -168,13 +172,38 @@ test('반증: PR 작성자가 신뢰 App이 아니거나 작성자를 읽지 못
   assert.equal((await runGate({ comments: [attestation()], authorFails: true })).passed, false);
 });
 
-test('반증: 신뢰 협력자의 CHANGES_REQUESTED가 열려 있으면 자동화 경로도 막는다', async () => {
+test('반증: 신뢰 협력자의 CHANGES_REQUESTED 또는 ACT_ON이 열려 있으면 자동화 경로도 막는다', async () => {
   const blocked = await runGate({ comments: [attestation()], reviews: [review(1, 'CHANGES_REQUESTED')] });
   assert.equal(blocked.passed, false);
-  // 변경 요청 뒤 승인·무시(dismiss)로 풀리면 통과한다. 신뢰 협력자가 아닌 사람의 변경 요청은 게이트가 보지 않는다(기존 게이트와 같다).
   assert.equal((await runGate({ comments: [attestation()], reviews: [review(1, 'CHANGES_REQUESTED'), review(2, 'APPROVED')] })).passed, true);
   assert.equal((await runGate({ comments: [attestation()], reviews: [review(1, 'CHANGES_REQUESTED'), review(2, 'DISMISSED')] })).passed, true);
+  assert.equal(
+    (await runGate({ comments: [attestation()], reviews: [review(1, 'CHANGES_REQUESTED'), interrogateReview(HEAD, { id: 2 })] })).passed,
+    true,
+  );
   assert.equal((await runGate({ comments: [attestation()], reviews: [review(1, 'CHANGES_REQUESTED', { author_association: 'NONE' })] })).passed, true);
+
+  const actOn = review(1, 'COMMENTED', { body: `<!-- pstack-interrogate head=${HEAD} act-on=1 -->` });
+  const unclosed = review(1, 'COMMENTED', { body: `<!-- pstack-interrogate head=${HEAD} act-on=0` });
+  assert.equal((await runGate({ comments: [attestation()], reviews: [actOn] })).passed, false);
+  assert.equal((await runGate({ comments: [attestation()], reviews: [unclosed] })).passed, false);
+  assert.equal((await runGate({ comments: [attestation()], reviews: [actOn, review(2, 'COMMENTED', { body: '일반 코멘트' })] })).passed, false);
+  assert.equal(
+    (await runGate({ comments: [attestation()], reviews: [actOn, interrogateReview(OTHER, { id: 2 })] })).passed,
+    false,
+    'older-commit act-on=0 must not clear ACT_ON',
+  );
+  assert.equal((await runGate({ comments: [attestation()], reviews: [actOn, interrogateReview(HEAD, { id: 2 })] })).passed, true);
+  assert.equal((await runGate({ comments: [attestation()], reviews: [actOn, review(2, 'APPROVED')] })).passed, true);
+  assert.equal((await runGate({ comments: [attestation()], reviews: [actOn, review(2, 'DISMISSED')] })).passed, true);
+  assert.equal(
+    (await runGate({ comments: [attestation()], reviews: [{ ...actOn, author_association: 'NONE' }] })).passed,
+    true,
+  );
+  assert.equal(
+    (await runGate({ comments: [attestation()], reviews: [{ ...actOn, user: { login: 'helper[bot]', type: 'Bot' } }] })).passed,
+    true,
+  );
 });
 
 test('사람 PR 경로는 pstack-interrogate 리뷰와 exact-head marker가 함께 있으면 자동화 판정을 부르지 않고 없으면 막힌다', async () => {
@@ -220,6 +249,7 @@ test('리뷰 게이트는 사람 리뷰 판정이 실패했을 때만 자동화 
     workflow,
     /<<<"\$\{reviews\}" >\/dev\/null; then\n\s+if automation_policy_authorized; then\n\s+automation_authorized=true\n[^\n]*\n\s+else\n\s+echo "PR #\$\{pr\}: no trusted frozen discovery review, or an active change request is open; skipping\."\n\s+continue\n\s+fi\n\s+fi\n\s+# review-state-filter-end/,
   );
+  // 후보마다 초기화한다. 앞 후보의 통과 여부가 다음 후보로 새면 안 된다.
   const reset = workflow.indexOf('automation_authorized=false');
   assert.ok(reset !== -1 && reset < workflow.indexOf('# review-state-filter-begin'));
   assert.ok(workflow.indexOf('# automation-policy-begin') < workflow.indexOf('# review-state-filter-begin'));
@@ -237,6 +267,7 @@ test('자동화 PR은 base 갱신(update-branch)을 요청하지 않는다. 사�
       'GH_TOKEN=github-token',
       'MERGE_GH_TOKEN=merge-token',
       'base_update_records=[]',
+      `reviews=${JSON.stringify(JSON.stringify([[review(1, 'APPROVED')]]))}`,
       'record_base_update() { :; }',
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,

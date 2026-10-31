@@ -397,6 +397,12 @@ jobs:
           }
           # fail-closed-pr-end
           # automation-policy-begin
+          # 자동화 PR(#985)은 신뢰 협력자의 사람 리뷰 대신 App의 exact-head 정책 통과 기록(attestation)으로 리뷰 게이트를 통과한다.
+          # 기록은 automation-pr-automerge.yml이 정책(작성자·브랜치·증거 블록·API diff 경로·커밋 신원·CI·게이트 재계산)을 모두 통과한 head에만 남긴다.
+          # 이 함수는 그 기록을 다시 검증할 뿐 정책을 되풀이하지 않는다: 스위치가 켜져 있고, PR 작성자가 신뢰 App(login·id·type)이고, 현재 head의 기록이
+          # 신뢰 App의 comment이고, 신뢰 협력자의 활성 변경 요청이나 ACT_ON 리뷰가 없어야 한다. 조회·형식 실패와 애매한 상태는 모두 통과하지 못한다(fail closed).
+          # 후보당 청구 모델: 사람 리뷰 판정이 실패한 후보에서만 REST 2회(PR 조회, head 커밋 조회)를 더 쓴다. marker 복구와 같은 드문 경로라 후보당 청구에 넣지 않는다.
+          # 입력: pr, head, comments, reviews(read_pages 페이지 배열). 병합은 이 함수가 아니라 아래 병합 분기가 같은 게이트 뒤에서 한다.
           automation_policy_authorized() {
             [[ "${AUTOMATION_AUTOMERGE_ENABLED:-}" == "true" ]] || return 1
             local pull author payload digest
@@ -417,32 +423,65 @@ jobs:
                 .type == "Bot";
               def is_coderabbit:
                 .author_association == "NONE" and
+                (.user | type == "object") and
                 .user.login == "coderabbitai[bot]" and
                 .user.id == 136622811 and
                 .user.type == "Bot";
+              def is_trusted_human:
+                (.author_association == "OWNER" or
+                 .author_association == "MEMBER" or
+                 .author_association == "COLLABORATOR") and
+                (.user | type == "object") and
+                (.user.login | type == "string" and length > 0) and
+                .user.type == "User";
+              def strip_markdown_code:
+                gsub("\\r\\n?"; "\n") |
+                gsub("(?m)^ {0,3}(?:(\\x60{3,})[^\\x60\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\1\\x60*[ \\t]*$|\\z)|(~{3,})[^\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\2~*[ \\t]*$|\\z))"; "") |
+                gsub("(?<!\\x60)(\\x60+)(?!\\x60)[\\s\\S]*?(?<!\\x60)\\1(?!\\x60)"; "");
+              def has_pstack_interrogate_marker:
+                (((.body // "") | strip_markdown_code) | test("<!--\\s*pstack-interrogate\\b"));
+              def is_valid_pstack_interrogate_on($expected_head):
+                ($expected_head | type == "string" and test("^[0-9a-f]{40}$")) and
+                is_trusted_human and
+                .state == "COMMENTED" and
+                .commit_id == $expected_head and
+                (((.body // "") | strip_markdown_code) as $clean |
+                (([$clean | scan("<!--\\s*pstack-interrogate[\\s\\S]*?-->")]) as $markers |
+                  ($markers | length == 1) and
+                  $markers[0] == ("<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->") and
+                  (($clean | sub("<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->"; "")) |
+                    test("<!--\\s*pstack-interrogate\\b") | not)));
+              def reduce_review_states($current_head):
+                sort_by(.submitted_at, .id) |
+                reduce .[] as $review ({};
+                  if $review.state == "DISMISSED" then
+                    del(.[$review.user.login])
+                  elif $review.state == "COMMENTED" then
+                    if ($review | is_trusted_human and has_pstack_interrogate_marker) then
+                      if ($review | is_valid_pstack_interrogate_on($current_head)) then
+                        if .[$review.user.login] == "APPROVED" then . else .[$review.user.login] = "COMMENTED" end
+                      elif ($review | is_valid_pstack_interrogate_on($review.commit_id)) then
+                        .[$review.user.login] //= "COMMENTED"
+                      else
+                        .[$review.user.login] = "ACT_ON"
+                      end
+                    else
+                      .[$review.user.login] //= "COMMENTED"
+                    end
+                  else
+                    .[$review.user.login] = $review.state
+                  end
+                );
               ($author | is_app) and
               ($comments | flatten | any(
+                type == "object" and
                 (.user | is_app) and
                 (.body // "") == ("<!-- Automation automerge policy: " + $head + " evidence " + $digest + " -->") and
                 .created_at == .updated_at and
                 ((.created_at | fromdateiso8601) >= ($head_at | fromdateiso8601)))) and
-              ([flatten[] |
-                select(
-                  .author_association == "OWNER" or
-                  .author_association == "MEMBER" or
-                  .author_association == "COLLABORATOR" or
-                  is_coderabbit
-                )] |
-              sort_by(.submitted_at, .id) |
-              reduce .[] as $review ({};
-                if $review.state == "COMMENTED" then
-                  .[$review.user.login] //= "COMMENTED"
-                elif $review.state == "DISMISSED" then
-                  del(.[$review.user.login])
-                else
-                  .[$review.user.login] = $review.state
-                end
-              ) | all(.[]; . == "APPROVED" or . == "COMMENTED"))
+              ([flatten[] | select(type == "object") | select(is_trusted_human or is_coderabbit)] |
+                reduce_review_states($head) |
+                all(.[]; . == "APPROVED" or . == "COMMENTED"))
             ' <<<"${reviews}" >/dev/null
           }
           # automation-policy-end
@@ -542,37 +581,72 @@ jobs:
                 return 0
               fi
             else
+              # 게이트의 신뢰 author와 discovery 절을 그대로 복제한다. commit set 조회 전에 먼저
+              # 후보 리뷰가 있는지 보고, 없으면 요청을 쓰지 않는다.
               # shellcheck disable=SC2016
               discovery='
                 def is_coderabbit:
                   .author_association == "NONE" and
+                  (.user | type == "object") and
                   .user.login == "coderabbitai[bot]" and
                   .user.id == 136622811 and
                   .user.type == "Bot";
                 def is_trusted_human:
-                  .author_association == "OWNER" or
-                  .author_association == "MEMBER" or
-                  .author_association == "COLLABORATOR";
-                def is_gate_discovery:
-                  .state == "APPROVED" or
+                  (.author_association == "OWNER" or
+                   .author_association == "MEMBER" or
+                   .author_association == "COLLABORATOR") and
+                  (.user | type == "object") and
+                  (.user.login | type == "string" and length > 0) and
+                  .user.type == "User";
+                def strip_markdown_code:
+                  gsub("\\r\\n?"; "\n") |
+                  gsub("(?m)^ {0,3}(?:(\\x60{3,})[^\\x60\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\1\\x60*[ \\t]*$|\\z)|(~{3,})[^\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\2~*[ \\t]*$|\\z))"; "") |
+                  gsub("(?<!\\x60)(\\x60+)(?!\\x60)[\\s\\S]*?(?<!\\x60)\\1(?!\\x60)"; "");
+                def has_pstack_interrogate_marker:
+                  (((.body // "") | strip_markdown_code) | test("<!--\\s*pstack-interrogate\\b"));
+                def is_valid_pstack_interrogate_on($expected_head):
+                  ($expected_head | type == "string" and test("^[0-9a-f]{40}$")) and
+                  is_trusted_human and
+                  .state == "COMMENTED" and
+                  .commit_id == $expected_head and
+                  (((.body // "") | strip_markdown_code) as $clean |
+                  (([$clean | scan("<!--\\s*pstack-interrogate[\\s\\S]*?-->")]) as $markers |
+                    ($markers | length == 1) and
+                    $markers[0] == ("<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->") and
+                    (($clean | sub("<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->"; "")) |
+                      test("<!--\\s*pstack-interrogate\\b") | not)));
+                def reduce_review_states($current_head):
+                  sort_by(.submitted_at, .id) |
+                  reduce .[] as $review ({};
+                    if $review.state == "DISMISSED" then
+                      del(.[$review.user.login])
+                    elif $review.state == "COMMENTED" then
+                      if ($review | is_trusted_human and has_pstack_interrogate_marker) then
+                        if ($review | is_valid_pstack_interrogate_on($current_head)) then
+                          if .[$review.user.login] == "APPROVED" then . else .[$review.user.login] = "COMMENTED" end
+                        elif ($review | is_valid_pstack_interrogate_on($review.commit_id)) then
+                          .[$review.user.login] //= "COMMENTED"
+                        else
+                          .[$review.user.login] = "ACT_ON"
+                        end
+                      else
+                        .[$review.user.login] //= "COMMENTED"
+                      end
+                    else
+                      .[$review.user.login] = $review.state
+                    end
+                  );
+                def is_gate_discovery($states):
+                  (.state == "APPROVED" and is_trusted_human and $states[.user.login] == "APPROVED") or
                   (.state == "COMMENTED" and
-                    (is_coderabbit or
-                      (($head | test("^[0-9a-f]{40}$")) and
-                       is_trusted_human and
-                       .commit_id == $head and
-                       (([(.body // "") | scan("<!-- pstack-interrogate [^>]*-->")]) as $markers |
-                         ($markers | length == 1) and
-                         $markers[0] == ("<!-- pstack-interrogate head=" + $head + " act-on=0 -->")))));
-                (([flatten[] |
-                  select(
-                    .author_association == "OWNER" or
-                    .author_association == "MEMBER" or
-                    .author_association == "COLLABORATOR" or
-                    is_coderabbit
-                  )]) as $trusted |
+                    ($states[.user.login] == "COMMENTED" or $states[.user.login] == "APPROVED") and
+                    (is_coderabbit or is_valid_pstack_interrogate_on($head)));
+                (([flatten[] | select(type == "object") | select(is_trusted_human or is_coderabbit)]) as $trusted |
+                (($trusted | reduce_review_states($head)) as $states |
+                ($states | length > 0 and all(.[]; . == "APPROVED" or . == "COMMENTED")) and
                 any($trusted[];
-                  is_gate_discovery and
-                  ($commit_ids == null or ((.commit_id) as $review_commit | $commit_ids | index($review_commit) != null))))
+                  is_gate_discovery($states) and
+                  ($commit_ids == null or ((.commit_id) as $review_commit | $commit_ids | index($review_commit) != null)))))
               '
               if ! jq -e --arg head "${head}" --argjson commit_ids null "${discovery}" <<<"${reviews}" >/dev/null; then
                 echo "PR #${pr}: no authorization marker and no gate-recognized discovery review; authorization is not recovered."
@@ -675,51 +749,81 @@ jobs:
             # 후보마다 초기화한다. 앞 후보의 자동화 통과 여부가 다음 후보로 새면 안 된다.
             automation_authorized=false
             # review-state-filter-begin
+            # 저장소 협력자 외에는 GitHub가 고정한 CodeRabbit Bot tuple만 신뢰한다.
+            # frozen discovery는 라벨 이벤트에서 GitHub Actions가 기록한 exact-head marker가
+            # 있을 때만 승계한다. 임의 author·다른 SHA·후속 push는 게이트를 통과하지 못한다.
+            # shellcheck disable=SC2016
             if ! jq -e --arg head "${head}" --argjson comments "${comments}" '
               def is_coderabbit:
                 .author_association == "NONE" and
+                (.user | type == "object") and
                 .user.login == "coderabbitai[bot]" and
                 .user.id == 136622811 and
                 .user.type == "Bot";
               def is_trusted_human:
-                .author_association == "OWNER" or
-                .author_association == "MEMBER" or
-                .author_association == "COLLABORATOR";
-              def is_exact_head_marker:
+                (.author_association == "OWNER" or
+                 .author_association == "MEMBER" or
+                 .author_association == "COLLABORATOR") and
+                (.user | type == "object") and
+                (.user.login | type == "string" and length > 0) and
+                .user.type == "User";
+              def strip_markdown_code:
+                gsub("\\r\\n?"; "\n") |
+                gsub("(?m)^ {0,3}(?:(\\x60{3,})[^\\x60\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\1\\x60*[ \\t]*$|\\z)|(~{3,})[^\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\2~*[ \\t]*$|\\z))"; "") |
+                gsub("(?<!\\x60)(\\x60+)(?!\\x60)[\\s\\S]*?(?<!\\x60)\\1(?!\\x60)"; "");
+              def has_pstack_interrogate_marker:
+                (((.body // "") | strip_markdown_code) | test("<!--\\s*pstack-interrogate\\b"));
+              def is_valid_pstack_interrogate_on($expected_head):
+                ($expected_head | type == "string" and test("^[0-9a-f]{40}$")) and
+                is_trusted_human and
+                .state == "COMMENTED" and
+                .commit_id == $expected_head and
+                (((.body // "") | strip_markdown_code) as $clean |
+                (([$clean | scan("<!--\\s*pstack-interrogate[\\s\\S]*?-->")]) as $markers |
+                  ($markers | length == 1) and
+                  $markers[0] == ("<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->") and
+                  (($clean | sub("<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->"; "")) |
+                    test("<!--\\s*pstack-interrogate\\b") | not)));
+              def reduce_review_states($current_head):
+                sort_by(.submitted_at, .id) |
+                reduce .[] as $review ({};
+                  if $review.state == "DISMISSED" then
+                    del(.[$review.user.login])
+                  elif $review.state == "COMMENTED" then
+                    if ($review | is_trusted_human and has_pstack_interrogate_marker) then
+                      if ($review | is_valid_pstack_interrogate_on($current_head)) then
+                        if .[$review.user.login] == "APPROVED" then . else .[$review.user.login] = "COMMENTED" end
+                      elif ($review | is_valid_pstack_interrogate_on($review.commit_id)) then
+                        .[$review.user.login] //= "COMMENTED"
+                      else
+                        .[$review.user.login] = "ACT_ON"
+                      end
+                    else
+                      .[$review.user.login] //= "COMMENTED"
+                    end
+                  else
+                    .[$review.user.login] = $review.state
+                  end
+                );
+              def is_canonical_actions_marker:
+                type == "object" and
+                (.user | type == "object") and
                 .user.login == "github-actions[bot]" and
                 .user.id == 41898282 and
                 .user.type == "Bot" and
-                (.body // "") == ("<!-- Automerge frozen discovery authorization: " + $head + " -->");
-              (([flatten[] |
-                select(
-                  .author_association == "OWNER" or
-                  .author_association == "MEMBER" or
-                  .author_association == "COLLABORATOR" or
-                  is_coderabbit
-                )]) as $trusted |
-              (($trusted |
-              sort_by(.submitted_at, .id) |
-              reduce .[] as $review ({};
-                if $review.state == "COMMENTED" then
-                  .[$review.user.login] //= "COMMENTED"
-                elif $review.state == "DISMISSED" then
-                  del(.[$review.user.login])
-                else
-                  .[$review.user.login] = $review.state
-                end
-              )) as $states |
-              ($comments | flatten | any(is_exact_head_marker)) and
+                (.body | type == "string") and
+                (.body | test("^<!-- Automerge frozen discovery authorization: [0-9a-f]{40} -->$"));
+              (([$comments | flatten[] | select(is_canonical_actions_marker)]) as $canonical_markers |
+              (([flatten[] | select(type == "object") | select(is_trusted_human or is_coderabbit)]) as $trusted |
+              (($trusted | reduce_review_states($head)) as $states |
+              ($canonical_markers | length == 1) and
+              $canonical_markers[0].body == ("<!-- Automerge frozen discovery authorization: " + $head + " -->") and
               ($states | length > 0 and all(.[]; . == "APPROVED" or . == "COMMENTED")) and
               any($trusted[];
-                .state == "APPROVED" or
+                (.state == "APPROVED" and is_trusted_human and $states[.user.login] == "APPROVED") or
                 (.state == "COMMENTED" and
-                  (is_coderabbit or
-                    (($head | test("^[0-9a-f]{40}$")) and
-                     is_trusted_human and
-                     .commit_id == $head and
-                     (([(.body // "") | scan("<!-- pstack-interrogate [^>]*-->")]) as $markers |
-                       ($markers | length == 1) and
-                       $markers[0] == ("<!-- pstack-interrogate head=" + $head + " act-on=0 -->"))))))))
+                  ($states[.user.login] == "COMMENTED" or $states[.user.login] == "APPROVED") and
+                  (is_coderabbit or is_valid_pstack_interrogate_on($head)))))))
             ' <<<"${reviews}" >/dev/null; then
               if automation_policy_authorized; then
                 automation_authorized=true
@@ -785,6 +889,9 @@ jobs:
                  elif $status.state == "success" then "success"
                  elif $status.state == "pending" then "pending"
                  else "failure" end) as $status_state |
+                # 같은 이름의 check run과 classic status가 함께 있으면 둘 다 봐야 한다.
+                # 하나만 보면 나머지 하나가 실패·대기여도 병합이 진행된다. 결합 규칙은
+                # "실패가 하나라도 있으면 실패, 전부 성공이어야 성공, 나머지는 대기"다.
                 (([$run_state, $status_state] | map(select(. != null))) as $observed |
                 if ($observed | length) == 0 then "missing"
                 elif ($observed | any(. == "failure")) then "failure"
@@ -863,6 +970,70 @@ jobs:
                 # 함께 깨진다. 자동화 PR은 갱신하지 않고 건너뛴다. automation-pr-behind-recreate.yml이 이 PR을 닫고 브랜치를 지운 뒤 최신 main에서 다시 만들게 한다.
                 if [[ "${automation_authorized:-false}" == true ]]; then
                   echo "::warning::PR #${pr} is an automation PR behind main; automation-pr-behind-recreate.yml closes it and requests a fresh run instead of updating its base (a base merge would void its head-bound policy attestation)."
+                  continue
+                fi
+                # shellcheck disable=SC2016
+                if ! jq -e --arg head "${head}" '
+                  def is_coderabbit:
+                    .author_association == "NONE" and
+                    (.user | type == "object") and
+                    .user.login == "coderabbitai[bot]" and
+                    .user.id == 136622811 and
+                    .user.type == "Bot";
+                  def is_trusted_human:
+                    (.author_association == "OWNER" or
+                     .author_association == "MEMBER" or
+                     .author_association == "COLLABORATOR") and
+                    (.user | type == "object") and
+                    (.user.login | type == "string" and length > 0) and
+                    .user.type == "User";
+                  def strip_markdown_code:
+                    gsub("\\r\\n?"; "\n") |
+                    gsub("(?m)^ {0,3}(?:(\\x60{3,})[^\\x60\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\1\\x60*[ \\t]*$|\\z)|(~{3,})[^\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\2~*[ \\t]*$|\\z))"; "") |
+                    gsub("(?<!\\x60)(\\x60+)(?!\\x60)[\\s\\S]*?(?<!\\x60)\\1(?!\\x60)"; "");
+                  def has_pstack_interrogate_marker:
+                    (((.body // "") | strip_markdown_code) | test("<!--\\s*pstack-interrogate\\b"));
+                  def is_valid_pstack_interrogate_on($expected_head):
+                    ($expected_head | type == "string" and test("^[0-9a-f]{40}$")) and
+                    is_trusted_human and
+                    .state == "COMMENTED" and
+                    .commit_id == $expected_head and
+                    (((.body // "") | strip_markdown_code) as $clean |
+                    (([$clean | scan("<!--\\s*pstack-interrogate[\\s\\S]*?-->")]) as $markers |
+                      ($markers | length == 1) and
+                      $markers[0] == ("<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->") and
+                      (($clean | sub("<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->"; "")) |
+                        test("<!--\\s*pstack-interrogate\\b") | not)));
+                  def reduce_review_states($current_head):
+                    sort_by(.submitted_at, .id) |
+                    reduce .[] as $review ({};
+                      if $review.state == "DISMISSED" then
+                        del(.[$review.user.login])
+                      elif $review.state == "COMMENTED" then
+                        if ($review | is_trusted_human and has_pstack_interrogate_marker) then
+                          if ($review | is_valid_pstack_interrogate_on($current_head)) then
+                            if .[$review.user.login] == "APPROVED" then . else .[$review.user.login] = "COMMENTED" end
+                          elif ($review | is_valid_pstack_interrogate_on($review.commit_id)) then
+                            .[$review.user.login] //= "COMMENTED"
+                          else
+                            .[$review.user.login] = "ACT_ON"
+                          end
+                        else
+                          .[$review.user.login] //= "COMMENTED"
+                        end
+                      else
+                        .[$review.user.login] = $review.state
+                      end
+                    );
+                  def is_transferable_discovery($states):
+                    (.state == "APPROVED" and is_trusted_human and $states[.user.login] == "APPROVED") or
+                    (.state == "COMMENTED" and is_coderabbit and $states[.user.login] == "COMMENTED");
+                  (([flatten[] | select(type == "object") | select(is_trusted_human or is_coderabbit)]) as $trusted |
+                  (($trusted | reduce_review_states($head)) as $states |
+                  ($states | length > 0 and all(.[]; . == "APPROVED" or . == "COMMENTED")) and
+                  any($trusted[]; is_transferable_discovery($states))))
+                ' <<<"${reviews}" >/dev/null; then
+                  echo "::warning::PR #${pr} is behind main without a transferable frozen discovery review; its owning SSD worktree must rebase and re-review."
                   continue
                 fi
                 # GITHUB_TOKEN이 만든 병합 커밋은 CI를 트리거하지 못하므로 PAT가 없으면 소유
