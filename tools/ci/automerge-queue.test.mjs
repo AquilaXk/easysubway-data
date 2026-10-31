@@ -882,6 +882,39 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
   assert.notEqual(
     runReviewFilter([
       review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
+      review(2, 'CHANGES_REQUESTED', '2026-08-01T00:00:30Z', '', { commit_id: PREVIOUS_HEAD }),
+      review(3, 'APPROVED', '2026-08-01T00:01:00Z', '', { commit_id: PREVIOUS_HEAD }),
+      review(4, 'COMMENTED', '2026-08-01T00:02:00Z', interrogateBody(), {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'repeated CHANGES_REQUESTED on older commit must keep max formal_pos so older APPROVED cannot clear HEAD CHANGES_REQUESTED',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', `Summary\n---\n    <!-- pstack-interrogate head=${HEAD} act-on=2 -->\n${interrogateBody(HEAD, '0')}`),
+    ], exactMarker),
+    0,
+    '4-space indented code decoy after Setext heading must be stripped',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', `<!-- pstack-interrogate head=${HEAD} act-on=2 -->\n---\n    code\n<!-- pstack-interrogate head=${HEAD} act-on=0 -->`),
+    ], exactMarker),
+    0,
+    'thematic break after blocking marker must not strip marker line as Setext heading',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', `- Example\n=======\n    <!-- pstack-interrogate head=${HEAD} act-on=2 -->\n<!-- pstack-interrogate head=${HEAD} act-on=0 -->`),
+    ], exactMarker),
+    0,
+    'list item before === underline must not strip indented blocking marker as Setext heading',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
       review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', { commit_id: DIFFERENT_HEAD }),
       review(3, 'COMMENTED', '2026-08-01T00:02:00Z', interrogateBody(), {
         user: { login: 'reviewer-two', type: 'User' },
@@ -3964,6 +3997,12 @@ test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | 
     ['non-JQ heredoc jq reference', 'run: |\n  msg="$(cat <<\'EOF\'\njq -r \'. as $x | $x\'\nEOF\n)"\n'],
     ['quoted YAML run key', "'run': |\n  jq -r '. as $x | $x' <<<'{}'\n"],
     ['folded YAML run scalar', 'name: T\non: push\njobs:\n  t:\n    steps:\n      - run: >\n          jq -r \'. as $x | $x\' <<<\'{}\'\n'],
+    ['gh -iq after $(...) endpoint arg', 'run: |\n  gh api "repos/o/$(printf r)" -iq \'. as $x | $x\'\n'],
+    ['YAML anchor on run scalar', 'run: &a |\n  jq -r \'. as $x | $x\' <<<\'{}\'\n'],
+    ['redirect $(...) before quoted jq', 'run: |\n  >$(echo /tmp/out) jq -r ". as \\$x | \\$x" <<<"{}"\n'],
+    ['assignment $(...) before dot runner', 'run: |\n  x="$(true)" . ./setup.sh\n  jq -r \'.\' <<<\'{}\'\n'],
+    ['command position $(...)', 'run: |\n  "$(printf .)" ./setup.sh\n  jq -r \'.\' <<<\'{}\'\n'],
+    ['dangling redirect at EOF', 'run: |\n  jq -r \'.\' >\n'],
   ]) {
     assert.equal(
       auditWorkflowJqInvocations(badWorkflow).ok,
@@ -3971,6 +4010,10 @@ test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | 
       `workflow auditor must fail closed on ${label}`,
     );
   }
+  assert.equal(
+    auditWorkflowJqInvocations('run: |\n  git -C . status\n  url="https://example.com/$(jq -r \'.\' <<<\'{}\')-q"\n  msg="$(cat <<\'EOF\'\n  [ "$a" -eq 1 ]\n  EOF\n  )"\n  jq -r \'((.a) as $x | $x)\' <<<\'{}\'\n').ok,
+    true,
+  );
 
   const automergeWorkflow = await readWorkflow();
   const automationWorkflow = await readFile(automationWorkflowUrl, 'utf8');
