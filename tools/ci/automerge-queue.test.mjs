@@ -7,6 +7,11 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { evaluateGithubExpression } from './github-expression.mjs';
+import {
+  auditWorkflowJqInvocations,
+  extractWorkflowJqPrograms,
+  validateJqAsBindings,
+} from './lib/automerge-queue-jq-ast.mjs';
 
 const workflowUrl = new URL(
   '../../.github/workflows/automerge-queue.yml',
@@ -31,387 +36,31 @@ const prTemplateUrls = [
 const readWorkflow = () => readFile(workflowUrl, 'utf8');
 const MARKER_SYNC_RE =
   /# authorization-marker-sync-begin\n([\s\S]*?)\n\s+# authorization-marker-sync-end/;
+const REVIEW_JQ_DEFS_RE =
+  /(^ +review_jq_defs="\$\(cat <<'JQ'\n[\s\S]*?\n +JQ\n +\)"$)/m;
+const BUDGET_CONSTANTS_RE = /# budget-constants-begin\n([\s\S]*?)\n\s+# budget-constants-end/;
 
-const JQ_NON_CALL_KEYWORDS = new Set([
-  'and',
-  'or',
-  'if',
-  'then',
-  'elif',
-  'else',
-  'try',
-  'catch',
-  'label',
-  'reduce',
-  'foreach',
-]);
-
-function tokenizeJq(source) {
-  const tokens = [];
-  let pos = 0;
-
-  function lexCode(stopOnInterpClose) {
-    let parenDepth = 0;
-    while (pos < source.length) {
-      const ch = source[pos];
-      if (/\s/.test(ch)) {
-        pos += 1;
-        continue;
-      }
-      if (ch === '#') {
-        while (pos < source.length && source[pos] !== '\n') pos += 1;
-        continue;
-      }
-      if (ch === '"') {
-        const strStart = pos;
-        pos += 1;
-        tokens.push({ type: 'string', value: '"', index: strStart });
-        while (pos < source.length && source[pos] !== '"') {
-          if (source[pos] === '\\') {
-            if (source[pos + 1] === '(') {
-              const interpStart = pos;
-              pos += 2;
-              tokens.push({ type: 'interp_open', value: '\\(', index: interpStart });
-              lexCode(true);
-            } else {
-              pos += 2;
-            }
-          } else {
-            pos += 1;
-          }
-        }
-        if (pos >= source.length) {
-          throw new Error(`unterminated jq string starting at offset ${strStart}`);
-        }
-        pos += 1;
-        continue;
-      }
-      if (ch === '(') {
-        parenDepth += 1;
-        tokens.push({ type: 'punct', value: '(', index: pos });
-        pos += 1;
-        continue;
-      }
-      if (ch === ')') {
-        if (stopOnInterpClose && parenDepth === 0) {
-          tokens.push({ type: 'interp_close', value: ')', index: pos });
-          pos += 1;
-          return;
-        }
-        parenDepth -= 1;
-        tokens.push({ type: 'punct', value: ')', index: pos });
-        pos += 1;
-        continue;
-      }
-      if ('[]{};,|'.includes(ch)) {
-        tokens.push({ type: 'punct', value: ch, index: pos });
-        pos += 1;
-        continue;
-      }
-      if (ch === '$') {
-        const match = source.slice(pos).match(/^\$[A-Za-z_][A-Za-z0-9_]*/);
-        if (match) {
-          tokens.push({ type: 'var', value: match[0], index: pos });
-          pos += match[0].length;
-          continue;
-        }
-      }
-      const identMatch = source.slice(pos).match(/^[A-Za-z_][A-Za-z0-9_]*/);
-      if (identMatch) {
-        tokens.push({ type: 'ident', value: identMatch[0], index: pos });
-        pos += identMatch[0].length;
-        continue;
-      }
-      const numMatch = source.slice(pos).match(/^[0-9]+(?:\.[0-9]+)?/);
-      if (numMatch) {
-        tokens.push({ type: 'num', value: numMatch[0], index: pos });
-        pos += numMatch[0].length;
-        continue;
-      }
-      const twoChar = source.slice(pos, pos + 2);
-      if (['==', '!=', '<=', '>=', '//', '?/'].includes(twoChar)) {
-        tokens.push({ type: 'op', value: twoChar, index: pos });
-        pos += 2;
-        continue;
-      }
-      tokens.push({ type: 'op', value: ch, index: pos });
-      pos += 1;
-    }
-    if (stopOnInterpClose) {
-      throw new Error('unterminated jq string interpolation \\(...)');
-    }
-  }
-
-  lexCode(false);
-  return tokens;
-}
-
-export function validateJqAsBindings(source) {
-  const tokens = tokenizeJq(source);
-  const openToClose = new Map();
-  const closeToOpen = new Map();
-  const stack = [];
-  const expectedCloser = { '(': ')', '[': ']', '{': '}', '\\(': ')' };
-
-  for (let i = 0; i < tokens.length; i += 1) {
-    const tok = tokens[i];
-    if (
-      (tok.type === 'punct' && (tok.value === '(' || tok.value === '[' || tok.value === '{')) ||
-      tok.type === 'interp_open'
-    ) {
-      stack.push(i);
-    } else if (
-      (tok.type === 'punct' && (tok.value === ')' || tok.value === ']' || tok.value === '}')) ||
-      tok.type === 'interp_close'
-    ) {
-      const openIdx = stack.pop();
-      if (openIdx === undefined || expectedCloser[tokens[openIdx].value] !== tok.value) {
-        return [`unbalanced bracket '${tok.value}' at offset ${tok.index}`];
-      }
-      openToClose.set(openIdx, i);
-      closeToOpen.set(i, openIdx);
-    }
-  }
-  if (stack.length > 0) {
-    const openTok = tokens[stack.at(-1)];
-    return [`unclosed bracket '${openTok.value}' at offset ${openTok.index}`];
-  }
-
-  const isCallParen = (openIdx) => {
-    if (tokens[openIdx]?.type !== 'punct' || tokens[openIdx].value !== '(') {
-      return false;
-    }
-    const prev = tokens[openIdx - 1];
-    return prev?.type === 'ident' && !JQ_NON_CALL_KEYWORDS.has(prev.value);
-  };
-
-  const isReduceOrForeachBinding = (asIdx) => {
-    let cursor = asIdx - 1;
-    while (cursor >= 0) {
-      const tok = tokens[cursor];
-      if (closeToOpen.has(cursor)) {
-        cursor = closeToOpen.get(cursor) - 1;
-        continue;
-      }
-      if (openToClose.has(cursor)) {
-        return false;
-      }
-      if (tok.type === 'punct' && (tok.value === ';' || tok.value === '|' || tok.value === ',')) {
-        return false;
-      }
-      if (tok.type === 'ident' && tok.value === 'as') {
-        return false;
-      }
-      if (tok.type === 'ident' && (tok.value === 'reduce' || tok.value === 'foreach')) {
-        return true;
-      }
-      cursor -= 1;
-    }
-    return false;
-  };
-
-  const violations = [];
-  for (let i = 0; i < tokens.length; i += 1) {
-    const tok = tokens[i];
-    if (tok.type !== 'ident' || tok.value !== 'as') continue;
-    const next = tokens[i + 1];
-    const isBindingTarget =
-      next?.type === 'var' ||
-      (next?.type === 'punct' && (next.value === '{' || next.value === '['));
-    if (!isBindingTarget) continue;
-    if (isReduceOrForeachBinding(i)) continue;
-
-    const lhsCloseIdx = i - 1;
-    const lhsOpenIdx = closeToOpen.get(lhsCloseIdx);
-    if (
-      tokens[lhsCloseIdx]?.type !== 'punct' ||
-      tokens[lhsCloseIdx].value !== ')' ||
-      lhsOpenIdx === undefined ||
-      tokens[lhsOpenIdx].type !== 'punct' ||
-      tokens[lhsOpenIdx].value !== '(' ||
-      isCallParen(lhsOpenIdx) ||
-      lhsCloseIdx <= lhsOpenIdx + 1
-    ) {
-      violations.push(`as binding at offset ${tok.index} lacks grouping parens around <lhs>`);
-      continue;
-    }
-
-    const outerOpenIdx = lhsOpenIdx - 1;
-    const outerCloseIdx = openToClose.get(outerOpenIdx);
-    if (
-      outerOpenIdx < 0 ||
-      tokens[outerOpenIdx].type !== 'punct' ||
-      tokens[outerOpenIdx].value !== '(' ||
-      isCallParen(outerOpenIdx) ||
-      outerCloseIdx === undefined
-    ) {
-      violations.push(`as binding at offset ${tok.index} lacks outer grouping parens ((<lhs>) as $var | <body>)`);
-      continue;
-    }
-
-    const patternEndIdx = next.type === 'var' ? i + 1 : openToClose.get(i + 1);
-    const pipeIdx = patternEndIdx + 1;
-    if (tokens[pipeIdx]?.type !== 'punct' || tokens[pipeIdx].value !== '|') {
-      violations.push(`as binding at offset ${tok.index} lacks '|' after binding pattern`);
-      continue;
-    }
-    if (outerCloseIdx <= pipeIdx + 1) {
-      violations.push(`as binding at offset ${tok.index} has empty <body>`);
-      continue;
-    }
-
-    let bodyCursor = pipeIdx + 1;
-    let hasTopLevelSemicolon = false;
-    while (bodyCursor < outerCloseIdx) {
-      if (openToClose.has(bodyCursor)) {
-        bodyCursor = openToClose.get(bodyCursor) + 1;
-        continue;
-      }
-      if (tokens[bodyCursor].type === 'punct' && tokens[bodyCursor].value === ';') {
-        hasTopLevelSemicolon = true;
-        break;
-      }
-      bodyCursor += 1;
-    }
-    if (hasTopLevelSemicolon) {
-      violations.push(`as binding at offset ${tok.index} contains ';' at outer grouping level`);
-    }
-  }
-  return violations;
-}
-
-function skipDoubleQuotedShellString(text, start) {
-  let pos = start + 1;
-  while (pos < text.length && text[pos] !== '"') {
-    if (text[pos] === '\\') {
-      pos += 2;
-      continue;
-    }
-    if (text[pos] === '$' && text[pos + 1] === '(') {
-      let depth = 1;
-      pos += 2;
-      while (pos < text.length && depth > 0) {
-        if (text[pos] === "'") {
-          pos += 1;
-          while (pos < text.length && text[pos] !== "'") pos += 1;
-          pos += 1;
-          continue;
-        }
-        if (text[pos] === '"') {
-          pos = skipDoubleQuotedShellString(text, pos);
-          continue;
-        }
-        if (text[pos] === '(') depth += 1;
-        else if (text[pos] === ')') depth -= 1;
-        pos += 1;
-      }
-      continue;
-    }
-    pos += 1;
-  }
-  return pos + 1;
-}
-
-function skipShellWord(text, start) {
-  let pos = start;
-  while (pos < text.length && !/\s/.test(text[pos]) && !';|&()<>'.includes(text[pos])) {
-    if (text[pos] === "'") {
-      pos += 1;
-      while (pos < text.length && text[pos] !== "'") pos += 1;
-      pos += 1;
-    } else if (text[pos] === '"') {
-      pos = skipDoubleQuotedShellString(text, pos);
-    } else if (text[pos] === '\\') {
-      pos += 2;
-    } else {
-      pos += 1;
-    }
-  }
-  return pos;
-}
-
-function extractWorkflowJqPrograms(workflowText) {
-  const shellVars = new Map();
-  for (const assignMatch of workflowText.matchAll(/^[ \t]*([A-Za-z_][A-Za-z0-9_]*)='([^']*)'[ \t]*$/gm)) {
-    shellVars.set(assignMatch[1], assignMatch[2]);
-  }
-
-  const programs = [];
-  const invocationRe = /(?:^|[\s(|!;])(--jq|jq)\b/gm;
-  let match;
-  while ((match = invocationRe.exec(workflowText)) !== null) {
-    const lineStart = workflowText.lastIndexOf('\n', match.index) + 1;
-    if (/^[ \t]*#/.test(workflowText.slice(lineStart, match.index + match[0].length))) {
-      continue;
-    }
-    const token = match[1];
-    let pos = match.index + match[0].length;
-    const skipWs = () => {
-      while (pos < workflowText.length) {
-        if (workflowText[pos] === '\\' && workflowText[pos + 1] === '\n') {
-          pos += 2;
-        } else if (/[ \t]/.test(workflowText[pos])) {
-          pos += 1;
-        } else {
-          break;
-        }
-      }
-    };
-    skipWs();
-    const argNames = [];
-    if (token === 'jq') {
-      while (pos < workflowText.length && workflowText[pos] === '-') {
-        const flagEnd = skipShellWord(workflowText, pos);
-        const flag = workflowText.slice(pos, flagEnd);
-        pos = flagEnd;
-        skipWs();
-        if (flag === '--arg' || flag === '--argjson' || flag === '--rawfile' || flag === '--slurpfile') {
-          const nameEnd = skipShellWord(workflowText, pos);
-          argNames.push(workflowText.slice(pos, nameEnd));
-          pos = nameEnd;
-          skipWs();
-          pos = skipShellWord(workflowText, pos);
-          skipWs();
-        }
-      }
-    }
-    const wordStart = pos;
-    const wordEnd = skipShellWord(workflowText, pos);
-    let resolved = '';
-    let canResolve = wordEnd > wordStart;
-    let cursor = wordStart;
-    while (canResolve && cursor < wordEnd) {
-      if (workflowText[cursor] === "'") {
-        const close = workflowText.indexOf("'", cursor + 1);
-        if (close === -1 || close >= wordEnd) {
-          canResolve = false;
-          break;
-        }
-        resolved += workflowText.slice(cursor + 1, close);
-        cursor = close + 1;
-      } else {
-        const varRef = workflowText.slice(cursor, wordEnd).match(/^"\$\{([A-Za-z_][A-Za-z0-9_]*)\}"/);
-        if (varRef && shellVars.has(varRef[1])) {
-          resolved += shellVars.get(varRef[1]);
-          cursor += varRef[0].length;
-        } else {
-          canResolve = false;
-        }
-      }
-    }
-    if (canResolve) {
-      const line = workflowText.slice(0, wordStart).split('\n').length;
-      programs.push({ line, source: resolved, argNames });
-      invocationRe.lastIndex = wordEnd;
-    }
-  }
-  return programs;
-}
-
-// `run: |` 블록의 본문은 10칸 들여쓰기다. 셸 블록을 그대로 실행하려면 벗겨야 한다.
-// 큐 루프 안쪽 블록은 셸 들여쓰기 2칸이 더 붙어 12칸이다.
 const dedent = (block, width = 10) =>
   block.replace(new RegExp(`^ {${width}}`, 'gm'), '');
+
+const budgetConstantsOf = (workflow) => {
+  const block = workflow.match(BUDGET_CONSTANTS_RE)?.[1];
+  assert.ok(block, 'budget constants block must stay testable');
+  return dedent(block);
+};
+
+const reviewJqDefsOf = (workflow) => {
+  const block = workflow.match(REVIEW_JQ_DEFS_RE)?.[1];
+  assert.ok(block, 'shared review_jq_defs block must stay testable');
+  return dedent(block);
+};
+
+const reviewJqBodyOf = (workflow) => {
+  const defs = reviewJqDefsOf(workflow);
+  const body = defs.match(/<<'JQ'\n([\s\S]*?)\n *JQ\b/)?.[1];
+  assert.ok(body, 'review_jq_defs heredoc body must stay extractable');
+  return body;
+};
 
 const stubbedBash = (lines) => {
   const dir = mkdtempSync(join(tmpdir(), 'automerge-queue-'));
@@ -702,6 +351,7 @@ test('REST 목록 조회는 페이지 상한 안에서 읽고 넘치면 판정�
     'page_limit=3',
     'read_pages() {',
     'read_pages "repos/${repo}/pulls/${pr}/reviews"',
+    'read_pages "repos/${repo}/pulls/${pr}/commits"',
     'read_pages "repos/${repo}/issues/${pr}/comments"',
     'read_pages "repos/${repo}/commits/${head}/check-runs"',
     'read_pages "repos/${repo}/commits/${head}/statuses"',
@@ -735,6 +385,7 @@ test('REST 목록 조회는 페이지 상한 안에서 읽고 넘치면 판정�
       '  local page="${all##*page=}"',
       '  cat "$DIR/page-${page}.json" 2>/dev/null || printf "[]"',
       '}',
+      budgetConstantsOf(workflow),
       dedent(readPages),
       'if out="$(read_pages "repos/o/r/pulls/1/reviews")"; then',
       `  printf 'OK %s\\n' "$out"`,
@@ -776,10 +427,12 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
   const workflow = await readWorkflow();
   assert.doesNotMatch(workflow, /Aquila Universal Review|Aquila fallback|aquila-review/);
 
-  const reviewProgram = workflow.match(
-    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" --argjson comments "\$\{comments\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
+  const reviewJqBody = reviewJqBodyOf(workflow);
+  const reviewSuffix = workflow.match(
+    /# review-state-filter-begin\n[\s\S]*?elif ! jq -e --arg head "\$\{head\}" --argjson comments "\$\{comments\}" --argjson commit_ids "\$\{commit_ids\}" "\$\{review_jq_defs\}"'\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
   )?.[1];
-  assert.ok(reviewProgram, 'review state jq program must stay testable');
+  assert.ok(reviewSuffix, 'review state jq program must stay testable');
+  const reviewProgram = `${reviewJqBody}\n${reviewSuffix}`;
 
   const HEAD = 'a'.repeat(40);
   const PREVIOUS_HEAD = 'b'.repeat(40);
@@ -809,13 +462,26 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
     ...overrides,
   });
-  const runReviewFilter = (reviews, comments = [marker()], headArg = HEAD) => {
-    const result = spawnSync('jq', ['-e', '--arg', 'head', headArg, '--argjson', 'comments', JSON.stringify(comments), reviewProgram], {
-      input: JSON.stringify([reviews]),
-      encoding: 'utf8',
-    });
-    // jq -e는 결과가 false/null이면 1, 컴파일 오류면 3, 런타임 오류면 5를 낸다.
-    // 0/1만 판정으로 인정해야 프로그램 파손이 "차단 성공"으로 새지 않는다.
+  const runReviewFilter = (
+    reviews,
+    comments = [marker()],
+    headArg = HEAD,
+    commitIds = [PREVIOUS_HEAD, HEAD],
+  ) => {
+    const result = spawnSync(
+      'jq',
+      [
+        '-e',
+        '--arg', 'head', headArg,
+        '--argjson', 'comments', JSON.stringify(comments),
+        '--argjson', 'commit_ids', JSON.stringify(commitIds),
+        reviewProgram,
+      ],
+      {
+        input: JSON.stringify([reviews]),
+        encoding: 'utf8',
+      },
+    );
     assert.ok(
       result.status === 0 || result.status === 1,
       `jq 하네스 파손 (status ${result.status}): ${result.stderr}`,
@@ -825,8 +491,6 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
 
   const exactMarker = [marker()];
 
-  // current head를 정확히 승인한 base-workflow marker가 없으면 prior-head discovery는
-  // 임의 후속 push까지 승계될 수 있으므로 fail closed다.
   assert.notEqual(
     runReviewFilter([
       review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', { commit_id: PREVIOUS_HEAD }),
@@ -990,8 +654,20 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
       `See \`${interrogateMarker(HEAD, '1')}\` and \`\` \` ${interrogateMarker(PREVIOUS_HEAD, '3')} \` \`\`.\n\n${interrogateMarker(HEAD, '0')}`,
     ],
     [
-      'valid act-on=0 marker before unclosed fenced block quoting act-on=1 to EOF',
-      `${interrogateMarker(HEAD, '0')}\n\`\`\`html\n${interrogateMarker(HEAD, '1')}`,
+      'multiline inline backtick span containing triple backticks in single paragraph before valid act-on=0',
+      `Inline \`span\n\`\`\`\ncode\` in paragraph.\n\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'list-indented fenced block quoting act-on=1 before valid act-on=0 marker',
+      `- item\n\n     \`\`\`html\n     ${interrogateMarker(HEAD, '1')}\n     \`\`\`\n\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'blockquote quoting act-on=1 before valid act-on=0 marker',
+      `> ${interrogateMarker(HEAD, '1')}\n\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      '4-space indented code block quoting act-on=1 before valid act-on=0 marker',
+      `Paragraph.\n\n    ${interrogateMarker(HEAD, '1')}\n\n${interrogateMarker(HEAD, '0')}`,
     ],
   ]) {
     assert.equal(
@@ -1007,6 +683,22 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     ['act-on=0 only inside unclosed fenced block', `\`\`\`\n${interrogateMarker(HEAD, '0')}`],
     ['act-on=0 only inside single-backtick inline code', `\`${interrogateMarker(HEAD, '0')}\``],
     ['act-on=0 only inside multi-backtick inline code', `\`\` ${interrogateMarker(HEAD, '0')} \`\``],
+    ['act-on=0 only inside blockquote', `> ${interrogateMarker(HEAD, '0')}`],
+    ['act-on=0 only inside 4-space indented code block', `Paragraph.\n\n    ${interrogateMarker(HEAD, '0')}`],
+    ['act-on=0 indented by 2 spaces instead of column 0', `  ${interrogateMarker(HEAD, '0')}`],
+    ['act-on=0 inline after prose on same line', `Verdict: ${interrogateMarker(HEAD, '0')}`],
+    [
+      'valid act-on=0 marker before unclosed fenced block quoting act-on=1 to EOF',
+      `${interrogateMarker(HEAD, '0')}\n\`\`\`html\n${interrogateMarker(HEAD, '1')}`,
+    ],
+    [
+      'unclosed fenced block before act-on=1 followed by act-on=0',
+      `\`\`\`html\n${interrogateMarker(HEAD, '1')}\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'stray single backticks across paragraphs around act-on=1 before act-on=0',
+      `First \` stray.\n\n${interrogateMarker(HEAD, '1')}\n\nSecond \` stray.\n\n${interrogateMarker(HEAD, '0')}`,
+    ],
   ]) {
     assert.notEqual(
       runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', body)], exactMarker),
@@ -1106,6 +798,36 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
   );
   assert.notEqual(
     runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', {
+        ...codeRabbit,
+        commit_id: DIFFERENT_HEAD,
+      }),
+    ], exactMarker),
+    0,
+    'CodeRabbit review outside PR commit set must fail closed',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', {
+        commit_id: DIFFERENT_HEAD,
+      }),
+    ], exactMarker),
+    0,
+    'human APPROVED outside PR commit set must fail closed',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
+      review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', { commit_id: DIFFERENT_HEAD }),
+      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', interrogateBody(), {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'out-of-PR APPROVED must not clear prior CHANGES_REQUESTED',
+  );
+  assert.notEqual(
+    runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(), {
         ...codeRabbit,
         user: { ...codeRabbit.user, type: 'User' },
@@ -1152,7 +874,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
       }),
     ], exactMarker),
     0,
-    'active ACT_ON must block merge even alongside CodeRabbit and another reviewer APPROVED',
+    'active ACT_ON_CURRENT must block merge even alongside CodeRabbit and another reviewer APPROVED',
   );
   assert.notEqual(
     runReviewFilter([
@@ -1164,7 +886,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
       }),
     ], exactMarker),
     0,
-    'unclosed pstack-interrogate prefix must set ACT_ON and block another reviewer APPROVED',
+    'unclosed pstack-interrogate prefix on current head must set ACT_ON_CURRENT and block another reviewer APPROVED',
   );
   assert.notEqual(
     runReviewFilter([
@@ -1179,9 +901,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
   );
   assert.notEqual(
     runReviewFilter([
-      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(PREVIOUS_HEAD, '1'), {
-        commit_id: PREVIOUS_HEAD,
-      }),
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(HEAD, '1')),
       review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody(PREVIOUS_HEAD, '0'), {
         commit_id: PREVIOUS_HEAD,
       }),
@@ -1190,7 +910,49 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
       }),
     ], exactMarker),
     0,
-    'older-commit act-on=0 must not clear that reviewer prior ACT_ON',
+    'older-commit act-on=0 must not clear that reviewer ACT_ON_CURRENT on HEAD',
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(PREVIOUS_HEAD, '1'), {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', '', codeRabbit),
+    ], exactMarker),
+    0,
+    'unresolved ACT_ON_PRIOR must block CodeRabbit-only discovery without a current human pass',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(PREVIOUS_HEAD, '1'), {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody(PREVIOUS_HEAD, '0'), {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', '', {
+        ...codeRabbit,
+        commit_id: PREVIOUS_HEAD,
+      }),
+    ], exactMarker),
+    0,
+    'valid act-on=0 on PR commit by same reviewer must clear ACT_ON_PRIOR alongside CodeRabbit discovery',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(PREVIOUS_HEAD, '1'), {
+        commit_id: PREVIOUS_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody(HEAD, '0'), {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'current-head valid pstack-interrogate act-on=0 must satisfy gate despite another reviewer ACT_ON_PRIOR',
   );
   assert.equal(
     runReviewFilter([
@@ -1216,15 +978,18 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(HEAD, '1'), {
         user: { login: 'reviewer-one', type: 'User' },
       }),
-      review(2, 'DISMISSED', '2026-08-01T00:01:00Z', '', {
+      review(2, 'CHANGES_REQUESTED', '2026-08-01T00:01:00Z', '', {
         user: { login: 'reviewer-one', type: 'User' },
       }),
-      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', interrogateBody(HEAD, '0'), {
+      review(3, 'DISMISSED', '2026-08-01T00:02:00Z', '', {
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(4, 'COMMENTED', '2026-08-01T00:03:00Z', interrogateBody(HEAD, '0'), {
         user: { login: 'reviewer-two', type: 'User' },
       }),
     ], exactMarker),
     0,
-    'DISMISSED must clear prior ACT_ON for that reviewer',
+    'DISMISSED after intermediate CHANGES_REQUESTED must clear prior reviewer state',
   );
 
   assert.notEqual(
@@ -1614,6 +1379,8 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
   // gh 호출을 기록만 하는 스텁으로 대체해 상태별 분기 결과를 실측한다. 분기는 큐 루프
   // 안에 있으므로 `continue`가 유효하도록 1회 루프로 감싸고, 루프를 빠져나오면
   // SKIPPED를 남겨 "이 후보를 건너뛰었다"를 관측한다.
+  const DEFAULT_DISPATCH_HEAD = '1'.repeat(40);
+  const PRIOR_DISPATCH_HEAD = '2'.repeat(40);
   const runDispatch = (
     mergeState,
     {
@@ -1623,7 +1390,9 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       updateStatus = 0,
       recordStatus = 0,
       baseUpdateRecords = [],
-      headSha = 'old-head',
+      headSha = DEFAULT_DISPATCH_HEAD,
+      commitIds = [headSha],
+      isAutomationPr = 'false',
       reviews = [
         [
           {
@@ -1647,6 +1416,8 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       'GH_TOKEN=github-token',
       `base_update_records=${JSON.stringify(JSON.stringify(baseUpdateRecords))}`,
       `reviews=${JSON.stringify(JSON.stringify(reviews))}`,
+      `commit_ids=${JSON.stringify(JSON.stringify(commitIds))}`,
+      `is_automation_pr=${isAutomationPr}`,
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       '  case "$*" in',
@@ -1665,6 +1436,7 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       'GITHUB_REPOSITORY=o/r',
       'MERGE_GH_TOKEN=merge-token',
       'GITHUB_RUN_ID=123456',
+      reviewJqDefsOf(workflow),
       dedent(failClosedHelper),
       dedent(markerSync),
       'for _ in 1; do',
@@ -1714,17 +1486,18 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       `${mergeState} must proceed to merge`,
     );
     // 이 저장소는 auto-merge가 꺼져 있으므로 즉시 병합이고, head 고정은 서버가 한다.
-    assert.match(result.calls, /gh pr merge --squash 26 --repo o\/r --match-head-commit old-head/);
+    assert.match(
+      result.calls,
+      new RegExp(`gh pr merge --squash 26 --repo o/r --match-head-commit ${DEFAULT_DISPATCH_HEAD}`),
+    );
   }
-  // base 갱신은 PR 소유 worktree만 수행한다. coordinator는 head를 바꾸지 않고 다음
-  // 후보를 계속 평가해 owner push → native CI → workflow_run으로 재진입한다.
   const behind = runDispatch('BEHIND');
   assert.equal(behind.status, 0);
   assert.equal(behind.merged, false);
   assert.equal(behind.updatedBranch, false);
   assert.equal(behind.dispatchedCi, false);
   assert.equal(behind.commented, false);
-  assert.equal(behind.removedLabel, false);
+  assert.equal(behind.removedLabel, true, 'PAT-less BEHIND handoff must remove automerge label');
   assert.equal(behind.skipped, true);
   assert.equal(behind.warned, true);
   assert.match(behind.calls + behind.stdout, /owning SSD worktree must rebase and push/);
@@ -1748,16 +1521,83 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
   });
   assert.equal(behindInterrogateOnly.status, 0);
   assert.equal(behindInterrogateOnly.updatedBranch, false, 'exact-head pstack-interrogate must not trigger update-branch');
-  assert.equal(behindInterrogateOnly.calls, 'SKIPPED\n', 'BEHIND transferable guard must use zero extra gh api calls');
+  assert.equal(behindInterrogateOnly.removedLabel, true, 'non-transferable BEHIND handoff must remove automerge label');
+  assert.equal(
+    behindInterrogateOnly.calls,
+    'gh pr edit 26 --repo o/r --remove-label automerge\nSKIPPED\n',
+    'BEHIND non-transferable handoff must remove automerge label with zero extra read calls',
+  );
   assert.equal(behindInterrogateOnly.skipped, true);
   assert.equal(behindInterrogateOnly.warned, true);
   assert.match(
     behindInterrogateOnly.stdout,
     /PR #26 is behind main without a transferable frozen discovery review; its owning SSD worktree must rebase and re-review\./,
   );
+  const behindOutsideCommitSet = runDispatch('BEHIND', {
+    hasPat: true,
+    headSha: DEFAULT_DISPATCH_HEAD,
+    commitIds: [DEFAULT_DISPATCH_HEAD],
+    reviews: [
+      [
+        {
+          id: 1,
+          state: 'APPROVED',
+          submitted_at: '2026-08-01T00:00:00Z',
+          commit_id: PRIOR_DISPATCH_HEAD,
+          author_association: 'OWNER',
+          body: '',
+          user: { login: 'reviewer', type: 'User' },
+        },
+      ],
+    ],
+  });
+  assert.equal(behindOutsideCommitSet.updatedBranch, false, 'APPROVED outside PR commit set must not trigger update-branch');
+  assert.equal(behindOutsideCommitSet.removedLabel, true);
+  const behindUnresolvedPriorActOn = runDispatch('BEHIND', {
+    hasPat: true,
+    headSha: DEFAULT_DISPATCH_HEAD,
+    commitIds: [PRIOR_DISPATCH_HEAD, DEFAULT_DISPATCH_HEAD],
+    reviews: [
+      [
+        {
+          id: 1,
+          state: 'COMMENTED',
+          submitted_at: '2026-08-01T00:00:00Z',
+          commit_id: PRIOR_DISPATCH_HEAD,
+          author_association: 'OWNER',
+          body: `<!-- pstack-interrogate head=${PRIOR_DISPATCH_HEAD} act-on=1 -->`,
+          user: { login: 'reviewer-one', type: 'User' },
+        },
+        {
+          id: 2,
+          state: 'COMMENTED',
+          submitted_at: '2026-08-01T00:01:00Z',
+          commit_id: DEFAULT_DISPATCH_HEAD,
+          author_association: 'OWNER',
+          body: `<!-- pstack-interrogate head=${DEFAULT_DISPATCH_HEAD} act-on=0 -->`,
+          user: { login: 'reviewer-two', type: 'User' },
+        },
+        {
+          id: 3,
+          state: 'COMMENTED',
+          submitted_at: '2026-08-01T00:02:00Z',
+          commit_id: PRIOR_DISPATCH_HEAD,
+          author_association: 'NONE',
+          body: '',
+          user: { login: 'coderabbitai[bot]', id: 136622811, type: 'Bot' },
+        },
+      ],
+    ],
+  });
+  assert.equal(
+    behindUnresolvedPriorActOn.updatedBranch,
+    false,
+    'prior ACT_ON from another reviewer would resurrect after update-branch and must block BEHIND update',
+  );
+  assert.equal(behindUnresolvedPriorActOn.removedLabel, true);
   // PAT가 있으면 게이트를 통과한 BEHIND 후보의 base를 현재 head 고정으로 갱신하고, 수락된
   // 요청만 github.token 기록으로 남긴 뒤 그 실행을 끝낸다.
-  const recordLine = 'gh api --method POST repos/o/r/issues/26/comments -f body=<!-- Automerge base update requested: old-head -->';
+  const recordLine = `gh api --method POST repos/o/r/issues/26/comments -f body=<!-- Automerge base update requested: ${DEFAULT_DISPATCH_HEAD} -->`;
   const behindWithPat = runDispatch('BEHIND', { hasPat: true });
   assert.equal(behindWithPat.status, 0);
   assert.equal(behindWithPat.merged, false);
@@ -1765,14 +1605,14 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
   assert.equal(behindWithPat.removedLabel, false);
   assert.deepEqual(
     behindWithPat.calls.split('\n').filter((line) => line.includes('update-branch')),
-    ['gh api --method PUT repos/o/r/pulls/26/update-branch -f expected_head_sha=old-head'],
+    [`gh api --method PUT repos/o/r/pulls/26/update-branch -f expected_head_sha=${DEFAULT_DISPATCH_HEAD}`],
   );
   assert.match(behindWithPat.calls, /^UPDATE_BRANCH_TOKEN=merge-token$/m);
   assert.ok(behindWithPat.calls.includes(recordLine), 'an accepted base update must be recorded');
   assert.ok(behindWithPat.calls.indexOf('update-branch') < behindWithPat.calls.indexOf(recordLine));
   assert.match(behindWithPat.calls, /^RECORD_TOKEN=github-token$/m);
   const behindRecorded = runDispatch('BEHIND', { hasPat: true, baseUpdateRecords: [{ id: 7, head: 'a'.repeat(40) }] });
-  assert.ok(behindRecorded.calls.includes('gh api --method PATCH repos/o/r/issues/comments/7 -f body=<!-- Automerge base update requested: old-head -->'));
+  assert.ok(behindRecorded.calls.includes(`gh api --method PATCH repos/o/r/issues/comments/7 -f body=<!-- Automerge base update requested: ${DEFAULT_DISPATCH_HEAD} -->`));
   assert.doesNotMatch(behindRecorded.calls, /--method POST/);
   const behindAmbiguous = runDispatch('BEHIND', { hasPat: true, baseUpdateRecords: [{ id: 7, head: 'a'.repeat(40) }, { id: 8, head: 'b'.repeat(40) }] });
   assert.equal(behindAmbiguous.status, 0);
@@ -1853,21 +1693,16 @@ test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch�
 });
 
 const BUDGET_BLOCK_RE = /# candidate-budget-begin\n([\s\S]*?)\n\s+# candidate-budget-end/;
-// 상수와 jq 질의만 담은 조각. 하네스가 이 블록을 그대로 주입하므로 워크플로에서 상수를
-// 바꾸면 하네스도 같이 따라간다 — 테스트가 값을 따로 들고 있으면 계약이 실제 동작과
-// 어긋난 채 통과한다.
-const BUDGET_CONSTANTS_RE = /# budget-constants-begin\n([\s\S]*?)\n\s+# budget-constants-end/;
-const budgetConstantsOf = (workflow) => {
-  const block = workflow.match(BUDGET_CONSTANTS_RE)?.[1];
-  assert.ok(block, 'budget constants block must stay testable');
-  return dedent(block);
-};
 
 const budgetConstantOf = (workflow, name) => {
-  const block = workflow.match(BUDGET_BLOCK_RE)?.[1];
-  assert.ok(block, 'candidate budget block must stay testable');
-  const declared = Number(block.match(new RegExp(`^\\s*${name}=(\\d+)$`, 'm'))?.[1]);
-  assert.ok(Number.isInteger(declared), `${name} constant must stay declared`);
+  const result = spawnSync(
+    'bash',
+    ['-c', `set -euo pipefail\n${budgetConstantsOf(workflow)}\nprintf '%s' "\${${name}}"`],
+    { encoding: 'utf8' },
+  );
+  assert.equal(result.status, 0, `${name} evaluation failed: ${result.stderr}`);
+  const declared = Number(result.stdout);
+  assert.ok(result.stdout !== '' && Number.isInteger(declared), `${name} constant must stay declared`);
   return declared;
 };
 
@@ -2033,7 +1868,7 @@ const makeRunQueue =
     '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
     '    *statuses*) h="${all#*commits/}"; h="${h%%/statuses*}"; cat "$FIX/statuses-$h.json" ;;',
     // 응답이 필요 없는 실제 동작. 로그에만 남기고 조용히 성공한다.
-    '    "pr merge"* | *update-branch* | "workflow run"*) ;;',
+    '    "pr merge"* | "pr edit"* | *update-branch* | "workflow run"*) ;;',
     // 기본 분기가 없으면 워크플로가 새 gh 호출을 늘렸을 때 스텁이 빈 출력 + 종료 코드 0을
     // 낸다. 큐 루프는 그것을 "빈 API 응답"으로 읽고 후보를 건너뛰므로, 하네스가 덮지 못한
     // 호출이 조용히 통과한다. 실패시켜 즉시 드러낸다.
@@ -2063,6 +1898,9 @@ const makeRunQueue =
     // 후보가 두 번 잡혀 "실행당 실제 동작 최대 한 건" 계약이 헐거워진다.
     evaluated: [...calls.matchAll(/gh pr view (\d+) --repo [^\n]*--json baseRefName/g)].map((m) =>
       Number(m[1]),
+    ),
+    removedLabels: [...calls.matchAll(/gh pr edit (\d+) --repo o\/r --remove-label automerge/g)].map(
+      (m) => Number(m[1]),
     ),
     updatedBranch: calls.includes('update-branch'),
     dispatchedCi: calls.includes('workflow run ci.yml'),
@@ -2162,7 +2000,6 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
     { number: 2, mergeStateStatus: 'CLEAN' },
   ]);
   assert.equal(serialized.evaluated.length, 1, '병합하면 그 실행은 거기서 끝난다');
-  // BEHIND 후보는 warning 후 건너뛰므로 뒤의 CLEAN 후보를 굶기지 않는다.
   const behind = runQueue([
     { number: 1, mergeStateStatus: 'BEHIND' },
     { number: 2, mergeStateStatus: 'CLEAN' },
@@ -2170,6 +2007,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   assert.equal(behind.status, 0);
   assert.equal(behind.mergedPr, 2);
   assert.deepEqual(behind.evaluated, [1, 2]);
+  assert.deepEqual(behind.removedLabels, [1]);
   assert.equal(behind.updatedBranch, false);
   assert.equal(behind.dispatchedCi, false);
   assert.match(behind.stdout + behind.stderr, /owning SSD worktree must rebase and push/);
@@ -2181,6 +2019,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   assert.equal(allBlocked.status, 0);
   assert.equal(allBlocked.mergedPr, null);
   assert.equal(allBlocked.evaluated.length, 2);
+  assert.deepEqual(allBlocked.removedLabels, []);
 });
 
 test('후보 창은 API 지분·timeout·실측 큐 깊이 세 기준으로 유도되고 모든 후보에 도달한다', async () => {
@@ -2266,9 +2105,7 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   // 한도를 Data Pack Release가 함께 쓰므로 형제 저장소(300)보다 크다.
   assert.equal(reserve, 400, 'data pack chain reserve must stay pinned');
   assert.equal(fixedCost, 16);
-  // 후보당 청구는 호출 6회가 아니라 read_pages의 page_limit=3까지 덮는 값이다
-  // (pr view 1 + reviewThreads 1 + REST 4종 * 3페이지). `--paginate`는 쓰지 않는다.
-  assert.equal(perCandidate, 14, 'per-candidate charge must match the page-capped reads');
+  assert.equal(perCandidate, 17, 'per-candidate charge must match the page-capped reads');
 
   // 응답 payload를 주고 워크플로의 jq 질의를 실제 jq로 적용해 `gh --jq`를 그대로 흉내낸다.
   const runBudget = (stub) =>
@@ -2297,10 +2134,10 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   for (const [remaining, expected] of [
     [5000, 3],
     [1000, 3],
-    [458, 3],
-    [457, 2],
-    [444, 2],
-    [430, 1],
+    [467, 3],
+    [466, 2],
+    [450, 2],
+    [433, 1],
   ]) {
     const result = windowAt(remaining);
     assert.equal(result.status, 0, `budget block failed at remaining=${remaining}: ${result.stderr}`);
@@ -2319,12 +2156,12 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   }
 
   // 두 버킷 값이 다르면 작은 쪽이 창을 정한다.
-  assert.equal(runPayload(buckets(5000, 444)).stdout.trim(), 'window=2');
-  assert.equal(runPayload(buckets(444, 5000)).stdout.trim(), 'window=2');
+  assert.equal(runPayload(buckets(5000, 450)).stdout.trim(), 'window=2');
+  assert.equal(runPayload(buckets(450, 5000)).stdout.trim(), 'window=2');
 
   // 예약분에 닿으면 큐만 건너뛴다. 실행을 실패시키지 않는다 — producer 스텝은 이미 끝났고
   // 실패로 남기면 그 check가 다음 판정 입력을 오염시킨다.
-  for (const remaining of [429, 420, 400, 0]) {
+  for (const remaining of [432, 420, 400, 0]) {
     const result = windowAt(remaining);
     assert.equal(result.status, 0, `budget block must not fail at remaining=${remaining}`);
     assert.match(result.stdout, /::warning::/, `low budget must be announced at remaining=${remaining}`);
@@ -3251,7 +3088,6 @@ const syncGhStub = [
   '      jq -nc --argjson id "$id" --arg body "${all#*body=}" \'{id: $id, body: $body, user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}\' ;;',
   '    "api repos/o/r/commits/"*) payload="$(cat "$FIX/head-commit.json" 2>/dev/null || printf __FAIL__)" ;;',
   '    "api repos/o/r/compare/"*) payload="$(cat "$FIX/compare.json" 2>/dev/null || printf __FAIL__)" ;;',
-  '    *"repos/o/r/pulls/85/commits?per_page=100&page="*) page="${all##*page=}"; payload="$(cat "$FIX/commits-$page.json" 2>/dev/null || printf __FAIL__)" ;;',
   '    "api repos/o/r/issues/85/events?per_page=100&page="*) page="${all##*page=}"; payload="$(cat "$FIX/events-$page.json" 2>/dev/null || printf __FAIL__)" ;;',
   '    *) printf "unstubbed gh call: %s\\n" "$all" >&2; return 1 ;;',
   '  esac',
@@ -3266,7 +3102,17 @@ const syncGhStub = [
 // comments·reviews·commits는 read_pages가 돌려주는 모양(페이지 배열)이다.
 const runMarkerSync = (
   workflow,
-  { head, comments = [], reviews = [], commits = [[]], headCommit = null, compare = null, events = null, mutation = 'ok' },
+  {
+    head,
+    comments = [],
+    reviews = [],
+    commits = [[committedAt(head, '2026-09-29T01:00:00Z')]],
+    headCommit = null,
+    compare = null,
+    events = null,
+    mutation = 'ok',
+    isAutomationPr = 'false',
+  },
 ) => {
   const block = workflow.match(MARKER_SYNC_RE)?.[1];
   assert.ok(block, 'authorization marker sync must stay testable');
@@ -3278,7 +3124,6 @@ const runMarkerSync = (
     writeFileSync(join(dir, name), payload === '__FAIL__' ? payload : JSON.stringify(payload));
   if (headCommit !== null) fixture('head-commit.json', headCommit);
   if (compare !== null) fixture('compare.json', compare);
-  commits.forEach((page, index) => fixture(`commits-${index + 1}.json`, page));
   (events ?? []).forEach((page, index) => fixture(`events-${index + 1}.json`, page));
   const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
   const result = spawnSync('bash', ['-c', [
@@ -3290,14 +3135,19 @@ const runMarkerSync = (
     `head=${shellQuote(head)}`,
     'GH_TOKEN=github-token',
     'MERGE_GH_TOKEN=merge-token',
+    `is_automation_pr=${isAutomationPr}`,
     `mutation=${shellQuote(mutation)}`,
     `comments=${shellQuote(JSON.stringify([comments]))}`,
     `reviews=${shellQuote(JSON.stringify([reviews]))}`,
+    `commits=${shellQuote(JSON.stringify(commits))}`,
+    `commit_ids="$(jq -c '[flatten[] | .sha? | select(type == "string" and test("^[0-9a-f]{40}$"))]' <<<"$commits")"`,
     ': > "$GH_LOG"',
     ...syncGhStub,
+    reviewJqDefsOf(workflow),
+    budgetConstantsOf(workflow),
     dedent(readPages),
     dedent(block),
-    'sync_authorization_marker',
+    'sync_authorization_marker "$commits" "$commit_ids"',
     'printf "SYNC_RETURNED\\n"',
     'printf "%s\\n" "$comments"',
   ].join('\n')], { encoding: 'utf8' });
@@ -3382,6 +3232,10 @@ test('marker 재발행은 코디네이터 기록이 있는 base 갱신 병합 �
   const current = runMarkerSync(workflow, { ...base, comments: [{ ...markerComment, body: markerFor(head) }] });
   assert.equal(current.calls, '', 'an exact-head marker needs no API call');
   assert.equal(current.authorized, true);
+
+  const automation = runMarkerSync(workflow, { ...base, isAutomationPr: 'true' });
+  assert.equal(automation.calls, '', 'automation PRs must never reissue or recover frozen human markers');
+  assert.equal(automation.authorized, false);
 
   for (const mutation of ['fail', 'foreign']) {
     const failed = runMarkerSync(workflow, { ...base, mutation });
@@ -3496,16 +3350,18 @@ test('marker 복구는 marker가 없고 게이트 정의의 discovery가 commit 
     ['markdown code-span marker only', { reviews: [interrogateReview(head, { body: `\`<!-- pstack-interrogate head=${head} act-on=0 -->\`` })] }],
     ['untrusted author association', { reviews: [interrogateReview(head, { author_association: 'NONE' })] }],
     ['CodeRabbit impersonation', { reviews: [codeRabbitDiscoveryReview(head, { user: { login: 'coderabbitai[bot]', id: 1, type: 'Bot' } })] }],
+    ['CodeRabbit discovery outside the PR commit set', { reviews: [codeRabbitDiscoveryReview(outside)] }],
+    ['trusted approval outside the PR commit set', { reviews: [interrogateReview(outside, { state: 'APPROVED', body: '' })] }],
+    ['empty commit set', { commits: [[]] }],
+    ['automation PR never syncs human marker', { isAutomationPr: 'true' }],
   ]) {
     const kept = runMarkerSync(workflow, { ...base, ...options });
     assert.equal(kept.status, 0, `${label}: ${kept.stderr}`);
-    assert.equal(kept.calls, '', `${label} must not read commits, events or post a marker`);
+    assert.equal(kept.calls, '', `${label} must not read events or post a marker`);
     assert.equal(kept.authorized, false);
   }
 
   for (const [label, options] of [
-    ['CodeRabbit discovery outside the PR commit set', { reviews: [codeRabbitDiscoveryReview(outside)] }],
-    ['commit read failure', { commits: ['__FAIL__'] }],
     ['head committed after the latest automerge label', { commits: [[committedAt(previous, '2026-09-29T00:00:00Z'), committedAt(head, '2026-09-29T03:00:00Z')]] }],
     ['events lookup failure', { events: ['__FAIL__'] }],
     ['no events at all', { events: [[]] }],
@@ -3527,73 +3383,79 @@ test('marker 복구는 marker가 없고 게이트 정의의 discovery가 commit 
   assert.equal(failed.authorized, false, 'a failed recovery must not authorize the head');
 });
 
-test('marker 동기화의 discovery 판정은 리뷰 게이트·자동화 정책·BEHIND 분기와 같은 정의를 쓰고 github.token만 쓴다', async () => {
+test('marker 동기화의 discovery 판정은 리뷰 게이트·자동화 정책·BEHIND 분기와 단일 review_jq_defs를 공유하고 github.token만 쓴다', async () => {
   const workflow = await readWorkflow();
+  const defs = reviewJqBodyOf(workflow);
   const sync = workflow.match(MARKER_SYNC_RE)?.[1];
   assert.ok(sync, 'authorization marker sync must stay testable');
   const policy = workflow.match(/# automation-policy-begin\n([\s\S]*?)\n\s+# automation-policy-end/)?.[1];
   assert.ok(policy, 'automation policy must stay testable');
   const dispatch = workflow.match(/# merge-state-dispatch-begin\n([\s\S]*?)\n\s+# merge-state-dispatch-end/)?.[1];
   assert.ok(dispatch, 'merge-state dispatch must stay testable');
-  const gate = workflow.match(
-    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" --argjson comments "\$\{comments\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
-  )?.[1];
-  assert.ok(gate, 'review gate program must stay testable');
-  const normalize = (text) => text.replace(/\s+/g, ' ').trim();
-  const definition = (source, header) => {
-    const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return source.match(new RegExp(`def ${escaped}:[\\s\\S]*?;\\n`))?.[0];
-  };
-  for (const sharedDef of [
-    'is_coderabbit',
-    'is_trusted_human',
-    'strip_markdown_code',
-    'has_pstack_interrogate_marker',
-    'is_valid_pstack_interrogate_on($expected_head)',
-    'reduce_review_states($current_head)',
-  ]) {
-    const canonicalDef = normalize(definition(gate, sharedDef) ?? '');
-    assert.ok(canonicalDef.length > 0, `${sharedDef} must be defined in gate`);
-    assert.equal(normalize(definition(sync, sharedDef) ?? ''), canonicalDef, `${sharedDef} must match in sync`);
-    assert.equal(normalize(definition(policy, sharedDef) ?? ''), canonicalDef, `${sharedDef} must match in policy`);
-    assert.equal(normalize(definition(dispatch, sharedDef) ?? ''), canonicalDef, `${sharedDef} must match in dispatch`);
-  }
-  const anyPrefix = 'any($trusted[];';
-  const anyStart = gate.lastIndexOf(anyPrefix);
-  assert.notEqual(anyStart, -1, 'review gate must evaluate any($trusted[]; ...)');
-  let depth = 1;
-  let cursor = anyStart + anyPrefix.length;
-  for (; cursor < gate.length && depth > 0; cursor += 1) {
-    if (gate[cursor] === '"') {
-      cursor += 1;
-      while (cursor < gate.length && gate[cursor] !== '"') {
-        if (gate[cursor] === '\\') cursor += 1;
-        cursor += 1;
-      }
-      continue;
-    }
-    if (gate[cursor] === '(') depth += 1;
-    else if (gate[cursor] === ')') depth -= 1;
-  }
-  assert.equal(depth, 0, 'any($trusted[]; ...) parentheses must stay balanced');
-  const gateClause = gate.slice(anyStart + anyPrefix.length, cursor - 1);
-  const syncClause = definition(sync, 'is_gate_discovery($states)')
-    ?.replace(/^def is_gate_discovery\(\$states\):/, '')
-    .replace(/;\n$/, '');
-  assert.ok(syncClause, 'marker sync must define is_gate_discovery($states)');
-  assert.equal(normalize(syncClause), normalize(gateClause), 'recovery discovery must match the gate clause');
-  assert.ok(
-    normalize(sync).includes(normalize('select(type == "object") | select(is_trusted_human or is_coderabbit)')),
-    'recovery must trust the same authors as the gate',
+  const gate = workflow.match(/# review-state-filter-begin\n([\s\S]*?)\n\s+# review-state-filter-end/)?.[1];
+  assert.ok(gate, 'review gate block must stay testable');
+
+  assert.equal(
+    (workflow.match(/^ +review_jq_defs="\$\(cat <<'JQ'/gm) ?? []).length,
+    1,
+    'review_jq_defs must be defined exactly once',
   );
+  for (const singleDef of [
+    'def is_coderabbit:',
+    'def is_trusted_human:',
+    'def is_sha_in(',
+    'def strip_closed_markdown_code:',
+    'def strip_markdown_code:',
+    'def has_pstack_interrogate_marker:',
+    'def is_valid_pstack_interrogate_on(',
+    'def is_transferable_frozen_review(',
+    'def reduce_review_states(',
+    'def has_no_blocking_review(',
+    'def passes_review_discovery(',
+    'def passes_transferable_behind_discovery(',
+  ]) {
+    const escaped = singleDef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.equal(
+      (workflow.match(new RegExp(escaped, 'g')) ?? []).length,
+      1,
+      `${singleDef} must appear only inside shared review_jq_defs`,
+    );
+    assert.ok(defs.includes(singleDef), `${singleDef} must live inside review_jq_defs`);
+  }
+
+  for (const [name, block, callExpr] of [
+    ['automation policy', policy, 'has_no_blocking_review($head; $commit_ids)'],
+    ['marker sync', sync, 'passes_review_discovery($head; $commit_ids)'],
+    ['review gate', gate, 'passes_review_discovery($head; $commit_ids)'],
+    ['merge-state dispatch', dispatch, 'passes_transferable_behind_discovery($commit_ids)'],
+  ]) {
+    assert.ok(block.includes('"${review_jq_defs}"'), `${name} must invoke shared review_jq_defs`);
+    assert.ok(block.includes(callExpr), `${name} must call ${callExpr}`);
+  }
+
   assert.doesNotMatch(sync, /MERGE_GH_TOKEN/);
   const loop = workflow.slice(workflow.indexOf('while IFS= read -r pr; do'));
-  const syncAt = loop.indexOf('\n            sync_authorization_marker\n');
-  assert.ok(syncAt > loop.indexOf('comments="$(read_pages "repos/${repo}/issues/${pr}/comments")"'), 'sync must follow the comment read');
+  const syncAt = loop.indexOf('\n            sync_authorization_marker "${commits}" "${commit_ids}"\n');
+  assert.ok(
+    syncAt > loop.indexOf('commits="$(read_pages "repos/${repo}/pulls/${pr}/commits")"'),
+    'sync must follow the PR commits read',
+  );
+  assert.ok(
+    syncAt > loop.indexOf('comments="$(read_pages "repos/${repo}/issues/${pr}/comments")"'),
+    'sync must follow the comment read',
+  );
   assert.ok(syncAt < loop.indexOf('# review-state-filter-begin'), 'sync must precede the review gate');
 });
 
-const runSyncQueue = (workflow, prs, { hasPat = false } = {}) => {
+const runSyncQueue = (
+  workflow,
+  prs,
+  { hasPat = false, eventName = 'workflow_run', eventPr = '', eventHead = '' } = {},
+) => {
+  const authorizationBlock = workflow.match(
+    /          if \[\[ "\$\{EVENT_NAME\}" == "pull_request_target" \]\]; then\n([\s\S]*?)\n          fi\n\n          # required context/,
+  )?.[0];
+  assert.ok(authorizationBlock, 'label authorization block must stay testable');
   const queueLoop = workflow.match(/# queue-loop-begin\n([\s\S]*?)\n\s+# queue-loop-end/)?.[1];
   assert.ok(queueLoop, 'queue loop must stay testable');
   const dir = mkdtempSync(join(tmpdir(), 'automerge-sync-queue-'));
@@ -3601,11 +3463,20 @@ const runSyncQueue = (workflow, prs, { hasPat = false } = {}) => {
   for (const pr of prs) {
     const head = pr.head;
     writeFileSync(join(dir, `pr-${pr.number}.json`), JSON.stringify({
-      state: 'OPEN', isDraft: false, baseRefName: 'main', labels: [{ name: 'automerge' }],
-      headRefOid: head, mergeStateStatus: pr.mergeStateStatus,
+      state: 'OPEN',
+      isDraft: false,
+      baseRefName: 'main',
+      author: pr.author ?? { login: 'author', type: 'User' },
+      headRefName: pr.headRefName ?? `feature-${pr.number}`,
+      labels: [{ name: 'automerge' }],
+      headRefOid: head,
+      mergeStateStatus: pr.mergeStateStatus,
     }));
     writeFileSync(join(dir, `reviews-${pr.number}.json`), JSON.stringify(pr.reviews));
-    writeFileSync(join(dir, `commits-${pr.number}.json`), JSON.stringify(pr.commits));
+    writeFileSync(
+      join(dir, `commits-${pr.number}.json`),
+      pr.commits === '__FAIL__' ? '__FAIL__' : JSON.stringify(pr.commits),
+    );
     writeFileSync(join(dir, `comments-${pr.number}.json`), JSON.stringify(pr.comments));
     for (const [page, events] of (pr.events ?? []).entries()) {
       writeFileSync(join(dir, `events-${pr.number}-${page + 1}.json`), JSON.stringify(events));
@@ -3619,8 +3490,10 @@ const runSyncQueue = (workflow, prs, { hasPat = false } = {}) => {
     writeFileSync(join(dir, `threads-${pr.number}.json`), JSON.stringify({
       data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } },
     }));
+    const conclusion =
+      pr.checkState === 'failure' ? 'failure' : pr.checkState === 'pending' ? null : 'success';
     writeFileSync(join(dir, `checks-${head}.json`), JSON.stringify({
-      check_runs: [{ id: 1, name: 'Data contracts', conclusion: 'success', started_at: '2026-08-01T00:00:00Z' }],
+      check_runs: [{ id: 1, name: 'Data contracts', conclusion, started_at: '2026-08-01T00:00:00Z' }],
     }));
     writeFileSync(join(dir, `statuses-${head}.json`), JSON.stringify([]));
   }
@@ -3636,18 +3509,35 @@ const runSyncQueue = (workflow, prs, { hasPat = false } = {}) => {
     `    *rate_limit*) printf '5000\\n' ;;`,
     `    "pr list"*) printf '%s\\n' ${JSON.stringify(JSON.stringify(prs.map((p) => p.number)))} ;;`,
     `    "api --method PUT repos/o/r/pulls/"*"/update-branch "*) printf 'TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"; printf '%s\\n' '{"message":"Updating pull request branch."}' ;;`,
-    `    "api --method PATCH repos/o/r/issues/comments/"*|"api --method POST repos/o/r/issues/"*"/comments "*) printf 'TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"; id=77; [[ "$all" == *"issues/comments/"* ]] && { id="\${all#*issues/comments/}"; id="\${id%% *}"; }; jq -nc --argjson id "$id" --arg body "\${all#*body=}" '{id: $id, body: $body, user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}' ;;`,
+    '    "api --method PATCH repos/o/r/issues/comments/"*)',
+    '      printf "TOKEN=%s\\n" "$GH_TOKEN" >> "$GH_LOG"',
+    '      id="${all#*issues/comments/}"; id="${id%% *}"',
+    '      b="${all#*body=}"',
+    '      for cf in "$FIX"/comments-*.json; do',
+    '        [[ -f "$cf" ]] || continue',
+    '        jq --argjson id "$id" --arg body "$b" \'map(if .id == $id then .body = $body else . end)\' "$cf" > "$cf.tmp" && mv "$cf.tmp" "$cf"',
+    '      done',
+    '      jq -nc --argjson id "$id" --arg body "$b" \'{id: $id, body: $body, user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}\' ;;',
+    '    "api --method POST repos/o/r/issues/"*"/comments "*)',
+    '      printf "TOKEN=%s\\n" "$GH_TOKEN" >> "$GH_LOG"',
+    '      pn="${all#*issues/}"; pn="${pn%%/comments*}"',
+    '      b="${all#*body=}"',
+    '      created="$(jq -nc --arg body "$b" \'{id: 77, body: $body, user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}\')"',
+    '      if [[ -f "$FIX/comments-$pn.json" ]]; then',
+    '        jq --argjson item "$created" \'. + [$item]\' "$FIX/comments-$pn.json" > "$FIX/comments-$pn.json.tmp" && mv "$FIX/comments-$pn.json.tmp" "$FIX/comments-$pn.json"',
+    '      fi',
+    '      printf "%s\\n" "$created" ;;',
     '    "api repos/o/r/commits/"*) h="${all#api repos/o/r/commits/}"; [[ -f "$FIX/commit-$h.json" ]] || return 1; cat "$FIX/commit-$h.json" ;;',
     '    "api repos/o/r/compare/"*) b="${all#api repos/o/r/compare/}"; b="${b%%...*}"; [[ -f "$FIX/compare-$b.json" ]] || return 1; jq -r .status "$FIX/compare-$b.json" ;;',
     '    *issues/*/events*) n="${all#*issues/}"; n="${n%%/events*}"; page="${all##*page=}"; [[ -f "$FIX/events-$n-$page.json" ]] || return 1; cat "$FIX/events-$n-$page.json" ;;',
     '    "pr view "*) set -- $all; cat "$FIX/pr-$3.json" ;;',
     '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
-    '    *pulls/*/commits*) n="${all#*pulls/}"; n="${n%%/commits*}"; cat "$FIX/commits-$n.json" ;;',
+    '    *pulls/*/commits*) n="${all#*pulls/}"; n="${n%%/commits*}"; [[ "$(cat "$FIX/commits-$n.json")" == __FAIL__ ]] && return 1; cat "$FIX/commits-$n.json" ;;',
     '    *issues/*/comments*) n="${all#*issues/}"; n="${n%%/comments*}"; cat "$FIX/comments-$n.json" ;;',
     '    *graphql*) n="${all#*number=}"; n="${n%% *}"; cat "$FIX/threads-$n.json" ;;',
     '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
     '    *statuses*) h="${all#*commits/}"; h="${h%%/statuses*}"; cat "$FIX/statuses-$h.json" ;;',
-    '    "pr merge"*) ;;',
+    '    "pr merge"* | "pr edit"*) ;;',
     `    *) printf 'unstubbed gh call: %s\\n' "$all" >&2; return 1 ;;`,
     '  esac',
     '}',
@@ -3658,7 +3548,11 @@ const runSyncQueue = (workflow, prs, { hasPat = false } = {}) => {
     'GH_TOKEN=github-token',
     'MERGE_GH_TOKEN=merge-token',
     `HAS_AUTOMERGE_PAT=${hasPat}`,
+    `EVENT_NAME=${JSON.stringify(eventName)}`,
+    `EVENT_PR=${JSON.stringify(eventPr)}`,
+    `EVENT_HEAD=${JSON.stringify(eventHead)}`,
     `required='[{"context":"Data contracts","integration_id":null}]'`,
+    dedent(authorizationBlock),
     'candidates="$(gh pr list)"',
     budgetConstantsOf(workflow),
     dedent(queueLoop),
@@ -3666,15 +3560,30 @@ const runSyncQueue = (workflow, prs, { hasPat = false } = {}) => {
   const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
   const calls = existsSync(log) ? readFileSync(log, 'utf8') : '';
   const merged = calls.match(/gh pr merge --squash (\d+) --repo/)?.[1];
-  return { status: result.status, mergedPr: merged ? Number(merged) : null, calls, stdout: result.stdout, stderr: result.stderr };
+  const removedLabels = [...calls.matchAll(/gh pr edit (\d+) --repo o\/r --remove-label automerge/g)].map(
+    (m) => Number(m[1]),
+  );
+  const commentsByPr = Object.fromEntries(
+    prs.map((pr) => [pr.number, JSON.parse(readFileSync(join(dir, `comments-${pr.number}.json`), 'utf8'))]),
+  );
+  return {
+    status: result.status,
+    mergedPr: merged ? Number(merged) : null,
+    removedLabels,
+    commentsByPr,
+    calls,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 };
 
-test('코디네이터 base 갱신 기록 뒤 승계 가능 리뷰는 previous 재사용으로 병합하고 pstack-interrogate 전용 BEHIND는 건너뛴다', async () => {
+test('코디네이터 base 갱신 기록 뒤 승계 가능 리뷰는 previous 재사용으로 병합하고 pstack-interrogate 전용 BEHIND는 라벨을 내리고 건너뛴다', async () => {
   const workflow = await readWorkflow();
   const previous = 'b'.repeat(40);
   const head = 'c'.repeat(40);
   const mainParent = 'd'.repeat(40);
   const nextHead = 'e'.repeat(40);
+  const initialSha = 'a'.repeat(40);
   const markerComment = { id: 99, body: markerFor(previous), user: actionsBotUser };
 
   const requested = runSyncQueue(workflow, [{
@@ -3683,6 +3592,7 @@ test('코디네이터 base 갱신 기록 뒤 승계 가능 리뷰는 previous �
   }], { hasPat: true });
   assert.equal(requested.status, 0, requested.stderr);
   assert.equal(requested.mergedPr, null);
+  assert.deepEqual(requested.removedLabels, []);
   assert.match(requested.calls, new RegExp(`update-branch -f expected_head_sha=${previous}\\nTOKEN=merge-token\\n`));
   const recordBody = requested.calls.match(
     /gh api --method POST repos\/o\/r\/issues\/1\/comments -f body=(<!-- Automerge base update requested: [0-9a-f]{40} -->)\nTOKEN=github-token\n/,
@@ -3697,6 +3607,7 @@ test('코디네이터 base 갱신 기록 뒤 승계 가능 리뷰는 previous �
   }], { hasPat: true });
   assert.equal(approvedBehind.status, 0, approvedBehind.stderr);
   assert.equal(approvedBehind.mergedPr, null);
+  assert.deepEqual(approvedBehind.removedLabels, []);
   assert.match(approvedBehind.calls, new RegExp(`update-branch -f expected_head_sha=${previous}\\nTOKEN=merge-token\\n`));
 
   const candidate = {
@@ -3712,6 +3623,37 @@ test('코디네이터 base 갱신 기록 뒤 승계 가능 리뷰는 previous �
   assert.match(reissued.calls, new RegExp(`gh api --method PATCH repos/o/r/issues/comments/99 -f body=${markerFor(head)}\\nTOKEN=github-token\\n`));
   assert.equal(reissued.mergedPr, 1, 'CodeRabbit discovery on previous must still satisfy the gate after base-update marker reissue');
 
+  const clearedPriorActOnReviews = [
+    codeRabbitDiscoveryReview(initialSha, { id: 4, submitted_at: '2026-09-29T00:00:00Z' }),
+    interrogateReview(initialSha, {
+      id: 5,
+      submitted_at: '2026-09-29T00:05:00Z',
+      body: interrogateDiscoveryBody(initialSha, '1'),
+    }),
+    interrogateReview(previous, { id: 6, submitted_at: '2026-09-29T00:10:00Z' }),
+  ];
+  const clearedBehind = runSyncQueue(workflow, [{
+    number: 1,
+    head: previous,
+    mergeStateStatus: 'BEHIND',
+    comments: [markerComment],
+    reviews: clearedPriorActOnReviews,
+    commits: [{ sha: initialSha }, { sha: previous }],
+  }], { hasPat: true });
+  assert.equal(clearedBehind.status, 0, clearedBehind.stderr);
+  assert.match(clearedBehind.calls, new RegExp(`update-branch -f expected_head_sha=${previous}\\nTOKEN=merge-token\\n`));
+  const clearedMerged = runSyncQueue(workflow, [{
+    ...candidate,
+    reviews: clearedPriorActOnReviews,
+    commits: [{ sha: initialSha }, { sha: previous }, { sha: head }],
+  }]);
+  assert.equal(clearedMerged.status, 0, clearedMerged.stderr);
+  assert.equal(
+    clearedMerged.mergedPr,
+    1,
+    'same-reviewer act-on=0 on previous must keep prior ACT_ON cleared after coordinator base-update merge commit',
+  );
+
   const interrogateBehind = runSyncQueue(workflow, [
     {
       number: 1, head: previous, mergeStateStatus: 'BEHIND',
@@ -3726,11 +3668,27 @@ test('코디네이터 base 갱신 기록 뒤 승계 가능 리뷰는 previous �
   ], { hasPat: true });
   assert.equal(interrogateBehind.status, 0, interrogateBehind.stderr);
   assert.doesNotMatch(interrogateBehind.calls, /update-branch|--method (POST|PATCH)/);
+  assert.deepEqual(interrogateBehind.removedLabels, [1], 'non-transferable BEHIND candidate must remove automerge label');
   assert.match(
     interrogateBehind.stdout,
     /PR #1 is behind main without a transferable frozen discovery review; its owning SSD worktree must rebase and re-review\./,
   );
   assert.equal(interrogateBehind.mergedPr, 2, 'non-transferable BEHIND candidate must not block a ready CLEAN candidate behind it');
+
+  const commitsReadFailed = runSyncQueue(workflow, [
+    {
+      number: 1, head: previous, mergeStateStatus: 'CLEAN',
+      comments: [markerComment], reviews: [interrogateReview(previous)], commits: '__FAIL__',
+    },
+    {
+      number: 2, head: nextHead, mergeStateStatus: 'CLEAN',
+      comments: [{ id: 101, body: markerFor(nextHead), user: actionsBotUser }],
+      reviews: [interrogateReview(nextHead)],
+      commits: [{ sha: nextHead }],
+    },
+  ]);
+  assert.equal(commitsReadFailed.status, 0, commitsReadFailed.stderr);
+  assert.equal(commitsReadFailed.mergedPr, 2, 'commits read failure must skip only that candidate');
 
   const interrogateStaleOnNewHead = runSyncQueue(workflow, [{
     ...candidate,
@@ -3769,6 +3727,75 @@ test('코디네이터 base 갱신 기록 뒤 승계 가능 리뷰는 previous �
   assert.equal(recovered.mergedPr, 1, 'a recovered marker must satisfy the unchanged review gate in the same run');
 });
 
+test('비승계 BEHIND 후보의 라벨 제거 뒤 소유 세션 rebase·재리뷰·재라벨이 canonical marker를 갱신해 병합한다', async () => {
+  const workflow = await readWorkflow();
+  const sha1 = '1'.repeat(40);
+  const sha2 = '2'.repeat(40);
+  const initialComments = [{ id: 99, body: markerFor(sha1), user: actionsBotUser }];
+
+  const step1Behind = runSyncQueue(
+    workflow,
+    [{
+      number: 1,
+      head: sha1,
+      mergeStateStatus: 'BEHIND',
+      comments: initialComments,
+      reviews: [interrogateReview(sha1)],
+      commits: [{ sha: sha1 }],
+    }],
+    { hasPat: true },
+  );
+  assert.equal(step1Behind.status, 0, step1Behind.stderr);
+  assert.equal(step1Behind.mergedPr, null);
+  assert.deepEqual(step1Behind.removedLabels, [1]);
+  assert.doesNotMatch(step1Behind.calls, /update-branch/);
+
+  const rebasedReviews = [interrogateReview(sha1, { id: 5 }), interrogateReview(sha2, { id: 6 })];
+  const step2RelabeledPending = runSyncQueue(
+    workflow,
+    [{
+      number: 1,
+      head: sha2,
+      mergeStateStatus: 'BLOCKED',
+      checkState: 'pending',
+      comments: step1Behind.commentsByPr[1],
+      reviews: rebasedReviews,
+      commits: [{ sha: sha2 }],
+    }],
+    {
+      hasPat: true,
+      eventName: 'pull_request_target',
+      eventPr: '1',
+      eventHead: sha2,
+    },
+  );
+  assert.equal(step2RelabeledPending.status, 0, step2RelabeledPending.stderr);
+  assert.equal(step2RelabeledPending.mergedPr, null);
+  assert.match(
+    step2RelabeledPending.calls,
+    new RegExp(`gh api --method PATCH repos/o/r/issues/comments/99 -f body=${markerFor(sha2)}`),
+  );
+  assert.deepEqual(step2RelabeledPending.commentsByPr[1], [
+    { id: 99, body: markerFor(sha2), user: actionsBotUser },
+  ]);
+
+  const step3CleanMerge = runSyncQueue(
+    workflow,
+    [{
+      number: 1,
+      head: sha2,
+      mergeStateStatus: 'CLEAN',
+      comments: step2RelabeledPending.commentsByPr[1],
+      reviews: rebasedReviews,
+      commits: [{ sha: sha2 }],
+    }],
+    { hasPat: true },
+  );
+  assert.equal(step3CleanMerge.status, 0, step3CleanMerge.stderr);
+  assert.equal(step3CleanMerge.mergedPr, 1);
+  assert.match(step3CleanMerge.calls, new RegExp(`gh pr merge --squash 1 --repo o/r --match-head-commit ${sha2}`));
+});
+
 test('모든 PR 템플릿이 현재 head의 pstack interrogate 단일 마커 계약을 안내하고 은퇴한 폴백 문구를 남기지 않는다', async () => {
   const expectedLine =
     '- [ ] 현재 head에 대한 `pstack` `interrogate` Review(`<!-- pstack-interrogate head=<40자 sha> act-on=0 -->`)를 단일 PR review로 게시했습니다.';
@@ -3788,18 +3815,24 @@ test('모든 PR 템플릿이 현재 head의 pstack interrogate 단일 마커 계
 
 test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | <body>) 형식을 지키고 jq 컴파일을 통과한다', async () => {
   for (const [label, badSource] of [
-    ['unparenthesized lhs', '(.foo as $x | $x)'],
+    ['unparenthesized lhs', '.[0] as $x | $x'],
+    ['unparenthesized lhs inside parens', '(.foo as $x | $x)'],
     ['missing outer grouping parens', '(.foo) as $x | $x'],
+    ['body outside outer parens', '((.[0]) as $x) | $x'],
+    ['compound boolean lhs without outer parens', '(true and ($files | flatten) as $changed | $changed)'],
     ['nested second as without own outer parens', '((.a) as $x | (.b) as $y | $x + $y)'],
     ['call paren masquerading as outer grouping paren', 'any((.foo) as $x | $x)'],
+    ['call paren with space masquerading as outer grouping paren', 'select ((.foo) as $x | $x)'],
     ['semicolon inside outer grouping level', 'def f(a; b): a; f((.foo) as $x | $x; 1)'],
     ['object destructuring without outer parens', '(.foo) as {a: $a} | $a'],
     ['array destructuring without outer parens', '(.foo) as [$a] | $a'],
     ['string interpolation violation', '"\\((.foo) as $x | $x)"'],
+    ['hash inside string does not hide unparenthesized as', '"# hash inside string" | . as $x | $x'],
     ['as following reduce outside header', 'reduce .[] as $r ({}; .) | (.foo) as $x | $x'],
   ]) {
-    assert.ok(
-      validateJqAsBindings(badSource).length > 0,
+    assert.equal(
+      validateJqAsBindings(badSource).ok,
+      false,
       `validator must reject ${label}: ${badSource}`,
     );
   }
@@ -3807,46 +3840,88 @@ test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | 
   for (const [label, goodSource] of [
     ['properly wrapped single binding', '((.foo) as $x | $x)'],
     ['properly wrapped nested bindings', '((.a) as $x | ((.b) as $y | $x + $y))'],
+    ['properly wrapped call argument', 'select(((.x) as $v | $v))'],
+    ['properly wrapped boolean rhs', 'true and ((.x) as $v | $v)'],
     ['reduce header binding', 'reduce (.items[] | select(.ok)) as $item ({}; . + $item)'],
     ['foreach header binding', '[foreach .[] as $item (0; . + $item; .)]'],
     ['destructuring wrapped properly', '((.foo) as {a: $a} | $a)'],
+    ['array destructuring wrapped properly', '((.foo) as [$a, $b] | $a + $b)'],
     ['string interpolation wrapped properly', '"\\(((.foo) as $x | $x))"'],
+    ['comment line ignored', '# . as $ignored_comment | .\n((.[0]) as $x | $x)'],
     ['literal "as $x" inside string', '"foo as $x | bar"'],
   ]) {
-    assert.deepEqual(
-      validateJqAsBindings(goodSource),
-      [],
-      `validator must accept ${label}: ${goodSource}`,
+    const check = validateJqAsBindings(goodSource);
+    assert.equal(
+      check.ok,
+      true,
+      `validator must accept ${label} (${check.reason ?? 'ok'}): ${goodSource}`,
+    );
+  }
+
+  for (const [label, badWorkflow] of [
+    ['double-quoted jq filter', 'out="$(jq -r ".foo | . as $x | $x" <<<"$x")"'],
+    ['double-quoted --jq filter', 'gh api rate_limit --jq ".resources.core.remaining"'],
+    ['unknown prefix variable', 'out="$(jq -r "${unknown_defs}"\'.\' <<<"$x")"'],
+    ['nested $(jq ...) in --argjson', 'out="$(jq -c --argjson r "$(jq -c \'{id}\' <<<"$a")" \'.\' <<<"$b")"'],
+    ['nested $(jq ...) in here-string input', 'out="$(jq -r \'.\' <<<"$(jq -c \'.\' <<<"$a")")"'],
+  ]) {
+    assert.equal(
+      auditWorkflowJqInvocations(badWorkflow).ok,
+      false,
+      `workflow auditor must fail closed on ${label}`,
     );
   }
 
   const automergeWorkflow = await readWorkflow();
   const automationWorkflow = await readFile(automationWorkflowUrl, 'utf8');
-  const stripDefs = [...automergeWorkflow.matchAll(/def strip_markdown_code:[\s\S]*?;\n/g)].map((m) => m[0]);
-  assert.equal(stripDefs.length, 4, 'all 4 strip_markdown_code definitions must be audited');
-  for (const stripDef of stripDefs) {
-    assert.doesNotMatch(
-      stripDef,
-      /`/,
-      'strip_markdown_code must use \\x60 instead of literal backticks',
+  for (const defName of ['strip_closed_markdown_code', 'strip_markdown_code']) {
+    const matches = [...automergeWorkflow.matchAll(new RegExp(`def ${defName}:[\\s\\S]*?;\\n`, 'g'))].map(
+      (m) => m[0],
     );
+    assert.equal(matches.length, 1, `${defName} must be defined once in review_jq_defs`);
+    assert.doesNotMatch(matches[0], /`/, `${defName} must use \\x60 instead of literal backticks`);
   }
 
-  for (const [name, workflowText, minPrograms] of [
-    ['automerge-queue.yml', automergeWorkflow, 30],
-    ['automation-pr-automerge.yml', automationWorkflow, 0],
+  for (const [name, workflowText, minCommands, minBindings] of [
+    ['automerge-queue.yml', automergeWorkflow, 30, 10],
+    ['automation-pr-automerge.yml', automationWorkflow, 0, 0],
   ]) {
-    const programs = extractWorkflowJqPrograms(workflowText);
+    const audit = auditWorkflowJqInvocations(workflowText);
+    assert.equal(audit.ok, true, `${name}: ${audit.reason ?? 'ok'}`);
+    assert.equal(extractWorkflowJqPrograms(workflowText).length, audit.programs.length);
     assert.ok(
-      programs.length >= minPrograms,
-      `${name}: expected at least ${minPrograms} extracted jq programs, got ${programs.length}`,
+      audit.commandCount >= minCommands,
+      `${name}: expected at least ${minCommands} audited jq/--jq invocations, got ${audit.commandCount}`,
     );
-    for (const { line, source, argNames } of programs) {
-      assert.deepEqual(
-        validateJqAsBindings(source),
-        [],
-        `${name}:${line} violates ((<lhs>) as $<var> | <body>)`,
+
+    let checkedNonReduce = 0;
+    let checkedLoop = 0;
+    for (const program of audit.programs) {
+      const validation = validateJqAsBindings(program);
+      assert.equal(
+        validation.ok,
+        true,
+        `${name} violates ((<lhs>) as $<var> | <body>) (${validation.reason}):\n${program}`,
       );
+      checkedNonReduce += validation.nonReduceCount;
+      checkedLoop += validation.loopCount;
+    }
+
+    const commentStrippedWorkflow = workflowText
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n');
+    const totalWorkflowAsBindings = [
+      ...commentStrippedWorkflow.matchAll(/\bas\s+(?:\$[A-Za-z_][A-Za-z0-9_]*|\{|\[)/g),
+    ].length;
+    assert.ok(totalWorkflowAsBindings >= minBindings);
+    assert.equal(
+      checkedNonReduce + checkedLoop,
+      totalWorkflowAsBindings,
+      `${name}: every jq as binding must be accounted for by AST audit`,
+    );
+
+    for (const { source, argNames } of audit.invocations) {
       const jqArgs = ['-n'];
       for (const argName of [...new Set(argNames)]) {
         jqArgs.push('--argjson', argName, 'null');
@@ -3856,7 +3931,7 @@ test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | 
       assert.equal(
         compiled.status,
         0,
-        `${name}:${line} failed jq compile check:\n${compiled.stderr}`,
+        `${name} failed jq compile check:\n${compiled.stderr}\n---\n${source}`,
       );
     }
   }
