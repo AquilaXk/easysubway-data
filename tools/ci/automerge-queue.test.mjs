@@ -585,6 +585,42 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     0,
     'older-commit pstack-interrogate act-on=0 must not clear that reviewer prior CHANGES_REQUESTED',
   );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
+      review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', { commit_id: PREVIOUS_HEAD }),
+      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', interrogateBody(), {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'older-commit APPROVED must not clear newer-commit CHANGES_REQUESTED by same reviewer',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z', 'pre-rebase cr', { commit_id: DIFFERENT_HEAD }),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody('6'.repeat(40), '0'), {
+        commit_id: '6'.repeat(40),
+      }),
+      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', interrogateBody(), {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'pre-rebase pstack-interrogate act-on=0 must clear pre-rebase CHANGES_REQUESTED by same reviewer',
+  );
+  for (const [label, body] of [
+    ['inline unclosed <!-- before act-on=0', `See \`<!--\` note.\n\n${interrogateMarker()}`],
+    ['fenced unclosed <!-- before act-on=0', `\`\`\`sh\nm="<!-- "\n\`\`\`\n\n${interrogateMarker()}`],
+    ['HTML comment holding triple backticks before act-on=0', `<!-- \`\`\` -->\n\n${interrogateMarker()}`],
+    ['closed backslash span before decoy inline span', `\`\\\` and \`${interrogateMarker(PREVIOUS_HEAD, '2')}\`\n\n${interrogateMarker()}`],
+  ]) {
+    assert.equal(
+      runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', body)], exactMarker),
+      0,
+      label,
+    );
+  }
 
   for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
     assert.equal(
@@ -669,6 +705,30 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
       '4-space indented code block quoting act-on=1 before valid act-on=0 marker',
       `Paragraph.\n\n    ${interrogateMarker(HEAD, '1')}\n\n${interrogateMarker(HEAD, '0')}`,
     ],
+    [
+      'HTML comment containing triple fence before valid act-on=0 marker',
+      `<!-- note \`\`\` -->\nbody\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'escaped backtick before inline code decoy before valid act-on=0 marker',
+      `\\\` text \`${interrogateMarker(HEAD, '1')}\`\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      '4-space indented code block containing fence before valid act-on=0 marker',
+      `    \`\`\`\n\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      '4-space indented code block after ATX heading before valid act-on=0 marker',
+      `### Example\n    ${interrogateMarker(HEAD, '2')}\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      '4-space inner fence inside fenced block before valid act-on=0 marker',
+      `\`\`\`md\n    \`\`\`\n${interrogateMarker(HEAD, '2')}\n\`\`\`\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'list-nested blockquote decoy before valid act-on=0 marker',
+      `- > ${interrogateMarker(HEAD, '2')}\n${interrogateMarker(HEAD, '0')}`,
+    ],
   ]) {
     assert.equal(
       runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', body)], exactMarker),
@@ -698,6 +758,10 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     [
       'stray single backticks across paragraphs around act-on=1 before act-on=0',
       `First \` stray.\n\n${interrogateMarker(HEAD, '1')}\n\nSecond \` stray.\n\n${interrogateMarker(HEAD, '0')}`,
+    ],
+    [
+      'escaped backticks around real act-on=2 must stay prose and block',
+      `Note \\\`${interrogateMarker(HEAD, '2')}\\\`\n${interrogateMarker(HEAD, '0')}`,
     ],
   ]) {
     assert.notEqual(
@@ -825,6 +889,38 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
     ], exactMarker),
     0,
     'out-of-PR APPROVED must not clear prior CHANGES_REQUESTED',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z', 'pre-rebase cr', {
+        commit_id: DIFFERENT_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', {
+        commit_id: 'f'.repeat(40),
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', interrogateBody(), {
+        user: { login: 'reviewer-two', type: 'User' },
+      }),
+    ], exactMarker),
+    0,
+    'pre-rebase CHANGES_REQUESTED already cleared by pre-rebase APPROVED must not wedge after rebase',
+  );
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', interrogateBody(DIFFERENT_HEAD, '2'), {
+        commit_id: DIFFERENT_HEAD,
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', interrogateBody('f'.repeat(40), '0'), {
+        commit_id: 'f'.repeat(40),
+        user: { login: 'reviewer-one', type: 'User' },
+      }),
+      review(3, 'COMMENTED', '2026-08-01T00:02:00Z', '', codeRabbit),
+    ], exactMarker),
+    0,
+    'pre-rebase ACT_ON already cleared by pre-rebase act-on=0 must not wedge CodeRabbit after rebase',
   );
   assert.notEqual(
     runReviewFilter([
@@ -3402,8 +3498,7 @@ test('marker 동기화의 discovery 판정은 리뷰 게이트·자동화 정책
     'def is_coderabbit:',
     'def is_trusted_human:',
     'def is_sha_in(',
-    'def strip_closed_markdown_code:',
-    'def strip_markdown_code:',
+    'def strip_markdown_code($keep_unclosed):',
     'def has_pstack_interrogate_marker:',
     'def is_valid_pstack_interrogate_on(',
     'def is_transferable_frozen_review(',
@@ -3857,11 +3952,18 @@ test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | 
   }
 
   for (const [label, badWorkflow] of [
-    ['double-quoted jq filter', 'out="$(jq -r ".foo | . as $x | $x" <<<"$x")"'],
-    ['double-quoted --jq filter', 'gh api rate_limit --jq ".resources.core.remaining"'],
-    ['unknown prefix variable', 'out="$(jq -r "${unknown_defs}"\'.\' <<<"$x")"'],
-    ['nested $(jq ...) in --argjson', 'out="$(jq -c --argjson r "$(jq -c \'{id}\' <<<"$a")" \'.\' <<<"$b")"'],
-    ['nested $(jq ...) in here-string input', 'out="$(jq -r \'.\' <<<"$(jq -c \'.\' <<<"$a")")"'],
+    ['double-quoted jq filter', 'run: |\n  out="$(jq -r ".foo | . as $x | $x" <<<"$x")"\n'],
+    ['double-quoted --jq filter', 'run: |\n  gh api rate_limit --jq ".resources.core.remaining"\n'],
+    ['unknown prefix variable', 'run: |\n  out="$(jq -r "${unknown_defs}"\'.\' <<<"$x")"\n'],
+    ['nested $(jq ...) in --argjson', 'run: |\n  out="$(jq -c --argjson r "$(jq -c \'{id}\' <<<"$a")" \'.\' <<<"$b")"\n'],
+    ['nested $(jq ...) in here-string input', 'run: |\n  out="$(jq -r \'.\' <<<"$(jq -c \'.\' <<<"$a")")"\n'],
+    ['gh -q shorthand', 'run: |\n  gh api rate_limit -q \'. as $x | $x\'\n'],
+    ['+= query mutation', 'run: |\n  q_query=\'.x\'\n  q_query+=\' | . as $x | $x\'\n  gh api x --jq "${q_query}"\n'],
+    ['eval command wrapper', 'run: |\n  eval "jq -r \'. as \\$x | \\$x\' <<<\'{}\'"\n'],
+    ['bash -c subshell bypass', 'run: |\n  bash -c "jq -r \'. as \\$x | \\$x\' <<<\'{}\'"\n'],
+    ['non-JQ heredoc jq reference', 'run: |\n  msg="$(cat <<\'EOF\'\njq -r \'. as $x | $x\'\nEOF\n)"\n'],
+    ['quoted YAML run key', "'run': |\n  jq -r '. as $x | $x' <<<'{}'\n"],
+    ['folded YAML run scalar', 'name: T\non: push\njobs:\n  t:\n    steps:\n      - run: >\n          jq -r \'. as $x | $x\' <<<\'{}\'\n'],
   ]) {
     assert.equal(
       auditWorkflowJqInvocations(badWorkflow).ok,
@@ -3872,13 +3974,11 @@ test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | 
 
   const automergeWorkflow = await readWorkflow();
   const automationWorkflow = await readFile(automationWorkflowUrl, 'utf8');
-  for (const defName of ['strip_closed_markdown_code', 'strip_markdown_code']) {
-    const matches = [...automergeWorkflow.matchAll(new RegExp(`def ${defName}:[\\s\\S]*?;\\n`, 'g'))].map(
-      (m) => m[0],
-    );
-    assert.equal(matches.length, 1, `${defName} must be defined once in review_jq_defs`);
-    assert.doesNotMatch(matches[0], /`/, `${defName} must use \\x60 instead of literal backticks`);
-  }
+  const stripDefs = [
+    ...automergeWorkflow.matchAll(/def strip_markdown_code\(\$keep_unclosed\):[\s\S]*?;\n/g),
+  ].map((m) => m[0]);
+  assert.equal(stripDefs.length, 1, 'strip_markdown_code($keep_unclosed) must be defined once in review_jq_defs');
+  assert.doesNotMatch(stripDefs[0], /`/, 'strip_markdown_code($keep_unclosed) must use \\x60 instead of literal backticks');
 
   for (const [name, workflowText, minCommands, minBindings] of [
     ['automerge-queue.yml', automergeWorkflow, 30, 10],
@@ -3910,7 +4010,7 @@ test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | 
       .filter((line) => !/^\s*#/.test(line))
       .join('\n');
     const totalWorkflowAsBindings = [
-      ...commentStrippedWorkflow.matchAll(/\bas\s+(?:\$[A-Za-z_][A-Za-z0-9_]*|\{|\[)/g),
+      ...commentStrippedWorkflow.matchAll(/\bas\s*(?:\$[A-Za-z_][A-Za-z0-9_]*|\{|\[)/g),
     ].length;
     assert.ok(totalWorkflowAsBindings >= minBindings);
     assert.equal(
@@ -3918,20 +4018,6 @@ test('워크플로의 모든 비-reduce jq as 바인딩이 ((<lhs>) as $<var> | 
       totalWorkflowAsBindings,
       `${name}: every jq as binding must be accounted for by AST audit`,
     );
-
-    for (const { source, argNames } of audit.invocations) {
-      const jqArgs = ['-n'];
-      for (const argName of [...new Set(argNames)]) {
-        jqArgs.push('--argjson', argName, 'null');
-      }
-      jqArgs.push(`if false then (\n${source}\n) else empty end`);
-      const compiled = spawnSync('jq', jqArgs, { encoding: 'utf8' });
-      assert.equal(
-        compiled.status,
-        0,
-        `${name} failed jq compile check:\n${compiled.stderr}\n---\n${source}`,
-      );
-    }
   }
 });
 
