@@ -123,7 +123,6 @@ jobs:
         env:
           CHAIN_LOCKED: ${{ steps.chain-lock.outputs.locked }}
         run: |
-          # shellcheck disable=SC2016
           set -euo pipefail
 
           if [ "${HAS_AUTOMERGE_PAT}" != "true" ]; then
@@ -229,22 +228,22 @@ jobs:
           #
           #  - API 예산 지분. GITHUB_TOKEN 한도는 저장소당 시간당 1,000회이고 이 저장소의
           #    다른 워크플로와 공유한다. 실행당 청구는 ruleset 1 + gh pr list 1 + 고정 비용
-          #    16 + 후보당 14 * window_max이고, window_max=3이면 60회로 한도의 6.0%다.
-          #    형제 저장소 backend는 같은 계산에서 7%를 허용했지만 이 저장소는 더 낮게 잡는다
+          #    16 + 후보당 17 * window_max이고, window_max=3이면 69회로 한도의 6.9%다.
+          #    형제 저장소 backend는 같은 계산에서 7%를 허용했지만 이 저장소는 그 안쪽으로 잡는다
           #    — 같은 한도를 Data Pack Release가 함께 쓰고, 그 실행 하나가 artifact 조회·
           #    업로드와 실행 목록 조회로 REST를 다량 소비한다. 큐가 지분을 키우면 그쪽이
-          #    한도에 먼저 닿는다. 후보 한 건당 호출은 5회지만 요청은 그보다 많을 수 있다.
+          #    한도에 먼저 닿는다. 후보 한 건당 호출은 7회지만 요청은 그보다 많을 수 있다.
           #    `gh pr view --json`(GraphQL)과 reviewThreads(GraphQL)는 페이지네이션이 없고
-          #    (reviewThreads는 first: 100 + hasNextPage fail closed), reviews·comments·
+          #    (reviewThreads는 first: 100 + hasNextPage fail closed), reviews·commits·comments·
           #    check-runs·statuses(REST)는 페이지 상한 3(아래 paginated-read)까지 읽는다. 그래서 후보당
-          #    청구는 14회다 — pr view 1 + reviewThreads 1 + REST 4종 * 3페이지. `--paginate`를
+          #    청구는 17회다 — pr view 1 + reviewThreads 1 + REST 5종 * 3페이지. `--paginate`를
           #    쓰지 않는 이유가 이것이다: 페이지 수에 상한이 없으면 이력이 유난히 긴 후보
           #    하나가 예산 모델을 통째로 넘긴다. 상한을 넘는 후보는 판정을 포기하고 건너뛴다.
           #    required context별 jq는 로컬 계산이라 요청을 쓰지 않는다. 후보 평가 밖의 고정
           #    비용은 label marker 발행, 병합과 실패 처리의 보수적 여유 16회로 둔다.
           #    authorization marker 재발행·복구는 exact marker가 없는 후보에서만 REST를 더 쓴다
-          #    (재발행 최대 3회: commit·compare·PATCH, 복구 최대 6회: commits 3페이지·events 2·
-          #    POST 1). head가 바뀐 뒤 한 번 성립하면 끝나는 드문 경로라 후보당 청구에 넣지 않고,
+          #    (재발행 최대 3회: commit·compare·PATCH, 복구 최대 3회: events 2·POST 1). head가
+          #    바뀐 뒤 한 번 성립하면 끝나는 드문 경로라 후보당 청구에 넣지 않고,
           #    후보마다의 잔량 재확인(budget-recheck)이 예약선을 지킨다.
           #
           #    이 예산을 "실행 빈도"로 나누지 않는다. 빈도는 강제되지 않는다 — concurrency
@@ -253,7 +252,7 @@ jobs:
           #    않는다. 그래서 창은 가정이 아니라 남은 예산을 매 실행 실측해서 정한다.
           #    `GET /rate_limit`은 한도를 소비하지 않으므로 이 조회 자체가 공짜이고, 이 job이
           #    실제로 쓰는 토큰의 REST·GraphQL 잔량을 그대로 준다. 두 버킷의 최솟값에 후보당
-          #    9회를 청구하면 실제 지출(REST 3 + 페이지, GraphQL 2)보다 많이 떼므로 어느 쪽
+          #    17회를 청구하면 실제 지출(REST 5 + 페이지, GraphQL 2)보다 많이 떼므로 어느 쪽
           #    버킷도 계산보다 먼저 마르지 않는다. 두 값 중 하나가 비정상이면 최솟값을 내지
           #    않고 큐를 건너뛴다 — 후보 평가는 두 버킷을 다 쓰므로 한쪽을 모르는 것은 예산
           #    전체를 모르는 것과 같다.
@@ -265,8 +264,8 @@ jobs:
           #    400회면 100회 실행분이고, 그 위에 Data Pack Release 자신의 소비가 얹힌다.
           #  - job timeout. 이 job은 10분(600초)이고 producer 스텝이 최대 90초(반영 확인
           #    12 * 5초 + API 6회), 러너·스텝 오버헤드가 30초쯤 든다. 남는 480초를 후보당
-          #    5회 * 1초(비관적 왕복)로 나누면 84건이고, API가 느린 날을 감안해 2배 여유를
-          #    두면 42건이다.
+          #    7회 * 1초(비관적 왕복)로 나누면 68건이고, API가 느린 날을 감안해 2배 여유를
+          #    두면 34건이다.
           #  - 실측 큐 깊이. 2026-08-02 기준 이 저장소의 열린 PR은 3건이고(전부 dependabot)
           #    저장소 생성(2026-07-30) 이후 누적 PR은 17건이다. 창 3이면 평상시 큐 전량이
           #    한 실행에 들어와 회전이 걸리지 않는다. 큐가 3건을 넘는 날에는 아래 회전이
@@ -276,8 +275,8 @@ jobs:
           # min(window_max, (잔량 - reserve - 고정 비용) / 후보당 요청)으로 정한다. 잔량이
           # reserve에 닿으면 창이 0이 되어 큐만 건너뛰고 producer 스텝은 계속 돈다. 창을
           # 정한 뒤에도 후보마다 잔량을 다시 읽어 예약선에서 멈추므로, 창은 상한이지 지출
-          # 약속이 아니다. 형제 저장소 값 6이나 20을 그대로 쓰면 실행당 청구가 각각 82회·
-          # 237회로 위 지분 기준을 깬다.
+          # 약속이 아니다. 형제 저장소 값 6이나 20을 그대로 쓰면 실행당 청구가 각각 120회·
+          # 358회로 위 지분 기준을 깬다.
           #
           # 다만 창을 큐 앞쪽에 고정하면 창 밖의 후보는 매 실행 제외되어, 없애려던 head
           # 차단이 1건에서 window건 규모로 옮겨갈 뿐이다. 그래서 창 시작점을 실행마다
@@ -323,7 +322,10 @@ jobs:
           window_max=3
           reserve=400
           fixed_cost=16
-          per_candidate=14
+          page_limit=3
+          graphql_per_candidate=2
+          rest_paginated_endpoints=5
+          per_candidate=$(( graphql_per_candidate + rest_paginated_endpoints * page_limit ))
           # 두 버킷이 모두 숫자일 때만 값을 낸다. 한쪽이 없거나 비정상인데 남은 하나로
           # 진행하면, 후보 평가가 실제로 소비하는 두 버킷 중 하나의 잔량을 모른 채 쓰는
           # 것이라 "모르는 예산은 쓰지 않는다"가 성립하지 않는다. 어느 쪽이든 비정상이면
@@ -358,11 +360,6 @@ jobs:
           fi
           # candidate-offset-end
           # paginated-read-begin
-          # 페이지를 직접 돌며 상한을 둔다. `gh api --paginate`는 페이지 수에 상한이 없어
-          # 이력이 유난히 긴 후보 하나가 위 예산 모델을 통째로 넘길 수 있다. 상한에 닿으면
-          # 판정을 포기한다 — 모르는 이력 위에서 병합하지 않는다(fail closed). 상한 3이
-          # 후보당 청구 11회의 근거다.
-          page_limit=3
           read_pages() {
             local endpoint="$1" page=1 body count pages='[]'
             while [[ "${page}" -le "${page_limit}" ]]; do
@@ -396,60 +393,183 @@ jobs:
             return 1
           }
           # fail-closed-pr-end
+          review_jq_defs="$(cat <<'JQ'
+          def is_coderabbit:
+            .author_association == "NONE" and
+            (.user | type == "object") and
+            .user.login == "coderabbitai[bot]" and
+            .user.id == 136622811 and
+            .user.type == "Bot";
+          def is_trusted_human:
+            (.author_association == "OWNER" or
+             .author_association == "MEMBER" or
+             .author_association == "COLLABORATOR") and
+            (.user | type == "object") and
+            (.user.login | type == "string" and length > 0) and
+            .user.type == "User";
+          def is_sha_in($commit_ids):
+            (type == "string" and test("^[0-9a-f]{40}$")) and
+            ((.) as $sha | any($commit_ids[]; . == $sha));
+          def strip_markdown_code($keep_unclosed):
+            ((if $keep_unclosed then "" else "|\\z" end) as $eof |
+             ((if $keep_unclosed then "" else "|(?=\\n\\S)|\\z" end) as $list_eof |
+              ((if $keep_unclosed then "|^ {0,11}(?:\\x60{3,}[^\\x60\\n]*|~{3,}[^\\n]*)$" else "" end) as $open_fence |
+               gsub("\\r\\n?"; "\n") |
+               gsub("(?m)^(?: {0,3}(?:[-+*]|[0-9]{1,9}[.)])[ \\t]+)* {0,3}>.*$"; "") |
+               gsub("(?m)^ {0,3}(\\x60{3,})[^\\x60\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\1\\x60*[ \\t]*$" + $eof + ")|^ {0,3}(~{3,})[^\\n]*\\n[\\s\\S]*?(?:^ {0,3}\\2~*[ \\t]*$" + $eof + ")|^( {4,11})(\\x60{3,})[^\\x60\\n]*\\n[\\s\\S]*?(?:^ {2,14}\\4\\x60*[ \\t]*$" + $list_eof + ")|^( {4,11})(~{3,})[^\\n]*\\n[\\s\\S]*?(?:^ {2,14}\\6~*[ \\t]*$" + $list_eof + ")|(?:\\n[ \\t]*\\n|(?:\\n|\\A) {0,3}#{1,6}(?:[ \\t](?!.*pstack-interrogate)[^\\n]*)?\\n|(?:\\n|\\A)(?! {0,3}(?:[-+*]|[0-9]{1,9}[.)])[ \\t])(?!.*pstack-interrogate)[^\\n]+\\n {0,3}(?:=+|-+)[ \\t]*\\n|\\A(?:[ \\t]*\\n)*)(?: {4,}|\\t)(?!\\x60{3,}|~{3,})[^\\n]*(?:\\n(?: {4,}|\\t)[^\\n]*)*" + $open_fence + "|\\\\[\\s\\S]|<!--(?!\\s*pstack-interrogate)(?:(?!<!--\\s*pstack-interrogate)[\\s\\S])*?-->|(?<!\\x60)(\\x60+)(?!\\x60)(?:(?!\\n[ \\t]*\\n)(?!\\n {0,3}<!--)[\\s\\S])*?(?<!\\x60)\\7(?!\\x60)"; " ") |
+               gsub("(?:\\n[ \\t]*\\n|(?:\\n|\\A) {0,3}#{1,6}(?:[ \\t](?!.*pstack-interrogate)[^\\n]*)?\\n|(?:\\n|\\A)(?! {0,3}(?:[-+*]|[0-9]{1,9}[.)])[ \\t])(?!.*pstack-interrogate)[^\\n]+\\n {0,3}(?:=+|-+)[ \\t]*\\n|\\A(?:[ \\t]*\\n)*)(?: {4,}|\\t)[^\\n]*(?:\\n(?: {4,}|\\t)[^\\n]*)*"; "\n"))));
+          def has_pstack_interrogate_marker:
+            (((.body // "") | strip_markdown_code(true)) as $clean |
+             ([$clean | scan("<!--\\s*pstack-interrogate")] | length) > 0);
+          def is_valid_pstack_interrogate_on($expected_head):
+            ($expected_head | type == "string" and test("^[0-9a-f]{40}$")) and
+            is_trusted_human and
+            .state == "COMMENTED" and
+            .commit_id == $expected_head and
+            (((.body // "") | strip_markdown_code(true)) as $closed_clean |
+             (((.body // "") | strip_markdown_code(false)) as $clean |
+              (([$closed_clean | scan("<!--\\s*pstack-interrogate")] | length) == 1 and
+               ([$clean | scan("<!--\\s*pstack-interrogate")] | length) == 1 and
+               ($clean | test("(?m)^<!-- pstack-interrogate head=" + $expected_head + " act-on=0 -->[ \\t]*$")))));
+          def is_transferable_frozen_review($commit_ids; $states):
+            (.commit_id | is_sha_in($commit_ids)) and
+            ((.state == "APPROVED" and is_trusted_human and
+              ($states[.user.login].formal == "APPROVED" or $states[.user.login].formal == "APPROVED_PRIOR") and $states[.user.login].pstack == null) or
+             (.state == "COMMENTED" and is_coderabbit and $states[.user.login].formal == "COMMENTED"));
+          def pos_clears($recorded_pos; $pos):
+            ($pos >= 0 and $pos >= $recorded_pos) or ($pos < 0 and $recorded_pos < 0);
+          def max_pos($a; $b): if $a > $b then $a else $b end;
+          def clear_prior_act_on($pstack; $pos):
+            if $pstack != null and $pstack.kind == "ACT_ON" and ($pstack.current | not) and pos_clears($pstack.pos; $pos)
+            then null else $pstack end;
+          def reduce_review_states($current_head; $commit_ids):
+            sort_by(.submitted_at, .id) |
+            reduce .[] as $review ({};
+              (($review.user.login) as $login |
+               ((.[$login] // { formal: null, formal_pos: -1, pstack: null }) as $cur |
+                ((($commit_ids | index($review.commit_id)) // -1) as $pos |
+                 (($current_head != "" and $review.commit_id == $current_head and $pos >= 0) as $is_cur_head |
+                  if $review.state == "DISMISSED" then
+                    if $cur.pstack != null and $cur.pstack.kind == "ACT_ON" then .[$login] = { formal: null, formal_pos: -1, pstack: $cur.pstack }
+                    else del(.[$login]) end
+                  elif $review.state == "CHANGES_REQUESTED" then
+                    if ($review | is_trusted_human) then
+                      .[$login] = { formal: "CHANGES_REQUESTED", formal_pos: (if $cur.formal == "CHANGES_REQUESTED" then max_pos($cur.formal_pos; $pos) else $pos end), pstack: (if $cur.pstack != null and $cur.pstack.kind == "OK" then null else $cur.pstack end) }
+                    else .[$login] = { formal: "UNTRUSTED_CHANGES_REQUESTED", formal_pos: (if $cur.formal == "UNTRUSTED_CHANGES_REQUESTED" then max_pos($cur.formal_pos; $pos) else $pos end), pstack: $cur.pstack } end
+                  elif $review.state == "APPROVED" then
+                    if ($review | is_trusted_human) and $pos >= 0 then
+                      if $is_cur_head then .[$login] = { formal: "APPROVED", formal_pos: $pos, pstack: null }
+                      elif $cur.formal == "CHANGES_REQUESTED" and (pos_clears($cur.formal_pos; $pos) | not) then
+                        .[$login] = { formal: "CHANGES_REQUESTED", formal_pos: $cur.formal_pos, pstack: clear_prior_act_on($cur.pstack; $pos) }
+                      else .[$login] = { formal: "APPROVED_PRIOR", formal_pos: $pos, pstack: clear_prior_act_on($cur.pstack; $pos) } end
+                    elif ($review | is_trusted_human) and $pos < 0 then
+                      .[$login] = {
+                        formal: (if $cur.formal == "CHANGES_REQUESTED" and pos_clears($cur.formal_pos; $pos) then "COMMENTED" else ($cur.formal // "COMMENTED") end),
+                        formal_pos: (if $cur.formal == "CHANGES_REQUESTED" and pos_clears($cur.formal_pos; $pos) then -1 else $cur.formal_pos end),
+                        pstack: clear_prior_act_on($cur.pstack; $pos)
+                      }
+                    elif ($review | is_coderabbit) and pos_clears($cur.formal_pos; $pos) then
+                      .[$login] = {
+                        formal: (if $cur.formal == "UNTRUSTED_CHANGES_REQUESTED" then "COMMENTED" else ($cur.formal // "COMMENTED") end),
+                        formal_pos: (if $cur.formal == "UNTRUSTED_CHANGES_REQUESTED" then -1 else $cur.formal_pos end),
+                        pstack: $cur.pstack
+                      }
+                    else .[$login] = { formal: ($cur.formal // "COMMENTED"), formal_pos: $cur.formal_pos, pstack: $cur.pstack } end
+                  elif $review.state == "COMMENTED" then
+                    if ($review | is_trusted_human and has_pstack_interrogate_marker) then
+                      if $is_cur_head and ($review | is_valid_pstack_interrogate_on($current_head)) then
+                        .[$login] = { formal: (if $cur.formal == null or $cur.formal == "CHANGES_REQUESTED" then "COMMENTED" else $cur.formal end), formal_pos: (if $cur.formal == "CHANGES_REQUESTED" then -1 else $cur.formal_pos end), pstack: { kind: "OK" } }
+                      elif ($review | is_valid_pstack_interrogate_on($review.commit_id)) then
+                        .[$login] = {
+                          formal: (if $cur.formal == "CHANGES_REQUESTED" and $pos < 0 and $cur.formal_pos < 0 then "COMMENTED" else ($cur.formal // "COMMENTED") end),
+                          formal_pos: (if $cur.formal == "CHANGES_REQUESTED" and $pos < 0 and $cur.formal_pos < 0 then -1 else $cur.formal_pos end),
+                          pstack: clear_prior_act_on($cur.pstack; $pos)
+                        }
+                      elif $is_cur_head then
+                        .[$login] = { formal: (if $cur.formal == "APPROVED" then "APPROVED_PRIOR" else ($cur.formal // "COMMENTED") end), formal_pos: $cur.formal_pos, pstack: { kind: "ACT_ON", pos: $pos, current: true } }
+                      else
+                        .[$login] = {
+                          formal: ($cur.formal // "COMMENTED"),
+                          formal_pos: $cur.formal_pos,
+                          pstack: (if $cur.pstack != null and $cur.pstack.kind == "ACT_ON" then
+                            { kind: "ACT_ON", pos: (if $pos > $cur.pstack.pos then $pos else $cur.pstack.pos end), current: $cur.pstack.current }
+                          else { kind: "ACT_ON", pos: $pos, current: false } end)
+                        }
+                      end
+                    else .[$login] = { formal: ($cur.formal // "COMMENTED"), formal_pos: $cur.formal_pos, pstack: $cur.pstack } end
+                  else .[$login] = { formal: $review.state, formal_pos: $cur.formal_pos, pstack: $cur.pstack } end))))
+            );
+          def state_entry_is_clean($has_current_human_pass):
+            (.formal == null or .formal == "COMMENTED" or .formal == "APPROVED" or .formal == "APPROVED_PRIOR") and
+            (.pstack == null or .pstack.kind == "OK" or (.pstack.kind == "ACT_ON" and (.pstack.current | not) and $has_current_human_pass));
+          def has_current_human_pass_in_states($states):
+            any($states[];
+              (.formal == "APPROVED" and .pstack == null) or
+              ((.pstack != null and .pstack.kind == "OK") and (.formal == "COMMENTED" or .formal == "APPROVED" or .formal == "APPROVED_PRIOR")));
+          def has_no_blocking_review($current_head; $commit_ids):
+            (($current_head | type == "string" and test("^[0-9a-f]{40}$")) and
+             ($commit_ids | type == "array" and length > 0 and
+               all(.[]; type == "string" and test("^[0-9a-f]{40}$")) and
+               ($current_head | is_sha_in($commit_ids)))) and
+            (([flatten[] | select(type == "object") | select(is_trusted_human)]) as $trusted |
+             (($trusted | reduce_review_states($current_head; $commit_ids)) as $states |
+              ((has_current_human_pass_in_states($states)) as $has_current_human_pass |
+               all($states[]; state_entry_is_clean($has_current_human_pass)))));
+          def passes_review_discovery($current_head; $commit_ids):
+            (($current_head | type == "string" and test("^[0-9a-f]{40}$")) and
+             ($commit_ids | type == "array" and length > 0 and
+               all(.[]; type == "string" and test("^[0-9a-f]{40}$")) and
+               ($current_head | is_sha_in($commit_ids)))) and
+            (([flatten[] | select(type == "object") | select(is_trusted_human or is_coderabbit)]) as $trusted |
+             (($trusted | reduce_review_states($current_head; $commit_ids)) as $states |
+              ((has_current_human_pass_in_states($states)) as $has_current_human_pass |
+               (($states | length) > 0 and
+                all($states[]; state_entry_is_clean($has_current_human_pass)) and
+                ($has_current_human_pass or any($trusted[]; is_transferable_frozen_review($commit_ids; $states)))))));
+          def passes_transferable_behind_discovery($commit_ids):
+            ($commit_ids | type == "array" and length > 0 and
+              all(.[]; type == "string" and test("^[0-9a-f]{40}$"))) and
+            (([flatten[] | select(type == "object") | select(is_trusted_human or is_coderabbit)]) as $trusted |
+             (($trusted | reduce_review_states(""; $commit_ids)) as $states |
+              (($states | length) > 0 and
+               all($states[]; (.formal == null or .formal == "COMMENTED" or .formal == "APPROVED_PRIOR") and .pstack == null) and
+               any($trusted[]; is_transferable_frozen_review($commit_ids; $states)))));
+          JQ
+          )"
+          is_automation_pr_info() {
+            jq -r '
+              ((.headRefName | type == "string") and (.headRefName | startswith("automation/"))) or
+              ((.author | type == "object") and
+               (.author.login == "easysubway-release-chain[bot]" or
+                .author.login == "app/easysubway-release-chain"))
+            ' <<<"$1"
+          }
           # automation-policy-begin
-          # 자동화 PR(#985)은 신뢰 협력자의 Aquila 리뷰 대신 App의 exact-head 정책 통과 기록(attestation)으로 리뷰 게이트를 통과한다.
-          # 기록은 automation-pr-automerge.yml이 정책(작성자·브랜치·증거 블록·API diff 경로·커밋 신원·CI·게이트 재계산)을 모두 통과한 head에만 남긴다.
-          # 이 함수는 그 기록을 다시 검증할 뿐 정책을 되풀이하지 않는다: 스위치가 켜져 있고, PR 작성자가 신뢰 App(login·id·type)이고, 현재 head의 기록이
-          # 신뢰 App의 comment이고, 신뢰 협력자의 활성 변경 요청이 없어야 한다. 조회·형식 실패와 애매한 상태는 모두 통과하지 못한다(fail closed).
-          # 후보당 청구 모델: Aquila 판정이 실패한 후보에서만 REST 2회(PR 조회, head 커밋 조회)를 더 쓴다. marker 복구와 같은 드문 경로라 후보당 청구에 넣지 않는다.
-          # 입력: pr, head, comments, reviews(read_pages 페이지 배열). 병합은 이 함수가 아니라 아래 병합 분기가 같은 게이트 뒤에서 한다.
           automation_policy_authorized() {
+            local target_pr="$1" target_head="$2" target_comments="$3" target_commit_ids="$4" target_reviews="$5"
             [[ "${AUTOMATION_AUTOMERGE_ENABLED:-}" == "true" ]] || return 1
-            local pull author payload digest
-            pull="$(gh api "repos/${repo}/pulls/${pr}" --jq '{user, body}')" || return 1
+            local pull author payload digest head_at
+            pull="$(gh api "repos/${repo}/pulls/${target_pr}" --jq '{user, body}')" || return 1
             author="$(jq -c '.user' <<<"${pull}")" || return 1
-            # 기록은 CI가 본 증거 블록(JSON 페이로드 텍스트의 sha256)에 묶인다(#986 F3). 지금 본문의 블록이 정확히 하나가 아니면 판정하지 못한다.
             payload="$(jq -r '.body | [match("<!-- easysubway-automation-pr:v1 (.*?) -->"; "g")] | if length == 1 then .[0].captures[0].string else empty end' <<<"${pull}")" || return 1
             [[ -n "${payload}" ]] || return 1
             digest="$(printf '%s' "${payload}" | openssl dgst -sha256 -r | cut -d' ' -f1)" || return 1
-            # 기록은 편집되지 않았고 head 커밋 이후에 만들어진 것만 인정한다(#986 F1). 커밋 시각을 못 읽으면 판정하지 못하므로 통과하지 못한다.
-            head_at="$(gh api "repos/${repo}/commits/${head}" --jq '.commit.committer.date')" || return 1
-            # shellcheck disable=SC2016
-            jq -e --arg head "${head}" --arg digest "${digest}" --arg head_at "${head_at}" --argjson author "${author}" --argjson comments "${comments}" '
+            head_at="$(gh api "repos/${repo}/commits/${target_head}" --jq '.commit.committer.date')" || return 1
+            jq -e --arg head "${target_head}" --arg digest "${digest}" --arg head_at "${head_at}" --argjson author "${author}" --argjson comments "${target_comments}" --argjson commit_ids "${target_commit_ids}" "${review_jq_defs}"'
               def is_app:
                 type == "object" and
                 .login == "easysubway-release-chain[bot]" and
                 .id == 337648189 and
                 .type == "Bot";
-              def is_coderabbit:
-                .author_association == "NONE" and
-                .user.login == "coderabbitai[bot]" and
-                .user.id == 136622811 and
-                .user.type == "Bot";
               ($author | is_app) and
               ($comments | flatten | any(
+                type == "object" and
                 (.user | is_app) and
                 (.body // "") == ("<!-- Automation automerge policy: " + $head + " evidence " + $digest + " -->") and
                 .created_at == .updated_at and
                 ((.created_at | fromdateiso8601) >= ($head_at | fromdateiso8601)))) and
-              ([flatten[] |
-                select(
-                  .author_association == "OWNER" or
-                  .author_association == "MEMBER" or
-                  .author_association == "COLLABORATOR" or
-                  is_coderabbit
-                )] |
-              sort_by(.submitted_at, .id) |
-              reduce .[] as $review ({};
-                if $review.state == "COMMENTED" then
-                  .[$review.user.login] //= "COMMENTED"
-                elif $review.state == "DISMISSED" then
-                  del(.[$review.user.login])
-                else
-                  .[$review.user.login] = $review.state
-                end
-              ) | all(.[]; . == "APPROVED" or . == "COMMENTED"))
-            ' <<<"${reviews}" >/dev/null
+              has_no_blocking_review($head; $commit_ids)
+            ' <<<"${target_reviews}" >/dev/null
           }
           # automation-policy-end
           # authorization-marker-sync-begin
@@ -466,15 +586,9 @@ jobs:
           #    POST한다. 판정은 head 커밋의 committer date <= 최신 automerge labeled 시각이고, 그
           #    시각 이후 head_ref_force_pushed 이벤트가 없는지로 한다. 일반 push는 push 시각을
           #    남기지 않으므로 committer date를 쓴다. committer date는 작성자가 조작할 수 있어
-          #    소유 계정 신뢰를 전제로 한 실수 방지이지 위조 방어가 아니다. PR commit set은
-          #    read_pages 상한 안에서, 이벤트는 1페이지(가득 차면 overflow 확인 1회)까지만 읽는다.
-          # 조회·형식·변경 실패와 애매한 상태는 marker를 건드리지 않고 아래 리뷰 게이트가 거절하게
-          # 둔다. 변경은 github.token(github-actions[bot])으로만 한다. 게이트는 그 봇의 marker만
-          # 인정한다. 성공하면 GitHub이 돌려준 comment로 comments(페이지 배열)를 갱신한다(PATCH는
-          # 같은 id를 교체, POST는 새 페이지로 추가).
+          #    소유 계정 신뢰를 전제로 한 실수 방지이지 위조 방어가 아니다.
           marker_prefix="<!-- Automerge frozen discovery authorization: "
           base_update_prefix="<!-- Automerge base update requested: "
-          # comments에서 github-actions[bot]가 남긴 `<prefix><40hex> -->` comment의 id·head 목록.
           canonical_bot_comment_heads() {
             jq -c --arg prefix "$1" '
               [flatten[] | select(
@@ -488,7 +602,6 @@ jobs:
               ) | {id, head: (.body | capture(": (?<sha>[0-9a-f]{40}) -->$").sha)}]
             ' <<<"${comments}"
           }
-          # 코디네이터가 요청해 수락된 base 갱신을 PR당 canonical 기록 하나로 남긴다.
           record_base_update() {
             local target="$1" requested_head="$2" records="$3" record_body record_count
             record_body="${base_update_prefix}${requested_head} -->"
@@ -505,10 +618,13 @@ jobs:
               echo "::warning::PR #${target}: base update record could not be written; the next head will need a new label authorization."
             fi
           }
-          # 입력: pr, head, comments, reviews(read_pages 페이지 배열). 출력: 갱신된 comments.
           sync_authorization_marker() {
+            local target_commits="$1" target_commit_ids="$2"
+            if [[ "${is_automation_pr:-false}" == true ]]; then
+              return 0
+            fi
             local marker_body markers marker_count marker_id marker_head records head_commit second_parent ancestry
-            local response commits events overflow head_date discovery
+            local response marker_comment events overflow head_date
             marker_body="${marker_prefix}${head} -->"
             markers="$(canonical_bot_comment_heads "${marker_prefix}")"
             marker_count="$(jq 'length' <<<"${markers}")"
@@ -548,40 +664,10 @@ jobs:
                 return 0
               fi
             else
-              # 게이트의 신뢰 author와 discovery 절을 그대로 복제한다. commit set 조회 전에 먼저
-              # 후보 리뷰가 있는지 보고, 없으면 요청을 쓰지 않는다.
-              # shellcheck disable=SC2016
-              discovery='
-                def is_coderabbit:
-                  .author_association == "NONE" and
-                  .user.login == "coderabbitai[bot]" and
-                  .user.id == 136622811 and
-                  .user.type == "Bot";
-                def is_gate_discovery:
-                  .state == "APPROVED" or
-                  (.state == "COMMENTED" and
-                    (is_coderabbit or
-                      ((.body // "" | startswith("**Actionable comments posted: ")) and
-                      ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
-                       (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->"))))));
-                [flatten[] |
-                  select(
-                    .author_association == "OWNER" or
-                    .author_association == "MEMBER" or
-                    .author_association == "COLLABORATOR" or
-                    is_coderabbit
-                  )] as $trusted |
-                any($trusted[];
-                  is_gate_discovery and
-                  ($commit_ids == null or (.commit_id as $review_commit | $commit_ids | index($review_commit) != null)))
-              '
-              if ! jq -e --argjson commit_ids null "${discovery}" <<<"${reviews}" >/dev/null; then
-                echo "PR #${pr}: no authorization marker and no gate-recognized discovery review; authorization is not recovered."
-                return 0
-              fi
-              if ! commits="$(read_pages "repos/${repo}/pulls/${pr}/commits")" ||
-                ! jq -e --argjson commit_ids "$(jq -c '[flatten[] | .sha? | select(type == "string")]' <<<"${commits}")" "${discovery}" <<<"${reviews}" >/dev/null; then
-                echo "PR #${pr}: no gate-recognized discovery review in the PR commit set; authorization is not recovered."
+              if ! jq -e --arg head "${head}" --argjson commit_ids "${target_commit_ids}" "${review_jq_defs}"'
+                passes_review_discovery($head; $commit_ids)
+              ' <<<"${reviews}" >/dev/null; then
+                echo "PR #${pr}: no authorization marker and no gate-recognized discovery review in the PR commit set; authorization is not recovered."
                 return 0
               fi
               if ! events="$(gh api "repos/${repo}/issues/${pr}/events?per_page=100&page=1")" ||
@@ -598,12 +684,12 @@ jobs:
               head_date="$(jq -r --arg head "${head}" '
                 [flatten[] | select(.sha? == $head) | .commit.committer.date] | unique |
                 if length == 1 and (.[0] | type == "string") then .[0] else "" end
-              ' <<<"${commits}")"
+              ' <<<"${target_commits}")"
               if ! jq -e --arg head_date "${head_date}" '
-                ([.[] | select(.event == "labeled" and .label.name? == "automerge") | .created_at | fromdateiso8601] | max) as $labeled_at |
+                (([.[] | select(.event == "labeled" and .label.name? == "automerge") | .created_at | fromdateiso8601] | max) as $labeled_at |
                 ($labeled_at | type == "number") and
                 ($head_date | fromdateiso8601) <= $labeled_at and
-                all(.[] | select(.event == "head_ref_force_pushed"); (.created_at | fromdateiso8601) < $labeled_at)
+                all(.[] | select(.event == "head_ref_force_pushed"); (.created_at | fromdateiso8601) < $labeled_at))
               ' <<<"${events}" >/dev/null 2>&1; then
                 echo "PR #${pr}: head ${head} is not proven to predate the latest automerge label; authorization is not recovered."
                 return 0
@@ -625,7 +711,8 @@ jobs:
               echo "::warning::PR #${pr}: authorization marker response did not prove the current head; it is not used."
               return 0
             fi
-            comments="$(jq -c --argjson response "$(jq -c '{id, body, user}' <<<"${response}")" '
+            marker_comment="$(jq -c '{id, body, user}' <<<"${response}")"
+            comments="$(jq -c --argjson response "${marker_comment}" '
               if any(flatten[]; .id? == $response.id)
               then map(if type == "array" then map(if .id? == $response.id then $response else . end) else . end)
               else . + [[$response]]
@@ -649,7 +736,7 @@ jobs:
             fi
             # budget-recheck-end
             info="$(gh pr view "${pr}" --repo "${repo}" \
-              --json baseRefName,headRefOid,isDraft,labels,mergeStateStatus,state)"
+              --json baseRefName,author,headRefName,headRefOid,isDraft,labels,mergeStateStatus,state)"
             if ! jq -e '
               .state == "OPEN" and
               .isDraft == false and
@@ -662,69 +749,49 @@ jobs:
 
             head="$(jq -r '.headRefOid' <<<"${info}")"
             merge_state="$(jq -r '.mergeStateStatus' <<<"${info}")"
+            is_automation_pr="$(is_automation_pr_info "${info}")"
 
             reviews="$(read_pages "repos/${repo}/pulls/${pr}/reviews")" || {
               echo "PR #${pr}: review history exceeds the page budget; skipping."
               continue
             }
+            commits="$(read_pages "repos/${repo}/pulls/${pr}/commits")" || {
+              echo "PR #${pr}: commit history exceeds the page budget; skipping."
+              continue
+            }
+            commit_ids="$(jq -c '[flatten[] | .sha? | select(type == "string" and test("^[0-9a-f]{40}$"))]' <<<"${commits}")"
             comments="$(read_pages "repos/${repo}/issues/${pr}/comments")" || {
               echo "PR #${pr}: comment history exceeds the page budget; skipping."
               continue
             }
-            sync_authorization_marker
+            sync_authorization_marker "${commits}" "${commit_ids}"
             base_update_records="$(canonical_bot_comment_heads "${base_update_prefix}")"
-            # 후보마다 초기화한다. 앞 후보의 자동화 통과 여부가 다음 후보로 새면 안 된다.
             automation_authorized=false
             # review-state-filter-begin
-            # 저장소 협력자 외에는 GitHub가 고정한 CodeRabbit Bot tuple만 신뢰한다.
-            # frozen discovery는 라벨 이벤트에서 GitHub Actions가 기록한 exact-head marker가
-            # 있을 때만 승계한다. 임의 author·다른 SHA·후속 push는 게이트를 통과하지 못한다.
-            if ! jq -e --arg head "${head}" --argjson comments "${comments}" '
-              def is_coderabbit:
-                .author_association == "NONE" and
-                .user.login == "coderabbitai[bot]" and
-                .user.id == 136622811 and
-                .user.type == "Bot";
-              def is_exact_head_marker:
-                .user.login == "github-actions[bot]" and
-                .user.id == 41898282 and
-                .user.type == "Bot" and
-                (.body // "") == ("<!-- Automerge frozen discovery authorization: " + $head + " -->");
-              [flatten[] |
-                select(
-                  .author_association == "OWNER" or
-                  .author_association == "MEMBER" or
-                  .author_association == "COLLABORATOR" or
-                  is_coderabbit
-                )] as $trusted |
-              ($trusted |
-              sort_by(.submitted_at, .id) |
-              reduce .[] as $review ({};
-                if $review.state == "COMMENTED" then
-                  .[$review.user.login] //= "COMMENTED"
-                elif $review.state == "DISMISSED" then
-                  del(.[$review.user.login])
-                else
-                  .[$review.user.login] = $review.state
-                end
-              )) as $states |
-              ($comments | flatten | any(is_exact_head_marker)) and
-              ($states | length > 0 and all(.[]; . == "APPROVED" or . == "COMMENTED")) and
-              any($trusted[];
-                .state == "APPROVED" or
-                (.state == "COMMENTED" and
-                  (is_coderabbit or
-                    ((.body // "" | startswith("**Actionable comments posted: ")) and
-                    ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
-                     (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->")))))))
-            ' <<<"${reviews}" >/dev/null; then
-              if automation_policy_authorized; then
+            if [[ "${is_automation_pr:-false}" == true ]]; then
+              if automation_policy_authorized "${pr}" "${head}" "${comments}" "${commit_ids}" "${reviews}"; then
                 automation_authorized=true
                 echo "PR #${pr}: authorized by the automation policy attestation for ${head}."
               else
-                echo "PR #${pr}: no trusted frozen discovery review, or an active change request is open; skipping."
+                echo "PR #${pr}: automation pull request failed automation policy authorization; skipping."
                 continue
               fi
+            elif ! jq -e --arg head "${head}" --argjson comments "${comments}" --argjson commit_ids "${commit_ids}" "${review_jq_defs}"'
+              def is_canonical_actions_marker:
+                type == "object" and
+                (.user | type == "object") and
+                .user.login == "github-actions[bot]" and
+                .user.id == 41898282 and
+                .user.type == "Bot" and
+                (.body | type == "string") and
+                (.body | test("^<!-- Automerge frozen discovery authorization: [0-9a-f]{40} -->$"));
+              (([$comments | flatten[] | select(is_canonical_actions_marker)]) as $canonical_markers |
+               (($canonical_markers | length == 1) and
+                $canonical_markers[0].body == ("<!-- Automerge frozen discovery authorization: " + $head + " -->") and
+                passes_review_discovery($head; $commit_ids)))
+            ' <<<"${reviews}" >/dev/null; then
+              echo "PR #${pr}: no trusted frozen discovery review, or an active change request is open; skipping."
+              continue
             fi
             # review-state-filter-end
 
@@ -765,32 +832,32 @@ jobs:
               # 명시적 실패만 위반이고, 위반이든 대기든 이 후보만 건너뛴다.
               # required-context-filter-begin
               context_state="$(jq -r --argjson required_check "${required_check}" --argjson statuses "${statuses}" '
-                ($statuses | flatten) as $status_records |
-                ([.[].check_runs[] |
+                (($statuses | flatten) as $status_records |
+                (([.[].check_runs[] |
                   select(.name == $required_check.context) |
                   select($required_check.integration_id == null or .app.id == $required_check.integration_id)] |
-                  sort_by(.started_at, .id) |
+                  sort_by((.conclusion == null), (.started_at == null), (.started_at // ""), .id) |
                   last) as $run |
-                ([$status_records[] | select(.context == $required_check.context)] |
+                (([$status_records[] | select(.context == $required_check.context)] |
                   sort_by((.updated_at // .created_at // ""), .id) |
                   last) as $status |
-                (if $run == null then null
+                ((if $run == null then null
                  elif $run.conclusion == null then "pending"
                  elif $run.conclusion == "success" then "success"
                  else "failure" end) as $run_state |
-                (if $required_check.integration_id != null or $status == null then null
+                ((if $required_check.integration_id != null or $status == null then null
                  elif $status.state == "success" then "success"
                  elif $status.state == "pending" then "pending"
                  else "failure" end) as $status_state |
                 # 같은 이름의 check run과 classic status가 함께 있으면 둘 다 봐야 한다.
                 # 하나만 보면 나머지 하나가 실패·대기여도 병합이 진행된다. 결합 규칙은
                 # "실패가 하나라도 있으면 실패, 전부 성공이어야 성공, 나머지는 대기"다.
-                [$run_state, $status_state] | map(select(. != null)) as $observed |
+                (([$run_state, $status_state] | map(select(. != null))) as $observed |
                 if ($observed | length) == 0 then "missing"
                 elif ($observed | any(. == "failure")) then "failure"
                 elif ($observed | all(. == "success")) then "success"
                 else "pending"
-                end
+                end))))))
               ' <<<"${checks}")"
               # required-context-filter-end
               context_name="$(jq -r '.context' <<<"${required_check}")"
@@ -820,15 +887,14 @@ jobs:
             fi
             # required-context-loop-end
             # automation-gates-begin
-            # 자동화 경로로 리뷰 게이트를 통과한 후보는 병합 직전에 게이트 재계산 check를 다시 확인한다(#986 F6). 이 check는 ruleset의 required가 아니므로
+            # 자동화 PR은 병합 직전에 게이트 재계산 check를 다시 확인한다(#986 F6). 이 check는 ruleset의 required가 아니므로
             # 기록만 믿지 않고 코디네이터가 같은 head의 check-run(위에서 읽은 페이지)에서 github-actions의 성공을 직접 본다. 성공만 허용한다.
-            if [[ "${automation_authorized:-false}" == true ]]; then
-              # shellcheck disable=SC2016
+            if [[ "${is_automation_pr:-false}" == true || "${automation_authorized:-false}" == true ]]; then
               if ! jq -e '
-                ([.[].check_runs[] | select(.name == "Automation PR gates" and .app.id == 15368)] |
-                  sort_by(.started_at, .id) |
+                (([.[].check_runs[] | select(.name == "Automation PR gates" and .app.id == 15368)] |
+                  sort_by((.conclusion == null), (.started_at == null), (.started_at // ""), .id) |
                   last) as $run |
-                $run != null and $run.status == "completed" and $run.conclusion == "success"
+                $run != null and $run.status == "completed" and $run.conclusion == "success")
               ' <<<"${checks}" >/dev/null; then
                 echo "::warning::PR #${pr}: Automation PR gates is not a completed success from github-actions on this head; skipping."
                 continue
@@ -861,16 +927,19 @@ jobs:
               BEHIND)
                 # 자동화 PR의 base 갱신은 사람(PAT 소유자) 작성 병합 커밋을 만들어 head가 바뀌고, 그러면 증거 블록의 head 결속과 정책 통과 기록이
                 # 함께 깨진다. 자동화 PR은 갱신하지 않고 건너뛴다. automation-pr-behind-recreate.yml이 이 PR을 닫고 브랜치를 지운 뒤 최신 main에서 다시 만들게 한다.
-                if [[ "${automation_authorized:-false}" == true ]]; then
+                if [[ "${is_automation_pr:-false}" == true || "${automation_authorized:-false}" == true ]]; then
                   echo "::warning::PR #${pr} is an automation PR behind main; automation-pr-behind-recreate.yml closes it and requests a fresh run instead of updating its base (a base merge would void its head-bound policy attestation)."
                   continue
                 fi
-                # GITHUB_TOKEN이 만든 병합 커밋은 CI를 트리거하지 못하므로 PAT가 없으면 소유
-                # 세션에 돌려보낸다. PAT가 있으면 게이트를 통과한 현재 head를 고정해 base만
-                # 갱신하고, 수락된 요청을 기록한 뒤 실행을 끝낸다. 새 head의 CI 완료가 다음
-                # 실행을 부르고, 그 실행이 기록으로 marker를 재발행한 뒤 같은 게이트를 다시
-                # 통과해야 병합한다.
+                if ! jq -e --argjson commit_ids "${commit_ids}" "${review_jq_defs}"'
+                  passes_transferable_behind_discovery($commit_ids)
+                ' <<<"${reviews}" >/dev/null; then
+                  gh pr edit "${pr}" --repo "${repo}" --remove-label automerge || true
+                  echo "::warning::PR #${pr} is behind main without a transferable frozen discovery review; its owning SSD worktree must rebase and re-review."
+                  continue
+                fi
                 if [[ "${HAS_AUTOMERGE_PAT}" != true ]]; then
+                  gh pr edit "${pr}" --repo "${repo}" --remove-label automerge || true
                   echo "::warning::PR #${pr} is behind main; its owning SSD worktree must rebase and push."
                   continue
                 fi
@@ -909,11 +978,11 @@ jobs:
             # merge-state-dispatch-end
           # candidate-window-begin
           done < <(jq -r --argjson window "${window}" --argjson offset "${offset}" '
-            . as $all |
-            length as $total |
+            ((.) as $all |
+            ((length) as $total |
             if $total == 0 then empty
             else [range($offset; $offset + $window) | . % $total] | unique | map($all[.])[]
-            end
+            end))
           ' <<<"${candidates}")
           # candidate-window-end
 
@@ -1006,14 +1075,14 @@ jobs:
           # 조용히 누락되므로 변경으로 본다.
           # shellcheck disable=SC2016
           producer_paths_query='
-            (.files // []) as $files |
+            ((.files // []) as $files |
             if ($files | length) >= 300 then "yes"
             elif any($files[].filename;
               startswith("tools/datapack/") or
               startswith("tools/route-map/") or
               . == "contracts.lock.json" or
               . == ".github/workflows/datapack-release.yml") then "yes"
-            else "no" end
+            else "no" end)
           '
           # 조회는 branch=main으로 제한한다. 이 값은 "producer가 main을 마지막으로 본
           # 지점"이어야 하는데, 필터가 없으면 feature ref를 대상으로 한 dispatch 실행이
