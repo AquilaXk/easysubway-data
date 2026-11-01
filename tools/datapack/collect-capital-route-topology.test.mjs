@@ -23,8 +23,8 @@ import {
   parseSeohaeMerged,
   projectCapitalTopologyOwnership,
   requireCurrentSourceSeparatedCapitalTopology,
-  resolveDataGoDownloadUrl,
 } from "./collect-capital-route-topology.mjs";
+import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
 import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
@@ -74,25 +74,22 @@ function refreshSnapshotIdentity(snapshot) {
 }
 
 test("MOLIT 전체노선 collector는 공개 FILE 링크의 CSV만 수집한다", async () => {
-  const requests = [];
+  const calls = [];
   const body = "권역,권역명,철도운영기관명,노선명,순번,역명\n01,수도권,운영사,신림선,1,샛강\n";
   const csv = await collectMolitFullRouteCsv({
-    fetchImpl: async (url, init) => {
-      const request = new URL(url);
-      requests.push(request);
-      if (requests.length === 1) {
-        assert.equal(init.headers["User-Agent"], "easysubway-datapack-collector/1.0");
-        return new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>');
-      }
-      assert.equal(init.headers.Referer, "https://www.data.go.kr/data/15122916/fileData.do");
-      return new Response(body);
-    },
+    fetchImpl: createDataGoPortalFetch({ 15122916: body }, { calls }),
   });
 
-  assert.equal(requests.length, 2);
-  assert.equal(requests[1].pathname, "/cmm/cmm/fileDownload.do");
-  assert.deepEqual([...requests[1].searchParams], [
-    ["atchFileId", "FILE_123"], ["fileDetailSn", "1"], ["insertDataPrcus", "N"],
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), [
+    "/data/15122916/fileData.do",
+    "/tcs/dss/selectFileDataDownload.do",
+    "/cmm/cmm/fileDownload.do",
+  ]);
+  assert.equal(calls[0].init.headers["User-Agent"], "easysubway-datapack-collector/1.0");
+  assert.equal(calls[2].init.headers.Referer, "https://www.data.go.kr/data/15122916/fileData.do");
+  assert.deepEqual([...new URL(calls[2].url).searchParams], [
+    ["atchFileId", "FILE_000000015122916"], ["fileDetailSn", "1"], ["insertDataPrcus", "N"],
   ]);
   assert.equal(csv.toString("utf8"), body);
 });
@@ -220,36 +217,47 @@ test("Capital topology는 HTTP 503·연결 timeout·본문 수신 오류 뒤 같
   const outcomes = [
     () => new Response("busy", { status: 503 }),
     () => { throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
-    () => ({ ok: true, status: 200, arrayBuffer: async () => { throw Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }); } }),
+    () => new Response(new ReadableStream({
+      start(controller) {
+        controller.error(Object.assign(new TypeError("terminated"), { cause: Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }) }));
+      },
+    }), { status: 200, headers: { "content-type": "application/octet-stream" } }),
   ];
   const csv = Buffer.from("노선,역\n1,a\n");
   for (const failure of outcomes) {
     const waits = [];
-    let calls = 0;
+    const calls = [];
     let fileCalls = 0;
+    const portal = createDataGoPortalFetch({ 15122916: csv }, { calls });
     const result = await collectMolitFullRouteCsv({
       ...retryFast(waits),
-      fetchImpl: async (url) => {
-        calls += 1;
-        if (new URL(url).pathname.endsWith("fileData.do")) return new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>');
-        fileCalls += 1;
-        return fileCalls === 1 ? failure() : new Response(csv);
+      fetchImpl: async (url, init) => {
+        if (new URL(url).pathname === "/cmm/cmm/fileDownload.do") {
+          fileCalls += 1;
+          if (fileCalls === 1) {
+            calls.push({ url: String(url), init });
+            return failure();
+          }
+        }
+        return portal(url, init);
       },
     });
     assert.equal(result.toString("utf8"), csv.toString("utf8"));
-    assert.equal(calls, 3);
+    assert.equal(calls.length, 4);
     assert.deepEqual(waits, [1_000]);
   }
 });
 
 test("Capital topology는 일시 오류가 한도(2번 재시도)를 넘으면 기존 HTTP 오류로 끝나고 인증·내용 오류는 재시도하지 않는다(#1099)", async () => {
-  const html = '<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>';
   const respondWith = (status) => {
-    const requests = { detail: 0, file: 0 };
+    const requests = { detail: 0, lookup: 0, file: 0 };
+    const portal = createDataGoPortalFetch({ 15122916: "노선,역\n1,a\n" });
     return {
       requests,
-      fetchImpl: async (url) => {
-        if (new URL(url).pathname.endsWith("fileData.do")) { requests.detail += 1; return new Response(html); }
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(url).pathname;
+        if (pathname.endsWith("/fileData.do")) { requests.detail += 1; return portal(url, init); }
+        if (pathname === "/tcs/dss/selectFileDataDownload.do") { requests.lookup += 1; return portal(url, init); }
         requests.file += 1;
         return new Response("body", { status });
       },
@@ -257,38 +265,43 @@ test("Capital topology는 일시 오류가 한도(2번 재시도)를 넘으면 �
   };
   const waits = [];
   const exhausted = respondWith(503);
-  await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(waits), fetchImpl: exhausted.fetchImpl }), /MOLIT full-route CSV HTTP 503/);
+  await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(waits), fetchImpl: exhausted.fetchImpl }), /data\.go\.kr 15122916 file HTTP 503/);
   assert.equal(exhausted.requests.file, 3);
   assert.deepEqual(waits, [1_000, 2_000]);
   for (const status of [401, 403, 404, 501]) {
     const denied = respondWith(status);
-    await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: denied.fetchImpl }), new RegExp(`MOLIT full-route CSV HTTP ${status}`));
+    await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: denied.fetchImpl }), new RegExp(`data\\.go\\.kr 15122916 file HTTP ${status}`));
     assert.equal(denied.requests.file, 1, String(status));
   }
   const rateLimited = respondWith(429);
-  await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: rateLimited.fetchImpl }), /MOLIT full-route CSV HTTP 429/);
+  await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: rateLimited.fetchImpl }), /data\.go\.kr 15122916 file HTTP 429/);
   assert.equal(rateLimited.requests.file, 2, "힌트 없는 429는 한 번만 다시 요청한다");
 });
 
 test("Capital topology의 data.go.kr 상세→FILE 다운로드도 각 요청을 일시 오류에서 다시 보낸다(#1099)", async () => {
   const source = LINE_SOURCES.find(({ resolveDownloadFromDetail }) => resolveDownloadFromDetail === true);
   assert.ok(source, "상세 페이지에서 FILE을 풀어 받는 source가 있다");
-  const detailHtml = '<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_555&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>';
-  const attempts = { detail: 0, file: 0 };
+  const portal = createDataGoPortalFetch({ [source.datasetId]: "not a valid topology csv" });
+  const attempts = { detail: 0, lookup: 0, file: 0 };
   const waits = [];
   await assert.rejects(collectCapitalRouteTopology({
     useLocalFiles: false, sources: [source], ...retryFast(waits),
-    fetchImpl: async (url) => {
-      if (new URL(url).pathname.endsWith("fileData.do")) {
+    fetchImpl: async (url, init) => {
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith("/fileData.do")) {
         attempts.detail += 1;
-        return attempts.detail < 3 ? new Response("busy", { status: 502 }) : new Response(detailHtml);
+        return attempts.detail < 3 ? new Response("busy", { status: 502 }) : portal(url, init);
+      }
+      if (pathname === "/tcs/dss/selectFileDataDownload.do") {
+        attempts.lookup += 1;
+        return attempts.lookup < 2 ? new Response("{}", { status: 502 }) : portal(url, init);
       }
       attempts.file += 1;
-      return attempts.file < 3 ? new Response("busy", { status: 503 }) : new Response("not a valid topology csv");
+      return attempts.file < 3 ? new Response("busy", { status: 503 }) : portal(url, init);
     },
   }), (error) => !/transport/u.test(error.message));
-  assert.deepEqual(attempts, { detail: 3, file: 3 });
-  assert.deepEqual(waits, [1_000, 2_000, 1_000, 2_000]);
+  assert.deepEqual(attempts, { detail: 3, lookup: 2, file: 3 });
+  assert.deepEqual(waits, [1_000, 2_000, 1_000, 1_000, 2_000]);
 });
 
 test("서해선 병합기는 코레일 전체 파일에서 서해선 행만 사용한다", () => {
@@ -528,51 +541,31 @@ test("수도권 topology는 컷오버(2026-10-03T00:00Z) 이후 수집분에 P7D
   assert.equal(legacy.freshUntil, new Date(cutover - 1 + day).toISOString());
 });
 
-test("data.go.kr 상세 페이지는 단일 canonical FILE download만 허용한다", () => {
-  const detail = "https://www.data.go.kr/data/15122916/fileData.do";
-  const resolved = resolveDataGoDownloadUrl(`
-    <a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&amp;fileDetailSn=1&amp;insertDataPrcus=N">CSV</a>
-  `, detail);
-  assert.equal(
-    resolved,
-    "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1&insertDataPrcus=N",
-  );
-  assert.equal(
-    resolveDataGoDownloadUrl(
-      `<button onclick="fn_fileDown('FILE_000000003700001', '1')">CSV</button>`,
-      detail,
-    ),
-    "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1&insertDataPrcus=N",
-  );
-  assert.equal(
-    resolveDataGoDownloadUrl(`
-      <a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&amp;fileDetailSn=1">CSV</a>
-      <button onclick="fn_fileDown('FILE_000000003700001', '1')">CSV</button>
-    `, detail),
-    "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1&insertDataPrcus=N",
-  );
-  assert.throws(() => resolveDataGoDownloadUrl("<html>none</html>", detail), /exactly one/);
-  assert.throws(
-    () => resolveDataGoDownloadUrl(`
-      /cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&amp;fileDetailSn=1
-      /cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700002&amp;fileDetailSn=1
-    `, detail),
-    /exactly one/,
-  );
-  assert.throws(
-    () => resolveDataGoDownloadUrl(
-      "https://evil.example/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1",
-      detail,
-    ),
-    /canonical data.go.kr/,
-  );
+test("data.go.kr 상세 페이지는 단일 fn_fileDataDown action만 허용한다", async () => {
+  const source = LINE_SOURCES.find(({ slug }) => slug === "gimpo");
+  for (const html of [
+    "<html>none</html>",
+    `
+      <button onclick="fileDetailObj.fn_fileDataDown('15122916', 'uddi:00000000-0000-4000-8000-000015122916', '','1', '1')">CSV</button>
+      <button onclick="fileDetailObj.fn_fileDataDown('15122916', 'uddi:00000000-0000-4000-8000-000015122916', '','2', '1')">CSV</button>
+    `,
+  ]) {
+    await assert.rejects(
+      () => collectCapitalRouteTopology({
+        useLocalFiles: false,
+        sources: [source],
+        fetchImpl: async () => new Response(html, { status: 200, headers: { "content-type": "text/html" } }),
+      }),
+      /exactly one download action/,
+    );
+  }
 });
 
 test("한 topology snapshot은 shared MOLIT bytes와 resolved URL을 한 번만 수집한다", async () => {
   const sources = ["gimpo", "sillim", "seohae"]
     .map((slug) => LINE_SOURCES.find((source) => source.slug === slug));
   const seohae = sources.find(({ slug }) => slug === "seohae");
-  const sharedDownloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1&insertDataPrcus=N";
+  const sharedDownloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015122916&fileDetailSn=1&insertDataPrcus=N";
   const molitCsv = `권역,권역명,철도운영기관명,노선명,순번,역명
 1,수도권,김포골드라인운영,김포골드라인,1,양촌
 1,수도권,김포골드라인운영,김포골드라인,2,구래
@@ -583,26 +576,22 @@ test("한 topology snapshot은 shared MOLIT bytes와 resolved URL을 한 번만 
   const seohaeCsv = `철도운영기관명,선명,역명,역간거리(km)
 코레일,서해선,일산,1.9
 코레일,서해선,부천종합운동장역,1.4`;
-  const responses = new Map([
-    [MOLIT_FULL_ROUTE_DETAIL_URL, `<a href="${sharedDownloadUrl}">CSV</a>`],
-    [sharedDownloadUrl, molitCsv],
-    [seohae.downloadUrl, seohaeCsv],
-  ]);
+  const portal = createDataGoPortalFetch({ 15122916: molitCsv });
   const requestCounts = new Map();
 
   const snapshot = await collectCapitalRouteTopology({
     useLocalFiles: false,
     sources,
     now: new Date("2026-08-09T12:04:20.479Z"),
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init) => {
       const value = String(url);
-      if (!responses.has(value)) throw new Error(`unexpected URL: ${value}`);
       requestCounts.set(value, (requestCounts.get(value) ?? 0) + 1);
-      return new Response(responses.get(value));
+      if (value === seohae.downloadUrl) return new Response(seohaeCsv);
+      return portal(url, init);
     },
   });
 
-  assert.deepEqual([...requestCounts.values()], [1, 1, 1]);
+  assert.deepEqual([...requestCounts.values()], [1, 1, 1, 1]);
   const bySlug = new Map(snapshot.lines.map((line) => [line.slug, line]));
   assert.equal(bySlug.get("gimpo").rawSha256, bySlug.get("sillim").rawSha256);
   assert.equal(
@@ -615,25 +604,18 @@ test("한 topology snapshot은 shared MOLIT bytes와 resolved URL을 한 번만 
 
 test("data.go.kr detail source는 실제 resolved download URL을 line provenance에 보존한다", async () => {
   const source = LINE_SOURCES.find(({ slug }) => slug === "gimpo");
-  const downloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1";
+  const downloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015122916&fileDetailSn=1&insertDataPrcus=N";
   const csv = Buffer.from([
     "권역,권역명,철도운영기관명,노선명,순번,역명",
     "1,수도권,김포골드라인운영,김포골드라인,1,양촌",
     "1,수도권,김포골드라인운영,김포골드라인,2,구래",
   ].join("\n"));
   const requests = [];
+  const portal = createDataGoPortalFetch({ [source.datasetId]: csv }, { calls: requests });
   const fetchImpl = async (url, init) => {
-    requests.push({ url, init });
     assert.ok(init.signal instanceof AbortSignal);
     assert.equal(init.signal.aborted, false);
-    if (url === source.detailUrl) {
-      return {
-        ok: true,
-        text: async () => `<a href="${downloadUrl}">CSV</a>`,
-      };
-    }
-    assert.equal(url, downloadUrl);
-    return { ok: true, arrayBuffer: async () => csv };
+    return portal(url, init);
   };
 
   const snapshot = await collectCapitalRouteTopology({
@@ -644,7 +626,7 @@ test("data.go.kr detail source는 실제 resolved download URL을 line provenanc
   });
 
   assert.equal(snapshot.lines[0].endpoint, downloadUrl);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
 });
 
 test("상충하는 official 거리는 선택하지 않고 conflict evidence를 보존한다", () => {
@@ -877,16 +859,15 @@ test("Capital topology는 HTTP 503에서 재시도 예산이 소진되면 마지
   await assert.rejects(collectMolitFullRouteCsv({
     sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
     fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
-  }), /MOLIT full-route detail HTTP 503/);
+  }), /data\.go\.kr 15122916 detail HTTP 503/);
   assert.equal(calls, 2);
 });
 
 defineSourceCollectionRetryTests({
   name: "수도권 topology collector(MOLIT 전체노선 CSV)",
-  httpError: /MOLIT full-route detail HTTP 403/,
-  delegate: async (url) => (new URL(url).pathname.endsWith("fileData.do")
-    ? new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>')
-    : new Response("노선,역\n1,a\n")),
+  httpError: /data\.go\.kr 15122916 detail HTTP 403/,
+  delegate: createDataGoPortalFetch({ 15122916: "노선,역\n1,a\n" }),
+  headers: { "content-type": "text/html" },
   run: async ({ fetchImpl, sleepImpl }) => (await collectMolitFullRouteCsv({ fetchImpl, sleepImpl, randomImpl: () => 0 })).toString("utf8"),
 });
 

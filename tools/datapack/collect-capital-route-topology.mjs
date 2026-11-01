@@ -56,6 +56,7 @@ import {
   normalizeStationName,
   parseCapitalLine1RouteTopology,
 } from "./collect-capital-line1-route-topology.mjs";
+import { downloadDataGoFile } from "./lib/data-go-file-download.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
@@ -1148,37 +1149,13 @@ const MOLIT_FULL_ROUTE_HEADER = Object.freeze([
 ]);
 
 export async function collectMolitFullRouteCsv({ fetchImpl = fetch, sleepImpl, retryBudget, randomImpl } = {}) {
-  const retry = { sleepImpl, retryBudget, randomImpl };
-  const { response: page, value: html } = await getWithTransientRetry(
-    () => fetchImpl(MOLIT_FULL_ROUTE_DETAIL_URL, { headers: { "User-Agent": "easysubway-datapack-collector/1.0" } }),
-    (response) => response.text(),
-    retry,
+  const downloaded = await downloadDataGoDetailFile(
+    fetchImpl,
+    MOLIT_FULL_ROUTE_DETAIL_URL,
+    CAPITAL_TOPOLOGY_REQUEST_TIMEOUT_MS,
+    { sleepImpl, retryBudget, randomImpl },
   );
-  if (!page.ok) throw new Error(`MOLIT full-route detail HTTP ${page.status}`);
-  const direct = html.match(/\/cmm\/cmm\/fileDownload\.do\?[^"'<>\s]+/u)?.[0]
-    ?.replaceAll("&amp;", "&");
-  const args = html.match(/(?:fn_)?fileDown\(\s*['"](FILE_[^'"]+)['"]\s*,\s*['"]?(\d+)['"]?/u);
-  const pathname = direct ?? (args
-    ? `/cmm/cmm/fileDownload.do?atchFileId=${encodeURIComponent(args[1])}&fileDetailSn=${args[2]}&insertDataPrcus=N`
-    : null);
-  if (pathname == null) throw new Error("MOLIT full-route public download link not found");
-  const downloadUrl = new URL(pathname, MOLIT_FULL_ROUTE_DETAIL_URL);
-  if (downloadUrl.origin !== "https://www.data.go.kr"
-    || downloadUrl.pathname !== "/cmm/cmm/fileDownload.do") {
-    throw new Error("MOLIT full-route public download link is invalid");
-  }
-  const { response, value } = await getWithTransientRetry(
-    () => fetchImpl(downloadUrl, {
-      headers: {
-        "User-Agent": "easysubway-datapack-collector/1.0",
-        Referer: MOLIT_FULL_ROUTE_DETAIL_URL,
-      },
-    }),
-    async (fileResponse) => Buffer.from(await fileResponse.arrayBuffer()),
-    retry,
-  );
-  if (!response.ok) throw new Error(`MOLIT full-route CSV HTTP ${response.status}`);
-  return value;
+  return downloaded.bytes;
 }
 
 // 요청과 본문 읽기(read)를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
@@ -1607,10 +1584,18 @@ export function parseLineSource(source, fileBytes, {
 }
 
 function responseFromBytes(status, headers, bytes) {
+  const normalizedHeaders = headers instanceof Headers
+    ? headers
+    : new Headers(
+      Object.entries(headers ?? {})
+        .filter(([, value]) => value != null)
+        .map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : String(value)]),
+    );
   return {
     status,
     ok: status >= 200 && status < 300,
-    headers,
+    headers: normalizedHeaders,
+    body: [bytes],
     text: async () => bytes.toString("utf8"),
     arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
   };
@@ -1869,62 +1854,20 @@ function capitalTopologyTransportCode(error) {
 }
 
 async function downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs, retry = {}) {
-  const { response: detailResponse, value: detailHtml } = await getWithTransientRetry(
-    () => requestCapitalTopologyGet(fetchImpl, detailUrl, {
-      headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
-    }, requestTimeoutMs),
-    (response) => response.text(),
-    retry,
-  );
-  if (!detailResponse.ok) throw new Error(`data.go.kr detail HTTP ${detailResponse.status}`);
-  const downloadUrl = resolveDataGoDownloadUrl(detailHtml, detailUrl);
-  const { response: fileResponse, value: bytes } = await getWithTransientRetry(
-    () => requestCapitalTopologyGet(fetchImpl, downloadUrl, {
-      headers: {
-        "User-Agent": "easysubway-datapack-collector/1.0",
-        Referer: detailUrl,
-      },
-    }, requestTimeoutMs),
-    async (response) => Buffer.from(await response.arrayBuffer()),
-    retry,
-  );
-  if (!fileResponse.ok) throw new Error(`data.go.kr file HTTP ${fileResponse.status}`);
+  const timeoutMs = requireCapitalTopologyRequestTimeout(requestTimeoutMs);
+  const match = /^https:\/\/www\.data\.go\.kr\/data\/([1-9]\d{0,11})\/fileData\.do$/u.exec(String(detailUrl));
+  if (!match) throw new Error("data.go.kr detail URL is invalid");
+  const downloaded = await downloadDataGoFile(fetchImpl, match[1], {
+    headerTimeoutMs: timeoutMs,
+    bodyTimeoutMs: timeoutMs,
+    sleepImpl: retry.sleepImpl,
+    retryBudget: retry.retryBudget,
+    randomImpl: retry.randomImpl,
+  });
   return {
-    bytes,
-    downloadUrl,
+    bytes: downloaded.bytes,
+    downloadUrl: downloaded.downloadUrl,
   };
-}
-
-export function resolveDataGoDownloadUrl(html, detailUrl) {
-  if (typeof html !== "string") throw new TypeError("data.go.kr detail HTML is required");
-  const normalized = html.replaceAll("&amp;", "&");
-  const directCandidates = [...normalized.matchAll(/(?:https?:\/\/[^/\s"'<>]+)?\/cmm\/cmm\/fileDownload\.do\?[^\s"'<>]+/g)]
-    .map(([value]) => new URL(value, detailUrl))
-    .filter((url) => url.origin === "https://www.data.go.kr"
-      && url.pathname === "/cmm/cmm/fileDownload.do"
-      && /^FILE_[0-9]+$/.test(url.searchParams.get("atchFileId") ?? "")
-      && /^[1-9][0-9]*$/.test(url.searchParams.get("fileDetailSn") ?? ""));
-  const functionCandidates = [...normalized.matchAll(
-    /(?:fn_)?fileDown\(\s*['"](FILE_[^'"]+)['"]\s*,\s*['"]?(\d+)['"]?\s*\)/gu,
-  )].map(([, atchFileId, fileDetailSn]) => new URL(
-    `/cmm/cmm/fileDownload.do?atchFileId=${encodeURIComponent(atchFileId)}&fileDetailSn=${fileDetailSn}&insertDataPrcus=N`,
-    detailUrl,
-  )).filter((url) => url.origin === "https://www.data.go.kr"
-    && url.pathname === "/cmm/cmm/fileDownload.do"
-    && /^FILE_[0-9]+$/.test(url.searchParams.get("atchFileId") ?? "")
-    && /^[1-9][0-9]*$/.test(url.searchParams.get("fileDetailSn") ?? ""));
-  const candidates = [...directCandidates, ...functionCandidates];
-  const unique = [...new Map(candidates.map((url) => [
-    `${url.searchParams.get("atchFileId")}\0${url.searchParams.get("fileDetailSn")}`,
-    url,
-  ])).values()];
-  if (unique.length === 0 && /https?:\/\/[^\s"'<>]+\/cmm\/cmm\/fileDownload\.do/.test(normalized)) {
-    throw new Error("data.go.kr download URL must use canonical data.go.kr host");
-  }
-  if (unique.length !== 1) {
-    throw new Error("data.go.kr detail must contain exactly one canonical FILE download URL");
-  }
-  return unique[0].toString();
 }
 
 function validDate(value, label) {
