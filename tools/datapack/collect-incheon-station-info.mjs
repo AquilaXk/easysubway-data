@@ -23,9 +23,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { resolveDataGoDownloadUrl } from "./collect-capital-route-topology.mjs";
+import { downloadDataGoFile } from "./lib/data-go-file-download.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { getDataGoPortalBytes } from "./lib/data-go-portal-get.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "incheon-transit-station-info";
@@ -792,12 +791,7 @@ function parseArgs(argv) {
 }
 
 async function downloadIncheonStationInfoCsv(fetchImpl, retry) {
-  const detail = await getDataGoPortalBytes({ url: DETAIL_URL, fetchImpl, label: "Incheon station info detail", retry });
-  if (!detail.response.ok) throw new Error(`Incheon station info detail HTTP ${detail.response.status}`);
-  const downloadUrl = resolveDataGoDownloadUrl(detail.bytes.toString("utf8"), DETAIL_URL);
-  const file = await getDataGoPortalBytes({ url: downloadUrl, fetchImpl, label: "Incheon station info CSV", referer: DETAIL_URL, retry });
-  if (!file.response.ok) throw new Error(`Incheon station info CSV HTTP ${file.response.status}`);
-  return file.bytes;
+  return (await downloadDataGoFile(fetchImpl, DATASET_ID, retry)).bytes;
 }
 
 export async function runIncheonStationInfoCollector(argv, { fetchImpl = fetch, sleepImpl, randomImpl } = {}) {

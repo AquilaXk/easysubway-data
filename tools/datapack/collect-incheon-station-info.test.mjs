@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
+import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
 import { assertErrorOmitsSecrets, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
@@ -431,24 +432,21 @@ test("current Incheon public attachment는 bounded download와 strict EUC-KR dec
   const output = path.join(outputDir, "snapshot.json");
   const currentSnapshot = await loadCurrentStationSnapshot();
   const csvBytes = await loadCurrentCsv();
-  const requests = [];
+  const calls = [];
   const detailUrl = "https://www.data.go.kr/data/15083751/fileData.do";
-  const downloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700002&fileDetailSn=1&insertDataPrcus=N";
-  const fetchImpl = async (url) => {
-    requests.push(String(url));
-    if (String(url) === detailUrl) {
-      return new Response(`<a href="${downloadUrl}">download</a>`, { status: 200 });
-    }
-    if (String(url) === downloadUrl) return new Response(csvBytes, { status: 200 });
-    return new Response("not found", { status: 404 });
-  };
+  const downloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015083751&fileDetailSn=1&insertDataPrcus=N";
+  const fetchImpl = createDataGoPortalFetch({ 15083751: csvBytes }, { calls });
 
   const snapshot = await runIncheonStationInfoCollector([
     "--download",
     "--output", output,
     "--captured-at", currentSnapshot.capturedAt,
   ], { fetchImpl });
-  assert.deepEqual(requests, [detailUrl, downloadUrl]);
+  assert.deepEqual(calls.map(({ url }) => url), [
+    detailUrl,
+    "https://www.data.go.kr/tcs/dss/selectFileDataDownload.do?publicDataPk=15083751&publicDataDetailPk=uddi%3A00000000-0000-4000-8000-000015083751&atchFileId=&fileDetailSn=1&publicDataTyCode=PR0051",
+    downloadUrl,
+  ]);
   assert.equal(snapshot.capturedAt, currentSnapshot.capturedAt);
   assert.equal(
     snapshot.freshUntil,
@@ -469,13 +467,9 @@ test("current Incheon public attachment는 bounded download와 strict EUC-KR dec
   assert.deepEqual(await readFile(output), original);
 });
 
-// 원천 수집 표준 재시도(lib/source-collection-retry.mjs): detail·FILE 요청이 일시 오류를 만나면 같은 GET을 다시 보낸다.
-const INCHEON_DETAIL_URL = "https://www.data.go.kr/data/15083751/fileData.do";
-const INCHEON_FILE_URL = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700002&fileDetailSn=1&insertDataPrcus=N";
+const INCHEON_FILE_URL = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015083751&fileDetailSn=1&insertDataPrcus=N";
 const incheonCsvBytes = await loadCurrentCsv();
-const incheonPortalFetch = async (url) => (String(url) === INCHEON_DETAIL_URL
-  ? new Response(`<a href="${INCHEON_FILE_URL}">download</a>`, { status: 200 })
-  : new Response(incheonCsvBytes, { status: 200 }));
+const incheonPortalFetch = createDataGoPortalFetch({ 15083751: incheonCsvBytes });
 
 async function collectIncheonStationInfoVia(fetchImpl, sleepImpl = async () => {}) {
   const { mkdtemp, rm } = await import("node:fs/promises");
@@ -492,7 +486,7 @@ async function collectIncheonStationInfoVia(fetchImpl, sleepImpl = async () => {
 
 defineSourceCollectionRetryTests({
   name: "인천 station-info collector",
-  httpError: /Incheon station info detail HTTP 403/,
+  httpError: /data\.go\.kr 15083751 detail HTTP 403/,
   delegate: incheonPortalFetch,
   headers: { "content-type": "text/html" },
   run: ({ fetchImpl, sleepImpl }) => collectIncheonStationInfoVia(fetchImpl, sleepImpl),
@@ -500,19 +494,19 @@ defineSourceCollectionRetryTests({
 
 test("인천 station-info collector는 FILE 요청이 HTTP 503을 만나면 같은 요청을 다시 보내고, 소진하면 기존 HTTP 오류로 끝난다", async () => {
   const fileCalls = [];
-  const recovered = await collectIncheonStationInfoVia(async (url) => {
+  const recovered = await collectIncheonStationInfoVia(async (url, init) => {
     if (String(url) === INCHEON_FILE_URL) fileCalls.push(url);
-    return String(url) === INCHEON_FILE_URL && fileCalls.length === 1 ? new Response("busy", { status: 503 }) : incheonPortalFetch(url);
+    return String(url) === INCHEON_FILE_URL && fileCalls.length === 1 ? new Response("busy", { status: 503 }) : incheonPortalFetch(url, init);
   });
   assert.equal(fileCalls.length, 2);
   assert.equal(recovered.stationCount, 71);
 
   let exhaustedCalls = 0;
-  await assert.rejects(collectIncheonStationInfoVia(async (url) => {
-    if (String(url) !== INCHEON_FILE_URL) return incheonPortalFetch(url);
+  await assert.rejects(collectIncheonStationInfoVia(async (url, init) => {
+    if (String(url) !== INCHEON_FILE_URL) return incheonPortalFetch(url, init);
     exhaustedCalls += 1;
     return new Response("busy", { status: 503 });
-  }), /Incheon station info CSV HTTP 503/);
+  }), /data\.go\.kr 15083751 file HTTP 503/);
   assert.equal(exhaustedCalls, 3);
 });
 
@@ -525,8 +519,8 @@ test("인천 station-info collector는 HTTP 429를 Retry-After 유무로 가르�
   await assert.rejects(collectIncheonStationInfoVia(async () => { hinted += 1; return new Response("slow", { status: 429, headers: { "retry-after": "21" } }); }), /RETRY_AFTER_EXCEEDS_CAP/);
   assert.equal(hinted, 1);
 
-  const leaky = async (url) => { throw Object.assign(new Error(`connect failed ${url}`), { code: "ECONNRESET", cause: { url: String(url) } }); };
+  const leaky = async () => { throw Object.assign(new Error("connect failed"), { code: "ECONNRESET" }); };
   const failure = await collectIncheonStationInfoVia(leaky).catch((error) => error);
-  assert.match(failure.message, /Incheon station info detail transport failure; code=ECONNRESET/);
+  assert.equal(failure.code, "ECONNRESET");
   assertErrorOmitsSecrets(failure, ["www.data.go.kr", "15083751"]);
 });

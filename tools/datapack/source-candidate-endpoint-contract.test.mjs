@@ -496,3 +496,30 @@ test("4개 DATA_GO runner는 malformed credential을 URL·cache·fetch·delegate
     assert.match(testSource, /assert\.equal\(calls, 0\)/, `${contract.test} must prove provider calls stay at zero`);
   }
 });
+
+test("대구 1~3호선 topology·timetable 카탈로그는 credential-free 공식 data.go.kr 다운로드 operation을 등록한다", () => {
+  const daeguIds = [
+    "daegu-line1-route-topology",
+    "daegu-line1-train-timetable",
+    "daegu-line2-route-topology",
+    "daegu-line2-train-timetable",
+    "daegu-line3-route-topology",
+    "daegu-line3-train-timetable",
+  ];
+  for (const id of daeguIds) {
+    const candidate = document.candidates.find((entry) => entry.id === id);
+    assert.ok(candidate, `${id} must exist in source-candidates.json`);
+    assert.equal(candidate.admissionStatus, "production_materialized");
+    assert.equal(candidate.requestUrl, candidate.detailUrl);
+    assert.equal(candidate.evidence.endpoint, candidate.detailUrl);
+    const operation = validateOperation(candidate);
+    assert.equal(operation.endpoint, candidate.detailUrl);
+    assert.deepEqual(operation.auth, { placement: "none" });
+    assert.deepEqual(operation.runner, {
+      command: "node tools/datapack/collect-daegu-datapack-sources.mjs",
+      arguments: ["--download", "--output-dir", "<absolute-operation-owned-output-directory>"],
+      requiredEnv: [],
+    });
+    assert.equal(operation.secretPolicy, "credential-free-output");
+  }
+});

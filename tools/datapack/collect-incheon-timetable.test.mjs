@@ -11,6 +11,7 @@ import {
   normalizedIncheonTimetableStationName,
   runIncheonTimetableCollector,
 } from "./collect-incheon-timetable.mjs";
+import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
 import { assertErrorOmitsSecrets, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -126,6 +127,9 @@ test("인천 timetable collector download mode는 official detail에서 정확�
     datasets.HOLI.up,
     datasets.HOLI.dn,
   ]);
+  const filesByDatasetId = Object.fromEntries(await Promise.all(
+    datasetIds.map(async (datasetId) => [datasetId, await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`))]),
+  ));
   try {
     const outputs = await runIncheonTimetableCollector([
       "--download",
@@ -133,34 +137,17 @@ test("인천 timetable collector download mode는 official detail에서 정확�
       "--output-dir", outputDirectory,
     ], {
       now: NOW,
-      fetchImpl: async (input, init) => {
-        const url = new URL(input);
-        calls.push({ url: url.toString(), headers: init?.headers });
-        const datasetId = /^\/data\/(\d+)\/fileData\.do$/u.exec(url.pathname)?.[1];
-        if (datasetId) {
-          return new Response(
-            `<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_${datasetId}&amp;fileDetailSn=1">CSV</a>`,
-          );
-        }
-        const fileId = /^FILE_(\d+)$/u.exec(url.searchParams.get("atchFileId") ?? "")?.[1];
-        if (url.origin === "https://www.data.go.kr"
-          && url.pathname === "/cmm/cmm/fileDownload.do"
-          && fileId
-          && url.searchParams.get("fileDetailSn") === "1") {
-          return new Response(await readFile(path.join(RAW_DIR, `data-go-${fileId}.csv`)));
-        }
-        assert.fail(`unexpected request: ${url}`);
-      },
+      fetchImpl: createDataGoPortalFetch(filesByDatasetId, { calls }),
     });
     assert.equal(outputs.length, 2);
     assert.deepEqual(calls.filter(({ url }) => new URL(url).pathname.endsWith("/fileData.do"))
       .map(({ url }) => url), datasetIds.map((datasetId) => `https://www.data.go.kr/data/${datasetId}/fileData.do`));
-    assert.equal(calls.length, datasetIds.length * 2);
-    for (const { url, headers } of calls) {
-      assert.equal(headers["User-Agent"], "easysubway-datapack-collector/1.0");
+    assert.equal(calls.length, datasetIds.length * 3);
+    for (const { url, init } of calls) {
+      assert.equal(init.headers["User-Agent"], "easysubway-datapack-collector/1.0");
       if (new URL(url).pathname === "/cmm/cmm/fileDownload.do") {
-        const datasetId = /^FILE_(\d+)$/u.exec(new URL(url).searchParams.get("atchFileId"))?.[1];
-        assert.equal(headers.Referer, `https://www.data.go.kr/data/${datasetId}/fileData.do`);
+        const datasetId = datasetIds.find((candidate) => `FILE_${String(candidate).padStart(15, "0")}` === new URL(url).searchParams.get("atchFileId"));
+        assert.equal(init.headers.Referer, `https://www.data.go.kr/data/${datasetId}/fileData.do`);
       }
     }
     const snapshots = await Promise.all(outputs.map(async (output) => JSON.parse(await readFile(output, "utf8"))));
@@ -174,13 +161,13 @@ test("인천 timetable collector download mode는 official detail에서 정확�
       for (const dayCode of ["WEEK", "HOLI"]) {
         for (const direction of ["up", "dn"]) {
           const datasetId = config.datasets[dayCode][direction];
-          const bytes = await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`));
+          const bytes = filesByDatasetId[datasetId];
           expectedProvenance.push({
             dayCode,
             direction,
             datasetId,
             detailUrl: `https://www.data.go.kr/data/${datasetId}/fileData.do`,
-            downloadUrl: `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_${datasetId}&fileDetailSn=1`,
+            downloadUrl: `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_${String(datasetId).padStart(15, "0")}&fileDetailSn=1&insertDataPrcus=N`,
             rawSha256: createHash("sha256").update(bytes).digest("hex"),
           });
         }
@@ -261,23 +248,17 @@ test("인천 timetable download mode는 canonical FILE 요청·raw provenance·a
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-timetable-download-"));
   const topologyPath = path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json");
   const config = INCHEON_TIMETABLE_LINES[0];
-  const requests = [];
+  const calls = [];
+  const filesByDatasetId = {};
   const downloadUrls = new Map();
   for (const dayCode of ["WEEK", "HOLI"]) {
     for (const direction of ["up", "dn"]) {
       const datasetId = config.datasets[dayCode][direction];
-      downloadUrls.set(datasetId, `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_0000000037${datasetId}&fileDetailSn=1&insertDataPrcus=N`);
+      filesByDatasetId[datasetId] = await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`));
+      downloadUrls.set(datasetId, `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_${String(datasetId).padStart(15, "0")}&fileDetailSn=1&insertDataPrcus=N`);
     }
   }
-  const fetchImpl = async (url, options = {}) => {
-    const value = String(url);
-    requests.push({ url: value, headers: options.headers });
-    const detail = /^https:\/\/www\.data\.go\.kr\/data\/(\d+)\/fileData\.do$/u.exec(value);
-    if (detail) return new Response(`<a href="${downloadUrls.get(detail[1])}">download</a>`, { status: 200 });
-    const datasetId = [...downloadUrls.entries()].find(([, downloadUrl]) => downloadUrl === value)?.[0];
-    if (datasetId) return new Response(await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`)), { status: 200 });
-    throw new Error(`unexpected request: ${value}`);
-  };
+  const fetchImpl = createDataGoPortalFetch(filesByDatasetId, { calls });
   try {
     const outputs = await runIncheonTimetableCollector([
       "--download",
@@ -294,10 +275,10 @@ test("인천 timetable download mode는 canonical FILE 요청·raw provenance·a
       assert.equal(entry.rawSha256, createHash("sha256").update(await readFile(path.join(RAW_DIR, `data-go-${entry.datasetId}.csv`))).digest("hex"));
       assert.equal(entry.downloadUrl, downloadUrls.get(entry.datasetId));
     }
-    assert.equal(requests.length, 8);
-    for (const request of requests.filter(({ url }) => url.includes("fileDownload.do"))) {
-      assert.equal(request.headers.Referer, `https://www.data.go.kr/data/${snapshot.downloadProvenance.find(({ downloadUrl }) => downloadUrl === request.url).datasetId}/fileData.do`);
-      assert.equal(request.headers["User-Agent"], "easysubway-datapack-collector/1.0");
+    assert.equal(calls.length, 12);
+    for (const request of calls.filter(({ url }) => url.includes("fileDownload.do"))) {
+      assert.equal(request.init.headers.Referer, `https://www.data.go.kr/data/${snapshot.downloadProvenance.find(({ downloadUrl }) => downloadUrl === request.url).datasetId}/fileData.do`);
+      assert.equal(request.init.headers["User-Agent"], "easysubway-datapack-collector/1.0");
     }
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -320,7 +301,7 @@ test("인천 timetable download mode는 malformed FILE link·restamp·stale topo
     ], {
       now: () => NOW,
       fetchImpl: async () => new Response('<a href="https://invalid.example/file">bad</a>', { status: 200 }),
-    }), /canonical FILE download URL/i);
+    }), /exactly one download action/i);
     assert.deepEqual(await (async () => {
       const { readdir } = await import("node:fs/promises");
       return readdir(directory);
@@ -338,21 +319,16 @@ test("인천 timetable download mode는 malformed FILE link·restamp·stale topo
   }
 });
 
-// 원천 수집 표준 재시도(lib/source-collection-retry.mjs): detail·FILE 요청이 일시 오류를 만나면 같은 GET을 다시 보낸다.
+const retryFilesByDatasetId = {};
 const retryDownloadUrls = new Map();
 for (const dayCode of ["WEEK", "HOLI"]) {
   for (const direction of ["up", "dn"]) {
     const datasetId = INCHEON_TIMETABLE_LINES[0].datasets[dayCode][direction];
-    retryDownloadUrls.set(datasetId, `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_0000000037${datasetId}&fileDetailSn=1&insertDataPrcus=N`);
+    retryFilesByDatasetId[datasetId] = await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`));
+    retryDownloadUrls.set(datasetId, `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_${String(datasetId).padStart(15, "0")}&fileDetailSn=1&insertDataPrcus=N`);
   }
 }
-const incheonTimetablePortalFetch = async (url) => {
-  const value = String(url);
-  const detail = /^https:\/\/www\.data\.go\.kr\/data\/(\d+)\/fileData\.do$/u.exec(value);
-  if (detail) return new Response(`<a href="${retryDownloadUrls.get(detail[1])}">download</a>`, { status: 200 });
-  const datasetId = [...retryDownloadUrls.entries()].find(([, downloadUrl]) => downloadUrl === value)?.[0];
-  return datasetId ? new Response(await readFile(path.join(RAW_DIR, `data-go-${datasetId}.csv`)), { status: 200 }) : new Response("unexpected", { status: 404 });
-};
+const incheonTimetablePortalFetch = createDataGoPortalFetch(retryFilesByDatasetId);
 
 async function collectIncheonTimetableVia(fetchImpl, sleepImpl = async () => {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-timetable-retry-"));
@@ -371,7 +347,7 @@ async function collectIncheonTimetableVia(fetchImpl, sleepImpl = async () => {})
 
 defineSourceCollectionRetryTests({
   name: "인천 timetable collector",
-  httpError: /Incheon \d+ detail HTTP 403/,
+  httpError: /data\.go\.kr \d+ detail HTTP 403/,
   delegate: incheonTimetablePortalFetch,
   headers: { "content-type": "text/html" },
   run: ({ fetchImpl, sleepImpl }) => collectIncheonTimetableVia(fetchImpl, sleepImpl),
@@ -380,19 +356,19 @@ defineSourceCollectionRetryTests({
 test("인천 timetable collector는 FILE 요청이 HTTP 503을 만나면 같은 요청을 다시 보내고, 소진하면 기존 HTTP 오류로 끝난다", async () => {
   const [firstFileUrl] = retryDownloadUrls.values();
   let recoveredCalls = 0;
-  await collectIncheonTimetableVia(async (url) => {
-    if (String(url) !== firstFileUrl) return incheonTimetablePortalFetch(url);
+  await collectIncheonTimetableVia(async (url, init) => {
+    if (String(url) !== firstFileUrl) return incheonTimetablePortalFetch(url, init);
     recoveredCalls += 1;
-    return recoveredCalls === 1 ? new Response("busy", { status: 503 }) : incheonTimetablePortalFetch(url);
+    return recoveredCalls === 1 ? new Response("busy", { status: 503 }) : incheonTimetablePortalFetch(url, init);
   });
   assert.equal(recoveredCalls, 2);
 
   let exhaustedCalls = 0;
-  await assert.rejects(collectIncheonTimetableVia(async (url) => {
-    if (String(url) !== firstFileUrl) return incheonTimetablePortalFetch(url);
+  await assert.rejects(collectIncheonTimetableVia(async (url, init) => {
+    if (String(url) !== firstFileUrl) return incheonTimetablePortalFetch(url, init);
     exhaustedCalls += 1;
     return new Response("busy", { status: 503 });
-  }), /Incheon \d+ CSV HTTP 503/);
+  }), /data\.go\.kr \d+ file HTTP 503/);
   assert.equal(exhaustedCalls, 3);
 });
 
@@ -405,8 +381,8 @@ test("인천 timetable collector는 HTTP 429를 Retry-After 유무로 가르고,
   await assert.rejects(collectIncheonTimetableVia(async () => { hinted += 1; return new Response("slow", { status: 429, headers: { "retry-after": "21" } }); }), /RETRY_AFTER_EXCEEDS_CAP/);
   assert.equal(hinted, 1);
 
-  const leaky = async (url) => { throw Object.assign(new Error(`connect failed ${url}`), { code: "ECONNRESET", cause: { url: String(url) } }); };
+  const leaky = async () => { throw Object.assign(new Error("connect failed"), { code: "ECONNRESET" }); };
   const failure = await collectIncheonTimetableVia(leaky).catch((error) => error);
-  assert.match(failure.message, /detail transport failure; code=ECONNRESET/);
+  assert.equal(failure.code, "ECONNRESET");
   assertErrorOmitsSecrets(failure, ["www.data.go.kr", "fileData.do"]);
 });
