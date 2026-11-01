@@ -102,7 +102,7 @@ test("공급자를 부르는 step(예산 가드·수집)은 재생 요청이 없
 
 test("재생 요청은 원본 run의 artifact를 같은 저장소·run id·이름으로만 받고 공급자 키를 쓰지 않는다 (#1127)", () => {
   const download = step("Download retained ITX collection evidence").block;
-  assert.match(download, /uses: actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/u);
+  assert.match(download, /uses: actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/u);
   assert.match(download, /repository: \$\{\{ github\.repository \}\}\n          run-id: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n          name: itx-current-promotion-\$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
   assert.match(download, /github-token: \$\{\{ github\.token \}\}/u);
   const restore = step("Restore retained ITX collection evidence").block;
@@ -180,7 +180,7 @@ test("App 토큰은 PR 생성 바로 앞 step에서 같은 조건으로 받고 p
   const token = all[create - 1];
   assert.equal(token.name, "Mint App token for the promotion pull request");
   assert.match(token.block, /\n        id: app-token-pr\n/u);
-  assert.match(token.block, /uses: actions\/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1/u);
+  assert.match(token.block, /uses: actions\/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510/u);
   assert.match(token.block, /\n          owner: AquilaXk\n          repositories: easysubway-data\n          permission-pull-requests: write(?:\n|$)/u);
   const { block } = all[create];
   assert.match(block, /\n          APP_PR_TOKEN: \$\{\{ steps\.app-token-pr\.outputs\.token \}\}\n/u);
@@ -233,7 +233,7 @@ test("공급자 호출 전 판정이 WAIT·OPEN_PR·BLOCKED인 실행은 collect
 test("증거 artifact는 수집을 시도한 실행에서 항상 올리고 비밀·키를 담지 않는다", () => {
   const upload = step("Upload sanitized promotion evidence");
   assert.equal(ifCondition(upload.block), "${{ always() && steps.decision.outputs.state == 'COLLECT' }}");
-  assert.match(upload.block, /uses: actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/u);
+  assert.match(upload.block, /uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/u);
   assert.match(upload.block, /name: itx-current-promotion-\$\{\{ github\.run_id \}\}/u);
   for (const file of ["freshness.json", "itx-result.json", "itx-completeness.json", "provider-response-capture.json", "itx-replay.json", "itx-promotion-gate.json"]) {
     assert.ok(upload.block.includes(`itx-current-promotion/\${{ github.run_id }}/${file}`) || upload.block.includes(`/${file}`), file);

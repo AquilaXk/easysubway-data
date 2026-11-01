@@ -35,7 +35,7 @@ test("job은 읽기 권한만 갖고, 서비스 토큰이 든 production-datapac
   assert.doesNotMatch(yml, /: write\b/u);
   assert.doesNotMatch(yml, /continue-on-error/u);
   const token = stepBody("Create the hub and platform read token");
-  assert.match(token, /uses: actions\/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1/u);
+  assert.match(token, /uses: actions\/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510/u);
   assert.match(token, /repositories: easysubway,easysubway-platform\n/u);
   assert.deepEqual(token.split("\n").filter((line) => /^ {10}permission-/u.test(line)).map((line) => line.trim()), ["permission-actions: read"]);
 });

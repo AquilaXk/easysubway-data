@@ -41,7 +41,7 @@ test("candidate workflow는 continuation_run_id와 replay_run_id 입력을 검�
   assert.match(validate, /\^\[1-9\]\[0-9\]\*\$/);
 
   const capture = step(yml, "ITX replay admission / Download retained extended capture");
-  assert.match(capture, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
+  assert.match(capture, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
   assert.match(capture, /repository:\s*AquilaXk\/easysubway-data/);
   assert.match(capture, /run-id:\s*\$\{\{\s*inputs\.continuation_run_id\s*\}\}/);
   assert.match(capture, /name:\s*itx-current-collection-continuation-\$\{\{\s*inputs\.continuation_run_id\s*\}\}/);
@@ -49,7 +49,7 @@ test("candidate workflow는 continuation_run_id와 replay_run_id 입력을 검�
   assert.doesNotMatch(capture, /31620004435/);
 
   const replay = step(yml, "ITX replay admission / Download successful replay evidence");
-  assert.match(replay, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
+  assert.match(replay, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
   assert.match(replay, /repository:\s*AquilaXk\/easysubway-data/);
   assert.match(replay, /run-id:\s*\$\{\{\s*inputs\.replay_run_id\s*\}\}/);
   assert.match(replay, /name:\s*itx-current-collection-offline-replay-\$\{\{\s*inputs\.replay_run_id\s*\}\}/);

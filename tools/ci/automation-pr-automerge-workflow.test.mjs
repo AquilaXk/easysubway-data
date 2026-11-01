@@ -24,7 +24,7 @@ const { yml, steps, step } = loadWorkflow(root, FILE);
 const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
 const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
 const ciCode = ci.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
-const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
+const APP_TOKEN_ACTION = "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510";
 const ELIGIBLE = "${{ steps.decision.outputs.state == 'ELIGIBLE' }}";
 
 test("변수는 코드가 켜지지 않고 QA 보고 뒤 별도 설정 변경으로만 켠다고 workflow가 스스로 밝힌다", () => {
@@ -175,7 +175,7 @@ test("게이트 재계산은 PR head 작업 트리에서 읽기 전용으로 돌
   // #986 F3: 게이트가 본 증거 블록의 digest를 artifact로 남긴다(읽기 전용 토큰으로 올린다). 라벨러가 현재 본문과 대조한다.
   const upload = jobSteps[5].block;
   assert.match(upload, /if: \$\{\{ steps\.classify\.outputs\.applicable == 'true' \}\}/u);
-  assert.match(upload, /uses: actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n        with:\n          name: automation-pr-evidence\n          path: \$\{\{ runner\.temp \}\}\/evidence-digest\.json\n          overwrite: true\n          if-no-files-found: error\n          retention-days: 7(?:\n|$)/u);
+  assert.match(upload, /uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9\n        with:\n          name: automation-pr-evidence\n          path: \$\{\{ runner\.temp \}\}\/evidence-digest\.json\n          overwrite: true\n          if-no-files-found: error\n          retention-days: 7(?:\n|$)/u);
   // 이 check는 ruleset의 required가 아니다. required 집계(Data contracts)가 이 job을 기다리지 않는다.
   const contracts = /\n  contracts:\n[\s\S]*$/u.exec(ciCode)[0];
   assert.doesNotMatch(contracts, /automation_pr_gates/u);

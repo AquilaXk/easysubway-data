@@ -56,11 +56,11 @@ test("predeployment measurement is a trusted main-only manual workflow", () => {
   assert.doesNotMatch(text, /^  (contents|packages): write$/m, "no publication permission");
   requireText(text, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/,
     "pinned checkout");
-  requireText(text, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/,
+  requireText(text, /actions\/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1/,
     "pinned node setup");
-  requireText(text, /actions\/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6/,
+  requireText(text, /actions\/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad/,
     "pinned Java setup");
-  requireText(text, /oras-project\/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d/,
+  requireText(text, /oras-project\/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4/,
     "pinned ORAS setup");
   requireText(text, /version: 1\.3\.3/, "pinned ORAS version");
   requireText(text, /java-version: "21\.0\.11"/, "pinned Java version");
@@ -133,7 +133,7 @@ test("predeployment measurement binds one trusted Backend PR and Data #6 release
     "candidate artifact name");
   requireText(text, /easysubway-datapack-candidate-execution-evidence-\$\{\{ inputs\.dataRunId \}\}/,
     "execution-evidence artifact name");
-  requireText(text, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/,
+  requireText(text, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/,
     "pinned artifact download action");
   requireText(text, /repository: AquilaXk\/easysubway-data[\s\S]+run-id: \$\{\{ inputs\.dataRunId \}\}[\s\S]+github-token: \$\{\{ github\.token \}\}/,
     "same-repository artifact read authority");

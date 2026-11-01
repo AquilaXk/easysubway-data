@@ -22,7 +22,7 @@ const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
 const ITX_PROMOTION_WORKFLOW = "itx-current-promotion.yml";
 const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW, ITX_PROMOTION_WORKFLOW, "source-derivative-rebinding.yml", "source-reverification.yml"];
 const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, ...SINGLE_PR_PATH_WORKFLOWS])];
-const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
+const APP_TOKEN_ACTION = "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510";
 
 function workflowText(file) {
   return readFileSync(path.join(root, ".github/workflows", file), "utf8");

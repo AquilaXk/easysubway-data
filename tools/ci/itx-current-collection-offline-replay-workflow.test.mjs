@@ -45,7 +45,7 @@ test("offline replay는 source_run_id 입력을 검증하고 해당 continuation
   assert.match(validate, /\^\[1-9\]\[0-9\]\*\$/);
 
   const download = step(yml, "ITX offline replay / Download retained extended capture");
-  assert.match(download, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
+  assert.match(download, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
   assert.match(download, /repository:\s*AquilaXk\/easysubway-data/);
   assert.match(download, /run-id:\s*\$\{\{\s*inputs\.source_run_id\s*\}\}/);
   assert.match(download, /name:\s*itx-current-collection-continuation-\$\{\{\s*inputs\.source_run_id\s*\}\}/);
@@ -71,7 +71,7 @@ test("sanitized replay output 하나만 14일 보존한다", () => {
   const yml = workflow();
   const upload = step(yml, "ITX offline replay / Upload sanitized replay evidence");
   assert.match(upload, /if:\s*\$\{\{ always\(\) \}\}/);
-  assert.match(upload, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
+  assert.match(upload, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.match(upload, /path:\s*\$\{\{ runner\.temp \}\}\/itx-offline-replay-output\/itx-replay\.json/);
   assert.match(upload, /if-no-files-found:\s*error/);
   assert.match(upload, /retention-days:\s*14/);

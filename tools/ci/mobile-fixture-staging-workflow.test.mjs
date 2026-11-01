@@ -320,7 +320,7 @@ function assertPinnedFixtureJob(job, timeoutMinutes = 30) {
     stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("cp -a "),
     "각 job은 fixture 검증 뒤에만 stage해야 함",
   );
-  assert.match(node, /uses:\s*actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
+  assert.match(node, /uses:\s*actions\/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1/);
   assert.match(node, /node-version:\s*"24\.19\.0"/);
 }
 

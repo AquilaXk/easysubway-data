@@ -45,6 +45,6 @@ test("실패 보고가 마지막 step이고 기존 실패 이슈 경로(#926)에
 test("run 스크립트에는 표현식을 직접 넣지 않고 action은 SHA로 고정한다", () => {
   assertNoExpressionInRunScripts({ steps, file: FILE });
   assert.match(yml, /uses: actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n/u);
-  assert.match(yml, /uses: actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020\n        with:\n          node-version: "24"\n/u);
+  assert.match(yml, /uses: actions\/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1\n        with:\n          node-version: "24"\n/u);
   for (const [, ref] of yml.matchAll(/uses: [^@\s]+@(\S+)/gu)) assert.match(ref, /^[a-f0-9]{40}$/u);
 });
