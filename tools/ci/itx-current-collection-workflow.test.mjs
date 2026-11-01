@@ -77,7 +77,7 @@ test("실패에도 sanitized 증적만 보존하며 raw·secret·catalog·promot
   const yml = workflow();
   const upload = step(yml, "ITX current collection / Upload sanitized evidence");
   assert.match(upload, /if:\s*\$\{\{ always\(\) \}\}/);
-  assert.match(upload, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
+  assert.match(upload, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.match(upload, /retention-days:\s*14/);
   assert.match(upload, /freshness\.json/);
   assert.match(upload, /itx-result\.json/);

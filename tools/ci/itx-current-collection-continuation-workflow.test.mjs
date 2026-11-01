@@ -36,7 +36,7 @@ test("continuation은 source_run_id 입력을 검증하고 해당 artifact를 �
   assert.match(validate, /\^\[1-9\]\[0-9\]\*\$/);
 
   const download = step(yml, "ITX continuation / Download retained provider capture");
-  assert.match(download, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
+  assert.match(download, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
   assert.match(download, /repository:\s*AquilaXk\/easysubway-data/);
   assert.match(download, /run-id:\s*\$\{\{\s*inputs\.source_run_id\s*\}\}/);
   assert.match(download, /name:\s*itx-current-collection-\$\{\{\s*inputs\.source_run_id\s*\}\}/);
@@ -67,7 +67,7 @@ test("결과·completeness·extended capture만 14일 보존하고 base/raw/secr
   const yml = workflow();
   const upload = step(yml, "ITX continuation / Upload sanitized continuation evidence");
   assert.match(upload, /if:\s*\$\{\{ always\(\) \}\}/);
-  assert.match(upload, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
+  assert.match(upload, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.match(upload, /retention-days:\s*14/);
   for (const name of [
     "itx-result.json", "itx-completeness.json",

@@ -262,7 +262,7 @@ test("재생은 claim 뒤에 원본 run이 main의 이 workflow인지 확인하�
   assert.doesNotMatch(verify.block, /secrets\./u);
   const download = step("Download the retained reverification collection");
   assert.equal(ifCondition(download.block), REPLAYING);
-  assert.match(download.block, /\n        uses: actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c\n/u);
+  assert.match(download.block, /\n        uses: actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333\n/u);
   assert.match(download.block, /\n          run-id: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
   assert.match(download.block, /\n          name: source-reverification-\$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
   assert.match(download.block, /\n          path: \$\{\{ runner\.temp \}\}\/source-reverification-replay\/\$\{\{ github\.run_id \}\}\n/u);
@@ -312,7 +312,7 @@ test("재생 묶음은 이 run이 묶음을 썼을 때만 push 뒤·PR 생성 �
   assert.equal(runs(pushed("true")), true);
   assert.equal(runs(pushed("false")), false, "재생할 수 있는 묶음을 등록하지 않은 run은 올릴 것이 없다");
   assert.equal(runs({ ...pushed("true"), push: { outputs: { pushed: "false" } } }), false, "push하지 않은 run의 묶음은 재생 원본이 아니다");
-  assert.match(upload.block, /\n        uses: actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n/u);
+  assert.match(upload.block, /\n        uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9\n/u);
   assert.match(upload.block, /\n          name: source-reverification-\$\{\{ github\.run_id \}\}\n/u);
   assert.match(upload.block, /\n          path: \$\{\{ runner\.temp \}\}\/source-reverification\/\$\{\{ github\.run_id \}\}\/replay-bundle\n/u);
   assert.match(upload.block, /\n          if-no-files-found: error\n/u, "묶음을 썼다고 했는데 파일이 없으면 실패한다");

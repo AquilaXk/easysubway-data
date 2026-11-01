@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           echo "${EXPECTED_SHA256}  platform-probe/tools/ops/source-reachability-probe.mjs" | sha256sum --check --strict
           echo "probe script sha256: ${EXPECTED_SHA256}" >> "${GITHUB_STEP_SUMMARY}"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24.19.0"
       - name: Probe source reachability from this runner
@@ -61,7 +61,7 @@ jobs:
           fi
       - name: Upload the measurements
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: source-reachability-gha-us-hosted-${{ github.run_id }}
           path: ${{ runner.temp }}/gha-us-hosted-probe.jsonl

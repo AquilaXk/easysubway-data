@@ -396,7 +396,7 @@ test("CLI plan은 닫을 대상 수를 출력하고 알 수 없는 명령·인�
 const FILE = "automation-pr-behind-recreate.yml";
 const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
-const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
+const APP_TOKEN_ACTION = "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510";
 const NEEDED = "${{ steps.plan.outputs.targets != '0' }}";
 
 test("트리거는 main push와 CI 완료이고 변수가 true일 때만 돈다. pull_request_target과 PR 코드 checkout이 없다", () => {

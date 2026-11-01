@@ -109,7 +109,7 @@ test("each app token is scoped to one repository with least privilege and never 
   ];
   for (const [name, repository, permissions] of tokens) {
     const token = stepBody(name);
-    assert.match(token, /uses: actions\/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1/u, name);
+    assert.match(token, /uses: actions\/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510/u, name);
     assert.match(token, /client-id: \$\{\{ secrets\.EASYSUBWAY_RELEASE_APP_CLIENT_ID \}\}/u, name);
     assert.match(token, /private-key: \$\{\{ secrets\.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY \}\}/u, name);
     assert.match(token, /owner: AquilaXk\n/u, name);
