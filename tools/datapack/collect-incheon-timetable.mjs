@@ -13,12 +13,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
-import { resolveDataGoDownloadUrl } from "./collect-capital-route-topology.mjs";
 import {
   I210_SEOHAE_GU_OFFICE_RENAME,
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
-import { getDataGoPortalBytes } from "./lib/data-go-portal-get.mjs";
+import { downloadDataGoFile, isCanonicalDataGoDownloadUrl } from "./lib/data-go-file-download.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
@@ -468,31 +467,6 @@ function parseArgs(argv) {
 function usage() {
   return "usage: collect-incheon-timetable.mjs (--input-dir <dir> | --download) --topology-snapshot <json> "
     + "--output-dir <abs-dir> [--captured-at <iso> --date-stamp YYYYMMDD] [--line 1|2]";
-}
-
-function isCanonicalDataGoDownloadUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.origin === "https://www.data.go.kr" && url.pathname === "/cmm/cmm/fileDownload.do"
-      && /^FILE_[0-9]+$/u.test(url.searchParams.get("atchFileId") ?? "")
-      && /^[1-9][0-9]*$/u.test(url.searchParams.get("fileDetailSn") ?? "");
-  } catch {
-    return false;
-  }
-}
-
-async function downloadDataGoFile(fetchImpl, datasetId, retry) {
-  const detailUrl = `https://www.data.go.kr/data/${datasetId}/fileData.do`;
-  const detail = await getDataGoPortalBytes({ url: detailUrl, fetchImpl, label: `Incheon ${datasetId} detail`, retry });
-  if (!detail.response.ok) throw new Error(`Incheon ${datasetId} detail HTTP ${detail.response.status}`);
-  const downloadUrl = resolveDataGoDownloadUrl(detail.bytes.toString("utf8"), detailUrl);
-  if (!isCanonicalDataGoDownloadUrl(downloadUrl)) throw new Error(`Incheon ${datasetId} download URL is invalid`);
-  const { response: fileResponse, bytes } = await getDataGoPortalBytes({
-    url: downloadUrl, fetchImpl, label: `Incheon ${datasetId} CSV`, referer: detailUrl, retry,
-  });
-  if (!fileResponse.ok) throw new Error(`Incheon ${datasetId} CSV HTTP ${fileResponse.status}`);
-  if (bytes.byteLength === 0) throw new Error(`Incheon ${datasetId} CSV is empty`);
-  return { bytes, detailUrl, downloadUrl, rawSha256: sha256(bytes) };
 }
 
 export async function runIncheonTimetableCollector(argv, { fetchImpl = fetch, now = () => new Date(), sleepImpl, randomImpl } = {}) {

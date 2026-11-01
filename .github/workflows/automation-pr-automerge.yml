@@ -2,8 +2,6 @@ name: Automation PR Automerge
 
 # 데이터 전용 자동화 PR의 자동 병합 승인(#985, #870 전체 자동화 2단계): 사람의 리뷰·라벨 없이, 증거 기반 정책이 통과한 PR만
 # 기존 병합 경로(automerge 라벨 -> automerge-queue 코디네이터)에 올린다. 사람은 이상이 났을 때만 개입한다.
-# - 이 workflow는 병합하지 않는다. 병합 주체는 코디네이터 하나다. 여기서는 PR을 ready로 바꾸고, exact-head 정책 통과 기록(attestation)을 남기고,
-#   기존 automerge 라벨을 붙인다. 코디네이터는 이 기록을 신뢰 협력자의 Aquila 리뷰 대신 인정하고 나머지 게이트(미해결 thread, required context)는 그대로 요구한다.
 # - 정책(tools/ci/automation-pr-policy.mjs): 작성자가 App easysubway-release-chain[bot]이고, 브랜치가 단계의 claim 접두사이고, 증거 블록이 PR head에 결속되고,
 #   API diff의 변경 경로가 단계별 allowlist와 정확히 맞고, 모든 커밋이 App 또는 github-actions 작성이고, CI·게이트 재계산이 성공이어야 한다.
 #   하나라도 어긋나면 라벨을 붙이지 않고 job이 실패해 실패 이슈(#926, report-refresh-failure)로 드러난다. 사람이 그 이상을 처리한다.
