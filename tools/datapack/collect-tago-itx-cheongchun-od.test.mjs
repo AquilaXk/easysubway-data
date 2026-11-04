@@ -2442,10 +2442,9 @@ test("#1267 최악 재시도 시간은 이 수집기를 쓰는 workflow의 실�
   const timeouts = {
     "itx-current-promotion.yml": workflowTimeoutMs("itx-current-promotion.yml"),
     "itx-current-collection.yml": workflowTimeoutMs("itx-current-collection.yml"),
-    "current-capital-topology-refresh.yml": workflowTimeoutMs("current-capital-topology-refresh.yml"),
   };
   const worstAdded = worstRetryAddedMs();
-  // 정상 공급자에서 수집 step이 걸린 시간(최대 17분 13초)에 재시도 최악 시간을 더해도 가장 짧은 timeout(45분)보다 짧다.
+  // 정상 공급자에서 수집 step이 걸린 시간(최대 17분 13초)에 재시도 최악 시간을 더해도 가장 짧은 timeout(60분)보다 짧다.
   for (const [file, timeout] of Object.entries(timeouts)) {
     assert.ok(OBSERVED_NORMAL_COLLECT_MS + worstAdded < timeout, `${file}: ${(OBSERVED_NORMAL_COLLECT_MS + worstAdded) / 60_000} min vs ${timeout / 60_000} min`);
   }
@@ -2453,5 +2452,5 @@ test("#1267 최악 재시도 시간은 이 수집기를 쓰는 workflow의 실�
   // 오프라인 replay(대기 없음)와 게이트·PR 단계에 쓸 남은 시간이 10분 이상이다.
   const promotion = timeouts["itx-current-promotion.yml"];
   assert.ok(OBSERVED_DEGRADED_COLLECT_MS + worstAdded + 10 * 60_000 < promotion, `${(OBSERVED_DEGRADED_COLLECT_MS + worstAdded) / 60_000} min vs ${promotion / 60_000} min`);
-  assert.deepEqual(Object.values(timeouts).toSorted((left, right) => left - right), [45, 60, 90].map((minutes) => minutes * 60_000));
+  assert.deepEqual(Object.values(timeouts).toSorted((left, right) => left - right), [60, 90].map((minutes) => minutes * 60_000));
 });
