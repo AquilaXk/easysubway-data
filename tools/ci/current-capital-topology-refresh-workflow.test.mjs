@@ -12,7 +12,6 @@ function stepBody(name) {
 test("derived GitHub environment values use physical records", () => {
   for (const name of [
     "Derive immutable input identities from collector output",
-    "Derive current ITX admission identity",
     "Derive current activation dependencies",
   ]) {
     const body = stepBody(name);
@@ -39,7 +38,7 @@ test("an exact empty claim is reused without creating another claim", () => {
   const create = stepBody("Create durable claim before provider access");
   const reuse = stepBody("Reuse an exact empty claim after provider failure");
   const collect = stepBody("Collect each official current topology input once");
-  const commit = stepBody("Commit exactly four or five immutable current topology inputs");
+  const commit = stepBody("Commit exactly four immutable current topology inputs");
   assert.match(preflight, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
   assert.doesNotMatch(create, /REUSE_CLAIM/);
   assert.match(reuse, /steps\.decision\.outputs\.state == 'REUSE_CLAIM'/);
@@ -58,9 +57,7 @@ test("pending full fan-in cannot reach a topology side effect", () => {
     "Create durable claim before provider access",
     "Reuse an exact empty claim after provider failure",
     "Collect each official current topology input once",
-    "Prepare current ITX collection",
-    "Collect current ITX timetable once",
-    "Commit exactly four or five immutable current topology inputs",
+    "Commit exactly four immutable current topology inputs",
     "Activate current topology inputs exactly once",
     "Create draft pull request",
   ];
@@ -81,29 +78,15 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   const collectTopology = stepBody("Collect each official current topology input once");
   assert.match(collectTopology, /mkdir -p "\$\{TOPOLOGY_OPERATION_ROOT\}\/timetables"\n\s+node tools\/datapack\/collect-incheon-timetable\.mjs --download --topology-snapshot "\$\{TOPOLOGY_OPERATION_ROOT\}\/incheon-transit-station-info-\$\{station_stamp\}\.json" --output-dir "\$\{TOPOLOGY_OPERATION_ROOT\}\/timetables"/);
   assert.equal((collectTopology.match(/collect-incheon-timetable\.mjs --download/g) ?? []).length, 1);
-  assert.match(yml, /environment: itx-current-collection/);
-  assert.equal((yml.match(/run-current-itx-collection\.mjs/g) ?? []).length, 1);
-  assert.match(yml, /guard-itx-current-collection-budget\.mjs/);
-  const prepareItx = stepBody("Prepare current ITX collection");
-  const collectItx = stepBody("Collect current ITX timetable once");
-  assert.ok(yml.indexOf("Prepare current ITX collection") < yml.indexOf("Collect current ITX timetable once"));
-  assert.match(prepareItx, /DATA_GO_KR_SERVICE_KEY must be a nonempty single line/);
-  assert.match(prepareItx, /emit-station-catalog-pack\.mjs/);
-  assert.match(prepareItx, /guard-itx-current-collection-budget\.mjs --output "\$\{TOPOLOGY_OPERATION_ROOT\}\/freshness\.json" --allow-after-failure/);
-  assert.doesNotMatch(collectItx, /DATA_GO_KR_SERVICE_KEY must be a nonempty single line|emit-station-catalog-pack\.mjs|guard-itx-current-collection-budget\.mjs/);
-  assert.match(prepareItx, /steps\.decision\.outputs\.itx_refresh_required == 'true'/);
-  assert.match(collectItx, /steps\.decision\.outputs\.itx_refresh_required == 'true'[\s\S]*set \+e[\s\S]*collector_status=\$\?[\s\S]*\[\[ "\$\{collector_status\}" == "0" \|\| "\$\{collector_status\}" == "1" \]\][\s\S]*build-itx-current-topology-admission\.mjs/);
-  assert.match(collectItx, /collection_input="\$\{TOPOLOGY_OPERATION_ROOT\}\/itx-completeness\.json"[\s\S]*if \[\[ "\$\{collector_status\}" == "1" \]\]; then collection_input="\$\{TOPOLOGY_OPERATION_ROOT\}\/itx-result\.json"; fi[\s\S]*--collection "\$\{collection_input\}"/);
-  assert.match(collectItx, /run-current-itx-collection\.mjs[\s\S]*--freshness-output "\$\{TOPOLOGY_OPERATION_ROOT\}\/freshness\.json"/);
-  assert.match(yml, /build-itx-current-topology-admission\.mjs[\s\S]*--collection[\s\S]*--coverage-contract tools\/datapack\/itx-cheongchun-coverage-contract\.json[\s\S]*--output/);
+  assert.doesNotMatch(yml, /environment:|DATA_GO_KR_SERVICE_KEY|run-current-itx-collection|guard-itx-current-collection-budget|build-itx-current-topology-admission|emit-station-catalog-pack/);
   assert.match(yml, /TOPOLOGY_BUILD_NOW/); assert.equal((yml.match(/activate-current-source-set\.mjs --topology-source-admission/g) ?? []).length, 2); assert.match(yml, /--check/);
   assert.doesNotMatch(yml, /--topology-only|--itx-current-admission|itx_args/);
-  assert.match(yml, /registrationEvidence\.snapshotId/); assert.match(yml, /source_key="\$\{key\}_SOURCE"; source="\$\{!source_key\}"/); assert.match(yml, /itxRefreshRequired: process\.env\.ITX_REFRESH_REQUIRED === "true"/); assert.match(yml, /four-input topology claim has an ITX admission/); assert.match(yml, /five-input topology claim is missing its ITX admission/); assert.match(yml, /exactly four or five immutable current topology inputs/);
+  assert.match(yml, /registrationEvidence\.snapshotId/); assert.match(yml, /source_key="\$\{key\}_SOURCE"; source="\$\{!source_key\}"/); assert.doesNotMatch(yml, /ITX_REFRESH_REQUIRED|itx_refresh_required|itx-current-network-edge-admission|ITX_ADMISSION/); assert.match(yml, /exactly four immutable current topology inputs/);
   const recovery = stepBody("Recover a completed claimed refresh");
   assert.match(recovery, /git diff --quiet HEAD "origin\/\$\{branch\}\^\^"/);
   assert.match(recovery, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^\^" "origin\/\$\{branch\}\^"/);
   assert.match(recovery, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
-  assert.match(recovery, /topology input commit must change exactly four or five paths/);
+  assert.match(recovery, /topology input commit must change exactly four paths/);
   assert.match(recovery, /topology activation commit must change a nonempty subset of the four source admission paths/);
   assert.match(recovery, /capital-topology-reverification-\[0-9\]\{8\}/);
   assert.doesNotMatch(recovery, /exactly eleven or twelve paths/);
@@ -117,27 +100,18 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   assert.doesNotMatch(activate, /exactly seven activation paths/);
   assert.doesNotMatch(yml, /- name: Verify current topology activation exactly once/);
   assert.match(stepBody("Activate current topology inputs exactly once"), /env:\n\s+GH_TOKEN: \$\{\{ github\.token \}\}/);
-  const uploadItx = stepBody("Upload sanitized ITX review evidence");
-  assert.match(uploadItx, /steps\.decision\.outputs\.itx_refresh_required == 'true'/);
-  assert.match(uploadItx, /current-capital-topology-refresh-itx-review-\$\{\{ github\.run_id \}\}/);
-  // #1298: 실패한 날의 공급자 요청 수 증거(capture)와 KASI 실패 영수증도 올린다. 승격 판정이 이 artifact로 쓴 요청 수를 읽는다.
-  assert.match(uploadItx, /itx-result\.json[\s\S]*itx-completeness\.json[\s\S]*provider-response-capture\.json[\s\S]*freshness\.json[\s\S]*retention-days: 14/);
-  assert.doesNotMatch(uploadItx, /credential|secret|raw-response/i);
-  assert.match(yml, /secrets\.DATA_GO_KR_SERVICE_KEY/);
+  assert.doesNotMatch(yml, /Upload sanitized ITX review evidence|itx-review/);
   assert.match(yml, /Refs #636, #625/); assert.doesNotMatch(yml, /oci:|aws|retry|fallback|automerge|git push origin main/i);
 });
 
-// F4(#977): ITX 승격 workflow와 같은 KST 날 ITX 공급자 호출을 나눠 쓴다. 이미 수집됐으면 가드 실패(이슈)가 아니라 대기로 끝난다.
-test("topology refresh는 판정 전에 같은 KST 날 ITX 수집 여부를 보고 이미 수집됐으면 대기한다", () => {
+// QA 2026-11-04: ITX 공급자는 승격 workflow만 부른다. topology 갱신은 승격 결과를 기다린다.
+test("topology refresh는 ITX 공급자를 부르지 않고 WAIT_ITX_PROMOTION이면 안내만 남기고 끝난다", () => {
   const decision = stepBody("Decide whether current topology refresh is due");
-  assert.match(decision, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
-  const probe = decision.indexOf('itx_collected="$(node tools/ci/guard-itx-current-collection-budget.mjs --probe)"');
-  const decide = decision.indexOf("node tools/ci/decide-current-capital-topology-refresh.mjs");
-  assert.ok(probe !== -1 && probe < decide, "the probe runs before the decision");
-  assert.match(decision, /--itx-collected-today "\$\{itx_collected\}" --output "\$\{TOPOLOGY_DECISION\}"/);
-  // WAIT_ITX_COLLECTED_TODAY는 어떤 쓰기·수집 step의 조건에도 들지 않으므로 아무것도 하지 않고 성공으로 끝난다.
-  assert.equal(yml.includes("WAIT_ITX_COLLECTED_TODAY' &&"), false);
-  assert.match(stepBody("Note current topology refresh waiting on today's ITX collection"), /steps\.decision\.outputs\.state == 'WAIT_ITX_COLLECTED_TODAY'/);
+  assert.doesNotMatch(decision, /guard-itx-current-collection-budget|itx-collected-today|itx_collected/);
+  assert.doesNotMatch(yml, /WAIT_ITX_COLLECTED_TODAY/);
+  assert.match(stepBody("Note current topology refresh waiting on ITX promotion"), /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'WAIT_ITX_PROMOTION' \}\}\n[\s\S]*::notice/);
+  assert.equal(yml.includes("WAIT_ITX_PROMOTION' &&"), false);
+  assert.equal(yml.includes("WAIT_ITX_PROMOTION' ||"), false);
 });
 
 test("topology refresh ends at source admission and never commits candidate-side outputs (#862 결정 C)", () => {

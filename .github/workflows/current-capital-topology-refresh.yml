@@ -21,7 +21,6 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-    environment: itx-current-collection
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -42,7 +41,6 @@ jobs:
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
-          GITHUB_TOKEN: ${{ github.token }}
           CLAIMS_PATH: ${{ runner.temp }}/current-capital-topology-refresh/claims.json
         run: |
           set -euo pipefail
@@ -60,11 +58,9 @@ jobs:
             node --input-type=module -e 'import { appendFile } from "node:fs/promises"; const [headSha, ref, mergeBaseSha, commitCount, subjects] = process.argv.slice(1); await appendFile(process.env.CLAIMS_PATH, JSON.stringify({ headSha, ref, mergeBaseSha, commitCount: Number(commitCount), subjects: subjects ? subjects.split("\n") : [] }) + "\n");' "${head_sha}" "${ref}" "${merge_base}" "${commit_count}" "${subjects}"
           done < "${state_root}/claim-refs.txt"
           node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, JSON.stringify(claims) + "\n", { flag: "w" });'
-          # #977, #1298: 같은 KST 날 다른 ITX 수집 workflow가 성공했거나 진행 중이거나, 실패한 뒤 재시도 간격·하루 예산 때문에 수집할 수 없으면 대기 상태로 끝난다(예산 가드 실패로 이슈를 만들지 않는다).
-          itx_collected="$(node tools/ci/guard-itx-current-collection-budget.mjs --probe)"
           # #995: PR 없는 claim은 만든 run과 게시 증거로 판정한다. 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다).
           node tools/ci/claim-orphans.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claim-refs.txt" --prs "${state_root}/prs.json" --output "${state_root}/claim-evidence.json"
-          node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --claim-evidence "${state_root}/claim-evidence.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --itx-collected-today "${itx_collected}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --claim-evidence "${state_root}/claim-evidence.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
       - name: Remove abandoned topology refresh claims named by the decision
         if: ${{ steps.decision.outputs.cleanup_claims != '' }}
         env:
@@ -81,10 +77,10 @@ jobs:
           CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
         run: |
           echo "::notice title=Current topology refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
-      - name: Note current topology refresh waiting on today's ITX collection
-        if: ${{ steps.decision.outputs.state == 'WAIT_ITX_COLLECTED_TODAY' }}
+      - name: Note current topology refresh waiting on ITX promotion
+        if: ${{ steps.decision.outputs.state == 'WAIT_ITX_PROMOTION' }}
         run: |
-          echo "::notice title=Current topology refresh::another workflow already collected ITX today (the provider allows one collection per KST day); the next run decides again."
+          echo "::notice title=Current topology refresh::ITX evidence is inside its refresh window; waiting for the ITX promotion workflow to renew it."
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
@@ -121,10 +117,9 @@ jobs:
         run: |
           set -euo pipefail
           git ls-tree -r --name-only HEAD > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
-          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths, itxRefreshRequired: process.env.ITX_REFRESH_REQUIRED === "true" }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
+          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
         env:
           PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
-          ITX_REFRESH_REQUIRED: ${{ steps.decision.outputs.itx_refresh_required }}
       - name: Mint App token for the refresh pull request
         id: app-token-recover
         if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
@@ -155,13 +150,11 @@ jobs:
           activation_deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
           [[ -z "${activation_deleted}" ]] || { echo "topology activation commit deleted a tracked path" >&2; exit 1; }
           mapfile -t input_paths < <(git diff --name-only --diff-filter=ACMR "origin/${branch}^^" "origin/${branch}^")
-          [[ "${#input_paths[@]}" == "4" || "${#input_paths[@]}" == "5" ]] || { echo "topology input commit must change exactly four or five paths" >&2; exit 1; }
+          [[ "${#input_paths[@]}" == "4" ]] || { echo "topology input commit must change exactly four paths" >&2; exit 1; }
           for pattern in '^tools/datapack/sources/capital-route-topology-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-transit-station-info-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line1-train-timetable-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line2-train-timetable-[0-9]{8}\.json$'; do
             [[ "$(printf '%s\n' "${input_paths[@]}" | grep -Ec "${pattern}")" == "1" ]] || { echo "topology claim input identity is invalid" >&2; exit 1; }
           done
-          itx_admission_count="$(printf '%s\n' "${input_paths[@]}" | grep -Ec '^tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json$' || true)"
-          if [[ "${#input_paths[@]}" == "4" ]]; then [[ "${itx_admission_count}" == "0" ]] || { echo "four-input topology claim has an ITX admission" >&2; exit 1; }; else [[ "${itx_admission_count}" == "1" ]] || { echo "five-input topology claim is missing its ITX admission" >&2; exit 1; }; fi
-          input_unexpected="$(printf '%s\n' "${input_paths[@]}" | grep -Ev '^(tools/datapack/itx-current-network-edge-admission-[0-9]{8}\.json|tools/datapack/sources/(capital-route-topology|incheon-transit-station-info|incheon-line1-train-timetable|incheon-line2-train-timetable)-[0-9]{8}\.json)$' || true)"
+          input_unexpected="$(printf '%s\n' "${input_paths[@]}" | grep -Ev '^tools/datapack/sources/(capital-route-topology|incheon-transit-station-info|incheon-line1-train-timetable|incheon-line2-train-timetable)-[0-9]{8}\.json$' || true)"
           [[ -z "${input_unexpected}" ]] || { echo "topology input commit changed an unsupported path" >&2; exit 1; }
           mapfile -t activation_paths < <(git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}")
           [[ "${#activation_paths[@]}" -gt 0 ]] || { echo "topology activation commit must change a nonempty subset of the four source admission paths" >&2; exit 1; }
@@ -227,10 +220,9 @@ jobs:
           git fetch --no-tags origin main
           [[ "$(git rev-parse origin/main)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "main changed after topology claim" >&2; exit 1; }
           git ls-tree -r --name-only "${TOPOLOGY_MAIN_SHA}" > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
-          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths, itxRefreshRequired: process.env.ITX_REFRESH_REQUIRED === "true" }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
+          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
         env:
           PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
-          ITX_REFRESH_REQUIRED: ${{ steps.decision.outputs.itx_refresh_required }}
       - name: Collect each official current topology input once
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
@@ -243,33 +235,6 @@ jobs:
           mkdir -p "${TOPOLOGY_OPERATION_ROOT}/timetables"
           node tools/datapack/collect-incheon-timetable.mjs --download --topology-snapshot "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info-${station_stamp}.json" --output-dir "${TOPOLOGY_OPERATION_ROOT}/timetables"
 
-      - name: Prepare current ITX collection
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
-        env:
-          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "ITX preflight is not running from its claimed main" >&2; exit 1; }
-          [[ -n "${DATA_GO_KR_SERVICE_KEY:-}" && "${DATA_GO_KR_SERVICE_KEY}" != *$'\n'* && "${DATA_GO_KR_SERVICE_KEY}" != *$'\r'* ]] || { echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2; exit 1; }
-          node tools/datapack/emit-station-catalog-pack.mjs --output "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --catalog-pack-id "itx-current-station-catalog-v1"
-          # #1298: 승격 workflow와 같은 규칙이다. 같은 KST 날 앞선 수집이 실패뿐이고 하루 시도 상한·요청 예산 안이면 다시 수집한다.
-          node tools/ci/guard-itx-current-collection-budget.mjs --output "${TOPOLOGY_OPERATION_ROOT}/freshness.json" --allow-after-failure
-      - name: Collect current ITX timetable once
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
-        env:
-          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
-        run: |
-          set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "ITX collector is not running from its claimed main" >&2; exit 1; }
-          set +e
-          node tools/datapack/run-current-itx-collection.mjs --output "${TOPOLOGY_OPERATION_ROOT}/itx-result.json" --completeness-output "${TOPOLOGY_OPERATION_ROOT}/itx-completeness.json" --station-catalog-pack "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --freshness-output "${TOPOLOGY_OPERATION_ROOT}/freshness.json"
-          collector_status=$?
-          set -e
-          [[ "${collector_status}" == "0" || "${collector_status}" == "1" ]] || exit "${collector_status}"
-          collection_input="${TOPOLOGY_OPERATION_ROOT}/itx-completeness.json"
-          if [[ "${collector_status}" == "1" ]]; then collection_input="${TOPOLOGY_OPERATION_ROOT}/itx-result.json"; fi
-          node tools/datapack/build-itx-current-topology-admission.mjs --collection "${collection_input}" --coverage-contract tools/datapack/itx-cheongchun-coverage-contract.json --output "${TOPOLOGY_OPERATION_ROOT}/itx-current-admission.json"
       - name: Derive immutable input identities from collector output
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
@@ -298,18 +263,7 @@ jobs:
             for (const [key, target, source] of values) { console.log(key + "=" + target); if (source) console.log(key + "_SOURCE=" + source); }
             console.log("TOPOLOGY_BUILD_NOW=" + new Date().toISOString());
           ' >> "${GITHUB_ENV}"
-      - name: Derive current ITX admission identity
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
-        run: |
-          set -euo pipefail
-          node --input-type=module -e '
-            import { readFile } from "node:fs/promises";
-            const admission = JSON.parse(await readFile(process.env.TOPOLOGY_OPERATION_ROOT + "/itx-current-admission.json", "utf8"));
-            if (admission.artifactKind !== "itx-current-network-edge-admission" || admission.artifactId !== "itx-current-network-edge-admission-" + admission.serviceDate || !/^[0-9]{8}$/u.test(admission.serviceDate)) throw new Error("ITX admission identity is invalid");
-            console.log("TOPOLOGY_ITX_ADMISSION_PATH=tools/datapack/" + admission.artifactId + ".json");
-            console.log("TOPOLOGY_ITX_ADMISSION_PATH_SOURCE=" + process.env.TOPOLOGY_OPERATION_ROOT + "/itx-current-admission.json");
-          ' >> "${GITHUB_ENV}"
-      - name: Commit exactly four or five immutable current topology inputs
+      - name: Commit exactly four immutable current topology inputs
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
@@ -318,7 +272,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           input_keys=(TOPOLOGY_CAPITAL_PATH TOPOLOGY_INCHEON_PATH TOPOLOGY_LINE1_PATH TOPOLOGY_LINE2_PATH)
-          if [[ "${{ steps.decision.outputs.itx_refresh_required }}" == "true" ]]; then input_keys+=(TOPOLOGY_ITX_ADMISSION_PATH); fi
           input_targets=()
           for key in "${input_keys[@]}"; do
             target="${!key}"; source_key="${key}_SOURCE"; source="${!source_key}"
@@ -395,18 +348,6 @@ jobs:
         with:
           name: current-capital-topology-refresh-${{ github.run_id }}
           path: ${{ runner.temp }}/current-capital-topology-refresh/decision.json
-          if-no-files-found: ignore
-          retention-days: 14
-      - name: Upload sanitized ITX review evidence
-        if: ${{ always() && steps.decision.outputs.itx_refresh_required == 'true' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: current-capital-topology-refresh-itx-review-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/itx-result.json
-            ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/itx-completeness.json
-            ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/provider-response-capture.json
-            ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/freshness.json
           if-no-files-found: ignore
           retention-days: 14
       - name: Remove this failed run's empty topology claim

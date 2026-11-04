@@ -111,9 +111,9 @@ async function setCandidateItxAdmission(input, freshUntil) {
   await writeFile(input.candidatePath, JSON.stringify(candidate));
 }
 
-test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EXPIRED", async () => {
+test("earliest canonical current topology expiry determines NOT_DUE and DUE", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
-  for (const [now, state] of [["2026-08-30T05:59:59.999Z", "NOT_DUE"], ["2026-08-30T06:00:00.000Z", "DUE"], ["2026-08-30T12:00:00.000Z", "EXPIRED"]]) {
+  for (const [now, state] of [["2026-08-30T05:59:59.999Z", "NOT_DUE"], ["2026-08-30T06:00:00.000Z", "DUE"]]) {
     assert.equal((await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date(now) })).state, state);
   }
   assert.deepEqual(await decideCurrentCapitalTopologyRefresh({
@@ -128,19 +128,25 @@ test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EX
   });
 });
 
-test("같은 KST 날 ITX를 이미 수집했고 이번 갱신이 ITX 수집을 요구하면 WAIT_ITX_COLLECTED_TODAY로 정상 종료한다 (F4)", async () => {
+test("ITX 증거가 임계 안이면 DUE·EXPIRED여도 승격을 기다리고, 임계 밖이면 진행한다", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  for (const now of ["2026-08-30T11:00:00.000Z", "2026-08-30T12:00:00.000Z"]) {
+    const waiting = await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date(now) });
+    assert.deepEqual({ state: waiting.state, itxRefreshRequired: waiting.itxRefreshRequired }, { state: "WAIT_ITX_PROMOTION", itxRefreshRequired: true }, now);
+  }
+  const proceeding = await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") });
+  assert.deepEqual({ state: proceeding.state, itxRefreshRequired: proceeding.itxRefreshRequired }, { state: "DUE", itxRefreshRequired: false });
+});
+
+test("ITX 승격을 기다리는 동안 빈 claim은 재사용하지 않고 남기며, 출력이 있는 claim은 복구한다", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   const now = new Date("2026-08-30T11:00:00.000Z");
-  const due = await decideCurrentCapitalTopologyRefresh({ ...input, now });
-  assert.deepEqual({ state: due.state, itxRefreshRequired: due.itxRefreshRequired }, { state: "DUE", itxRefreshRequired: true });
-  const waiting = await decideCurrentCapitalTopologyRefresh({ ...input, now, itxCollectedToday: true });
-  assert.deepEqual({ state: waiting.state, itxRefreshRequired: waiting.itxRefreshRequired }, { state: "WAIT_ITX_COLLECTED_TODAY", itxRefreshRequired: true });
-  // 만료된 뒤에도, ITX 수집이 필요 없으면(아직 신선하면) 평소처럼 진행한다.
-  const expired = await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T12:00:00.000Z"), itxCollectedToday: true });
-  assert.equal(expired.state, "WAIT_ITX_COLLECTED_TODAY");
-  const notRequired = await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z"), itxCollectedToday: true });
-  assert.deepEqual({ state: notRequired.state, itxRefreshRequired: notRequired.itxRefreshRequired }, { state: "DUE", itxRefreshRequired: false });
-  await assert.rejects(() => decideCurrentCapitalTopologyRefresh({ ...input, now, itxCollectedToday: "yes" }), /decision input is invalid/);
+  const branch = `${PREFIX}21`;
+  await setClaims(input, [claimRecord(21)], claimEvidence(21));
+  const waiting = await decideCurrentCapitalTopologyRefresh({ ...input, now });
+  assert.deepEqual({ state: waiting.state, branch: waiting.branch }, { state: "WAIT_ITX_PROMOTION", branch });
+  await setClaims(input, [claimRecord(22, { commitCount: 3 })], withOutput(22));
+  assert.equal((await decideCurrentCapitalTopologyRefresh({ ...input, now })).state, "RECOVER_CLAIM");
 });
 
 test("requires exactly sixteen distinct admitted capital sources and all three Incheon inputs", async () => {
@@ -165,7 +171,7 @@ test("candidate-selected ITX freshness participates in the earliest due decision
     ...input,
     now: new Date("2026-08-30T04:00:00.000Z"),
   });
-  assert.equal(result.state, "DUE");
+  assert.equal(result.state, "WAIT_ITX_PROMOTION");
   assert.equal(result.itxFreshUntil, "2026-08-30T10:00:00.000Z");
   assert.equal(result.itxRefreshRequired, true);
 });
@@ -189,7 +195,7 @@ test("ITX provider skip uses the standalone evidence retained by the next candid
     ...input,
     now: new Date("2026-08-30T07:00:00.000Z"),
   });
-  assert.equal(result.state, "DUE");
+  assert.equal(result.state, "WAIT_ITX_PROMOTION");
   assert.equal(result.itxFreshUntil, "2026-08-30T10:00:00.000Z");
   assert.equal(result.itxRefreshRequired, true);
 });
@@ -277,13 +283,12 @@ test("a claim without evidence is not guessed and the CLI writes the cleanup cla
   await setClaims(input, [claimRecord(12, { mergeBaseSha: OLD_MAIN })], claimEvidence(12));
   const outputPath = path.join(input.repositoryRoot, "decision.json"); const githubOutputPath = path.join(input.repositoryRoot, "github-output.txt");
   await runCurrentCapitalTopologyRefreshDecision({ ...input, outputPath, githubOutputPath, now: NOW });
-  assert.equal(await readFile(githubOutputPath, "utf8"), `state=DUE\nbranch=\ncleanup_claims=${PREFIX}12\nitx_fresh_until=2026-08-30T16:00:00.000Z\nitx_refresh_required=false\n`);
+  assert.equal(await readFile(githubOutputPath, "utf8"), `state=DUE\nbranch=\ncleanup_claims=${PREFIX}12\nitx_fresh_until=2026-08-30T16:00:00.000Z\n`);
 });
 
 test("preflight blocks every possible UTC or KST identity during the job window", async () => {
   const { currentCapitalTopologyPreflight } = await load();
   assert.deepEqual(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/sources/incheon-line1-train-timetable-20260831.json"] }).state, "WAIT_IMMUTABLE_IDENTITY");
-  assert.deepEqual(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/itx-current-network-edge-admission-20260831.json"] }).state, "WAIT_IMMUTABLE_IDENTITY");
-  assert.equal(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/itx-current-network-edge-admission-20260831.json"], itxRefreshRequired: false }).state, "CLEAR");
+  assert.equal(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:59:00.000Z"), existingPaths: ["tools/datapack/itx-current-network-edge-admission-20260831.json"] }).state, "CLEAR");
   assert.equal(currentCapitalTopologyPreflight({ now: new Date("2026-08-30T14:00:00.000Z"), existingPaths: [] }).state, "CLEAR");
 });
