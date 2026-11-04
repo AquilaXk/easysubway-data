@@ -60,7 +60,7 @@ test("predeployment measurement is a trusted main-only manual workflow", () => {
     "pinned node setup");
   requireText(text, /actions\/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad/,
     "pinned Java setup");
-  requireText(text, /oras-project\/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4/,
+  requireText(text, /oras-project\/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63/,
     "pinned ORAS setup");
   requireText(text, /version: 1\.3\.3/, "pinned ORAS version");
   requireText(text, /java-version: "21\.0\.11"/, "pinned Java version");
