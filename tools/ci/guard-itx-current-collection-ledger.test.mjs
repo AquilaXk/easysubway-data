@@ -192,19 +192,30 @@ test("증거를 읽을 수 없는 실패 run은 null로 남고, 판정은 ITX_CO
   assert.throws(() => decideAt(NOW, missing.entries), /ITX_COLLECTION_EVIDENCE_MISSING/u);
 });
 
-// F1: topology 갱신도 실패해도 capture를 올리므로(current-capital-topology-refresh-itx-review-<run id>) 쓴 요청 수를 증명할 수 있다.
-test("topology 갱신 run이 실패한 날도 그 run의 증거 artifact에서 요청 수를 읽는다", async () => {
-  const topology = {
-    topologyRuns: [run(FAILED_RUN, TOPOLOGY, { event: "schedule" })],
-    runs: [currentRun()],
-    jobs: { [FAILED_RUN]: [job(FAILED_RUN, TOPOLOGY, "failure")] },
+// F1: 승격 run이 실패해도 capture를 올리므로(itx-current-promotion-<run id>) 쓴 요청 수를 증명할 수 있다.
+test("승격 run이 실패한 날도 그 run의 증거 artifact에서 요청 수를 읽는다", async () => {
+  const promotion = {
+    runs: [run(FAILED_RUN, PROMOTION), currentRun()],
+    jobs: { [FAILED_RUN]: [job(FAILED_RUN, PROMOTION, "failure")] },
     artifacts: { [FAILED_RUN]: (directory) => writeFailedRunArtifact(directory, { requestCount: 420 }) },
   };
-  const { fetchImpl, downloadArtifact, downloads } = github(topology);
+  const { fetchImpl, downloadArtifact, downloads } = github(promotion);
   const { entries } = await readItxCollectionLedger({ env: env(), now: NOW, fetchImpl, downloadArtifact });
-  assert.deepEqual(entries.map(({ workflowFile, outcome, requestCount }) => ({ workflowFile, outcome, requestCount })), [{ workflowFile: TOPOLOGY.file, outcome: "FAILED", requestCount: 420 }]);
-  assert.equal(downloads[0].artifactName, `current-capital-topology-refresh-itx-review-${FAILED_RUN}`);
+  assert.deepEqual(entries.map(({ workflowFile, outcome, requestCount }) => ({ workflowFile, outcome, requestCount })), [{ workflowFile: PROMOTION.file, outcome: "FAILED", requestCount: 420 }]);
+  assert.equal(downloads[0].artifactName, `itx-current-promotion-${FAILED_RUN}`);
   assert.deepEqual(stateOf(decideAt(NOW, entries, true)), { state: "COLLECT", reason: "SAFETY_LEAD" });
+});
+
+test("topology 갱신 run은 collector step이 없어도 가드가 읽지 않는다 (ledger·가드·probe 모두 통과)", async () => {
+  const unrelatedStep = { name: "Refresh topology", status: "completed", conclusion: "success" };
+  const fixture = {
+    runs: [currentRun()],
+    topologyRuns: [run(FAILED_RUN, TOPOLOGY, { event: "schedule" })],
+    jobs: { [FAILED_RUN]: [{ id: FAILED_RUN + 10_000, run_id: FAILED_RUN, name: TOPOLOGY.job, status: "completed", conclusion: "success", steps: [unrelatedStep] }] },
+  };
+  assert.deepEqual((await ledgerOf(fixture)).entries, []);
+  assert.deepEqual(await guardItxCurrentCollectionBudget(options(fixture)), { repository: REPOSITORY, runId: CURRENT_RUN, quotaWindow: "2026-10-17", otherRunCount: 0 });
+  assert.equal((await probeItxCollectionToday(options(fixture))).collectedToday, false);
 });
 
 test("ledger는 목록 응답이 잘못되면 추정하지 않고 실패한다", async () => {
