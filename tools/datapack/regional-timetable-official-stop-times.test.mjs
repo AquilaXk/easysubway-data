@@ -326,8 +326,16 @@ test("커밋된 전국 정본 팩의 대전 정차 시각은 원천 값이고 �
 // head와 정확히 같을 것을 내용과 무관하게 요구하며, 이 테스트는 그 게이트를 완화하지 않고 required-pr에서 내용이 같은 재확인만 허용한다.
 const RETAINED_SOURCE_ID = "kric-nationwide-timetable-file";
 
-// 광주 정차 시각을 정하는 보관본 내용: 원천 원본 sha256과 계약의 결속 내용(역·노선·서비스·요일 시작·공휴일 날짜).
-// 갱신마다 새로 쓰는 확인 창(calendar 시작·종료일, confirmationWindow, 공휴일 증거의 수집 시각·manifest sha)은 내용이 아니라 제외한다.
+function windowCalendarDates(contract, field, evidenceField) {
+  const calendar = contract.calendar;
+  const dates = calendar?.[field];
+  if (!Array.isArray(dates)) return dates;
+  const startDate = calendar?.startDate ?? "";
+  const endDate = calendar?.endDate ?? "";
+  const evidenceDates = new Set((contract.holidayCalendarEvidence?.months ?? []).flatMap((month) => month?.[evidenceField] ?? []));
+  return dates.filter((date) => (date >= startDate && date <= endDate) || !evidenceDates.has(date));
+}
+
 function retainedContentKey(row) {
   const contract = row.retainedTimetableInputs.contract;
   return JSON.stringify({
@@ -339,8 +347,8 @@ function retainedContentKey(row) {
     serviceIds: contract.serviceIds,
     servicePatterns: contract.servicePatterns,
     serviceDayStartSeconds: contract.serviceDayStartSeconds,
-    publicHolidayDates: contract.calendar?.publicHolidayDates,
-    festivalDates: contract.calendar?.festivalDates,
+    publicHolidayDates: windowCalendarDates(contract, "publicHolidayDates", "holidayDates"),
+    festivalDates: windowCalendarDates(contract, "festivalDates", "festivalDates"),
   });
 }
 
@@ -422,13 +430,15 @@ const changeCalendarDates = (field) => (row) => {
   next.retainedTimetableInputs.contract.calendar = { ...next.retainedTimetableInputs.contract.calendar, [field]: ["20991225"] };
   return next;
 };
-// 갱신마다 새로 쓰는 확인 창만 바뀐 행(실제 #1004가 이렇다).
 const shiftConfirmationWindow = (row) => {
   const next = structuredClone(row);
   const contract = next.retainedTimetableInputs.contract;
-  contract.calendar = { ...contract.calendar, startDate: "20991231", endDate: "21000107" };
+  contract.calendar = { ...contract.calendar, startDate: "20991231", endDate: "21000107", publicHolidayDates: [], festivalDates: [] };
   contract.confirmationWindow = { observedAt: "2099-01-01T00:00:00.000Z", expiresAt: "2099-01-08T00:00:00.000Z" };
-  contract.holidayCalendarEvidence = { ...contract.holidayCalendarEvidence, manifestSha256: "4".repeat(64) };
+  contract.holidayCalendarEvidence = {
+    manifestSha256: "4".repeat(64),
+    months: [{ year: 2099, month: 12, rawSha256: "5".repeat(64), rawByteLength: 100, holidayDates: [], festivalDates: [], retrievedAt: "2099-01-01T00:00:00.000Z" }],
+  };
   return next;
 };
 
