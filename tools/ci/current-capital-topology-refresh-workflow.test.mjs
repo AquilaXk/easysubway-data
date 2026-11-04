@@ -104,7 +104,6 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   assert.match(yml, /Refs #636, #625/); assert.doesNotMatch(yml, /oci:|aws|retry|fallback|automerge|git push origin main/i);
 });
 
-// QA 2026-11-04: ITX 공급자는 승격 workflow만 부른다. topology 갱신은 승격 결과를 기다린다.
 test("topology refresh는 ITX 공급자를 부르지 않고 WAIT_ITX_PROMOTION이면 안내만 남기고 끝난다", () => {
   const decision = stepBody("Decide whether current topology refresh is due");
   assert.doesNotMatch(decision, /guard-itx-current-collection-budget|itx-collected-today|itx_collected/);

@@ -141,6 +141,7 @@ function settleTopologyClaims({ claims, prs, plan }) {
   return { open, available, cleanupClaims: stale.map(({ branch }) => branch).sort(byText) };
 }
 
+const itxPromotionPending = ({ itxRefreshRequired }) => itxRefreshRequired;
 export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candidatePath, policyPath, prsPath, claimsPath, claimEvidencePath, repositoryRoot = process.cwd(), repository, currentMainSha, now = new Date() } = {}) {
   const [inventoryBytes, candidateBytes, policyBytes, prsBytes, claimsBytes, evidenceBytes] = await Promise.all([
     readFile(path.resolve(inventoryPath)), readFile(path.resolve(candidatePath)), readFile(path.resolve(policyPath)),
@@ -165,14 +166,12 @@ export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candi
   if (open.length === 1) return { state: "OPEN_PR", ...component, cleanupClaims };
   if (plan.active.length === 1) return { state: "CLAIM_IN_PROGRESS", ...component, branch: plan.active[0], cleanupClaims };
   if (available.length === 1) {
-    const reuse = available[0].commitCount === 1;
-    // REUSE_CLAIM은 수집을 다시 하는 경로라 ITX 승격을 기다린다. RECOVER_CLAIM은 이미 만든 출력을 PR로 올릴 뿐이다.
-    if (reuse && component.itxRefreshRequired) return { state: "WAIT_ITX_PROMOTION", ...component, branch: available[0].branch, cleanupClaims };
-    return { state: reuse ? "REUSE_CLAIM" : "RECOVER_CLAIM", ...component, branch: available[0].branch, cleanupClaims };
+    const claimRequiresRecollection = available[0].commitCount === 1;
+    if (claimRequiresRecollection && itxPromotionPending(component)) return { state: "WAIT_ITX_PROMOTION", ...component, branch: available[0].branch, cleanupClaims };
+    return { state: claimRequiresRecollection ? "REUSE_CLAIM" : "RECOVER_CLAIM", ...component, branch: available[0].branch, cleanupClaims };
   }
   const state = dueStateOf(current, freshUntil, threshold);
-  // ITX 공급자는 승격 workflow만 부른다. ITX 증거가 갱신 임계 안이면 이상이 아니라 승격을 기다린다.
-  if (component.itxRefreshRequired && state !== "NOT_DUE") return { state: "WAIT_ITX_PROMOTION", ...component, cleanupClaims };
+  if (itxPromotionPending(component) && state !== "NOT_DUE") return { state: "WAIT_ITX_PROMOTION", ...component, cleanupClaims };
   return { state, ...component, cleanupClaims };
 }
 export async function runCurrentCapitalTopologyRefreshDecision({ outputPath, githubOutputPath, ...input } = {}) { const result = await decideCurrentCapitalTopologyRefresh(input); await Promise.all([writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }), writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\ncleanup_claims=${result.cleanupClaims.join(",")}\nitx_fresh_until=${result.itxFreshUntil ?? ""}\n`, { flag: "a" })]); return result; }
