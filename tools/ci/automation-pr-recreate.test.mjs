@@ -470,7 +470,7 @@ test("단계마다 재생성 방식이 정해져 있다: ITX 승격은 보관 ca
   // 공급자 호출을 하루 한 번으로 묶는 예산 가드(guard-itx-current-collection-budget)에 등록된 수집 workflow는 모두 닫지 않는 방식이다.
   const guard = readFileSync(path.resolve(import.meta.dirname, "guard-itx-current-collection-budget.mjs"), "utf8");
   const guarded = [...guard.matchAll(/workflowFile: "([^"]+)"/gu)].map((match) => match[1]).filter((workflow) => workflow !== "itx-current-collection.yml");
-  assert.deepEqual(guarded.sort(), ["current-capital-topology-refresh.yml", "itx-current-promotion.yml"]);
+  assert.deepEqual(guarded.sort(), ["itx-current-promotion.yml"]);
   for (const workflow of guarded) {
     const stage = Object.keys(AUTOMATION_STAGE_WORKFLOWS).find((candidate) => AUTOMATION_STAGE_WORKFLOWS[candidate] === workflow);
     assert.notEqual(STAGE_RECREATE_MODE[stage], RECREATE_MODE.CLOSE, `${stage}: 하루 한 번 수집분을 들고 있어 단순히 닫으면 그날 수집분을 잃는다`);

@@ -18,9 +18,9 @@ const CURRENT_RUN = 39800679317;
 const PRIOR_RUN = 39798715632;
 const TOKEN = "synthetic-github-token-that-must-not-leak";
 const COLLECTION = "itx-current-collection.yml";
-const TOPOLOGY = "current-capital-topology-refresh.yml";
-const TOPOLOGY_JOB = "Current topology refresh";
-const TOPOLOGY_STEP = "Collect current ITX timetable once";
+const PROMOTION = "itx-current-promotion.yml";
+const PROMOTION_JOB = "ITX current promotion";
+const PROMOTION_STEP = "Collect current ITX timetable";
 
 const env = (overrides = {}) => ({
   GITHUB_REPOSITORY: REPOSITORY,
@@ -35,15 +35,15 @@ const run = (id, workflowFile, event, overrides = {}) => ({
   id, status: "completed", created_at: "2026-10-22T14:00:00Z", event, head_branch: "main", run_attempt: 1, path: `.github/workflows/${workflowFile}`, ...overrides,
 });
 const currentRun = () => run(CURRENT_RUN, COLLECTION, "workflow_dispatch", { status: "in_progress", created_at: "2026-10-22T14:56:00Z" });
-const priorTopologyRun = (overrides) => run(PRIOR_RUN, TOPOLOGY, "schedule", overrides);
-const collectorStep = (conclusion, overrides = {}) => ({ name: TOPOLOGY_STEP, status: "completed", conclusion, completed_at: "2026-10-22T14:30:00Z", ...overrides });
+const priorPromotionRun = (overrides) => run(PRIOR_RUN, PROMOTION, "schedule", overrides);
+const collectorStep = (conclusion, overrides = {}) => ({ name: PROMOTION_STEP, status: "completed", conclusion, completed_at: "2026-10-22T14:30:00Z", ...overrides });
 const collectorJob = (conclusion, steps = [collectorStep(conclusion)], overrides = {}) => ({
-  id: PRIOR_RUN + 10_000, run_id: PRIOR_RUN, name: TOPOLOGY_JOB, status: "completed", conclusion: "failure", steps, ...overrides,
+  id: PRIOR_RUN + 10_000, run_id: PRIOR_RUN, name: PROMOTION_JOB, status: "completed", conclusion: "failure", steps, ...overrides,
 });
 const baseRuns = (extra = {}) => ({ [`${COLLECTION}|workflow_dispatch`]: [currentRun()], ...extra });
-// 같은 날 topology 갱신(schedule)의 이전 run들이 목록에 있는 시나리오. jobs는 그 run(PRIOR_RUN)의 job 목록이다.
-const withTopologyRuns = (runs, jobs = []) => ({ runs: baseRuns({ [`${TOPOLOGY}|schedule`]: runs }), jobs: { [PRIOR_RUN]: jobs } });
-const withPriorJobs = (jobs) => withTopologyRuns([priorTopologyRun()], jobs);
+// 같은 날 승격(schedule)의 이전 run들이 목록에 있는 시나리오. jobs는 그 run(PRIOR_RUN)의 job 목록이다.
+const withPromotionRuns = (runs, jobs = []) => ({ runs: baseRuns({ [`${PROMOTION}|schedule`]: runs }), jobs: { [PRIOR_RUN]: jobs } });
+const withPriorJobs = (jobs) => withPromotionRuns([priorPromotionRun()], jobs);
 
 function runGuard(args, { scenario = {}, envOverrides = {} } = {}) {
   const result = spawnSync(process.execPath, ["--import", STUB, GUARD, ...args], {
@@ -65,10 +65,10 @@ async function withDirectory(callback) {
 
 // 목록 안의 항목이 기대한 모양이 아니다. 각 행은 항목의 검사 하나만 어긴다: [이름, 항목]
 const INVALID_RUNS = [
-  ["run_attempt가 0", priorTopologyRun({ run_attempt: 0 })],
-  ["run_attempt가 정수가 아님", priorTopologyRun({ run_attempt: 1.5 })],
-  ["run id가 0", priorTopologyRun({ id: 0 })],
-  ["run id가 숫자가 아님", priorTopologyRun({ id: "7" })],
+  ["run_attempt가 0", priorPromotionRun({ run_attempt: 0 })],
+  ["run_attempt가 정수가 아님", priorPromotionRun({ run_attempt: 1.5 })],
+  ["run id가 0", priorPromotionRun({ id: 0 })],
+  ["run id가 숫자가 아님", priorPromotionRun({ id: "7" })],
   ["run 항목이 null", null],
   ["run 항목이 배열", []],
 ];
@@ -132,26 +132,26 @@ const PROBE_FAILURES = [
   ["이 run이 목록에 없음", { runs: {} }, {}, "reason=CURRENT_RUN_MISMATCH"],
   ["이 run이 두 번째 시도임", { runs: baseRuns({ [`${COLLECTION}|workflow_dispatch`]: [{ ...currentRun(), run_attempt: 2 }] }) }, {}, "reason=CURRENT_RUN_MISMATCH"],
   ["이 run의 event가 GITHUB_EVENT_NAME과 다름", {}, { GITHUB_EVENT_NAME: "schedule" }, "reason=CURRENT_RUN_MISMATCH"],
-  ["다른 workflow의 run이 이 run과 같은 id", withTopologyRuns([priorTopologyRun({ id: CURRENT_RUN })]), {}, "reason=RUN_IDENTITY_MISMATCH"],
-  ["이전 run이 같은 목록에 두 번", withTopologyRuns([priorTopologyRun(), priorTopologyRun()]), {}, "reason=RUN_IDENTITY_MISMATCH"],
-  ...INVALID_RUNS.map(([name, record]) => [`run 항목 이상: ${name}`, withTopologyRuns([record]), {}, `reason=RUN_RECORD_INVALID workflow=${TOPOLOGY}`]),
-  ...MISPLACED_RUNS.map(([name, overrides]) => [`run이 조회 조건과 다름: ${name}`, withTopologyRuns([priorTopologyRun(overrides)]), {}, `reason=RUN_IDENTITY_MISMATCH workflow=${TOPOLOGY}`]),
-  ["이전 run의 jobs API가 503", { ...withPriorJobs([]), jobsFault: { status: 503 } }, {}, `reason=GITHUB_API_STATUS status=503 workflow=${TOPOLOGY}`],
-  ["이전 run에 job이 하나도 없음", withPriorJobs([]), {}, `reason=JOB_LIST_EMPTY workflow=${TOPOLOGY}`],
-  ["이전 run의 job이 한 페이지 상한(100)을 넘음", { ...withPriorJobs([]), jobsFault: { totalCount: 101 } }, {}, `reason=JOB_LIST_LIMIT workflow=${TOPOLOGY}`],
-  ["jobs의 total_count가 목록 길이와 다름", { ...withPriorJobs([collectorJob("success")]), jobsFault: { totalCount: 2 } }, {}, `reason=GITHUB_API_BODY_INVALID workflow=${TOPOLOGY}`],
-  ["job이 같은 id로 두 번", withPriorJobs([collectorJob("success"), collectorJob("success")]), {}, `reason=JOB_RECORD_INVALID workflow=${TOPOLOGY}`],
-  ...INVALID_JOBS.map(([name, record]) => [`job 항목 이상: ${name}`, withPriorJobs([record]), {}, `reason=JOB_RECORD_INVALID workflow=${TOPOLOGY}`]),
-  ["이전 run에 collector step이 없음", withPriorJobs([collectorJob("failure", [{ name: "Unrelated step", status: "completed", conclusion: "success" }])]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${TOPOLOGY}`],
-  ["collector step이 둘", withPriorJobs([collectorJob("success", [collectorStep("success"), collectorStep("success")])]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${TOPOLOGY}`],
-  ["collector step이 시작 전(queued)인데 결과가 있음", withPriorJobs([collectorJob("success", [collectorStep("success", { status: "queued" })])]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${TOPOLOGY}`],
-  ["collector step이 끝났는데 결과가 없음", withPriorJobs([collectorJob("success", [collectorStep(null)])]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${TOPOLOGY}`],
-  ["collector step 결과를 해석할 수 없음", withPriorJobs([collectorJob("neutral")]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${TOPOLOGY}`],
+  ["다른 workflow의 run이 이 run과 같은 id", withPromotionRuns([priorPromotionRun({ id: CURRENT_RUN })]), {}, "reason=RUN_IDENTITY_MISMATCH"],
+  ["이전 run이 같은 목록에 두 번", withPromotionRuns([priorPromotionRun(), priorPromotionRun()]), {}, "reason=RUN_IDENTITY_MISMATCH"],
+  ...INVALID_RUNS.map(([name, record]) => [`run 항목 이상: ${name}`, withPromotionRuns([record]), {}, `reason=RUN_RECORD_INVALID workflow=${PROMOTION}`]),
+  ...MISPLACED_RUNS.map(([name, overrides]) => [`run이 조회 조건과 다름: ${name}`, withPromotionRuns([priorPromotionRun(overrides)]), {}, `reason=RUN_IDENTITY_MISMATCH workflow=${PROMOTION}`]),
+  ["이전 run의 jobs API가 503", { ...withPriorJobs([]), jobsFault: { status: 503 } }, {}, `reason=GITHUB_API_STATUS status=503 workflow=${PROMOTION}`],
+  ["이전 run에 job이 하나도 없음", withPriorJobs([]), {}, `reason=JOB_LIST_EMPTY workflow=${PROMOTION}`],
+  ["이전 run의 job이 한 페이지 상한(100)을 넘음", { ...withPriorJobs([]), jobsFault: { totalCount: 101 } }, {}, `reason=JOB_LIST_LIMIT workflow=${PROMOTION}`],
+  ["jobs의 total_count가 목록 길이와 다름", { ...withPriorJobs([collectorJob("success")]), jobsFault: { totalCount: 2 } }, {}, `reason=GITHUB_API_BODY_INVALID workflow=${PROMOTION}`],
+  ["job이 같은 id로 두 번", withPriorJobs([collectorJob("success"), collectorJob("success")]), {}, `reason=JOB_RECORD_INVALID workflow=${PROMOTION}`],
+  ...INVALID_JOBS.map(([name, record]) => [`job 항목 이상: ${name}`, withPriorJobs([record]), {}, `reason=JOB_RECORD_INVALID workflow=${PROMOTION}`]),
+  ["이전 run에 collector step이 없음", withPriorJobs([collectorJob("failure", [{ name: "Unrelated step", status: "completed", conclusion: "success" }])]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${PROMOTION}`],
+  ["collector step이 둘", withPriorJobs([collectorJob("success", [collectorStep("success"), collectorStep("success")])]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${PROMOTION}`],
+  ["collector step이 시작 전(queued)인데 결과가 있음", withPriorJobs([collectorJob("success", [collectorStep("success", { status: "queued" })])]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${PROMOTION}`],
+  ["collector step이 끝났는데 결과가 없음", withPriorJobs([collectorJob("success", [collectorStep(null)])]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${PROMOTION}`],
+  ["collector step 결과를 해석할 수 없음", withPriorJobs([collectorJob("neutral")]), {}, `reason=COLLECTOR_STEP_SHAPE workflow=${PROMOTION}`],
   // 가드가 모르는 예외는 원문(여기서는 토큰이 섞인 메시지) 없이 INTERNAL_ERROR만 남는다.
   ["가드가 모르는 예외", { runsFault: { explodingResponse: `unexpected ${TOKEN}` } }, {}, "reason=INTERNAL_ERROR"],
   ...INVALID_ENVS.map(([name, overrides]) => [`환경 이상: ${name}`, {}, overrides, "reason=ENV_INVALID"]),
   ...RUNS_BODIES.map(([name, rawBody]) => [`runs 응답 모양 이상: ${name}`, { runsFault: { rawBody } }, {}, `reason=GITHUB_API_BODY_INVALID workflow=${COLLECTION}`]),
-  ...JOBS_BODIES.map(([name, rawBody]) => [`jobs 응답 모양 이상: ${name}`, { ...withPriorJobs([]), jobsFault: { rawBody } }, {}, `reason=GITHUB_API_BODY_INVALID workflow=${TOPOLOGY}`]),
+  ...JOBS_BODIES.map(([name, rawBody]) => [`jobs 응답 모양 이상: ${name}`, { ...withPriorJobs([]), jobsFault: { rawBody } }, {}, `reason=GITHUB_API_BODY_INVALID workflow=${PROMOTION}`]),
   ["200이 아닌 성공 상태(201)", { runsFault: { status: 201 } }, {}, `reason=GITHUB_API_STATUS status=201 workflow=${COLLECTION}`],
   ["응답 본문이 2MiB를 넘음", { runsFault: { padBytes: 2 * 1024 * 1024 } }, {}, `reason=GITHUB_API_BODY_INVALID workflow=${COLLECTION}`],
 ];
@@ -168,7 +168,7 @@ for (const [name, scenario, envOverrides, reasonLine] of PROBE_FAILURES) {
 test("정상 예산 거부(strict): 같은 날 다른 수집이 있으면 QUOTA_EXHAUSTED를 stderr와 영수증에 남긴다", async () => {
   await withDirectory(async (directory) => {
     const output = path.join(directory, "freshness.json");
-    const scenario = { runs: baseRuns({ [`${TOPOLOGY}|schedule`]: [priorTopologyRun()] }), jobs: { [PRIOR_RUN]: [collectorJob("success")] } };
+    const scenario = { runs: baseRuns({ [`${PROMOTION}|schedule`]: [priorPromotionRun()] }), jobs: { [PRIOR_RUN]: [collectorJob("success")] } };
     const result = runGuard(["--output", output], { scenario });
     assert.equal(result.status, 1);
     assert.deepEqual(result.lines, [FAILURE_MESSAGE, "reason=QUOTA_EXHAUSTED"]);
@@ -188,7 +188,7 @@ test("정상 예산 거부(strict): 같은 날 다른 수집이 있으면 QUOTA_
 test("정상 예산 거부(--allow-after-failure): 허용 규칙이 거부한 이유를 allowance로 함께 남긴다", async () => {
   await withDirectory(async (directory) => {
     const output = path.join(directory, "freshness.json");
-    const scenario = { runs: baseRuns({ [`${TOPOLOGY}|schedule`]: [priorTopologyRun()] }), jobs: { [PRIOR_RUN]: [collectorJob("success")] } };
+    const scenario = { runs: baseRuns({ [`${PROMOTION}|schedule`]: [priorPromotionRun()] }), jobs: { [PRIOR_RUN]: [collectorJob("success")] } };
     const result = runGuard(["--output", output, "--allow-after-failure"], { scenario });
     assert.equal(result.status, 1);
     assert.deepEqual(result.lines, [FAILURE_MESSAGE, "reason=QUOTA_EXHAUSTED allowance=ITX_COLLECTED_TODAY"]);

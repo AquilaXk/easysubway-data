@@ -16,13 +16,6 @@ const COLLECTION_CONTEXTS = [
     collectorStepName: "ITX current collection / Collect ITX current timetable",
     artifactPrefix: "itx-current-collection",
   },
-  {
-    workflowFile: "current-capital-topology-refresh.yml",
-    events: ["schedule", "workflow_dispatch"],
-    jobName: "Current topology refresh",
-    collectorStepName: "Collect current ITX timetable once",
-    artifactPrefix: "current-capital-topology-refresh-itx-review",
-  },
   // #977: ITX 원천 시간표 자동 승격 workflow도 같은 KST 하루 공급자 호출 예산을 나눠 쓴다.
   {
     workflowFile: "itx-current-promotion.yml",

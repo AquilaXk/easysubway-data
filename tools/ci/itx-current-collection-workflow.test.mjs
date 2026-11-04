@@ -224,7 +224,7 @@ test("KST quota guard는 fresh window의 exact current run과 자동 refresh led
     quotaWindow: "2026-08-13",
     otherRunCount: 0,
   });
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 3);
   const requestUrl = new URL(calls[0].url);
   assert.equal(requestUrl.origin, "https://api.github.com");
   assert.equal(requestUrl.pathname, "/repos/AquilaXk/easysubway-data/actions/workflows/itx-current-collection.yml/runs");
@@ -234,28 +234,6 @@ test("KST quota guard는 fresh window의 exact current run과 자동 refresh led
   assert.equal(requestUrl.searchParams.get("created"), "2026-08-12T15:00:00.000Z..2026-08-13T14:59:59.999Z");
   assert.equal(calls[0].options.headers.authorization, "Bearer synthetic-github-token-that-must-not-leak");
   assert.doesNotMatch(calls[0].url, /synthetic-github-token/);
-});
-
-test("KST quota guard는 scheduled topology refresh의 exact current run을 허용한다", async () => {
-  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
-  const result = await guardItxCurrentCollectionBudget({
-    env: budgetEnv({ GITHUB_EVENT_NAME: "schedule" }),
-    now: new Date("2026-08-12T15:15:00.000Z"),
-    async fetchImpl(url) {
-      const request = new URL(url);
-      const selected = request.pathname.includes("/current-capital-topology-refresh.yml/")
-        && request.searchParams.get("event") === "schedule"
-        ? [{
-            ...workflowRun(9001),
-            event: "schedule",
-            path: ".github/workflows/current-capital-topology-refresh.yml",
-          }]
-        : [];
-      return githubResponse({ total_count: selected.length, workflow_runs: selected });
-    },
-  });
-  assert.equal(result.runId, 9001);
-  assert.equal(result.otherRunCount, 0);
 });
 
 // #977: ITX 승격 workflow(정기·사람 dispatch)도 같은 KST 하루 한 번 제한을 나눠 쓴다.
@@ -309,7 +287,6 @@ const probeJob = (runId, name, stepName, conclusion) => ({
   steps: [{ name: stepName, status: "completed", conclusion }],
 });
 const PROBE_CONTEXTS = {
-  topology: { file: "current-capital-topology-refresh.yml", job: "Current topology refresh", step: "Collect current ITX timetable once" },
   promotion: { file: "itx-current-promotion.yml", job: "ITX current promotion", step: "Collect current ITX timetable" },
   manual: { file: "itx-current-collection.yml", job: "ITX current collection", step: "ITX current collection / Collect ITX current timetable" },
 };
@@ -333,10 +310,9 @@ test("probe는 같은 KST 날 다른 workflow가 collector에 들어갔는지만
   const now = new Date("2026-08-12T15:15:00.000Z");
   const cases = [
     { name: "아무도 수집하지 않음", current: "promotion", others: [], expected: false },
-    { name: "topology 갱신이 먼저 수집", current: "promotion", others: [["topology", "success"]], expected: true },
-    { name: "승격 workflow가 먼저 수집(topology 입장)", current: "topology", others: [["promotion", "failure"]], expected: true },
+    { name: "수동 수집이 먼저 성공", current: "promotion", others: [["manual", "success"]], expected: true },
     { name: "수동 수집이 먼저", current: "promotion", others: [["manual", "cancelled"]], expected: true },
-    { name: "다른 run은 collector가 skipped라 공급자를 부르지 않음", current: "topology", others: [["promotion", "skipped"]], expected: false },
+    { name: "다른 run은 collector가 skipped라 공급자를 부르지 않음", current: "promotion", others: [["manual", "skipped"]], expected: false },
   ];
   for (const { name, current, others, expected } of cases) {
     const runsByFile = {};
@@ -358,25 +334,26 @@ test("probe는 같은 KST 날 다른 workflow가 collector에 들어갔는지만
   }
 });
 
-test("같은 KST 날 topology 갱신이 먼저 ITX를 수집하면 승격 판정은 probe 결과로 WAIT하고 다음 날 다시 수집한다 (F4)", async () => {
+test("같은 KST 날 수동 수집이 먼저 ITX를 수집하면 승격 판정은 probe 결과로 WAIT하고 다음 날 다시 수집한다 (F4)", async () => {
   const { probeItxCollectionToday, readItxCollectionLedger } = await loadBudgetGuard();
   const { decideItxCurrentPromotion } = await import("./decide-itx-current-promotion.mjs");
   const contract = { sourceTimetableArtifact: { status: "ADMITTED", freshUntil: "2026-10-12T00:00:00+09:00" } };
   const decideAt = (now, collectionEntries) => decideItxCurrentPromotion({
     now, contract, pullRequests: [], branches: [], repository: "AquilaXk/easysubway-data", limits: { pullRequests: 1000 }, collectionEntries,
   });
-  // 2026-10-10 03:00 KST: topology 갱신(01:47 KST)이 먼저 collector에 들어갔다.
+  // 2026-10-10 03:00 KST: 수동 수집(01:47 KST)이 먼저 collector에 들어갔다.
   const sameDay = new Date("2026-10-09T18:00:00.000Z");
-  const topologyRun = { ...workflowRun(9000, "2026-10-09T16:47:00.000Z"), event: "schedule", path: ".github/workflows/current-capital-topology-refresh.yml" };
+  const manualRun = { ...workflowRun(9000, "2026-10-09T16:47:00.000Z"), event: "workflow_dispatch", path: ".github/workflows/itx-current-collection.yml" };
   const promotionRun = { ...workflowRun(9001, "2026-10-09T18:00:00.000Z"), event: "schedule", path: ".github/workflows/itx-current-promotion.yml" };
   const fetchImpl = async (url) => {
     const request = new URL(url);
     if (request.pathname.endsWith("/runs")) {
       const file = request.pathname.split("/").at(-2);
-      const selected = request.searchParams.get("event") !== "schedule" ? [] : file === "current-capital-topology-refresh.yml" ? [topologyRun] : file === "itx-current-promotion.yml" ? [promotionRun] : [];
+      const event = request.searchParams.get("event");
+      const selected = event === "workflow_dispatch" && file === "itx-current-collection.yml" ? [manualRun] : event === "schedule" && file === "itx-current-promotion.yml" ? [promotionRun] : [];
       return githubResponse({ total_count: selected.length, workflow_runs: selected });
     }
-    return githubResponse({ total_count: 1, jobs: [{ id: 19_000, run_id: 9000, name: "Current topology refresh", status: "completed", conclusion: "success", steps: [{ name: "Collect current ITX timetable once", status: "completed", conclusion: "success" }] }] });
+    return githubResponse({ total_count: 1, jobs: [{ id: 19_000, run_id: 9000, name: "ITX current collection", status: "completed", conclusion: "success", steps: [{ name: "ITX current collection / Collect ITX current timetable", status: "completed", conclusion: "success" }] }] });
   };
   const probe = await probeItxCollectionToday({ env: budgetEnv({ GITHUB_EVENT_NAME: "schedule", GITHUB_RUN_ID: "9001" }), now: sameDay, fetchImpl });
   assert.equal(probe.collectedToday, true);
