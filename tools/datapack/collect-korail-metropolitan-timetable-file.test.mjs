@@ -346,7 +346,10 @@ test("#988 lineName이 주어지면 코레일 시각표 게시판의 최신 글 
         }
         return xlsxResponse();
       },
-    }), new RegExp(`^Error: KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected ${URL.replaceAll(".", "\\.")} but board head is ${NEWER_URL.replaceAll(".", "\\.")}$`, "u"));
+    }), {
+      name: "Error",
+      message: `KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected ${URL} but board head is ${NEWER_URL}`,
+    });
     assert.deepEqual(requestedUrls, [KORAIL_TIMETABLE_BOARD_URL]);
     assert.deepEqual(await readdir(outputDirectory), []);
   });
