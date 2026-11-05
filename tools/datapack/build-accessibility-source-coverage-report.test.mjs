@@ -1547,8 +1547,12 @@ async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, sna
     manifest: { packs: [{ id: "nationwide", url: "https://example.invalid/catalog/pack.sqlite.gz", sqliteSha256: hashBytes(bytes) }] },
     manifestRoot: directory, bundledIndex: { packs: [] }, bundledRoot: directory,
   });
+  const evaluatedAt = new Date(Math.max(
+    Date.parse(KRIC_EVALUATED_AT),
+    ...snapshots.map(({ capturedAt }) => Date.parse(capturedAt) + 1_000),
+  )).toISOString();
   return buildAccessibilitySourceCoverageReport({
-    artifacts, inventory, snapshots, sourceSnapshotPolicies, evaluatedAt: KRIC_EVALUATED_AT,
+    artifacts, inventory, snapshots, sourceSnapshotPolicies, evaluatedAt,
   });
 }
 
@@ -1688,9 +1692,13 @@ const ESCALATOR_CAPTURED_AT = "2026-10-22T12:00:00.000Z";
 
 async function escalatorCoverageInputs(t, { withTerminal = true } = {}) {
   const inputs = await pinnedKricCoverageInputs(t);
+  const escalatorCapturedAt = new Date(Math.max(
+    Date.parse(ESCALATOR_CAPTURED_AT),
+    Date.parse(inputs.snapshot.capturedAt) + 1_000,
+  ));
   const terminal = new Set(inputs.snapshot.queries.filter((_, index) => withTerminal && index % 17 === 0).map(({ stinCd }) => stinCd));
   const { snapshot: collected } = await collectKricStandardAccessibilityObservation({
-    sourceId: KRIC_ESCALATOR, serviceKey: "fixture-only-key", now: new Date(ESCALATOR_CAPTURED_AT),
+    sourceId: KRIC_ESCALATOR, serviceKey: "fixture-only-key", now: escalatorCapturedAt,
     roster: inputs.snapshot.queries.map(({ stationId, lineId, railOprIsttCd, lnCd, stinCd, canonicalMappings }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, canonicalMappings })),
     fetchImpl: async (url) => {
       const tuple = Object.fromEntries(["railOprIsttCd", "lnCd", "stinCd"].map((field) => [field, url.searchParams.get(field)]));
@@ -1713,7 +1721,10 @@ async function escalatorCoverageInputs(t, { withTerminal = true } = {}) {
         .map((field) => [field, collected[field]])),
     },
   };
-  const inventory = { ...inputs.inventory, sources: [...inputs.inventory.sources, escalatorSource] };
+  const inventory = {
+    ...inputs.inventory,
+    sources: [...inputs.inventory.sources.filter(({ id }) => id !== KRIC_ESCALATOR), escalatorSource],
+  };
   const standardHead = inputs.sourceSnapshotPolicies.findLast(({ sourceId }) => sourceId === KRIC_STANDARD);
   const policy = { ...structuredClone(standardHead), sourceId: KRIC_ESCALATOR, snapshotId: collected.snapshotId, freshnessExpiresAt: collected.freshUntil };
   const snapshots = await loadAccessibilityAdmissionSnapshots({
@@ -1723,7 +1734,12 @@ async function escalatorCoverageInputs(t, { withTerminal = true } = {}) {
   const standardEvidence = withCapitalKricFacilities({ pack: inputs.pack, snapshot: inputs.snapshot });
   const { stationFacilityEvidence } = withCapitalKricFacilities({ pack: { ...inputs.pack, ...standardEvidence }, snapshot: escalator });
   return {
-    inputs: { ...inputs, inventory, sourceSnapshotPolicies: [...inputs.sourceSnapshotPolicies, policy], snapshots },
+    inputs: {
+      ...inputs,
+      inventory,
+      sourceSnapshotPolicies: [...inputs.sourceSnapshotPolicies.filter(({ sourceId }) => sourceId !== KRIC_ESCALATOR), policy],
+      snapshots,
+    },
     escalator,
     evidence: stationFacilityEvidence.filter(({ sourceId }) => [KRIC_STANDARD, KRIC_ESCALATOR].includes(sourceId)),
   };
