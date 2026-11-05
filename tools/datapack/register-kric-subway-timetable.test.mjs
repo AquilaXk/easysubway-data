@@ -8,7 +8,7 @@ import test from "node:test";
 import { validateProductionScheduleProvenance } from "./import-official-sources.mjs";
 import { registerKricSubwayTimetable } from "./register-kric-subway-timetable.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
-import { validateLineage } from "./source-snapshot-policy.mjs";
+import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
 const SOURCE_ID = "kric-subway-timetable";
@@ -29,7 +29,7 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const gitRunner = async (args) => (args[0] === "rev-parse" ? `${HEAD}\n` : "");
 
 // 공식 수집기 산출물과 같은 형태·고정 건수(2026-10-01 승인 관측)를 가진 합성 수집 산출물.
-function collection() {
+function collection(collectedAt = COLLECTED_AT) {
   const responses = Array.from({ length: 153 }, (_, index) => {
     const bytes = Buffer.from(JSON.stringify({ header: { resultCode: "00" }, body: [{
       railOprIsttCd: "S1", trnNo: `K${index}`, dayCd: "8", dayNm: "평일", stinCd: "433", lnCd: "4", arvTm: null, dptTm: "050000", exptCd: null,
@@ -38,7 +38,7 @@ function collection() {
   });
   return {
     artifactKind: "kric-line4-timetable-collection", sourceId: "kric-subway-route-info", lineId: "seoul-4",
-    operation: "subwayTimetableExp", collectedAt: COLLECTED_AT, capturedAt: COLLECTED_DATE,
+    operation: "subwayTimetableExp", collectedAt, capturedAt: collectedAt.slice(0, 10),
     requestCount: 153, failedRequestCount: 0, expectedNoDataRequestCount: 51,
     intermediateRowCount: 32677, excludedOutsidePilotGroupCount: 415, excludedNonStopRowCount: 42,
     reconstructionRowCount: 21645, transitTripCount: 458, transitStopTimeCount: 21645,
@@ -151,6 +151,10 @@ test("4호선 등록기는 검토 파일 없이(무인 재확인) 현재 head가
   const headId = validateLineage(ledger).headsBySource[SOURCE_ID];
   const headRow = ledger.find(({ snapshotId }) => snapshotId === headId);
   headRow.redactedRequestFingerprint = collection().rawResponseInventory.inventorySha256;
+  if (headRow.previousSnapshotId != null) {
+    const previousRow = ledger.find(({ snapshotId }) => snapshotId === headRow.previousSnapshotId);
+    headRow.diffSummary = buildSnapshotDiff(previousRow, headRow);
+  }
   await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
 
   const previousInventory = JSON.parse(await readFile(path.join(root, INPUTS[0]), "utf8"));
@@ -170,6 +174,45 @@ test("4호선 등록기는 검토 파일 없이(무인 재확인) 현재 head가
   assert.deepEqual(
     evidence.reverifiedFromSnapshotIds,
     [...new Set([...(previousAdmission.reverifiedFromSnapshotIds ?? []), previousAdmission.snapshotId])],
+  );
+
+  const governance = JSON.parse(await readFile(path.join(root, INPUTS[2]), "utf8"));
+  const secondCollectedAt = new Date(Date.parse(COLLECTED_AT) + 24 * 60 * 60 * 1_000).toISOString();
+  const secondCapturedDate = secondCollectedAt.slice(0, 10).replaceAll("-", "");
+  const secondBytes = Buffer.from(`${JSON.stringify(collection(secondCollectedAt), null, 2)}\n`);
+  const secondRawSha256 = sha(secondBytes);
+  const secondObjectKey = `source-raw/${SOURCE_ID}/${secondCapturedDate}/${secondRawSha256}.json`;
+  const secondReceipt = {
+    ...receipt,
+    snapshotId: `${SOURCE_ID}-line4-pilot-${secondCapturedDate}`,
+    capturedAt: secondCollectedAt.slice(0, 10),
+    collectedAt: secondCollectedAt,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${secondObjectKey}`,
+    rawObjectSha256: secondRawSha256,
+    objectKey: secondObjectKey,
+    capturedDate: secondCapturedDate,
+    byteSize: secondBytes.length,
+    storedAt: new Date(Date.parse(secondCollectedAt) + 60_000).toISOString(),
+    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governance, sourceId: SOURCE_ID, retrievedAt: secondCollectedAt }),
+  };
+  await writeFile(paths.collectionPath, secondBytes);
+  await writeFile(paths.receiptPath, `${JSON.stringify(secondReceipt, null, 2)}\n`);
+  await registerKricSubwayTimetable({
+    repositoryRoot: root,
+    collectionPath: paths.collectionPath,
+    receiptPath: paths.receiptPath,
+    reviewAdmissionPath: null,
+    expectedHeadSha: HEAD,
+    gitRunner,
+    now: new Date(Date.parse(secondCollectedAt) + 30 * 60 * 1_000),
+  });
+  const secondLedger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  assert.equal(validateLineage(secondLedger).headsBySource[SOURCE_ID], secondReceipt.snapshotId);
+  const secondEvidence = JSON.parse(await readFile(path.join(root, INPUTS[0]), "utf8")).sources.find(({ id }) => id === SOURCE_ID).admissionEvidence;
+  assert.equal(secondEvidence.snapshotId, secondReceipt.snapshotId);
+  assert.deepEqual(
+    secondEvidence.reverifiedFromSnapshotIds,
+    [...new Set([...(previousAdmission.reverifiedFromSnapshotIds ?? []), previousAdmission.snapshotId, receipt.snapshotId])],
   );
 });
 

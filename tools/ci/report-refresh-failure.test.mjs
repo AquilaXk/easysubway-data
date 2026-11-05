@@ -10,6 +10,7 @@ import {
   CHAIN_WORKFLOWS,
   COMMENT_INTERVAL_MS,
   GH_CANDIDATES,
+  PARENT_EPIC_NUMBER,
   REFRESH_WORKFLOWS,
   defaultRunGh,
   failureIssuesOf,
@@ -42,9 +43,19 @@ function stepBody(yml, name) {
 function fakeGitHub(initialIssues = []) {
   const issues = structuredClone(initialIssues);
   const writes = [];
+  const subIssues = [];
   let clock = start;
   const runGh = async (args, input) => {
-    const [, command] = args;
+    const [surface, command] = args;
+    if (surface === "api") {
+      if (command === "--method" && args[2] === "POST") {
+        subIssues.push({ endpoint: args[3], field: args[5] });
+        return "{}\n";
+      }
+      const match = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/u.exec(command ?? "");
+      assert.ok(match, `unexpected gh api call ${args.join(" ")}`);
+      return `${10_000 + Number(match[1])}\n`;
+    }
     if (command === "list") {
       return JSON.stringify(issues.filter(({ state }) => state === "OPEN").map(({ state, ...issue }) => issue));
     }
@@ -64,7 +75,7 @@ function fakeGitHub(initialIssues = []) {
     else assert.fail(`unexpected gh command ${command}`);
     return "";
   };
-  return { issues, writes, runGh, setClock: (value) => { clock = value; } };
+  return { issues, writes, subIssues, runGh, setClock: (value) => { clock = value; } };
 }
 
 async function report(github, runId, now) {
@@ -196,17 +207,23 @@ test("unknown workflow, repository, run identity, or clock is rejected before an
   assert.deepEqual(calls, []);
 });
 
-test("CLI lists open issues once with comments, then creates through gh with the planned body", async () => {
+test("CLI lists open issues once with comments, then creates through gh with the planned body and links it as a sub-issue of #870 (#1556)", async () => {
+  assert.equal(PARENT_EPIC_NUMBER, 870);
   const calls = [];
   const created = await reportRefreshFailure({
     argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"],
     runGh: async (args, input) => {
       calls.push({ args, input });
-      return args[1] === "list" ? "[]\n" : `https://github.com/${repository}/issues/99\n`;
+      if (args[0] === "issue" && args[1] === "list") return "[]\n";
+      if (args[0] === "issue" && args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
+      if (args[0] === "api" && args[1] === `repos/${repository}/issues/99`) return "777888\n";
+      return "{}\n";
     },
     now: () => start,
   });
   assert.equal(created.action, "create");
+  assert.equal(created.createdIssueNumber, 99);
+  assert.equal(created.linkedParentEpicNumber, 870);
   assert.deepEqual(calls[0].args, [
     "issue", "list", "--repo", repository, "--state", "open", "--limit", "1000",
     "--json", "number,title,body,author,createdAt,comments",
@@ -215,7 +232,9 @@ test("CLI lists open issues once with comments, then creates through gh with the
   assert.equal(calls[1].args[calls[1].args.indexOf("--title") + 1], created.title);
   assert.ok(calls[1].args.includes("--body-file"));
   assert.equal(calls[1].input, created.body);
-  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[2].args, ["api", `repos/${repository}/issues/99`, "--jq", ".id"]);
+  assert.deepEqual(calls[3].args, ["api", "--method", "POST", `repos/${repository}/issues/870/sub_issues`, "-F", "sub_issue_id=777888"]);
+  assert.equal(calls.length, 4);
 });
 
 test("a malformed issue listing fails the report instead of opening a duplicate issue", async () => {

@@ -4,6 +4,8 @@ import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { isTransientTransportError } from "./lib/transient-retry.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -467,18 +469,70 @@ async function responseBytes(response, source, expectedContentType) {
   return Buffer.concat(chunks, byteLength);
 }
 
-async function fetchSourceResponse({ source, url, init, fetchImpl, expectedContentType }) {
+const TRANSIENT_SEOUL_RESULT_CODES = new Set(["ERROR-500", "ERROR-600"]);
+
+function seoulOpenApiResultCodeOf(bytes) {
+  if (!Buffer.isBuffer(bytes)) return undefined;
   try {
-    return await responseBytes(await fetchImpl(url, init), source, expectedContentType);
+    const parsed = JSON.parse(bytes.toString("utf8"));
+    const code = parsed?.SearchSTNBySubwayLineInfo?.RESULT?.CODE
+      ?? parsed?.SearchInfoBySubwayNameService?.RESULT?.CODE
+      ?? parsed?.RESULT?.CODE;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function isRetryableSeoulOpenApiPayload(rawBody) {
+  const bytes = Buffer.isBuffer(rawBody)
+    ? rawBody
+    : typeof rawBody === "string"
+      ? Buffer.from(rawBody, "utf8")
+      : null;
+  return bytes !== null && TRANSIENT_SEOUL_RESULT_CODES.has(seoulOpenApiResultCodeOf(bytes));
+}
+
+async function fetchSourceResponse({ source, url, init, fetchImpl, expectedContentType, sleep, random }) {
+  let outcome;
+  try {
+    outcome = await withSourceCollectionRetry(async () => {
+      const response = await fetchImpl(url, {
+        ...init,
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response || response.status !== 200 || !response.ok) {
+        return { response, bytes: null };
+      }
+      const bytes = await responseBytes(response, source, expectedContentType);
+      return { response, bytes };
+    }, {
+      label: "Seoul static network revalidation",
+      sourceId: SEOUL_SOURCE_ID,
+      url,
+      isTransientResult: ({ bytes }) => bytes !== null && isRetryableSeoulOpenApiPayload(bytes),
+      resultCodeOf: ({ bytes }) => seoulOpenApiResultCodeOf(bytes),
+      isTransientError: (error) => !error?.message?.startsWith("STATIC_SOURCE_REVALIDATION_")
+        && isTransientTransportError(error),
+      sleep,
+      random,
+    });
   } catch (error) {
     if (error?.message?.startsWith("STATIC_SOURCE_REVALIDATION_")) throw error;
     fail(`${source}_TRANSPORT`);
   }
+  if (!outcome.response || outcome.response.status !== 200 || !outcome.response.ok) {
+    const status = Number.isSafeInteger(outcome.response?.status) ? outcome.response.status : "INVALID";
+    fail(`${source}_HTTP_${status}`);
+  }
+  return outcome.bytes;
 }
 
 export async function fetchCurrentStaticSourceResponses({
   seoulOpenApiKey,
   fetchImpl = fetch,
+  sleep,
+  random,
 }) {
   const seoulKey = requiredSingleLine(seoulOpenApiKey, "SEOUL_OPENAPI_KEY");
   const seoulUrl = new URL(
@@ -488,10 +542,11 @@ export async function fetchCurrentStaticSourceResponses({
     source: "SEOUL",
     url: seoulUrl,
     fetchImpl,
+    sleep,
+    random,
     init: {
       method: "GET",
       redirect: "error",
-      signal: AbortSignal.timeout(15_000),
       headers: { accept: "application/json" },
     },
     expectedContentType: "application/json",

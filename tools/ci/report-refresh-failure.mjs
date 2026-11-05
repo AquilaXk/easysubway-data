@@ -399,8 +399,15 @@ export async function listOpenIssues(repository, runGh) {
   }
 }
 
+export const PARENT_EPIC_NUMBER = 870;
+
 export async function reportRefreshFailure({
-  argv = process.argv.slice(2), runGh = defaultRunGh, now = () => new Date(), orphan, readText = (file) => readFile(file, "utf8"),
+  argv = process.argv.slice(2),
+  runGh = defaultRunGh,
+  now = () => new Date(),
+  orphan,
+  readText = (file) => readFile(file, "utf8"),
+  parentEpicNumber = PARENT_EPIC_NUMBER,
 } = {}) {
   const { failuresPath, overdueList, sourceId, ...args } = parseArgs(argv);
   const input = validated(args);
@@ -409,7 +416,17 @@ export async function reportRefreshFailure({
   const openIssues = await listOpenIssues(input.repository, runGh);
   const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures, overdue, sourceId });
   if (plan.action === "create") {
-    await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
+    const createdOutput = await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
+    const createdMatch = /\/issues\/([1-9]\d*)\s*$/u.exec(String(createdOutput ?? ""));
+    if (createdMatch && Number.isSafeInteger(parentEpicNumber) && parentEpicNumber > 0) {
+      const createdIssueNumber = Number(createdMatch[1]);
+      const restId = String(await runGh(["api", `repos/${input.repository}/issues/${createdIssueNumber}`, "--jq", ".id"]) ?? "").trim();
+      if (/^[1-9]\d*$/u.test(restId)) {
+        await runGh(["api", "--method", "POST", `repos/${input.repository}/issues/${parentEpicNumber}/sub_issues`, "-F", `sub_issue_id=${restId}`]);
+        return { ...plan, createdIssueNumber, linkedParentEpicNumber: parentEpicNumber };
+      }
+      return { ...plan, createdIssueNumber };
+    }
     return plan;
   }
   // 댓글을 먼저 단다. 본문 갱신이 실패해도 댓글에 run이 남아 다음 보고가 같은 run을 건너뛴다.
