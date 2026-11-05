@@ -13,7 +13,7 @@ import {
   loadTransferStairAccessInputs,
 } from "./build-transfer-stair-access.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { parseDirection } from "./lib/transfer-direction.mjs";
+import { parseDirection, parseTerminalDirection } from "./lib/transfer-direction.mjs";
 
 // #925 RED 계획. fixture 기대값은 손으로 적는다(도구 출력에서 복사하지 않는다).
 
@@ -21,7 +21,7 @@ import { parseDirection } from "./lib/transfer-direction.mjs";
 const PROVIDER_CODE_CATALOG = JSON.parse(await readFile("tools/datapack/sources/kric-provider-code-catalog-20260228.json", "utf8"));
 const SNAPSHOT_ID = "molit-railway-transfer-movement-20260811";
 // 어휘 표 예시가 쓰는 역 이름. 운영 판정에서는 번들 정본 역 이름이 이 자리에 들어간다.
-const EXAMPLE_STATION_NAMES = Object.freeze(["방배", "서강대", "총신대입구", "월드컵경기장", "사평", "상봉", "연신내", "효창공원앞"]);
+const EXAMPLE_STATION_NAMES = Object.freeze(["방배", "서강대", "총신대입구", "월드컵경기장", "사평", "상봉", "연신내", "효창공원앞", "미남", "신사", "석바위시장", "종로5가", "청량리"]);
 
 function sadangCatalog({ extraStations = [], extraStationLines = [] } = {}) {
   return {
@@ -867,3 +867,125 @@ test("F1 후속 여러 노선 함께 적기와 띄어 쓴 역 이름은 정확�
   assert.equal(kind("(B4) 3호선 총신대 입구역 방면 승강장 하차"), "UNRECOGNIZED");
   assert.equal(classifyTransferStep("(B4) 3호선 을지로 3가 방면 승강장 하차").kind, "UNRECOGNIZED");
 });
+
+test("#1027·#1028 갈래 1~7 실제 원천 문구는 닫힌 어휘로 분류하고 갈래 8~10·차단 키워드 반례는 막는다", () => {
+  const stationNames = [
+    "국회의사당", "석바위시장", "석천사거리", "간석오거리", "예술회관", "제기동", "동묘앞", "종로5가", "청량리", "중랑",
+    "서울역", "사상", "대저", "수영", "미남", "신사", "김포공항", "오금", "신내", "모란", "샛강", "소사", "신설동", "신도림", "별내",
+  ];
+  const step = (detail) => classifyTransferStep(detail, { stationNames });
+  const firstStep = step("5(B3) 9호선 국회의사당 방면 승강장으로 이동");
+  assert.equal(firstStep.ruleId, "LEVEL_MOVE_TO_PLACE");
+  assert.equal(firstStep.kind, "LEVEL_MOVE");
+  assert.equal(firstStep.effect, "STEP_FREE");
+  assert.deepEqual(firstStep.floors, ["B3"]);
+  for (const [expectedKind, details] of [
+    ["LEVEL_MOVE", ["3) (B3) 승강장 으로 이동", "5) 9호선 승강장 으로 이동 ", "5) 9호선 승강장 으로 이동", "9) 경의중앙선 승강장 으로 이동", "3) (B2) 환승통로 이용하여 1호선 종로5가 방면 승강장으로 이동"]],
+    ["ELEVATOR", [
+      "2) 좌측 승강장 엘리베이터 이용", "2) 우측 승강장 엘리베이터 이용", "3) 인천2호선 석바위시장 방면 내부 엘리베이터 이용", "3) 인천2호선 석천사거리 방면 내부 엘리베이터 이용",
+      "3) 인천1호선 간석오거리 방면 내부 엘리베이터 이용", "3) 인천1호선 예술회관 방면 내부 엘리베이터 이용", "2) 1호선 제기동 방면 대합실 방향 내부 엘리베이터 탑승",
+      "2) 1호선 동묘앞 방면 대합실 방향 내부 엘리베이터 탑승", "4) 1호선 환승통로 방향 경사형 엘리베이터 탑승", "3) 환승통로를 지나 환승 엘리베이터를 이용", "4) 개집표기 통과 후 엘리베이터 이용", "7) 개집표기 통과 후 엘리베이터 이용",
+    ]],
+    ["FARE_GATE", ["2) 우측 환승게이트 통과 ", "4) 7호선 대합실로 이동하여 표 내는 곳 통과", "6) 7호선 대합실로 이동하여 표 내는 곳 통과"]],
+    ["BOARD", ["2) (1F) 경의중앙선 청량리 방면 차량 확인", "2) (1F) 경의중앙선 중랑 방면 차량 확인", "2) 경춘선 청량리 방면 차량 확인", "2) 경춘선 중랑 방면 차량 확인", "4) 열차승차"]],
+    ["ALIGHT", [
+      "1) (B7) 공항철도 서울역(종착역) 승강장 하차", "1) (3F) 부산김해경전철 사상 (종착역) 승강장 하차", "1) (3F) 부산김해경전철  사상 (종착역) 승강장 하차", "1) (3F) 3호선 대저 (종착역) 승강장 하차",
+      "1) (B3) 3호선 수영 (종착역) 승강장 하차", "1) (B3) 4호선 미남 (종착역) 승강장 하차", "1) (B4) 신분당선 신사역(종착역) 승강장 하차", "1) (B4) 김포골드라인 김포공항 (종착역) 승강장 하차",
+      "1) (B4) 3호선 오금역(종착역) 승강장 하차", "1) (B4) 3호선 오금역(종착역) 방면 승강장 하차", "1) (1F) 6호선 신내 (종착역) 승강장 하차", "1) (B3) 8호선 모란(종착역)  승강장 하차",
+      "1) (B4) 신림선 샛강역(종착역) 승강장 하차", "1) 서해선 소사(종착역) 승강장 하차", "1) (B2) 우이신설선 신설동(종착역) 승강장 하차",
+    ]],
+  ]) {
+    for (const detail of details) {
+      assert.equal(step(detail).kind, expectedKind, detail);
+      assert.equal(step(detail).effect, "STEP_FREE", detail);
+    }
+  }
+  for (const unrecognizedProbe of [
+    "7 3호선 서문시장 방면 엘리베이터 탑승", "3) 3호선/수인분당선 환승 통로 로 이동", "8) 경의중앙선 맞이방 으로 이동", "4) 1호선으로 이동",
+    "5) GTX-A 승강장 방향 경사 엘리베이터 탑승", "5) 4호선 방향 (경사형)엘리베이터 탑승", "2) 승강장 엘리베이터를 이용하여 중층으로 이동", "4) 개집표기 통과 후 경의중앙선 방향으로 이동",
+    "7) 1호선 석계역 역사로 들어가 개집표기 통과 후 내부 엘리베이터 이용", "2) 표 내는 곳 통과 후 2호선 대합실 방향 엘리베이터 탑승", "5) 종로3가 방면 승차 (휠체어칸)", "4) 승차이동",
+    "1) (B2) 2호선 지선 신도림 (종착역) 승강장 하차", "1) (B3) 8호선 별내 종착역  하차", "1) 오이도역 종착 승강장", "1) GTX-A 서울역(종착역) 승강장",
+    "4) 5  6호선 방향 환승통로로 이동", "4) 1  4호선 방향 환승통로로 이동", "2) 엘리베이터 3호기 이용 ", "3) 5호선 게이트 지나 B1층 화장실 맞은 편 엘리베이터 탑승",
+    "3) 환승통로", "3) 지하상가 연결통로 경사로 이동", "경사형 통로로 이동", "경사형 환승통로로 이동", "경사형 연결통로로 이동",
+    "1) (B3) 4호선 미남 (종착역) 승강장 승강장 하차", "1) (B4) 신분당선 미등재역(종착역) 승강장 하차",
+  ]) {
+    assert.equal(step(unrecognizedProbe).kind, "UNRECOGNIZED", unrecognizedProbe);
+    assert.equal(step(unrecognizedProbe).effect, "BLOCKING", unrecognizedProbe);
+  }
+  for (const [probe, expectedKind] of [["계단으로 이동", "STAIRS"], ["에스컬레이터 탑승", "ESCALATOR"], ["대합실 방향 휠체어리프트 탑승", "LIFT"], ["1번 출구로 이동", "OUTSIDE"], ["엘리베이터 고장 시 직원 호출", "UNAVAILABLE"]]) {
+    assert.equal(step(probe).kind, expectedKind, probe);
+  }
+});
+
+test("#1027 갈래 1~6 실제 경로 문구와 #1028 종착역 방면 집합 인정·거부 규칙을 검증한다", () => {
+  const dangsanRows = sadangRows().map((row) => (row.LN_NM === "2호선" && row.CHTN_MV_TP_ORDR === "5" && row.CHTN_MV_CONT === ""
+    ? { ...row, MV_CONT_DTL: "5(B3) 4호선 총신대입구 방면 승강장으로 이동" } : row));
+  assert.equal(edgeState(derive({ rows: dangsanRows }), EDGE_2_4).state, "STEP_FREE");
+  for (const steps of [
+    ["엘리베이터 이용", "지하 1층으로 이동", "개집표기 통과 후 엘리베이터 이용", "지하 2층으로 이동", "환승통로 이동"],
+    ["대합실 방향 엘리베이터 탑승", "(B1) 환승통로로 이동", "4호선 대합실로 이동하여 표 내는 곳 통과", "승강장 방향 엘리베이터 탑승", "(B3) 승강장으로 이동"],
+    ["대합실 방향 엘리베이터 탑승", "(B2) 환승통로 이용하여 4호선 총신대입구 방면 승강장으로 이동"],
+    ["승강장 엘리베이터를 이용하여 지하1층 대합실로 이동", "환승통로를 지나 환승 엘리베이터를 이용", "지상2층으로 이동"],
+    ["(B2) 4호선 총신대입구 방면 차량 확인"],
+  ]) {
+    assert.equal(edgeState(derive({ rows: sadangRows({ steps: () => steps }) }), EDGE_2_4).state, "STEP_FREE");
+  }
+  for (const [value, lineToken, stationName] of [
+    ["4호선 미남 (종착역)", "4호선", "미남"], ["공항철도 서울역(종착역)", "공항철도", "서울역"], ["GTXA 수서(종착역)", "GTXA", "수서"],
+    ["3호선 오금역(종착역) 승강장", "3호선", "오금역"], [" 6호선 신내 (종착역) ", "6호선", "신내"], ["4호선 미남(종착)", "4호선", "미남"],
+  ]) {
+    assert.deepEqual(parseTerminalDirection(value), { lineToken, stationName, terminal: true }, value);
+  }
+  for (const value of ["", null, undefined, "4호선 남태령 방면", "서울역 종착역 승강장", "4호선 오이도 종착", "8호선 별내 종점", "(종착역)"]) {
+    assert.equal(parseTerminalDirection(value), null, String(value));
+  }
+  const minamCatalog = {
+    stations: [["s-minam", "미남"], ["s-sajik", "사직"], ["s-mandeok", "만덕"], ["s-dongnae", "동래"]].map(([id, nameKo]) => ({ id, nameKo, nameSub: "" })),
+    lines: [{ id: "busan-3", nameKo: "부산 3호선" }, { id: "busan-4", nameKo: "부산 4호선" }],
+    stationLines: [["s-minam", "busan-3"], ["s-sajik", "busan-3"], ["s-mandeok", "busan-3"], ["s-minam", "busan-4"], ["s-dongnae", "busan-4"]].map(([stationId, lineId]) => ({ stationId, lineId })),
+  };
+  const minamEdges = [
+    ride("s-sajik", "s-minam", "busan-3"), ride("s-minam", "s-sajik", "busan-3"), ride("s-mandeok", "s-minam", "busan-3"), ride("s-minam", "s-mandeok", "busan-3"),
+    ride("s-dongnae", "s-minam", "busan-4"), ride("s-minam", "s-dongnae", "busan-4"), transfer("s-minam", "busan-3", "busan-4"), transfer("s-minam", "busan-4", "busan-3"),
+  ];
+  const row = (LN_NM, CHTN_MV_TP_ORDR, MV_CONT_DTL, CHTN_MV_CONT = "") => ({
+    RAIL_OPR_ISTT_CD: "BS(부산교통공사)", LN_NM, STIN_NM: "미남", CHTN_MV_TP_ORDR: String(CHTN_MV_TP_ORDR), MV_CONT_DTL, CHTN_MV_CONT,
+  });
+  const minamRows = [
+    ...["사직", "만덕"].flatMap((fromDir) => [
+      row("3호선", 1, `1) (B2) 3호선 ${fromDir} 방면 승강장 하차`, `3호선 ${fromDir} 방면`), row("3호선", 2, "2) 4호선 승강장 방향 엘리베이터 탑승"),
+      row("3호선", 3, "3) (B3) 4호선 동래 방면 승강장으로 이동"), row("3호선", 4, "4) 승차 (휠체어칸)", "4호선 동래 방면"),
+    ]),
+    ...["사직", "만덕"].flatMap((toDir) => [
+      row("4호선", 1, "1) (B3) 4호선 미남 (종착역) 승강장 하차", "4호선 미남 (종착역)"), row("4호선", 2, "2) 3호선 승강장 방향 엘리베이터 탑승"),
+      row("4호선", 3, `3) (B2) 3호선 ${toDir} 방면 승강장으로 이동`), row("4호선", 4, "4) 승차 (휠체어칸)", `3호선 ${toDir} 방면`),
+    ]),
+  ];
+  const runMinam = (rows = minamRows, catalog = minamCatalog, routeEdges = minamEdges) => derive({ rows, catalog, routeEdges });
+  const withEvidence = runMinam();
+  assert.equal(edgeState(withEvidence, "transfer-s-minam-busan-3-busan-4").state, "STEP_FREE");
+  assert.equal(edgeState(withEvidence, "transfer-s-minam-busan-4-busan-3").state, "STEP_FREE");
+  assert.equal(withEvidence.evidenceRows.length, 4);
+  const unresolvedReverseTo = runMinam(minamRows.map((entry) => (entry.LN_NM === "4호선" && entry.CHTN_MV_TP_ORDR === "4" ? { ...entry, CHTN_MV_CONT: "3호선 미등재 방면" } : entry)));
+  assert.equal(edgeState(unresolvedReverseTo, "transfer-s-minam-busan-3-busan-4").state, "STEP_FREE");
+  assert.equal(edgeState(unresolvedReverseTo, "transfer-s-minam-busan-4-busan-3").reason, "NO_OFFICIAL_PATH");
+  const toTerminal = runMinam(minamRows.map((entry) => (entry.LN_NM === "3호선" && entry.CHTN_MV_TP_ORDR === "4" ? { ...entry, CHTN_MV_CONT: "4호선 미남 (종착역)" } : entry)));
+  assert.equal(toTerminal.summary.excludedPathsByReason.DIRECTION_FORMAT_UNSUPPORTED, 2);
+  const withoutEvidence = runMinam(minamRows.filter(({ LN_NM }) => LN_NM === "3호선"));
+  assert.equal(edgeState(withoutEvidence, "transfer-s-minam-busan-3-busan-4").reason, "DIRECTION_SET_UNDETERMINED");
+  assert.equal(edgeState(withoutEvidence, "transfer-s-minam-busan-4-busan-3").reason, "DIRECTION_SET_UNDETERMINED");
+  const mismatchedName = runMinam(minamRows.map((entry) => (entry.CHTN_MV_CONT === "4호선 미남 (종착역)" ? { ...entry, CHTN_MV_CONT: "4호선 동래 (종착역)" } : entry)));
+  assert.equal(mismatchedName.summary.excludedPathsByReason.DIRECTION_FORMAT_UNSUPPORTED, 2);
+  assert.equal(edgeState(mismatchedName, "transfer-s-minam-busan-3-busan-4").reason, "DIRECTION_SET_UNDETERMINED");
+  const twoNeighborEdges = [...minamEdges, ride("s-minam", "s-anpyeong", "busan-4"), ride("s-anpyeong", "s-minam", "busan-4")];
+  const twoNeighborCatalog = { ...minamCatalog, stations: [...minamCatalog.stations, { id: "s-anpyeong", nameKo: "안평", nameSub: "" }], stationLines: [...minamCatalog.stationLines, { stationId: "s-anpyeong", lineId: "busan-4" }] };
+  const twoNeighbors = runMinam(minamRows, twoNeighborCatalog, twoNeighborEdges);
+  assert.equal(twoNeighbors.summary.excludedPathsByReason.DIRECTION_NAME_UNRESOLVED, 2);
+  assert.equal(edgeState(twoNeighbors, "transfer-s-minam-busan-4-busan-3").reason, "NO_OFFICIAL_PATH");
+  const branchEdges = [...twoNeighborEdges, ride("s-minam", "s-branch", "busan-4"), ride("s-branch", "s-minam", "busan-4")];
+  const branchCatalog = { ...twoNeighborCatalog, stations: [...twoNeighborCatalog.stations, { id: "s-branch", nameKo: "분기", nameSub: "" }], stationLines: [...twoNeighborCatalog.stationLines, { stationId: "s-branch", lineId: "busan-4" }] };
+  const threeNeighbors = runMinam(minamRows, branchCatalog, branchEdges);
+  assert.equal(edgeState(threeNeighbors, "transfer-s-minam-busan-3-busan-4").reason, "DIRECTION_SET_UNDETERMINED");
+  assert.equal(edgeState(threeNeighbors, "transfer-s-minam-busan-4-busan-3").reason, "DIRECTION_SET_UNDETERMINED");
+});
+
