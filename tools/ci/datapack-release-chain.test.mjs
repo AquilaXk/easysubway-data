@@ -494,7 +494,7 @@ test("발행: 발행 run 실패·FINAL artifact 없음·공개 manifest 불일�
 
 const PREV = { backendRunId: "100", backendArtifactId: "101", dataRunId: "200", dataArtifactId: "201" };
 
-function deployWorld({ compare = "ahead", previousExpired = false, backendDigest = digest("b"), inFlight = false, legacy = false } = {}) {
+function deployWorld({ compare = "ahead", previousExpired = false, previousPurged = false, backendDigest = digest("b"), inFlight = false, legacy = false } = {}) {
   const world = new World();
   world.refs[PLATFORM] = "p".repeat(40);
   const previous = deployRun(50, legacy ? "Source-free Journey K3s Deploy" : formatDeployRunName("DEPLOY", PREV), "success", { created_at: "2026-10-08T00:00:00Z" });
@@ -503,7 +503,9 @@ function deployWorld({ compare = "ahead", previousExpired = false, backendDigest
   world.seedRuns(PLATFORM, "source-free-journey-k3s-deploy.yml", runs);
   // previous release artifacts (rollback inputs)
   world.runById.set(`${BACKEND}|100`, { id: 100, head_sha: OLD_BACKEND_SHA, conclusion: "success", head_branch: "main", path: ".github/workflows/release-artifacts.yml" });
-  world.artifactsById.set(`${BACKEND}|101`, { id: 101, name: `easysubway-backend-release-${OLD_BACKEND_SHA}-1`, expired: previousExpired, digest: digest("1"), workflow_run: { id: 100 } });
+  if (!previousPurged) {
+    world.artifactsById.set(`${BACKEND}|101`, { id: 101, name: `easysubway-backend-release-${OLD_BACKEND_SHA}-1`, expired: previousExpired, digest: digest("1"), workflow_run: { id: 100 } });
+  }
   world.artifactsById.set(`${DATA}|201`, { id: 201, name: `easysubway-datapacks-${"d".repeat(40)}`, expired: false, digest: digest("2"), workflow_run: { id: 200 } });
   // new backend producer
   const newRun = {
@@ -559,6 +561,7 @@ test("배포 입력: 활성보다 오래된 backend·digest 불량·이전 artif
     ["diverged", { compare: "diverged" }, "BACKEND_OLDER_THAN_ACTIVE"],
     ["bad digest", { backendDigest: "sha256:zz" }, "ARTIFACT_INVALID"],
     ["previous expired", { previousExpired: true }, "ROLLBACK_PATH_UNAVAILABLE"],
+    ["previous purged 404", { previousPurged: true }, "ROLLBACK_PATH_UNAVAILABLE"],
     ["in flight", { inFlight: true }, "DEPLOY_IN_FLIGHT"],
     ["legacy title", { legacy: true }, "ACTIVE_RELEASE_UNCERTAIN"],
   ]) {

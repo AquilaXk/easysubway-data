@@ -471,7 +471,6 @@ export async function resolveBusanTransferMetrics({ fanIn, sourceInventory, read
 // 그 snapshot으로 다시 만든 지표가 커밋된 산출물과 바이트까지 같고, 정책으로 유도한 신선도가 원장과 같고 후보 시계 이후일 때만 쓴다.
 const MEASURED_TRANSFER_SOURCE_ID = "seoul-metro-transfer-car-door-duration";
 const DISTANCE_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
-// #879 리뷰 F1: 후보 시계(evaluatedAt = publishedAt)는 후보가 인용하는 원문 OCI 객체의 저장 시각보다 앞설 수 없다.
 export function assertCandidateClockAfterRawStorage({ evaluatedAt, stored }) {
   const evaluatedMillis = Date.parse(requiredInstant(evaluatedAt, "candidate clock"));
   for (const { sourceId, storedAt } of stored) {
@@ -516,7 +515,6 @@ export async function resolveSeoulMeasuredTransferMetrics({ sourceInventory, sou
     throw new Error("nationwide candidate Seoul measured transfer freshness does not match the freshness policy");
   }
   if (Date.parse(freshUntil) <= evaluatedMillis) throw new Error("nationwide candidate Seoul measured transfer snapshot is expired");
-  // #879 F1: 등록기가 보존한 OCI 영수증은 원장 영수증 hash와 같아야 하고, 그 저장 시각 이후의 후보 시계에서만 쓴다.
   const receiptBytes = await read(`tools/datapack/sources/${head}.receipt.json`);
   const receipt = JSON.parse(receiptBytes);
   if (sha256(receiptBytes) !== row.rawReceiptSha256 || receipt.sourceId !== MEASURED_TRANSFER_SOURCE_ID || receipt.snapshotId !== head
@@ -695,10 +693,6 @@ export function officialTransferEndpointRecords({ edgeDirections, officialByDire
   return byCell;
 }
 
-// #872 후속(#866 메인 결정 D1 선행): 역 밖 환승 링크는 링크 자체에 공식 VERIFIED 근거가 있을 때만 쓴다.
-// 근거는 OFFICIAL_SOURCE·VERIFIED 표기, inventory에서 productionUseAllowed인 원천 id, 그 원천의 원장 snapshot id,
-// 64자 소문자 hex 레코드 hash·evidence hash, 0보다 큰 거리·시간이다(#883 F1).
-// 근거가 없는 링크는 고정 거리·시간으로 채우지 않고 끝점과 사유만 제외 목록에 남긴다(Fallback 금지, #872 D1).
 export function admitOutOfStationTransferLinks(links, { sourceInventory, sourceSnapshots }) {
   const admitted = [];
   const excluded = [];
@@ -726,7 +720,6 @@ export function admitOutOfStationTransferLinks(links, { sourceInventory, sourceS
   return { admitted, excluded };
 }
 
-// 팩에 싣는 역 밖 환승 링크. 접근성 필드는 공식 근거가 없으므로 UNKNOWN으로 두고, 출처 필드(원천·snapshot·hash·검증 표기)는 지우지 않고 보존한다(#883 F2).
 export function packOutOfStationTransferLinks(links) {
   return links.map((link) => ({
     ...link,
@@ -950,7 +943,6 @@ export async function prepareNationwideCandidate({
     sourceInventory, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
   });
 
-  // #879 F1: fan-in이 고른 원장 행 중 영수증 저장 시각을 담은 행도 후보 시계 이전에 저장됐어야 한다.
   const selectedSnapshotIdsForClock = new Set(fanIn.selectedSources.map(({ snapshotId }) => snapshotId));
   assertCandidateClockAfterRawStorage({
     evaluatedAt: fanIn.evaluatedAt,
@@ -1731,8 +1723,6 @@ export async function prepareNationwideCandidate({
   for (const table of ["transitRoutes", "transitTrips", "transitStopTimes", "serviceCalendars", "serviceCalendarDates"]) {
     finalPack[table] = [...finalPack[table], ...gwangjuSchedule[table]];
   }
-  // #919: 모든 기관 달력이 모인 뒤, 공휴일에 평일·토요일 달력이 운행하거나 휴일 달력이 없는 노선이 있으면 후보를 만들지 않는다.
-  // 리뷰 F2(#922): 통합기에 넘긴 목록이 아니라 보관된 KASI 원문에서 따로 도출한 집합과 비교한다.
   const holidayCalendarRows = holidayCalendarViolations({ ...finalPack, holidayDates: retainedKasiHolidayDates() });
   if (holidayCalendarRows.length > 0) {
     const routes = [...new Set(holidayCalendarRows.map(({ routeId }) => routeId))];
@@ -1966,10 +1956,6 @@ export async function prepareNationwideCandidate({
     }
   }
 
-  // #872 S3 리뷰 F3: 부산 원천 설명에 이 원천이 실제로 채우는 환승 표와 공식 환승 도메인을 더한다. 하드코딩하지 않고 유도한다.
-  // - 필드: inventory fieldsProvided(팩 표·컬럼 이름)에, 팩에서 이 원천을 인용하는 환승 표 이름을 더한다.
-  // - 도메인: inventory 도메인에, 공식 환승 거리·시간 원천(서울교통공사) inventory가 선언한 도메인을 더한다.
-  // #876: 실측 환승시간 원천도 같은 규칙으로 유도한다.
   for (const transferSourceId of ["busan-transportation-route-topology", MEASURED_TRANSFER_SOURCE_ID]) {
     const transferPackSource = finalPack.sourceInventory.find(({ id }) => id === transferSourceId);
     const citingTables = [["station_pathway_edges", stationPathwayEdges], ["transfer_rules", transferRules]]

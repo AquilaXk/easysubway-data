@@ -66,12 +66,9 @@ function kricFacilityProfile(snapshot) {
 
 const hash = (value) => sha256(JSON.stringify(value));
 
-// 수집기(collect-kric-accessibility-snapshots)는 결과 03 조회가 있는 MIXED snapshot에만 조회별 providerResultCode를 쓴다.
-// 결과 03이 없는 snapshot은 조회별 코드 없이 snapshot 코드 00만 갖고, 그 조회는 모두 결과 00이다.
-// MIXED snapshot에서 조회별 코드가 빠진 조회는 결과를 알 수 없으므로 undefined를 돌려 조회된 것으로 치지 않는다.
 export function kricQueryResultCode(query, snapshot) {
-  if (query.providerResultCode !== undefined) return query.providerResultCode;
-  return snapshot.providerResultCode === KRIC_MIXED_SNAPSHOT_RESULT_CODE ? undefined : KRIC_PRESENT_RESULT_CODE;
+  if (typeof query?.providerResultCode === "string" && query.providerResultCode !== "") return query.providerResultCode;
+  return snapshot?.providerResultCode === KRIC_PRESENT_RESULT_CODE ? KRIC_PRESENT_RESULT_CODE : undefined;
 }
 
 const tuple = ({ railOprIsttCd, lnCd, stinCd }) => ({ railOprIsttCd, lnCd, stinCd });

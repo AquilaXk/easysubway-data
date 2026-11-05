@@ -190,6 +190,8 @@ test("변이: 승인된 직전 정책을 재구성해도 선언이 사실과 다
     ["틀린 predecessorPolicySha256", retired, (policy) => { policy.registrationLineage.predecessorPolicySha256 = "0".repeat(64); }],
     ["retiredSourceIds에 id 추가", retired, (policy) => { policy.registrationLineage.retiredSourceIds.push(LIFT_LOCATION); }],
     ["retiredSourceIds 순서 뒤바꿈", retired, (policy) => { policy.registrationLineage.retiredSourceIds.reverse(); }],
+    ["정수가 아닌 문자열 위치(splice 강제 변환 별칭)", retired, (policy) => { policy.registrationLineage.retiredSources[0].position = "3"; }],
+    ["정수가 아닌 실수 위치(splice 절삭 별칭)", retired, (policy) => { policy.registrationLineage.retiredSources[0].position = 3.5; }],
     ["직전 정책 길이를 넘는 위치(끝에 붙는 별칭)", retiredTail, (policy) => { policy.registrationLineage.retiredSources[1].position = 999; }],
     ["내림차순 위치(끝 항목을 먼저 붙이는 별칭)", retiredTail, (policy) => {
       const lineage = policy.registrationLineage;
@@ -206,8 +208,87 @@ test("변이: 승인된 직전 정책을 재구성해도 선언이 사실과 다
   }
 });
 
+test("사슬 시작 sha 불일치·비정규 직렬화·currentPolicyBytes 생략 경계를 검증한다", () => {
+  const registeredSha = sha256(registered.bytes);
+  const rootSha = sha256(rootBytes);
+  assert.throws(() => approvedGovernanceBindingTransition({
+    snapshot: { sourceId: KEPT_ID, governancePolicyVersion: retired.policy.policyVersion, governancePolicySha256: registeredSha },
+    currentPolicyVersion: retired.policy.policyVersion,
+    currentPolicySha256: registeredSha,
+    currentPolicyBytes: retired.bytes,
+  }), BINDING_ERROR);
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({
+    binding: bindingTo(registered.bytes),
+    currentPolicyVersion: retired.policy.policyVersion,
+    currentPolicySha256: registeredSha,
+    currentPolicyBytes: retired.bytes,
+    sourceId: KEPT_ID,
+  }), false);
+
+  const compactBytes = Buffer.from(JSON.stringify(retired.policy));
+  const compactSha = sha256(compactBytes);
+  assert.throws(() => approvedGovernanceBindingTransition({
+    snapshot: { sourceId: KEPT_ID, governancePolicyVersion: retired.policy.policyVersion, governancePolicySha256: compactSha },
+    currentPolicyVersion: retired.policy.policyVersion,
+    currentPolicySha256: compactSha,
+    currentPolicyBytes: compactBytes,
+  }), BINDING_ERROR);
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({
+    binding: bindingTo(compactBytes),
+    currentPolicyVersion: retired.policy.policyVersion,
+    currentPolicySha256: compactSha,
+    currentPolicyBytes: compactBytes,
+    sourceId: KEPT_ID,
+  }), false);
+
+  const rootBinding = bindingTo(rootBytes, rootPolicy.policyVersion);
+  assert.deepEqual(approvedGovernanceBindingTransition({
+    snapshot: { sourceId: KEPT_ID, ...rootBinding },
+    currentPolicyVersion: rootPolicy.policyVersion,
+    currentPolicySha256: rootSha,
+  }), rootBinding);
+  assert.deepEqual(approvedGovernanceBindingTransition({
+    snapshot: { sourceId: ELEVATOR, ...LEGACY_COMPATIBLE_BINDING },
+    currentPolicyVersion: rootPolicy.policyVersion,
+    currentPolicySha256: rootSha,
+  }), LEGACY_COMPATIBLE_BINDING);
+  assert.throws(() => approvedGovernanceBindingTransition({
+    snapshot: { sourceId: KEPT_ID, ...bindingTo(registered.bytes) },
+    currentPolicyVersion: rootPolicy.policyVersion,
+    currentPolicySha256: rootSha,
+  }), BINDING_ERROR);
+  assert.throws(() => approvedGovernanceBindingTransition({
+    snapshot: { sourceId: KEPT_ID, ...rootBinding },
+    currentPolicyVersion: rootPolicy.policyVersion,
+    currentPolicySha256: "0".repeat(64),
+  }), BINDING_ERROR);
+
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({
+    binding: rootBinding,
+    currentPolicyVersion: rootPolicy.policyVersion,
+    currentPolicySha256: rootSha,
+    sourceId: KEPT_ID,
+  }), true);
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({
+    binding: LEGACY_COMPATIBLE_BINDING,
+    currentPolicyVersion: rootPolicy.policyVersion,
+    currentPolicySha256: rootSha,
+  }), true);
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({
+    binding: bindingTo(registered.bytes),
+    currentPolicyVersion: rootPolicy.policyVersion,
+    currentPolicySha256: rootSha,
+    sourceId: KEPT_ID,
+  }), false);
+  assert.equal(isApprovedCurrentOrPriorGovernanceBinding({
+    binding: rootBinding,
+    currentPolicyVersion: rootPolicy.policyVersion,
+    currentPolicySha256: "0".repeat(64),
+    sourceId: KEPT_ID,
+  }), false);
+});
+
 test("검증기는 한 번 퇴역한 id를 이후 등록 단계에서 다시 추가하는 정책을 거부한다", () => {
-  // builder를 거치지 않고 손으로 만든 등록 단계다. 신뢰의 기준점은 builder가 아니라 검증기다.
   const registrationOn = (base, sourceId, tweak = () => {}) => {
     const entry = structuredClone(rootPolicy.sources.find((source) => source.sourceId === sourceId) ?? syntheticSource(sourceId));
     tweak(entry);
