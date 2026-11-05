@@ -6,9 +6,9 @@ import { pathToFileURL } from "node:url";
 
 import {
   isRetryAfterExceedsCap,
-  SourceFetchTelemetryWriteError,
   withSourceCollectionRetry,
 } from "./lib/source-collection-retry.mjs";
+import { SourceFetchTelemetryWriteError } from "./lib/source-fetch-telemetry.mjs";
 import { isTransientTransportError } from "./lib/transient-retry.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
