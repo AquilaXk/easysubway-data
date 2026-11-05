@@ -467,40 +467,44 @@ test("registrar fails closed before acquiring when a prior lock displacement rem
 });
 
 test("rebindMolitMembershipEvidence recomputes Daegu and Daejeon membership snapshotId when MOLIT head advances", async () => {
-  const inventory = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8"));
   const molitRawBytes = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
-  const gwangjuPath = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology").topologyAdmissionEvidence.snapshotPath;
-  const gwangjuTopology = JSON.parse(await readFile(path.join(repositoryRoot, gwangjuPath), "utf8"));
   const bindings = {
     "line-5b8d9b05e7e6": () => parseMolitDaeguStationMappings(molitRawBytes, "1호선"),
     "line-e2938a4cc492": () => parseMolitDaeguStationMappings(molitRawBytes, "2호선"),
     "line-0ffaa95b1b5d": () => parseMolitDaeguStationMappings(molitRawBytes, "3호선"),
     "line-7051a9c2525c": () => parseMolitDaejeonStationMappings(molitRawBytes),
-    "line-e57a361e8892": () => parseMolitGwangjuStationMappings(molitRawBytes, gwangjuTopology),
   };
-  for (const source of inventory.sources) {
-    const evidence = source.membershipAdmissionEvidence;
-    if (evidence?.membershipSourceId !== "molit-urban-rail-full-route") continue;
-    const mappings = bindings[evidence.lineIds[0]]();
-    evidence.stationCount = mappings.length;
-    evidence.mappingSha256 = sha(JSON.stringify(mappings));
-    if (evidence.lineIds[0] === "line-7051a9c2525c" || evidence.lineIds[0] === "line-e57a361e8892") {
-      evidence.stationCodesSha256 = sha(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
-    }
-  }
+  const pairs = [
+    ["daegu-line1-route-topology", "molit-urban-rail-full-route-daegu-line1-membership", "line-5b8d9b05e7e6"],
+    ["daegu-line2-route-topology", "molit-urban-rail-full-route-daegu-line2-membership", "line-e2938a4cc492"],
+    ["daegu-line3-route-topology", "molit-urban-rail-full-route-daegu-line3-membership", "line-0ffaa95b1b5d"],
+    ["daejeon-station-distance-fare", "molit-urban-rail-full-route-daejeon-membership", "line-7051a9c2525c"],
+  ];
+  const inventory = {
+    sources: pairs.flatMap(([topologyId, membershipId, lineId]) => {
+      const mappings = bindings[lineId]();
+      const baseEvidence = {
+        snapshotId: `${membershipId}-predecessor`,
+        membershipSourceId: "molit-urban-rail-full-route",
+        lineIds: [lineId],
+        stationCount: mappings.length,
+        mappingSha256: sha(JSON.stringify(mappings)),
+        stationCodesSha256: sha(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber))),
+      };
+      return [
+        { id: topologyId, membershipAdmissionEvidence: structuredClone(baseEvidence) },
+        { id: membershipId, membershipAdmissionEvidence: structuredClone(baseEvidence) },
+      ];
+    }),
+  };
   const nextMolitSnapshot = {
     snapshotId: "molit-urban-rail-full-route-current-20261105T090000000Z",
     retrievedAt: "2026-11-05T09:00:00.000Z",
     rawSha256: sha(molitRawBytes),
     rawReceipt: { byteSize: molitRawBytes.length },
   };
-  rebindMolitMembershipEvidence(inventory, nextMolitSnapshot, molitRawBytes, gwangjuTopology);
-  for (const [topologyId, membershipId] of [
-    ["daegu-line1-route-topology", "molit-urban-rail-full-route-daegu-line1-membership"],
-    ["daegu-line2-route-topology", "molit-urban-rail-full-route-daegu-line2-membership"],
-    ["daegu-line3-route-topology", "molit-urban-rail-full-route-daegu-line3-membership"],
-    ["daejeon-station-distance-fare", "molit-urban-rail-full-route-daejeon-membership"],
-  ]) {
+  rebindMolitMembershipEvidence(inventory, nextMolitSnapshot, molitRawBytes, null);
+  for (const [topologyId, membershipId] of pairs) {
     const topologyEvidence = inventory.sources.find(({ id }) => id === topologyId).membershipAdmissionEvidence;
     const membershipEvidence = inventory.sources.find(({ id }) => id === membershipId).membershipAdmissionEvidence;
     assert.deepEqual(topologyEvidence, membershipEvidence);
