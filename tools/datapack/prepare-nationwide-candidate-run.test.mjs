@@ -2365,12 +2365,29 @@ test("#3036 전국 후보 팩의 KRIC 시설·증거는 fan-in head snapshot 하
 // 첫 등록 전(inventory 항목이 없거나 증거가 없음)에는 고르지 않고, 그때 원장 행이 있으면 실패한다.
 const ESCALATOR_LICENSE_URL = "https://www.data.go.kr/data/15041683/openapi.do";
 const ESCALATOR_STORED_AT = "2026-10-23T00:05:00.000Z";
+async function withoutKricEscalatorRead(baseRead = pinnedRead) {
+  const [inventory, ledger] = await Promise.all([
+    candidatePinnedJson(baseRead, "tools/datapack/source-inventory.json"),
+    candidatePinnedJson(baseRead, "tools/datapack/release/source-snapshots.json"),
+  ]);
+  inventory.sources = inventory.sources.filter(({ id }) => id !== KRIC_ESCALATOR);
+  const filteredLedger = ledger.filter(({ sourceId }) => sourceId !== KRIC_ESCALATOR);
+  const overrides = new Map([
+    ["tools/datapack/source-inventory.json", Buffer.from(JSON.stringify(inventory))],
+    ["tools/datapack/release/source-snapshots.json", Buffer.from(JSON.stringify(filteredLedger))],
+  ]);
+  return async (relative) => overrides.get(relative) ?? baseRead(relative);
+}
 async function escalatorCandidateInputs({ register = true, snapshotShape = "MIXED" } = {}) {
   const { standard, pack, snapshot: mixed } = await pinnedTopologyEscalatorInputs();
   const snapshot = snapshotShape === "MIXED" ? mixed : await collectedEscalatorSnapshot(escalatorRosterFor(standard.queries),
     (tuple) => (Number.parseInt(sha256(tuple.stinCd)[0], 16) < 8 ? [escalatorRowFor(tuple, "대합실")] : []));
-  const [inventory, ledger, freshness] = await Promise.all(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+  const [inventory, rawLedger, freshness] = await Promise.all(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
     "release/product-gates/datapack-freshness-sla.json"].map((relative) => candidatePinnedJson(pinnedRead, relative)));
+  inventory.sources = inventory.sources.filter(({ id }) => id !== KRIC_ESCALATOR);
+  const ledger = rawLedger.filter(({ sourceId }) => sourceId !== KRIC_ESCALATOR);
+  const staticAccessibilityClass = freshness.sourceClasses.find(({ id }) => id === "static_accessibility_facility");
+  staticAccessibilityClass.sourceIds = staticAccessibilityClass.sourceIds.filter((id) => id !== KRIC_ESCALATOR);
   const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   const standardSource = inventory.sources.find(({ id }) => id === KRIC_STANDARD);
@@ -2381,7 +2398,7 @@ async function escalatorCandidateInputs({ register = true, snapshotShape = "MIXE
   };
   delete entry.accessibilityAdmissionEvidence;
   inventory.sources.push(entry);
-  freshness.sourceClasses.find(({ id }) => id === "static_accessibility_facility").sourceIds.push(KRIC_ESCALATOR);
+  staticAccessibilityClass.sourceIds.push(KRIC_ESCALATOR);
   let row = null;
   if (register) {
     entry.accessibilityAdmissionEvidence = {
@@ -2416,9 +2433,10 @@ const resolveWith = (inputs, overrides = {}) => resolveKricEscalatorSnapshot({
 });
 
 test("#3036 에스컬레이터 원천은 등록 전에는 후보 입력이 아니고, 등록되면 원장 head·snapshot·영수증·신선도·약관에 결속된 snapshot을 쓴다", async () => {
+  const readWithoutEscalator = await withoutKricEscalatorRead();
   const [inventory, ledger, freshness] = await Promise.all(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
-    "release/product-gates/datapack-freshness-sla.json"].map((relative) => candidatePinnedJson(pinnedRead, relative)));
-  assert.equal(await resolveKricEscalatorSnapshot({ sourceInventory: inventory, sourceSnapshots: ledger, freshnessPolicy: freshness, evaluatedAt: escalatorClock, read: pinnedRead }), null, "inventory 항목이 없는 후보 입력");
+    "release/product-gates/datapack-freshness-sla.json"].map((relative) => candidatePinnedJson(readWithoutEscalator, relative)));
+  assert.equal(await resolveKricEscalatorSnapshot({ sourceInventory: inventory, sourceSnapshots: ledger, freshnessPolicy: freshness, evaluatedAt: escalatorClock, read: readWithoutEscalator }), null, "inventory 항목이 없는 후보 입력");
   const staged = await escalatorCandidateInputs({ register: false });
   assert.equal(await resolveWith(staged), null, "첫 등록 전 항목");
   for (const shape of ["MIXED", "00"]) {
@@ -2458,7 +2476,7 @@ test("#3036 반증: 에스컬레이터 원천 결속의 각 항을 어기면 후
 test("#3036 등록된 에스컬레이터 원천은 전국 후보에서 원천 밖 UNKNOWN 칸만 원문 규칙대로 바꾸고 팩 원천 목록에 실린다", async () => {
   const inputs = await escalatorCandidateInputs();
   const prepare = (readRepositoryFile) => prepareNationwideCandidate({ readRepositoryFile, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122 });
-  const [{ finalPack: before }, { finalPack: after }] = [await prepare(pinnedRead), await prepare(inputs.read)];
+  const [{ finalPack: before }, { finalPack: after }] = [await prepare(await withoutKricEscalatorRead()), await prepare(inputs.read)];
   const cell = ({ stationId, lineId, facilityType }) => `${stationId}|${lineId}|${facilityType}`;
   const beforeCells = new Map(before.stationFacilityEvidence.map((row) => [cell(row), row]));
   const expected = expectedEscalatorStates({ snapshot: inputs.snapshot, pack: after });
@@ -2494,7 +2512,7 @@ test("#3036 등록된 에스컬레이터 원천은 전국 후보에서 원천 �
 test("#3036 첫 등록 전 에스컬레이터 항목은 전국 후보 팩을 바꾸지 않는다", async () => {
   const staged = await escalatorCandidateInputs({ register: false });
   const prepare = (readRepositoryFile) => prepareNationwideCandidate({ readRepositoryFile, requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122 });
-  const [{ finalPack: before }, { finalPack: after }] = [await prepare(pinnedRead), await prepare(staged.read)];
+  const [{ finalPack: before }, { finalPack: after }] = [await prepare(await withoutKricEscalatorRead()), await prepare(staged.read)];
   assert.deepEqual(after.facilities, before.facilities);
   assert.deepEqual(after.stationFacilityEvidence, before.stationFacilityEvidence);
   assert.deepEqual(after.sourceInventory, before.sourceInventory);

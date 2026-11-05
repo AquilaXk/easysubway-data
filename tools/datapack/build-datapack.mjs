@@ -82,6 +82,7 @@ import { serviceDayStopTimes } from "./lib/service-day-seconds.mjs";
 import { networkEdgeStairColumns } from "./lib/network-edge-stair-columns.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
+import { KRIC_ESCALATOR_SOURCE_ID, kricQueryFacilities, kricStationContexts } from "./lib/kric-standard-facilities.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -1949,18 +1950,85 @@ async function validateAndApplyNetworkEdgeProvenance(
     ...[...capitalAdmissions.values()].map(({ freshUntil }) => Date.parse(freshUntil)),
   ];
   if (includePackAccessibilityFreshness) {
+    const admittedAccessibilityEvidence = new Map([[
+      incheonAccessibilityAdmission.source.id,
+      incheonAccessibilityAdmission,
+    ]]);
+    const kricEscalatorAdmission = await admittedKricEscalatorAccessibilityEvidence(
+      sourceInventory.value,
+      productionPacks,
+      repositoryRoot,
+    );
+    if (kricEscalatorAdmission != null) {
+      admittedAccessibilityEvidence.set(kricEscalatorAdmission.source.id, kricEscalatorAdmission);
+    }
     freshnessMillis.push(Date.parse(productionAccessibilityFreshUntil(
       productionPacks,
       sourceInventory.value,
       buildSpec.sourceSnapshots,
       now,
-      { admittedAccessibilityEvidence: new Map([[
-        incheonAccessibilityAdmission.source.id,
-        incheonAccessibilityAdmission,
-      ]]) },
+      { admittedAccessibilityEvidence },
     )));
   }
   return new Date(Math.min(...freshnessMillis)).toISOString();
+}
+
+async function admittedKricEscalatorAccessibilityEvidence(sourceInventory, productionPacks, repositoryRoot) {
+  const kricEscalatorSource = sourceInventory?.sources?.find(({ id }) => id === KRIC_ESCALATOR_SOURCE_ID);
+  const evidence = kricEscalatorSource?.accessibilityAdmissionEvidence;
+  if (evidence == null) return null;
+  if (kricEscalatorSource.requiredForProductionPack !== false
+    || kricEscalatorSource.productionUseAllowed !== true
+    || kricEscalatorSource.capabilities?.facility?.productionUseAllowed !== true
+    || kricEscalatorSource.license?.redistributionAllowed !== true
+    || evidence.decision !== "APPROVED"
+    || evidence.productionUseAllowed !== true) {
+    throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+  }
+  const { value: snapshot } = await readPinnedBuildJson(
+    { path: evidence.snapshotPath, sha256: evidence.snapshotFileSha256 },
+    "kricEscalatorSource.accessibilityAdmissionEvidence",
+    undefined,
+    repositoryRoot,
+  );
+  if (snapshot.snapshotId !== evidence.snapshotId
+    || snapshot.sourceId !== KRIC_ESCALATOR_SOURCE_ID
+    || snapshot.rawSha256 !== evidence.rawSha256
+    || snapshot.contentSha256 !== evidence.contentSha256
+    || snapshot.capturedAt !== evidence.capturedAt
+    || snapshot.freshUntil !== evidence.freshUntil
+    || !Array.isArray(snapshot.queries)) {
+    throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+  }
+  const queries = snapshot.queries.filter(({ status }) => status !== "UNVERIFIED_EVIDENCE_BLOCKED");
+  const evidenceHashes = new Set();
+  for (const pack of productionPacks) {
+    if (!Array.isArray(pack.stations) || !Array.isArray(pack.stationLines)) {
+      throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+    }
+    const stationNames = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
+    const stationContexts = kricStationContexts(snapshot, queries, pack.stationLines);
+    for (const query of queries) {
+      const stationName = stationNames.get(query.stationId);
+      if (typeof stationName !== "string" || stationName.length === 0) {
+        throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+      }
+      const observed = kricQueryFacilities({
+        snapshot,
+        query,
+        stationName,
+        stationContexts,
+      });
+      for (const row of observed.facilities) evidenceHashes.add(row.evidenceHash);
+      for (const row of observed.statusEvidence) evidenceHashes.add(row.evidenceHash);
+    }
+  }
+  return {
+    source: kricEscalatorSource,
+    snapshotId: evidence.snapshotId,
+    freshUntil: evidence.freshUntil,
+    evidenceHashes,
+  };
 }
 
 export function validateCapitalTopologyReverification(
@@ -2286,13 +2354,16 @@ export function productionAccessibilityFreshUntil(
       return Date.parse(snapshot.freshnessExpiresAt);
     }
     const admission = admittedAccessibilityEvidence.get(row.sourceId);
+    const matchesEvidenceHash = admission?.evidenceHashes instanceof Set
+      ? admission.evidenceHashes.has(row.evidenceHash)
+      : admission?.evidenceHash === row.evidenceHash;
     if (admission?.source?.id !== row.sourceId
       || !isDeepStrictEqual(admission.source, sources.get(row.sourceId))
       || admission.source.requiredForProductionPack !== false
       || admission.source.productionUseAllowed !== true
       || admission.source.license?.redistributionAllowed !== true
       || admission.snapshotId !== row.sourceSnapshotId
-      || admission.evidenceHash !== row.evidenceHash
+      || !matchesEvidenceHash
       || admission.freshUntil !== evidence.freshUntil
       || !Number.isFinite(Date.parse(admission.freshUntil))) {
       throw new Error(`production accessibility snapshot mismatch: ${row.sourceId}`);

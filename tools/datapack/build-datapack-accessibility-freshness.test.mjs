@@ -99,3 +99,38 @@ test("registered Incheon accessibility freshness uses the generic candidate proj
     admittedAccessibilityEvidence: new Map([[sourceId, admission]]),
   }), "2026-08-28T00:00:00.000Z");
 });
+
+test("registered KRIC escalator accessibility freshness validates per-query evidenceHashes Set", () => {
+  const sourceId = "kric-station-escalator-detailed";
+  const snapshotId = "kric-station-escalator-detailed-20261105T201741340Z";
+  const freshUntil = "2026-11-06T20:17:41.340Z";
+  const facilityEvidenceHash = "a".repeat(64);
+  const statusEvidenceHash = "b".repeat(64);
+  const source = {
+    id: sourceId,
+    requiredForProductionPack: false,
+    productionUseAllowed: true,
+    license: { redistributionAllowed: true },
+    accessibilityAdmissionEvidence: {
+      snapshotId,
+      freshUntil,
+    },
+  };
+  const admission = {
+    source,
+    snapshotId,
+    freshUntil,
+    evidenceHashes: new Set([facilityEvidenceHash, statusEvidenceHash]),
+  };
+  assert.equal(productionAccessibilityFreshUntil([{
+    facilities: [{ sourceId, sourceSnapshotId: snapshotId, evidenceHash: facilityEvidenceHash }],
+    stationFacilityEvidence: [{ sourceId, sourceSnapshotId: snapshotId, evidenceHash: statusEvidenceHash }],
+  }], { sources: [source] }, [], new Date("2026-11-05T20:30:00.000Z"), {
+    admittedAccessibilityEvidence: new Map([[sourceId, admission]]),
+  }), freshUntil);
+  assert.throws(() => productionAccessibilityFreshUntil([{
+    facilities: [{ sourceId, sourceSnapshotId: snapshotId, evidenceHash: "c".repeat(64) }],
+  }], { sources: [source] }, [], new Date("2026-11-05T20:30:00.000Z"), {
+    admittedAccessibilityEvidence: new Map([[sourceId, admission]]),
+  }), /production accessibility snapshot mismatch: kric-station-escalator-detailed/);
+});
