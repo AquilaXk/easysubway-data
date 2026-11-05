@@ -8,6 +8,12 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import {
+  deriveFreshnessExpiresAt,
+} from "./freshness-policy.mjs";
+import {
+  deriveRawRetentionExpiresAt,
+} from "./source-governance-policy.mjs";
+import {
   assertRepositoryRelativePath,
   purgeEvidenceBySnapshot,
   validateSourceSnapshotFreshness,
@@ -49,6 +55,60 @@ async function syntheticCurrentRepository(t, prefix) {
   await copySyntheticCurrentPublicRouteMapRepository(root, repositoryRoot, {
     now: new Date(syntheticCurrentEvaluationAt),
   });
+  const [candidatePath, snapshotsPath, policyPath, governancePath] = [
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/source-snapshots.json",
+    "release/product-gates/datapack-freshness-sla.json",
+    "tools/datapack/source-governance-policy.json",
+  ].map((relative) => path.join(repositoryRoot, relative));
+  const [candidate, snapshots, freshnessPolicy, governancePolicy] = await Promise.all([
+    readFile(candidatePath, "utf8").then(JSON.parse),
+    readFile(snapshotsPath, "utf8").then(JSON.parse),
+    readFile(policyPath, "utf8").then(JSON.parse),
+    readFile(governancePath, "utf8").then(JSON.parse),
+  ]);
+  const evaluatedMillis = Date.parse(syntheticCurrentEvaluationAt);
+  const refreshedAt = new Date(evaluatedMillis - 60_000).toISOString();
+  let updated = false;
+  for (const projection of candidate.sourceSnapshots) {
+    if (Date.parse(projection.freshnessExpiresAt) > evaluatedMillis) continue;
+    const row = snapshots.find(({ snapshotId }) => snapshotId === projection.snapshotId);
+    const sourceClass = freshnessPolicy.sourceClasses.find(({ sourceIds }) => sourceIds.includes(projection.sourceId));
+    if (!row || !sourceClass) continue;
+    row.retrievedAt = refreshedAt;
+    if (typeof row.sourceUpdatedAt === "string") row.sourceUpdatedAt = refreshedAt;
+    if (row.rawReceipt && typeof row.rawReceipt === "object") {
+      row.rawReceipt.capturedAt = refreshedAt;
+      row.rawReceipt.storedAt = refreshedAt;
+    }
+    row.freshnessExpiresAt = deriveFreshnessExpiresAt({
+      policy: freshnessPolicy,
+      sourceClassId: sourceClass.id,
+      basisAt: row[sourceClass.basisField],
+      evaluationAt: syntheticCurrentEvaluationAt,
+    });
+    row.rawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+      policy: governancePolicy,
+      sourceId: row.sourceId,
+      retrievedAt: refreshedAt,
+    });
+    if (row.rawReceipt && typeof row.rawReceipt === "object" && typeof row.rawReceipt.rawRetentionExpiresAt === "string") {
+      row.rawReceipt.rawRetentionExpiresAt = row.rawRetentionExpiresAt;
+    }
+    projection.freshnessExpiresAt = row.freshnessExpiresAt;
+    projection.rawRetentionExpiresAt = row.rawRetentionExpiresAt;
+    updated = true;
+  }
+  if (updated) {
+    const selectedIds = new Set(candidate.sourceSnapshotIds);
+    candidate.sourceSnapshotSetHash = sha256(JSON.stringify(
+      snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
+    ));
+    await Promise.all([
+      writeFile(snapshotsPath, `${JSON.stringify(snapshots, null, 2)}\n`),
+      writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`),
+    ]);
+  }
   return repositoryRoot;
 }
 const purgeKeys = generateKeyPairSync("ed25519");

@@ -18,6 +18,9 @@ export const SOURCE_REVERIFICATION_RECIPE_IDS = Object.freeze([
   "daejeon-timetable",
   "daegu-sources",
   "daegu-accessibility",
+  "seoulmetro-station-line-info",
+  "kric-line4-timetable",
+  "public-static-network-v2",
 ]);
 
 /**

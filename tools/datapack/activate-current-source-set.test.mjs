@@ -54,7 +54,9 @@ const TEST_GOVERNANCE_POLICY_BINDING = Object.freeze({
   governancePolicyVersion: "2026-07-15",
   governancePolicySha256: "9".repeat(64),
 });
-const CURRENT_V2_TEST_NOW = (await currentTopologyAdmissionClock(root)).inWindow;
+const CURRENT_V2_TEST_NOW = new Date(
+  Math.max(...(await currentV2HeadsFixture()).sourceSnapshots.map(({ retrievedAt }) => Date.parse(retrievedAt))) + 60_000,
+);
 
 async function currentV2HeadsFixture() {
   const [ledger, inventory] = await Promise.all([
@@ -1599,11 +1601,8 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
   const { topology: baselineTopology, bytes: baselineTopologyBytes } = await historicalCandidateCapitalTopology(baseSpec);
-  const capitalTopologyCandidate = baseSpec.networkEdgeEvidence?.capitalTopologyCandidate;
-  assert.ok(capitalTopologyCandidate?.path);
-  const currentTopologyPath = capitalTopologyCandidate.path;
-  const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));
-  const currentTopology = JSON.parse(currentTopologyBytes);
+  const { relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology } =
+    await currentCapitalTopology(sourceInventory);
   const topologySnapshotId = path.basename(currentTopologyPath, ".json");
   assert.equal(currentTopology.lines.length, 22);
   assert.equal(currentTopology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_438);
@@ -2271,7 +2270,7 @@ test("topology source admission은 후보 spec 없이 inventory·reviewed·canon
     readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
   ]);
   const { topology: baselineTopology, bytes: baselineTopologyBytes } = await historicalCandidateCapitalTopology(baseSpec);
-  const currentTopologyPath = baseSpec.networkEdgeEvidence.capitalTopologyCandidate.path;
+  const { relativePath: currentTopologyPath } = await currentCapitalTopology(sourceInventory);
   const incheonSource = (id) => sourceInventory.sources.find((source) => source.id === id);
   const currentIncheonTopologyPath = incheonSource("incheon-transit-station-info").topologyAdmissionEvidence.snapshotPath;
   const currentIncheonAccessibilityPath = `tools/datapack/sources/${incheonSource("incheon-transit-accessibility").registrationEvidence.snapshotId}.json`;

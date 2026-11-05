@@ -179,6 +179,11 @@ async function currentReleaseFixture(t) {
   const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
   const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
   for (const row of ledger.filter(({ sourceId }) => sourceId === "capital-route-topology")) row.credentialRedacted = true;
+  for (const row of ledger) {
+    if (typeof row.freshnessExpiresAt === "string" && Date.parse(row.freshnessExpiresAt) <= NOW.getTime()) {
+      row.freshnessExpiresAt = new Date(NOW.getTime() + 86_400_000).toISOString();
+    }
+  }
   await writeJson(ledgerPath, ledger);
   await bindReleaseRequestToCandidate(root);
   return root;

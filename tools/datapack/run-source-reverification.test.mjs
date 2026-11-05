@@ -309,8 +309,10 @@ test("의존 묶음은 recipe 표의 dependsOn으로 정해진다(실제 표: to
     ["busan-topology", "busan-accessibility", "busan-timetable"],
     ["daejeon-topology", "daejeon-accessibility", "daejeon-timetable"],
     ["daegu-sources", "daegu-accessibility"],
+    ["seoulmetro-station-line-info"],
+    ["kric-line4-timetable"],
+    ["public-static-network-v2"],
   ]);
-  // 여러 의존 대상을 가진 recipe는 그 대상들의 묶음을 하나로 합친다.
   const merged = dependencyGroups([meta("a"), meta("b"), meta("c", ["a", "b"]), meta("d")]);
   assert.deepEqual(merged.map((group) => group.map(({ id }) => id)), [["a", "b", "c"], ["d"]]);
 });

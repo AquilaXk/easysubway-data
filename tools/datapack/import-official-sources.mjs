@@ -1448,7 +1448,7 @@ function transitScheduleMinimumTableRows(rows) {
   );
 }
 
-function validateProductionScheduleProvenance(provenance, selectedSources, allowedSourceIds) {
+export function validateProductionScheduleProvenance(provenance, selectedSources, allowedSourceIds) {
   if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
     throw new Error("production transit schedule import requires sourced schedule provenance");
   }
@@ -1468,7 +1468,10 @@ function validateProductionScheduleProvenance(provenance, selectedSources, allow
     source.admissionEvidence?.snapshotId,
     `source admission snapshotId: ${sourceId}`,
   );
-  if (sourceSnapshotId !== admittedSnapshotId) {
+  const reverifiedFromSnapshotIds = Array.isArray(source.admissionEvidence?.reverifiedFromSnapshotIds)
+    ? source.admissionEvidence.reverifiedFromSnapshotIds
+    : [];
+  if (sourceSnapshotId !== admittedSnapshotId && !reverifiedFromSnapshotIds.includes(sourceSnapshotId)) {
     throw new Error(`scheduleProvenance.sourceSnapshotId must match selected source admission snapshot: ${sourceId}`);
   }
   productionEvidenceHash(provenance.providerRecordHash, true, sourceId, "scheduleProvenance.providerRecordHash");

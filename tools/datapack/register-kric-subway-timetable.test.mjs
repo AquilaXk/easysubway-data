@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { validateProductionScheduleProvenance } from "./import-official-sources.mjs";
 import { registerKricSubwayTimetable } from "./register-kric-subway-timetable.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
@@ -135,3 +136,79 @@ test("4호선 등록기는 승인 없음·다른 원본·receipt 불일치·HEAD
   await assert.rejects(register(), /raw receipt is invalid/);
   assert.deepEqual(await readFile(path.join(root, INPUTS[1])), ledgerBytes);
 });
+
+test("4호선 등록기는 검토 파일 없이(무인 재확인) 현재 head가 승인 상태이고 스키마·원본 응답 인벤토리 해시가 같으면 이전 승인을 이월하고 응답 변경 시 SOURCE_SHA_DRIFT로 거부한다", async (t) => {
+  const { root, paths, receipt, rawSha256 } = await fixture(t);
+  await assert.rejects(
+    registerKricSubwayTimetable({
+      repositoryRoot: root, collectionPath: paths.collectionPath, receiptPath: paths.receiptPath, reviewAdmissionPath: null, expectedHeadSha: HEAD, gitRunner, now: NOW,
+    }),
+    /SOURCE_SHA_DRIFT/,
+  );
+
+  const ledgerPath = path.join(root, INPUTS[1]);
+  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  const headId = validateLineage(ledger).headsBySource[SOURCE_ID];
+  const headRow = ledger.find(({ snapshotId }) => snapshotId === headId);
+  headRow.redactedRequestFingerprint = collection().rawResponseInventory.inventorySha256;
+  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+
+  const previousInventory = JSON.parse(await readFile(path.join(root, INPUTS[0]), "utf8"));
+  const previousAdmission = previousInventory.sources.find(({ id }) => id === SOURCE_ID).admissionEvidence;
+
+  await registerKricSubwayTimetable({
+    repositoryRoot: root, collectionPath: paths.collectionPath, receiptPath: paths.receiptPath, reviewAdmissionPath: null, expectedHeadSha: HEAD, gitRunner, now: NOW,
+  });
+
+  const evidence = JSON.parse(await readFile(path.join(root, INPUTS[0]), "utf8")).sources.find(({ id }) => id === SOURCE_ID).admissionEvidence;
+  assert.equal(evidence.snapshotId, receipt.snapshotId);
+  assert.equal(evidence.rawSha256, rawSha256);
+  assert.equal(evidence.decision, "APPROVED");
+  assert.equal(evidence.approvedBy, previousAdmission.approvedBy);
+  assert.equal(evidence.approvedAt, previousAdmission.approvedAt);
+  assert.equal(evidence.adminReviewRecordHash, previousAdmission.adminReviewRecordHash);
+  assert.deepEqual(evidence.reverifiedFromSnapshotIds, [previousAdmission.snapshotId]);
+});
+
+test("validateProductionScheduleProvenance는 무인 재확인 계보(reverifiedFromSnapshotIds)에 기록된 직전 snapshotId만 수용하고 미기록 snapshotId는 거부한다", async () => {
+  const inventory = JSON.parse(await readFile(path.join(REPOSITORY_ROOT, INPUTS[0]), "utf8"));
+  const baseSource = inventory.sources.find(({ id }) => id === SOURCE_ID);
+  const selectedSources = [{
+    ...baseSource,
+    admissionEvidence: {
+      ...baseSource.admissionEvidence,
+      snapshotId: "kric-subway-timetable-line4-pilot-20261105",
+      reverifiedFromSnapshotIds: ["kric-subway-timetable-line4-pilot-20261001"],
+    },
+  }];
+  const allowedSourceIds = new Set([SOURCE_ID]);
+  const baseProvenance = {
+    sourceId: SOURCE_ID,
+    sourceSnapshotId: "kric-subway-timetable-line4-pilot-20261001",
+    providerRecordHash: "a1".repeat(32),
+    evidenceHash: "b2".repeat(32),
+    retrievedAt: "2026-10-01T00:00:00.000Z",
+  };
+
+  assert.equal(
+    validateProductionScheduleProvenance(baseProvenance, selectedSources, allowedSourceIds).sourceSnapshotId,
+    "kric-subway-timetable-line4-pilot-20261001",
+  );
+  assert.throws(
+    () => validateProductionScheduleProvenance(
+      { ...baseProvenance, sourceSnapshotId: "kric-subway-timetable-line4-pilot-20260901" },
+      selectedSources,
+      allowedSourceIds,
+    ),
+    /scheduleProvenance\.sourceSnapshotId must match selected source admission snapshot: kric-subway-timetable/,
+  );
+  assert.throws(
+    () => validateProductionScheduleProvenance(
+      { ...baseProvenance, sourceSnapshotId: "kric-subway-timetable-line4-pilot-20261201" },
+      selectedSources,
+      allowedSourceIds,
+    ),
+    /scheduleProvenance\.sourceSnapshotId must match selected source admission snapshot: kric-subway-timetable/,
+  );
+});
+

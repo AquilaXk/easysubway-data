@@ -163,6 +163,43 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     inventoryChanges: changes({ "daegu-transportation-accessibility": ACCESSIBILITY_FIELDS }),
     due: null,
   },
+  {
+    id: "seoulmetro-station-line-info",
+    message: "[Data] 서울교통공사 역·노선 정보를 다시 수집해 등록",
+    sourceIds: ["seoulmetro-station-line-info"],
+    dependsOn: [],
+    inventoryChanges: changes({ "seoulmetro-station-line-info": ["admissionEvidence", "retrievedAt"] }),
+    due: ledgerHead("seoulmetro-station-line-info"),
+  },
+  {
+    id: "kric-line4-timetable",
+    message: "[Data] KRIC 4호선 시간표를 다시 수집해 등록",
+    sourceIds: ["kric-subway-timetable"],
+    dependsOn: [],
+    inventoryChanges: changes({ "kric-subway-timetable": ["admissionEvidence", "observedDataUpdatedAt", "retrievedAt"] }),
+    due: ledgerHead("kric-subway-timetable"),
+  },
+  {
+    id: "public-static-network-v2",
+    message: "[Data] 공공 정적 노선망(서울 노선도 위치·국토부 전체 노선)을 다시 수집해 등록",
+    sourceIds: ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"],
+    dependsOn: [],
+    inventoryChanges: changes({
+      "seoul-metro-route-map-positions": ["admissionEvidence", "observedDataUpdatedAt", "retrievedAt", "routeMapAdmissionEvidence"],
+      "molit-urban-rail-full-route": ["admissionEvidence", "membershipCoverageEvidence", "observedDataUpdatedAt", "retrievedAt"],
+      "daegu-line1-route-topology": MEMBERSHIP_FIELDS,
+      "daegu-line2-route-topology": MEMBERSHIP_FIELDS,
+      "daegu-line3-route-topology": MEMBERSHIP_FIELDS,
+      "daejeon-station-distance-fare": MEMBERSHIP_FIELDS,
+      "gwangju-transportation-route-topology": MEMBERSHIP_FIELDS,
+      "molit-urban-rail-full-route-daegu-line1-membership": MEMBERSHIP_FIELDS,
+      "molit-urban-rail-full-route-daegu-line2-membership": MEMBERSHIP_FIELDS,
+      "molit-urban-rail-full-route-daegu-line3-membership": MEMBERSHIP_FIELDS,
+      "molit-urban-rail-full-route-daejeon-membership": MEMBERSHIP_FIELDS,
+      "molit-urban-rail-full-route-gwangju-membership": MEMBERSHIP_FIELDS,
+    }),
+    due: ledgerHead("seoul-metro-route-map-positions", "molit-urban-rail-full-route"),
+  },
 ]);
 
 if (JSON.stringify(REVERIFICATION_RECIPES.map(({ id }) => id)) !== JSON.stringify(SOURCE_REVERIFICATION_RECIPE_IDS)) {

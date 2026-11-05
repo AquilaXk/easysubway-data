@@ -441,6 +441,7 @@ const PACK_TIME_KEYS = Object.freeze(["updatedAt", "lastVerifiedAt", "reviewedAt
 
 // #1062: pack이 입력 파일을 따라 옮기는 KRIC·서울 증거 행. 표(pack) -> 입력 파일의 같은 신원 행 목록.
 const FOLLOW_SOURCE_IDS = Object.freeze([KRIC_SOURCE_ID, "seoul-metro-accessibility"]);
+const FOLLOW_INVENTORY_SOURCE_IDS = Object.freeze([...FOLLOW_SOURCE_IDS, "molit-urban-rail-full-route", "kric-subway-timetable"]);
 const FOLLOW_TABLES = Object.freeze({ facilities: "facilityRows", networkEdges: "routeEdges", stationFacilityEvidence: "accessibilityStatusEvidence" });
 const FOLLOW_ROW_KEYS = Object.freeze(["sourceSnapshotId", "verifiedAt", "retrievedAt", "lastVerifiedAt", "evidenceHash"]);
 const evidenceKey = (row) => [row.stationId, row.lineId, row.facilityType, row.sourceId].join("\u0000");
@@ -480,7 +481,7 @@ async function loadFollowContext({ files, headInventory, baseSha }) {
       }
     }
     const observed = new Map();
-    for (const id of FOLLOW_SOURCE_IDS) {
+    for (const id of FOLLOW_INVENTORY_SOURCE_IDS) {
       const date = entryOf(headInventory, id)?.observedDataUpdatedAt;
       if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(date)) observed.set(id, date);
     }
@@ -592,7 +593,7 @@ export function packContentViolations({ base, head, sources, follow = null }) {
         for (const reason of followRowViolations({ x, y, table, follow, head })) problem(pathOf(parts), reason);
         return;
       }
-      if (table === "sourceInventory" && typeof x.id === "string" && FOLLOW_SOURCE_IDS.includes(x.id)) {
+      if (table === "sourceInventory" && typeof x.id === "string" && FOLLOW_INVENTORY_SOURCE_IDS.includes(x.id)) {
         if (sameJson(x, y)) return;
         for (const reason of followInventoryViolations({ x, y, follow, pack: head.packs?.[Number(/^\[(\d+)\]$/u.exec(parts[2] ?? "")?.[1])] })) problem(pathOf(parts), reason);
         return;

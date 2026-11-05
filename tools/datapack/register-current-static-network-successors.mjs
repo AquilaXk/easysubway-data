@@ -28,6 +28,7 @@ import {
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 import { deriveCurrentMolitMembershipCoverage } from "./current-molit-observation.mjs";
 import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -114,6 +115,12 @@ const MOLIT_MEMBERSHIP_BINDINGS = Object.freeze({
   "line-7051a9c2525c": parseMolitDaejeonStationMappings,
   "line-e57a361e8892": parseMolitGwangjuStationMappings,
 });
+const MOLIT_MEMBERSHIP_SNAPSHOT_PREFIX_BY_LINE_ID = Object.freeze({
+  "line-5b8d9b05e7e6": "molit-urban-rail-full-route-daegu-line1-membership",
+  "line-e2938a4cc492": "molit-urban-rail-full-route-daegu-line2-membership",
+  "line-0ffaa95b1b5d": "molit-urban-rail-full-route-daegu-line3-membership",
+  "line-7051a9c2525c": "molit-urban-rail-full-route-daejeon-membership",
+});
 
 function gwangjuTopologyAdmission(inventory) {
   const sources = inventory.sources?.filter(({ id }) => id === "gwangju-transportation-route-topology");
@@ -139,7 +146,7 @@ async function readGwangjuMembershipTopology(inventory, read) {
   return { relative, bytes: topologyBytes, snapshot };
 }
 
-function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes, gwangjuTopology) {
+export function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes, gwangjuTopology) {
   if (!Array.isArray(inventory?.sources) || !Buffer.isBuffer(rawBytes)
     || sha(rawBytes) !== snapshot?.rawSha256 || rawBytes.length !== snapshot?.rawReceipt?.byteSize) {
     throw new Error("static network MOLIT membership raw binding is invalid");
@@ -163,8 +170,22 @@ function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes, gwangjuTop
       || stationCodesSha256 != null && evidence.stationCodesSha256 !== stationCodesSha256) {
       throw new Error("static network MOLIT membership admission drift is invalid");
     }
+    const effectiveStationCodesSha256 = stationCodesSha256 ?? evidence.stationCodesSha256;
+    const snapshotPrefix = MOLIT_MEMBERSHIP_SNAPSHOT_PREFIX_BY_LINE_ID[lineIds[0]];
+    if (snapshotPrefix && !SHA.test(effectiveStationCodesSha256 ?? "")) {
+      throw new Error("static network MOLIT membership station codes hash is required");
+    }
+    const nextSnapshotId = snapshotPrefix
+      ? `${snapshotPrefix}-${sha(canonicalJson({
+        molitSnapshotId: snapshot.snapshotId,
+        membershipSourceRawSha256: snapshot.rawSha256,
+        mappingSha256,
+        stationCodesSha256: effectiveStationCodesSha256,
+      }))}`
+      : evidence.snapshotId;
     source.membershipAdmissionEvidence = {
       ...evidence,
+      snapshotId: nextSnapshotId,
       verifiedAt: snapshot.retrievedAt,
       stationCount: mappings.length,
       membershipSourceRawSha256: snapshot.rawSha256,
