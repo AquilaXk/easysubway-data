@@ -34,6 +34,29 @@ function duration(value) { const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/
 function currentExpiry(inventory, itxExpiry) { const sources = object(inventory, "source inventory").sources; if (!Array.isArray(sources)) throw new Error("source inventory is invalid"); const capital = sources.filter((source) => requiresCurrentCapitalTopologyAdmission(object(source, "source inventory source"))); if (capital.length !== 16 || new Set(capital.map(({ id }) => id)).size !== 16) throw new Error("capital current topology admissions must contain exactly sixteen unique sources"); const expiry = capital.map((source) => instant(source.routeMapAdmissionEvidence?.currentTopologyAdmission?.freshUntil, `${source.id} current topology freshUntil`)); for (const [id, evidence] of INCHEON) { const matches = sources.filter((source) => source.id === id); if (matches.length !== 1) throw new Error(`${id} source identity is invalid`); expiry.push(instant(matches[0][evidence]?.freshUntil, `${id} freshUntil`)); } expiry.push(itxExpiry); return Math.min(...expiry); }
 
 function repositoryFile(repositoryRoot, relative, label) { if (typeof relative !== "string" || path.posix.isAbsolute(relative) || relative.includes("\\") || relative.split("/").some((part) => part === "" || part === "." || part === "..")) throw new Error(`${label} path is invalid`); const root = path.resolve(repositoryRoot); const resolved = path.resolve(root, relative); if (!resolved.startsWith(`${root}${path.sep}`)) throw new Error(`${label} path is invalid`); return resolved; }
+async function promotedItxFreshness(repositoryRoot) {
+  let evidenceBytes;
+  try {
+    evidenceBytes = await readFile(repositoryFile(
+      repositoryRoot,
+      "tools/datapack/itx-cheongchun-topology-evidence.json",
+      "promoted ITX topology evidence",
+    ));
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+  const evidence = object(
+    json(evidenceBytes, "promoted ITX topology evidence"),
+    "promoted ITX topology evidence",
+  );
+  if (evidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence") {
+    throw new Error("promoted ITX topology evidence identity is invalid");
+  }
+  const freshUntil = evidence.sourceArtifact?.freshUntil;
+  const reusableExpiry = instant(freshUntil, "promoted ITX topology evidence freshUntil");
+  return { freshUntil, reusableExpiry };
+}
 async function currentItxFreshness(candidate, repositoryRoot) {
   object(candidate, "candidate build spec");
   if (!/^tools\/datapack\/itx-cheongchun-topology-evidence(?:-[0-9]{17})?\.json$/u
@@ -61,33 +84,44 @@ async function currentItxFreshness(candidate, repositoryRoot) {
   const freshUntil = evidence.sourceArtifact?.freshUntil;
   const reusableExpiry = instant(freshUntil, "candidate ITX topology evidence freshUntil");
   const binding = candidate.networkEdgeEvidence?.itxCurrentTopologyAdmission;
-  if (binding == null) return { freshUntil, reusableExpiry, selectedExpiry: reusableExpiry };
-  object(binding, "ITX current topology admission binding");
-  if (!/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u
-    .test(binding.path ?? "") || !/^[a-f0-9]{64}$/u.test(binding.sha256 ?? "")) {
-    throw new Error("ITX current topology admission binding is invalid");
+  let selectedExpiry = reusableExpiry;
+  if (binding != null) {
+    object(binding, "ITX current topology admission binding");
+    if (!/^tools\/datapack\/itx-current-network-edge-admission-[0-9]{8}\.json$/u
+      .test(binding.path ?? "") || !/^[a-f0-9]{64}$/u.test(binding.sha256 ?? "")) {
+      throw new Error("ITX current topology admission binding is invalid");
+    }
+    const admissionBytes = await readFile(repositoryFile(
+      repositoryRoot,
+      binding.path,
+      "ITX current topology admission",
+    ));
+    if (sha256(admissionBytes) !== binding.sha256) {
+      throw new Error("ITX current topology admission bytes mismatch");
+    }
+    const admission = object(
+      json(admissionBytes, "ITX current topology admission"),
+      "ITX current topology admission",
+    );
+    if (admission.artifactKind !== "itx-current-network-edge-admission"
+      || admission.status !== "ADMITTED"
+      || binding.path !== `tools/datapack/${admission.artifactId}.json`) {
+      throw new Error("ITX current topology admission identity is invalid");
+    }
+    selectedExpiry = instant(admission.freshUntil, "ITX current topology admission freshUntil");
   }
-  const admissionBytes = await readFile(repositoryFile(
-    repositoryRoot,
-    binding.path,
-    "ITX current topology admission",
-  ));
-  if (sha256(admissionBytes) !== binding.sha256) {
-    throw new Error("ITX current topology admission bytes mismatch");
-  }
-  const admission = object(
-    json(admissionBytes, "ITX current topology admission"),
-    "ITX current topology admission",
-  );
-  if (admission.artifactKind !== "itx-current-network-edge-admission"
-    || admission.status !== "ADMITTED"
-    || binding.path !== `tools/datapack/${admission.artifactId}.json`) {
-    throw new Error("ITX current topology admission identity is invalid");
+  const promoted = await promotedItxFreshness(repositoryRoot);
+  if (promoted && promoted.reusableExpiry > reusableExpiry) {
+    return {
+      freshUntil: promoted.freshUntil,
+      reusableExpiry: promoted.reusableExpiry,
+      selectedExpiry: Math.max(selectedExpiry, promoted.reusableExpiry),
+    };
   }
   return {
     freshUntil,
     reusableExpiry,
-    selectedExpiry: instant(admission.freshUntil, "ITX current topology admission freshUntil"),
+    selectedExpiry,
   };
 }
 function ownedPrs(value, repository) { if (!Array.isArray(value) || !/^[^/\s]+\/[^/\s]+$/u.test(repository ?? "")) throw new Error("pull requests are invalid"); return value.filter((pr) => { object(pr, "pull request"); if (!BRANCH.test(pr.headRefName ?? "")) return false; if (pr.baseRefName !== "main" || pr.isCrossRepository !== false || pr.headRepository?.nameWithOwner !== repository || !["OPEN", "CLOSED", "MERGED"].includes(pr.state) || typeof pr.isDraft !== "boolean") throw new Error("current topology refresh pull request is invalid"); return true; }); }
