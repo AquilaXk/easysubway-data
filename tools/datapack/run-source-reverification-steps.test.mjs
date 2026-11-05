@@ -374,8 +374,16 @@ test("서울교통공사 역·노선 정보와 KRIC 4호선 시간표와 공공 
 
   const line4 = await record("kric-line4-timetable");
   assert.equal(line4.calls.length, 3);
-  assert.equal(line4.calls[0].script, "collect-kric-line4-timetables.mjs");
-  assert.deepEqual(line4.calls[0].env, { KRIC_SERVICE_KEY: "kric-key-value" });
+  assert.deepEqual(line4.calls[0], {
+    script: "collect-kric-line4-timetables.mjs",
+    args: [
+      "--roster", abs("tools/datapack/sources/kric-line4-route-roster-20260706.json"), "--line-id", "seoul-4",
+      "--service-pattern-evidence", abs("tools/datapack/kric-subway-timetable-service-pattern-evidence.json"),
+      "--no-data-evidence", abs("tools/datapack/kric-subway-timetable-no-data-evidence.json"),
+      "--output", path.join(line4.operationDir, "collection.json"),
+    ],
+    env: { KRIC_SERVICE_KEY: "kric-key-value" },
+  });
   assert.equal(line4.calls[1].script, "publish-kric-timetable-raw.mjs");
   assert.deepEqual(line4.calls[2], {
     script: "register-kric-subway-timetable.mjs",
@@ -390,6 +398,36 @@ test("서울교통공사 역·노선 정보와 KRIC 4호선 시간표와 공공 
     args: ["--operation-root", path.join(netV2.operationDir, "operation"), "--expected-main-sha", MAIN, "--expected-head-sha", HEAD],
     env: {},
   }]);
+});
+
+test("run-source-reverification.mjs의 정적 abs(ctx, ...) 리터럴과 recipe가 넘기는 저장소 입력 경로는 모두 디스크에 존재한다", async () => {
+  const source = await readFile(abs("tools/datapack/run-source-reverification.mjs"), "utf8");
+  const literalPaths = [...source.matchAll(/\babs\(\s*ctx\s*,\s*(["'])([^"'`$]+)\1\s*\)/gu)].map((match) => match[2]);
+  assert.ok(literalPaths.length > 0);
+  for (const relative of literalPaths) {
+    await readFile(abs(relative)).catch(async (error) => {
+      if (error.code === "EISDIR") {
+        await readdir(abs(relative));
+        return;
+      }
+      assert.fail(`missing static abs(ctx, ${JSON.stringify(relative)}) target: ${error.code ?? error.message}`);
+    });
+  }
+  const shared = new Map();
+  for (const recipeId of SOURCE_REVERIFICATION_RECIPE_IDS) {
+    const { calls } = await record(recipeId, { shared });
+    for (const { script, args } of calls) {
+      for (const arg of args.filter((value) => value.startsWith(`${root}${path.sep}`))) {
+        await readFile(arg).catch(async (error) => {
+          if (error.code === "EISDIR") {
+            await readdir(arg);
+            return;
+          }
+          assert.fail(`${recipeId} ${script} references missing repository path ${path.relative(root, arg)}: ${error.code ?? error.message}`);
+        });
+      }
+    }
+  }
 });
 
 // 인자 계약: 기록한 모든 명령을 실제 도구에 넘긴다. 네트워크는 막고(fetch 차단) 환경은 비운다. 인자 오류로 거부되면 실패다.
