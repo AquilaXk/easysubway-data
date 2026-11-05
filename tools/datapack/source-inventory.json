@@ -5095,8 +5095,8 @@
       },
       "requiredForProductionPack": true,
       "updateFrequency": "provider-documented-on-change",
-      "observedDataUpdatedAt": "2026-10-01",
-      "retrievedAt": "2026-10-01",
+      "observedDataUpdatedAt": "2026-11-05",
+      "retrievedAt": "2026-11-05",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -5147,12 +5147,12 @@
         "issue": 1415,
         "candidateId": "kric-subway-timetable",
         "sourceId": "kric-subway-timetable",
-        "snapshotId": "kric-subway-timetable-line4-pilot-20261001",
+        "snapshotId": "kric-subway-timetable-line4-pilot-20261105",
         "decision": "APPROVED",
         "approvedBy": "data-release-authority",
         "approvedAt": "2026-10-01T04:01:42.000Z",
         "sampleEvidenceHash": "918f97c9da55bf3279bfe280bf00beaa2902a7d20e8b3733a027471c4dff171e",
-        "rawSha256": "6fa54bfebb20c4b33ec469883aef6b0f948fc2f5867ea5eb48eee8a43ce305b2",
+        "rawSha256": "0c560160a38754b7d51854fc264640e6030db9a30c2f0d514f63d128a60dcaca",
         "schemaFingerprint": "60cb682c2ea9773d183ccbb7a1a333cdeb8681cc11e3d2c6cd4869f5b3ecdf9a",
         "sourceSnapshotSetHash": "306e5150d3744f0ff8bc42a0e12c2662e855f4194137f6bfbd63b7b405cf3b62",
         "sourceInventorySha256": "3fefe143323e822a9f2ceacd2d1366b72b7f5dc4d046ad9d6de37a44914bed8e",
@@ -5170,7 +5170,10 @@
           "unlockStatus": "approved",
           "productionUseAllowed": true
         },
-        "productionUseNoteKo": "수도권 4호선 상록수-사당 pilot stop_times 적재에 한해 production 사용을 허용한다."
+        "productionUseNoteKo": "수도권 4호선 상록수-사당 pilot stop_times 적재에 한해 production 사용을 허용한다.",
+        "reverifiedFromSnapshotIds": [
+          "kric-subway-timetable-line4-pilot-20261001"
+        ]
       }
     },
     {
