@@ -27,6 +27,9 @@ export function candidateSelectedLedgerHeads(buildSpec, sourceSnapshots) {
   });
 }
 
+// 후보가 고른 수도권 base 원천 head와 현재 capital topology admission 중 가장 늦은 시각.
+// #862 결정 2: topology가 base head보다 늦게 수집될 수 있으므로(같은 날 재등록) reviewedAt을 기준에 포함하고,
+// 각 원천과 topology admission이 자체 신선 창 안에 있어야 한다.
 export async function selectedSourceHeadAt(datapackRoot) {
   const [buildSpec, sourceSnapshots, inventory] = await Promise.all([
     readFile(path.join(datapackRoot, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),

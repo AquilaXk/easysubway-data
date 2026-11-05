@@ -639,16 +639,15 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
 }
 
 export async function nextSyntheticCurrentStaticNetworkNow(root) {
-  const [candidate, snapshots, inventory, topologyClock] = await Promise.all([
+  const [candidate, snapshots, topologyClock] = await Promise.all([
     readJson(root, "tools/datapack/release/candidate-build-spec.json"),
     readJson(root, "tools/datapack/release/source-snapshots.json"),
-    readJson(root, "tools/datapack/source-inventory.json"),
     currentTopologyAdmissionClock(root),
   ]);
-  const hasMembershipAdmissions = inventory.sources.some(({ membershipAdmissionEvidence }) => membershipAdmissionEvidence != null);
-  const staticSourceIds = new Set(hasMembershipAdmissions
-    ? [...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS, CAPITAL_TOPOLOGY_SOURCE_ID]
-    : [PUBLIC_SOURCE_ID, MOLIT_SOURCE_ID]);
+  const staticSourceIds = new Set([
+    ...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS,
+    CAPITAL_TOPOLOGY_SOURCE_ID,
+  ]);
   // #1007: 후보 pin이 아니라 후보가 고른 원천의 원장 head 기준이다(rollCandidateToLedgerHeads와 같은 의미).
   const selected = candidateSelectedLedgerHeads(candidate, snapshots)
     .filter((snapshot) => staticSourceIds.has(snapshot.sourceId));
@@ -678,7 +677,7 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
   );
   if (!Number.isFinite(basisAt) || !Number.isFinite(candidatePublishedAt)
     || !Number.isFinite(topologyClock.inWindow.getTime()) || !Number.isFinite(topologyClock.expiredAt.getTime())
-    || topologyClock.inWindow.getTime() >= topologyClock.expiredAt.getTime()) {
+    || nowMillis >= topologyClock.expiredAt.getTime()) {
     throw new Error("synthetic current static-network clock fixture has no valid freshness window");
   }
   return new Date(nowMillis);
@@ -712,16 +711,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   ]);
   let governancePolicy = JSON.parse(governanceBytes);
   const topologyClock = await currentTopologyAdmissionClock(root);
-  const selectedIdsAtEntry = new Set(candidate.sourceSnapshotIds);
-  const maxSelectedBasisAt = Math.max(
-    ...snapshots
-      .filter(({ snapshotId }) => selectedIdsAtEntry.has(snapshotId))
-      .flatMap((entry) => [entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt]
-        .filter(Boolean)
-        .map(Date.parse)),
-  );
-  if (!(now instanceof Date) || !Number.isFinite(now.getTime())
-    || (now.getTime() >= topologyClock.expiredAt.getTime() && maxSelectedBasisAt < topologyClock.expiredAt.getTime())) {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || now.getTime() >= topologyClock.expiredAt.getTime()) {
     now = topologyClock.inWindow;
   }
   const historicalTopologyEvidence = structuredClone(candidate.networkEdgeEvidence?.capitalTopology);
@@ -997,21 +987,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   candidate.candidateId = `capital-pilot-candidate-${capitalRouteTopologySnapshotVersion(currentTopologySnapshotId)}`;
   candidate.publishedAt = now.toISOString();
   const currentTopologyPath = `tools/datapack/sources/${currentTopologySnapshotId}.json`;
-  let topologyFileBytes = topologySnapshotBytes;
-  const currentTopology = JSON.parse(topologyFileBytes);
-  const canonicalTopologyCapturedAt = currentTopology.lines?.[0]?.capturedAt ?? currentTopology.capturedAt;
-  const canonicalTopologyFreshUntil = deriveFreshnessExpiresAt({
-    policy: freshnessPolicy,
-    sourceClassId: "route_graph_topology",
-    basisAt: canonicalTopologyCapturedAt,
-    evaluationAt: canonicalTopologyCapturedAt,
-  });
-  if (currentTopology.capturedAt !== canonicalTopologyCapturedAt
-    || currentTopology.freshUntil !== canonicalTopologyFreshUntil) {
-    currentTopology.capturedAt = canonicalTopologyCapturedAt;
-    currentTopology.freshUntil = canonicalTopologyFreshUntil;
-    topologyFileBytes = jsonBytes(currentTopology);
-  }
+  const currentTopology = JSON.parse(topologySnapshotBytes);
   const currentIncheonSource = inventory.sources.find(({ id }) => id === "incheon-transit-station-info");
   const currentIncheonTopologyPath = currentIncheonSource?.topologyAdmissionEvidence?.snapshotPath;
   if (typeof currentIncheonTopologyPath !== "string") {
@@ -1027,14 +1003,6 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     .map((source) => ({ source, evidence: source.routeMapAdmissionEvidence,
       admission: source.routeMapAdmissionEvidence?.currentTopologyAdmission }))
     .filter(({ evidence }) => evidence?.topologySourceId === currentTopology.sourceId);
-  for (const { admission } of currentTopologyAdmissions) {
-    if (admission?.topologySnapshotId === currentTopologySnapshotId
-      && (admission.reviewedAt !== currentTopology.capturedAt
-        || Date.parse(admission.freshUntil) > Date.parse(currentTopology.freshUntil))) {
-      admission.reviewedAt = currentTopology.capturedAt;
-      admission.freshUntil = currentTopology.freshUntil;
-    }
-  }
   if (currentTopologyAdmissions.length === 0
     || currentTopologyAdmissions.some(({ evidence, admission }) => !Array.isArray(evidence?.lineIds)
       || evidence.lineIds.length === 0
@@ -1084,7 +1052,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   }
   Object.assign(candidate.networkEdgeEvidence.capitalTopologyCandidate, {
     path: currentTopologyPath,
-    sha256: sha256(topologyFileBytes),
+    sha256: sha256(topologySnapshotBytes),
     snapshotId: currentTopologySnapshotId,
   });
   Object.assign(candidate.networkEdgeEvidence.capitalTopologyReverification, {
@@ -1099,18 +1067,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     freshUntil: currentTopology.freshUntil,
   });
   const candidatePublishedAt = Math.max(now.getTime(), Date.parse(currentTopology.capturedAt));
-  const effectiveTopologyCapturedAt = candidatePublishedAt >= Date.parse(currentTopology.freshUntil)
-    ? new Date(candidatePublishedAt - 60_000).toISOString()
-    : currentTopology.capturedAt;
-  const effectiveTopologyFreshUntil = candidatePublishedAt >= Date.parse(currentTopology.freshUntil)
-    ? deriveFreshnessExpiresAt({
-      policy: freshnessPolicy,
-      sourceClassId: "route_graph_topology",
-      basisAt: effectiveTopologyCapturedAt,
-      evaluationAt: effectiveTopologyCapturedAt,
-    })
-    : currentTopology.freshUntil;
-  if (!Number.isFinite(candidatePublishedAt) || candidatePublishedAt >= Date.parse(effectiveTopologyFreshUntil)) {
+  if (!Number.isFinite(candidatePublishedAt) || candidatePublishedAt >= Date.parse(currentTopology.freshUntil)) {
     throw new Error("synthetic candidate release clock is outside current topology admission");
   }
   candidate.publishedAt = new Date(candidatePublishedAt).toISOString();
@@ -1135,17 +1092,14 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     freshnessPolicy,
     nowMillis: now.getTime(),
   });
-  const topologyRegistrationNow = now.getTime() >= Date.parse(currentTopology.freshUntil)
-    ? new Date(Date.parse(currentTopology.capturedAt) + 1_000)
-    : now;
   const topologyRegistration = await registerFixtureCapitalTopology({
     root,
-    now: topologyRegistrationNow,
+    now,
     paths,
     inventory,
     snapshots,
     topologyPath: currentTopologyPath,
-    topologyBytes: topologyFileBytes,
+    topologyBytes: topologySnapshotBytes,
   });
   inventory = topologyRegistration.inventory;
   snapshots = topologyRegistration.snapshots;
@@ -1153,31 +1107,6 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   governancePolicy = topologyRegistration.governancePolicy;
   governanceBytes = topologyRegistration.governanceBytes;
   freshnessPolicy = topologyRegistration.freshnessPolicy;
-  if (effectiveTopologyFreshUntil !== currentTopology.freshUntil) {
-    candidate.networkEdgeEvidence.capitalTopologyAdmission.freshUntil = effectiveTopologyFreshUntil;
-    for (const source of inventory.sources) {
-      if (source.routeMapAdmissionEvidence?.topologySourceId === currentTopology.sourceId
-        && source.routeMapAdmissionEvidence?.currentTopologyAdmission) {
-        if (advanceCurrentPublicHead) {
-          source.routeMapAdmissionEvidence.currentTopologyAdmission.reviewedAt = effectiveTopologyCapturedAt;
-        }
-        source.routeMapAdmissionEvidence.currentTopologyAdmission.freshUntil = effectiveTopologyFreshUntil;
-      }
-      if (source.id === "incheon-transit-station-info" && source.topologyAdmissionEvidence) {
-        source.topologyAdmissionEvidence.freshUntil = effectiveTopologyFreshUntil;
-      }
-    }
-    if (advanceCurrentPublicHead) {
-      await writeFile(
-        path.join(root, currentTopologyPath),
-        jsonBytes({
-          ...currentTopology,
-          capturedAt: effectiveTopologyCapturedAt,
-          freshUntil: effectiveTopologyFreshUntil,
-        }),
-      );
-    }
-  }
   if (!advanceCurrentPublicHead) {
     const refreshedAt = new Date(candidatePublishedAt - 60_000).toISOString();
     for (const [index, projection] of candidate.sourceSnapshots.entries()) {

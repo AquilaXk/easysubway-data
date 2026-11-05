@@ -43,8 +43,14 @@ export async function verifyCurrentKorailBoardTimetableUrl({
   const canonicalExpectedUrl = officialKorailUrl(expectedUrl);
   const headerTimeout = timeoutMs(headerTimeoutMs);
   const bodyTimeout = timeoutMs(bodyTimeoutMs);
-  const bytes = await downloadBoardWithTransientRetry(fetchImpl, {
-    sleepImpl, retryBudget, randomImpl, headerTimeoutMs: headerTimeout, bodyTimeoutMs: bodyTimeout,
+  const bytes = await downloadWithTransientRetry(fetchImpl, KORAIL_TIMETABLE_BOARD_URL, {
+    sleepImpl,
+    retryBudget,
+    randomImpl,
+    headerTimeoutMs: headerTimeout,
+    bodyTimeoutMs: bodyTimeout,
+    label: "KORAIL metropolitan timetable board",
+    checkResponse: validateHttpResponse,
   });
   let board;
   try { board = JSON.parse(bytes.toString("utf8")); } catch { fail("BOARD"); }
@@ -53,14 +59,12 @@ export async function verifyCurrentKorailBoardTimetableUrl({
     .filter((entry) => entry?.bdCode === "_ticketTable02"
       && typeof entry.bdTitle === "string"
       && entry.bdTitle.includes(trimmedLineName)
-      && /(?:전동열차|광역전철)/u.test(entry.bdTitle)
-      && /(?:시각표|시간표)/u.test(entry.bdTitle))
-    .sort((left, right) => Number(right.bdIdx) - Number(left.bdIdx));
-  const latest = matches[0];
-  if (!latest || !Number.isSafeInteger(Number(latest.bdIdx)) || typeof latest.bdContent !== "string") fail("BOARD");
-  const attachmentMatch = latest.bdContent.match(BOARD_ATTACHMENT_PATH);
-  if (!attachmentMatch) fail("BOARD");
-  const latestOfficialUrl = officialKorailUrl(`https://www.korail.com/file/cubedata/COMMON/${attachmentMatch[0]}`);
+      && /(?:시각표|시간표)/u.test(entry.bdTitle));
+  if (matches.length === 0 || matches.some((entry) => !isValidBoardIndex(entry.bdIdx))) fail("BOARD");
+  matches.sort((left, right) => Number(right.bdIdx) - Number(left.bdIdx));
+  const attachmentPath = extractBoardAttachmentPath(matches[0]);
+  if (!attachmentPath) fail("BOARD");
+  const latestOfficialUrl = officialKorailUrl(`https://www.korail.com/file/cubedata/COMMON/${attachmentPath}`);
   if (latestOfficialUrl !== canonicalExpectedUrl) {
     throw new Error(`KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected ${canonicalExpectedUrl} but board head is ${latestOfficialUrl}`);
   }
@@ -108,36 +112,18 @@ export async function collectKorailMetropolitanTimetableFile({
   return receipt;
 }
 
-async function downloadBoardWithTransientRetry(fetchImpl, { sleepImpl, retryBudget, randomImpl, headerTimeoutMs, bodyTimeoutMs }) {
-  let outcome;
-  try {
-    outcome = await withSourceCollectionRetry(async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), headerTimeoutMs);
-      timer.unref?.();
-      let response;
-      try {
-        response = await fetchImpl(KORAIL_TIMETABLE_BOARD_URL, { method: "GET", redirect: "error", signal: controller.signal });
-      } catch (error) {
-        throw Object.assign(new Error("KORAIL_METROPOLITAN_TIMETABLE_FILE_TRANSPORT"), { cause: error });
-      } finally {
-        clearTimeout(timer);
-      }
-      if (response?.status !== 200) return { response, bytes: null };
-      if (!response || response.ok !== true || response.redirected === true) fail("HTTP");
-      return { response, bytes: await readBounded(response.body, bodyTimeoutMs) };
-    }, { label: "KORAIL metropolitan timetable board", sourceId: "korail-metropolitan-timetable-file", url: KORAIL_TIMETABLE_BOARD_URL, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
-  } catch (error) {
-    throw unwrapTransientRetryFailure(error);
-  }
-  if (outcome.bytes === null) fail("HTTP");
-  return outcome.bytes;
-}
-
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
 // 연결·헤더 timeout·소켓 끊김·본문 수신 중 연결 끊김)으로 같은 요청을 다시 보낸다(#1099, #1334).
 // 본문 수신 데드라인 초과(TIMEOUT, #997의 계약)·인증·형식·내용 오류는 재시도하지 않는다. 한도를 다 쓰면 기존 오류 코드(HTTP·TRANSPORT·BODY)로 실패한다.
-async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, retryBudget, randomImpl, headerTimeoutMs, bodyTimeoutMs }) {
+async function downloadWithTransientRetry(fetchImpl, officialUrl, {
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  headerTimeoutMs,
+  bodyTimeoutMs,
+  label = "KORAIL metropolitan timetable file",
+  checkResponse = validateResponse,
+}) {
   let outcome;
   try {
     outcome = await withSourceCollectionRetry(async () => {
@@ -154,14 +140,36 @@ async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, r
       }
       // 200이 아닌 응답은 본문을 읽지 않는다. 재시도하지 않을 응답은 아래에서 HTTP 오류 코드로 실패한다.
       if (response?.status !== 200) return { response, bytes: null };
-      validateResponse(response);
+      checkResponse(response);
       return { response, bytes: await readBounded(response.body, bodyTimeoutMs) };
-    }, { label: "KORAIL metropolitan timetable file", sourceId: "korail-metropolitan-timetable-file", url: officialUrl, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
+    }, { label, sourceId: "korail-metropolitan-timetable-file", url: officialUrl, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
   }
-  if (outcome.bytes === null) validateResponse(outcome.response);
+  if (outcome.bytes === null) checkResponse(outcome.response);
   return outcome.bytes;
+}
+
+function isValidBoardIndex(value) {
+  const text = typeof value === "number" && Number.isSafeInteger(value)
+    ? String(value)
+    : typeof value === "string" ? value.trim() : "";
+  return /^\d+$/u.test(text) && Number.isSafeInteger(Number(text)) && Number(text) > 0;
+}
+
+function extractBoardAttachmentPath(entry) {
+  if (Array.isArray(entry?.fileId)) {
+    for (const item of entry.fileId) {
+      if (typeof item !== "string") continue;
+      const match = item.trim().match(BOARD_ATTACHMENT_PATH);
+      if (match) return match[0];
+    }
+  }
+  if (typeof entry?.bdContent === "string") {
+    const match = entry.bdContent.match(BOARD_ATTACHMENT_PATH);
+    if (match) return match[0];
+  }
+  return null;
 }
 
 function officialKorailUrl(value) {
@@ -194,8 +202,12 @@ function timeoutMs(value) {
   return value;
 }
 
-function validateResponse(response) {
+function validateHttpResponse(response) {
   if (!response || response.status !== 200 || response.ok !== true || response.redirected === true) fail("HTTP");
+}
+
+function validateResponse(response) {
+  validateHttpResponse(response);
   if (!XLSX_CONTENT_TYPE.test(response.headers?.get("content-type") ?? "")) fail("CONTENT_TYPE");
 }
 
