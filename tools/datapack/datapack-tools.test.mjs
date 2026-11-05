@@ -8289,20 +8289,26 @@ async function pinnedIncheonTimetableWindows() {
 
 test("합성 ITX 입력 헬퍼: 만료를 지난 관측을 주입하면 source·completeness 관측 시각과 build 시계가 모두 고정 원천 신선 구간 안으로 당겨진다", async () => {
   const { latestCapture, expiry } = await pinnedIncheonTimetableWindows();
-  const injected = new Date(expiry + 8 * 3_600_000).toISOString();
+  const injected = new Date(expiry + 14 * 86_400_000).toISOString();
+  const futureDates = { "8": "20261105", "7": "20261107", "9": "20261108" };
   const workspace = await mkdtemp(path.join(tmpdir(), "itx-synthetic-clock-rewind-"));
   try {
-    const inputs = await writeCurrentItxReleaseInputs(workspace, { observedAtOverride: injected });
+    const inputs = await writeCurrentItxReleaseInputs(workspace, {
+      observedAtOverride: injected,
+      selectedServiceDatesOverride: futureDates,
+    });
     const fixtureDirectory = path.join(inputs.repositoryRoot, "tools/datapack/fixtures/current-itx");
     const source = JSON.parse(await readFile(path.join(fixtureDirectory, "itx-source.json"), "utf8"));
     const completeness = JSON.parse(await readFile(path.join(fixtureDirectory, "itx-completeness.json"), "utf8"));
     const buildNow = Date.parse(inputs.env.EASYSUBWAY_DATAPACK_BUILD_NOW);
     assert.notEqual(source.observedAt, injected, "the injected observation after the expiry must be rewound");
     assert.equal(completeness.observedAt, source.observedAt, "completeness and source observations must agree");
+    assert.deepEqual(completeness.selectedServiceDates, source.selectedServiceDates);
     for (const [label, value] of [["source.observedAt", Date.parse(source.observedAt)], ["completeness.observedAt", Date.parse(completeness.observedAt)]]) {
       assert.ok(value >= latestCapture && value < expiry, `${label} must be inside the pinned fresh interval`);
     }
     assert.ok(buildNow > Date.parse(source.observedAt) && buildNow < expiry, "build clock must follow the observation and precede the expiry");
+    await runCurrentItxCandidateBuild({ ...inputs, output: path.join(workspace, "output") });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -8340,9 +8346,57 @@ function deriveItxSyntheticClock({ observedAtMillis, pinnedBuildMillis, pinnedTi
   return { rewound, observedAtMillis: derivedObservedAtMillis, buildMillis };
 }
 
+function parseRunDateMillis(serviceDate) {
+  if (typeof serviceDate !== "string" || !/^\d{8}$/u.test(serviceDate)) {
+    throw new Error("synthetic ITX admission service date mismatch");
+  }
+  return Date.UTC(
+    Number(serviceDate.slice(0, 4)),
+    Number(serviceDate.slice(4, 6)) - 1,
+    Number(serviceDate.slice(6, 8)),
+  );
+}
+
+function formatRunDateMillis(millis) {
+  const date = new Date(millis);
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function alignItxSyntheticServiceDates({ selectedServiceDates, observedAtMillis }) {
+  const dayMillis = 86_400_000;
+  const weekMillis = 7 * dayMillis;
+  const kstDayMillis = Math.floor((observedAtMillis + 9 * 3_600_000) / dayMillis) * dayMillis;
+  const entries = Object.entries(selectedServiceDates ?? {}).map(([dayCd, value]) => [
+    dayCd,
+    parseRunDateMillis(value),
+  ]);
+  if (entries.length === 0) throw new Error("synthetic ITX admission service date mismatch");
+  const minDateMillis = Math.min(...entries.map(([, millis]) => millis));
+  const maxDateMillis = Math.max(...entries.map(([, millis]) => millis));
+  if (minDateMillis >= kstDayMillis && maxDateMillis <= kstDayMillis + 13 * dayMillis) {
+    const latest = Object.values(selectedServiceDates).sort((left, right) => codepointCompare(left, right)).at(-1);
+    return {
+      shifted: false,
+      selectedServiceDates: structuredClone(selectedServiceDates),
+      freshUntil: nextKstMidnight(latest),
+    };
+  }
+  const shiftWeeks = Math.floor((minDateMillis - kstDayMillis) / weekMillis);
+  const shiftedDates = Object.fromEntries(entries.map(([dayCd, millis]) => [
+    dayCd,
+    formatRunDateMillis(millis - shiftWeeks * weekMillis),
+  ]));
+  const latest = Object.values(shiftedDates).sort((left, right) => codepointCompare(left, right)).at(-1);
+  return {
+    shifted: true,
+    selectedServiceDates: shiftedDates,
+    freshUntil: nextKstMidnight(latest),
+  };
+}
+
 async function writeCurrentItxReleaseInputs(
   workspace,
-  { mutateFixture, mutateTopologyEvidence, mutateCompleteness, mutateCurrentSourceContext, observedAtOverride } = {},
+  { mutateFixture, mutateTopologyEvidence, mutateCompleteness, mutateCurrentSourceContext, observedAtOverride, selectedServiceDatesOverride } = {},
 ) {
   const repositoryRoot = await writeTransitionFreeCandidateRoot(workspace);
   const currentIdentity = {
@@ -8492,7 +8546,12 @@ async function writeCurrentItxReleaseInputs(
   }]));
   // observedAtOverride: 관측 시각을 주입한다. 승격 PR 입력이 아니어도 시각 당김 연결부를 실행하게 한다(#1134).
   let sourceObservedAt = observedAtOverride ?? source.observedAt;
-  const sourceFreshUntil = source.freshUntil;
+  if (selectedServiceDatesOverride !== undefined) {
+    source.selectedServiceDates = structuredClone(selectedServiceDatesOverride);
+    completeness.selectedServiceDates = structuredClone(selectedServiceDatesOverride);
+    source.freshUntil = nextKstMidnight(Object.values(selectedServiceDatesOverride).sort().at(-1));
+  }
+  let sourceFreshUntil = source.freshUntil;
   const incheonSources = currentInventory.sources.filter(({ id }) => id === "incheon-transit-station-info");
   if (incheonSources.length !== 1) throw new Error("fixture current Incheon topology admission is required");
   const currentIncheonCapturedAt = incheonSources[0].topologyAdmissionEvidence?.capturedAt;
@@ -8560,9 +8619,6 @@ async function writeCurrentItxReleaseInputs(
     currentIncheonAccessibilityCapturedAt,
     ...currentIncheonTimetableCapturedAts,
   ].map(clockMillis)) + 1_000;
-  // 이 합성 후보는 후보가 고정한 inventory(seq 발행 시점)에 현재 ITX 원천을 얹는다. 고정된 인천 시간표 증거는 P1D라서 만료 뒤에 build할 수 없는데,
-  // 새 ITX 승격은 그 만료보다 늦게 관측될 수 있다(#1132). 그러면 관측 시각을 고정 원천 직후로 당겨 합성 관측이 고정 원천의 신선 구간 안에 머물게 한다.
-  // 서비스 일자(오늘~13일)와 freshUntil은 관측 시각이 아니라 일자에서 정해지므로 그대로 유효하다. 운영 후보 재생성은 같은 시점에 P1D 증거도 함께 갱신한다.
   const pinnedTimetableExpiryMillis = Math.min(...incheonTimetableSources.map(({ id, scheduleAdmissionEvidence }) => {
     if (scheduleAdmissionEvidence?.freshUntil === undefined) throw new Error(`fixture current ${id} timetable admission freshness is invalid`);
     return clockMillis(scheduleAdmissionEvidence.freshUntil);
@@ -8575,6 +8631,15 @@ async function writeCurrentItxReleaseInputs(
   if (syntheticClock.rewound) {
     sourceObservedAt = new Date(syntheticClock.observedAtMillis).toISOString();
     completeness.observedAt = sourceObservedAt;
+    const syntheticDates = alignItxSyntheticServiceDates({
+      selectedServiceDates: source.selectedServiceDates,
+      observedAtMillis: syntheticClock.observedAtMillis,
+    });
+    if (syntheticDates.shifted) {
+      source.selectedServiceDates = structuredClone(syntheticDates.selectedServiceDates);
+      completeness.selectedServiceDates = structuredClone(syntheticDates.selectedServiceDates);
+      sourceFreshUntil = syntheticDates.freshUntil;
+    }
   }
   const buildNow = new Date(syntheticClock.buildMillis).toISOString();
   Object.assign(completeness.sourceTimetableArtifact, {
