@@ -513,9 +513,8 @@ export const RECIPE_STEPS = Object.freeze({
       if (!text(serviceKey)) fail("the KRIC service key is not set");
       await ctx.execute("collect-kric-line4-timetables.mjs", [
         "--roster", abs(ctx, "tools/datapack/sources/kric-line4-route-roster-20260706.json"), "--line-id", "seoul-4",
-        "--canonical-pack", abs(ctx, "tools/datapack/release/easysubway-datapack-v1.0.0.sqlite.gz"),
-        "--service-pattern-evidence", abs(ctx, "tools/datapack/sources/kric-line4-service-pattern-evidence-20260706.json"),
-        "--no-data-evidence", abs(ctx, "tools/datapack/sources/kric-line4-no-data-evidence-20260706.json"),
+        "--service-pattern-evidence", abs(ctx, "tools/datapack/kric-subway-timetable-service-pattern-evidence.json"),
+        "--no-data-evidence", abs(ctx, "tools/datapack/kric-subway-timetable-no-data-evidence.json"),
         "--output", ctx.file("collection.json"),
       ], { env: { [KRIC_CREDENTIAL_ENV]: serviceKey } });
     }),

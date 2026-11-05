@@ -10,7 +10,7 @@ import {
   loadCurrentFacilitySourceAdmissionInput,
 } from "./build-facility-source-admission.mjs";
 import { KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS } from "./lib/kric-standard-facilities.mjs";
-import { validateLineage } from "./source-snapshot-policy.mjs";
+import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -306,11 +306,43 @@ test("consumer input order가 달라도 admission bytes와 caller input은 동�
   assert.deepEqual(secondInput, secondBefore);
 });
 
-async function historicalFacilityFixtureInput(observedAt) {
+test("historical FACILITY fixture는 seoul-metro-route-map-positions 원장 head가 candidate pin보다 앞선 후속 snapshot을 가져도 selectedHead까지 계보를 잘라낸다", async () => {
+  const baseline = await historicalFacilityFixtureInput();
+  const pinnedRouteMapId = (await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse))
+    .sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").snapshotId;
+  let appendedSuccessorId = "";
+  const input = await historicalFacilityFixtureInput(undefined, {
+    mutateLoadedInput(loaded) {
+      const currentHeadId = validateLineage(loaded.sourceSnapshots).headsBySource["seoul-metro-route-map-positions"];
+      const currentHead = loaded.sourceSnapshots.find(({ snapshotId }) => snapshotId === currentHeadId);
+      const nextTime = new Date(Date.parse(currentHead.retrievedAt) + 86_400_000).toISOString();
+      appendedSuccessorId = `${currentHead.snapshotId}-successor`;
+      const successor = {
+        ...structuredClone(currentHead),
+        snapshotId: appendedSuccessorId,
+        previousSnapshotId: currentHead.snapshotId,
+        retrievedAt: nextTime,
+        sourceUpdatedAt: nextTime,
+      };
+      delete successor.projectionMigration;
+      successor.diffSummary = buildSnapshotDiff(currentHead, successor);
+      loaded.sourceSnapshots.push(successor);
+    },
+  });
+  const lineage = validateLineage(input.sourceSnapshots);
+  const routeMapChain = lineage.chainsBySource["seoul-metro-route-map-positions"];
+  assert.equal(lineage.headsBySource["seoul-metro-route-map-positions"], appendedSuccessorId);
+  assert.ok(routeMapChain.indexOf(pinnedRouteMapId) >= 0 && routeMapChain.indexOf(pinnedRouteMapId) < routeMapChain.length - 1);
+  assert.deepEqual(input.candidateBuildSpec, baseline.candidateBuildSpec);
+  assert.equal(buildFacilitySourceAdmission(input).decision, "GO");
+});
+
+async function historicalFacilityFixtureInput(observedAt, { mutateLoadedInput } = {}) {
   const [input, historicalAdmission] = await Promise.all([
     loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: root, observedAt: FRESH_AT }),
     readFile(path.join(root, "tools/datapack/release/facility-source-admission.json"), "utf8").then(JSON.parse),
   ]);
+  mutateLoadedInput?.(input);
   const historicalSnapshotPath = "tools/datapack/sources/kric-station-convenience-standard-20260813T200604805Z.json";
   const historicalSnapshotBytes = await readFile(path.join(root, historicalSnapshotPath));
   const historicalSnapshot = JSON.parse(historicalSnapshotBytes);
@@ -335,10 +367,6 @@ async function historicalFacilityFixtureInput(observedAt) {
       // #1007: 이 fixture의 역사 입력은 아래에서 시각(historicalMembershipAt)으로 따로 고르므로, 원천 갱신이 원장 head를 앞으로 옮긴 직후의
       // 후보 pin(병합 뒤 후보 갱신이 옮긴다)에 의존하지 않는다. pin 신선도(pin이 원장 head와 같을 것)는 release 게이트
       // validate-candidate-source-set.mjs 114행이 판정하고 current-public-route-map-successor.test.mjs가 그 게이트의 거부를 직접 실행한다.
-      // 노선도 원천은 pin 이전 계보의 projection 이관 표지를 쓰므로 pin이 head와 같아야 한다(이 원천은 정기 갱신 대상이 아니다).
-      if (projection.sourceId === "seoul-metro-route-map-positions") {
-        assert.equal(lineage.headsBySource[projection.sourceId], selectedHead.snapshotId);
-      }
       const selectedIndex = sourceChain.indexOf(selectedHead.snapshotId);
       assert.ok(selectedIndex >= 0, `selected ${projection.sourceId} lineage member`);
       const selectedChain = (projection.sourceId === "seoul-metro-route-map-positions" ? sourceChain.slice(0, selectedIndex + 1) : sourceChain)

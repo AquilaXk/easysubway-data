@@ -167,7 +167,10 @@ test("4호선 등록기는 검토 파일 없이(무인 재확인) 현재 head가
   assert.equal(evidence.approvedBy, previousAdmission.approvedBy);
   assert.equal(evidence.approvedAt, previousAdmission.approvedAt);
   assert.equal(evidence.adminReviewRecordHash, previousAdmission.adminReviewRecordHash);
-  assert.deepEqual(evidence.reverifiedFromSnapshotIds, [previousAdmission.snapshotId]);
+  assert.deepEqual(
+    evidence.reverifiedFromSnapshotIds,
+    [...new Set([...(previousAdmission.reverifiedFromSnapshotIds ?? []), previousAdmission.snapshotId])],
+  );
 });
 
 test("validateProductionScheduleProvenance는 무인 재확인 계보(reverifiedFromSnapshotIds)에 기록된 직전 snapshotId만 수용하고 미기록 snapshotId는 거부한다", async () => {
