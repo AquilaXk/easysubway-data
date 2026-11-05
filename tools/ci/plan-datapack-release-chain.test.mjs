@@ -281,8 +281,8 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   // #969: 권한은 job에만 주고(issues 쓰기는 실패 보고용) workflow dispatch 권한(actions: write)은 여전히 없다.
   assert.match(yml, /\n    permissions:\n      actions: read\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
   assert.doesNotMatch(yml, /actions: write/u);
-  // #1032, #1040: 정기 실행과 스케줄러 App의 dispatch는 저장소 변수가 true이고 actor와 triggering_actor가 모두 App일 때만 돈다. 사람 dispatch는 두 값 모두 App이 아닐 때만 돈다.
-  assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.actor != 'easysubway-release-chain\[bot\]' && github\.triggering_actor != 'easysubway-release-chain\[bot\]'\) \|\| \(vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true' && \(github\.event_name != 'workflow_dispatch' \|\| \(github\.actor == 'easysubway-release-chain\[bot\]' && github\.triggering_actor == 'easysubway-release-chain\[bot\]'\)\)\)\) \}\}/u);
+  // #1032, #1040, #1384: job 가드는 sender.type으로 사람 dispatch만 변수와 무관하게 허용하고, 스케줄러 App 식별과 재실행 불일치(actor != triggering_actor) 차단은 decide·plan 단계가 맡는다.
+  assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.event\.sender\.type == 'User'\) \|\| vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true'\) \}\}/u);
   assert.match(yml, /cancel-in-progress: false/u);
   assert.match(yml, /persist-credentials: false/u);
   // dispatch 입력은 env로만 run에 들어간다(셸 주입 차단).

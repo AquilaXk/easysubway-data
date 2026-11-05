@@ -183,7 +183,7 @@ const jobIfOf = (workflow) => {
   assert.equal(matches.length, 1, `${workflow}: job-level if가 하나`);
   return matches[0][1];
 };
-const runsOn = (workflow, { actor, vars }) => evaluateGithubExpression(jobIfOf(workflow), { github: { event_name: "workflow_dispatch", triggering_actor: actor, actor, ref: "refs/heads/main" }, vars });
+const runsOn = (workflow, { actor, senderType = actor.endsWith("[bot]") ? "Bot" : "User", vars }) => evaluateGithubExpression(jobIfOf(workflow), { github: { event_name: "workflow_dispatch", triggering_actor: actor, actor, event: { sender: { type: senderType } }, ref: "refs/heads/main" }, vars });
 const SCHEDULED_VARIABLES = {
   "current-capital-topology-registration.yml": "DATAPACK_SCHEDULED_SOURCE_REGISTRATION", "source-derivative-rebinding.yml": "DATAPACK_SCHEDULED_SOURCE_REBINDING",
   "itx-current-promotion.yml": "DATAPACK_SCHEDULED_ITX_PROMOTION", "source-reverification.yml": "DATAPACK_SCHEDULED_SOURCE_REVERIFICATION",

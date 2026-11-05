@@ -38,7 +38,8 @@ concurrency:
 jobs:
   refresh:
     name: Nationwide candidate refresh
-    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.actor != 'easysubway-release-chain[bot]' && github.triggering_actor != 'easysubway-release-chain[bot]') || (vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true' && (github.event_name != 'workflow_dispatch' || (github.actor == 'easysubway-release-chain[bot]' && github.triggering_actor == 'easysubway-release-chain[bot]')))) }}
+    # 사람(sender.type이 User) dispatch만 변수와 무관하게 돈다(Sonar githubactions:S8232). 스케줄러 App 식별과 재실행(actor != triggering_actor) 차단·2인 역할 결속은 decide·plan 단계가 맡는다(#1032, #1040).
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User') || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
