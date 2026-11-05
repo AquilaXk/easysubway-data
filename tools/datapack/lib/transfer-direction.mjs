@@ -214,23 +214,24 @@ function parseEntryDirection(value, mapping, stations, allowTerminal) {
 }
 
 export function resolveDirectionLines({ entry, mapping, linesAtStation, tableLines, stations, allowTerminal = false }) {
+  const stationLines = linesAtStation.get(mapping.stationId) ?? [];
+  const linesForToken = (token) => tableLines
+    .filter(({ directionTokens, lineId }) => directionTokens.includes(token) && stationLines.includes(lineId))
+    .map(({ lineId }) => lineId);
   const from = parseEntryDirection(entry.rows[0].CHTN_MV_CONT, mapping, stations, allowTerminal);
-  const to = parseEntryDirection(entry.rows.at(-1).CHTN_MV_CONT, mapping, stations, allowTerminal);
-  if (!from || !to) return { reason: "DIRECTION_FORMAT_UNSUPPORTED" };
+  const fromLines = from ? linesForToken(from.lineToken) : [];
+  const fromTerminal = Boolean(from?.terminal && fromLines.length === 1 && fromLines[0] === mapping.lineId);
+  const to = parseDirection(entry.rows.at(-1).CHTN_MV_CONT);
+  if (!from || !to) return { reason: "DIRECTION_FORMAT_UNSUPPORTED", fromTerminal };
   // 첫 단어가 고정 노선 표기가 아니고, 첫 단어와 역명을 이어 붙인 이름이 정본 역 이름이면 노선 표기 없는 방면이다
   // ("을지로 3가 방면"의 "을지로"). 노선 불일치로 읽지 않는다(#1025). 표에 없는 노선 표기는 기존대로 노선 해석 단계에서 제외된다.
   const names = stationNameSet(stations);
   if ([from, to].some(({ lineToken, stationName }) => !KNOWN_DIRECTION_LINE_TOKENS.has(lineToken)
     && names.has(normalizeStationName(`${lineToken}${stationName}`)))) {
-    return { reason: "DIRECTION_FORMAT_UNSUPPORTED" };
+    return { reason: "DIRECTION_FORMAT_UNSUPPORTED", fromTerminal };
   }
-  const stationLines = linesAtStation.get(mapping.stationId) ?? [];
-  const linesForToken = (token) => tableLines
-    .filter(({ directionTokens, lineId }) => directionTokens.includes(token) && stationLines.includes(lineId))
-    .map(({ lineId }) => lineId);
-  const fromLines = linesForToken(from.lineToken);
-  if (fromLines.length !== 1 || fromLines[0] !== mapping.lineId) return { reason: "FROM_LINE_MISMATCH" };
+  if (fromLines.length !== 1 || fromLines[0] !== mapping.lineId) return { reason: "FROM_LINE_MISMATCH", fromTerminal: false };
   const toLines = linesForToken(to.lineToken);
-  if (toLines.length !== 1 || toLines[0] === mapping.lineId) return { reason: "TO_LINE_UNRESOLVED" };
-  return { from, to, toLineId: toLines[0] };
+  if (toLines.length !== 1 || toLines[0] === mapping.lineId) return { reason: "TO_LINE_UNRESOLVED", fromTerminal };
+  return { from, to, toLineId: toLines[0], fromTerminal };
 }
