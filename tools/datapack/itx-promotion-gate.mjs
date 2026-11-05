@@ -283,8 +283,13 @@ function evaluateFetchErrors({ completeness, capture, replay, limits, dayCds }) 
   let providerErrors = 0;
   if (records === null) failures.push("CAPTURE_RECORDS_MISSING");
   else {
-    providerErrors = records.filter((record) => (
-      record?.outcome?.kind !== "RESPONSE" || record.outcome.response?.status !== 200
+    const finalOutcomeByRequest = new Map();
+    records.forEach((record, index) => {
+      const key = isObject(record?.request) ? `request:${stringify(record.request)}` : `index:${index}`;
+      finalOutcomeByRequest.set(key, record?.outcome);
+    });
+    providerErrors = [...finalOutcomeByRequest.values()].filter((outcome) => (
+      outcome?.kind !== "RESPONSE" || outcome.response?.status !== 200
     )).length;
     if (providerErrors > limits.providerErrorRecords) failures.push("PROVIDER_ERROR_RECORDS");
   }

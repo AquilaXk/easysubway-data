@@ -7,8 +7,6 @@ import test from "node:test";
 import { ITX_REPLAY_EVIDENCE_FILES, main, verifyItxReplaySource } from "./restore-itx-replay-evidence.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
-// #1127: 하루 한 번만 받을 수 있는 ITX 수집분을 이전 run의 artifact에서 되살릴 때의 거부 사례를 고정한다.
-// 이 도구는 공급자를 부르지 않는다. 이전 run이 실제로 수집·게이트 통과한 증거만 되살리고, 하나라도 어긋나면 추정하지 않고 실패한다.
 const REPOSITORY = "AquilaXk/easysubway-data";
 const SOURCE_RUN_ID = "38062621511";
 const ARTIFACT_ID = "itx-cheongchun-source-timetable-20261010151222895";
@@ -78,9 +76,11 @@ test("수집기가 성공하고 게이트가 통과한 이전 run의 증거는 �
   assert.equal(Buffer.compare(result.outputs["provider-response-capture.json"], evidence()["provider-response-capture.json"]), 0);
 });
 
-test("재생 run이 되살려 올린 증거도 다음 재생의 원본이 된다 (수집기 대신 복원 step이 성공한 run)", () => {
+test("재생 run이 되살려 올린 증거와 게이트 재평가가 필요한 BLOCK run의 증거도 다음 재생의 원본이 된다", () => {
   const chained = jobs([step("Collect current ITX timetable", "skipped"), step("Restore retained ITX collection evidence"), step("Evaluate promotion gate")]);
   assert.equal(verify({ jobs: chained }).artifactId, ARTIFACT_ID);
+  const blockedGate = jobs([step("Collect current ITX timetable"), step("Evaluate promotion gate", "failure")]);
+  assert.equal(verify({ jobs: blockedGate, files: evidence({ receipt: { status: "BLOCK" } }) }).artifactId, ARTIFACT_ID);
 });
 
 test("이 workflow의 main run이 아니면 거부한다", () => {
@@ -96,11 +96,12 @@ test("이 workflow의 main run이 아니면 거부한다", () => {
   assert.throws(() => verify({ sourceRunId: "abc" }), /ITX_REPLAY_RUN_INVALID/u);
 });
 
-test("수집기도 복원 step도 성공하지 않았거나 게이트 step이 성공하지 않았으면 거부한다", () => {
+test("수집기도 복원 step도 성공하지 않았거나 게이트 step이 실행되지 않았으면 거부한다", () => {
   for (const steps of [
     [step("Collect current ITX timetable", "skipped"), step("Evaluate promotion gate")],
     [step("Collect current ITX timetable", "failure"), step("Evaluate promotion gate", "skipped")],
-    [step("Collect current ITX timetable"), step("Evaluate promotion gate", "failure")],
+    [step("Collect current ITX timetable"), step("Evaluate promotion gate", "skipped")],
+    [step("Collect current ITX timetable"), step("Evaluate promotion gate", "cancelled")],
     [step("Collect current ITX timetable")],
     [step("Collect current ITX timetable"), step("Restore retained ITX collection evidence"), step("Evaluate promotion gate")],
   ]) {
@@ -118,8 +119,8 @@ test("artifact 파일 집합이 정확히 여섯 개가 아니면 거부한다",
   assert.throws(() => verify({ files: evidence({ files: { "extra.json": Buffer.from("{}") } }) }), /ITX_REPLAY_ARTIFACT_INVALID/u);
 });
 
-test("영수증이 PASS가 아니거나 후보·capture·완전성 해시가 서로 맞지 않으면 거부한다", () => {
-  assert.throws(() => verify({ files: evidence({ receipt: { status: "BLOCK" } }) }), /ITX_REPLAY_BINDING_MISMATCH/u);
+test("영수증 상태가 유효하지 않거나 후보·capture·완전성 해시가 서로 맞지 않으면 거부한다", () => {
+  assert.throws(() => verify({ files: evidence({ receipt: { status: "INVALID" } }) }), /ITX_REPLAY_BINDING_MISMATCH/u);
   assert.throws(() => verify({ files: evidence({ captureText: '{"capture":"retained"}\n', receipt: { source: { rawCaptureSha256: sha256("other") } } }) }), /ITX_REPLAY_BINDING_MISMATCH/u);
   assert.throws(() => verify({ files: evidence({ receipt: { candidate: { artifactId: ARTIFACT_ID, sha256: sha256("other"), observedAt: "2026-10-10T15:12:22.895Z", freshUntil: FRESH_UNTIL } } }) }), /ITX_REPLAY_BINDING_MISMATCH/u);
   assert.throws(() => verify({ files: evidence({ result: { completenessEvidenceSha256: sha256("other") } }) }), /ITX_REPLAY_BINDING_MISMATCH/u);

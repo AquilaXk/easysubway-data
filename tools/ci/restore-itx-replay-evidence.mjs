@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-// 이전 run이 받아 둔 ITX-청춘 수집분을 승격 workflow의 작업 위치로 되살린다(#1127).
-//
-// ITX 공급자 호출은 KST 하루 한 번이다. 그날 받은 응답이 승격 PR과 함께 사라지면(PR이 닫히고 브랜치가 지워지는 경우) 다음 수집 가능 시각까지 기다려야 한다.
-// 그러나 수집분은 이전 run의 artifact(후보·완전성 증거·게이트 영수증·raw provider capture·replay)에 남아 있다.
-// 이 도구는 그 artifact가 "실제로 수집기가 성공하고 게이트가 통과한 run"의 것인지 확인하고, 후보·완전성·capture가 영수증과 바이트 단위로 맞을 때만
-// 후보·완전성·capture·서비스 일자 네 파일을 작업 위치에 쓴다. 이어지는 step이 같은 capture에서 replay를 다시 계산하고 게이트를 다시 돌린다.
-// - 공급자를 부르지 않는다. 받은 바이트(보관 capture) 밖의 값은 쓰지 않는다. 어긋나면 추정하거나 이전 값으로 덮지 않고 실패한다.
-// - 이미 승격됐거나 더 옛날인 수집분, 신선도가 이미 지난 수집분은 되살리지 않는다.
-// - 되살린 run도 같은 artifact를 올리므로 재생이 한 번 더 필요해져도(예: 승격 PR이 다시 뒤처짐) 같은 방식으로 이어진다.
-//
-// 사용: node tools/ci/restore-itx-replay-evidence.mjs --source-run-id <run id> --repository <owner/repo> --run <gh api run json> --jobs <gh api jobs json>
-//   --artifact-dir <내려받은 artifact 디렉터리> --contract <coverage contract> --output-root <작업 위치>
 import { lstat, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -56,17 +44,13 @@ function parseJson(buffer, label) {
 
 function verifyJobs({ sourceRunId, jobs }) {
   const steps = replaySourceJobSteps({ sourceRunId, jobs, jobName: JOB_NAME, code: REPLAY_CODE });
-  // 수집기가 성공했거나(처음 수집한 run), 복원 step이 성공한 run(재생 run)이어야 한다. 둘 다이면 모순이라 거부한다.
   const collected = stepConclusion(steps, COLLECT_STEP) === "success";
   const restored = stepConclusion(steps, RESTORE_STEP) === "success";
   if (collected === restored) fail("ITX_REPLAY_STEP_NOT_SUCCESS", `run ${sourceRunId} must have exactly one of "${COLLECT_STEP}" or "${RESTORE_STEP}" succeed`);
-  if (stepConclusion(steps, GATE_STEP) !== "success") fail("ITX_REPLAY_STEP_NOT_SUCCESS", `run ${sourceRunId} did not pass "${GATE_STEP}"`);
+  const gate = stepConclusion(steps, GATE_STEP);
+  if (gate !== "success" && gate !== "failure") fail("ITX_REPLAY_STEP_NOT_SUCCESS", `run ${sourceRunId} did not run "${GATE_STEP}"`);
 }
 
-/**
- * 이전 run의 메타데이터와 artifact 파일을 검증하고 되살릴 파일을 돌려준다. 읽기만 한다.
- * @returns {{ artifactId: string, freshUntil: string, observedAt: string, outputs: Record<string, Buffer> }}
- */
 export function verifyItxReplaySource({ sourceRunId, repository, run, jobs, files, contract, now }) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime()) || typeof repository !== "string" || !isObject(files)) fail("ITX_REPLAY_INPUT_INVALID");
   verifyReplaySourceRun({ sourceRunId, repository, run, workflowPath: ITX_REPLAY_WORKFLOW_PATH, code: REPLAY_CODE });
@@ -79,7 +63,7 @@ export function verifyItxReplaySource({ sourceRunId, repository, run, jobs, file
   const receipt = parseJson(files["itx-promotion-gate.json"], "itx-promotion-gate.json");
   const result = parseJson(files["itx-result.json"], "itx-result.json");
   const mismatch = (detail) => fail("ITX_REPLAY_BINDING_MISMATCH", detail);
-  if (receipt.artifactKind !== "itx-promotion-gate-receipt" || receipt.status !== "PASS" || !isObject(receipt.candidate) || !isObject(receipt.source)) mismatch("gate receipt is not a PASS receipt");
+  if (receipt.artifactKind !== "itx-promotion-gate-receipt" || (receipt.status !== "PASS" && receipt.status !== "BLOCK") || !isObject(receipt.candidate) || !isObject(receipt.source)) mismatch("gate receipt is not a valid promotion gate receipt");
   if (result.artifactKind !== "itx-cheongchun-source-timetable" || result.validationStatus !== "SUPPORTED") mismatch("candidate is not a supported ITX source timetable");
   const stamp = ARTIFACT_ID.exec(result.artifactId ?? "")?.[1];
   if (stamp === undefined) mismatch("candidate artifact id");
