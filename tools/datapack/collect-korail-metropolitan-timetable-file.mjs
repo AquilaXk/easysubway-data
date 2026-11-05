@@ -15,8 +15,10 @@ export const MIN_BODY_THROUGHPUT_BYTES_PER_SECOND = 1_000;
 export const BODY_TIMEOUT_MS = 60_000;
 export const MAXIMUM_BYTES = 128 * 1024 * 1024;
 export const KORAIL_METROPOLITAN_TIMETABLE_FILE_SOURCE_ID = "korail-metropolitan-timetable-file";
+export const KORAIL_TIMETABLE_BOARD_URL = "https://www.korail.com/com/userBoard.do?schBcid=ticketTable&mode=list&page=1";
 
 const URL_PREFIX = "/file/cubedata/COMMON/jfile/";
+const BOARD_ATTACHMENT_PATH = /jfile\/[^\s"'<>]+\.xlsx/iu;
 const XLSX_CONTENT_TYPE = /^(?:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/octet-stream)(?:\s*;|$)/iu;
 const XLSX_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
@@ -33,16 +35,59 @@ export function validateKorailTimetableFileReceipt(receipt, { rawSha256, rawByte
   return structuredClone(receipt);
 }
 
+export async function verifyCurrentKorailBoardTimetableUrl({
+  lineName, expectedUrl, fetchImpl = fetch, sleepImpl, retryBudget, randomImpl,
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
+} = {}) {
+  const trimmedLineName = requiredLineName(lineName);
+  const canonicalExpectedUrl = officialKorailUrl(expectedUrl);
+  const headerTimeout = timeoutMs(headerTimeoutMs);
+  const bodyTimeout = timeoutMs(bodyTimeoutMs);
+  const bytes = await downloadWithTransientRetry(fetchImpl, KORAIL_TIMETABLE_BOARD_URL, {
+    sleepImpl,
+    retryBudget,
+    randomImpl,
+    headerTimeoutMs: headerTimeout,
+    bodyTimeoutMs: bodyTimeout,
+    label: "KORAIL metropolitan timetable board",
+    checkResponse: validateHttpResponse,
+  });
+  let board;
+  try { board = JSON.parse(bytes.toString("utf8")); } catch { fail("BOARD"); }
+  if (board?.strResult !== "SUCC" || !Array.isArray(board.boardList)) fail("BOARD");
+  const matches = board.boardList
+    .filter((entry) => entry?.bdCode === "_ticketTable02"
+      && typeof entry.bdTitle === "string"
+      && entry.bdTitle.includes(trimmedLineName)
+      && /(?:시각표|시간표)/u.test(entry.bdTitle));
+  if (matches.length === 0 || matches.some((entry) => !isValidBoardIndex(entry.bdIdx))) fail("BOARD");
+  matches.sort((left, right) => Number(right.bdIdx) - Number(left.bdIdx));
+  const attachmentPath = extractBoardAttachmentPath(matches[0]);
+  if (!attachmentPath) fail("BOARD");
+  const latestOfficialUrl = officialKorailUrl(`https://www.korail.com/file/cubedata/COMMON/${attachmentPath}`);
+  if (latestOfficialUrl !== canonicalExpectedUrl) {
+    throw new Error(`KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected ${canonicalExpectedUrl} but board head is ${latestOfficialUrl}`);
+  }
+  return latestOfficialUrl;
+}
+
 export async function collectKorailMetropolitanTimetableFile({
-  url, expectedSha256, outputDirectory, fetchImpl = fetch, sleepImpl, retryBudget, randomImpl,
+  url, expectedSha256, outputDirectory, lineName, fetchImpl = fetch, sleepImpl, retryBudget, randomImpl,
   headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   const officialUrl = officialKorailUrl(url);
   const expected = requireSha256Hex(expectedSha256);
   const output = absoluteOutputDirectory(outputDirectory);
+  const checkedLineName = lineName === undefined ? undefined : requiredLineName(lineName);
   const headerTimeout = timeoutMs(headerTimeoutMs);
   const bodyTimeout = timeoutMs(bodyTimeoutMs);
   try { await mkdir(output); } catch { fail("OUTPUT_DIRECTORY"); }
+  if (checkedLineName !== undefined) {
+    await verifyCurrentKorailBoardTimetableUrl({
+      lineName: checkedLineName, expectedUrl: officialUrl, fetchImpl, sleepImpl, retryBudget, randomImpl,
+      headerTimeoutMs: headerTimeout, bodyTimeoutMs: bodyTimeout,
+    });
+  }
   const bytes = await downloadWithTransientRetry(fetchImpl, officialUrl, {
     sleepImpl, retryBudget, randomImpl, headerTimeoutMs: headerTimeout, bodyTimeoutMs: bodyTimeout,
   });
@@ -70,7 +115,15 @@ export async function collectKorailMetropolitanTimetableFile({
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
 // 연결·헤더 timeout·소켓 끊김·본문 수신 중 연결 끊김)으로 같은 요청을 다시 보낸다(#1099, #1334).
 // 본문 수신 데드라인 초과(TIMEOUT, #997의 계약)·인증·형식·내용 오류는 재시도하지 않는다. 한도를 다 쓰면 기존 오류 코드(HTTP·TRANSPORT·BODY)로 실패한다.
-async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, retryBudget, randomImpl, headerTimeoutMs, bodyTimeoutMs }) {
+async function downloadWithTransientRetry(fetchImpl, officialUrl, {
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  headerTimeoutMs,
+  bodyTimeoutMs,
+  label = "KORAIL metropolitan timetable file",
+  checkResponse = validateResponse,
+}) {
   let outcome;
   try {
     outcome = await withSourceCollectionRetry(async () => {
@@ -87,14 +140,36 @@ async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, r
       }
       // 200이 아닌 응답은 본문을 읽지 않는다. 재시도하지 않을 응답은 아래에서 HTTP 오류 코드로 실패한다.
       if (response?.status !== 200) return { response, bytes: null };
-      validateResponse(response);
+      checkResponse(response);
       return { response, bytes: await readBounded(response.body, bodyTimeoutMs) };
-    }, { label: "KORAIL metropolitan timetable file", sourceId: "korail-metropolitan-timetable-file", url: officialUrl, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
+    }, { label, sourceId: "korail-metropolitan-timetable-file", url: officialUrl, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
   }
-  if (outcome.bytes === null) validateResponse(outcome.response);
+  if (outcome.bytes === null) checkResponse(outcome.response);
   return outcome.bytes;
+}
+
+function isValidBoardIndex(value) {
+  const text = typeof value === "number" && Number.isSafeInteger(value)
+    ? String(value)
+    : typeof value === "string" ? value.trim() : "";
+  return /^\d+$/u.test(text) && Number.isSafeInteger(Number(text)) && Number(text) > 0;
+}
+
+function extractBoardAttachmentPath(entry) {
+  if (Array.isArray(entry?.fileId)) {
+    for (const item of entry.fileId) {
+      if (typeof item !== "string") continue;
+      const match = item.trim().match(BOARD_ATTACHMENT_PATH);
+      if (match) return match[0];
+    }
+  }
+  if (typeof entry?.bdContent === "string") {
+    const match = entry.bdContent.match(BOARD_ATTACHMENT_PATH);
+    if (match) return match[0];
+  }
+  return null;
 }
 
 function officialKorailUrl(value) {
@@ -104,6 +179,12 @@ function officialKorailUrl(value) {
     || parsed.username !== "" || parsed.password !== "" || parsed.search !== "" || parsed.hash !== ""
     || !parsed.pathname.startsWith(URL_PREFIX) || !parsed.pathname.endsWith(".xlsx")) fail("URL");
   return parsed.href;
+}
+
+function requiredLineName(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) fail("LINE_NAME");
+  return trimmed;
 }
 
 function requireSha256Hex(value) {
@@ -121,8 +202,12 @@ function timeoutMs(value) {
   return value;
 }
 
-function validateResponse(response) {
+function validateHttpResponse(response) {
   if (!response || response.status !== 200 || response.ok !== true || response.redirected === true) fail("HTTP");
+}
+
+function validateResponse(response) {
+  validateHttpResponse(response);
   if (!XLSX_CONTENT_TYPE.test(response.headers?.get("content-type") ?? "")) fail("CONTENT_TYPE");
 }
 
@@ -185,13 +270,19 @@ async function readBounded(body, bodyTimeoutMs) {
 function fail(code) { throw new Error(`KORAIL_METROPOLITAN_TIMETABLE_FILE_${code}`); }
 
 function cliArguments(argv) {
-  if (argv.length !== 6) fail("ARGUMENTS");
+  if (argv.length !== 6 && argv.length !== 8) fail("ARGUMENTS");
   const values = new Map();
   for (let index = 0; index < argv.length; index += 2) {
-    if (!["--url", "--sha256", "--output-directory"].includes(argv[index]) || values.has(argv[index])) fail("ARGUMENTS");
+    if (!["--url", "--sha256", "--output-directory", "--line-name"].includes(argv[index]) || values.has(argv[index])) fail("ARGUMENTS");
     values.set(argv[index], argv[index + 1]);
   }
-  return { url: values.get("--url"), expectedSha256: values.get("--sha256"), outputDirectory: values.get("--output-directory") };
+  if (!values.has("--url") || !values.has("--sha256") || !values.has("--output-directory")) fail("ARGUMENTS");
+  return {
+    url: values.get("--url"),
+    expectedSha256: values.get("--sha256"),
+    outputDirectory: values.get("--output-directory"),
+    ...(values.has("--line-name") ? { lineName: values.get("--line-name") } : {}),
+  };
 }
 
 if (isMainModule(import.meta.url)) {

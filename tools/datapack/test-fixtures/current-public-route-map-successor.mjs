@@ -654,15 +654,20 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
   if (selected.length === 0) {
     throw new Error("synthetic current static-network clock fixture is incomplete");
   }
-  const basisAt = Math.max(...selected.flatMap((snapshot) => [
-    snapshot.retrievedAt,
-    snapshot.sourceUpdatedAt,
-    snapshot.rawReceipt?.storedAt,
-  ].filter(Boolean).map(Date.parse)));
-  const freshUntil = Math.min(
-    ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
-    topologyClock.expiredAt.getTime(),
-  );
+  const snapshotBasisTimes = selected.map((snapshot) => {
+    const snapshotBasisAt = Math.max(...[
+      snapshot.retrievedAt,
+      snapshot.sourceUpdatedAt,
+      snapshot.rawReceipt?.storedAt,
+    ].filter(Boolean).map(Date.parse));
+    const snapshotFreshUntil = Date.parse(snapshot.freshnessExpiresAt);
+    if (!Number.isFinite(snapshotBasisAt) || !Number.isFinite(snapshotFreshUntil)
+      || snapshotBasisAt + 60_000 >= snapshotFreshUntil) {
+      throw new Error("synthetic current static-network clock fixture has no valid freshness window");
+    }
+    return snapshotBasisAt;
+  });
+  const basisAt = Math.max(...snapshotBasisTimes);
   const candidatePublishedAt = candidate.networkEdgeEvidence?.capitalTopologyAdmission?.reverifiedAt
     ? Date.parse(candidate.networkEdgeEvidence.capitalTopologyAdmission.reverifiedAt)
     : Date.parse(candidate.publishedAt);
@@ -671,7 +676,8 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
     topologyClock.inWindow.getTime(),
   );
   if (!Number.isFinite(basisAt) || !Number.isFinite(candidatePublishedAt)
-    || !Number.isFinite(freshUntil) || nowMillis >= freshUntil) {
+    || !Number.isFinite(topologyClock.inWindow.getTime()) || !Number.isFinite(topologyClock.expiredAt.getTime())
+    || nowMillis >= topologyClock.expiredAt.getTime()) {
     throw new Error("synthetic current static-network clock fixture has no valid freshness window");
   }
   return new Date(nowMillis);
@@ -1101,6 +1107,56 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   governancePolicy = topologyRegistration.governancePolicy;
   governanceBytes = topologyRegistration.governanceBytes;
   freshnessPolicy = topologyRegistration.freshnessPolicy;
+  if (!advanceCurrentPublicHead) {
+    const refreshedAt = new Date(candidatePublishedAt - 60_000).toISOString();
+    for (const [index, projection] of candidate.sourceSnapshots.entries()) {
+      if (Date.parse(projection.freshnessExpiresAt) > candidatePublishedAt) continue;
+      const row = snapshots.find(({ snapshotId }) => snapshotId === projection.snapshotId);
+      const refreshedSourceClass = freshnessPolicy.sourceClasses.find(({ sourceIds }) =>
+        sourceIds.includes(projection.sourceId));
+      if (!row || !refreshedSourceClass) continue;
+      row.retrievedAt = refreshedAt;
+      if (typeof row.capturedAt === "string") row.capturedAt = refreshedAt;
+      if (typeof row.sourceUpdatedAt === "string") row.sourceUpdatedAt = refreshedAt;
+      if (typeof row[refreshedSourceClass.basisField] === "string") {
+        row[refreshedSourceClass.basisField] = refreshedAt;
+      }
+      if (row.rawReceipt && typeof row.rawReceipt === "object") {
+        if (typeof row.rawReceipt.capturedAt === "string" && row.rawReceipt.capturedAt.includes("T")) {
+          row.rawReceipt.capturedAt = refreshedAt;
+        }
+        if (typeof row.rawReceipt.collectedAt === "string") row.rawReceipt.collectedAt = refreshedAt;
+        if (typeof row.rawReceipt.storedAt === "string") row.rawReceipt.storedAt = refreshedAt;
+      }
+      row.freshnessExpiresAt = deriveFreshnessExpiresAt({
+        policy: freshnessPolicy,
+        sourceClassId: refreshedSourceClass.id,
+        basisAt: row[refreshedSourceClass.basisField],
+        evaluationAt: candidate.publishedAt,
+      });
+      row.rawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+        policy: governancePolicy,
+        sourceId: row.sourceId,
+        retrievedAt: refreshedAt,
+      });
+      if (row.rawReceipt && typeof row.rawReceipt === "object"
+        && typeof row.rawReceipt.rawRetentionExpiresAt === "string") {
+        row.rawReceipt.rawRetentionExpiresAt = row.rawRetentionExpiresAt;
+      }
+      if (row.previousSnapshotId != null) {
+        const previous = snapshots.find(({ snapshotId }) => snapshotId === row.previousSnapshotId);
+        if (previous) row.diffSummary = buildSnapshotDiff(previous, row);
+      }
+      candidate.sourceSnapshots[index] = deriveReleaseProjection({
+        snapshot: row,
+        sourceInventory: inventory,
+        governancePolicy,
+        governancePolicyBytes: governanceBytes,
+        freshnessPolicy,
+        nowMillis: candidatePublishedAt,
+      });
+    }
+  }
   bindFixtureRequiredSourceScope(scope, candidate);
   const inventoryBytes = jsonBytes(inventory);
   const scopeBytes = jsonBytes(scope);

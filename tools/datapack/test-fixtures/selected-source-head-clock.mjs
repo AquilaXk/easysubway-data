@@ -29,7 +29,7 @@ export function candidateSelectedLedgerHeads(buildSpec, sourceSnapshots) {
 
 // 후보가 고른 수도권 base 원천 head와 현재 capital topology admission 중 가장 늦은 시각.
 // #862 결정 2: topology가 base head보다 늦게 수집될 수 있으므로(같은 날 재등록) reviewedAt을 기준에 포함하고,
-// 그 시각 이후 2분이 모든 원천과 topology admission의 신선 창 안에 있어야 한다.
+// 각 원천과 topology admission이 자체 신선 창 안에 있어야 한다.
 export async function selectedSourceHeadAt(datapackRoot) {
   const [buildSpec, sourceSnapshots, inventory] = await Promise.all([
     readFile(path.join(datapackRoot, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),
@@ -42,16 +42,18 @@ export async function selectedSourceHeadAt(datapackRoot) {
     ?.find(({ id }) => id === "seoul-metro-route-map-positions")
     ?.routeMapAdmissionEvidence?.currentTopologyAdmission;
   assert.ok(isCapitalRouteTopologySnapshotId(topologyAdmission?.topologySnapshotId), "current capital topology admission is required");
-  const basisAt = Math.max(
-    ...selected.flatMap((entry) => [
-      entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
-    ].filter(Boolean).map(Date.parse)),
-    Date.parse(topologyAdmission.reviewedAt),
-  );
-  const freshUntil = Math.min(
-    ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
-    Date.parse(topologyAdmission.freshUntil),
-  );
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 120_000 < freshUntil);
-  return basisAt;
+  const topologyReviewedAt = Date.parse(topologyAdmission.reviewedAt);
+  const topologyFreshUntil = Date.parse(topologyAdmission.freshUntil);
+  assert.ok(Number.isFinite(topologyReviewedAt) && Number.isFinite(topologyFreshUntil) && topologyReviewedAt + 120_000 < topologyFreshUntil);
+  const entryBasisTimes = selected.map((entry) => {
+    const entryBasisAt = Math.max(
+      ...[entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt]
+        .filter(Boolean)
+        .map(Date.parse),
+    );
+    const entryFreshUntil = Date.parse(entry.freshnessExpiresAt);
+    assert.ok(Number.isFinite(entryBasisAt) && Number.isFinite(entryFreshUntil) && entryBasisAt + 120_000 < entryFreshUntil);
+    return entryBasisAt;
+  });
+  return Math.max(...entryBasisTimes, topologyReviewedAt);
 }

@@ -8,11 +8,13 @@ import test from "node:test";
 import {
   BODY_TIMEOUT_MS,
   HEADER_TIMEOUT_MS,
+  KORAIL_TIMETABLE_BOARD_URL,
   MIN_BODY_THROUGHPUT_BYTES_PER_SECOND,
   OBSERVED_FILE_BYTES,
   REQUEST_TIMEOUT_MS,
   collectKorailMetropolitanTimetableFile,
   validateKorailTimetableFileReceipt,
+  verifyCurrentKorailBoardTimetableUrl,
 } from "./collect-korail-metropolitan-timetable-file.mjs";
 import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
@@ -275,4 +277,114 @@ defineSourceCollectionRetryTests({
     });
     return { sha256, byteLength, bytes: await readFile(path.join(outputDirectory, "timetable.xlsx")) };
   }),
+});
+
+test("#988 lineName이 주어지면 코레일 시각표 게시판의 최신 글 첨부 URL과 대조하고 새 파일 URL이 올라오면 다운로드 전에 URL_DRIFT로 실패한다", async () => {
+  const NEWER_PATH = "jfile/202611/01/20261101_daegyeong_timetable.xlsx";
+  const NEWER_URL = `https://www.korail.com/file/cubedata/COMMON/${NEWER_PATH}`;
+  const boardResponse = (boardList) => new Response(JSON.stringify({ strResult: "SUCC", boardList }), {
+    status: 200,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+
+  await withDirectory(async (outputDirectory) => {
+    const requestedUrls = [];
+    const receipt = await collectKorailMetropolitanTimetableFile({
+      url: URL,
+      expectedSha256: SHA256,
+      outputDirectory,
+      lineName: "대경선",
+      fetchImpl: async (requestedUrl) => {
+        requestedUrls.push(requestedUrl);
+        if (requestedUrl === KORAIL_TIMETABLE_BOARD_URL) {
+          return boardResponse([
+            {
+              bdIdx: 12002,
+              bdCode: "_ticketTable02",
+              bdTitle: " 대경선 시각표(2025.10.27.부터)  ",
+              bdContent: "<p><br></p>",
+              fileId: ["jfile/older-timetable.xlsx"],
+            },
+            {
+              bdIdx: 12618,
+              bdCode: "_ticketTable02",
+              bdTitle: "대경선 전동열차 시각표(2026.9.1.부터)",
+              bdContent: "<p><br></p>",
+              fileId: ["jfile/metropolitan-timetable.xlsx"],
+            },
+          ]);
+        }
+        return xlsxResponse();
+      },
+    });
+    assert.deepEqual(requestedUrls, [KORAIL_TIMETABLE_BOARD_URL, URL]);
+    assert.equal(receipt.officialUrl, URL);
+    assert.equal(receipt.sha256, SHA256);
+  });
+
+  await withDirectory(async (outputDirectory) => {
+    const requestedUrls = [];
+    await assert.rejects(collectKorailMetropolitanTimetableFile({
+      url: URL,
+      expectedSha256: SHA256,
+      outputDirectory,
+      lineName: "대경선",
+      fetchImpl: async (requestedUrl) => {
+        requestedUrls.push(requestedUrl);
+        if (requestedUrl === KORAIL_TIMETABLE_BOARD_URL) {
+          return boardResponse([
+            {
+              bdIdx: 12618,
+              bdCode: "_ticketTable02",
+              bdTitle: "대경선 전동열차 시각표(2026.9.1.부터)",
+              bdContent: "<p><br></p>",
+              fileId: ["jfile/metropolitan-timetable.xlsx"],
+            },
+            {
+              bdIdx: 12700,
+              bdCode: "_ticketTable02",
+              bdTitle: " 대경선 시각표(2026.12.1.부터)  ",
+              bdContent: "<p><br></p>",
+              fileId: [NEWER_PATH],
+            },
+          ]);
+        }
+        return xlsxResponse();
+      },
+    }), {
+      name: "Error",
+      message: `KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected ${URL} but board head is ${NEWER_URL}`,
+    });
+    assert.deepEqual(requestedUrls, [KORAIL_TIMETABLE_BOARD_URL]);
+    assert.deepEqual(await readdir(outputDirectory), []);
+  });
+
+  await assert.rejects(verifyCurrentKorailBoardTimetableUrl({
+    lineName: "   ",
+    expectedUrl: URL,
+    fetchImpl: async () => boardResponse([]),
+  }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_LINE_NAME$/u);
+
+  for (const invalidBoard of [
+    new Response("not-json", { status: 200 }),
+    new Response(JSON.stringify({ strResult: "FAIL", boardList: [] }), { status: 200 }),
+    new Response(JSON.stringify({ strResult: "SUCC", boardList: [] }), { status: 200 }),
+    new Response(JSON.stringify({
+      strResult: "SUCC",
+      boardList: [{ bdIdx: 12618, bdCode: "_ticketTable02", bdTitle: "대경선 전동열차 시각표", bdContent: "<p><br></p>", fileId: [] }],
+    }), { status: 200 }),
+    new Response(JSON.stringify({
+      strResult: "SUCC",
+      boardList: [
+        { bdIdx: "invalid", bdCode: "_ticketTable02", bdTitle: "대경선 시각표(개정)", bdContent: "<p><br></p>", fileId: [NEWER_PATH] },
+        { bdIdx: 12618, bdCode: "_ticketTable02", bdTitle: "대경선 전동열차 시각표", bdContent: "<p><br></p>", fileId: ["jfile/metropolitan-timetable.xlsx"] },
+      ],
+    }), { status: 200 }),
+  ]) {
+    await assert.rejects(verifyCurrentKorailBoardTimetableUrl({
+      lineName: "대경선",
+      expectedUrl: URL,
+      fetchImpl: async () => invalidBoard.clone(),
+    }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_BOARD$/u);
+  }
 });

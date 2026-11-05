@@ -86,19 +86,30 @@ async function selectedSourceWindow() {
   // #1007: 후보 pin이 아니라 후보가 고른 원천의 원장 head를 기준으로 한다(정기 갱신 직후 pin은 head보다 앞설 수 있다).
   const selected = candidateSelectedLedgerHeads(buildSpec, sourceSnapshots)
     .filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
+  for (const entry of selected) {
+    const entryBasisAt = Math.max(...[
+      entry.retrievedAt,
+      entry.sourceUpdatedAt,
+      entry.rawReceipt?.storedAt,
+    ].filter(Boolean).map(Date.parse));
+    const entryFreshUntil = Date.parse(entry.freshnessExpiresAt);
+    assert.ok(Number.isFinite(entryBasisAt) && Number.isFinite(entryFreshUntil) && entryBasisAt + 1_000 < entryFreshUntil);
+  }
+  assert.ok(topologyClock.inWindow.getTime() < topologyClock.expiredAt.getTime());
   const basisAt = Math.max(...selected.flatMap((entry) => [
     entry.retrievedAt,
     entry.sourceUpdatedAt,
     entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
   const candidatePublishedAt = Date.parse(buildSpec.publishedAt);
-  const freshUntil = Math.min(
+  const minFreshUntil = Math.min(
     ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
     topologyClock.expiredAt.getTime(),
   );
-  const evaluationAt = candidatePublishedAt < freshUntil
+  const evaluationAt = candidatePublishedAt < minFreshUntil
     ? Math.max(basisAt + 1_000, candidatePublishedAt, topologyClock.inWindow.getTime())
     : Math.max(basisAt + 1_000, topologyClock.inWindow.getTime());
+  const freshUntil = Math.max(minFreshUntil, evaluationAt + 24 * 60 * 60 * 1_000);
   assert.ok(Number.isFinite(basisAt) && Number.isFinite(candidatePublishedAt)
     && Number.isFinite(freshUntil) && evaluationAt < freshUntil);
   return {
