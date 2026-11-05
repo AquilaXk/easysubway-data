@@ -29,6 +29,16 @@ test("새 행이 직전 head와 같은 내용이면 통과하고 원천별 증�
   }]);
 });
 
+test("원본 sha를 내용 해시로 쓰는 원천(seoulmetro-station-line-info, kric-subway-timetable)은 contentSha256 없이 rawSha256으로 비교한다", () => {
+  for (const sourceId of ["seoulmetro-station-line-info", "kric-subway-timetable"]) {
+    const base = [{ sourceId, snapshotId: "s1", previousSnapshotId: null, rawSha256: "a".repeat(64), rowCount: 100, coverageCount: 1 }];
+    const head = [...base, { sourceId, snapshotId: "s2", previousSnapshotId: "s1", rawSha256: "b".repeat(64), rowCount: 100, coverageCount: 1, diffSummary: { status: "NO_CHANGE", rowDelta: 0, coverageDelta: 0 } }];
+    const result = evaluateLedgerChange({ baseLedger: base, headLedger: head, policy: POLICY });
+    assert.deepEqual(result.violations, [], sourceId);
+    assert.equal(result.sources[0].contentSha256, "b".repeat(64), sourceId);
+  }
+});
+
 test("변경이 없으면 증거도 없고, 첫 등록은 이전 head 없이 FIRST로 남는다", () => {
   assert.deepEqual(evaluate(BASE), { sources: [], violations: [] });
   const first = evaluate([...BASE, row("t1", { sourceId: "other-source", diffSummary: undefined })]);

@@ -11,6 +11,7 @@ import {
   REFRESH_STAGE_IDS,
   evaluateRefreshStage,
   isRefreshStage,
+  packContentViolations,
   packMarkerOnlyViolations,
   refreshFileViolation,
   refreshPathShapeViolation,
@@ -922,4 +923,32 @@ test("#3036 반증: KRIC 시설 단계는 두 원천을 한 PR에 올리거나, 
   const swapped = await evaluate(escalator, { mutateFiles: (head) => { head.set(standardFile, head.get(ESCALATOR_SNAPSHOT_PATH)); head.delete(ESCALATOR_SNAPSHOT_PATH); } }, { paths: swappedPaths });
   assert.ok(codes(swapped).includes("REFRESH_GATE"), "에스컬레이터 행에 표준 snapshot 파일");
   assert.notEqual(refreshPathShapeViolation(escalator.stage, [...filenames(escalator), standardFile].sort()), null, "snapshot 파일 둘");
+});
+
+test("pack sourceInventory의 molit-urban-rail-full-route와 kric-subway-timetable은 inventory 관측일(observedDataUpdatedAt)을 따라 updatedAt이 갱신되면 통과한다", () => {
+  const follow = {
+    lineage: new Map(),
+    identities: {},
+    observed: new Map([["molit-urban-rail-full-route", "2026-10-12"], ["kric-subway-timetable", "2026-10-12"]]),
+  };
+  const base = {
+    packs: [{
+      sourceInventory: [
+        { id: "molit-urban-rail-full-route", updatedAt: "2026-07-07T00:00:00.000Z" },
+        { id: "kric-subway-timetable", updatedAt: "2026-07-06T00:00:00.000Z" },
+      ],
+    }],
+  };
+  const head = {
+    packs: [{
+      sourceInventory: [
+        { id: "molit-urban-rail-full-route", updatedAt: "2026-10-12T00:00:00.000Z" },
+        { id: "kric-subway-timetable", updatedAt: "2026-10-12T00:00:00.000Z" },
+      ],
+    }],
+  };
+  assert.deepEqual(packContentViolations({ base, head, sources: [], follow }), []);
+  const wrongDate = structuredClone(head);
+  wrongDate.packs[0].sourceInventory[0].updatedAt = "2026-10-13T00:00:00.000Z";
+  assert.equal(packContentViolations({ base, head: wrongDate, sources: [], follow }).length, 1);
 });

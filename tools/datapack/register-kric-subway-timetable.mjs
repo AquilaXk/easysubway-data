@@ -98,7 +98,7 @@ function validateReview(review, receipt, artifact, now) {
 }
 
 export async function buildKricSubwayTimetableRegistrationOutputs({
-  repositoryRoot = ROOT, collectionPath, receiptPath, reviewAdmissionPath, now = new Date(),
+  repositoryRoot = ROOT, collectionPath, receiptPath, reviewAdmissionPath = null, now = new Date(),
 } = {}) {
   const root = path.resolve(repositoryRoot);
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) fail("now is invalid");
@@ -106,13 +106,13 @@ export async function buildKricSubwayTimetableRegistrationOutputs({
   const [inventory, ledger, governance, freshness] = currentBytes.map((bytes, index) => parse(bytes, OUTPUTS[index]));
   const collectionFile = await externalFile(collectionPath, "collection", root);
   const receiptFile = await externalFile(receiptPath, "raw receipt", root);
-  const reviewFile = await externalFile(reviewAdmissionPath, "review admission", root);
+  const reviewFile = reviewAdmissionPath == null ? null : await externalFile(reviewAdmissionPath, "review admission", root);
   const artifact = parse(collectionFile.bytes, "collection");
   validateKricLine4PilotCollectionArtifact(artifact);
   const receipt = parse(receiptFile.bytes, "raw receipt");
   validateReceipt(receipt, artifact, collectionFile.bytes, governance, now);
-  const review = parse(reviewFile.bytes, "review admission");
-  validateReview(review, receipt, artifact, now);
+  const review = reviewFile ? parse(reviewFile.bytes, "review admission") : null;
+  if (reviewFile) validateReview(review, receipt, artifact, now);
 
   const { policySources } = validateSourceGovernancePolicy({ policy: governance, inventory, freshnessPolicy: freshness });
   const heads = validateLineage(ledger).headsBySource;
@@ -175,18 +175,39 @@ export async function buildKricSubwayTimetableRegistrationOutputs({
   const nextSource = nextInventory.sources.find(({ id }) => id === SOURCE_ID);
   nextSource.retrievedAt = artifact.capturedAt;
   nextSource.observedDataUpdatedAt = artifact.capturedAt;
-  nextSource.admissionEvidence = {
-    ...nextSource.admissionEvidence,
-    snapshotId: row.snapshotId,
-    decision: review.decision,
-    approvedBy: review.approvedBy,
-    approvedAt: review.approvedAt,
-    rawSha256: row.rawSha256,
-    schemaFingerprint: row.schemaFingerprint,
-    adminReviewRecordHash: sha(reviewFile.bytes),
-  };
+  if (reviewFile) {
+    nextSource.admissionEvidence = {
+      ...nextSource.admissionEvidence,
+      snapshotId: row.snapshotId,
+      decision: review.decision,
+      approvedBy: review.approvedBy,
+      approvedAt: review.approvedAt,
+      rawSha256: row.rawSha256,
+      schemaFingerprint: row.schemaFingerprint,
+      adminReviewRecordHash: sha(reviewFile.bytes),
+    };
+  } else {
+    const previousAdmission = source.admissionEvidence;
+    if (previousAdmission?.decision !== "APPROVED"
+      || previousAdmission?.snapshotId !== head.snapshotId
+      || previousAdmission?.rawSha256 !== head.rawSha256
+      || previousAdmission?.schemaFingerprint !== head.schemaFingerprint
+      || row.schemaFingerprint !== head.schemaFingerprint
+      || typeof previousAdmission?.approvedBy !== "string"
+      || previousAdmission.approvedBy.trim() === ""
+      || !Number.isFinite(instant(previousAdmission?.approvedAt))
+      || !/^[a-f0-9]{64}$/u.test(previousAdmission?.adminReviewRecordHash ?? "")) {
+      fail("unattended reverification requires an approved current head with matching schema");
+    }
+    nextSource.admissionEvidence = {
+      ...previousAdmission,
+      snapshotId: row.snapshotId,
+      rawSha256: row.rawSha256,
+      schemaFingerprint: row.schemaFingerprint,
+    };
+  }
   validateSourceGovernancePolicy({ policy: governance, inventory: nextInventory, freshnessPolicy: freshness });
-  const inputs = [collectionFile, receiptFile, reviewFile];
+  const inputs = reviewFile ? [collectionFile, receiptFile, reviewFile] : [collectionFile, receiptFile];
   const values = [json(nextInventory), json(nextLedger), currentBytes[2], currentBytes[3]];
   return OUTPUTS.map((relative, index) => ({ relative, bytes: values[index], prestateBytes: currentBytes[index], inputs }));
 }
@@ -196,7 +217,7 @@ const transaction = createSourceRegistrationTransaction({
   validateOutputs(outputs) {
     const inputs = outputs?.[0]?.inputs;
     if (!Array.isArray(outputs) || !isDeepStrictEqual(outputs.map(({ relative }) => relative), [...OUTPUTS])
-      || !Array.isArray(inputs) || inputs.length !== 3
+      || !Array.isArray(inputs) || (inputs.length !== 2 && inputs.length !== 3)
       || outputs.some((output) => !Buffer.isBuffer(output.bytes) || !Buffer.isBuffer(output.prestateBytes) || output.inputs !== inputs)) {
       fail("registration outputs are invalid");
     }
@@ -204,7 +225,7 @@ const transaction = createSourceRegistrationTransaction({
 });
 
 export async function registerKricSubwayTimetable({
-  repositoryRoot = ROOT, collectionPath, receiptPath, reviewAdmissionPath, expectedHeadSha, now = new Date(),
+  repositoryRoot = ROOT, collectionPath, receiptPath, reviewAdmissionPath = null, expectedHeadSha, now = new Date(),
   gitRunner = async (args, settings) => (await promisify(execFile)("git", args, settings)).stdout,
 } = {}) {
   const root = path.resolve(repositoryRoot);
@@ -221,13 +242,14 @@ export async function registerKricSubwayTimetable({
 
 export function parseKricSubwayTimetableRegistrationArgs(argv) {
   const names = ["collection", "receipt", "review-admission", "expected-head-sha"];
+  const required = ["collection", "receipt", "expected-head-sha"];
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     const name = argv[index]?.startsWith("--") ? argv[index].slice(2) : null;
     if (!names.includes(name) || Object.hasOwn(args, name) || typeof argv[index + 1] !== "string" || argv[index + 1].startsWith("--")) fail("arguments are invalid");
     args[name] = argv[index + 1];
   }
-  if (names.some((name) => !Object.hasOwn(args, name))) fail("--collection, --receipt, --review-admission and --expected-head-sha are required");
+  if (required.some((name) => !Object.hasOwn(args, name))) fail("--collection, --receipt and --expected-head-sha are required");
   return args;
 }
 
@@ -235,7 +257,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   try {
     const args = parseKricSubwayTimetableRegistrationArgs(process.argv.slice(2));
     await registerKricSubwayTimetable({
-      collectionPath: args.collection, receiptPath: args.receipt, reviewAdmissionPath: args["review-admission"], expectedHeadSha: args["expected-head-sha"],
+      collectionPath: args.collection, receiptPath: args.receipt, reviewAdmissionPath: args["review-admission"] ?? null, expectedHeadSha: args["expected-head-sha"],
     });
     process.stdout.write(`${JSON.stringify({ sourceId: SOURCE_ID, status: "REGISTERED" })}\n`);
   } catch (error) {

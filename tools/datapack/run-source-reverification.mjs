@@ -62,7 +62,8 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 // 자격 증명 coverage는 연속된 env 토큰으로 runner를 찾으므로 provider-call-integrity와 같은 방식으로 이름을 조립한다.
 const DATA_GO_CREDENTIAL_ENV = ["DATA", "GO", "KR", "SERVICE", "KEY"].join("_");
 const KRIC_CREDENTIAL_ENV = ["KRIC", "SERVICE", "KEY"].join("_");
-const SECRET_ENV = Object.freeze([DATA_GO_CREDENTIAL_ENV, KRIC_CREDENTIAL_ENV, "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
+const SEOUL_CREDENTIAL_ENV = ["SEOUL", "OPENAPI", "KEY"].join("_");
+const SECRET_ENV = Object.freeze([DATA_GO_CREDENTIAL_ENV, KRIC_CREDENTIAL_ENV, SEOUL_CREDENTIAL_ENV, "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
 const DAY_MS = 86_400_000;
 const KST_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
 
@@ -492,11 +493,55 @@ export const RECIPE_STEPS = Object.freeze({
     collectScript: "collect-daegu-accessibility.mjs",
     collectArgs: async (ctx) => ["--sources-dir", abs(ctx, "tools/datapack/sources"), "--inventory", abs(ctx, INVENTORY_PATH)],
   }),
+  "seoulmetro-station-line-info": [
+    step("collect", "collect", async (ctx) => {
+      const serviceKey = ctx.env[SEOUL_CREDENTIAL_ENV];
+      if (!text(serviceKey)) fail("the Seoul OpenAPI key is not set");
+      await ctx.execute("revalidate-current-static-network-sources.mjs", [
+        "--source-snapshots", abs(ctx, LEDGER_PATH), "--observed-at", ctx.now().toISOString(), "--output-directory", ctx.file("revalidation"),
+      ], { env: { [SEOUL_CREDENTIAL_ENV]: serviceKey } });
+    }),
+    step("register", "register", async (ctx) => {
+      await ctx.execute("register-seoulmetro-station-line-info.mjs", [
+        "--revalidation-directory", ctx.file("revalidation"), "--expected-head-sha", await ctx.head(),
+      ]);
+    }),
+  ],
+  "kric-line4-timetable": [
+    step("collect", "collect", async (ctx) => {
+      const serviceKey = ctx.env[KRIC_CREDENTIAL_ENV];
+      if (!text(serviceKey)) fail("the KRIC service key is not set");
+      await ctx.execute("collect-kric-line4-timetables.mjs", [
+        "--roster", abs(ctx, "tools/datapack/sources/kric-line4-route-roster-20260706.json"), "--line-id", "seoul-4",
+        "--canonical-pack", abs(ctx, "tools/datapack/release/easysubway-datapack-v1.0.0.sqlite.gz"),
+        "--service-pattern-evidence", abs(ctx, "tools/datapack/sources/kric-line4-service-pattern-evidence-20260706.json"),
+        "--no-data-evidence", abs(ctx, "tools/datapack/sources/kric-line4-no-data-evidence-20260706.json"),
+        "--output", ctx.file("collection.json"),
+      ], { env: { [KRIC_CREDENTIAL_ENV]: serviceKey } });
+    }),
+    step("publish", "register", async (ctx) => {
+      const bytes = await readFile(ctx.file("collection.json"));
+      await ctx.execute("publish-kric-timetable-raw.mjs", [
+        "--input", ctx.file("collection.json"), "--receipt", ctx.file("raw-receipt.json"),
+        "--expected-sha256", sha256(bytes), "--expected-byte-size", String(bytes.length),
+      ]);
+    }),
+    step("register", "register", async (ctx) => {
+      await ctx.execute("register-kric-subway-timetable.mjs", [
+        "--collection", ctx.file("collection.json"), "--receipt", ctx.file("raw-receipt.json"), "--expected-head-sha", await ctx.head(),
+      ]);
+    }),
+  ],
+  "public-static-network-v2": [
+    step("register", "collect-register", async (ctx) => {
+      await mkdir(ctx.file("operation"));
+      await ctx.execute("run-public-static-network-v2-operation.mjs", [
+        "--operation-root", ctx.file("operation"), "--expected-main-sha", await ctx.originMain(), "--expected-head-sha", await ctx.head(),
+      ]);
+    }, { fetchErrorPattern: /^PUBLIC_STATIC_NETWORK_V2_FETCH_/u }),
+  ],
 });
 
-// ---------------------------------------------------------------------------
-// controller
-// ---------------------------------------------------------------------------
 async function git(repositoryRoot, args) {
   return (await execFileAsync(GIT, args, { cwd: repositoryRoot, maxBuffer: 512 * 1024 * 1024 })).stdout;
 }
@@ -543,9 +588,8 @@ const defaultLib = Object.freeze({
   collectKasiHolidayCalendarWindowFiles: async (input) => (await import("./fetch-kasi-public-holiday-calendar.mjs")).collectKasiHolidayCalendarWindowFiles(input),
 });
 
-// KRIC 키는 상속시키지 않는다. 수집 단계가 extra env로 명시할 때만 그 자식 프로세스가 받는다.
 export function defaultExecute(repositoryRoot, env) {
-  const inherited = Object.fromEntries(Object.entries(env).filter(([name]) => name !== KRIC_CREDENTIAL_ENV));
+  const inherited = Object.fromEntries(Object.entries(env).filter(([name]) => ![KRIC_CREDENTIAL_ENV, SEOUL_CREDENTIAL_ENV].includes(name)));
   return async (script, args, { env: extra = {} } = {}) => {
     try {
       const { stdout } = await execFileAsync(process.execPath, [path.join(repositoryRoot, "tools/datapack", script), ...args], {

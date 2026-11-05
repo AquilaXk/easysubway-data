@@ -51,6 +51,7 @@ const FAKE_EFFECTS = {
 
 const FAKE_COLLECTION = '{"artifactKind":"kric-station-timetable-collection"}\n';
 FAKE_EFFECTS["collect-kric-station-timetables.mjs"] = (args) => writeFile(args[args.indexOf("--output") + 1], FAKE_COLLECTION);
+FAKE_EFFECTS["collect-kric-line4-timetables.mjs"] = (args) => writeFile(args[args.indexOf("--output") + 1], FAKE_COLLECTION);
 
 const fakeLib = {
   collectKricCurrentStationLineFile: async ({ outputFile }) => {
@@ -86,7 +87,7 @@ const ledgerHeadId = (ledger, sourceId) => {
   return rows.find((row) => !referenced.has(row.snapshotId)).snapshotId;
 };
 
-async function record(recipeId, { shared = new Map(), env = { DATA_GO_KR_SERVICE_KEY: "service-key-value", KRIC_SERVICE_KEY: "kric-key-value" }, mutateRegistered } = {}) {
+async function record(recipeId, { shared = new Map(), env = { DATA_GO_KR_SERVICE_KEY: "service-key-value", KRIC_SERVICE_KEY: "kric-key-value", SEOUL_OPENAPI_KEY: "seoul-key-value" }, mutateRegistered } = {}) {
   const operationDir = path.join(temporary, `${recipeId}-${Math.random().toString(16).slice(2)}`);
   await mkdir(operationDir, { recursive: true });
   const calls = [];
@@ -352,6 +353,42 @@ test("코레일 계획 시각표는 topology recipe가 남긴 산출물과 오�
 
 test("코레일 계획 시각표는 topology recipe 없이 단독으로 돌 수 없다", async () => {
   await assert.rejects(record("korail-planned-timetable"), /did not leave its registration outputs/u);
+});
+
+test("서울교통공사 역·노선 정보와 KRIC 4호선 시간표와 공공 정적 노선망은 각각의 수집·등록 도구를 호출한다", async () => {
+  const seoul = await record("seoulmetro-station-line-info");
+  assert.deepEqual(seoul.calls, [
+    {
+      script: "revalidate-current-static-network-sources.mjs",
+      args: ["--source-snapshots", abs(LEDGER), "--observed-at", NOW.toISOString(), "--output-directory", path.join(seoul.operationDir, "revalidation")],
+      env: { SEOUL_OPENAPI_KEY: "seoul-key-value" },
+    },
+    {
+      script: "register-seoulmetro-station-line-info.mjs",
+      args: ["--revalidation-directory", path.join(seoul.operationDir, "revalidation"), "--expected-head-sha", HEAD],
+      env: {},
+    },
+  ]);
+  await assert.rejects(record("seoulmetro-station-line-info", { env: {} }), /the Seoul OpenAPI key is not set/u);
+
+  const line4 = await record("kric-line4-timetable");
+  assert.equal(line4.calls.length, 3);
+  assert.equal(line4.calls[0].script, "collect-kric-line4-timetables.mjs");
+  assert.deepEqual(line4.calls[0].env, { KRIC_SERVICE_KEY: "kric-key-value" });
+  assert.equal(line4.calls[1].script, "publish-kric-timetable-raw.mjs");
+  assert.deepEqual(line4.calls[2], {
+    script: "register-kric-subway-timetable.mjs",
+    args: ["--collection", path.join(line4.operationDir, "collection.json"), "--receipt", path.join(line4.operationDir, "raw-receipt.json"), "--expected-head-sha", HEAD],
+    env: {},
+  });
+  await assert.rejects(record("kric-line4-timetable", { env: {} }), /the KRIC service key is not set/u);
+
+  const netV2 = await record("public-static-network-v2");
+  assert.deepEqual(netV2.calls, [{
+    script: "run-public-static-network-v2-operation.mjs",
+    args: ["--operation-root", path.join(netV2.operationDir, "operation"), "--expected-main-sha", MAIN, "--expected-head-sha", HEAD],
+    env: {},
+  }]);
 });
 
 // 인자 계약: 기록한 모든 명령을 실제 도구에 넘긴다. 네트워크는 막고(fetch 차단) 환경은 비운다. 인자 오류로 거부되면 실패다.

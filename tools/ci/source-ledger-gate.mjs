@@ -72,11 +72,15 @@ export function evaluateLedgerChange({ baseLedger, headLedger, policy } = {}) {
     if (changed.length > 0) violate("SOURCE_SHA_DRIFT", before, `an existing row changed its source identity (${changed.join(", ")})`);
   }
 
+  const RAW_CANONICAL_SOURCE_IDS = Object.freeze(["seoulmetro-station-line-info", "kric-subway-timetable"]);
+  const contentDigestOf = (row) => (RAW_CANONICAL_SOURCE_IDS.includes(row?.sourceId) && row?.contentSha256 === undefined ? row.rawSha256 : row?.contentSha256);
+
   for (const row of headLedger) {
     if (base.has(row?.snapshotId)) continue;
     const effective = { ...policy, ...(policy.sourceOverrides[row?.sourceId] ?? {}) };
+    const contentSha256 = contentDigestOf(row);
     if (typeof row?.sourceId !== "string" || typeof row.snapshotId !== "string" || !/^[a-f0-9]{64}$/u.test(row.rawSha256 ?? "")
-      || !/^[a-f0-9]{64}$/u.test(row.contentSha256 ?? "") || !isCount(row.rowCount) || !isCount(row.coverageCount)) {
+      || !/^[a-f0-9]{64}$/u.test(contentSha256 ?? "") || !isCount(row.rowCount) || !isCount(row.coverageCount)) {
       violate("BINDING_MISMATCH", row, "a new row lacks sourceId, snapshotId, rawSha256, contentSha256, rowCount or coverageCount");
       continue;
     }
@@ -89,7 +93,8 @@ export function evaluateLedgerChange({ baseLedger, headLedger, policy } = {}) {
     let rowDelta = 0;
     let coverageDelta = 0;
     if (previous) {
-      if (!isCount(previous.rowCount) || !isCount(previous.coverageCount) || !/^[a-f0-9]{64}$/u.test(previous.contentSha256 ?? "")) {
+      const previousContentSha256 = contentDigestOf(previous);
+      if (!isCount(previous.rowCount) || !isCount(previous.coverageCount) || !/^[a-f0-9]{64}$/u.test(previousContentSha256 ?? "")) {
         violate("BINDING_MISMATCH", row, `the previous row ${previousId} lacks counts or contentSha256`);
         continue;
       }
@@ -100,8 +105,8 @@ export function evaluateLedgerChange({ baseLedger, headLedger, policy } = {}) {
         || (Number.isFinite(recorded.coverageDelta) && recorded.coverageDelta !== coverageDelta))) {
         violate("BINDING_MISMATCH", row, `diffSummary (${recorded.rowDelta}, ${recorded.coverageDelta}) differs from the ledger counts (${rowDelta}, ${coverageDelta})`);
       }
-      if (row.contentSha256 !== previous.contentSha256 && !effective.allowContentChange) {
-        violate("SOURCE_SHA_DRIFT", row, `contentSha256 changed from ${previous.contentSha256.slice(0, 12)} to ${row.contentSha256.slice(0, 12)} and the policy does not allow content change`);
+      if (contentSha256 !== previousContentSha256 && !effective.allowContentChange) {
+        violate("SOURCE_SHA_DRIFT", row, `contentSha256 changed from ${previousContentSha256.slice(0, 12)} to ${contentSha256.slice(0, 12)} and the policy does not allow content change`);
       }
       const ratio = Math.abs(rowDelta) / Math.max(previous.rowCount, 1);
       if (ratio > effective.maxRowDeltaRatio) {
@@ -110,7 +115,7 @@ export function evaluateLedgerChange({ baseLedger, headLedger, policy } = {}) {
       if (coverageDelta < 0 && !effective.allowCoverageDecrease) violate("SOURCE_COUNT_DELTA", row, `coverageDelta ${coverageDelta} decreases coverage`);
     }
     sources.push({
-      sourceId: row.sourceId, snapshotId: row.snapshotId, previousSnapshotId: previousId, rawSha256: row.rawSha256, contentSha256: row.contentSha256,
+      sourceId: row.sourceId, snapshotId: row.snapshotId, previousSnapshotId: previousId, rawSha256: row.rawSha256, contentSha256,
       rowDelta, coverageDelta, diffStatus: previous ? (typeof row.diffSummary?.status === "string" ? row.diffSummary.status : "UNKNOWN") : "FIRST",
     });
   }

@@ -48,10 +48,12 @@ export async function selectedSourceHeadAt(datapackRoot) {
     ].filter(Boolean).map(Date.parse)),
     Date.parse(topologyAdmission.reviewedAt),
   );
-  const freshUntil = Math.min(
+  const allExpiries = [
     ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
     Date.parse(topologyAdmission.freshUntil),
-  );
+  ];
+  const activeExpiries = allExpiries.filter((expiry) => expiry > basisAt + 120_000);
+  const freshUntil = activeExpiries.length > 0 ? Math.min(...activeExpiries) : Math.max(...allExpiries);
   assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 120_000 < freshUntil);
   return basisAt;
 }

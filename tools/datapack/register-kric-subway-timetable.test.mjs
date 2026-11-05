@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { validateProductionScheduleProvenance } from "./import-official-sources.mjs";
 import { registerKricSubwayTimetable } from "./register-kric-subway-timetable.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
@@ -135,3 +136,55 @@ test("4호선 등록기는 승인 없음·다른 원본·receipt 불일치·HEAD
   await assert.rejects(register(), /raw receipt is invalid/);
   assert.deepEqual(await readFile(path.join(root, INPUTS[1])), ledgerBytes);
 });
+
+test("4호선 등록기는 검토 파일 없이(무인 재확인) 현재 head가 승인 상태이고 스키마가 같으면 이전 승인을 이월한다", async (t) => {
+  const { root, paths, receipt, rawSha256 } = await fixture(t);
+  const previousInventory = JSON.parse(await readFile(path.join(root, INPUTS[0]), "utf8"));
+  const previousAdmission = previousInventory.sources.find(({ id }) => id === SOURCE_ID).admissionEvidence;
+
+  await registerKricSubwayTimetable({
+    repositoryRoot: root, collectionPath: paths.collectionPath, receiptPath: paths.receiptPath, reviewAdmissionPath: null, expectedHeadSha: HEAD, gitRunner, now: NOW,
+  });
+
+  const evidence = JSON.parse(await readFile(path.join(root, INPUTS[0]), "utf8")).sources.find(({ id }) => id === SOURCE_ID).admissionEvidence;
+  assert.equal(evidence.snapshotId, receipt.snapshotId);
+  assert.equal(evidence.rawSha256, rawSha256);
+  assert.equal(evidence.decision, "APPROVED");
+  assert.equal(evidence.approvedBy, previousAdmission.approvedBy);
+  assert.equal(evidence.approvedAt, previousAdmission.approvedAt);
+  assert.equal(evidence.adminReviewRecordHash, previousAdmission.adminReviewRecordHash);
+});
+
+test("validateProductionScheduleProvenance는 kric-subway-timetable 4호선 파일럿 계보에서 후속 재확인 snapshotId가 더 최신이어도 수용하고 역전은 거부한다", async () => {
+  const inventory = JSON.parse(await readFile(path.join(REPOSITORY_ROOT, INPUTS[0]), "utf8"));
+  const baseSource = inventory.sources.find(({ id }) => id === SOURCE_ID);
+  const selectedSources = [{
+    ...baseSource,
+    admissionEvidence: {
+      ...baseSource.admissionEvidence,
+      snapshotId: "kric-subway-timetable-line4-pilot-20261105",
+    },
+  }];
+  const allowedSourceIds = new Set([SOURCE_ID]);
+  const baseProvenance = {
+    sourceId: SOURCE_ID,
+    sourceSnapshotId: "kric-subway-timetable-line4-pilot-20261001",
+    providerRecordHash: "a1".repeat(32),
+    evidenceHash: "b2".repeat(32),
+    retrievedAt: "2026-10-01T00:00:00.000Z",
+  };
+
+  assert.equal(
+    validateProductionScheduleProvenance(baseProvenance, selectedSources, allowedSourceIds).sourceSnapshotId,
+    "kric-subway-timetable-line4-pilot-20261001",
+  );
+  assert.throws(
+    () => validateProductionScheduleProvenance(
+      { ...baseProvenance, sourceSnapshotId: "kric-subway-timetable-line4-pilot-20261201" },
+      selectedSources,
+      allowedSourceIds,
+    ),
+    /scheduleProvenance\.sourceSnapshotId must match selected source admission snapshot: kric-subway-timetable/,
+  );
+});
+

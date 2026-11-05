@@ -1448,7 +1448,7 @@ function transitScheduleMinimumTableRows(rows) {
   );
 }
 
-function validateProductionScheduleProvenance(provenance, selectedSources, allowedSourceIds) {
+export function validateProductionScheduleProvenance(provenance, selectedSources, allowedSourceIds) {
   if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
     throw new Error("production transit schedule import requires sourced schedule provenance");
   }
@@ -1468,7 +1468,11 @@ function validateProductionScheduleProvenance(provenance, selectedSources, allow
     source.admissionEvidence?.snapshotId,
     `source admission snapshotId: ${sourceId}`,
   );
-  if (sourceSnapshotId !== admittedSnapshotId) {
+  const isLine4PilotLineage = sourceId === "kric-subway-timetable"
+    && /^kric-subway-timetable-line4-pilot-\d{8}$/u.test(sourceSnapshotId)
+    && /^kric-subway-timetable-line4-pilot-\d{8}$/u.test(admittedSnapshotId)
+    && sourceSnapshotId <= admittedSnapshotId;
+  if (sourceSnapshotId !== admittedSnapshotId && !isLine4PilotLineage) {
     throw new Error(`scheduleProvenance.sourceSnapshotId must match selected source admission snapshot: ${sourceId}`);
   }
   productionEvidenceHash(provenance.providerRecordHash, true, sourceId, "scheduleProvenance.providerRecordHash");
