@@ -105,8 +105,8 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
   if (routeGraphTopology?.reverificationCadence !== TOPOLOGY_REVERIFICATION_CADENCE) {
     throw new Error("contract bundle route_graph_topology reverificationCadence is invalid");
   }
-  const localFreshnessSla = await readOptionalUtf8(path.join(root, "release/product-gates/datapack-freshness-sla.json"));
-  if (localFreshnessSla !== null && localFreshnessSla !== bundle.resources["datapack/datapack-freshness-sla.json"]) {
+  const localFreshnessSla = await readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json"), "utf8");
+  if (localFreshnessSla !== bundle.resources["datapack/datapack-freshness-sla.json"]) {
     throw new Error("local release/product-gates/datapack-freshness-sla.json does not match contract bundle");
   }
 
@@ -145,15 +145,6 @@ function exactKeys(value, expected, label) {
 async function requireDirectory(target, label) {
   const stats = await lstat(target);
   if (!stats.isDirectory() || stats.isSymbolicLink()) throw new Error(`${label} must be a real directory`);
-}
-
-async function readOptionalUtf8(target) {
-  try {
-    return await readFile(target, "utf8");
-  } catch (error) {
-    if (error?.code === "ENOENT") return null;
-    throw error;
-  }
 }
 
 async function requireAbsent(target) {

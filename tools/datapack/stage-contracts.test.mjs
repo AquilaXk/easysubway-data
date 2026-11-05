@@ -51,6 +51,10 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
     url: bundleUrl,
     sha256: createHash("sha256").update(bytes).digest("hex"),
   }, null, 2)}\n`);
+  const localGatesDir = path.join(root, "release/product-gates");
+  mkdirSync(localGatesDir, { recursive: true });
+  const localFreshnessPath = path.join(localGatesDir, "datapack-freshness-sla.json");
+  writeFileSync(localFreshnessPath, committedFreshnessSla);
   try {
     await stageContracts({
       root,
@@ -209,9 +213,6 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
       /route_graph_topology reverificationCadence/,
     );
 
-    const localGatesDir = path.join(root, "release/product-gates");
-    mkdirSync(localGatesDir, { recursive: true });
-    const localFreshnessPath = path.join(localGatesDir, "datapack-freshness-sla.json");
     writeFileSync(localFreshnessPath, "{\"sourceClasses\":[]}\n");
     lock.sha256 = createHash("sha256").update(bytes).digest("hex");
     writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
