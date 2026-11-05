@@ -15,8 +15,10 @@ export const MIN_BODY_THROUGHPUT_BYTES_PER_SECOND = 1_000;
 export const BODY_TIMEOUT_MS = 60_000;
 export const MAXIMUM_BYTES = 128 * 1024 * 1024;
 export const KORAIL_METROPOLITAN_TIMETABLE_FILE_SOURCE_ID = "korail-metropolitan-timetable-file";
+export const KORAIL_TIMETABLE_BOARD_URL = "https://www.korail.com/com/userBoard.do?schBcid=ticketTable&mode=list&page=1";
 
 const URL_PREFIX = "/file/cubedata/COMMON/jfile/";
+const BOARD_ATTACHMENT_PATH = /jfile\/[^\s"'<>]+\.xlsx/iu;
 const XLSX_CONTENT_TYPE = /^(?:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/octet-stream)(?:\s*;|$)/iu;
 const XLSX_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
@@ -33,16 +35,55 @@ export function validateKorailTimetableFileReceipt(receipt, { rawSha256, rawByte
   return structuredClone(receipt);
 }
 
+export async function verifyCurrentKorailBoardTimetableUrl({
+  lineName, expectedUrl, fetchImpl = fetch, sleepImpl, retryBudget, randomImpl,
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
+} = {}) {
+  const trimmedLineName = requiredLineName(lineName);
+  const canonicalExpectedUrl = officialKorailUrl(expectedUrl);
+  const headerTimeout = timeoutMs(headerTimeoutMs);
+  const bodyTimeout = timeoutMs(bodyTimeoutMs);
+  const bytes = await downloadBoardWithTransientRetry(fetchImpl, {
+    sleepImpl, retryBudget, randomImpl, headerTimeoutMs: headerTimeout, bodyTimeoutMs: bodyTimeout,
+  });
+  let board;
+  try { board = JSON.parse(bytes.toString("utf8")); } catch { fail("BOARD"); }
+  if (board?.strResult !== "SUCC" || !Array.isArray(board.boardList)) fail("BOARD");
+  const matches = board.boardList
+    .filter((entry) => entry?.bdCode === "_ticketTable02"
+      && typeof entry.bdTitle === "string"
+      && entry.bdTitle.includes(trimmedLineName)
+      && /(?:전동열차|광역전철)/u.test(entry.bdTitle)
+      && /(?:시각표|시간표)/u.test(entry.bdTitle))
+    .sort((left, right) => Number(right.bdIdx) - Number(left.bdIdx));
+  const latest = matches[0];
+  if (!latest || !Number.isSafeInteger(Number(latest.bdIdx)) || typeof latest.bdContent !== "string") fail("BOARD");
+  const attachmentMatch = latest.bdContent.match(BOARD_ATTACHMENT_PATH);
+  if (!attachmentMatch) fail("BOARD");
+  const latestOfficialUrl = officialKorailUrl(`https://www.korail.com/file/cubedata/COMMON/${attachmentMatch[0]}`);
+  if (latestOfficialUrl !== canonicalExpectedUrl) {
+    throw new Error(`KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected ${canonicalExpectedUrl} but board head is ${latestOfficialUrl}`);
+  }
+  return latestOfficialUrl;
+}
+
 export async function collectKorailMetropolitanTimetableFile({
-  url, expectedSha256, outputDirectory, fetchImpl = fetch, sleepImpl, retryBudget, randomImpl,
+  url, expectedSha256, outputDirectory, lineName, fetchImpl = fetch, sleepImpl, retryBudget, randomImpl,
   headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   const officialUrl = officialKorailUrl(url);
   const expected = requireSha256Hex(expectedSha256);
   const output = absoluteOutputDirectory(outputDirectory);
+  const checkedLineName = lineName === undefined ? undefined : requiredLineName(lineName);
   const headerTimeout = timeoutMs(headerTimeoutMs);
   const bodyTimeout = timeoutMs(bodyTimeoutMs);
   try { await mkdir(output); } catch { fail("OUTPUT_DIRECTORY"); }
+  if (checkedLineName !== undefined) {
+    await verifyCurrentKorailBoardTimetableUrl({
+      lineName: checkedLineName, expectedUrl: officialUrl, fetchImpl, sleepImpl, retryBudget, randomImpl,
+      headerTimeoutMs: headerTimeout, bodyTimeoutMs: bodyTimeout,
+    });
+  }
   const bytes = await downloadWithTransientRetry(fetchImpl, officialUrl, {
     sleepImpl, retryBudget, randomImpl, headerTimeoutMs: headerTimeout, bodyTimeoutMs: bodyTimeout,
   });
@@ -65,6 +106,32 @@ export async function collectKorailMetropolitanTimetableFile({
     await writeFile(path.join(output, "receipt.json"), JSON.stringify(receipt), { flag: "wx" });
   } catch { fail("OUTPUT"); }
   return receipt;
+}
+
+async function downloadBoardWithTransientRetry(fetchImpl, { sleepImpl, retryBudget, randomImpl, headerTimeoutMs, bodyTimeoutMs }) {
+  let outcome;
+  try {
+    outcome = await withSourceCollectionRetry(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), headerTimeoutMs);
+      timer.unref?.();
+      let response;
+      try {
+        response = await fetchImpl(KORAIL_TIMETABLE_BOARD_URL, { method: "GET", redirect: "error", signal: controller.signal });
+      } catch (error) {
+        throw Object.assign(new Error("KORAIL_METROPOLITAN_TIMETABLE_FILE_TRANSPORT"), { cause: error });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (response?.status !== 200) return { response, bytes: null };
+      if (!response || response.ok !== true || response.redirected === true) fail("HTTP");
+      return { response, bytes: await readBounded(response.body, bodyTimeoutMs) };
+    }, { label: "KORAIL metropolitan timetable board", sourceId: "korail-metropolitan-timetable-file", url: KORAIL_TIMETABLE_BOARD_URL, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
+  } catch (error) {
+    throw unwrapTransientRetryFailure(error);
+  }
+  if (outcome.bytes === null) fail("HTTP");
+  return outcome.bytes;
 }
 
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·502·503·504와
@@ -104,6 +171,12 @@ function officialKorailUrl(value) {
     || parsed.username !== "" || parsed.password !== "" || parsed.search !== "" || parsed.hash !== ""
     || !parsed.pathname.startsWith(URL_PREFIX) || !parsed.pathname.endsWith(".xlsx")) fail("URL");
   return parsed.href;
+}
+
+function requiredLineName(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) fail("LINE_NAME");
+  return trimmed;
 }
 
 function requireSha256Hex(value) {
@@ -185,13 +258,19 @@ async function readBounded(body, bodyTimeoutMs) {
 function fail(code) { throw new Error(`KORAIL_METROPOLITAN_TIMETABLE_FILE_${code}`); }
 
 function cliArguments(argv) {
-  if (argv.length !== 6) fail("ARGUMENTS");
+  if (argv.length !== 6 && argv.length !== 8) fail("ARGUMENTS");
   const values = new Map();
   for (let index = 0; index < argv.length; index += 2) {
-    if (!["--url", "--sha256", "--output-directory"].includes(argv[index]) || values.has(argv[index])) fail("ARGUMENTS");
+    if (!["--url", "--sha256", "--output-directory", "--line-name"].includes(argv[index]) || values.has(argv[index])) fail("ARGUMENTS");
     values.set(argv[index], argv[index + 1]);
   }
-  return { url: values.get("--url"), expectedSha256: values.get("--sha256"), outputDirectory: values.get("--output-directory") };
+  if (!values.has("--url") || !values.has("--sha256") || !values.has("--output-directory")) fail("ARGUMENTS");
+  return {
+    url: values.get("--url"),
+    expectedSha256: values.get("--sha256"),
+    outputDirectory: values.get("--output-directory"),
+    ...(values.has("--line-name") ? { lineName: values.get("--line-name") } : {}),
+  };
 }
 
 if (isMainModule(import.meta.url)) {

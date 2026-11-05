@@ -318,10 +318,11 @@ test("코레일 topology: 이전 증거의 URL·고정 sha로 수집하고 membe
   const inventory = JSON.parse(await readFile(abs(INVENTORY), "utf8"));
   const evidence = inventory.sources.find(({ id }) => id === "korail-metropolitan-timetable-file").topologyAdmissionEvidence;
   assert.deepEqual(calls.map(({ script }) => script), ["collect-korail-metropolitan-timetable-file.mjs", "register-korail-route-topology.mjs"]);
-  assert.deepEqual(calls[0].args.slice(0, 1).concat(calls[0].args.slice(2, 3), calls[0].args.slice(4, 5)), ["--url", "--sha256", "--output-directory"]);
+  assert.deepEqual(calls[0].args.slice(0, 1).concat(calls[0].args.slice(2, 3), calls[0].args.slice(4, 5), calls[0].args.slice(6, 7)), ["--url", "--sha256", "--output-directory", "--line-name"]);
   assert.match(calls[0].args[1], /^https:\/\/www\.korail\.com\/file\/cubedata\/COMMON\/jfile\/.+\.xlsx$/u);
   assert.equal(calls[0].args[3], evidence.rawSha256);
   assert.equal(calls[0].args[5], file("collection"));
+  assert.equal(calls[0].args[7], "대경선");
   assert.deepEqual(calls[1].args, ["publish-register", "--source-input", file("source-input.json"), "--operation-directory", file("publication"), "--expected-main-sha", MAIN, "--expected-head-sha", HEAD]);
   const input = JSON.parse(await readFile(file("source-input.json"), "utf8"));
   assert.equal(input.artifactKind, "korail-topology-registration-input");

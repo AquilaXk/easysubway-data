@@ -168,7 +168,13 @@ async function copyCommittedReleaseInputs(t, prefix) {
   const snapshotPath = inventory.sources.find(({ id }) => id === STANDARD_SOURCE_ID).accessibilityAdmissionEvidence.snapshotPath;
   await mkdir(path.dirname(path.join(root, snapshotPath)), { recursive: true });
   await cp(path.join(REPOSITORY_ROOT, snapshotPath), path.join(root, snapshotPath));
-  await writeJson(ledgerPath, withoutFirstRegistration(inventory, ledger));
+  const filteredLedger = withoutFirstRegistration(inventory, ledger);
+  for (const row of filteredLedger) {
+    if (typeof row.freshnessExpiresAt === "string" && Date.parse(row.freshnessExpiresAt) <= NOW.getTime()) {
+      row.freshnessExpiresAt = new Date(NOW.getTime() + 86_400_000).toISOString();
+    }
+  }
+  await writeJson(ledgerPath, filteredLedger);
   await writeJson(inventoryPath, inventory);
   return root;
 }
@@ -179,11 +185,6 @@ async function currentReleaseFixture(t) {
   const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
   const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
   for (const row of ledger.filter(({ sourceId }) => sourceId === "capital-route-topology")) row.credentialRedacted = true;
-  for (const row of ledger) {
-    if (typeof row.freshnessExpiresAt === "string" && Date.parse(row.freshnessExpiresAt) <= NOW.getTime()) {
-      row.freshnessExpiresAt = new Date(NOW.getTime() + 86_400_000).toISOString();
-    }
-  }
   await writeJson(ledgerPath, ledger);
   await bindReleaseRequestToCandidate(root);
   return root;

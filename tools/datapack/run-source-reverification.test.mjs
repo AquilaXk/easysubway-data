@@ -353,6 +353,7 @@ test("수집·등록을 한 번에 하는 단계는 수집기 오류 코드로 �
   assert.equal(classifyRecipeFailure({ id: "x", kind: "glue" }, "boom"), "SOURCE_REGISTRATION_FAILED");
   // 코레일 수집기는 원본 sha를 고정해서 받는다. 이 sha가 다르면 원본이 바뀐 것이지 수집이 실패한 것이 아니다.
   assert.equal(classifyRecipeFailure({ id: "collect-timetable", kind: "collect" }, "KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256"), "SOURCE_SHA_DRIFT");
+  assert.equal(classifyRecipeFailure({ id: "collect-timetable", kind: "collect" }, "KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected https://www.korail.com/file/cubedata/COMMON/jfile/old.xlsx but board head is https://www.korail.com/file/cubedata/COMMON/jfile/new.xlsx"), "SOURCE_SHA_DRIFT");
   assert.equal(classifyRecipeFailure({ id: "collect-timetable", kind: "collect" }, "KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP"), "SOURCE_FETCH_FAILED");
 });
 
@@ -360,6 +361,8 @@ test("원본 sha가 고정과 다르면 SOURCE_SHA_DRIFT로 멈춘다", async (t
   const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   await assert.rejects(runSourceReverification(options(root, { recipes: [meta("korail")], steps: { korail: stepsOf("collect", async () => { throw new Error("KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256"); }) }, recipeIds: ["korail"] })),
     /^Error: SOURCE_SHA_DRIFT: korail\/only: KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256$/u);
+  await assert.rejects(runSourceReverification(options(root, { recipes: [meta("korail")], steps: { korail: stepsOf("collect", async () => { throw new Error("KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected https://www.korail.com/file/cubedata/COMMON/jfile/old.xlsx but board head is https://www.korail.com/file/cubedata/COMMON/jfile/new.xlsx"); }) }, recipeIds: ["korail"] })),
+    /^Error: SOURCE_SHA_DRIFT: korail\/only: KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected https:\/\/www\.korail\.com\/file\/cubedata\/COMMON\/jfile\/old\.xlsx but board head is https:\/\/www\.korail\.com\/file\/cubedata\/COMMON\/jfile\/new\.xlsx$/u);
 });
 
 test("recipe가 아무 등록 결과도 만들지 않으면 조용히 성공하지 않고 SOURCE_REGISTRATION_FAILED로 멈춘다", async (t) => {

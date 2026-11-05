@@ -56,6 +56,7 @@ const KORAIL_PLANNED_SOURCE_ID = "korail-metropolitan-planned-timetable";
 const SNAPSHOT_FILE = /^tools\/datapack\/sources\/[^/]+\.json$/u;
 const KNOWN_CODE = /^(SOURCE_FETCH_FAILED|SOURCE_REGISTRATION_FAILED|SOURCE_SHA_DRIFT|SOURCE_COUNT_DELTA|BINDING_MISMATCH): /u;
 const KORAIL_SHA_DRIFT = /KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256/u;
+const KORAIL_URL_DRIFT = /KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT/u;
 const EXPECTATION_CHANGED = /EXPECTED_OBSERVATION_CHANGED/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
 // 이 controller는 공급자를 직접 부르는 runner가 아니다. 키는 환경으로 하위 수집기(각자 키 형상을 먼저 검사한다)와 KASI 수집 함수에 넘기기만 한다.
@@ -86,8 +87,7 @@ const utcDate = (date) => date.toISOString().slice(0, 10).replaceAll("-", "");
 
 /** 단계 종류와 오류 메시지로 이상 코드를 정한다. 수집 실패와 등록 실패를 섞지 않는다. */
 export function classifyRecipeFailure(step, message) {
-  // 코레일 수집기는 원본 sha를 고정해서 받는다. sha가 다르면 원본이 바뀐 것이지 수집이 실패한 것이 아니다.
-  if (KORAIL_SHA_DRIFT.test(message)) return "SOURCE_SHA_DRIFT";
+  if (KORAIL_SHA_DRIFT.test(message) || KORAIL_URL_DRIFT.test(message)) return "SOURCE_SHA_DRIFT";
   // 고정 기대 관측과 달라진 것은 공급자 변경이지 전송 실패가 아니다(수집기와 등록기가 같은 검사를 한다).
   if (EXPECTATION_CHANGED.test(message)) return SOURCE_EXPECTATION_CHANGED;
   if (step.kind === "collect") return "SOURCE_FETCH_FAILED";
@@ -222,9 +222,6 @@ async function governanceEntry(ctx, sourceId) {
   return entries[0];
 }
 
-// 코레일 topology: 이전 등록 증거(inventory·원장 head·snapshot)에서 수집 대상(URL·고정 sha)과 선택 범위·거버넌스 항목을 다시 만든다.
-// 한계: 이전에 등록한 URL의 같은 파일만 확인한다. 같은 URL의 본문 변경은 SOURCE_SHA_DRIFT, URL 소멸은 SOURCE_FETCH_FAILED로 멈추지만
-// 옛 파일 옆에 새 URL로 올라온 새 파일은 감지하지 못한다(후속: #988).
 async function korailPrevious(ctx) {
   const source = await sourceByKey(ctx, KORAIL_SOURCE_ID);
   const evidence = source.topologyAdmissionEvidence;
@@ -258,7 +255,10 @@ const KORAIL_TOPOLOGY_STEPS = [
   step("collect-timetable", "collect", async (ctx) => {
     const { previous } = ctx.shared.get("korail");
     ctx.shared.get("korail").collectionDirectory = ctx.file("collection");
-    await ctx.execute("collect-korail-metropolitan-timetable-file.mjs", ["--url", previous.officialUrl, "--sha256", previous.rawSha256, "--output-directory", ctx.file("collection")]);
+    await ctx.execute("collect-korail-metropolitan-timetable-file.mjs", [
+      "--url", previous.officialUrl, "--sha256", previous.rawSha256,
+      "--output-directory", ctx.file("collection"), "--line-name", previous.selection.lineName,
+    ]);
   }),
   step("source-input", "glue", async (ctx) => {
     const korail = ctx.shared.get("korail");
