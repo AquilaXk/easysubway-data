@@ -149,6 +149,30 @@ test("ITX 승격을 기다리는 동안 빈 claim은 재사용하지 않고 남�
   assert.equal((await decideCurrentCapitalTopologyRefresh({ ...input, now })).state, "RECOVER_CLAIM");
 });
 
+test("후보 build spec이 아직 재결속되기 전이라도 main에 승격된 최신 ITX 증거가 있으면 대기를 풀고 진행한다", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  await setCandidateItxAdmission(input, "2026-08-30T11:30:00.000Z");
+  await writeFile(
+    path.join(input.repositoryRoot, "tools/datapack/itx-cheongchun-topology-evidence.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: "itx-cheongchun-mobile-topology-evidence",
+      sourceArtifact: { freshUntil: "2026-09-03T00:00:00.000Z" },
+    })}\n`,
+  );
+  const result = await decideCurrentCapitalTopologyRefresh({
+    ...input,
+    now: new Date("2026-08-30T11:00:00.000Z"),
+  });
+  assert.deepEqual(result, {
+    state: "DUE",
+    alertBeforePackExpiry: "PT6H",
+    itxFreshUntil: "2026-09-03T00:00:00.000Z",
+    itxRefreshRequired: false,
+    cleanupClaims: [],
+  });
+});
+
 test("requires exactly sixteen distinct admitted capital sources and all three Incheon inputs", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   const inventory = JSON.parse(await readFile(input.inventoryPath, "utf8"));
