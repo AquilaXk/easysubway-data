@@ -236,12 +236,24 @@ test("tracked provider boundary는 Seoul을 exact one-call한다", async () => {
   });
 });
 
-test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지 않는다", async () => {
-  const responses = responseBytes();
+test("provider 실패는 source와 closed HTTP stage만 분류하고 비일시 오류는 retry하지 않는다", async () => {
   const cases = [
+    {
+      expected: "STATIC_SOURCE_REVALIDATION_SEOUL_HTTP_403",
+      fetchImpl: async () => new Response("raw-secret-sentinel", { status: 403 }),
+      calls: 1,
+    },
     {
       expected: "STATIC_SOURCE_REVALIDATION_SEOUL_HTTP_503",
       fetchImpl: async () => new Response("raw-secret-sentinel", { status: 503 }),
+      calls: 3,
+    },
+    {
+      expected: "STATIC_SOURCE_REVALIDATION_SEOUL_HTTP_429",
+      fetchImpl: async () => new Response("raw-secret-sentinel", {
+        status: 429,
+        headers: { "retry-after": "60" },
+      }),
       calls: 1,
     },
     {
@@ -268,6 +280,8 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
     let calls = 0;
     await assert.rejects(fetchCurrentStaticSourceResponses({
       seoulOpenApiKey: "seoul-key",
+      sleep: async () => {},
+      random: () => 0.5,
       fetchImpl: (url, init) => {
         calls += 1;
         return scenario.fetchImpl(url, init, calls);
@@ -278,6 +292,78 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
       return true;
     });
     assert.equal(calls, scenario.calls);
+  }
+});
+
+test("일시 HTTP 503 및 서울 OpenAPI ERROR-500·ERROR-600은 재시도 후 성공하고 비일시 HTTP 403·ERROR-300은 재시도하지 않는다", async () => {
+  const responses = responseBytes();
+  {
+    const sleepCalls = [];
+    let calls = 0;
+    const result = await fetchCurrentStaticSourceResponses({
+      seoulOpenApiKey: "seoul-key",
+      sleep: async (ms) => { sleepCalls.push(ms); },
+      random: () => 0.5,
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls === 1) return new Response("service unavailable", { status: 503 });
+        return new Response(responses.seoul, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(calls, 2);
+    assert.equal(sleepCalls.length, 1);
+    assert.equal(result.seoul.equals(responses.seoul), true);
+  }
+
+  for (const transientPayload of [
+    { SearchSTNBySubwayLineInfo: { RESULT: { CODE: "ERROR-500", MESSAGE: "서버 오류입니다." } } },
+    { RESULT: { CODE: "ERROR-600", MESSAGE: "데이터베이스 연결 오류입니다." } },
+    { SearchInfoBySubwayNameService: { RESULT: { CODE: "ERROR-500", MESSAGE: "서버 오류입니다." } } },
+  ]) {
+    const sleepCalls = [];
+    let calls = 0;
+    const result = await fetchCurrentStaticSourceResponses({
+      seoulOpenApiKey: "seoul-key",
+      sleep: async (ms) => { sleepCalls.push(ms); },
+      random: () => 0.5,
+      fetchImpl: async () => {
+        calls += 1;
+        const body = calls === 1 ? Buffer.from(JSON.stringify(transientPayload)) : responses.seoul;
+        return new Response(body, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(calls, 2);
+    assert.equal(sleepCalls.length, 1);
+    assert.equal(result.seoul.equals(responses.seoul), true);
+  }
+
+  {
+    const sleepCalls = [];
+    let calls = 0;
+    const nonTransientBody = Buffer.from(JSON.stringify({
+      RESULT: { CODE: "ERROR-300", MESSAGE: "필수 값이 누락되어 있습니다." },
+    }));
+    const result = await fetchCurrentStaticSourceResponses({
+      seoulOpenApiKey: "seoul-key",
+      sleep: async (ms) => { sleepCalls.push(ms); },
+      random: () => 0.5,
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response(nonTransientBody, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(sleepCalls.length, 0);
+    assert.equal(result.seoul.equals(nonTransientBody), true);
   }
 });
 

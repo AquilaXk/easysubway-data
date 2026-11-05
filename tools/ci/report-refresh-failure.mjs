@@ -399,8 +399,15 @@ export async function listOpenIssues(repository, runGh) {
   }
 }
 
+export const PARENT_EPIC_NUMBER = 870;
+
 export async function reportRefreshFailure({
-  argv = process.argv.slice(2), runGh = defaultRunGh, now = () => new Date(), orphan, readText = (file) => readFile(file, "utf8"),
+  argv = process.argv.slice(2),
+  runGh = defaultRunGh,
+  now = () => new Date(),
+  orphan,
+  readText = (file) => readFile(file, "utf8"),
+  parentEpicNumber = PARENT_EPIC_NUMBER,
 } = {}) {
   const { failuresPath, overdueList, sourceId, ...args } = parseArgs(argv);
   const input = validated(args);
@@ -409,8 +416,29 @@ export async function reportRefreshFailure({
   const openIssues = await listOpenIssues(input.repository, runGh);
   const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures, overdue, sourceId });
   if (plan.action === "create") {
-    await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
-    return plan;
+    const createdOutput = await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
+    const createdMatch = /\/issues\/([1-9]\d*)\s*$/u.exec(String(createdOutput ?? ""));
+    if (!createdMatch) {
+      fail("CREATE_ISSUE", "gh issue create 출력에서 생성된 이슈 번호를 읽을 수 없다.");
+    }
+    const createdIssueNumber = Number(createdMatch[1]);
+    if (parentEpicNumber == null) {
+      return { ...plan, issueNumber: createdIssueNumber, createdIssueNumber };
+    }
+    if (!Number.isSafeInteger(parentEpicNumber) || parentEpicNumber <= 0) {
+      fail("SUB_ISSUE_LINK", "parentEpicNumber는 양의 정수여야 한다.");
+    }
+    const restId = String(await runGh(["api", `repos/${input.repository}/issues/${createdIssueNumber}`, "--jq", ".id"]) ?? "").trim();
+    if (!/^[1-9]\d*$/u.test(restId)) {
+      fail("SUB_ISSUE_LINK", `생성된 이슈 #${createdIssueNumber}의 REST ID를 읽을 수 없다.`);
+    }
+    await runGh(["api", "--method", "POST", `repos/${input.repository}/issues/${parentEpicNumber}/sub_issues`, "-F", `sub_issue_id=${restId}`]);
+    return {
+      ...plan,
+      issueNumber: createdIssueNumber,
+      createdIssueNumber,
+      linkedParentEpicNumber: parentEpicNumber,
+    };
   }
   // 댓글을 먼저 단다. 본문 갱신이 실패해도 댓글에 run이 남아 다음 보고가 같은 run을 건너뛴다.
   if (plan.action === "comment") {
