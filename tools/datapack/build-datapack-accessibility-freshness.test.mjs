@@ -103,7 +103,6 @@ test("registered Incheon accessibility freshness uses the generic candidate proj
 test("registered KRIC escalator accessibility freshness validates per-query evidenceHashes Set", () => {
   const sourceId = "kric-station-escalator-detailed";
   const snapshotId = "kric-station-escalator-detailed-20261105T201741340Z";
-  const freshUntil = "2026-11-06T20:17:41.340Z";
   const facilityEvidenceHash = "a".repeat(64);
   const statusEvidenceHash = "b".repeat(64);
   const source = {
@@ -113,13 +112,13 @@ test("registered KRIC escalator accessibility freshness validates per-query evid
     license: { redistributionAllowed: true },
     accessibilityAdmissionEvidence: {
       snapshotId,
-      freshUntil,
+      freshUntil: "2026-11-06T20:17:41.340Z",
     },
   };
   const admission = {
     source,
     snapshotId,
-    freshUntil,
+    freshUntil: "2026-11-06T20:17:41.340Z",
     evidenceHashes: new Set([facilityEvidenceHash, statusEvidenceHash]),
   };
   assert.equal(productionAccessibilityFreshUntil([{
@@ -127,7 +126,7 @@ test("registered KRIC escalator accessibility freshness validates per-query evid
     stationFacilityEvidence: [{ sourceId, sourceSnapshotId: snapshotId, evidenceHash: statusEvidenceHash }],
   }], { sources: [source] }, [], new Date("2026-11-05T20:30:00.000Z"), {
     admittedAccessibilityEvidence: new Map([[sourceId, admission]]),
-  }), freshUntil);
+  }), "2026-11-06T20:17:41.340Z");
   assert.throws(() => productionAccessibilityFreshUntil([{
     facilities: [{ sourceId, sourceSnapshotId: snapshotId, evidenceHash: "c".repeat(64) }],
   }], { sources: [source] }, [], new Date("2026-11-05T20:30:00.000Z"), {
