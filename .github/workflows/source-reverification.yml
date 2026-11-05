@@ -202,7 +202,7 @@ jobs:
           # OCI 주소는 등록기가 영수증 결속(namespace·bucket)을 확인하는 데 쓴다.
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
           KRIC_SERVICE_KEY: ${{ steps.decision.outputs.replay_run_id == '' && secrets.KRIC_SERVICE_KEY || '' }}
-          SEOUL_OPENAPI_KEY: ${{ steps.decision.outputs.replay_run_id == '' && secrets.SEOUL_OPENAPI_KEY || '' }}
+          SEOUL_OPENAPI_KEY: ${{ steps.decision.outputs.replay_run_id == '' && secrets.EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY || '' }}
           RECIPES: ${{ steps.decision.outputs.recipes }}
           REPLAY_RUN_ID: ${{ steps.decision.outputs.replay_run_id }}
         run: |
