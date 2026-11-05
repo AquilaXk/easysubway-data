@@ -354,7 +354,15 @@ async function checkPublishedManifest(ctx, expectedSequence) {
 // ---------- 단계: 배포 입력 선택 ----------
 
 async function previousArtifact(ctx, { repo, token, artifactId, runId, namePattern }) {
-  const found = await ctx.gh.api(`repos/${repo}/actions/artifacts/${artifactId}`, { token });
+  let found;
+  try {
+    found = await ctx.gh.api(`repos/${repo}/actions/artifacts/${artifactId}`, { token });
+  } catch (error) {
+    if (/\b(?:HTTP 404|not found)\b/iu.test(String(error?.message ?? ""))) {
+      fail("ROLLBACK_PATH_UNAVAILABLE", `the previous release artifact ${artifactId} of ${repo} is expired or no longer verifiable`);
+    }
+    throw error;
+  }
   const match = DIGEST.exec(typeof found?.digest === "string" ? found.digest : "");
   if (found?.expired !== false || !match || Number(found?.workflow_run?.id) !== Number(runId)
     || !namePattern.test(found?.name ?? "") || Number(found?.id) !== Number(artifactId)) {
