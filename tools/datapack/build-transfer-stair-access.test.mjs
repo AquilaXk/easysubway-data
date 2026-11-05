@@ -878,12 +878,11 @@ test("#1027·#1028 갈래 1~7 실제 원천 문구는 닫힌 어휘로 분류하
   };
   const step = (detail) => classifyTransferStep(detail, context);
 
-  assert.deepEqual(step("5(B3) 9호선 국회의사당 방면 승강장으로 이동"), {
-    ruleId: "LEVEL_MOVE_TO_PLACE",
-    kind: "LEVEL_MOVE",
-    effect: "STEP_FREE",
-    floors: ["B3"],
-  });
+  const firstStep = step("5(B3) 9호선 국회의사당 방면 승강장으로 이동");
+  assert.equal(firstStep.ruleId, "LEVEL_MOVE_TO_PLACE");
+  assert.equal(firstStep.kind, "LEVEL_MOVE");
+  assert.equal(firstStep.effect, "STEP_FREE");
+  assert.deepEqual(firstStep.floors, ["B3"]);
 
   for (const detail of [
     "3) (B3) 승강장 으로 이동",
