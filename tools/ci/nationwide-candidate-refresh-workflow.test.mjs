@@ -26,25 +26,21 @@ test("권한은 job에만 주고 issues 쓰기는 실패 보고용이다(workflo
   assert.doesNotMatch(yml, /actions: write/u);
 });
 
-test("정기 실행과 스케줄러 App의 dispatch는 저장소 변수가 true일 때만 돌고, 사람 dispatch는 항상 돈다(#1032, #1040)", () => {
-  const condition = "${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.actor != 'easysubway-release-chain[bot]' && github.triggering_actor != 'easysubway-release-chain[bot]') || (vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true' && (github.event_name != 'workflow_dispatch' || (github.actor == 'easysubway-release-chain[bot]' && github.triggering_actor == 'easysubway-release-chain[bot]')))) }}";
+test("정기 실행과 스케줄러 App의 dispatch는 저장소 변수가 true일 때만 돌고, 사람 dispatch는 항상 돈다(#1032, #1040, #1384)", () => {
+  const condition = "${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User') || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}";
   assert.equal(yml.match(/\n    if: ([^\n]+)\n/u)?.[1], condition);
   const runs = (context) => evaluateGithubExpression(condition, context);
-  const APP = "easysubway-release-chain[bot]";
   const main = { ref: "refs/heads/main" };
   for (const vars of [{}, { DATAPACK_SCHEDULED_CANDIDATE_REFRESH: "false" }, { DATAPACK_SCHEDULED_CANDIDATE_REFRESH: "true" }]) {
-    assert.equal(runs({ github: { ...main, event_name: "workflow_dispatch", actor: "AquilaXk", triggering_actor: "AquilaXk" }, vars }), true, `사람 dispatch ${JSON.stringify(vars)}`);
-    // #1040: App이 시작한 run을 사람이 재실행(actor=APP, triggering_actor=사람)하거나 반대로 어긋난 경우는 어떤 변수 상태에서도 돌지 않는다.
-    assert.equal(runs({ github: { ...main, event_name: "workflow_dispatch", actor: APP, triggering_actor: "AquilaXk" }, vars }), false, `재실행 불일치 ${JSON.stringify(vars)}`);
-    assert.equal(runs({ github: { ...main, event_name: "workflow_dispatch", actor: "AquilaXk", triggering_actor: APP }, vars }), false, `역방향 불일치 ${JSON.stringify(vars)}`);
+    assert.equal(runs({ github: { ...main, event_name: "workflow_dispatch", event: { sender: { type: "User" } } }, vars }), true, `사람 dispatch ${JSON.stringify(vars)}`);
   }
-  for (const event_name of ["schedule", "workflow_dispatch"]) {
-    const github = { ...main, event_name, actor: event_name === "schedule" ? "AquilaXk" : APP, triggering_actor: event_name === "schedule" ? "AquilaXk" : APP };
+  for (const [event_name, senderType] of [["schedule", undefined], ["workflow_dispatch", "Bot"]]) {
+    const github = { ...main, event_name, event: senderType === undefined ? {} : { sender: { type: senderType } } };
     assert.equal(runs({ github, vars: {} }), false, `${event_name} 변수 없음`);
     assert.equal(runs({ github, vars: { DATAPACK_SCHEDULED_CANDIDATE_REFRESH: "false" } }), false, `${event_name} 변수 false`);
     assert.equal(runs({ github, vars: { DATAPACK_SCHEDULED_CANDIDATE_REFRESH: "true" } }), true, `${event_name} 변수 true`);
   }
-  assert.equal(runs({ github: { ref: "refs/heads/feature", event_name: "workflow_dispatch", actor: "AquilaXk", triggering_actor: "AquilaXk" }, vars: {} }), false, "main이 아닌 ref");
+  assert.equal(runs({ github: { ref: "refs/heads/feature", event_name: "workflow_dispatch", event: { sender: { type: "User" } } }, vars: {} }), false, "main이 아닌 ref");
 });
 
 test("dispatch 입력은 선택이다: 스케줄러 App은 입력 없이 깨우고 사람 입력 검증은 plan 단계가 한다(#1032, #1040)", () => {
