@@ -6,13 +6,13 @@ import { pathToFileURL } from "node:url";
 
 import { TOPOLOGY_REVERIFICATION_CADENCE } from "./lib/topology-freshness-cutover.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/54a2719638910f30ad7da2a4493d286fafb7ffca/contracts/bundles/data-contracts-v1.0.0.json";
-const annualOfficialFileSourceIds = [
+export const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/54a2719638910f30ad7da2a4493d286fafb7ffca/contracts/bundles/data-contracts-v1.0.0.json";
+export const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
   "seoul-metro-transfer-car-door-duration",
 ];
-const staticAccessibilitySourceIds = [
+export const staticAccessibilitySourceIds = [
   "incheon-transit-accessibility",
   "kric-station-convenience-standard",
   "seoul-metro-accessibility",
@@ -22,13 +22,13 @@ const staticAccessibilitySourceIds = [
   "busan-transportation-accessibility",
   "kric-station-escalator-detailed",
 ];
-const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
-const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
-const routeMapGovernanceMappings = [
+export const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
+export const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
+export const routeMapGovernanceMappings = [
   { sourceId: "seoul-metro-route-map-positions", sourceClassId: "route_map_positions" },
   { sourceId: "seoulmetro-cyberstation-route-map", sourceClassId: "route_map_asset_historical" },
 ];
-const productionRequiredSourceIds = [
+export const productionRequiredSourceIds = [
   "incheon-transit-accessibility",
   "molit-urban-rail-full-route",
   "seoulmetro-station-line-info",
@@ -38,7 +38,7 @@ const productionRequiredSourceIds = [
   "kric-subway-timetable",
   "seoul-metro-transfer-distance-duration",
 ];
-const resourceNames = [
+export const resourceNames = [
   "datapack/mobility-profile-policy.json",
   "datapack/datapack-freshness-sla.json",
   "datapack/source-governance-policy.json",
@@ -105,6 +105,10 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
   if (routeGraphTopology?.reverificationCadence !== TOPOLOGY_REVERIFICATION_CADENCE) {
     throw new Error("contract bundle route_graph_topology reverificationCadence is invalid");
   }
+  const localFreshnessSla = await readOptionalUtf8(path.join(root, "release/product-gates/datapack-freshness-sla.json"));
+  if (localFreshnessSla !== null && localFreshnessSla !== bundle.resources["datapack/datapack-freshness-sla.json"]) {
+    throw new Error("local release/product-gates/datapack-freshness-sla.json does not match contract bundle");
+  }
 
   const build = path.join(root, "build");
   await mkdir(build, { recursive: true });
@@ -141,6 +145,15 @@ function exactKeys(value, expected, label) {
 async function requireDirectory(target, label) {
   const stats = await lstat(target);
   if (!stats.isDirectory() || stats.isSymbolicLink()) throw new Error(`${label} must be a real directory`);
+}
+
+async function readOptionalUtf8(target) {
+  try {
+    return await readFile(target, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 async function requireAbsent(target) {

@@ -1,57 +1,30 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { stageContracts } from "./stage-contracts.mjs";
+import {
+  annualOfficialFileSourceIds,
+  bundleUrl,
+  historicalRouteMapSourceIds,
+  productionRequiredSourceIds,
+  routeMapGovernanceMappings,
+  routeMapPositionSourceIds,
+  stageContracts,
+  staticAccessibilitySourceIds,
+} from "./stage-contracts.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/54a2719638910f30ad7da2a4493d286fafb7ffca/contracts/bundles/data-contracts-v1.0.0.json";
 const bundleSha256 = "48e3a41d992fac4135b28c1fe83dc62f4ca1fcdfc5d2e4dbad4f039d4b4b811c";
-const annualOfficialFileSourceIds = [
-  "molit-railway-transfer-movement",
-  "seoul-metro-transfer-distance-duration",
-  "seoul-metro-transfer-car-door-duration",
-];
-const staticAccessibilitySourceIds = [
-  "incheon-transit-accessibility",
-  "kric-station-convenience-standard",
-  "seoul-metro-accessibility",
-  "daegu-transportation-accessibility",
-  "daejeon-transportation-accessibility",
-  "gwangju-transportation-accessibility",
-  "busan-transportation-accessibility",
-  "kric-station-escalator-detailed",
-];
-const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
-const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
-const routeMapGovernanceMappings = [
-  { sourceId: "seoul-metro-route-map-positions", sourceClassId: "route_map_positions" },
-  { sourceId: "seoulmetro-cyberstation-route-map", sourceClassId: "route_map_asset_historical" },
-];
-const productionRequiredSourceIds = [
-  "incheon-transit-accessibility",
-  "molit-urban-rail-full-route",
-  "seoulmetro-station-line-info",
-  "seoul-metro-accessibility",
-  "seoul-metro-route-map-positions",
-  "kric-station-convenience-standard",
-  "kric-subway-timetable",
-  "seoul-metro-transfer-distance-duration",
-];
+const committedFreshnessSla = readFileSync(
+  new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url),
+  "utf8",
+);
 
 const resources = {
   "datapack/mobility-profile-policy.json": "{\"id\":\"mobility\"}\n",
-  "datapack/datapack-freshness-sla.json": `${JSON.stringify({
-    sourceClasses: [
-      { id: "static_accessibility_facility", sourceIds: staticAccessibilitySourceIds },
-      { id: "route_map_positions", sourceIds: routeMapPositionSourceIds, reverificationCadence: "P90D", offlinePackEligible: true },
-      { id: "route_map_asset_historical", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: false },
-      { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
-      { id: "route_graph_topology", reverificationCadence: "P7D" },
-    ],
-  })}\n`,
+  "datapack/datapack-freshness-sla.json": committedFreshnessSla,
   "datapack/source-governance-policy.json": `${JSON.stringify({
     sources: routeMapGovernanceMappings,
   })}\n`,
@@ -235,6 +208,21 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
       stageContracts({ root, fetchBundle: async () => legacyTopologyBytes }),
       /route_graph_topology reverificationCadence/,
     );
+
+    const localGatesDir = path.join(root, "release/product-gates");
+    mkdirSync(localGatesDir, { recursive: true });
+    const localFreshnessPath = path.join(localGatesDir, "datapack-freshness-sla.json");
+    writeFileSync(localFreshnessPath, "{\"sourceClasses\":[]}\n");
+    lock.sha256 = createHash("sha256").update(bytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => bytes }),
+      /local release\/product-gates\/datapack-freshness-sla\.json does not match contract bundle/,
+    );
+
+    writeFileSync(localFreshnessPath, committedFreshnessSla);
+    await stageContracts({ root, fetchBundle: async () => bytes });
+    assert.equal(readFileSync(path.join(root, "build/contracts/datapack/datapack-freshness-sla.json"), "utf8"), committedFreshnessSla);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

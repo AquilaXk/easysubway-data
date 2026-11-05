@@ -300,6 +300,7 @@ async function finalizedPublishedRecoveryFixture(t) {
 
 test("collect records failure after COLLECTION_STARTED and never resumes a provider call", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const root = path.join(temporaryRoot, "operation");
   const repositoryRoot = await currentReleaseFixture(t);
   const sha = EXACT_MAIN;
@@ -314,6 +315,7 @@ test("collect records failure after COLLECTION_STARTED and never resumes a provi
 
 test("collect journals a complete exact terminal observation as COLLECTED without replay", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const operationRoot = path.join(temporaryRoot, "operation");
   const repositoryRoot = await currentReleaseFixture(t);
   await prepareCurrentCapitalFacilityOperation({ sourceId: STANDARD_SOURCE_ID, repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
@@ -490,6 +492,7 @@ test("collection preflight judges fan-in selected ledger heads instead of the ca
 
 test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider call 0", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const root = path.join(temporaryRoot, "operation");
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const repositoryRoot = await currentReleaseFixture(t); const sha = EXACT_MAIN;
   await prepareCurrentCapitalFacilityOperation({ sourceId: STANDARD_SOURCE_ID, repositoryRoot, operationRoot: root, expectedMainSha: sha, expectedFacilityHeadSha: sha, execFileImpl: exactMainExec, now: NOW });
   let calls = 0;

@@ -41,6 +41,7 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
   };
   const kricSnapshot = {
     sourceId: "kric-station-convenience-standard", snapshotId: "kric-1", observedAt: "2026-07-28T00:00:00Z", capturedAt: "2026-07-28T00:00:00Z",
+    providerResultCode: "00",
     queries: [{ stationId: "station-a", lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd: "1", providerRecordHash: "a".repeat(64), rows: [{ gubun: "EV", grndDvCd: "2", stinFlor: 3, dtlLoc: "대합실" }, { gubun: "ELEC", stinFlor: 1, dtlLoc: "충전" }] }],
   };
   const seoulSnapshot = {
@@ -295,6 +296,7 @@ test("#3036 KRIC 목록에 없는 에스컬레이터와 환승역 다른 노선 
     input,
     kricSnapshot: {
       sourceId: "kric-station-convenience-standard", snapshotId: "kric-1", observedAt: "2026-10-22T00:00:00Z", capturedAt: "2026-10-22T00:00:00Z",
+      providerResultCode: "00",
       queries: [
         query("line-5", "5", "2538", [{ gubun: "INFO", stinFlor: 1, dtlLoc: "대합실" }]),
         query("line-6", "6", "2635", [{ gubun: "EV", grndDvCd: "2", stinFlor: 1, dtlLoc: "신금호방면5-3" }]),
@@ -373,6 +375,7 @@ test("station과 edge identity는 line까지 일치해야 하고 결측 line은 
   const kricSnapshot = {
     sourceId: "kric-station-convenience-standard", snapshotId: "kric-1",
     observedAt: "2026-07-28T00:00:00Z", capturedAt: "2026-07-28T00:00:00Z",
+    providerResultCode: "00",
     queries: [{
       stationId: "station-a", lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd: "1",
       providerRecordHash: "a".repeat(64), rows: [{ gubun: "EV", grndDvCd: "1", stinFlor: 1, dtlLoc: "대합실" }],
