@@ -93,6 +93,10 @@ test("의존은 앞선 recipe만 가리키고(순환 없음) 의존 recipe는 �
   assert.deepEqual(recipeById("korail-planned-timetable").dependsOn, ["korail-topology"]);
   assert.deepEqual(recipeById("gwangju-accessibility").dependsOn, ["gwangju-topology"]);
   assert.deepEqual(recipeById("daejeon-accessibility").dependsOn, ["daejeon-topology"]);
+  const orderedIds = REVERIFICATION_RECIPES.map(({ id }) => id);
+  for (const regionalId of ["gwangju-topology", "daejeon-topology", "daegu-sources"]) {
+    assert.ok(orderedIds.indexOf(regionalId) < orderedIds.indexOf("public-static-network-v2"), regionalId);
+  }
 });
 
 // #1122: 수집기가 24시간 근거(freshUntil)를 싣는 부산·대전·대구 원천 4건은 만료 기준을 따로 갖지 않고, 결속된 topology recipe가 돌 때 함께 다시 등록된다.

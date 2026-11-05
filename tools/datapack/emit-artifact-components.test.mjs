@@ -92,18 +92,13 @@ async function selectedSourceWindow() {
     entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
   const candidatePublishedAt = Date.parse(buildSpec.publishedAt);
-  const rawFreshUntil = Math.min(
+  const freshUntil = Math.min(
     ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
     topologyClock.expiredAt.getTime(),
   );
-  const evaluationAt = candidatePublishedAt < rawFreshUntil
+  const evaluationAt = candidatePublishedAt < freshUntil
     ? Math.max(basisAt + 1_000, candidatePublishedAt, topologyClock.inWindow.getTime())
     : Math.max(basisAt + 1_000, topologyClock.inWindow.getTime());
-  const activeExpiries = [
-    ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)).filter((expiry) => expiry > evaluationAt),
-    topologyClock.expiredAt.getTime(),
-  ];
-  const freshUntil = Math.min(...activeExpiries);
   assert.ok(Number.isFinite(basisAt) && Number.isFinite(candidatePublishedAt)
     && Number.isFinite(freshUntil) && evaluationAt < freshUntil);
   return {

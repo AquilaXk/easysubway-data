@@ -659,6 +659,10 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
     snapshot.sourceUpdatedAt,
     snapshot.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(
+    ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
+    topologyClock.expiredAt.getTime(),
+  );
   const candidatePublishedAt = candidate.networkEdgeEvidence?.capitalTopologyAdmission?.reverifiedAt
     ? Date.parse(candidate.networkEdgeEvidence.capitalTopologyAdmission.reverifiedAt)
     : Date.parse(candidate.publishedAt);
@@ -666,11 +670,6 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
     Math.max(basisAt, candidatePublishedAt) + 60_000,
     topologyClock.inWindow.getTime(),
   );
-  const activeExpiries = [
-    ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)).filter((expiry) => expiry > nowMillis),
-    topologyClock.expiredAt.getTime(),
-  ];
-  const freshUntil = Math.min(...activeExpiries);
   if (!Number.isFinite(basisAt) || !Number.isFinite(candidatePublishedAt)
     || !Number.isFinite(freshUntil) || nowMillis >= freshUntil) {
     throw new Error("synthetic current static-network clock fixture has no valid freshness window");

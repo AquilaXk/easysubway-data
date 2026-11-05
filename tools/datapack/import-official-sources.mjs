@@ -1468,11 +1468,10 @@ export function validateProductionScheduleProvenance(provenance, selectedSources
     source.admissionEvidence?.snapshotId,
     `source admission snapshotId: ${sourceId}`,
   );
-  const isLine4PilotLineage = sourceId === "kric-subway-timetable"
-    && /^kric-subway-timetable-line4-pilot-\d{8}$/u.test(sourceSnapshotId)
-    && /^kric-subway-timetable-line4-pilot-\d{8}$/u.test(admittedSnapshotId)
-    && sourceSnapshotId <= admittedSnapshotId;
-  if (sourceSnapshotId !== admittedSnapshotId && !isLine4PilotLineage) {
+  const reverifiedFromSnapshotIds = Array.isArray(source.admissionEvidence?.reverifiedFromSnapshotIds)
+    ? source.admissionEvidence.reverifiedFromSnapshotIds
+    : [];
+  if (sourceSnapshotId !== admittedSnapshotId && !reverifiedFromSnapshotIds.includes(sourceSnapshotId)) {
     throw new Error(`scheduleProvenance.sourceSnapshotId must match selected source admission snapshot: ${sourceId}`);
   }
   productionEvidenceHash(provenance.providerRecordHash, true, sourceId, "scheduleProvenance.providerRecordHash");

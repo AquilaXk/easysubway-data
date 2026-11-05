@@ -176,8 +176,9 @@ export async function buildKricSubwayTimetableRegistrationOutputs({
   nextSource.retrievedAt = artifact.capturedAt;
   nextSource.observedDataUpdatedAt = artifact.capturedAt;
   if (reviewFile) {
+    const { reverifiedFromSnapshotIds: _omitted, ...baseAdmission } = nextSource.admissionEvidence ?? {};
     nextSource.admissionEvidence = {
-      ...nextSource.admissionEvidence,
+      ...baseAdmission,
       snapshotId: row.snapshotId,
       decision: review.decision,
       approvedBy: review.approvedBy,
@@ -199,11 +200,18 @@ export async function buildKricSubwayTimetableRegistrationOutputs({
       || !/^[a-f0-9]{64}$/u.test(previousAdmission?.adminReviewRecordHash ?? "")) {
       fail("unattended reverification requires an approved current head with matching schema");
     }
+    if (row.redactedRequestFingerprint !== head.redactedRequestFingerprint) {
+      fail("SOURCE_SHA_DRIFT: unattended reverification requires unchanged provider response inventory");
+    }
+    const previousLineage = Array.isArray(previousAdmission.reverifiedFromSnapshotIds)
+      ? previousAdmission.reverifiedFromSnapshotIds
+      : [];
     nextSource.admissionEvidence = {
       ...previousAdmission,
       snapshotId: row.snapshotId,
       rawSha256: row.rawSha256,
       schemaFingerprint: row.schemaFingerprint,
+      reverifiedFromSnapshotIds: [...new Set([...previousLineage, previousAdmission.snapshotId])],
     };
   }
   validateSourceGovernancePolicy({ policy: governance, inventory: nextInventory, freshnessPolicy: freshness });

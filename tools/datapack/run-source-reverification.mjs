@@ -538,7 +538,7 @@ export const RECIPE_STEPS = Object.freeze({
       await ctx.execute("run-public-static-network-v2-operation.mjs", [
         "--operation-root", ctx.file("operation"), "--expected-main-sha", await ctx.originMain(), "--expected-head-sha", await ctx.head(),
       ]);
-    }, { fetchErrorPattern: /^PUBLIC_STATIC_NETWORK_V2_FETCH_/u }),
+    }, { fetchErrorPattern: /^PUBLIC_STATIC_NETWORK_V2_(?:FETCH|POSITIONS|MOLIT)_/u }),
   ],
 });
 

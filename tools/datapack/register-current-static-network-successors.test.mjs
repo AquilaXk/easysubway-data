@@ -6,8 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildPublicStaticNetworkV2SuccessorOutputs, commitStaticNetworkSuccessorOutputs, registerPublicStaticNetworkV2Successors } from "./register-current-static-network-successors.mjs";
+import { buildPublicStaticNetworkV2SuccessorOutputs, commitStaticNetworkSuccessorOutputs, rebindMolitMembershipEvidence, registerPublicStaticNetworkV2Successors } from "./register-current-static-network-successors.mjs";
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
+import { parseMolitDaeguStationMappings, parseMolitDaejeonStationMappings, parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { daeguMembershipSnapshotIdentity } from "./materialize-daegu-timetable.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
@@ -462,4 +464,52 @@ test("registrar fails closed before acquiring when a prior lock displacement rem
   await cp(path.resolve(import.meta.dirname, "../.."), root, { recursive: true, filter: (source) => !source.includes("node_modules") });
   await writeFile(path.join(root, "tools/datapack/..static-network-successors.lock.static-network-successors.before"), "orphaned lock\n");
   await assert.rejects(commitStaticNetworkSuccessorOutputs({ repositoryRoot: root, outputs: await registrationOutputs(root) }), /lock residue exists/);
+});
+
+test("rebindMolitMembershipEvidence recomputes Daegu and Daejeon membership snapshotId when MOLIT head advances", async () => {
+  const inventory = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8"));
+  const molitRawBytes = await readFile(path.join(repositoryRoot, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"));
+  const gwangjuPath = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology").topologyAdmissionEvidence.snapshotPath;
+  const gwangjuTopology = JSON.parse(await readFile(path.join(repositoryRoot, gwangjuPath), "utf8"));
+  const bindings = {
+    "line-5b8d9b05e7e6": () => parseMolitDaeguStationMappings(molitRawBytes, "1호선"),
+    "line-e2938a4cc492": () => parseMolitDaeguStationMappings(molitRawBytes, "2호선"),
+    "line-0ffaa95b1b5d": () => parseMolitDaeguStationMappings(molitRawBytes, "3호선"),
+    "line-7051a9c2525c": () => parseMolitDaejeonStationMappings(molitRawBytes),
+    "line-e57a361e8892": () => parseMolitGwangjuStationMappings(molitRawBytes, gwangjuTopology),
+  };
+  for (const source of inventory.sources) {
+    const evidence = source.membershipAdmissionEvidence;
+    if (evidence?.membershipSourceId !== "molit-urban-rail-full-route") continue;
+    const mappings = bindings[evidence.lineIds[0]]();
+    evidence.stationCount = mappings.length;
+    evidence.mappingSha256 = sha(JSON.stringify(mappings));
+    if (evidence.lineIds[0] === "line-7051a9c2525c" || evidence.lineIds[0] === "line-e57a361e8892") {
+      evidence.stationCodesSha256 = sha(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
+    }
+  }
+  const nextMolitSnapshot = {
+    snapshotId: "molit-urban-rail-full-route-current-20261105T090000000Z",
+    retrievedAt: "2026-11-05T09:00:00.000Z",
+    rawSha256: sha(molitRawBytes),
+    rawReceipt: { byteSize: molitRawBytes.length },
+  };
+  rebindMolitMembershipEvidence(inventory, nextMolitSnapshot, molitRawBytes, gwangjuTopology);
+  for (const [topologyId, membershipId] of [
+    ["daegu-line1-route-topology", "molit-urban-rail-full-route-daegu-line1-membership"],
+    ["daegu-line2-route-topology", "molit-urban-rail-full-route-daegu-line2-membership"],
+    ["daegu-line3-route-topology", "molit-urban-rail-full-route-daegu-line3-membership"],
+    ["daejeon-station-distance-fare", "molit-urban-rail-full-route-daejeon-membership"],
+  ]) {
+    const topologyEvidence = inventory.sources.find(({ id }) => id === topologyId).membershipAdmissionEvidence;
+    const membershipEvidence = inventory.sources.find(({ id }) => id === membershipId).membershipAdmissionEvidence;
+    assert.deepEqual(topologyEvidence, membershipEvidence);
+    assert.equal(topologyEvidence.snapshotId, daeguMembershipSnapshotIdentity({
+      sourceId: membershipId,
+      molitSnapshotId: nextMolitSnapshot.snapshotId,
+      membershipSourceRawSha256: nextMolitSnapshot.rawSha256,
+      mappingSha256: topologyEvidence.mappingSha256,
+      stationCodesSha256: topologyEvidence.stationCodesSha256,
+    }));
+  }
 });
