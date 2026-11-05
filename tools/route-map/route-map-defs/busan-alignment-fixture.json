@@ -5,7 +5,7 @@
     "geometry": "tools/route-map/route-map-defs/easy-subway-busan-v3-geometry.json",
     "geometrySha256": "d775eaf2be7220c32b0f88bbab07e80fc330a22da677ee8b43240f6a9f8163bc",
     "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    "packSha256": "3415a2f9255e08805bc332b8e76116c10a2f15c4b241f4f6f711ae7334f2f33a"
+    "packSha256": "40fe7b605739817c9a5d5f644ac3fbd73ffd4dac4c1dcf76a4beed4e28877ec9"
   },
   "stationCount": 158,
   "unmatchedCount": 0,
