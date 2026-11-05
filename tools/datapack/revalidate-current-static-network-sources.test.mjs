@@ -249,6 +249,14 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 비일시 �
       calls: 3,
     },
     {
+      expected: "STATIC_SOURCE_REVALIDATION_SEOUL_HTTP_429",
+      fetchImpl: async () => new Response("raw-secret-sentinel", {
+        status: 429,
+        headers: { "retry-after": "60" },
+      }),
+      calls: 1,
+    },
+    {
       expected: "STATIC_SOURCE_REVALIDATION_SEOUL_CONTENT_TYPE",
       fetchImpl: async () => new Response("raw-secret-sentinel", { status: 200, headers: { "content-type": "text/plain" } }),
       calls: 1,

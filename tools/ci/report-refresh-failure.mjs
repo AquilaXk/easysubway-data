@@ -418,16 +418,27 @@ export async function reportRefreshFailure({
   if (plan.action === "create") {
     const createdOutput = await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
     const createdMatch = /\/issues\/([1-9]\d*)\s*$/u.exec(String(createdOutput ?? ""));
-    if (createdMatch && Number.isSafeInteger(parentEpicNumber) && parentEpicNumber > 0) {
-      const createdIssueNumber = Number(createdMatch[1]);
-      const restId = String(await runGh(["api", `repos/${input.repository}/issues/${createdIssueNumber}`, "--jq", ".id"]) ?? "").trim();
-      if (/^[1-9]\d*$/u.test(restId)) {
-        await runGh(["api", "--method", "POST", `repos/${input.repository}/issues/${parentEpicNumber}/sub_issues`, "-F", `sub_issue_id=${restId}`]);
-        return { ...plan, createdIssueNumber, linkedParentEpicNumber: parentEpicNumber };
-      }
-      return { ...plan, createdIssueNumber };
+    if (!createdMatch) {
+      fail("CREATE_ISSUE", "gh issue create 출력에서 생성된 이슈 번호를 읽을 수 없다.");
     }
-    return plan;
+    const createdIssueNumber = Number(createdMatch[1]);
+    if (parentEpicNumber == null) {
+      return { ...plan, issueNumber: createdIssueNumber, createdIssueNumber };
+    }
+    if (!Number.isSafeInteger(parentEpicNumber) || parentEpicNumber <= 0) {
+      fail("SUB_ISSUE_LINK", "parentEpicNumber는 양의 정수여야 한다.");
+    }
+    const restId = String(await runGh(["api", `repos/${input.repository}/issues/${createdIssueNumber}`, "--jq", ".id"]) ?? "").trim();
+    if (!/^[1-9]\d*$/u.test(restId)) {
+      fail("SUB_ISSUE_LINK", `생성된 이슈 #${createdIssueNumber}의 REST ID를 읽을 수 없다.`);
+    }
+    await runGh(["api", "--method", "POST", `repos/${input.repository}/issues/${parentEpicNumber}/sub_issues`, "-F", `sub_issue_id=${restId}`]);
+    return {
+      ...plan,
+      issueNumber: createdIssueNumber,
+      createdIssueNumber,
+      linkedParentEpicNumber: parentEpicNumber,
+    };
   }
   // 댓글을 먼저 단다. 본문 갱신이 실패해도 댓글에 run이 남아 다음 보고가 같은 run을 건너뛴다.
   if (plan.action === "comment") {

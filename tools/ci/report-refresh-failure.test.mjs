@@ -460,7 +460,13 @@ test("CLI의 --failures 파일은 기대 관측 변경 실패만 표지로 옮�
     await writeFile(file, JSON.stringify([blocking, { recipeId: "busan-timetable", code: "SOURCE_FETCH_FAILED" }]));
     const run = (failuresPath) => reportRefreshFailure({
       argv: ["--workflow", reverificationFile, "--repository", repository, "--run-id", "9", "--failures", failuresPath],
-      runGh: async (args) => (args[1] === "list" ? "[]" : ""), now: () => start,
+      runGh: async (args) => {
+        if (args[1] === "list") return "[]";
+        if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
+        if (args[0] === "api" && args.includes("--jq")) return "777888\n";
+        return "{}";
+      },
+      now: () => start,
     });
     const withFailures = await run(file);
     assert.ok(withFailures.body.includes(blockMarker("kric-station-timetable", "SOURCE_EXPECTATION_CHANGED")));
@@ -498,7 +504,14 @@ test("CLI의 --overdue는 쉼표로 나눈 recipe id이고 빈 값은 연체 없
   const writes = [];
   const cli = (value) => reportRefreshFailure({
     argv: ["--workflow", reverificationFile, "--repository", repository, "--run-id", "9", "--failures", path.join(os.tmpdir(), "absent-reverification-failures.json"), "--overdue", value],
-    runGh: async (args) => { if (args[1] !== "list") writes.push(args[1]); return args[1] === "list" ? "[]" : ""; }, now: () => start,
+    runGh: async (args) => {
+      if (args[1] === "list") return "[]";
+      writes.push(args[0] === "api" ? "api" : args[1]);
+      if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
+      if (args[0] === "api" && args.includes("--jq")) return "777888\n";
+      return "{}";
+    },
+    now: () => start,
   });
   assert.match((await cli("busan-topology,daegu-sources")).body, /재확인 기한을 넘긴 recipe: `busan-topology`, `daegu-sources`/u);
   assert.doesNotMatch((await cli("")).body, /재확인 기한/u);
@@ -596,11 +609,32 @@ test("CLI의 --source-id는 식별자이거나 빈 값(원천 없음)일 때만 
   const writes = [];
   const cli = (...extra) => reportRefreshFailure({
     argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "9", ...extra],
-    runGh: async (args) => { if (args[1] !== "list") writes.push(args[1]); return args[1] === "list" ? "[]" : ""; }, now: () => start,
+    runGh: async (args) => {
+      if (args[1] === "list") return "[]";
+      writes.push(args[0] === "api" ? "api" : args[1]);
+      if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
+      if (args[0] === "api" && args.includes("--jq")) return "777888\n";
+      return "{}";
+    },
+    now: () => start,
   });
   assert.match((await cli("--source-id", KRIC_ESCALATOR)).body, /실패 원천: `kric-station-escalator-detailed`/u);
   for (const unnamed of [[], ["--source-id", ""]]) assert.doesNotMatch((await cli(...unnamed)).body, /실패 원천/u);
   const before = writes.length;
   for (const bad of ["Kric Escalator", "a -->\n<!-- x", "-lead"]) await assert.rejects(cli("--source-id", bad), /REFRESH_FAILURE_REPORT_SOURCE_ID/u, JSON.stringify(bad));
   assert.equal(writes.length, before);
+  await assert.rejects(reportRefreshFailure({
+    argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "9"],
+    runGh: async (args) => (args[1] === "list" ? "[]" : "invalid-create-output"),
+    now: () => start,
+  }), /REFRESH_FAILURE_REPORT_CREATE_ISSUE/u);
+  await assert.rejects(reportRefreshFailure({
+    argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "9"],
+    runGh: async (args) => {
+      if (args[1] === "list") return "[]";
+      if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
+      return "not-an-id";
+    },
+    now: () => start,
+  }), /REFRESH_FAILURE_REPORT_SUB_ISSUE_LINK/u);
 });

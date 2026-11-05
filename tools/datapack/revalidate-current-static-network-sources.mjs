@@ -4,7 +4,11 @@ import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import {
+  isRetryAfterExceedsCap,
+  SourceFetchTelemetryWriteError,
+  withSourceCollectionRetry,
+} from "./lib/source-collection-retry.mjs";
 import { isTransientTransportError } from "./lib/transient-retry.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
@@ -440,10 +444,6 @@ function requiredSingleLine(value, label) {
 }
 
 async function responseBytes(response, source, expectedContentType) {
-  if (!response || response.status !== 200 || !response.ok) {
-    const status = Number.isSafeInteger(response?.status) ? response.status : "INVALID";
-    fail(`${source}_HTTP_${status}`);
-  }
   if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase()
     !== expectedContentType) fail(`${source}_CONTENT_TYPE`);
   if (!response.body || typeof response.body.getReader !== "function") fail(`${source}_BODY_SIZE`);
@@ -502,7 +502,7 @@ async function fetchSourceResponse({ source, url, init, fetchImpl, expectedConte
         signal: AbortSignal.timeout(15_000),
       });
       if (!response || response.status !== 200 || !response.ok) {
-        return { response, bytes: null };
+        return { response };
       }
       const bytes = await responseBytes(response, source, expectedContentType);
       return { response, bytes };
@@ -510,7 +510,7 @@ async function fetchSourceResponse({ source, url, init, fetchImpl, expectedConte
       label: "Seoul static network revalidation",
       sourceId: SEOUL_SOURCE_ID,
       url,
-      isTransientResult: ({ bytes }) => bytes !== null && isRetryableSeoulOpenApiPayload(bytes),
+      isTransientResult: ({ bytes }) => Buffer.isBuffer(bytes) && isRetryableSeoulOpenApiPayload(bytes),
       resultCodeOf: ({ bytes }) => seoulOpenApiResultCodeOf(bytes),
       isTransientError: (error) => !error?.message?.startsWith("STATIC_SOURCE_REVALIDATION_")
         && isTransientTransportError(error),
@@ -518,7 +518,12 @@ async function fetchSourceResponse({ source, url, init, fetchImpl, expectedConte
       random,
     });
   } catch (error) {
+    if (error instanceof SourceFetchTelemetryWriteError) throw error;
     if (error?.message?.startsWith("STATIC_SOURCE_REVALIDATION_")) throw error;
+    if (isRetryAfterExceedsCap(error)) {
+      const status = Number.isSafeInteger(error.status) ? error.status : "INVALID";
+      fail(`${source}_HTTP_${status}`);
+    }
     fail(`${source}_TRANSPORT`);
   }
   if (!outcome.response || outcome.response.status !== 200 || !outcome.response.ok) {
