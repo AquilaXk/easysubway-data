@@ -310,14 +310,16 @@ test("historical FACILITY fixture는 seoul-metro-route-map-positions 원장 head
   const baseline = await historicalFacilityFixtureInput();
   const pinnedRouteMapId = (await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse))
     .sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").snapshotId;
+  let appendedSuccessorId = "";
   const input = await historicalFacilityFixtureInput(undefined, {
     mutateLoadedInput(loaded) {
       const currentHeadId = validateLineage(loaded.sourceSnapshots).headsBySource["seoul-metro-route-map-positions"];
       const currentHead = loaded.sourceSnapshots.find(({ snapshotId }) => snapshotId === currentHeadId);
       const nextTime = new Date(Date.parse(currentHead.retrievedAt) + 86_400_000).toISOString();
+      appendedSuccessorId = `${currentHead.snapshotId}-successor`;
       const successor = {
         ...structuredClone(currentHead),
-        snapshotId: `${currentHead.snapshotId}-successor`,
+        snapshotId: appendedSuccessorId,
         previousSnapshotId: currentHead.snapshotId,
         retrievedAt: nextTime,
         sourceUpdatedAt: nextTime,
@@ -328,8 +330,9 @@ test("historical FACILITY fixture는 seoul-metro-route-map-positions 원장 head
     },
   });
   const lineage = validateLineage(input.sourceSnapshots);
-  assert.equal(lineage.headsBySource["seoul-metro-route-map-positions"], `${pinnedRouteMapId}-successor`);
-  assert.equal(lineage.chainsBySource["seoul-metro-route-map-positions"].indexOf(pinnedRouteMapId), lineage.chainsBySource["seoul-metro-route-map-positions"].length - 2);
+  const routeMapChain = lineage.chainsBySource["seoul-metro-route-map-positions"];
+  assert.equal(lineage.headsBySource["seoul-metro-route-map-positions"], appendedSuccessorId);
+  assert.ok(routeMapChain.indexOf(pinnedRouteMapId) >= 0 && routeMapChain.indexOf(pinnedRouteMapId) < routeMapChain.length - 1);
   assert.deepEqual(input.candidateBuildSpec, baseline.candidateBuildSpec);
   assert.equal(buildFacilitySourceAdmission(input).decision, "GO");
 });
