@@ -166,6 +166,19 @@ export function parseDirection(value) {
   return match ? { lineToken: match[1], stationName: match[2] } : null;
 }
 
+export function parseTerminalDirection(value) {
+  const text = String(value ?? "").trim().replace(/ 승강장$/u, "");
+  const match = /^(\S+) (\S.*?) ?\(종착(?:역)?\)$/u.exec(text);
+  return match ? { lineToken: match[1], stationName: match[2], terminal: true } : null;
+}
+
+export function matchesStationName(stationId, name, stations) {
+  const station = stations.get(stationId);
+  if (!station) return false;
+  const wanted = normalizeStationName(name);
+  return wanted !== "" && [station.nameKo, ...subNamed(station)].some((candidate) => normalizeStationName(candidate) === wanted);
+}
+
 export function directionStation(stationId, lineId, name, stations, neighbors) {
   const wanted = normalizeStationName(name);
   const matches = [...(neighbors.get(`${stationId}\0${lineId}`) ?? [])].filter((neighborId) => {
@@ -192,11 +205,17 @@ export function sequenceSha256(rows) {
   })))).digest("hex");
 }
 
-// 시퀀스의 첫·마지막 단계 방면 표기를 노선 토큰 표로 해석한다. 출발 노선은 행의 노선과 같아야 하고, 도착 노선은 하나로 정해지며 출발 노선과 달라야 한다.
-// 성공하면 { from, to, toLineId }, 아니면 { reason }이다.
-export function resolveDirectionLines({ entry, mapping, linesAtStation, tableLines, stations }) {
-  const from = parseDirection(entry.rows[0].CHTN_MV_CONT);
-  const to = parseDirection(entry.rows.at(-1).CHTN_MV_CONT);
+function parseEntryDirection(value, mapping, stations, allowTerminal) {
+  const direct = parseDirection(value);
+  if (direct) return direct;
+  if (!allowTerminal) return null;
+  const terminal = parseTerminalDirection(value);
+  return terminal && matchesStationName(mapping.stationId, terminal.stationName, stations) ? terminal : null;
+}
+
+export function resolveDirectionLines({ entry, mapping, linesAtStation, tableLines, stations, allowTerminal = false }) {
+  const from = parseEntryDirection(entry.rows[0].CHTN_MV_CONT, mapping, stations, allowTerminal);
+  const to = parseEntryDirection(entry.rows.at(-1).CHTN_MV_CONT, mapping, stations, allowTerminal);
   if (!from || !to) return { reason: "DIRECTION_FORMAT_UNSUPPORTED" };
   // 첫 단어가 고정 노선 표기가 아니고, 첫 단어와 역명을 이어 붙인 이름이 정본 역 이름이면 노선 표기 없는 방면이다
   // ("을지로 3가 방면"의 "을지로"). 노선 불일치로 읽지 않는다(#1025). 표에 없는 노선 표기는 기존대로 노선 해석 단계에서 제외된다.

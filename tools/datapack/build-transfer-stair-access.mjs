@@ -23,6 +23,7 @@ import {
   directionStation,
   localNeighbors,
   mapProviderTuples,
+  parseTerminalDirection,
   resolveDirectionLines,
   resolveTableLines,
   sequenceSha256,
@@ -47,7 +48,7 @@ const ELEVATOR_WORDS = Object.freeze(["엘리베이터", "엘레베이터"]);
 const PLACE_ROOT = "(?:환승대합실|대합실|승강장|환승통로|연결통로|환승홀|맞이방|통로)";
 const QUALIFIER_WORDS = new Set([
   "환승대합실", "대합실", "승강장", "환승통로", "연결통로", "환승홀", "맞이방", "통로", "환승", "지하", "지상",
-  "방면", "방향", "내", "근처", "맞은편", "앞", "옆", ...ELEVATOR_WORDS,
+  "방면", "방향", "내", "내부", "근처", "맞은편", "앞", "옆", "좌측", "우측", "경사형", ...ELEVATOR_WORDS,
 ]);
 const FLOOR_WORD = /^(?:지하|지상)?\d+층$/u;
 const CAR_WORD = /^\d+번칸$/u;
@@ -66,13 +67,13 @@ export const TRANSFER_STEP_VOCABULARY = Object.freeze([
   blocking("UNAVAILABLE_OR_ASSISTED_WORDING", "UNAVAILABLE", /고장|중지|미운영|공사|불가|중단|없음|없는|직원|호출|요청|동행/u, [
     "엘리베이터 고장 시 직원 호출", "장애인 게이트에서 콜 버튼 눌러 4호선 환승을 위한 게이트 통과 요청",
   ]),
-  stepFree("ALIGHT_AT_PLATFORM", "ALIGHT", (tokens, context) => endsWithAny(tokens, context, [["승강장", "하차"], ["승강장에서", "하차"]]), [
-    "2호선 방배 방면 승강장 하차", "경의중앙선 서강대 방면 승강장 하차",
+  stepFree("ALIGHT_AT_PLATFORM", "ALIGHT", matchesAlightAtPlatform, [
+    "2호선 방배 방면 승강장 하차", "경의중앙선 서강대 방면 승강장 하차", "4호선 미남 (종착역) 승강장 하차", "신분당선 신사역(종착역) 승강장 하차",
   ]),
-  stepFree("ELEVATOR_RIDE", "ELEVATOR", (tokens, context) => endsWithAny(tokens, context, ELEVATOR_WORDS.flatMap((word) => [
-    ...["탑승", "이용", "승차"].map((verb) => [word, verb]), [`${word}를`, "이용"],
-  ])), [
+  stepFree("ELEVATOR_RIDE", "ELEVATOR", matchesElevatorRide, [
     "대합실 방향 엘리베이터 탑승", "승강장 내 엘리베이터 탑승", "3번칸 근처 엘리베이터 이용", "맞은편 엘리베이터 승차", "4호선 승강장 엘레베이터 탑승",
+    "좌측 승강장 엘리베이터 이용", "인천2호선 석바위시장 방면 내부 엘리베이터 이용", "1호선 환승통로 방향 경사형 엘리베이터 탑승",
+    "환승통로를 지나 환승 엘리베이터를 이용", "개집표기 통과 후 엘리베이터 이용",
   ]),
   stepFree("ELEVATOR_EXIT", "ELEVATOR", (tokens, context) => endsWithAny(tokens, context, ELEVATOR_WORDS.map((word) => [word, "하차"])), [
     "엘리베이터 하차", "연결통로 엘리베이터 하차",
@@ -86,20 +87,23 @@ export const TRANSFER_STEP_VOCABULARY = Object.freeze([
   // 승하차 지점 표기("사평 방면 승강장"): 경로의 처음·끝 단계에서만 인정한다(evaluatePathSteps).
   stepFree("PLATFORM_ENDPOINT", "PLATFORM_ENDPOINT", (tokens, context) => tokens.length >= 2 && tokens.at(-1) === "승강장"
     && tokens.at(-2).endsWith("방면") && qualifiers(tokens.slice(0, -1), context), ["사평 방면 승강장", "상봉방면 승강장", "GTX-A 연신내 방면 승강장"]),
-  stepFree("BOARD", "BOARD", (tokens, context) => (tokens.length === 1 && tokens[0] === "승차")
-    || endsWithAny(tokens, context, [["승강장", "승차"]]), ["승차", "6호선 승강장 승차"]),
-  stepFree("FARE_GATE_PASS", "FARE_GATE", (tokens, context) => endsWithAny(tokens, context, FARE_GATE_PHRASES.map((phrase) => [...phrase, "통과"])), [
-    "표 내는 곳 통과", "표 내는곳 통과", "개집표기 통과", "환승 게이트 통과", "1호선 방향 환승게이트 통과", "엘리베이터 앞 표 내는 곳 통과",
+  stepFree("BOARD", "BOARD", (tokens, context) => (tokens.length === 1 && (tokens[0] === "승차" || tokens[0] === "열차승차"))
+    || endsWithAny(tokens, context, [["승강장", "승차"], ["차량", "확인"]]), [
+    "승차", "6호선 승강장 승차", "경의중앙선 청량리 방면 차량 확인", "열차승차",
   ]),
-  stepFree("LEVEL_MOVE_TO_PLACE", "LEVEL_MOVE", (tokens, context) => tokens.length >= 2 && ["이동", "이용"].includes(tokens.at(-1))
-    && DESTINATION_WORD.test(tokens.at(-2)) && qualifiers(tokens.slice(0, -2), context), [
+  stepFree("FARE_GATE_PASS", "FARE_GATE", matchesFareGatePass, [
+    "표 내는 곳 통과", "표 내는곳 통과", "개집표기 통과", "환승 게이트 통과", "1호선 방향 환승게이트 통과", "엘리베이터 앞 표 내는 곳 통과",
+    "7호선 대합실로 이동하여 표 내는 곳 통과",
+  ]),
+  stepFree("LEVEL_MOVE_TO_PLACE", "LEVEL_MOVE", matchesLevelMoveToPlace, [
     "대합실로 이동", "환승통로로 이동", "4호선 총신대입구 방면 승강장으로 이동", "지하 2층으로 이동", "환승통로 이용", "승강장 이동", "지하1층 이동",
+    "승강장 으로 이동", "환승통로 이용하여 1호선 종로5가 방면 승강장으로 이동",
   ]),
 ]);
 const LEVEL_DEVICE_KINDS = new Set(["ELEVATOR", "LIFT", "ESCALATOR", "STAIRS"]);
 // 층 표기가 내리는 층인 승강 설비 규칙.
 const DESTINATION_LABEL_RULES = new Set(["ELEVATOR_EXIT", "ELEVATOR_MOVE"]);
-const STEP_PREFIX = /^\s*(\d+)\)\s*/u;
+const STEP_PREFIX = /^\s*(\d+)(?:\)\s*|(?=\((?:B\d+|BM|\d+F|F\d+)\)))/u;
 const FLOOR_TOKEN = /\((B\d+|BM|\d+F|F\d+)\)|(지하|지상)? ?(\d+)층/gu;
 
 const DIRECTION_LINE_TOKENS = new Set(TRANSFER_STAIR_LINE_TABLE.flatMap(({ directionTokens }) => directionTokens));
@@ -166,6 +170,7 @@ export function deriveTransferStairAccess({ snapshot, providerCodeCatalog, catal
   });
 
   const mappedPaths = [];
+  const terminalStationLines = new Set();
   for (const entry of valid) {
     const mapping = tupleMapping.get(tupleKey(entry.rows[0]));
     if (mapping.reason) {
@@ -177,13 +182,15 @@ export function deriveTransferStairAccess({ snapshot, providerCodeCatalog, catal
       exclude(entry, resolved.reason);
       continue;
     }
+    if (resolved.fromTerminal) terminalStationLines.add(`${resolved.stationId}\0${resolved.fromLineId}`);
+    if (resolved.toTerminal) terminalStationLines.add(`${resolved.stationId}\0${resolved.toLineId}`);
     mappedPaths.push({ ...resolved, pathSha256: entry.pathSha256, ...evaluatePathSteps(entry.rows, stepContext) });
   }
 
   const edges = [];
   const evidenceRows = [];
   for (const edge of routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER")) {
-    const result = evaluateTransferEdge({ edge, mappedPaths, neighbors });
+    const result = evaluateTransferEdge({ edge, mappedPaths, neighbors, terminalStationLines });
     edges.push(result);
     if (result.state !== "STEP_FREE") continue;
     for (const combo of result.combos) {
@@ -325,6 +332,60 @@ function endsWithAny(tokens, context, cores) {
     && qualifiers(tokens.slice(0, tokens.length - core.length), context));
 }
 
+function matchesAlightAtPlatform(tokens, context) {
+  if (endsWithAny(tokens, context, [["승강장", "하차"], ["승강장에서", "하차"]])) return true;
+  if (tokens.length < 3 || tokens.at(-1) !== "하차" || !["승강장", "승강장에서"].includes(tokens.at(-2))) return false;
+  let prefix = tokens.slice(0, -2);
+  if (prefix.at(-1) === "방면") prefix = prefix.slice(0, -1);
+  const parsed = parseTerminalDirection(prefix.join(" "));
+  if (!parsed || !context.lineTokens.has(parsed.lineToken)) return false;
+  const compact = parsed.stationName.replaceAll(" ", "");
+  return context.stationNames.has(compact) || (compact.endsWith("역") && context.stationNames.has(compact.slice(0, -1)));
+}
+
+function matchesElevatorRide(tokens, context) {
+  const cores = ELEVATOR_WORDS.flatMap((word) => [
+    ...["탑승", "이용", "승차"].map((verb) => [word, verb]), [`${word}를`, "이용"],
+  ]);
+  return cores.some((core) => {
+    if (tokens.length < core.length || !core.every((word, index) => tokens[tokens.length - core.length + index] === word)) {
+      return false;
+    }
+    const prefix = tokens.slice(0, tokens.length - core.length);
+    if (qualifiers(prefix, context)) return true;
+    if (prefix.length >= 2 && prefix[0] === "환승통로를" && prefix[1] === "지나" && qualifiers(prefix.slice(2), context)) {
+      return true;
+    }
+    return prefix.length === 3 && prefix[0] === "개집표기" && prefix[1] === "통과" && prefix[2] === "후";
+  });
+}
+
+function matchesFareGatePass(tokens, context) {
+  const cores = FARE_GATE_PHRASES.map((phrase) => [...phrase, "통과"]);
+  return cores.some((core) => {
+    if (tokens.length < core.length || !core.every((word, index) => tokens[tokens.length - core.length + index] === word)) {
+      return false;
+    }
+    const prefix = tokens.slice(0, tokens.length - core.length);
+    if (qualifiers(prefix, context)) return true;
+    return prefix.length >= 2 && prefix.at(-1) === "이동하여" && DESTINATION_WORD.test(prefix.at(-2))
+      && qualifiers(prefix.slice(0, -2), context);
+  });
+}
+
+function matchesLevelMoveToPlace(tokens, context) {
+  if (tokens.length < 2) return false;
+  let prefix = null;
+  if (["이동", "이용"].includes(tokens.at(-1)) && DESTINATION_WORD.test(tokens.at(-2))) {
+    prefix = tokens.slice(0, -2);
+  } else if (tokens.length >= 3 && tokens.at(-1) === "이동" && tokens.at(-2) === "으로" && tokens.at(-3) === "승강장") {
+    prefix = tokens.slice(0, -3);
+  }
+  if (!prefix) return false;
+  if (qualifiers(prefix, context)) return true;
+  return prefix.length >= 2 && prefix[0] === "환승통로" && prefix[1] === "이용하여" && qualifiers(prefix.slice(2), context);
+}
+
 // "<한정어> 엘리베이터[로|를] [이용 후|이용하여|...] <한정어> [목적지] 이동"
 function matchesElevatorMove(tokens, context) {
   if (tokens.length < 2 || tokens.at(-1) !== "이동") return false;
@@ -373,14 +434,20 @@ function groupPaths(rows) {
   });
 }
 
-// 방면은 원천의 "<노선> <역> 방면" 표기에서만 읽는다. 역은 같은 노선 완행 인접 역 이름과 정확히 같아야 한다.
 function resolveDirections({ entry, mapping, stations, linesAtStation, tableLines, neighbors }) {
-  const lines = resolveDirectionLines({ entry, mapping, linesAtStation, tableLines, stations });
+  const lines = resolveDirectionLines({ entry, mapping, linesAtStation, tableLines, stations, allowTerminal: true });
   if (lines.reason) return { reason: lines.reason };
   const { from, to } = lines;
   const toLineId = lines.toLineId;
-  const fromDirection = directionStation(mapping.stationId, mapping.lineId, from.stationName, stations, neighbors);
-  const toDirection = directionStation(mapping.stationId, toLineId, to.stationName, stations, neighbors);
+  const resolveEndpointDirection = (lineId, parsed) => {
+    if (parsed.terminal) {
+      const lineNeighbors = [...(neighbors.get(`${mapping.stationId}\0${lineId}`) ?? [])].sort(codepointCompare);
+      return lineNeighbors.length === 1 ? lineNeighbors[0] : null;
+    }
+    return directionStation(mapping.stationId, lineId, parsed.stationName, stations, neighbors);
+  };
+  const fromDirection = resolveEndpointDirection(mapping.lineId, from);
+  const toDirection = resolveEndpointDirection(toLineId, to);
   if (!fromDirection || !toDirection) return { reason: "DIRECTION_NAME_UNRESOLVED" };
   return {
     stationId: mapping.stationId,
@@ -388,6 +455,8 @@ function resolveDirections({ entry, mapping, stations, linesAtStation, tableLine
     toLineId,
     fromDirectionStationId: fromDirection,
     toDirectionStationId: toDirection,
+    fromTerminal: Boolean(from.terminal),
+    toTerminal: Boolean(to.terminal),
   };
 }
 
@@ -425,7 +494,7 @@ function evaluatePathSteps(rows, context) {
   return { stepFree: reasons.size === 0, blockingReasons: [...reasons].sort(codepointCompare) };
 }
 
-function evaluateTransferEdge({ edge, mappedPaths, neighbors }) {
+function evaluateTransferEdge({ edge, mappedPaths, neighbors, terminalStationLines = new Set() }) {
   const from = splitNode(edge.fromNodeId);
   const to = splitNode(edge.toNodeId);
   if (!from || !to || from.stationId !== to.stationId || from.lineId === to.lineId) {
@@ -434,7 +503,10 @@ function evaluateTransferEdge({ edge, mappedPaths, neighbors }) {
   const base = { edgeId: edge.edgeId, stationId: from.stationId, fromLineId: from.lineId, toLineId: to.lineId };
   const fromDirections = [...(neighbors.get(`${from.stationId}\0${from.lineId}`) ?? [])].sort(codepointCompare);
   const toDirections = [...(neighbors.get(`${to.stationId}\0${to.lineId}`) ?? [])].sort(codepointCompare);
-  if (fromDirections.length !== 2 || toDirections.length !== 2) {
+  const validDirectionSet = (stationId, lineId, directions) => directions.length === 2
+    || (directions.length === 1 && terminalStationLines.has(`${stationId}\0${lineId}`));
+  if (!validDirectionSet(from.stationId, from.lineId, fromDirections)
+    || !validDirectionSet(to.stationId, to.lineId, toDirections)) {
     return { ...base, state: "UNKNOWN", reason: "DIRECTION_SET_UNDETERMINED", fromDirectionCount: fromDirections.length, toDirectionCount: toDirections.length, combos: [] };
   }
   const paths = mappedPaths.filter((entry) => entry.stationId === from.stationId
