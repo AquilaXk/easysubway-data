@@ -19,7 +19,7 @@
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "e5635ffde08ceae2ad965a4b97b4f20ee073a36475e40c8096a05d5a6655264d"
+        "sha256": "5e9bd83728a41b5c5bf1967e3f8cea3b99779b0fe2f448ad1804a2869a4e7764"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -27,14 +27,14 @@
       },
       "sourceSnapshots": {
         "path": "tools/datapack/release/source-snapshots.json",
-        "sha256": "451d095d9b9baf1b99e78452dc70b7dc0b64b1659535b14bfce77b83671ebb44"
+        "sha256": "2663791fc78b89433931b185372488dd228356adef4e74e94328e5943c9f287e"
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "e88fa78a4c036cadcdd1f2d865f171f2e996b1c6cc9516449f37220c628f5d69",
-        "fanInSha256": "d60e93e21d873c3d60883e3938848da4c00735707bd9b2daf2613aa260b34e29",
+        "sha256": "6cf8e19d8c99d7e4d68265e91fe6220867a7e37f921fe85ed16d540f0bad4982",
+        "fanInSha256": "26b4250edb2bcb22717d8ca2d90a9b2de54f4f201bc3e18999eada8b28387c4e",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
-        "sourceSetSha256": "d3fd43fd8032d4186c178718b37cae95bba5c921a1b4c02fab04aae956704e9b",
+        "sourceSetSha256": "59127aca606f9aa7c7ff019e2d3c820e32db8aaeb63378ead4bf6e4f5c979e7e",
         "regionalMatrixSha256": "f30ccf1c12f9fcecda626c14c37994dbe4272535a3e19758c8548b5364bf5dfb"
       }
     }
@@ -773,8 +773,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -783,8 +783,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -850,7 +850,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -893,9 +893,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -1626,8 +1626,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -1636,8 +1636,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -1703,7 +1703,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -1746,9 +1746,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -2479,8 +2479,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -2489,8 +2489,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -2556,7 +2556,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -2599,9 +2599,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -3332,8 +3332,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -3342,8 +3342,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -3409,7 +3409,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -3452,9 +3452,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -3930,8 +3930,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -3940,8 +3940,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -3959,7 +3959,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -3996,9 +3996,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -4549,8 +4549,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -4559,8 +4559,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -4578,7 +4578,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -4615,9 +4615,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -5270,8 +5270,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -5280,8 +5280,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -5836,22 +5836,12 @@
           ]
         },
         "freshnessLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "incheon-line2-train-timetable",
-              "observedDataUpdatedAt": "2025-06-30",
-              "retrievedAt": "2026-11-05",
-              "admissionEvidence": [
-                {
-                  "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-11-05T15:20:41.925Z",
-                  "freshUntil": "2026-11-06T15:20:41.925Z"
-                }
-              ],
-              "currentHead": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 459,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
+          }
         },
         "admissionLineage": {
           "state": "PENDING",
@@ -5976,8 +5966,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -5986,8 +5976,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -6542,22 +6532,12 @@
           ]
         },
         "freshnessLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "incheon-line1-train-timetable",
-              "observedDataUpdatedAt": "2025-04-12",
-              "retrievedAt": "2026-11-05",
-              "admissionEvidence": [
-                {
-                  "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-11-05T15:20:41.925Z",
-                  "freshUntil": "2026-11-06T15:20:41.925Z"
-                }
-              ],
-              "currentHead": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 459,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
+          }
         },
         "admissionLineage": {
           "state": "PENDING",
@@ -6682,8 +6662,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -6692,8 +6672,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -7211,8 +7191,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -7221,8 +7201,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -7240,7 +7220,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -7277,9 +7257,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -7755,8 +7735,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -7765,8 +7745,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -7784,7 +7764,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -7821,9 +7801,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -8299,8 +8279,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -8309,8 +8289,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -8328,7 +8308,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -8365,9 +8345,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -8868,8 +8848,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -8878,8 +8858,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -8897,7 +8877,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -8934,9 +8914,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -9437,8 +9417,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -9447,8 +9427,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -9466,7 +9446,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -9503,9 +9483,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -10006,8 +9986,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -10016,8 +9996,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -10035,7 +10015,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -10072,9 +10052,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -10575,8 +10555,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -10585,8 +10565,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -10604,7 +10584,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -10641,9 +10621,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -11119,8 +11099,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -11129,8 +11109,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -11148,7 +11128,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -11185,9 +11165,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -11663,8 +11643,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -11673,8 +11653,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -11692,7 +11672,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -11729,9 +11709,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -12232,8 +12212,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -12242,8 +12222,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -12261,7 +12241,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -12298,9 +12278,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -12801,8 +12781,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -12811,8 +12791,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -12830,7 +12810,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -12867,9 +12847,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -13445,8 +13425,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -13455,8 +13435,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -13474,7 +13454,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -13511,9 +13491,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -14089,8 +14069,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -14099,8 +14079,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -14118,7 +14098,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -14155,9 +14135,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -14658,8 +14638,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -14668,8 +14648,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -14687,7 +14667,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -14724,9 +14704,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -15227,8 +15207,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -15237,8 +15217,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -15256,7 +15236,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -15293,9 +15273,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -15871,8 +15851,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -15881,8 +15861,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -15900,7 +15880,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -15937,9 +15917,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -16440,8 +16420,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -16450,8 +16430,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -16469,7 +16449,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -16506,9 +16486,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -17042,8 +17022,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -17052,8 +17032,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -17071,7 +17051,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -17108,9 +17088,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -17686,8 +17666,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -17696,8 +17676,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -17715,7 +17695,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -17752,9 +17732,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -18330,8 +18310,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -18340,8 +18320,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -18359,7 +18339,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -18396,9 +18376,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -18874,8 +18854,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -18884,8 +18864,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -18903,7 +18883,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -18940,9 +18920,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -19418,8 +19398,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -19428,8 +19408,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -19447,7 +19427,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -19484,9 +19464,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -19906,12 +19886,12 @@
             {
               "sourceId": "seoul-metro-route-map-positions",
               "observedDataUpdatedAt": "2025-08-14",
-              "retrievedAt": "2026-11-05",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
-                  "freshUntil": "2027-02-03T18:58:58.010Z"
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -19920,8 +19900,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2027-02-03T18:58:58.010Z"
+                "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2027-02-04T20:25:10.426Z"
               }
             }
           ]
@@ -19942,7 +19922,7 @@
                   "snapshotId": "seoul-metro-route-map-positions-20260724",
                   "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
                   "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 274,
                   "datasetId": "15099316",
                   "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -19968,7 +19948,7 @@
                     "8": 18
                   },
                   "observedDataUpdatedAt": "2025-08-14",
-                  "freshUntil": "2027-02-03T18:58:58.010Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z",
                   "topologySourceId": "capital-route-topology",
                   "currentTopologyAdmission": {
                     "schemaVersion": 1,
@@ -19977,7 +19957,7 @@
                     "status": "ADMITTED",
                     "topologySnapshotId": "capital-route-topology-20261105",
                     "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-                    "positionSnapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "reviewedAt": "2026-11-05T15:20:21.630Z",
                     "freshUntil": "2026-11-12T15:20:21.630Z",
                     "topologyLineages": [
@@ -20035,9 +20015,9 @@
                     "schemaVersion": 2,
                     "artifactKind": "seoul-public-route-map-layout-admission",
                     "status": "ADMITTED",
-                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261105T185858010Z.json",
-                    "snapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261106T202510426Z.json",
+                    "snapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
                     "contentSha256": "7367364695eba41bc69b4a45b11014164f1c80c23071b80120e11747cbe67404",
                     "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -20053,7 +20033,7 @@
                     "semanticInputSha256": "43e269108bd68394b8fb7a662d8ba9ef520db79b06fd3ef9255b1b9a52434561",
                     "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
                     "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-                    "layoutArtifactSha256": "d4c3152bb330c62b16e69ddf6059155a9cf921f1a7159209b1e785e3fadf852f"
+                    "layoutArtifactSha256": "168778975777b2a40c149b442282515212be485a21ea5a148e421cf95f84cb4a"
                   }
                 },
                 {
@@ -20062,7 +20042,7 @@
                   "issue": 447,
                   "candidateId": "seoul-metro-route-map-positions",
                   "sourceId": "seoul-metro-route-map-positions",
-                  "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+                  "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
                   "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
@@ -20081,9 +20061,9 @@
           "refs": [
             {
               "sourceId": "seoul-metro-route-map-positions",
-              "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+              "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
               "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261105/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261106/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
             }
           ]
         },
@@ -20219,8 +20199,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -20229,8 +20209,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -20248,7 +20228,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -20285,9 +20265,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -20707,12 +20687,12 @@
             {
               "sourceId": "seoul-metro-route-map-positions",
               "observedDataUpdatedAt": "2025-08-14",
-              "retrievedAt": "2026-11-05",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
-                  "freshUntil": "2027-02-03T18:58:58.010Z"
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -20721,8 +20701,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2027-02-03T18:58:58.010Z"
+                "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2027-02-04T20:25:10.426Z"
               }
             }
           ]
@@ -20743,7 +20723,7 @@
                   "snapshotId": "seoul-metro-route-map-positions-20260724",
                   "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
                   "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 274,
                   "datasetId": "15099316",
                   "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -20769,7 +20749,7 @@
                     "8": 18
                   },
                   "observedDataUpdatedAt": "2025-08-14",
-                  "freshUntil": "2027-02-03T18:58:58.010Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z",
                   "topologySourceId": "capital-route-topology",
                   "currentTopologyAdmission": {
                     "schemaVersion": 1,
@@ -20778,7 +20758,7 @@
                     "status": "ADMITTED",
                     "topologySnapshotId": "capital-route-topology-20261105",
                     "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-                    "positionSnapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "reviewedAt": "2026-11-05T15:20:21.630Z",
                     "freshUntil": "2026-11-12T15:20:21.630Z",
                     "topologyLineages": [
@@ -20836,9 +20816,9 @@
                     "schemaVersion": 2,
                     "artifactKind": "seoul-public-route-map-layout-admission",
                     "status": "ADMITTED",
-                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261105T185858010Z.json",
-                    "snapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261106T202510426Z.json",
+                    "snapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
                     "contentSha256": "7367364695eba41bc69b4a45b11014164f1c80c23071b80120e11747cbe67404",
                     "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -20854,7 +20834,7 @@
                     "semanticInputSha256": "43e269108bd68394b8fb7a662d8ba9ef520db79b06fd3ef9255b1b9a52434561",
                     "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
                     "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-                    "layoutArtifactSha256": "d4c3152bb330c62b16e69ddf6059155a9cf921f1a7159209b1e785e3fadf852f"
+                    "layoutArtifactSha256": "168778975777b2a40c149b442282515212be485a21ea5a148e421cf95f84cb4a"
                   }
                 },
                 {
@@ -20863,7 +20843,7 @@
                   "issue": 447,
                   "candidateId": "seoul-metro-route-map-positions",
                   "sourceId": "seoul-metro-route-map-positions",
-                  "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+                  "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
                   "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
@@ -20882,9 +20862,9 @@
           "refs": [
             {
               "sourceId": "seoul-metro-route-map-positions",
-              "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+              "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
               "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261105/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261106/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
             }
           ]
         },
@@ -21020,8 +21000,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -21030,8 +21010,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -21049,7 +21029,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -21086,9 +21066,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -21508,12 +21488,12 @@
             {
               "sourceId": "seoul-metro-route-map-positions",
               "observedDataUpdatedAt": "2025-08-14",
-              "retrievedAt": "2026-11-05",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
-                  "freshUntil": "2027-02-03T18:58:58.010Z"
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -21522,8 +21502,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2027-02-03T18:58:58.010Z"
+                "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2027-02-04T20:25:10.426Z"
               }
             }
           ]
@@ -21544,7 +21524,7 @@
                   "snapshotId": "seoul-metro-route-map-positions-20260724",
                   "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
                   "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 274,
                   "datasetId": "15099316",
                   "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -21570,7 +21550,7 @@
                     "8": 18
                   },
                   "observedDataUpdatedAt": "2025-08-14",
-                  "freshUntil": "2027-02-03T18:58:58.010Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z",
                   "topologySourceId": "capital-route-topology",
                   "currentTopologyAdmission": {
                     "schemaVersion": 1,
@@ -21579,7 +21559,7 @@
                     "status": "ADMITTED",
                     "topologySnapshotId": "capital-route-topology-20261105",
                     "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-                    "positionSnapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "reviewedAt": "2026-11-05T15:20:21.630Z",
                     "freshUntil": "2026-11-12T15:20:21.630Z",
                     "topologyLineages": [
@@ -21637,9 +21617,9 @@
                     "schemaVersion": 2,
                     "artifactKind": "seoul-public-route-map-layout-admission",
                     "status": "ADMITTED",
-                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261105T185858010Z.json",
-                    "snapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261106T202510426Z.json",
+                    "snapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
                     "contentSha256": "7367364695eba41bc69b4a45b11014164f1c80c23071b80120e11747cbe67404",
                     "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -21655,7 +21635,7 @@
                     "semanticInputSha256": "43e269108bd68394b8fb7a662d8ba9ef520db79b06fd3ef9255b1b9a52434561",
                     "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
                     "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-                    "layoutArtifactSha256": "d4c3152bb330c62b16e69ddf6059155a9cf921f1a7159209b1e785e3fadf852f"
+                    "layoutArtifactSha256": "168778975777b2a40c149b442282515212be485a21ea5a148e421cf95f84cb4a"
                   }
                 },
                 {
@@ -21664,7 +21644,7 @@
                   "issue": 447,
                   "candidateId": "seoul-metro-route-map-positions",
                   "sourceId": "seoul-metro-route-map-positions",
-                  "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+                  "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
                   "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
@@ -21683,9 +21663,9 @@
           "refs": [
             {
               "sourceId": "seoul-metro-route-map-positions",
-              "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+              "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
               "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261105/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261106/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
             }
           ]
         },
@@ -21821,8 +21801,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -21831,8 +21811,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -21850,7 +21830,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -21887,9 +21867,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -22309,12 +22289,12 @@
             {
               "sourceId": "seoul-metro-route-map-positions",
               "observedDataUpdatedAt": "2025-08-14",
-              "retrievedAt": "2026-11-05",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
-                  "freshUntil": "2027-02-03T18:58:58.010Z"
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -22323,8 +22303,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2027-02-03T18:58:58.010Z"
+                "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2027-02-04T20:25:10.426Z"
               }
             }
           ]
@@ -22345,7 +22325,7 @@
                   "snapshotId": "seoul-metro-route-map-positions-20260724",
                   "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
                   "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 274,
                   "datasetId": "15099316",
                   "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -22371,7 +22351,7 @@
                     "8": 18
                   },
                   "observedDataUpdatedAt": "2025-08-14",
-                  "freshUntil": "2027-02-03T18:58:58.010Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z",
                   "topologySourceId": "capital-route-topology",
                   "currentTopologyAdmission": {
                     "schemaVersion": 1,
@@ -22380,7 +22360,7 @@
                     "status": "ADMITTED",
                     "topologySnapshotId": "capital-route-topology-20261105",
                     "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-                    "positionSnapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "reviewedAt": "2026-11-05T15:20:21.630Z",
                     "freshUntil": "2026-11-12T15:20:21.630Z",
                     "topologyLineages": [
@@ -22438,9 +22418,9 @@
                     "schemaVersion": 2,
                     "artifactKind": "seoul-public-route-map-layout-admission",
                     "status": "ADMITTED",
-                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261105T185858010Z.json",
-                    "snapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261106T202510426Z.json",
+                    "snapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
                     "contentSha256": "7367364695eba41bc69b4a45b11014164f1c80c23071b80120e11747cbe67404",
                     "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -22456,7 +22436,7 @@
                     "semanticInputSha256": "43e269108bd68394b8fb7a662d8ba9ef520db79b06fd3ef9255b1b9a52434561",
                     "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
                     "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-                    "layoutArtifactSha256": "d4c3152bb330c62b16e69ddf6059155a9cf921f1a7159209b1e785e3fadf852f"
+                    "layoutArtifactSha256": "168778975777b2a40c149b442282515212be485a21ea5a148e421cf95f84cb4a"
                   }
                 },
                 {
@@ -22465,7 +22445,7 @@
                   "issue": 447,
                   "candidateId": "seoul-metro-route-map-positions",
                   "sourceId": "seoul-metro-route-map-positions",
-                  "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+                  "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
                   "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
@@ -22484,9 +22464,9 @@
           "refs": [
             {
               "sourceId": "seoul-metro-route-map-positions",
-              "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+              "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
               "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261105/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261106/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
             }
           ]
         },
@@ -22622,8 +22602,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -22632,8 +22612,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -22651,7 +22631,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -22688,9 +22668,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -23110,12 +23090,12 @@
             {
               "sourceId": "seoul-metro-route-map-positions",
               "observedDataUpdatedAt": "2025-08-14",
-              "retrievedAt": "2026-11-05",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
-                  "freshUntil": "2027-02-03T18:58:58.010Z"
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -23124,8 +23104,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2027-02-03T18:58:58.010Z"
+                "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2027-02-04T20:25:10.426Z"
               }
             }
           ]
@@ -23146,7 +23126,7 @@
                   "snapshotId": "seoul-metro-route-map-positions-20260724",
                   "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
                   "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 274,
                   "datasetId": "15099316",
                   "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -23172,7 +23152,7 @@
                     "8": 18
                   },
                   "observedDataUpdatedAt": "2025-08-14",
-                  "freshUntil": "2027-02-03T18:58:58.010Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z",
                   "topologySourceId": "capital-route-topology",
                   "currentTopologyAdmission": {
                     "schemaVersion": 1,
@@ -23181,7 +23161,7 @@
                     "status": "ADMITTED",
                     "topologySnapshotId": "capital-route-topology-20261105",
                     "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-                    "positionSnapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "reviewedAt": "2026-11-05T15:20:21.630Z",
                     "freshUntil": "2026-11-12T15:20:21.630Z",
                     "topologyLineages": [
@@ -23239,9 +23219,9 @@
                     "schemaVersion": 2,
                     "artifactKind": "seoul-public-route-map-layout-admission",
                     "status": "ADMITTED",
-                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261105T185858010Z.json",
-                    "snapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261106T202510426Z.json",
+                    "snapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
                     "contentSha256": "7367364695eba41bc69b4a45b11014164f1c80c23071b80120e11747cbe67404",
                     "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -23257,7 +23237,7 @@
                     "semanticInputSha256": "43e269108bd68394b8fb7a662d8ba9ef520db79b06fd3ef9255b1b9a52434561",
                     "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
                     "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-                    "layoutArtifactSha256": "d4c3152bb330c62b16e69ddf6059155a9cf921f1a7159209b1e785e3fadf852f"
+                    "layoutArtifactSha256": "168778975777b2a40c149b442282515212be485a21ea5a148e421cf95f84cb4a"
                   }
                 },
                 {
@@ -23266,7 +23246,7 @@
                   "issue": 447,
                   "candidateId": "seoul-metro-route-map-positions",
                   "sourceId": "seoul-metro-route-map-positions",
-                  "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+                  "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
                   "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
@@ -23285,9 +23265,9 @@
           "refs": [
             {
               "sourceId": "seoul-metro-route-map-positions",
-              "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+              "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
               "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261105/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261106/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
             }
           ]
         },
@@ -23423,8 +23403,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -23433,8 +23413,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -23452,7 +23432,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -23489,9 +23469,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -23911,12 +23891,12 @@
             {
               "sourceId": "seoul-metro-route-map-positions",
               "observedDataUpdatedAt": "2025-08-14",
-              "retrievedAt": "2026-11-05",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
-                  "freshUntil": "2027-02-03T18:58:58.010Z"
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -23925,8 +23905,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2027-02-03T18:58:58.010Z"
+                "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2027-02-04T20:25:10.426Z"
               }
             }
           ]
@@ -23947,7 +23927,7 @@
                   "snapshotId": "seoul-metro-route-map-positions-20260724",
                   "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
                   "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 274,
                   "datasetId": "15099316",
                   "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -23973,7 +23953,7 @@
                     "8": 18
                   },
                   "observedDataUpdatedAt": "2025-08-14",
-                  "freshUntil": "2027-02-03T18:58:58.010Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z",
                   "topologySourceId": "capital-route-topology",
                   "currentTopologyAdmission": {
                     "schemaVersion": 1,
@@ -23982,7 +23962,7 @@
                     "status": "ADMITTED",
                     "topologySnapshotId": "capital-route-topology-20261105",
                     "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-                    "positionSnapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "reviewedAt": "2026-11-05T15:20:21.630Z",
                     "freshUntil": "2026-11-12T15:20:21.630Z",
                     "topologyLineages": [
@@ -24040,9 +24020,9 @@
                     "schemaVersion": 2,
                     "artifactKind": "seoul-public-route-map-layout-admission",
                     "status": "ADMITTED",
-                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261105T185858010Z.json",
-                    "snapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261106T202510426Z.json",
+                    "snapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
                     "contentSha256": "7367364695eba41bc69b4a45b11014164f1c80c23071b80120e11747cbe67404",
                     "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -24058,7 +24038,7 @@
                     "semanticInputSha256": "43e269108bd68394b8fb7a662d8ba9ef520db79b06fd3ef9255b1b9a52434561",
                     "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
                     "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-                    "layoutArtifactSha256": "d4c3152bb330c62b16e69ddf6059155a9cf921f1a7159209b1e785e3fadf852f"
+                    "layoutArtifactSha256": "168778975777b2a40c149b442282515212be485a21ea5a148e421cf95f84cb4a"
                   }
                 },
                 {
@@ -24067,7 +24047,7 @@
                   "issue": 447,
                   "candidateId": "seoul-metro-route-map-positions",
                   "sourceId": "seoul-metro-route-map-positions",
-                  "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+                  "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
                   "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
@@ -24086,9 +24066,9 @@
           "refs": [
             {
               "sourceId": "seoul-metro-route-map-positions",
-              "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+              "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
               "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261105/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261106/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
             }
           ]
         },
@@ -24224,8 +24204,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -24234,8 +24214,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -24253,7 +24233,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -24290,9 +24270,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -24712,12 +24692,12 @@
             {
               "sourceId": "seoul-metro-route-map-positions",
               "observedDataUpdatedAt": "2025-08-14",
-              "retrievedAt": "2026-11-05",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
-                  "freshUntil": "2027-02-03T18:58:58.010Z"
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -24726,8 +24706,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2027-02-03T18:58:58.010Z"
+                "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2027-02-04T20:25:10.426Z"
               }
             }
           ]
@@ -24748,7 +24728,7 @@
                   "snapshotId": "seoul-metro-route-map-positions-20260724",
                   "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
                   "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 274,
                   "datasetId": "15099316",
                   "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -24774,7 +24754,7 @@
                     "8": 18
                   },
                   "observedDataUpdatedAt": "2025-08-14",
-                  "freshUntil": "2027-02-03T18:58:58.010Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z",
                   "topologySourceId": "capital-route-topology",
                   "currentTopologyAdmission": {
                     "schemaVersion": 1,
@@ -24783,7 +24763,7 @@
                     "status": "ADMITTED",
                     "topologySnapshotId": "capital-route-topology-20261105",
                     "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-                    "positionSnapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "reviewedAt": "2026-11-05T15:20:21.630Z",
                     "freshUntil": "2026-11-12T15:20:21.630Z",
                     "topologyLineages": [
@@ -24841,9 +24821,9 @@
                     "schemaVersion": 2,
                     "artifactKind": "seoul-public-route-map-layout-admission",
                     "status": "ADMITTED",
-                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261105T185858010Z.json",
-                    "snapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261106T202510426Z.json",
+                    "snapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
                     "contentSha256": "7367364695eba41bc69b4a45b11014164f1c80c23071b80120e11747cbe67404",
                     "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -24859,7 +24839,7 @@
                     "semanticInputSha256": "43e269108bd68394b8fb7a662d8ba9ef520db79b06fd3ef9255b1b9a52434561",
                     "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
                     "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-                    "layoutArtifactSha256": "d4c3152bb330c62b16e69ddf6059155a9cf921f1a7159209b1e785e3fadf852f"
+                    "layoutArtifactSha256": "168778975777b2a40c149b442282515212be485a21ea5a148e421cf95f84cb4a"
                   }
                 },
                 {
@@ -24868,7 +24848,7 @@
                   "issue": 447,
                   "candidateId": "seoul-metro-route-map-positions",
                   "sourceId": "seoul-metro-route-map-positions",
-                  "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+                  "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
                   "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
@@ -24887,9 +24867,9 @@
           "refs": [
             {
               "sourceId": "seoul-metro-route-map-positions",
-              "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+              "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
               "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261105/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261106/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
             }
           ]
         },
@@ -25025,8 +25005,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -25035,8 +25015,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -25054,7 +25034,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -25091,9 +25071,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -25513,12 +25493,12 @@
             {
               "sourceId": "seoul-metro-route-map-positions",
               "observedDataUpdatedAt": "2025-08-14",
-              "retrievedAt": "2026-11-05",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
-                  "freshUntil": "2027-02-03T18:58:58.010Z"
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -25527,8 +25507,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2027-02-03T18:58:58.010Z"
+                "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2027-02-04T20:25:10.426Z"
               }
             }
           ]
@@ -25549,7 +25529,7 @@
                   "snapshotId": "seoul-metro-route-map-positions-20260724",
                   "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
                   "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
-                  "capturedAt": "2026-11-05T18:58:58.010Z",
+                  "capturedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 274,
                   "datasetId": "15099316",
                   "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
@@ -25575,7 +25555,7 @@
                     "8": 18
                   },
                   "observedDataUpdatedAt": "2025-08-14",
-                  "freshUntil": "2027-02-03T18:58:58.010Z",
+                  "freshUntil": "2027-02-04T20:25:10.426Z",
                   "topologySourceId": "capital-route-topology",
                   "currentTopologyAdmission": {
                     "schemaVersion": 1,
@@ -25584,7 +25564,7 @@
                     "status": "ADMITTED",
                     "topologySnapshotId": "capital-route-topology-20261105",
                     "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-                    "positionSnapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "reviewedAt": "2026-11-05T15:20:21.630Z",
                     "freshUntil": "2026-11-12T15:20:21.630Z",
                     "topologyLineages": [
@@ -25642,9 +25622,9 @@
                     "schemaVersion": 2,
                     "artifactKind": "seoul-public-route-map-layout-admission",
                     "status": "ADMITTED",
-                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
-                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261105T185858010Z.json",
-                    "snapshotSha256": "88ef6fcd5cacb0eabf2f201680835de942ecde1f7441c1a33ae2300f9264b463",
+                    "positionSnapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
+                    "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-current-20261106T202510426Z.json",
+                    "snapshotSha256": "166f9cc1f490e3b4748014369291511872ed12884ef21b66c44569aad5774496",
                     "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
                     "contentSha256": "7367364695eba41bc69b4a45b11014164f1c80c23071b80120e11747cbe67404",
                     "layoutAlgorithmVersion": "seoul-public-latlon-line-order-layout-v2",
@@ -25660,7 +25640,7 @@
                     "semanticInputSha256": "43e269108bd68394b8fb7a662d8ba9ef520db79b06fd3ef9255b1b9a52434561",
                     "semanticOutputSha256": "b3f984f2e10325f7fa8b6c357ebf7cb4c29936d21694c9d9478290af0c0d3a79",
                     "outputSchemaSha256": "58b25a596700a55a301e30b68369653c1667dc2142500419fde05456ec6bcb74",
-                    "layoutArtifactSha256": "d4c3152bb330c62b16e69ddf6059155a9cf921f1a7159209b1e785e3fadf852f"
+                    "layoutArtifactSha256": "168778975777b2a40c149b442282515212be485a21ea5a148e421cf95f84cb4a"
                   }
                 },
                 {
@@ -25669,7 +25649,7 @@
                   "issue": 447,
                   "candidateId": "seoul-metro-route-map-positions",
                   "sourceId": "seoul-metro-route-map-positions",
-                  "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+                  "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "sampleEvidenceHash": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
                   "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
@@ -25688,9 +25668,9 @@
           "refs": [
             {
               "sourceId": "seoul-metro-route-map-positions",
-              "snapshotId": "seoul-metro-route-map-positions-current-20261105T185858010Z",
+              "snapshotId": "seoul-metro-route-map-positions-current-20261106T202510426Z",
               "rawSha256": "f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261105/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-route-map-positions/20261106/f093fd7af5fe992b9697ef798039f6a2944cf3db9e82507ba742b2f403b60074.json"
             }
           ]
         },
@@ -25826,8 +25806,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -25836,8 +25816,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -25855,7 +25835,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -25892,9 +25872,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -26301,11 +26281,11 @@
                   "issue": 2407,
                   "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
                   "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-                  "snapshotId": "molit-urban-rail-full-route-daegu-line3-membership-30473dbcd87e3861a4d53fe9f46456f065215ebcdbad3f8d6033e0bcc213eda1",
+                  "snapshotId": "molit-urban-rail-full-route-daegu-line3-membership-7bfe6257929734751feb295df28d28f89abc030ff14ce145ff8c22b27dff890d",
                   "lineIds": [
                     "line-0ffaa95b1b5d"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 30,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -26674,8 +26654,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -26684,8 +26664,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -26718,11 +26698,11 @@
                   "issue": 2407,
                   "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
                   "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-                  "snapshotId": "molit-urban-rail-full-route-daegu-line3-membership-30473dbcd87e3861a4d53fe9f46456f065215ebcdbad3f8d6033e0bcc213eda1",
+                  "snapshotId": "molit-urban-rail-full-route-daegu-line3-membership-7bfe6257929734751feb295df28d28f89abc030ff14ce145ff8c22b27dff890d",
                   "lineIds": [
                     "line-0ffaa95b1b5d"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 30,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -26749,7 +26729,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -26792,9 +26772,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -27201,11 +27181,11 @@
                   "issue": 2407,
                   "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
                   "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-                  "snapshotId": "molit-urban-rail-full-route-daegu-line1-membership-871dab782344d2c9accc55c82b26f02f8a5bf03ae1e16eaac8372173e65f0760",
+                  "snapshotId": "molit-urban-rail-full-route-daegu-line1-membership-362f9a5f237713ff9f75d14dbd1c20d00809c5654fc88bdfb3c53a39cc6a59ad",
                   "lineIds": [
                     "line-5b8d9b05e7e6"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 35,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -27574,8 +27554,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -27584,8 +27564,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -27618,11 +27598,11 @@
                   "issue": 2407,
                   "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
                   "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-                  "snapshotId": "molit-urban-rail-full-route-daegu-line1-membership-871dab782344d2c9accc55c82b26f02f8a5bf03ae1e16eaac8372173e65f0760",
+                  "snapshotId": "molit-urban-rail-full-route-daegu-line1-membership-362f9a5f237713ff9f75d14dbd1c20d00809c5654fc88bdfb3c53a39cc6a59ad",
                   "lineIds": [
                     "line-5b8d9b05e7e6"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 35,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -27649,7 +27629,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -27692,9 +27672,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -28101,11 +28081,11 @@
                   "issue": 2407,
                   "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
                   "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-                  "snapshotId": "molit-urban-rail-full-route-daegu-line2-membership-561db994f8a362339d4565a88d12b7a4bdbc87c58431e185c751233028e29d03",
+                  "snapshotId": "molit-urban-rail-full-route-daegu-line2-membership-4906b48208c5aa44dfb16fa14fa864f9a93ad76ba353050ad04524083d47f50e",
                   "lineIds": [
                     "line-e2938a4cc492"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 29,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -28474,8 +28454,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -28484,8 +28464,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -28518,11 +28498,11 @@
                   "issue": 2407,
                   "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
                   "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-                  "snapshotId": "molit-urban-rail-full-route-daegu-line2-membership-561db994f8a362339d4565a88d12b7a4bdbc87c58431e185c751233028e29d03",
+                  "snapshotId": "molit-urban-rail-full-route-daegu-line2-membership-4906b48208c5aa44dfb16fa14fa864f9a93ad76ba353050ad04524083d47f50e",
                   "lineIds": [
                     "line-e2938a4cc492"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 29,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -28549,7 +28529,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -28592,9 +28572,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -29193,8 +29173,8 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -29203,8 +29183,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -29222,7 +29202,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -29259,9 +29239,9 @@
           "refs": [
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -29659,11 +29639,11 @@
                   "issue": 2346,
                   "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
                   "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
-                  "snapshotId": "molit-urban-rail-full-route-daejeon-membership-000be7b8d32d31a56aaf6aa5486e4abe8c8e342a030b9902015ced6ffe944f9f",
+                  "snapshotId": "molit-urban-rail-full-route-daejeon-membership-fd66719c1d23b61739eb47c466e1cdc098c5dcc4ae5ccfe4fe50dbd4a3575336",
                   "lineIds": [
                     "line-7051a9c2525c"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 22,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -30026,8 +30006,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -30036,8 +30016,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -30069,11 +30049,11 @@
                   "issue": 2346,
                   "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
                   "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
-                  "snapshotId": "molit-urban-rail-full-route-daejeon-membership-000be7b8d32d31a56aaf6aa5486e4abe8c8e342a030b9902015ced6ffe944f9f",
+                  "snapshotId": "molit-urban-rail-full-route-daejeon-membership-fd66719c1d23b61739eb47c466e1cdc098c5dcc4ae5ccfe4fe50dbd4a3575336",
                   "lineIds": [
                     "line-7051a9c2525c"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 22,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -30100,7 +30080,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -30143,9 +30123,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
@@ -30547,7 +30527,7 @@
                   "lineIds": [
                     "line-e57a361e8892"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 20,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -31377,8 +31357,8 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "observedDataUpdatedAt": "2026-11-05",
-              "retrievedAt": "2026-11-05",
+              "observedDataUpdatedAt": "2026-11-06",
+              "retrievedAt": "2026-11-06",
               "admissionEvidence": [
                 {
                   "kind": "admissionEvidence",
@@ -31387,8 +31367,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
-                "freshnessExpiresAt": "2026-12-05T18:58:58.010Z"
+                "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
+                "freshnessExpiresAt": "2026-12-06T20:25:10.426Z"
               }
             }
           ]
@@ -31424,7 +31404,7 @@
                   "lineIds": [
                     "line-e57a361e8892"
                   ],
-                  "verifiedAt": "2026-11-05T18:58:58.010Z",
+                  "verifiedAt": "2026-11-06T20:25:10.426Z",
                   "stationCount": 20,
                   "membershipSourceId": "molit-urban-rail-full-route",
                   "membershipSourceRawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
@@ -31451,7 +31431,7 @@
                   "issue": 1397,
                   "candidateId": "molit-urban-rail-full-route",
                   "sourceId": "molit-urban-rail-full-route",
-                  "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+                  "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
                   "decision": "APPROVED",
                   "approvedBy": "aquilaXk10",
                   "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -31494,9 +31474,9 @@
             },
             {
               "sourceId": "molit-urban-rail-full-route",
-              "snapshotId": "molit-urban-rail-full-route-current-20261105T185858010Z",
+              "snapshotId": "molit-urban-rail-full-route-current-20261106T202510426Z",
               "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261105/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/molit-urban-rail-full-route/20261106/8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363.csv"
             }
           ]
         },
