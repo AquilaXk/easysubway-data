@@ -63,7 +63,7 @@
       },
       "itxCoverageContract": {
         "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-        "sha256": "734b30644de5e9ada2423b7eda651874d37f94f14f10ee5dec0c66fa5492ac70"
+        "sha256": "78d6a6bd76c96c4b33d6a55cab4acbed247be88b4e83a89704dfc87ea4640e03"
       },
       "incheonTimetables": {
         "line1": {
@@ -114,31 +114,31 @@
         }
       ]
     },
-    "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20261105001802000.json",
-    "itxTopologyEvidenceSha256": "5e45cfd5b8ce9067f3aade23f8390fa152e4362754799eecdb95e94c667e51fc"
+    "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20261106150038097.json",
+    "itxTopologyEvidenceSha256": "cc2d1861cce42085fd637f1e8bf8a03e1371005d4d55fa9c5823aaf4845132c6"
   },
   "releaseIdentity": {
-    "candidateId": "nationwide-candidate-20261106-seq177",
-    "publishedAt": "2026-11-06T06:29:42.553Z",
-    "releaseSequence": 177
+    "candidateId": "nationwide-candidate-20261106-seq178",
+    "publishedAt": "2026-11-06T16:29:31.886Z",
+    "releaseSequence": 178
   },
   "builderIdentity": {
-    "gitSha": "34faba3fb3bd204e44b9cf5d35e80162e212b877",
+    "gitSha": "6d7bf493ae28b4add01943dc7888398bac070f2a",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
-    "candidateId": "nationwide-candidate-20261106-seq177",
+    "candidateId": "nationwide-candidate-20261106-seq178",
     "scopeId": "nationwide_routing_android_v1",
-    "approvalId": "release-request-nationwide-candidate-20261106-seq177",
+    "approvalId": "release-request-nationwide-candidate-20261106-seq178",
     "requestedBy": "datapack-scheduled-refresh",
     "approvedBy": "datapack-release-gates"
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "07ffd7ce48278a314321cf7c2e7cbcdc088d9d35da5b5922441576dc2fba316b"
+    "sha256": "20b92ce1945365a1b67b11604aac33c1f00ca97214c6a209c07f609051c6e704"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",
-    "sha256": "ce6e50d76eeeff716fa31d2725e9edc86ab97829c2abb19550eda4fb662c5e65"
+    "sha256": "75a859919931bdcea6d8e8248ad4719ea62bd33080fc2713df48f3a037ca1809"
   }
 }
