@@ -205,6 +205,8 @@ export const HUMETRO_REQUEST_INTERVAL_MS = 500;
 const MAX_REQUEST_INTERVAL_MS = 60_000;
 const defaultSleep = (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds); });
 
+const requestIntervalWrappers = new WeakSet();
+
 /**
  * fetch 시작 사이를 intervalMs 이상 벌린다. 동시 worker가 같은 fetch를 써도 시작은 하나씩 차례로 열린다. 재시도도 같은 fetch를 지나므로 간격을 지킨다.
  * @param {Function} fetchImpl
@@ -216,14 +218,19 @@ export function withRequestInterval(fetchImpl, { intervalMs, sleep = defaultSlee
   }
   if (intervalMs === 0) return fetchImpl;
   let turn = Promise.resolve();
-  return async (...args) => {
+  const wrapped = async (...args) => {
     const previous = turn;
     let release;
     turn = new Promise((resolve) => { release = resolve; });
     await previous;
     void sleep(intervalMs).then(release, release);
+    if (typeof args[1]?.signal === "function") {
+      args[1] = { ...args[1], signal: args[1].signal() };
+    }
     return fetchImpl(...args);
   };
+  requestIntervalWrappers.add(wrapped);
+  return wrapped;
 }
 
 const SAFE_ERROR_CODE = /^[A-Za-z0-9._-]{1,32}$/u;
@@ -255,7 +262,10 @@ export async function fetchBytesWithSourceRetry({
 }) {
   try {
     return await withSourceCollectionRetry(async () => {
-      const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(timeoutMs), headers: { accept, ...headers } });
+      const signal = requestIntervalWrappers.has(fetchImpl)
+        ? () => AbortSignal.timeout(timeoutMs)
+        : AbortSignal.timeout(timeoutMs);
+      const response = await fetchImpl(url, { redirect: "error", signal, headers: { accept, ...headers } });
       return { response, bytes: Buffer.from(await response.arrayBuffer()) };
     }, { label, sourceId, url, isTransientResult, resultCodeOf, sleep, budget, random });
   } catch (error) {

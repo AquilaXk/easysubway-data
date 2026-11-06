@@ -1420,3 +1420,51 @@ test("#3036 a retained journal without a sourceId is read as the standard source
   const recovered = JSON.parse(await readFile(path.join(standardTarget, "journal.json"), "utf8"));
   assert.deepEqual([recovered.phase, recovered.sourceId], ["FINALIZE_STARTED", STANDARD_SOURCE_ID]);
 });
+
+test("#3036 a second escalator refresh on an already-registered source links previousSnapshotId and records diffSummary", async (t) => {
+  const { repositoryRoot, operationRoot, plan, oci, finalize, readJson } = await collectedEscalatorOperation(t);
+  await finalize();
+  const firstLedger = await readJson("tools/datapack/release/source-snapshots.json");
+  const firstRow = firstLedger.at(-1);
+  assert.equal(firstRow.sourceId, ESCALATOR_SOURCE_ID);
+  assert.equal(firstRow.previousSnapshotId, null);
+
+  const secondOperationRoot = path.join(path.dirname(operationRoot), "second-operation");
+  const secondNow = new Date(NOW.getTime() + 120_000);
+  await main(
+    ["--phase", "prepare", "--source-id", ESCALATOR_SOURCE_ID, "--operation-root", secondOperationRoot, "--expected-main-sha", EXACT_MAIN, "--expected-facility-head-sha", EXACT_MAIN],
+    { repositoryRoot, execFileImpl: exactMainExec, now: secondNow },
+  );
+  await collectCurrentCapitalFacilityOperation({
+    repositoryRoot,
+    operationRoot: secondOperationRoot,
+    serviceKey: "test",
+    env: OCI_ENV,
+    execFileImpl: exactMainExec,
+    now: secondNow,
+    fetchImpl: escalatorProvider(plan),
+    delayImpl: async () => {},
+  });
+  await main(["--phase", "finalize", "--operation-root", secondOperationRoot], {
+    repositoryRoot,
+    now: new Date(secondNow.getTime() + 60_000),
+    env: OCI_ENV,
+    execFileImpl: exactMainExec,
+    publishImpl: (options) => publishKricAccessibilityRawArtifact({ ...options, client: oci.client }),
+  });
+
+  const [secondLedger, secondInventory] = await Promise.all([
+    readJson("tools/datapack/release/source-snapshots.json"),
+    readJson("tools/datapack/source-inventory.json"),
+  ]);
+  assert.equal(secondLedger.length, firstLedger.length + 1);
+  const secondRow = secondLedger.at(-1);
+  assert.equal(secondRow.sourceId, ESCALATOR_SOURCE_ID);
+  assert.equal(secondRow.previousSnapshotId, firstRow.snapshotId);
+  assert.deepEqual(secondRow.diffSummary, buildSnapshotDiff(firstRow, secondRow));
+  assert.equal(validateLineage(secondLedger).headsBySource[ESCALATOR_SOURCE_ID], secondRow.snapshotId);
+  assert.equal(
+    secondInventory.sources.find(({ id }) => id === ESCALATOR_SOURCE_ID).accessibilityAdmissionEvidence.snapshotId,
+    secondRow.snapshotId,
+  );
+});
