@@ -12,8 +12,14 @@ export const GITHUB_API_REASON = Object.freeze({
 /** 가드가 모르는 예외. 원문은 비밀이 섞일 수 있어 남기지 않고 이 코드만 남긴다. */
 export const INTERNAL_ERROR_REASON = "INTERNAL_ERROR";
 
-// 사유 줄의 키 순서. 사유 코드가 항상 먼저다.
-const REASON_LINE_KEYS = Object.freeze([["reason", "reason"], ["status", "httpStatus"], ["workflow", "workflow"], ["allowance", "allowance"], ["cause", "causeReason"]]);
+export const SECRET_SYNC_REASON = Object.freeze({
+  ARGUMENT_INVALID: "ARGUMENT_INVALID",
+  SECRET_INVALID: "SECRET_INVALID",
+  GH_SYNC_FAILED: "GH_SYNC_FAILED",
+  INTERNAL_ERROR: INTERNAL_ERROR_REASON,
+});
+
+const REASON_LINE_KEYS = Object.freeze([["reason", "reason"], ["secret", "secret"], ["status", "httpStatus"], ["workflow", "workflow"], ["allowance", "allowance"], ["cause", "causeReason"]]);
 
 /** `reason=<CODE> status=<n> workflow=<file> ...` 한 줄. 값이 없는 키는 쓰지 않는다. */
 export function formatReasonLine(details) {
@@ -22,3 +28,26 @@ export function formatReasonLine(details) {
     .map(([key, field]) => `${key}=${details[field]}`)
     .join(" ");
 }
+
+export function createSecretSyncError(message, reason, secret) {
+  const resolvedReason = Object.values(SECRET_SYNC_REASON).includes(reason)
+    ? reason
+    : INTERNAL_ERROR_REASON;
+  const error = new Error(message);
+  error.reason = resolvedReason;
+  if (typeof secret === "string" && secret.length > 0) {
+    error.secret = secret;
+  }
+  return error;
+}
+
+export function formatSecretSyncReasonLine(error, allowedSecrets = []) {
+  const reason = Object.values(SECRET_SYNC_REASON).includes(error?.reason)
+    ? error.reason
+    : INTERNAL_ERROR_REASON;
+  const secret = typeof error?.secret === "string" && allowedSecrets.includes(error.secret)
+    ? error.secret
+    : undefined;
+  return formatReasonLine({ reason, secret });
+}
+

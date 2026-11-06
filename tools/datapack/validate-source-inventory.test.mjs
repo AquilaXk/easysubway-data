@@ -671,3 +671,45 @@ test("official OD fare candidate admission은 inventory hash 쌍과 일치해야
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("candidate productionUseAdmission이 승인된 admitted source는 inventory에서도 productionUseAllowed와 production capability를 켜야 한다", async () => {
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const movementSource = inventory.sources.find(({ id }) => id === "kric-station-movement-standard");
+  assert.ok(movementSource);
+  assert.equal(movementSource.productionUseAllowed, true);
+  assert.equal(movementSource.capabilities.facility.productionUseAllowed, true);
+  assert.equal(movementSource.capabilities.facility.status, "SUPPORTED");
+  assert.equal(movementSource.capabilities.facility.coverageStatus, "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH");
+  assert.equal(movementSource.admissionEvidence.quotaEvidence.productionUseAllowed, true);
+  assert.equal(movementSource.admissionEvidence.quotaEvidence.unlockStatus, "unlocked");
+
+  const workspace = await mkdtemp(path.join(tmpdir(), "movement-production-admission-"));
+  try {
+    const disabledSourceInventory = structuredClone(inventory);
+    disabledSourceInventory.sources.find(({ id }) => id === "kric-station-movement-standard").productionUseAllowed = false;
+    const disabledSourcePath = path.join(workspace, "disabled-source.json");
+    await writeFile(disabledSourcePath, JSON.stringify(disabledSourceInventory));
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/validate-source-inventory.mjs", "--inventory", disabledSourcePath,
+      ], { cwd: root }),
+      /kric-station-movement-standard must enable productionUseAllowed and a production capability when candidate productionUseAdmission is approved/,
+    );
+
+    const disabledCapabilityInventory = structuredClone(inventory);
+    disabledCapabilityInventory.sources.find(
+      ({ id }) => id === "kric-station-movement-standard",
+    ).capabilities.facility.productionUseAllowed = false;
+    const disabledCapabilityPath = path.join(workspace, "disabled-capability.json");
+    await writeFile(disabledCapabilityPath, JSON.stringify(disabledCapabilityInventory));
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/validate-source-inventory.mjs", "--inventory", disabledCapabilityPath,
+      ], { cwd: root }),
+      /kric-station-movement-standard must enable productionUseAllowed and a production capability when candidate productionUseAdmission is approved/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
