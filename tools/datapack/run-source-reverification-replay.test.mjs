@@ -327,12 +327,15 @@ test("재생이 부르는 register 모드 명령은 실제 등록기의 인자 �
   }
   assert.equal(calls.length, 6);
   for (const { script, args } of calls) {
+    for (const arg of args.filter((value) => value.startsWith(work))) await writeFile(arg, "{}\n");
     const result = spawnSync(process.execPath, ["--import", NETWORK_BLOCK, path.join(repositoryRoot, "tools/datapack", script), ...args], {
       cwd: repo, env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 60_000,
     });
     assert.notEqual(result.status, null, `${script}: timed out`);
     assert.notEqual(result.status, 0, `${script}: 가짜 입력은 등록되지 않는다`);
     assert.doesNotMatch(`${result.stderr}${result.stdout}`, USAGE_ERROR, `${script} ${args.join(" ")}: ${result.stderr.slice(0, 300)}`);
+    assert.match(result.stderr, new RegExp(path.basename(repo), "u"), `${script}: cwd 임시 저장소를 읽어야 한다: ${result.stderr}`);
+    assert.equal(result.stderr.includes(repositoryRoot), false, `${script}: 실제 체크아웃을 읽지 않는다`);
   }
   assert.equal(git(repo, "status", "--porcelain"), "", "실제 원장은 바뀌지 않는다");
 });

@@ -370,7 +370,7 @@ function parseArgs(argv) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     const { publish, ...inputs } = parseArgs(process.argv.slice(2));
-    const options = { repositoryRoot: path.resolve(import.meta.dirname, "../.."), ...inputs };
+    const options = { repositoryRoot: process.cwd(), ...inputs };
     if (publish) await publishAndRegisterBusanTopology(options);
     else await registerBusanTopology(options);
   }

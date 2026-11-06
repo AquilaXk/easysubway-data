@@ -546,7 +546,7 @@ function parseArgs(argv) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     const { publish, ...options } = parseArgs(process.argv.slice(2));
-    const inputs = { repositoryRoot: path.resolve(import.meta.dirname, "../.."), ...options };
+    const inputs = { repositoryRoot: process.cwd(), ...options };
     if (publish) await publishAndRegisterRegionalAccessibility(inputs);
     else await registerRegionalAccessibility(inputs);
   } catch (error) {

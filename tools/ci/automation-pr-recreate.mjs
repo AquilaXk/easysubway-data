@@ -112,17 +112,14 @@ async function replaySourceAlive({ repository, api, stage, runId }) {
 }
 
 const gateStatesFromEnv = (env) => Object.fromEntries(Object.entries(STAGE_REPLAY).map(([stage, { gateVariable }]) => [stage, env[gateVariable] === "true"]));
-const resolveGateEnabled = ({ gateEnabled, itxPromotionEnabled = false, sourceReverificationEnabled = false }) => gateEnabled
-  ? Object.fromEntries(Object.keys(STAGE_REPLAY).map((stage) => [stage, gateEnabled[stage] === true]))
-  : { "itx-promotion": itxPromotionEnabled === true, "source-reverification": sourceReverificationEnabled === true };
 
 /**
  * 닫을 PR, 상한·원본 부재로 닫지 못하는 단계, 닫지 않고 기다릴 PR을 계산한다. 읽기만 한다.
  * @returns {Promise<{ actions: { number: number, branch: string, stage: string, workflow: string, replayRunId?: string }[], anomalies: { stage: string, number: number, closures: number, reason: string }[], deferred: { stage: string, number: number, reason: string }[] }>}
  */
-export async function planBehindRecreation({ repository, api, now = new Date(), gateEnabled, itxPromotionEnabled = false, sourceReverificationEnabled = false }) {
+export async function planBehindRecreation({ repository, api, now = new Date(), gateEnabled = {} }) {
   if (typeof repository !== "string" || !REPOSITORY_PATTERN.test(repository)) throw inputError("repository");
-  const resolvedGates = resolveGateEnabled({ gateEnabled, itxPromotionEnabled, sourceReverificationEnabled });
+  const normalizedGates = Object.fromEntries(Object.keys(STAGE_REPLAY).map((stage) => [stage, Boolean(gateEnabled?.[stage])]));
   const openPulls = await readPages(api, `repos/${repository}/pulls?state=open&base=${MAIN}`, { limit: 3 });
   const closedPulls = await readPages(api, `repos/${repository}/pulls?state=closed&base=${MAIN}&sort=updated&direction=desc`, { limit: 1, overflow: "return" });
   // 현재 main tip이 생긴 뒤에 닫힌 PR만 같은 tip의 닫힘이다. tip 시각은 추정하지 않고 읽지 못하면 실패한다.
@@ -142,7 +139,7 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
   // 뒤처진 형제 PR도 같은 실행에서 닫고 다시 dispatch하므로 이번 계획에서는 열린 PR로 세고, 다음 계획에서 그 형제가 claim으로만 보이면 재확인 재생은 claim으로 센다.
   // ITX·재확인 PR이 함께 뒤처져 서로 기다리면 재확인 묶음이 만료(보관 1일)되는 대로 재확인 PR이 다시 수집 경로로 닫혀 ITX가 재생된다.
   const findBlockingLedgerWriters = createLedgerWriterBlockerLookup({ repository, api, openPulls });
-  const context = { repository, api, now, gateEnabled: resolvedGates, findBlockingLedgerWriters };
+  const context = { repository, api, now, gateEnabled: normalizedGates, findBlockingLedgerWriters };
 
   const actions = [];
   const anomalies = [];
@@ -276,9 +273,9 @@ async function carriesItxCollection({ repository, api, number }) {
 
 /** 계획대로 닫고, 브랜치를 지우고, 단계 workflow를 다시 실행한다. 상한에 닿은 단계가 있으면 나머지를 마친 뒤 실패로 보고한다. */
 export async function recreateBehindPullRequests({
-  repository, api, closePullRequest, deleteBranch, dispatchWorkflow, now = new Date(), log = () => {}, gateEnabled, itxPromotionEnabled = false, sourceReverificationEnabled = false,
+  repository, api, closePullRequest, deleteBranch, dispatchWorkflow, now = new Date(), log = () => {}, gateEnabled = {},
 }) {
-  const { actions, anomalies, deferred } = await planBehindRecreation({ repository, api, now, gateEnabled, itxPromotionEnabled, sourceReverificationEnabled });
+  const { actions, anomalies, deferred } = await planBehindRecreation({ repository, api, now, gateEnabled });
   for (const { stage, number, reason } of deferred) log(`held #${number} (${stage}): ${reason}; not closed so the day's one-time collection is not lost`);
   const dispatched = new Set();
   for (const action of actions) {
