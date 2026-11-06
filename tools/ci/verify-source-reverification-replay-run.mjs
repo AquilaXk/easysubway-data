@@ -6,16 +6,12 @@
 // 사용: node tools/ci/verify-source-reverification-replay-run.mjs --source-run-id <run id> --repository <owner/repo> --run <gh api run json> --jobs <gh api jobs json>
 import { pathToFileURL } from "node:url";
 
-import { readReplaySourceFile, replaySourceJobSteps, stepConclusion, verifyReplaySourceRun } from "./replay-source-run.mjs";
+import { fail, readReplaySourceFile, replaySourceJobSteps, stepConclusion, verifyReplaySourceRun } from "./replay-source-run.mjs";
 
 export const SOURCE_REVERIFICATION_WORKFLOW_PATH = ".github/workflows/source-reverification.yml";
 export const SOURCE_REVERIFICATION_JOB = "Source reverification";
 export const SOURCE_REVERIFICATION_REPLAY_SOURCE_STEPS = Object.freeze(["Reverify due P7D sources", "Upload the retained collection for a later replay"]);
 const CODE = "REVERIFICATION_REPLAY_SOURCE";
-
-function fail(code, detail) {
-  throw new Error(`${code}: ${detail}`);
-}
 
 /** 원본 run 메타데이터와 job 목록을 확인한다. 어긋나면 REVERIFICATION_REPLAY_SOURCE_* 코드로 실패한다. */
 export function verifySourceReverificationReplayRun({ sourceRunId, repository, run, jobs }) {

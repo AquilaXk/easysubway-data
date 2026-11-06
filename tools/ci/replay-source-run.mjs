@@ -9,8 +9,8 @@ const RUN_ID = /^[1-9]\d{0,15}$/u;
 const SOURCE_EVENTS = Object.freeze(["workflow_dispatch", "schedule"]);
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 
-function fail(code, detail) {
-  throw new Error(`${code}: ${detail}`);
+export function fail(code, detail = "") {
+  throw new Error(detail ? `${code}: ${detail}` : code);
 }
 
 /** gh api runs/{id} 응답이 repository main에서 돈 workflowPath의 run이 아니면 `${code}_RUN_INVALID`로 실패한다. */

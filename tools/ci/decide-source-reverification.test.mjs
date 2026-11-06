@@ -307,16 +307,18 @@ test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으�
   assert.equal(decideSourceReverification(input({ ledger: stale, pullRequests: [writer(973, "automation/927-nationwide-candidate-refresh-"), writer(974, "feat/x")] })).state, "RUN");
 });
 
-test("재생 run은 DUE가 아니어도 RUN이고 recipe 목록은 비며, 이 workflow의 열린 PR이 있으면 정상 run처럼 OPEN_PR이다 (#3036)", () => {
+test("재생 run은 DUE가 아니어도 RUN이고 recipe 목록은 비며, 잘못된 replayRunId는 거부한다 (#3036)", () => {
   assert.deepEqual(decideSourceReverification(input({ replayRunId: "39369279984" })), { state: "RUN", due: [], recipes: [], blocked: [], budgetBlocked: [], cleanupClaims: [], overdue: [], replayRunId: "39369279984" });
-  assert.equal(decideSourceReverification(input({ replayRunId: "39369279984", pullRequests: [pr("OPEN", 77)], automationBranches: [`${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`] })).state, "OPEN_PR");
   for (const bad of ["", "0", "abc", "12345678901234567890"]) assert.throws(() => decideSourceReverification(input({ replayRunId: bad })), /REVERIFICATION_INPUT_INVALID/u, bad);
 });
 
-test("재생 run이 다른 원장 쓰기 PR·claim에 막히면 기다리지 않고 REVERIFICATION_REPLAY_BLOCKED로 실패하며 같은 replay_run_id로 다시 dispatch하라고 알린다 (#3036)", () => {
+test("재생 run이 이 workflow나 다른 원장 쓰기 PR·claim에 막히면 기다리지 않고 REVERIFICATION_REPLAY_BLOCKED로 실패하며 같은 replay_run_id로 다시 dispatch하라고 알린다 (#3036)", () => {
   // 재생 입력은 이 dispatch에만 있다. 대기로 끝나면 막힘 재dispatch가 입력 없이 다시 돌려 공급자에서 다시 수집한다.
   const DUE_LEDGER = ledgerAt(dueAgo(DAY + HOUR));
+  const ownClaim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`;
   for (const [label, blockers, expected] of [
+    ["이 workflow의 열린 PR", { pullRequests: [pr("OPEN", 77)], automationBranches: [ownClaim] }, "#990"],
+    ["이 workflow의 진행 중 claim", { automationBranches: [ownClaim], runs: [run(77, "in_progress")] }, ownClaim],
     ["열린 PR", { pullRequests: [writer(971)] }, "#971"],
     ["PR 전의 claim", { automationBranches: ["automation/639-seoul-accessibility-refresh-9"] }, "automation/639-seoul-accessibility-refresh-9"],
     ["ITX 승격 PR", { pullRequests: [writer(980, "automation/977-itx-promotion-")] }, "#980"],

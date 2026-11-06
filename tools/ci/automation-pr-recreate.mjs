@@ -111,13 +111,15 @@ async function replaySourceAlive({ repository, api, stage, runId }) {
   return live.length === 1;
 }
 
+const gateStatesFromEnv = (env) => Object.fromEntries(Object.entries(STAGE_REPLAY).map(([stage, { gateVariable }]) => [stage, env[gateVariable] === "true"]));
+
 /**
  * 닫을 PR, 상한·원본 부재로 닫지 못하는 단계, 닫지 않고 기다릴 PR을 계산한다. 읽기만 한다.
  * @returns {Promise<{ actions: { number: number, branch: string, stage: string, workflow: string, replayRunId?: string }[], anomalies: { stage: string, number: number, closures: number, reason: string }[], deferred: { stage: string, number: number, reason: string }[] }>}
  */
-export async function planBehindRecreation({ repository, api, now = new Date(), itxPromotionEnabled = false, sourceReverificationEnabled = false }) {
+export async function planBehindRecreation({ repository, api, now = new Date(), gateEnabled = {} }) {
   if (typeof repository !== "string" || !REPOSITORY_PATTERN.test(repository)) throw inputError("repository");
-  const gateEnabled = { "itx-promotion": itxPromotionEnabled === true, "source-reverification": sourceReverificationEnabled === true };
+  const normalizedGates = Object.fromEntries(Object.keys(STAGE_REPLAY).map((stage) => [stage, Boolean(gateEnabled?.[stage])]));
   const openPulls = await readPages(api, `repos/${repository}/pulls?state=open&base=${MAIN}`, { limit: 3 });
   const closedPulls = await readPages(api, `repos/${repository}/pulls?state=closed&base=${MAIN}&sort=updated&direction=desc`, { limit: 1, overflow: "return" });
   // 현재 main tip이 생긴 뒤에 닫힌 PR만 같은 tip의 닫힘이다. tip 시각은 추정하지 않고 읽지 못하면 실패한다.
@@ -136,7 +138,8 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
   // 그때 PR은 이미 닫힌 뒤라서, 재생 run의 판정과 같은 함수·같은 입력으로 막힘을 미리 판정해 막혀 있는 동안은 재생을 미룬다(원장 쓰기 PR은 한 번에 하나다).
   // 뒤처진 형제 PR도 같은 실행에서 닫고 다시 dispatch하므로 이번 계획에서는 열린 PR로 세고, 다음 계획에서 그 형제가 claim으로만 보이면 재확인 재생은 claim으로 센다.
   // ITX·재확인 PR이 함께 뒤처져 서로 기다리면 재확인 묶음이 만료(보관 1일)되는 대로 재확인 PR이 다시 수집 경로로 닫혀 ITX가 재생된다.
-  const ledgerWritersBlocking = ledgerWriterBlockers({ repository, api, openPulls });
+  const findBlockingLedgerWriters = createLedgerWriterBlockerLookup({ repository, api, openPulls });
+  const context = { repository, api, now, gateEnabled: normalizedGates, findBlockingLedgerWriters };
 
   const actions = [];
   const anomalies = [];
@@ -146,7 +149,7 @@ export async function planBehindRecreation({ repository, api, now = new Date(), 
     if (stage === null) continue;
     const used = closures.get(stage) ?? 0;
     const usedInWindow = windowClosures.get(stage) ?? 0;
-    const planned = await planPull({ pull, stage, used, usedInWindow, repository, api, now, gateEnabled, ledgerWritersBlocking }); // NOSONAR -- 앞선 PR이 올린 단계별 닫힘 횟수(closures)로 이 PR의 상한 판정이 달라져 PR을 순서대로 판정한다
+    const planned = await planPull({ pull, stage, used, usedInWindow, context }); // NOSONAR -- 앞선 PR이 올린 단계별 닫힘 횟수(closures)로 이 PR의 상한 판정이 달라져 PR을 순서대로 판정한다
     if (planned.deferred) deferred.push(planned.deferred);
     if (planned.anomaly) anomalies.push(planned.anomaly);
     if (planned.action) {
@@ -177,7 +180,8 @@ const statePullOf = (pull, repository) => ({
 // PR 없는 원장 쓰기 claim 브랜치의 PR 상태(병합된 브랜치는 끝난 일이다)까지 모아 재생 run의 판정과 같은 pendingLedgerWriters 입력을 만든다.
 // automation/ 브랜치 수 상한(MAX_CLAIM_BRANCHES)과 브랜치별 PR 목록 상한(BRANCH_PR_LIMIT)은 판정 입력을 모으는 collect-automation-prs와 같다.
 async function readClaimInput({ repository, api, openPulls }) {
-  const refs = await readPages(api, `repos/${repository}/git/matching-refs/heads/automation/`, { limit: 3 });
+  const refs = await api(`repos/${repository}/git/matching-refs/heads/automation/`);
+  if (!Array.isArray(refs)) throw inputError("automation matching refs");
   const automationBranches = parseAutomationBranches(refs.map(({ ref, object }) => `${object?.sha}\t${ref}`).join("\n"));
   if (automationBranches.length > MAX_CLAIM_BRANCHES) throw inputError(`AUTOMATION_CLAIM_BRANCH_LIMIT: ${automationBranches.length} automation branches exceed the limit ${MAX_CLAIM_BRANCHES}`);
   const pullRequests = new Map(openPulls.map((pull) => [pull.number, statePullOf(pull, repository)]));
@@ -185,7 +189,7 @@ async function readClaimInput({ repository, api, openPulls }) {
   const ledgerPrefixes = LEDGER_WRITER_WORKFLOWS.map((workflow) => REFRESH_CLAIM_PREFIXES[workflow]);
   const owner = repository.split("/")[0];
   for (const branch of automationBranches.filter((name) => !openHeads.has(name) && ledgerPrefixes.some((prefix) => name.startsWith(prefix)))) {
-    const rows = await api(`repos/${repository}/pulls?state=all&head=${owner}:${branch}&per_page=100`); // NOSONAR -- 브랜치별 조회 수가 적고 한 번의 실패로 판정을 멈춰야 하므로 순서대로 읽는다
+    const rows = await api(`repos/${repository}/pulls?state=all&head=${owner}:${branch}&per_page=${BRANCH_PR_LIMIT}`); // NOSONAR -- GitHub API 동시 요청을 직렬화해 호출 수를 억제한다
     if (!Array.isArray(rows)) throw inputError(`pull requests of ${branch}`);
     if (rows.length >= BRANCH_PR_LIMIT) throw inputError(`AUTOMATION_PR_LIST_TRUNCATED: pull request list for ${branch} reached its limit ${BRANCH_PR_LIMIT}`);
     for (const pull of rows) pullRequests.set(pull?.number, statePullOf(pull, repository));
@@ -194,7 +198,7 @@ async function readClaimInput({ repository, api, openPulls }) {
 }
 
 /** replayStage의 재생 run 판정이 막힐 원장 쓰기 PR 번호와(재확인만) PR 없는 claim 브랜치 이름. claim 목록은 필요할 때 한 번만 읽는다. */
-function ledgerWriterBlockers({ repository, api, openPulls }) {
+export function createLedgerWriterBlockerLookup({ repository, api, openPulls }) {
   let claimInput = null;
   return async (replayStage) => {
     const workflow = AUTOMATION_STAGE_WORKFLOWS[replayStage];
@@ -222,7 +226,8 @@ function countClosures({ closedPulls, ours, windowStart, countFrom }) {
 }
 
 /** 열린 PR 하나의 처리: 최신이면 {}, 아니면 action·anomaly·deferred 중 하나를 돌려준다. */
-async function planPull({ pull, stage, used, usedInWindow, repository, api, now, gateEnabled, ledgerWritersBlocking }) {
+async function planPull({ pull, stage, used, usedInWindow, context }) {
+  const { repository, api, now } = context;
   const compare = await api(`repos/${repository}/compare/${MAIN}...${pull.head.sha}?per_page=1`);
   if (!Number.isSafeInteger(compare?.behind_by) || compare.behind_by < 0) throw inputError(`compare behind_by of #${pull.number}`);
   if (compare.behind_by === 0) return {};
@@ -234,7 +239,7 @@ async function planPull({ pull, stage, used, usedInWindow, repository, api, now,
   // 같은 tip 루프는 아니지만 main이 계속 전진해 한 단계가 병합되지 못하는 경우(starvation)도 이상으로 드러낸다.
   if (usedInWindow >= RECREATE_STARVATION_LIMIT) return { anomaly: { stage, number: pull.number, closures: usedInWindow, reason: "STARVATION" } };
   if (!REPLAY_MODES.includes(mode)) return { action: {} };
-  return planReplay({ pull, stage, mode, used, repository, api, gateEnabled, ledgerWritersBlocking });
+  return planReplay({ pull, stage, mode, used, context });
 }
 
 // 그날 만들어졌고 ITX admission을 실제로 담고 있을 때만 대기한다. ITX를 수집하지 않은 topology PR은 평소처럼 닫고 다시 만든다.
@@ -244,14 +249,15 @@ async function carriesSameDayItxCollection({ pull, repository, api, now }) {
   return createdAt >= kstDayStart(now) && carriesItxCollection({ repository, api, number: pull.number });
 }
 
-async function planReplay({ pull, stage, mode, used, repository, api, gateEnabled, ledgerWritersBlocking }) {
+async function planReplay({ pull, stage, mode, used, context }) {
+  const { repository, api, gateEnabled, findBlockingLedgerWriters } = context;
   const { code } = STAGE_REPLAY[stage];
   // 단계 workflow는 변수 게이트(gateVariable)가 true일 때만 github-actions[bot] dispatch를 받는다. 꺼져 있으면 재생이든 다시 수집이든 dispatch는 성공해도
   // job이 건너뛰어져 조용히 수집분을 잃는다.
   if (!gateEnabled[stage]) return { anomaly: { stage, number: pull.number, closures: used, reason: gateDisabled(stage) } };
   const runId = REPLAY_RUN_SUFFIX.exec(pull.head.ref)?.[1];
   if (isReplayRunId(runId) && await replaySourceAlive({ repository, api, stage, runId })) {
-    const blockedBy = await ledgerWritersBlocking(stage);
+    const blockedBy = await findBlockingLedgerWriters(stage);
     if (blockedBy.length > 0) return { deferred: { stage, number: pull.number, reason: `${code}_WAITS_FOR_LEDGER_WRITERS`, blockedBy } };
     return { action: { replayRunId: runId } };
   }
@@ -267,9 +273,9 @@ async function carriesItxCollection({ repository, api, number }) {
 
 /** 계획대로 닫고, 브랜치를 지우고, 단계 workflow를 다시 실행한다. 상한에 닿은 단계가 있으면 나머지를 마친 뒤 실패로 보고한다. */
 export async function recreateBehindPullRequests({
-  repository, api, closePullRequest, deleteBranch, dispatchWorkflow, now = new Date(), log = () => {}, itxPromotionEnabled = false, sourceReverificationEnabled = false,
+  repository, api, closePullRequest, deleteBranch, dispatchWorkflow, now = new Date(), log = () => {}, gateEnabled = {},
 }) {
-  const { actions, anomalies, deferred } = await planBehindRecreation({ repository, api, now, itxPromotionEnabled, sourceReverificationEnabled });
+  const { actions, anomalies, deferred } = await planBehindRecreation({ repository, api, now, gateEnabled });
   for (const { stage, number, reason } of deferred) log(`held #${number} (${stage}): ${reason}; not closed so the day's one-time collection is not lost`);
   const dispatched = new Set();
   for (const action of actions) {
@@ -313,12 +319,11 @@ async function ghApi(endpoint) {
 
 export async function main(argv, { api = ghApi, now = new Date(), env = process.env, log = (line) => process.stdout.write(`${line}\n`) } = {}) {
   // 수집분을 들고 있는 단계 workflow의 변수 게이트. 값은 workflow env로 넘겨받는다.
-  const itxPromotionEnabled = env[STAGE_REPLAY["itx-promotion"].gateVariable] === "true";
-  const sourceReverificationEnabled = env[STAGE_REPLAY["source-reverification"].gateVariable] === "true";
+  const gateEnabled = gateStatesFromEnv(env);
   const [command, ...rest] = argv;
   if (command === "plan") {
     const values = parseOptions(rest, ["repository", "github-output"]);
-    const { actions, anomalies, deferred } = await planBehindRecreation({ repository: values.repository, api, now, itxPromotionEnabled, sourceReverificationEnabled });
+    const { actions, anomalies, deferred } = await planBehindRecreation({ repository: values.repository, api, now, gateEnabled });
     writeOutputs(values["github-output"], { targets: actions.length + anomalies.length });
     log(`뒤처진 자동화 PR: 닫을 ${actions.length}건, 상한 도달·원본 없음 ${anomalies.length}건, 대기 ${deferred.length}건`);
   } else if (command === "run") {
@@ -331,8 +336,7 @@ export async function main(argv, { api = ghApi, now = new Date(), env = process.
       api,
       now,
       log,
-      itxPromotionEnabled,
-      sourceReverificationEnabled,
+      gateEnabled,
       closePullRequest: ({ number, comment }) => gh(["pr", "close", String(number), "--repo", repository, "--comment", comment], closeToken),
       // 브랜치 이름은 plan이 단계 claim 접두사(automationStageForBranch)로 거른 값뿐이다.
       deleteBranch: async (branch) => {

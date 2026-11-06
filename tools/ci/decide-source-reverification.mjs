@@ -229,15 +229,20 @@ function classifyClaims({ pullRequests, automationBranches, runs, repository }) 
   if (open.length === 1) {
     const [pullRequest] = open;
     if (!live.includes(pullRequest.headRefName)) fail("REVERIFICATION_CLAIM_MISSING", `#${pullRequest.number} has no claim branch`);
-    return { state: "OPEN_PR", branch: pullRequest.headRefName, cleanupClaims };
+    return { state: "OPEN_PR", branch: pullRequest.headRefName, blocker: pullRequest.number, cleanupClaims };
   }
   if (live.length === 1) {
     const [branch] = live;
     if (own.get(branch)?.state === "CLOSED") fail("REVERIFICATION_CLAIM_CLOSED", `${branch} is bound to a closed pull request`);
-    if (classifyUnboundClaim(branch, runs) === "RUNNING") return { state: "CLAIM_IN_PROGRESS", branch, cleanupClaims };
+    if (classifyUnboundClaim(branch, runs) === "RUNNING") return { state: "CLAIM_IN_PROGRESS", branch, blocker: branch, cleanupClaims };
     cleanupClaims.push(branch);
   }
   return { state: null, cleanupClaims };
+}
+
+function failReplayBlocked(replayRunId, blockers) {
+  const listed = blockers.map((blocker) => (typeof blocker === "number" ? `#${blocker}` : blocker)).join(", ");
+  fail("REVERIFICATION_REPLAY_BLOCKED", `replay of run ${replayRunId} is blocked by ${listed}; dispatch ${SOURCE_REVERIFICATION_WORKFLOW} again with replay_run_id=${replayRunId} once they are merged or closed`);
 }
 
 // 실행할 결속 묶음 중 공급자 하루 호출 예산이 허락하지 않는 묶음과 그 이유(#3036).
@@ -265,17 +270,15 @@ export function decideSourceReverification({ inventory, ledger, policy, pullRequ
   const blocked = selected.filter((id) => blockedIds.has(id));
   const due = dueRows.filter((row) => isDue(row) && !blockedIds.has(row.recipeId)).map(({ recipeId, sourceId, dueAt }) => ({ recipeId, sourceId, dueAt }));
   const overdue = overdueRowsOf(dueRows);
-  const { state, branch, cleanupClaims } = classifyClaims({ pullRequests, automationBranches, runs, repository });
+  const { state, branch, blocker, cleanupClaims } = classifyClaims({ pullRequests, automationBranches, runs, repository });
   const replay = replayRunId === undefined ? {} : { replayRunId };
-  if (state) return { state, branch, due: [], recipes: [], cleanupClaims, overdue, ...replay };
+  if (state && replayRunId !== undefined) failReplayBlocked(replayRunId, [blocker]);
+  if (state) return { state, branch, due: [], recipes: [], cleanupClaims, overdue };
   const work = replayRunId === undefined ? { due, recipes: recipeIds, blocked, budgetBlocked: [] } : { due: [], recipes: [], blocked: [], budgetBlocked: [] };
   if (replayRunId === undefined && recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, budgetBlocked: [], cleanupClaims, overdue };
   const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow: SOURCE_REVERIFICATION_WORKFLOW });
   const blockedBy = [...pending.pullRequests, ...pending.branches];
-  if (blockedBy.length > 0 && replayRunId !== undefined) {
-    const blockers = blockedBy.map((blocker) => (typeof blocker === "number" ? `#${blocker}` : blocker)).join(", ");
-    fail("REVERIFICATION_REPLAY_BLOCKED", `replay of run ${replayRunId} is blocked by ${blockers}; dispatch ${SOURCE_REVERIFICATION_WORKFLOW} again with replay_run_id=${replayRunId} once they are merged or closed`);
-  }
+  if (blockedBy.length > 0 && replayRunId !== undefined) failReplayBlocked(replayRunId, blockedBy);
   if (blockedBy.length > 0) return { state: "BLOCKED_BY_PENDING_PR", blockedBy, ...work, cleanupClaims, overdue, ...replay };
   if (replayRunId !== undefined) return { state: "RUN", ...work, cleanupClaims, overdue, ...replay };
   return { ...runWithinBudget({ due, recipeIds, blocked, recipes, providerBudget }), cleanupClaims, overdue };
