@@ -239,6 +239,7 @@ test("transportFailureWithCode는 안전한 형식의 오류 코드만 남기고
   assert.equal(error.message, "Sample transport failure; code=ECONNRESET");
   assert.equal(error.cause, undefined);
   assert.equal(toFailure({ cause: { code: "UND_ERR_SOCKET" } }).message, "Sample transport failure; code=UND_ERR_SOCKET");
+  assert.equal(toFailure({ code: "SOURCE_FETCH_TELEMETRY_WRITE_FAILED" }).message, "Sample transport failure; code=SOURCE_FETCH_TELEMETRY_WRITE_FAILED");
   assert.equal(toFailure({ code: "has space&key=SECRET" }).message, "Sample transport failure; code=UNKNOWN");
   assert.equal(toFailure(undefined).message, "Sample transport failure; code=UNKNOWN");
 });

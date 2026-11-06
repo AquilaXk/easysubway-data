@@ -7,13 +7,14 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { GITHUB_API_REASON } from "./failure-reason.mjs";
+import { MAX_WINDOW_RUNS_PER_EVENT } from "./provider-call-budget.mjs";
 
 const execFileAsync = promisify(execFile);
 export const COLLECTION_REPOSITORY = "AquilaXk/easysubway-data";
 const EXPECTED_REF = "refs/heads/main";
 const EXPECTED_BRANCH = "main";
 /** 한 workflow의 같은 KST 날 run은 event마다 한 페이지, 이 수까지만 읽는다. 넘으면 RUN_LIST_LIMIT로 멈춘다. */
-export const MAX_RUNS = 100;
+export const MAX_RUNS = MAX_WINDOW_RUNS_PER_EVENT;
 const MAX_JOBS = 100;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MILLIS = 10_000;
@@ -178,10 +179,10 @@ async function listRunJobs({ run, token, fetchImpl, context }) {
   const workflow = context.workflowFile;
   const body = await getGithubJson({ requestUrl, token, fetchImpl, workflow });
   if (!body || typeof body !== "object" || Array.isArray(body)
-    || !Number.isSafeInteger(body.total_count) || !Array.isArray(body.jobs)) {
+    || !Number.isSafeInteger(body.total_count) || body.total_count < 0 || !Array.isArray(body.jobs)) {
     throw failure(COLLECTION_WINDOW_REASON.GITHUB_API_BODY_INVALID, { workflow });
   }
-  if (body.total_count < 1) {
+  if (body.total_count === 0) {
     if (body.jobs.length === 0 && neverEnteredAnyJob(run)) return [];
     throw failure(COLLECTION_WINDOW_REASON.JOB_LIST_EMPTY, { workflow });
   }

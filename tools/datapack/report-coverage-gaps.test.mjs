@@ -252,36 +252,46 @@ test("전국 coverage report는 불완전하거나 만료된 공공 API 미지�
     }], /search plan query mismatch/],
   ];
 
+  const assertResolutionsRejected = async (resolutionsJson, expected) => {
+    const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-resolution-invalid-"));
+    const resolutionsPath = path.join(outputDir, "resolutions.json");
+    const resolutionPlanPath = path.join(outputDir, "resolution-plan.json");
+    await writeFile(resolutionPlanPath, `${JSON.stringify(resolutionPlan)}\n`);
+    await writeFile(resolutionsPath, `${resolutionsJson}\n`);
+    await assert.rejects(execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", "tools/datapack/source-inventory.json",
+        "--resolutions", resolutionsPath,
+        "--resolution-plan", resolutionPlanPath,
+        "--now", COVERAGE_REVIEW_NOW,
+        "--output", path.join(outputDir, "report.json"),
+        "--allow-gaps",
+      ],
+      { cwd: root },
+    ), expected);
+  };
+
   for (const [label, entries, expected] of cases) {
-    await context.test(label, async () => {
-      const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-resolution-invalid-"));
-      const resolutionsPath = path.join(outputDir, "resolutions.json");
-      const resolutionPlanPath = path.join(outputDir, "resolution-plan.json");
-      await writeFile(resolutionPlanPath, `${JSON.stringify(resolutionPlan)}\n`);
-      await writeFile(resolutionsPath, `${JSON.stringify({
-        schemaVersion: 1,
-        artifactKind: "nationwide-coverage-resolutions",
-        targetVersion: "2026-07-13",
-        searchPlanSha256: sha256(JSON.stringify(resolutionPlan)),
-        entries,
-      })}\n`);
-      await assert.rejects(execFileAsync(
-        process.execPath,
-        [
-          "tools/datapack/report-coverage-gaps.mjs",
-          "--targets", "tools/datapack/nationwide-coverage-targets.json",
-          "--inventory", "tools/datapack/source-inventory.json",
-          "--resolutions", resolutionsPath,
-          "--resolution-plan", resolutionPlanPath,
-          "--now", COVERAGE_REVIEW_NOW,
-          "--output", path.join(outputDir, "report.json"),
-          "--allow-gaps",
-        ],
-        { cwd: root },
-      ), expected);
-    });
+    await context.test(label, () => assertResolutionsRejected(JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: "nationwide-coverage-resolutions",
+      targetVersion: "2026-07-13",
+      searchPlanSha256: sha256(JSON.stringify(resolutionPlan)),
+      entries,
+    }), expected));
   }
 
+  for (const [label, rawJson] of [
+    ["json zero", "0"],
+    ["json false", "false"],
+    ["json empty string", '""'],
+    ["json null", "null"],
+  ]) {
+    await context.test(label, () => assertResolutionsRejected(rawJson, /coverage resolutions must be an object/));
+  }
 });
 
 const REVIEW_BOUNDARY = COVERAGE_REVIEW_DUE_AT;

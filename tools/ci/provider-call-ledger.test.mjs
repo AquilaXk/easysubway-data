@@ -158,6 +158,12 @@ test("취소된 대기 run(완료·cancelled·job 0건)은 기록에 넣지 않�
   const fixture = github({ runs: { workflow_dispatch: [run(61, "2026-10-20T01:00:00Z", { conclusion: "cancelled" }), currentRun()] } });
   assert.deepEqual((await read(fixture)).entries, []);
   assert.deepEqual(fixture.downloads, []);
+  const negativeTotalCount = github({ runs: { workflow_dispatch: [run(61, "2026-10-20T01:00:00Z", { conclusion: "cancelled" }), currentRun()] } });
+  await assert.rejects(read(negativeTotalCount, {
+    fetchImpl: async (url) => (String(url).endsWith("/jobs?filter=all&per_page=100")
+      ? Response.json({ total_count: -1, jobs: [] })
+      : negativeTotalCount.fetchImpl(url)),
+  }), { reason: "GITHUB_API_BODY_INVALID" });
   for (const runOverrides of [
     { status: "completed", conclusion: "failure" },
     { status: "completed", conclusion: "success" },

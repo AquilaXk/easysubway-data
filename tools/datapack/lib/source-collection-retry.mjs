@@ -11,6 +11,7 @@
 // 재시도는 fallback이 아니다: 같은 원천에 같은 요청을 다시 보낼 뿐이고, 소진하면 마지막 오류(또는 마지막 응답)를 호출자의 기존 오류 경로로 그대로 넘긴다.
 // 요청 하나의 최악 시간은 3 × 요청 timeout + 2 × cap이고, 한 실행의 재시도 시간은 transient-retry의 시간 예산(5분)으로 따로 막힌다.
 import { sha256 } from "../../lib/hash.mjs";
+import { isSafeToken } from "../../lib/safe-token.mjs";
 import {
   fullJitterBackoffMs,
   isTransientTransportError,
@@ -233,15 +234,13 @@ export function withRequestInterval(fetchImpl, { intervalMs, sleep = defaultSlee
   return wrapped;
 }
 
-const SAFE_ERROR_CODE = /^[A-Za-z0-9._-]{1,32}$/u;
-
 /**
  * fetchBytesWithSourceRetry의 transportFailure용: 소진했거나 일시 아닌 전송 오류를 `<label> transport failure; code=<오류 코드>`로 바꾼다.
  * 원본 오류(URL·Response가 실릴 수 있다)는 싣지 않고, 형식이 안전한 오류 코드만 남긴다.
  */
 export const transportFailureWithCode = (label) => (failure) => {
   const code = String(failure?.code ?? failure?.cause?.code ?? "UNKNOWN");
-  return new Error(`${label} transport failure; code=${SAFE_ERROR_CODE.test(code) ? code : "UNKNOWN"}`);
+  return new Error(`${label} transport failure; code=${isSafeToken(code) ? code : "UNKNOWN"}`);
 };
 
 /**

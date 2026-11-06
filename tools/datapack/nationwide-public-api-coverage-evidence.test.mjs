@@ -8,12 +8,12 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { BUILTIN_KNOWN_PROVIDER_CANDIDATES } from "./collect-nationwide-public-api-coverage.mjs";
 import { RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS } from "./lib/retired-sources.mjs";
-import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
+import { COVERAGE_RESOLUTIONS_REL_PATH, COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const planPath = "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json";
-const resolutionsPath = "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json";
+const resolutionsPath = COVERAGE_RESOLUTIONS_REL_PATH;
 const ledgerPath = "tools/datapack/reports/nationwide-coverage-tally.json";
 
 const requirementKey = ({ regionId, operatorId, lineId, sourceDomain }) =>
@@ -178,20 +178,29 @@ test("실제 공식 미지원 resolutions는 모든 nextReviewAt 직전까지 te
 const coverageGateInvocations = (text) =>
   [...text.matchAll(/"tools\/datapack\/report-coverage-gaps\.mjs"[^\]]*\]/g)].map(([invocation]) => invocation);
 
+const flagLiteral = (flag) => `"--${flag}"`;
+const RESOLUTIONS_FLAG_LITERAL = flagLiteral("resolutions");
+const NOW_FLAG_LITERAL = flagLiteral("now");
+
 // 실제 resolutions 문서를 쓰는 테스트가 실행 시각을 읽으면 문서의 nextReviewAt이 지나는 순간 기준선이 깨진다(2026-10-23 main CI 실패).
 // 파일 단위 문자열 검사로는 한 호출만 고정해도 통과하므로 --resolutions를 넘기는 호출마다 --now가 argv에 있는지 센다.
 test("resolutions를 넘겨 coverage gate를 실행하는 호출은 모두 평가 시각을 고정한다", async () => {
   const names = (await readdir(path.join(root, "tools/datapack"))).filter((name) => name.endsWith(".test.mjs"));
   const unpinned = [];
   let resolutionInvocations = 0;
+  let totalResolutionLiterals = 0;
   for (const name of names) {
     const text = await readFile(path.join(root, "tools/datapack", name), "utf8");
-    for (const invocation of coverageGateInvocations(text)) {
-      if (!invocation.includes('"--resolutions"')) continue;
+    const invocations = coverageGateInvocations(text);
+    if (invocations.length === 0) continue;
+    totalResolutionLiterals += [...text.matchAll(new RegExp(RESOLUTIONS_FLAG_LITERAL, "g"))].length;
+    for (const invocation of invocations) {
+      if (!invocation.includes(RESOLUTIONS_FLAG_LITERAL)) continue;
       resolutionInvocations += 1;
-      if (!invocation.includes('"--now"')) unpinned.push(`${name}: ${invocation.replace(/\s+/g, " ")}`);
+      if (!invocation.includes(NOW_FLAG_LITERAL)) unpinned.push(`${name}: ${invocation.replace(/\s+/g, " ")}`);
     }
   }
-  assert.ok(resolutionInvocations >= 20, `resolutions gate invocations scanned: ${resolutionInvocations}`);
+  assert.ok(resolutionInvocations > 0);
+  assert.equal(resolutionInvocations, totalResolutionLiterals);
   assert.deepEqual(unpinned, []);
 });
