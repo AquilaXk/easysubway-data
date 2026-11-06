@@ -7,7 +7,7 @@
 // 쓰기 실패는 치명적이다: SOURCE_FETCH_TELEMETRY_WRITE_FAILED로 던지고, 오류를 잡아도 프로세스가 0이 아닌 상태로 끝나 그 run은 증명되지 않음으로 남는다.
 // 실패한 run도 계측 artifact를 올리므로, 쓰지 못한 줄이 있는 파일이 "정확한 요청 수"로 읽히지 않게 첫 실패 때 표지 줄을 덧붙인다(호출 기록은 시도 기록이 아닌 줄을 증명 불가로 거부한다).
 // 환경 변수가 없으면 아무것도 하지 않으므로 이 파일을 쓰지 않는 수집(ITX 등)은 영향이 없다.
-import { appendFileSync } from "node:fs";
+import { appendFileSync, unlinkSync } from "node:fs";
 
 import { isSafeToken } from "../../lib/safe-token.mjs";
 import { causeChainDetails } from "./transient-retry.mjs";
@@ -80,9 +80,15 @@ export const SOURCE_FETCH_TELEMETRY_WRITE_FAILED = "SOURCE_FETCH_TELEMETRY_WRITE
 
 /** 시도 기록 한 줄을 쓰지 못했다. 호출 수 증거가 불완전하므로 수집은 계속될 수 없다. */
 export class SourceFetchTelemetryWriteError extends Error {
-  constructor() {
-    super(`${SOURCE_FETCH_TELEMETRY_WRITE_FAILED}: an attempt record could not be written to ${SOURCE_FETCH_TELEMETRY_PATH_ENV}`);
+  constructor(cause) {
+    const errnoCode = safeToken(cause?.code);
+    const suffix = errnoCode === undefined ? "" : ` (${errnoCode})`;
+    super(
+      `${SOURCE_FETCH_TELEMETRY_WRITE_FAILED}: an attempt record could not be written to ${SOURCE_FETCH_TELEMETRY_PATH_ENV}${suffix}`,
+      cause === undefined ? undefined : { cause },
+    );
     this.code = SOURCE_FETCH_TELEMETRY_WRITE_FAILED;
+    if (errnoCode !== undefined) this.errnoCode = errnoCode;
   }
 }
 
@@ -91,10 +97,17 @@ export const TELEMETRY_WRITE_FAILED_MARKER = JSON.stringify({ telemetryWriteFail
 
 let writeFailures = 0;
 
+function markTelemetryFileCorrupted(target) {
+  try {
+    appendFileSync(target, `${TELEMETRY_WRITE_FAILED_MARKER}\n`);
+  } catch {
+    try { unlinkSync(target); } catch {}
+  }
+}
+
 // 호출한 쪽이 오류를 잡거나 삼켜도 이 프로세스는 실패로 끝난다: 종료 때 이름 있는 ::error:: 한 줄에 건수를 남기고 종료 상태를 1로 정한다.
-function countWriteFailure(target) {
+function recordWriteFailure() {
   if (writeFailures === 0) {
-    try { appendFileSync(target, `${TELEMETRY_WRITE_FAILED_MARKER}\n`); } catch { /* 같은 원인으로 표지도 못 쓰면 파일은 없거나 불완전하다: 프로세스 종료 상태가 실패를 드러낸다 */ }
     process.once("exit", () => {
       process.stderr.write(`::error title=Source fetch telemetry::${SOURCE_FETCH_TELEMETRY_WRITE_FAILED}: ${writeFailures} attempt records could not be written to ${SOURCE_FETCH_TELEMETRY_PATH_ENV}; the call count evidence is incomplete.\n`);
       if (!process.exitCode) process.exitCode = 1;
@@ -107,9 +120,10 @@ function countWriteFailure(target) {
 export function emitAttemptRecord(record, env = process.env) {
   const target = env[SOURCE_FETCH_TELEMETRY_PATH_ENV];
   if (typeof target !== "string" || target === "") return;
-  try { appendFileSync(target, `${JSON.stringify(record)}\n`); } catch {
-    countWriteFailure(target);
-    throw new SourceFetchTelemetryWriteError();
+  try { appendFileSync(target, `${JSON.stringify(record)}\n`); } catch (cause) {
+    markTelemetryFileCorrupted(target);
+    recordWriteFailure();
+    throw new SourceFetchTelemetryWriteError(cause);
   }
 }
 

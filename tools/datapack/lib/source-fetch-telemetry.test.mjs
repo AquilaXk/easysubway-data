@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -209,10 +209,24 @@ const runChild = (script) => spawnSync(process.execPath, ["--input-type=module",
 test("계측 쓰기가 실패하면 emitAttemptRecord가 SOURCE_FETCH_TELEMETRY_WRITE_FAILED로 던지고 프로세스는 0이 아닌 상태로 끝난다", () => {
   const child = runChild(`
     const { emitAttemptRecord } = await import(${telemetryModuleUrl});
-    try { emitAttemptRecord({ a: 1 }); } catch (error) { process.stdout.write(error.code); }
-    try { emitAttemptRecord({ a: 2 }); } catch { /* 두 번째 실패도 센다 */ }
+    try {
+      emitAttemptRecord({ a: 1 });
+    } catch (error) {
+      process.stdout.write(JSON.stringify({
+        code: error.code,
+        errnoCode: error.errnoCode,
+        causeCode: error.cause?.code,
+        message: error.message,
+      }));
+    }
+    try { emitAttemptRecord({ a: 2 }); } catch { }
   `);
-  assert.equal(child.stdout, "SOURCE_FETCH_TELEMETRY_WRITE_FAILED");
+  assert.deepEqual(JSON.parse(child.stdout), {
+    code: "SOURCE_FETCH_TELEMETRY_WRITE_FAILED",
+    errnoCode: "ENOENT",
+    causeCode: "ENOENT",
+    message: "SOURCE_FETCH_TELEMETRY_WRITE_FAILED: an attempt record could not be written to SOURCE_FETCH_TELEMETRY_PATH (ENOENT)",
+  });
   assert.equal(child.status, 1);
   assert.equal(child.stderr.trim().split("\n").length, 1);
   assert.match(child.stderr, /^::error title=Source fetch telemetry::SOURCE_FETCH_TELEMETRY_WRITE_FAILED: 2 attempt records could not be written/u);
@@ -254,6 +268,34 @@ test("기록을 잃은 파일에는 표지 줄이 남아 호출 기록이 그 �
     assert.equal(lines.length, 2);
     assert.equal(lines[1], TELEMETRY_WRITE_FAILED_MARKER);
     assert.throws(() => countTelemetryRequests(readFileSync(file)), /^Error: PROVIDER_CALL_TELEMETRY_INVALID/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("기록 쓰기와 표지 줄 쓰기가 모두 실패하면 부분 계측 파일을 삭제해 무손실로 읽히지 않게 한다", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "source-fetch-telemetry-unlinked-"));
+  try {
+    const file = path.join(directory, "telemetry.jsonl");
+    const attempt = { sourceId: "kept-source", host: "example.test", attempt: 1, outcome: "success" };
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      const append = fs.appendFileSync;
+      let failing = false;
+      fs.appendFileSync = (target, data) => {
+        if (failing) throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+        return append(target, data);
+      };
+      syncBuiltinESMExports();
+      const { emitAttemptRecord } = await import(${telemetryModuleUrl});
+      emitAttemptRecord(${JSON.stringify(attempt)});
+      failing = true;
+      try { emitAttemptRecord(${JSON.stringify({ ...attempt, attempt: 2 })}); } catch (error) { process.stdout.write(error.errnoCode); }
+    `], { encoding: "utf8", env: { ...process.env, [SOURCE_FETCH_TELEMETRY_PATH_ENV]: file } });
+    assert.equal(child.status, 1);
+    assert.equal(child.stdout, "ENOSPC");
+    assert.equal(existsSync(file), false);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

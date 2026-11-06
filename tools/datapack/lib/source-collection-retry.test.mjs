@@ -10,6 +10,7 @@ import {
   isTransientDataGoKrResultCode,
   isTransientKricResultCode,
   transportFailureWithCode,
+  withRequestInterval,
   withSourceCollectionRetry,
 } from "./source-collection-retry.mjs";
 import { assertErrorOmitsSecrets } from "./source-collection-retry-test-support.mjs";
@@ -238,6 +239,7 @@ test("transportFailureWithCode는 안전한 형식의 오류 코드만 남기고
   assert.equal(error.message, "Sample transport failure; code=ECONNRESET");
   assert.equal(error.cause, undefined);
   assert.equal(toFailure({ cause: { code: "UND_ERR_SOCKET" } }).message, "Sample transport failure; code=UND_ERR_SOCKET");
+  assert.equal(toFailure({ code: "SOURCE_FETCH_TELEMETRY_WRITE_FAILED" }).message, "Sample transport failure; code=SOURCE_FETCH_TELEMETRY_WRITE_FAILED");
   assert.equal(toFailure({ code: "has space&key=SECRET" }).message, "Sample transport failure; code=UNKNOWN");
   assert.equal(toFailure(undefined).message, "Sample transport failure; code=UNKNOWN");
 });
@@ -252,4 +254,35 @@ test("assertErrorOmitsSecrets는 비밀이 메시지·cause 체인·열거 속�
   ];
   for (const leak of leaks) assert.throws(() => assertErrorOmitsSecrets(leak, [secret]), assert.AssertionError);
   assert.doesNotThrow(() => assertErrorOmitsSecrets(new Error("failed", { cause: new Error("inner") }), [secret]));
+});
+
+test("withRequestInterval로 감싼 fetchImpl을 공유하는 동시 요청은 대기열을 빠져나온 뒤에야 AbortSignal.timeout을 시작한다", async () => {
+  const observed = [];
+  const fetchImpl = withRequestInterval(async (url, init) => {
+    assert.equal(init.signal instanceof AbortSignal, true);
+    init.signal.throwIfAborted();
+    observed.push({ url, aborted: init.signal.aborted });
+    return new Response(url);
+  }, {
+    intervalMs: 60,
+    sleep: (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds); }),
+  });
+  const call = (url) => fetchBytesWithSourceRetry({
+    url,
+    fetchImpl,
+    accept: "text/plain",
+    label: "Sample",
+    timeoutMs: 20,
+    transportFailure: (failure) => failure,
+  });
+  const [first, second] = await Promise.all([
+    call("https://example.test/1"),
+    call("https://example.test/2"),
+  ]);
+  assert.equal(first.bytes.toString(), "https://example.test/1");
+  assert.equal(second.bytes.toString(), "https://example.test/2");
+  assert.deepEqual(observed, [
+    { url: "https://example.test/1", aborted: false },
+    { url: "https://example.test/2", aborted: false },
+  ]);
 });

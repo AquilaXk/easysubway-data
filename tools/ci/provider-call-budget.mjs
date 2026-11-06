@@ -10,11 +10,11 @@
 // 끝났는데 계측 파일을 증명할 수 없는 run(artifact·파일 없음, 손상, 기록 유실)은 그 날이 끝날 때까지 증명되지 않은 채 남는다.
 // 판정은 묶음을 빼고, workflow가 job을 실패시켜 실패 이슈로 드러낸다.
 import { isSafeToken } from "../lib/safe-token.mjs";
-import { MAX_RUNS } from "./collection-run-window.mjs";
 
 export const PROVIDER_CALL_LEDGER_SCHEMA_VERSION = 1;
 /** 호출 기록이 읽는 source-reverification 실행 event. 호출 기록(provider-call-ledger)이 이 목록으로 run 창을 조회한다. */
 export const SOURCE_REVERIFICATION_EVENTS = Object.freeze(["schedule", "workflow_dispatch"]);
+export const MAX_WINDOW_RUNS_PER_EVENT = 100;
 export const PROVIDER_BUDGET_REASON = Object.freeze({
   EVIDENCE_MISSING: "PROVIDER_CALL_EVIDENCE_MISSING",
   ATTEMPTS_EXHAUSTED: "PROVIDER_DAILY_ATTEMPTS_EXHAUSTED",
@@ -24,8 +24,8 @@ export const PROVIDER_BUDGET_REASON = Object.freeze({
 export const PROVIDER_BUDGET_BLOCK_STEP = "Fail recipes blocked by the provider daily call budget";
 
 const POLICY_KIND = "provider-daily-call-budget-policy";
-// 한 KST 날 run 목록은 event마다 한 페이지 MAX_RUNS개까지라서 기록 항목도 그 곱을 넘지 않는다(collection-run-window).
-const MAX_LEDGER_ENTRIES = MAX_RUNS * SOURCE_REVERIFICATION_EVENTS.length;
+// 한 KST 날 run 목록은 event마다 한 페이지 MAX_WINDOW_RUNS_PER_EVENT개까지라서 기록 항목도 그 곱을 넘지 않는다(collection-run-window).
+const MAX_LEDGER_ENTRIES = MAX_WINDOW_RUNS_PER_EVENT * SOURCE_REVERIFICATION_EVENTS.length;
 const OUTCOMES = new Set(["SUCCEEDED", "RUNNING", "FAILED"]);
 const QUOTA_WINDOW = /^\d{4}-\d{2}-\d{2}$/u;
 const REASON_CODE = /^[A-Z][A-Z0-9_]{0,63}$/u;
