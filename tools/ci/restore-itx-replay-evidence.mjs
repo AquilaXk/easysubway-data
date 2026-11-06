@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isObject } from "../lib/is-object.mjs";
 import { sha256 } from "../lib/hash.mjs";
-import { readReplaySourceFile, replaySourceJobSteps, stepConclusion, verifyReplaySourceRun } from "./replay-source-run.mjs";
+import { fail, readReplaySourceFile, replaySourceJobSteps, stepConclusion, verifyReplaySourceRun } from "./replay-source-run.mjs";
 
 export const ITX_REPLAY_WORKFLOW_PATH = ".github/workflows/itx-current-promotion.yml";
 export const ITX_REPLAY_EVIDENCE_FILES = Object.freeze([
@@ -26,10 +26,6 @@ const GATE_STEP = "Evaluate promotion gate";
 const ARTIFACT_ID = /^itx-cheongchun-source-timetable-(\d{17})$/u;
 const REPLAY_CODE = "ITX_REPLAY";
 const SHA256 = /^[0-9a-f]{64}$/u;
-
-function fail(code, detail = "") {
-  throw new Error(detail ? `${code}: ${detail}` : code);
-}
 
 
 function parseJson(buffer, label) {

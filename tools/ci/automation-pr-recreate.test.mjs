@@ -14,11 +14,13 @@ import {
   RECREATE_MODE,
   STAGE_RECREATE_MODE,
   STAGE_REDISPATCH,
+  createLedgerWriterBlockerLookup,
   main,
   planBehindRecreation,
   recreateBehindPullRequests,
 } from "./automation-pr-recreate.mjs";
-import { isReplayRunId } from "./decide-itx-current-promotion.mjs";
+import { decideItxCurrentPromotion, isReplayRunId } from "./decide-itx-current-promotion.mjs";
+import { decideSourceReverification } from "./decide-source-reverification.mjs";
 import { REFRESH_WORKFLOWS } from "./report-refresh-failure.mjs";
 import { assertFailureReportLast, assertNoExpressionInRunScripts, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
@@ -61,7 +63,7 @@ function fakeApi({ openPulls = [], closedPulls = [], behind = {}, artifacts = (r
   const calls = [];
   const api = async (endpoint) => {
     calls.push(endpoint);
-    if (endpoint === `repos/${REPOSITORY}/git/matching-refs/heads/automation/?per_page=100&page=1`) {
+    if (endpoint === `repos/${REPOSITORY}/git/matching-refs/heads/automation/`) {
       return automationRefs([...openPulls.map(({ head }) => head.ref).filter((branch) => branch.startsWith("automation/")), ...claims]);
     }
     const branchMatch = /^repos\/[^/]+\/[^/]+\/pulls\?state=all&head=AquilaXk:(automation\/[^&]+)&per_page=100$/u.exec(endpoint);
@@ -827,10 +829,67 @@ test("R1: ITX 승격 재생의 판정은 열린 PR만 보므로 claim만 남은 
 });
 
 test("R1: automation 브랜치가 상한(50)을 넘거나 한 브랜치의 PR 목록이 잘리면 재생을 판정하지 않고 실패한다 (#3036)", async () => {
-  const many = Array.from({ length: 51 }, (_, index) => `automation/700-unrelated-experiment-${index + 1}`);
-  const crowded = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, claims: many });
-  await assert.rejects(planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: crowded.api, now: NOW }), /AUTOMATION_CLAIM_BRANCH_LIMIT/u);
+  const claimNames = (count) => Array.from({ length: count }, (_, index) => `automation/700-unrelated-experiment-${index + 1}`);
+  const atLimit = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, claims: claimNames(49) });
+  const plannedAtLimit = await planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: atLimit.api, now: NOW });
+  assert.deepEqual(plannedAtLimit.actions.map(({ number, replayRunId }) => ({ number, replayRunId })), [{ number: 5, replayRunId: "9005" }]);
+  for (const extraClaims of [50, 100]) {
+    const crowded = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, claims: claimNames(extraClaims) });
+    await assert.rejects(planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: crowded.api, now: NOW }), /AUTOMATION_CLAIM_BRANCH_LIMIT/u);
+  }
   const manyPulls = Array.from({ length: 100 }, (_, index) => closed(100 + index, SIBLING_CLAIM, 2));
   const truncated = fakeApi({ openPulls: [open(5, BRANCHES["source-reverification"])], behind: { [sha(5)]: 1 }, artifacts: reverificationArtifact, claims: [SIBLING_CLAIM], branchPulls: { [SIBLING_CLAIM]: manyPulls } });
   await assert.rejects(planBehindRecreation({ ...REVERIFICATION_ON, repository: REPOSITORY, api: truncated.api, now: NOW }), /AUTOMATION_PR_LIST_TRUNCATED/u);
 });
+
+test("R1: createLedgerWriterBlockerLookup은 decideSourceReverification·decideItxCurrentPromotion의 재생 차단 판정과 같은 PR·브랜치를 찾는다 (#3036)", async () => {
+  const openPulls = [open(1, BRANCHES.registration), open(3, BRANCHES["derivative-rebinding"])];
+  const mergedBranch = "automation/629-kric-facility-refresh-9201";
+  const claims = [SIBLING_CLAIM, mergedBranch, "automation/927-nationwide-candidate-refresh-9202"];
+  const branchPulls = { [mergedBranch]: [closed(41, mergedBranch, 2, { merged: true })] };
+  const { api } = fakeApi({ openPulls, claims, branchPulls });
+  const findBlockingLedgerWriters = createLedgerWriterBlockerLookup({ repository: REPOSITORY, api, openPulls });
+  const pullRequests = [
+    { number: 1, state: "OPEN", headRefName: BRANCHES.registration, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY } },
+    { number: 3, state: "OPEN", headRefName: BRANCHES["derivative-rebinding"], baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY } },
+    { number: 41, state: "MERGED", headRefName: mergedBranch, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY } },
+  ];
+  const automationBranches = [BRANCHES.registration, BRANCHES["derivative-rebinding"], ...claims];
+
+  const reverificationBlockers = await findBlockingLedgerWriters("source-reverification");
+  assert.deepEqual(reverificationBlockers, [1, 3, SIBLING_CLAIM]);
+  assert.throws(
+    () => decideSourceReverification({
+      policy: { monitoring: { alertBeforePackExpiry: "PT6H" }, scheduledPipeline: { cadence: "P1D" }, sourceClasses: [] },
+      inventory: { sources: [] },
+      ledger: [],
+      pullRequests,
+      automationBranches,
+      runs: [],
+      openIssues: [],
+      repository: REPOSITORY,
+      now: NOW,
+      limits: { pullRequests: 100, runs: 20, issues: 100 },
+      recipes: [],
+      replayRunId: "9005",
+      providerBudget: { policy: { operations: [] }, ledger: null, expectedRequests: {} },
+    }),
+    new RegExp(`REVERIFICATION_REPLAY_BLOCKED:.*#1, #3.*${SIBLING_CLAIM}`, "u"),
+  );
+
+  const itxBlockers = await findBlockingLedgerWriters("itx-promotion");
+  assert.deepEqual(itxBlockers, [1, 3]);
+  assert.throws(
+    () => decideItxCurrentPromotion({
+      now: NOW,
+      contract: { sourceTimetableArtifact: { status: "ADMITTED", freshUntil: "2026-10-12T00:00:00+09:00" } },
+      pullRequests,
+      branches: [],
+      repository: REPOSITORY,
+      limits: { pullRequests: 100 },
+      replayRunId: "9002",
+    }),
+    /ITX_PROMOTION_REPLAY_BLOCKED:.*#1, #3/u,
+  );
+});
+

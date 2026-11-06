@@ -311,13 +311,14 @@ const USAGE_ERROR = /usage:|_CLI\b|_ARGUMENTS?\b|arguments mismatch/iu;
 const repositoryRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
 test("재생이 부르는 register 모드 명령은 실제 등록기의 인자 파서가 받아들인다 (대전 포함)", async (t) => {
+  const repo = await fixtureRepository(t);
   const work = await scratch(t, "parsers");
   const calls = [];
   const ctx = (recipeId) => ({
-    recipeId, repositoryRoot, operationDir: path.join(work, recipeId), env: {}, replay: true, shared: new Map(), lib: {}, now: () => new Date(),
+    recipeId, repositoryRoot: repo, operationDir: path.join(work, recipeId), env: {}, replay: true, shared: new Map(), lib: {}, now: () => new Date(),
     execute: async (script, args) => { calls.push({ script, args }); return { stdout: "" }; },
     head: async () => { throw new Error("replay must not bind the publication HEAD"); },
-    readJson: async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8")),
+    readJson: async (relative) => JSON.parse(await readFile(path.join(repo, relative), "utf8")),
     file: (name) => path.join(work, recipeId, name),
   });
   for (const recipeId of [...BUSAN, "daejeon-topology", "daejeon-accessibility", "daejeon-timetable"]) {
@@ -327,11 +328,11 @@ test("재생이 부르는 register 모드 명령은 실제 등록기의 인자 �
   assert.equal(calls.length, 6);
   for (const { script, args } of calls) {
     const result = spawnSync(process.execPath, ["--import", NETWORK_BLOCK, path.join(repositoryRoot, "tools/datapack", script), ...args], {
-      cwd: repositoryRoot, env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 60_000,
+      cwd: repo, env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 60_000,
     });
     assert.notEqual(result.status, null, `${script}: timed out`);
     assert.notEqual(result.status, 0, `${script}: 가짜 입력은 등록되지 않는다`);
     assert.doesNotMatch(`${result.stderr}${result.stdout}`, USAGE_ERROR, `${script} ${args.join(" ")}: ${result.stderr.slice(0, 300)}`);
   }
-  assert.equal(git(repositoryRoot, "status", "--porcelain", "--", "tools/datapack/release", "tools/datapack/source-inventory.json"), "", "실제 원장은 바뀌지 않는다");
+  assert.equal(git(repo, "status", "--porcelain"), "", "실제 원장은 바뀌지 않는다");
 });

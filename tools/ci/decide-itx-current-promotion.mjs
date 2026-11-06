@@ -91,6 +91,10 @@ export function isReplayRunId(value) {
   return typeof value === "string" && RUN_ID.test(value) && Number.isSafeInteger(Number(value));
 }
 
+function failReplayBlocked(replayRunId, numbers) {
+  fail("ITX_PROMOTION_REPLAY_BLOCKED", `replay of run ${replayRunId} is blocked by ${numbers.map((number) => `#${number}`).join(", ")}; dispatch again with the same replay_run_id once they are merged or closed`);
+}
+
 export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false, collectionEntries = [], replayRunId } = {}) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(pullRequests) || !Array.isArray(branches)
     || !validRepository(repository) || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1
@@ -114,6 +118,7 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   if (orphans.length > 0) fail("ITX_PROMOTION_ORPHAN_BRANCH", orphans.map(({ branch }) => branch).join(", "));
   if (open.length === 1) {
     const [pullRequest] = open;
+    if (replayRunId !== undefined) failReplayBlocked(replayRunId, [pullRequest.number]);
     return { ...base, state: "OPEN_PR", reason: "OPEN_PR", branch: pullRequest.headRefName, number: pullRequest.number };
   }
 
@@ -138,7 +143,7 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, ITX_PROMOTION_WORKFLOW);
   if (blockedBy.length > 0) {
     // 재생은 이 dispatch의 replay_run_id에만 실려 있다. 기다리다 blocked-redispatch가 입력 없이 다시 돌리면 ITX_COLLECTED_TODAY로 대기해 수집분을 잃으므로 조용히 기다리지 않고 실패로 드러낸다(같은 입력으로 다시 dispatch하면 된다).
-    if (replayRunId !== undefined) fail("ITX_PROMOTION_REPLAY_BLOCKED", `replay of run ${replayRunId} is blocked by ${blockedBy.map((number) => `#${number}`).join(", ")}; dispatch again with the same replay_run_id once they are merged or closed`);
+    if (replayRunId !== undefined) failReplayBlocked(replayRunId, blockedBy);
     // 대기는 이상이 아니다. 하지만 만료 1일 전까지 풀리지 않으면 재시도 여유가 없으므로 이상으로 드러낸다.
     if (daysUntilExpiry <= 1) fail("ITX_PROMOTION_BLOCKED_NEAR_EXPIRY", `blocked by ${blockedBy.map((number) => `#${number}`).join(", ")} with ${daysUntilExpiry} day(s) left`);
     return { ...base, state: "BLOCKED_BY_PENDING_PR", reason, blockedBy };

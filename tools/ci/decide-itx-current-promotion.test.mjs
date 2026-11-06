@@ -195,9 +195,9 @@ test("재생 요청은 수집할 때가 아니어도, 같은 KST 날 이미 수�
   assert.equal(decide({ now: kst("2026-10-10") }).replayRunId, undefined);
 });
 
-test("재생 요청도 열린 PR·중복·닫힌 PR·고아 브랜치 판정은 그대로 받고, 대기 PR이 있으면 기다리지 않고 실패한다", () => {
+test("재생 요청도 중복·닫힌 PR·고아 브랜치 판정은 그대로 받고, 이 workflow나 다른 원장 쓰기의 열린 PR이 있으면 기다리지 않고 실패한다", () => {
   const replayRunId = "38062621511";
-  assert.equal(decide({ replayRunId, pullRequests: [pr()], branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] }).state, "OPEN_PR");
+  assert.throws(() => decide({ replayRunId, pullRequests: [pr()], branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] }), /ITX_PROMOTION_REPLAY_BLOCKED: replay of run 38062621511 is blocked by #990/u);
   assert.throws(() => decide({ replayRunId, pullRequests: [pr(), pr({ number: 991, headRefName: `${ITX_PROMOTION_CLAIM_PREFIX}124` })], branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }, { branch: `${ITX_PROMOTION_CLAIM_PREFIX}124` }] }), /ITX_PROMOTION_PR_DUPLICATE/u);
   assert.throws(() => decide({ replayRunId, pullRequests: [pr({ state: "CLOSED" })], branches: [] }), /ITX_PROMOTION_PR_CLOSED/u);
   assert.throws(() => decide({ replayRunId, branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] }), /ITX_PROMOTION_ORPHAN_BRANCH/u);
