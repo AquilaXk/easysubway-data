@@ -1146,34 +1146,34 @@
         "issue": 2467,
         "materializer": "tools/datapack/materialize-daegu-accessibility.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-accessibility.test.mjs",
-        "snapshotId": "daegu-transportation-accessibility-e3b8b997e7066cd1fac8853365c1a40c01a3ecd96e385b8365bebb367cf120e3-20261106",
-        "snapshotPath": "tools/datapack/sources/daegu-transportation-accessibility-e3b8b997e7066cd1fac8853365c1a40c01a3ecd96e385b8365bebb367cf120e3-20261106.json",
-        "capturedAt": "2026-11-06T04:34:59.232Z",
-        "freshUntil": "2026-11-07T04:34:59.232Z",
+        "snapshotId": "daegu-transportation-accessibility-129b5d53d13b19974bfb0ab49b98d2f02f7c851568df651baf383acb504896ac-20261107",
+        "snapshotPath": "tools/datapack/sources/daegu-transportation-accessibility-129b5d53d13b19974bfb0ab49b98d2f02f7c851568df651baf383acb504896ac-20261107.json",
+        "capturedAt": "2026-11-07T09:22:46.215Z",
+        "freshUntil": "2026-11-08T09:22:46.215Z",
         "stationCount": 94,
         "rowCount": 94,
         "facilityCount": 282,
         "rawSha256": "c49fdbe199b9aae0ef52a4fa977be0d5d464b892abd1339d5a890c738bf3659e",
         "rowsSha256": "9025ecf2fb191d19358b9300dbfae92a0deb6a6924673d427d511d19a553e8db",
         "topologySourceId": "daegu-transportation-accessibility-topology-lineage",
-        "topologySnapshotId": "daegu-transportation-accessibility-topology-lineage-29fa8a5ca5378cf0128c623f5efd8f5f1d27f234ec97c654632f7334d547ce46",
-        "topologyContentSha256": "29fa8a5ca5378cf0128c623f5efd8f5f1d27f234ec97c654632f7334d547ce46",
+        "topologySnapshotId": "daegu-transportation-accessibility-topology-lineage-d4e067cda90ec7329b20ebb880b6a5501c2fe4d88c341efeb863272e0eb192d5",
+        "topologyContentSha256": "d4e067cda90ec7329b20ebb880b6a5501c2fe4d88c341efeb863272e0eb192d5",
         "topologyLineages": [
           {
             "sourceId": "daegu-line1-route-topology",
-            "snapshotId": "daegu-line1-route-topology-7917edef67761b23872e40946bdb4f166bd9b5907dce321331faf65107511294",
+            "snapshotId": "daegu-line1-route-topology-a7e98aa1deea4611049fdac59495eb72feb597897ad4df6122292223e2efadb2",
             "contentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f",
             "lineId": "line-5b8d9b05e7e6"
           },
           {
             "sourceId": "daegu-line2-route-topology",
-            "snapshotId": "daegu-line2-route-topology-7b8c66302443578ec9c68867a12c1482e42f59b1ffccd6577c5fb1ccfc1628f5",
+            "snapshotId": "daegu-line2-route-topology-59adb7ccbae1a4b7ecc684cc64e92c3f5a604227868df5e213eda82bfad9bd3e",
             "contentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00",
             "lineId": "line-e2938a4cc492"
           },
           {
             "sourceId": "daegu-line3-route-topology",
-            "snapshotId": "daegu-line3-route-topology-558f25944a2c57e55c7b8c717c9d90275d05993e07092acb55b21e8d76fd45c1",
+            "snapshotId": "daegu-line3-route-topology-30bd0c85b07c9d01249080bf6c5ce38639c275633d2feafb85a849efb45a97f8",
             "contentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653",
             "lineId": "line-0ffaa95b1b5d"
           }
