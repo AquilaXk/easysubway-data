@@ -8435,7 +8435,7 @@
             "schedule_timetable"
           ]
         },
-        "observedAt": "2026-11-06T04:23:54.875Z",
+        "observedAt": "2026-11-07T09:18:57.801Z",
         "reverifications": [
           {
             "observedAt": "2026-10-02T15:57:05.773Z",
@@ -8546,6 +8546,11 @@
             "observedAt": "2026-11-06T04:23:54.875Z",
             "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
             "collectionReceiptSha256": "8b4fe2d4b2adad4e5b71a79ca00e3682eb32a0f39efe74ed4a679947599bec07"
+          },
+          {
+            "observedAt": "2026-11-07T09:18:57.801Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "4e561a6321d06c835e872478fa0064cf57a982da026899433e31085658f6ad1f"
           }
         ]
       },
@@ -8633,7 +8638,7 @@
             "schedule_timetable"
           ]
         },
-        "observedAt": "2026-11-06T04:23:54.875Z",
+        "observedAt": "2026-11-07T09:18:57.801Z",
         "reverifications": [
           {
             "observedAt": "2026-10-03T00:11:32.831Z",
@@ -8739,6 +8744,11 @@
             "observedAt": "2026-11-06T04:23:54.875Z",
             "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
             "collectionReceiptSha256": "8b4fe2d4b2adad4e5b71a79ca00e3682eb32a0f39efe74ed4a679947599bec07"
+          },
+          {
+            "observedAt": "2026-11-07T09:18:57.801Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "4e561a6321d06c835e872478fa0064cf57a982da026899433e31085658f6ad1f"
           }
         ]
       },
