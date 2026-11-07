@@ -9074,8 +9074,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "provider-documented-on-change",
-      "observedDataUpdatedAt": "2026-11-06",
-      "retrievedAt": "2026-11-06",
+      "observedDataUpdatedAt": "2026-11-07",
+      "retrievedAt": "2026-11-07",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -9119,10 +9119,10 @@
         "issue": 903,
         "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
         "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
-        "snapshotId": "kric-subway-timetable-station-lines-20261106",
-        "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261106.json",
-        "capturedAt": "2026-11-06T04:24:58.973Z",
-        "freshUntil": "2026-12-06T04:27:29.642Z",
+        "snapshotId": "kric-subway-timetable-station-lines-20261107",
+        "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261107.json",
+        "capturedAt": "2026-11-07T09:19:36.875Z",
+        "freshUntil": "2026-12-07T09:21:27.435Z",
         "lineIds": [
           "line-8604048b6430",
           "line-828f04afc588",
@@ -9132,9 +9132,9 @@
         ],
         "tripCount": 3956,
         "stopTimeCount": 50754,
-        "rawSha256": "f157d18ecbe3e3208bfe7604738651b8e301c8e31f811f0180ff987c2ca4b883",
+        "rawSha256": "cbdcd873427751fecdd03eb213b6b7363d35ab16da0abb40c0892293bf8e9e10",
         "tripsSha256": "0511c2b1e7c4e1481940b5978568249c25d2f5e7f18bcfc171f6d4a97e1fb99b",
-        "contentSha256": "e44dfc646873fbd8d75978e9e1bbad5cc1707299db99a74543309f71186a7d92"
+        "contentSha256": "c04feb204a2695916a8674d415deeb9e32f6a59b04d7a42c7d5227c9f16e3d30"
       },
       "admissionEvidence": {
         "candidateId": "kric-subway-timetable-station-lines",
