@@ -23,6 +23,7 @@ import {
   markLineTerminalBadgeEntries,
   matchingGroupEnd,
   normalizeSvgForCompile,
+  parseStylesheet,
   parseSvgNumbers,
   stripHiddenElements,
 } from "./compile-basemap-vec.mjs";
@@ -729,11 +730,15 @@ test("숨겨진 조상 안의 clipPath는 SVG에서 계속 참조할 수 있으�
   assert.ok(stripped.indexOf('id="in-group"') < stripped.indexOf('id="second"'), "clipPath 정의의 문서 순서가 바뀌었다");
 });
 
-test("display:none인 clipPath 정의도 참조할 수 있으므로 남기고, 그 자식의 display:none은 오려내기에 기여하지 않아 지운다", () => {
-  assertStripped(
+test("display:none인 clipPath 정의도 참조할 수 있으므로 자기 display 선언을 벗겨 남기고, 그 자식의 display:none은 오려내기에 기여하지 않아 지운다", () => {
+  const stripped = assertStripped(
     '<svg><clipPath id="hidden-def" display="none"><rect id="kept-child" width="9" height="9"/>' +
       '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath></svg>',
     { removed: ["hidden-child"], kept: ["hidden-def", "kept-child"] },
+  );
+  assert.equal(
+    stripped,
+    '<svg><clipPath id="hidden-def"><rect id="kept-child" width="9" height="9"/></clipPath></svg>',
   );
 });
 
@@ -792,12 +797,12 @@ for (const { name, child } of REFERENCEABLE_DEFINITIONS) {
   });
 
   test(`숨겨진 조상 안에서 ${name} 정의는 남고 그 밖의 분류되지 않은 선언은 요소째 지워져 던지지 않는다`, () => {
+    const cleanChild = child.replace(' class="r"', "");
     const out = expandAndStrip(
-      `<g display="none"><${name} id="def">${child.replace(' class="r"', "")}</${name}>` +
+      `<g display="none"><${name} id="def">${cleanChild}</${name}>` +
         '<path id="junk" class="r" d="M0 0L1 1"/></g>',
     );
-    assert.ok(out.includes('id="def"'), `${name} 정의가 빠졌다`);
-    assert.ok(!out.includes('id="junk"'), "숨겨진 조상의 일반 요소가 남았다");
+    assert.equal(out, `<svg id="root" viewBox="0 0 100 100"><${name} id="def">${cleanChild}</${name}></svg>`);
   });
 }
 
@@ -859,12 +864,105 @@ test("클래스가 준 display:none은 그 요소에서 선언을 버려도 던�
   );
 });
 
-test("정의 일곱 가지는 자신의 display:none이 사양상 적용되지 않으므로 보이는 자리에서도 남는다", () => {
+test("분류되지 않은 CSS 선언이 인라인 동명 style에 지면 던지지 않고, !important로 인라인 style을 이기면 던진다", () => {
+  const inlineOverridden = expandAndStrip(
+    '<path id="kept" class="r" style="clip-rule:nonzero" d="M0 0L1 1"/>',
+    ".r { clip-rule:evenodd; fill:#123456; }",
+  );
+  assert.equal(
+    inlineOverridden,
+    '<svg id="root" viewBox="0 0 100 100"><path id="kept" class="r" style="clip-rule:nonzero" d="M0 0L1 1" fill="#123456" /></svg>',
+  );
+  assert.throws(
+    () =>
+      expandAndStrip(
+        '<path id="kept" class="r" style="clip-rule:nonzero" d="M0 0L1 1"/>',
+        ".r { clip-rule:evenodd !important; }",
+      ),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("인라인 style과 스타일시트 선언은 프레젠테이션 속성 display=none·opacity=0보다 우선한다", () => {
+  const inlineWins = assertStripped(
+    '<svg>' +
+      '<rect id="attr-display-inline-style" display="none" style="display:inline" width="1" height="1"/>' +
+      '<rect id="attr-opacity-inline-style" opacity="0" style="opacity:1" width="1" height="1"/>' +
+      '<rect id="attr-both-inline-style" display="none" opacity="0" style="opacity:0.5;display:block" width="1" height="1"/>' +
+      '<rect id="attr-visible-style-display-none" display="inline" style="display:none" width="1" height="1"/>' +
+      '<rect id="attr-visible-style-opacity-zero" opacity="1" style="opacity:0" width="1" height="1"/>' +
+      "</svg>",
+    {
+      kept: ["attr-display-inline-style", "attr-opacity-inline-style", "attr-both-inline-style"],
+      removed: ["attr-visible-style-display-none", "attr-visible-style-opacity-zero"],
+    },
+  );
+  assert.ok(inlineWins.includes('id="attr-both-inline-style"'));
+
+  // 살아남는 요소는 분류되지 않은 CSS 선언에서도 지워지지 않는 것으로 판정되어야 한다.
+  assert.throws(
+    () => expandAndStrip('<path class="r" display="none" style="display:inline" d="M0 0L1 1"/>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () => expandAndStrip('<path class="r" opacity="0" style="opacity:1" d="M0 0L1 1"/>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () =>
+      expandAndStrip(
+        '<path class="r" display="none" opacity="0" d="M0 0L1 1"/>',
+        ".r { display:inline !important; opacity:1 !important; clip-rule:evenodd; }",
+      ),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.doesNotThrow(() =>
+    expandAndStrip('<path class="r" display="inline" style="display:none" d="M0 0L1 1"/>'),
+  );
+  assert.doesNotThrow(() =>
+    expandAndStrip('<path class="r" opacity="1" style="opacity:0" d="M0 0L1 1"/>'),
+  );
+});
+
+test("정의 일곱 가지는 보이는 자리와 숨겨진 조상 아래 모두에서 자기 display:none을 벗겨 컴파일 입력에 남긴다", () => {
+  const wrappers = [
+    ["보이는 루트", "", ""],
+    ["숨긴 defs", '<defs display="none">', "</defs>"],
+    ["숨긴 그룹(display)", '<g display="none">', "</g>"],
+    ["숨긴 그룹(opacity)", '<g style="opacity:0">', "</g>"],
+  ];
   for (const { name } of REFERENCEABLE_DEFINITIONS) {
-    assertStripped(`<svg><${name} id="def" display="none"><rect id="inner" width="1" height="1"/></${name}></svg>`, {
-      kept: ["def", "inner"],
-    });
-    assertStripped(`<svg><${name} id="def" style="display:none"/></svg>`, { kept: ["def"] });
+    const expected = normalizeSvgForCompile(
+      `<svg viewBox="0 0 10 10"><${name} id="def"><rect id="inner" width="1" height="1"/></${name}>` +
+        '<rect id="use-site" clip-path="url(#def)" width="2" height="2"/></svg>',
+    );
+    for (const [label, openWrap, closeWrap] of wrappers) {
+      for (const defAttr of [
+        'display="none"',
+        'style="display:none"',
+        'display="none" style="display : none !important"',
+        'class="off"',
+        'class="off-important"',
+      ]) {
+        const actual = normalizeSvgForCompile(
+          `<svg viewBox="0 0 10 10"><style>.off { display:none; } .off-important { display:none !important; }</style>` +
+            `${openWrap}<${name} id="def" ${defAttr}><rect id="inner" width="1" height="1"/></${name}>` +
+            `<rect id="sibling-hidden" display="none" width="1" height="1"/>${closeWrap}` +
+            '<rect id="use-site" clip-path="url(#def)" width="2" height="2"/></svg>',
+        );
+        const normalizedActual = actual.replace(/\sclass="off(?:-important)?"/, "");
+        assert.equal(normalizedActual, expected, `${name} (${label}, ${defAttr})`);
+        assert.doesNotMatch(actual, /display/, `${name} (${label}, ${defAttr})에 display 선언이 남았다`);
+      }
+    }
+    const mixedStyle = stripHiddenElements(
+      `<svg><${name} id="def" display="none" style="fill:red; display : none !important; font-display:none"/></svg>`,
+    );
+    assert.equal(
+      mixedStyle,
+      `<svg><${name} id="def" style="fill:red;font-display:none"/></svg>`,
+      `${name}: display 선언만 제거하고 다른 style 선언은 보존해야 한다`,
+    );
   }
 });
 
@@ -891,7 +989,60 @@ test("clipPath 밖의 정의는 자식의 불투명도 0과 display:none을 일�
   }
 });
 
-test("장식 영역 판정도 같은 display:none 판정을 쓴다: 숨긴 레이어는 영역에서 빼고 font-display:none은 보이는 레이어다", () => {
+test("중첩 defs·symbol·clipPath와 숨김 요소 전반에서 applyStylesheet의 scope와 stripHiddenElements의 제거 판정이 일치한다", () => {
+  const treeBody = [
+    '<defs id="n1" display="none">',
+    '  <rect id="n2" width="1" height="1"/>',
+    '  <symbol id="n3">',
+    '    <path id="n4" d="M0 0L1 1"/>',
+    '    <path id="n5" opacity="0" d="M0 0L1 1"/>',
+    '    <path id="n6" display="none" d="M0 0L1 1"/>',
+    '    <clipPath id="n7" display="none">',
+    '      <rect id="n8" opacity="0" width="1" height="1"/>',
+    '      <rect id="n9" display="none" width="1" height="1"/>',
+    '      <g id="n10" display="none">',
+    '        <path id="n11" opacity="0" d="M0 0L1 1"/>',
+    '        <symbol id="n12">',
+    '          <path id="n13" opacity="0" d="M0 0L1 1"/>',
+    '        </symbol>',
+    '      </g>',
+    '    </clipPath>',
+    '  </symbol>',
+    '  <symbol id="n14" opacity="0">',
+    '    <path id="n15" d="M0 0L1 1"/>',
+    '    <clipPath id="n16" opacity="0">',
+    '      <rect id="n17" opacity="0" width="1" height="1"/>',
+    '    </clipPath>',
+    '  </symbol>',
+    '</defs>',
+    '<g id="n18" opacity="0" style="opacity:1">',
+    '  <rect id="n19" display="none" style="display:inline" width="1" height="1"/>',
+    '  <rect id="n20" display="inline" style="display:none" width="1" height="1"/>',
+    '</g>',
+  ].join("");
+
+  const stripped = expandAndStrip(treeBody, "");
+  const ids = [...treeBody.matchAll(/\bid="(n\d+)"/g)].map((match) => match[1]);
+  assert.equal(ids.length, 20);
+  for (const id of ids) {
+    const keptByStripper = stripped.includes(`id="${id}"`);
+    const probedBody = treeBody.replace(`id="${id}"`, `id="${id}" class="probe"`);
+    let keptByStylesheetScope = false;
+    try {
+      applyStylesheet(cssSvg(probedBody, ".probe { clip-rule:evenodd; }"));
+    } catch (error) {
+      assert.match(String(error), UNCLASSIFIED_DECLARATION);
+      keptByStylesheetScope = true;
+    }
+    assert.equal(
+      keptByStylesheetScope,
+      keptByStripper,
+      `${id}: applyStylesheet scope(${keptByStylesheetScope}) !== stripHiddenElements(${keptByStripper})`,
+    );
+  }
+});
+
+test("장식 영역 판정도 같은 display:none 판정을 쓴다: 숨긴 레이어는 영역에서 빼고 인라인 style 우선순위와 font-display:none을 지킨다", () => {
   const boundsOf = (attributes) =>
     decorLayerBoundsOf(
       `<svg viewBox="0 0 100 100"><g id="legend-layer" ${attributes}><rect x="1" y="2" width="30" height="40"/></g></svg>`,
@@ -899,8 +1050,9 @@ test("장식 영역 판정도 같은 display:none 판정을 쓴다: 숨긴 레�
   const box = { minX: 1, minY: 2, maxX: 31, maxY: 42 };
   assert.deepEqual(boundsOf(""), [box]);
   assert.deepEqual(boundsOf('style="font-display:none"'), [box]);
+  assert.deepEqual(boundsOf('display="none" style="display:inline"'), [box]);
   assert.deepEqual(boundsOf('display="none"'), []);
-  assert.deepEqual(boundsOf('style="fill:red; display : none !important"'), []);
+  assert.deepEqual(boundsOf('display="inline" style="fill:red; display : none !important"'), []);
 });
 
 test("숨김 요소 제거는 입력 크기에 선형인 시간에 끝난다(이차 시간 회귀 방지)", () => {
@@ -924,6 +1076,23 @@ test("숨김 요소 제거는 입력 크기에 선형인 시간에 끝난다(이
   assert.ok(!stripped.includes('id="h') && !stripped.includes('id="o'), "숨김 요소가 남았다");
   // 선형이면 수십 ms, 이차이면 같은 입력에서 10초를 넘는다(실측). 느린 CI도 넘지 않을 상한이다.
   assert.ok(elapsedMs < 3000, `${elapsedMs.toFixed(0)}ms`);
+});
+
+test("<style> 추출과 제거는 긴 공백 입력에서도 선형 시간에 끝나고 여는 태그 끝 공백 형태를 보존한다", () => {
+  const longSpace = " ".repeat(120000);
+  const svg =
+    `<svg viewBox="0 0 10 10">${longSpace}<style type="text/css">.c { fill:#999999 !important; }</style>` +
+    `${longSpace}<rect id="self" class="c" width="1" height="1"   />` +
+    `<g id="open" class="c"   ><rect width="1" height="1"/></g></svg>`;
+  const started = performance.now();
+  const rules = parseStylesheet(svg);
+  const out = applyStylesheet(svg);
+  const elapsedMs = performance.now() - started;
+  assert.equal(rules.length, 1);
+  assert.ok(!out.includes("<style"), "<style> 블록이 남았다");
+  assert.match(out, /<rect id="self" class="c" width="1" height="1" style="fill:#999999" \/>/);
+  assert.match(out, /<g id="open" class="c" style="fill:#999999">/);
+  assert.ok(elapsedMs < 1000, `${elapsedMs.toFixed(0)}ms`);
 });
 
 test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다", () => {

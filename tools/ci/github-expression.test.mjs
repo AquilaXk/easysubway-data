@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { evaluateGithubExpression } from "./github-expression.mjs";
+import { evaluateGithubExpression, evaluateGithubTemplate, evaluateGithubValue } from "./github-expression.mjs";
 
 const context = { github: { actor: "Alice", ref: "refs/heads/main" }, vars: { FLAG: "true", EMPTY: "" }, inputs: {} };
 const run = (expression) => evaluateGithubExpression(`\${{ ${expression} }}`, context);
@@ -63,4 +63,30 @@ test("cancelled()는 실행이 취소된 때만 참이다", () => {
   assert.equal(evaluate("!cancelled()", { cancelled: true }), false);
   assert.equal(evaluate("cancelled()", { cancelled: true }), true);
   assert.throws(() => evaluate("cancelled"), /GITHUB_EXPRESSION_SYNTAX/u);
+});
+
+test("format()과 템플릿 평가기는 &&/|| 피연산자 값과 문자열 치환을 GitHub 의미대로 계산한다", () => {
+  assert.equal(
+    evaluateGithubValue("inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule'", { inputs: {} }),
+    "schedule",
+  );
+  assert.equal(
+    evaluateGithubValue("inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule'", { inputs: { replay_run_id: "" } }),
+    "schedule",
+  );
+  assert.equal(
+    evaluateGithubValue("inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule'", { inputs: { replay_run_id: "39369279984" } }),
+    "replay-39369279984",
+  );
+  const template = "source-reverification-${{ github.workflow }}-${{ github.ref }}-${{ inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule' }}";
+  assert.equal(
+    evaluateGithubTemplate(template, { github: { workflow: "Source Reverification", ref: "refs/heads/main" }, inputs: {} }),
+    "source-reverification-Source Reverification-refs/heads/main-schedule",
+  );
+  assert.equal(
+    evaluateGithubTemplate(template, { github: { workflow: "Source Reverification", ref: "refs/heads/main" }, inputs: { replay_run_id: "39369279984" } }),
+    "source-reverification-Source Reverification-refs/heads/main-replay-39369279984",
+  );
+  assert.throws(() => evaluateGithubValue("format('only-pattern')", context), /GITHUB_EXPRESSION_SYNTAX/u);
+  assert.throws(() => evaluateGithubValue("format(true, 'x')", context), /GITHUB_EXPRESSION_SYNTAX/u);
 });

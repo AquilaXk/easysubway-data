@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { evaluateGithubTemplate } from "./github-expression.mjs";
 import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
 // #977: ITX-청춘 원천 시간표 자동 승격 workflow 계약(#870 전체 자동화 3단계).
@@ -49,7 +50,22 @@ test("정기 실행은 저장소 변수가 true일 때만 돌고 사람 dispatch
 test("job은 공급자 secret이 있는 itx-current-collection 환경에서 돌고 이름이 예산 가드의 등록과 같다", () => {
   assert.match(yml, /\n    name: ITX current promotion\n/u);
   assert.match(yml, /\n    environment: itx-current-collection\n/u);
-  assert.match(yml, /\nconcurrency:\n  group: itx-current-promotion-main\n  cancel-in-progress: false\n/u);
+  const concurrencyGroup = /\nconcurrency:\n  group: ([^\n]+)\n  cancel-in-progress: false\n/u.exec(yml)?.[1];
+  assert.equal(
+    concurrencyGroup,
+    "itx-current-promotion-main-${{ inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule' }}",
+  );
+  const groupFor = (inputs = {}) => evaluateGithubTemplate(concurrencyGroup, { inputs });
+  const cronGroup = groupFor({});
+  const forceCollectGroup = groupFor({ force_collect: true, replay_run_id: "" });
+  const replayGroupA = groupFor({ replay_run_id: "24090001001" });
+  const replayGroupB = groupFor({ replay_run_id: "24090001002" });
+  assert.equal(cronGroup, "itx-current-promotion-main-schedule");
+  assert.equal(forceCollectGroup, cronGroup, "일반·강제 수집 dispatch와 정기 실행은 같은 수집 슬롯을 공유한다");
+  assert.equal(replayGroupA, "itx-current-promotion-main-replay-24090001001");
+  assert.notEqual(replayGroupA, cronGroup, "대기 중인 replay dispatch가 뒤따르는 정기 cron에 의해 대기열에서 대체되지 않는다");
+  assert.notEqual(replayGroupA, replayGroupB, "서로 다른 원본 run 재생은 서로의 대기 슬롯을 덮어쓰지 않는다");
+  assert.equal(groupFor({ replay_run_id: "24090001001" }), replayGroupA, "같은 replay_run_id 중복 dispatch는 같은 그룹에서 직렬화된다");
 });
 
 test("판정 step이 공급자 접근·쓰기보다 먼저 돌고 PR·브랜치 기록만 읽는다", () => {
