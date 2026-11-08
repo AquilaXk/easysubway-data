@@ -662,7 +662,16 @@ function validateAdmissionEvidence(evidence, candidate, source, sourceId) {
       `${sourceId}.admissionEvidence.quotaEvidence.productionUseAllowed must be true when source has production capability`,
     );
   }
+  if (
+    candidate.evidence?.productionUseAdmission?.productionUseAllowed === true &&
+    (source.productionUseAllowed !== true || !sourceHasProductionCapability(source))
+  ) {
+    throw new Error(
+      `${sourceId} must enable productionUseAllowed and a production capability when candidate productionUseAdmission is approved`,
+    );
+  }
 }
+
 
 function sourceHasProductionCapability(source) {
   return ["schedule", "realtime", "facility"].some(

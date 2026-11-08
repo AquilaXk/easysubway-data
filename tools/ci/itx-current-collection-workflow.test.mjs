@@ -597,6 +597,7 @@ test("ITX current collection secret 동기화는 stdin으로 gh secret set을 �
 
 test("ITX current collection secret 동기화는 유효하지 않은 입력과 추가 인자를 실행 전에 거부한다", async () => {
   const { syncItxCurrentCollectionSecret } = await loadSecretSync();
+  const { formatSecretSyncReasonLine, SECRET_SYNC_REASON } = await import("./failure-reason.mjs");
   const invalidKeys = [undefined, "", "line-one\nline-two", Buffer.from([0xc3, 0x28])];
 
   for (const serviceKey of invalidKeys) {
@@ -611,27 +612,47 @@ test("ITX current collection secret 동기화는 유효하지 않은 입력과 �
         },
       }),
       (error) => {
+        assert.equal(error.message, "ITX current collection secret synchronization failed");
+        assert.equal(error.reason, SECRET_SYNC_REASON.SECRET_INVALID);
+        assert.equal(error.secret, "DATA_GO_KR_SERVICE_KEY");
+        const reasonLine = formatSecretSyncReasonLine(error, ["DATA_GO_KR_SERVICE_KEY"]);
+        assert.equal(reasonLine, "reason=SECRET_INVALID secret=DATA_GO_KR_SERVICE_KEY");
         assert.doesNotMatch(error.message, /line-one|\u00c3\(/);
+        assert.doesNotMatch(reasonLine, /line-one|\u00c3\(/);
         return true;
       },
     );
     assert.equal(calls, 0);
   }
 
-  let calls = 0;
-  await assert.rejects(() => syncItxCurrentCollectionSecret({
-    argv: ["--unexpected"],
-    env: { DATA_GO_KR_SERVICE_KEY: "synthetic-itx-service-key-2026" },
-    spawnImpl() {
-      calls += 1;
-      return childResult();
-    },
-  }));
-  assert.equal(calls, 0);
+  for (const invalidInput of [
+    { argv: ["--unexpected"], env: { DATA_GO_KR_SERVICE_KEY: "synthetic-itx-service-key-2026" } },
+    { argv: [], env: null },
+  ]) {
+    let calls = 0;
+    await assert.rejects(
+      () => syncItxCurrentCollectionSecret({
+        ...invalidInput,
+        spawnImpl() {
+          calls += 1;
+          return childResult();
+        },
+      }),
+      (error) => {
+        assert.equal(error.message, "ITX current collection secret synchronization failed");
+        assert.equal(error.reason, SECRET_SYNC_REASON.ARGUMENT_INVALID);
+        assert.equal(error.secret, undefined);
+        assert.equal(formatSecretSyncReasonLine(error, ["DATA_GO_KR_SERVICE_KEY"]), "reason=ARGUMENT_INVALID");
+        return true;
+      },
+    );
+    assert.equal(calls, 0);
+  }
 });
 
 test("ITX current collection secret 동기화는 gh 실행 실패를 secret과 출력 없이 보고한다", async () => {
   const { syncItxCurrentCollectionSecret } = await loadSecretSync();
+  const { formatSecretSyncReasonLine, SECRET_SYNC_REASON } = await import("./failure-reason.mjs");
   const serviceKey = "synthetic-itx-service-key-2026";
   const failures = [
     () => childResult({ error: new Error(`spawn failed: ${serviceKey}`), stdout: serviceKey, stderr: serviceKey }),
@@ -650,8 +671,15 @@ test("ITX current collection secret 동기화는 gh 실행 실패를 secret과 �
         },
       }),
       (error) => {
+        assert.equal(error.message, "ITX current collection secret synchronization failed");
+        assert.equal(error.reason, SECRET_SYNC_REASON.GH_SYNC_FAILED);
+        assert.equal(error.secret, "DATA_GO_KR_SERVICE_KEY");
+        const reasonLine = formatSecretSyncReasonLine(error, ["DATA_GO_KR_SERVICE_KEY"]);
+        assert.equal(reasonLine, "reason=GH_SYNC_FAILED secret=DATA_GO_KR_SERVICE_KEY");
         assert.doesNotMatch(error.message, /synthetic-itx-service-key-2026/);
         assert.doesNotMatch(error.message, /spawn failed/);
+        assert.doesNotMatch(reasonLine, /synthetic-itx-service-key-2026/);
+        assert.doesNotMatch(reasonLine, /spawn failed/);
         return true;
       },
     );
@@ -660,6 +688,7 @@ test("ITX current collection secret 동기화는 gh 실행 실패를 secret과 �
 
 test("ITX current collection secret 동기화는 SIGTERM을 무시하는 gh child를 15초 뒤 SIGKILL로 종료한다", async () => {
   const { syncItxCurrentCollectionSecret } = await loadSecretSync();
+  const { SECRET_SYNC_REASON } = await import("./failure-reason.mjs");
   const serviceKey = "synthetic-itx-service-key-2026%2Btimeout";
   const leakedOutput = "synthetic-gh-output-that-must-not-leak";
   const child = new EventEmitter();
@@ -702,6 +731,9 @@ test("ITX current collection secret 동기화는 SIGTERM을 무시하는 gh chil
   assert.equal(timers[0].delay, 15_000);
   timers[0].callback();
   await assert.rejects(observedPending, (error) => {
+    assert.equal(error.message, "ITX current collection secret synchronization failed");
+    assert.equal(error.reason, SECRET_SYNC_REASON.GH_SYNC_FAILED);
+    assert.equal(error.secret, "DATA_GO_KR_SERVICE_KEY");
     assert.doesNotMatch(error.message, /synthetic-itx-service-key-2026%2Btimeout/);
     assert.doesNotMatch(error.message, /synthetic-gh-output-that-must-not-leak/);
     return true;
@@ -716,3 +748,4 @@ test("ITX current collection secret 동기화는 SIGTERM을 무시하는 gh chil
   assert.deepEqual(clearedTimers, [timers[0]]);
   assert.equal(failureCount, 1);
 });
+

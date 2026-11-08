@@ -4681,8 +4681,8 @@
         ]
       },
       "requiredForProductionPack": false,
-      "productionUseAllowed": false,
-      "updateFrequency": "provider documented; production cadence not admitted",
+      "productionUseAllowed": true,
+      "updateFrequency": "번들 입력 스냅샷 수집 시 1회",
       "observedDataUpdatedAt": "2026-07-12",
       "retrievedAt": "2026-07-12",
       "license": {
@@ -4722,11 +4722,11 @@
           "unsupportedNotes": "source is not admitted as production realtime arrival data"
         },
         "facility": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "coverageStatus": "CONSUMER_EVIDENCE_REQUIRED",
-          "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
+          "updateFrequency": "번들 입력 스냅샷 수집 시 1회",
+          "unsupportedNotes": "표준 역구내 이동동선 원천이 SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH 범위(tools/datapack/build-station-elevator-paths.mjs)로 승인·소비됨"
         }
       },
       "admissionEvidence": {
@@ -4753,10 +4753,10 @@
         "quotaEvidence": {
           "defaultDailyLimit": "unlimited",
           "portal": "KRIC 레일포털",
-          "productionUseAllowed": false,
-          "unlockStatus": "not_required"
+          "productionUseAllowed": true,
+          "unlockStatus": "unlocked"
         },
-        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "productionUseNoteKo": "오너 admin review(2026-07-13) 및 #834 운영 사용 승격(QA 결정 2026-09-30) 완료. SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH 범위(tools/datapack/build-station-elevator-paths.mjs)로 승인·소비됨.",
         "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
       }
     },

@@ -4687,7 +4687,7 @@
           }
         }
       },
-      "nextAction": "#834에서 서버 번들 station_elevator_path 적재 용도로 운영 사용 승격(QA 결정 2026-09-30). production inventory(source-inventory.json) 승격은 별도 결정 대상이다",
+      "nextAction": "Maintain stationThruwayInfo snapshot verification for build-station-elevator-paths.mjs within SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH scope",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -4714,7 +4714,7 @@
         }
       },
       "productionInventoryReferenceId": "kric-station-movement-standard",
-      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_station_elevator_path_issue_834"
     },
     {
       "id": "kric-station-platform",
