@@ -1252,8 +1252,8 @@
     },
     "transferTopology": {
       "canonicalPackSha256": "4c1f91dd58df875c4d2a2ec0bf5192f4c0837be61b809660c00ad206689ee37a",
-      "metricsArtifactSha256": "3e34b4e1a2a9ef2601db2027b634cadf89731bf3a21b34b4a46b539ad833a883",
-      "applicabilityArtifactSha256": "18ba4282fe7cf4c9ea9f3cb134ffd01b9e79a6cb8b9185607cff15aba6af5e30",
+      "metricsArtifactSha256": "44560eaa0402d523196a98a2afb25a18d141812f42154e391e17374edb84032d",
+      "applicabilityArtifactSha256": "ef7429430ba49e8950a4e2c6754e76c18c70d11b54d17ee350d56127a17e38c6",
       "stationLineCount": 698,
       "stationCount": 567,
       "physicalPairCount": 102,
