@@ -45,9 +45,6 @@ function runCoverageGapsCli({
   provenance,
   releaseScope,
   releaseTargets,
-  resolutions,
-  resolutionPlan,
-  now,
   output,
   allowGaps = false,
 }) {
@@ -57,17 +54,14 @@ function runCoverageGapsCli({
     targets,
     "--inventory",
     inventory,
-    ...(manifest ? ["--manifest", manifest] : []),
-    ...(provenance ? ["--provenance", provenance] : []),
-    ...(releaseScope ? ["--release-scope", releaseScope] : []),
-    ...(releaseTargets ? ["--release-targets", releaseTargets] : []),
-    ...(resolutions ? ["--resolutions", resolutions] : []),
-    ...(resolutionPlan ? ["--resolution-plan", resolutionPlan] : []),
-    ...(now !== undefined ? ["--now", now] : []),
     "--output",
     output,
-    ...(allowGaps ? ["--allow-gaps"] : []),
   ];
+  if (manifest) args.push("--manifest", manifest);
+  if (provenance) args.push("--provenance", provenance);
+  if (releaseScope) args.push("--release-scope", releaseScope);
+  if (releaseTargets) args.push("--release-targets", releaseTargets);
+  if (allowGaps) args.push("--allow-gaps");
   return execFileAsync(process.execPath, args, { cwd: root });
 }
 
@@ -247,7 +241,7 @@ test("전국 coverage report는 운행 노선 launch와 enhancement 분모를 �
 });
 
 test("전국 coverage report는 공공기관 API 실제 부재만 공식 미지원 terminal 상태로 집계한다", async () => {
-  await withCoverageWorkspace(async ({ resolutionsPath, resolutionPlanPath, runReport, readReport }) => {
+  await withCoverageWorkspace(async ({ resolutionsPath, resolutionPlanPath, reportPath, readReport }) => {
     const { publicApiQueries, entry: resolutionEntry, plan: resolutionPlan } = buildBusanTimetableResolution({
       responseFill: "a",
     });
@@ -260,12 +254,22 @@ test("전국 coverage report는 공공기관 API 실제 부재만 공식 미지�
       entries: [resolutionEntry],
     });
 
-    await runReport({
-      resolutions: resolutionsPath,
-      resolutionPlan: resolutionPlanPath,
-      now: COVERAGE_REVIEW_NOW,
-      allowGaps: true,
-    });
+    await execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      NATIONWIDE_TARGETS_PATH,
+      "--inventory",
+      SOURCE_INVENTORY_PATH,
+      "--resolutions",
+      resolutionsPath,
+      "--resolution-plan",
+      resolutionPlanPath,
+      "--now",
+      COVERAGE_REVIEW_NOW,
+      "--output",
+      reportPath,
+      "--allow-gaps",
+    ], { cwd: root });
 
     const report = await readReport();
     const requirement = findRequirement(report, resolutionEntry);
@@ -312,16 +316,26 @@ test("전국 coverage report는 불완전하거나 만료된 공공 API 미지�
   ];
 
   const assertResolutionsRejected = async (resolutionsJson, expected) => {
-    await withCoverageWorkspace(async ({ resolutionsPath, resolutionPlanPath, runReport }) => {
+    await withCoverageWorkspace(async ({ resolutionsPath, resolutionPlanPath, reportPath }) => {
       await writeFile(resolutionPlanPath, `${JSON.stringify(resolutionPlan)}\n`);
       await writeFile(resolutionsPath, `${resolutionsJson}\n`);
       await assert.rejects(
-        runReport({
-          resolutions: resolutionsPath,
-          resolutionPlan: resolutionPlanPath,
-          now: COVERAGE_REVIEW_NOW,
-          allowGaps: true,
-        }),
+        execFileAsync(process.execPath, [
+          "tools/datapack/report-coverage-gaps.mjs",
+          "--targets",
+          NATIONWIDE_TARGETS_PATH,
+          "--inventory",
+          SOURCE_INVENTORY_PATH,
+          "--resolutions",
+          resolutionsPath,
+          "--resolution-plan",
+          resolutionPlanPath,
+          "--now",
+          COVERAGE_REVIEW_NOW,
+          "--output",
+          reportPath,
+          "--allow-gaps",
+        ], { cwd: root }),
         expected,
       );
     });
@@ -356,7 +370,7 @@ async function reportRequirementAt({ nextReviewAt, now }) {
     checkedAt: "2026-07-25T09:12:39.105Z",
     nextReviewAt,
   });
-  return withCoverageWorkspace(async ({ resolutionsPath, resolutionPlanPath, runReport, readReport }) => {
+  return withCoverageWorkspace(async ({ resolutionsPath, resolutionPlanPath, reportPath, readReport }) => {
     await writeFile(resolutionPlanPath, `${JSON.stringify(plan)}\n`);
     await writeFile(resolutionsPath, `${JSON.stringify({
       schemaVersion: 1,
@@ -365,12 +379,22 @@ async function reportRequirementAt({ nextReviewAt, now }) {
       searchPlanSha256: sha256(JSON.stringify(plan)),
       entries: [entry],
     })}\n`);
-    await runReport({
-      resolutions: resolutionsPath,
-      resolutionPlan: resolutionPlanPath,
+    await execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      NATIONWIDE_TARGETS_PATH,
+      "--inventory",
+      SOURCE_INVENTORY_PATH,
+      "--resolutions",
+      resolutionsPath,
+      "--resolution-plan",
+      resolutionPlanPath,
+      "--now",
       now,
-      allowGaps: true,
-    });
+      "--output",
+      reportPath,
+      "--allow-gaps",
+    ], { cwd: root });
     const report = await readReport();
     return {
       requirement: findRequirement(report, entry),
@@ -410,9 +434,20 @@ test("--now는 밀리초까지 있는 ISO 시각만 받는다", async (context) 
 });
 
 test("--now는 --resolutions 없이 쓰면 거부한다", async () => {
-  await withCoverageWorkspace(async ({ runReport }) => {
+  await withCoverageWorkspace(async ({ reportPath }) => {
     await assert.rejects(
-      runReport({ now: COVERAGE_REVIEW_NOW, allowGaps: true }),
+      execFileAsync(process.execPath, [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets",
+        NATIONWIDE_TARGETS_PATH,
+        "--inventory",
+        SOURCE_INVENTORY_PATH,
+        "--now",
+        COVERAGE_REVIEW_NOW,
+        "--output",
+        reportPath,
+        "--allow-gaps",
+      ], { cwd: root }),
       /--resolutions is required with --now/,
     );
   });
