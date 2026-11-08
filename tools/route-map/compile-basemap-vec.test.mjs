@@ -8,7 +8,6 @@ import test from "node:test";
 import {
   applyStylesheet,
   baselineShiftRatio,
-  compileAll,
   decorLayerBoundsOf,
   expandDominantBaseline,
   extractOwnerLabels,
@@ -30,7 +29,6 @@ import {
 } from "./compile-basemap-vec.mjs";
 import { basemapVectorFileName, BASEMAP_VARIANTS } from "./basemap-variants.mjs";
 import { viewBoxOf } from "./svg-ink-bbox.mjs";
-import { decodeVec } from "./vec-codec.mjs";
 
 // 평탄화되어야 하는 입력이 던지면 예외가 아니라 단언 실패로 드러나게 한다. 문법을 좁히는
 // 변이가 던진 예외로 죽지 않고 단언으로 죽어야 어떤 입력을 읽어야 하는지 테스트가 말해 준다.
@@ -744,7 +742,7 @@ test("display:none인 clipPath 정의도 참조할 수 있으므로 자기 displ
   );
 });
 
-test("바깥 clipPath 자식 중 display:none인 요소 안의 중첩 clipPath는 바깥 clipPath에 합쳐지지 않도록 제거되고 컴파일된 .vec에도 반영된다", () => {
+test("바깥 clipPath 자식 중 display:none인 요소 안의 중첩 clipPath는 바깥 clipPath에 합쳐지지 않도록 제거되고 컴파일 입력에도 반영된다", () => {
   const inputSvg =
     '<svg viewBox="0 0 100 100">' +
     '<clipPath id="outer">' +
@@ -753,27 +751,29 @@ test("바깥 clipPath 자식 중 display:none인 요소 안의 중첩 clipPath�
     "</clipPath>" +
     '<rect id="target" clip-path="url(#outer)" width="100" height="100" fill="#ff0000"/>' +
     "</svg>";
+  const expectedSvg =
+    '<svg viewBox="0 0 100 100">' +
+    '<clipPath id="outer"><rect id="kept" x="0" y="0" width="10" height="10"/></clipPath>' +
+    '<rect id="target" clip-path="url(#outer)" width="100" height="100" fill="#ff0000"/>' +
+    "</svg>";
   const stripped = assertStripped(inputSvg, {
     removed: ["inner", "leaked"],
     kept: ["outer", "kept", "target"],
   });
-  assert.equal(
-    stripped,
-    '<svg viewBox="0 0 100 100">' +
-      '<clipPath id="outer"><rect id="kept" x="0" y="0" width="10" height="10"/></clipPath>' +
-      '<rect id="target" clip-path="url(#outer)" width="100" height="100" fill="#ff0000"/>' +
-      "</svg>",
+  assert.equal(stripped, expectedSvg);
+  assert.equal(normalizeSvgForCompile(inputSvg), normalizeSvgForCompile(expectedSvg));
+  assert.doesNotThrow(() =>
+    expandAndStrip(
+      '<clipPath id="outer"><g display="none"><clipPath id="inner"><rect id="leaked" class="r" width="10" height="10"/></clipPath></g><rect id="kept" width="10" height="10"/></clipPath>',
+    ),
   );
-  const workDir = mkdtempSync(path.join(tmpdir(), "nested-clip-vec-"));
-  try {
-    compileAll([{ fileName: "nested-clip.vec", compileInputSvg: stripped }], workDir, workDir);
-    const vecDoc = decodeVec(new Uint8Array(readFileSync(path.join(workDir, "nested-clip.vec"))));
-    const allCoords = vecDoc.paths.flatMap((p) => p.points);
-    assert.ok(!allCoords.includes(50), "제거된 inner clipPath의 leaked 좌표(50)가 .vec에 남았다");
-    assert.equal(vecDoc.paths.length, 2);
-  } finally {
-    rmSync(workDir, { recursive: true, force: true });
-  }
+  assert.throws(
+    () =>
+      expandAndStrip(
+        '<clipPath id="outer"><g display="none"><clipPath id="inner"><rect id="leaked" width="10" height="10"/></clipPath></g><rect id="kept" class="r" width="10" height="10"/></clipPath>',
+      ),
+    UNCLASSIFIED_DECLARATION,
+  );
 });
 
 test("닫는 태그가 없는 숨김 요소는 조용히 넘기지 않고 실패한다", () => {
