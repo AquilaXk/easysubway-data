@@ -42,7 +42,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: itx-current-promotion-main
+  group: itx-current-promotion-main-${{ inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule' }}
   cancel-in-progress: false
 
 jobs:

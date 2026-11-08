@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -8,6 +9,9 @@ import { checkSchedulerHeartbeat, main, parseMaxAge, validateHeartbeatPolicy } f
 // #1001: 외부 스케줄러(OCI k3s CronJob)가 App(easysubway-release-chain[bot])으로 data workflow를 dispatch한다.
 // 이 점검은 정책에 적힌 workflow마다 그 App의 가장 최근 dispatch run이 maxAge 안에 있는지 본다. 없거나 늦으면 실패해 실패 이슈(#926)로 드러난다.
 const root = path.resolve(import.meta.dirname, "../..");
+const PLATFORM_SCHEDULER_CONTRACT_REL_PATH = "contracts/release/platform-data-workflow-scheduler-contract.json";
+const PLATFORM_SCHEDULER_CONTRACT_SOURCE_COMMIT = "9e4e3b11d6d5a05bd8371013d4eecd524660198d";
+const PLATFORM_SCHEDULER_CONTRACT_SHA256 = "667e7903ddf341be6def48e3ff631fb18779d2912d57eee8cbcf35c773bef70a";
 const repository = "AquilaXk/easysubway-data";
 const APP = "easysubway-release-chain[bot]";
 const now = new Date("2026-10-07T12:00:00.000Z");
@@ -183,56 +187,90 @@ test("main은 API 오류와 깨진 응답을 통과로 바꾸지 않는다", asy
   await assert.rejects(main(["--repository", repository], { ...base, runGh: async () => "{}" }), /SCHEDULER_HEARTBEAT_ARGUMENTS/u);
 });
 
-test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 실행과 dispatch를 가진다", () => {
+function expectedBackupCron({ everyHours, offsetHour, minute }) {
+  assert.equal(offsetHour, 0);
+  if (everyHours === 1) return `${minute} * * * *`;
+  if (everyHours === 24) return `${minute} 0 * * *`;
+  return `${minute} */${everyHours} * * *`;
+}
+
+function expectedHeartbeatMaxAgeHours(everyHours) {
+  if (everyHours === 24) return everyHours + 3;
+  return 2 * everyHours + 1;
+}
+
+function parseWorkflowScheduleCrons(yml, workflow) {
+  const scheduleBlock = /\n  schedule:\n((?:    - cron: "[^"]+"\n)+)/u.exec(yml);
+  assert.ok(scheduleBlock, `${workflow} keeps the GitHub schedule as the backup path`);
+  return [...scheduleBlock[1].matchAll(/^    - cron: "([^"]+)"$/gmu)].map((match) => match[1]);
+}
+
+function expectedRunNameForContractEntry(yml, entry) {
+  const target = entry.inputs?.target;
+  if (!target) return undefined;
+  const nameMatch = /^name:\s*(.+)$/mu.exec(yml);
+  assert.ok(nameMatch, `${entry.workflow} declares workflow name`);
+  assert.match(yml, /\nrun-name: \$\{\{ github\.workflow \}\} \(\$\{\{ inputs\.target \|\| github\.event_name \}\}\)\n/u);
+  return `${nameMatch[1]} (${target})`;
+}
+
+test("실제 정책 파일과 각 workflow 백업 schedule.cron은 미러된 platform 스케줄러 계약과 1:1 일치한다", () => {
   const actual = JSON.parse(readFileSync(path.join(root, "release/product-gates/external-scheduler-heartbeat.json"), "utf8"));
   validateHeartbeatPolicy(actual);
-  assert.deepEqual(actual.workflows.map(({ workflow }) => workflow), [
-    "automation-status-publish.yml",
-    "current-capital-topology-refresh.yml",
-    "current-capital-topology-registration.yml",
-    "datapack-expiry-alert.yml",
-    "datapack-expiry-alert.yml",
-    "itx-current-promotion.yml",
-    "kric-current-facility-refresh.yml",
-    "nationwide-candidate-refresh.yml",
-    "recovered-failure-issues-close.yml",
-    "retained-gwangju-timetable-refresh.yml",
-    "seoul-current-accessibility-refresh.yml",
-    "source-derivative-rebinding.yml",
-    "source-reverification.yml",
-  ]);
-  for (const { workflow, maxAge } of actual.workflows) {
-    const yml = readFileSync(path.join(root, ".github/workflows", workflow), "utf8");
-    assert.match(yml, /\n  schedule:\n/u, `${workflow} keeps the GitHub schedule as the backup path`);
-    assert.match(yml, /\n  workflow_dispatch:/u, `${workflow} accepts workflow_dispatch`);
-    parseMaxAge(maxAge);
+
+  const mirrorPath = path.join(root, PLATFORM_SCHEDULER_CONTRACT_REL_PATH);
+  const mirrorBytes = readFileSync(mirrorPath);
+  assert.equal(
+    createHash("sha256").update(mirrorBytes).digest("hex"),
+    PLATFORM_SCHEDULER_CONTRACT_SHA256,
+    `${PLATFORM_SCHEDULER_CONTRACT_REL_PATH} matches pinned sha256 from platform commit ${PLATFORM_SCHEDULER_CONTRACT_SOURCE_COMMIT}`,
+  );
+  const siblingPath = path.resolve(root, "../easysubway-platform", PLATFORM_SCHEDULER_CONTRACT_REL_PATH);
+  if (existsSync(siblingPath)) {
+    assert.equal(
+      Buffer.compare(mirrorBytes, readFileSync(siblingPath)),
+      0,
+      `${PLATFORM_SCHEDULER_CONTRACT_REL_PATH} must match ../easysubway-platform/${PLATFORM_SCHEDULER_CONTRACT_REL_PATH} byte-for-byte`,
+    );
   }
-  // 하루 안에 여러 번 도는 항목은 maxAge를 정기 주기의 두 배에 1시간을 더해 잡는다. 스케줄러가 한 번 늦은 것만으로는 알리지 않는다(2시간 주기는 5시간, 3시간 주기는 7시간).
-  // cron은 각 workflow의 GitHub schedule 백업 값이다. platform의 contracts/release/platform-data-workflow-scheduler-contract.json은 이 값을 githubCron으로 옮겨 적으므로
-  // 여기서 cron을 바꾸면 그 계약의 주기와 분도 같이 바꿔야 한다(AquilaXk/easysubway-platform#258).
-  const DATAPACK_EXPIRY = "datapack-expiry-alert.yml";
-  const SUB_DAILY = [
-    { workflow: "automation-status-publish.yml", cadenceHours: 1, cron: "7 * * * *" },
-    { workflow: "current-capital-topology-refresh.yml", cadenceHours: 2, cron: "47 */2 * * *" },
-    { workflow: "current-capital-topology-registration.yml", cadenceHours: 2, cron: "5 */2 * * *" },
-    { workflow: DATAPACK_EXPIRY, runName: "Data Pack Expiry Alert (datapack-expiry)", cadenceHours: 4, cron: "23 */4 * * *" },
-    { workflow: "itx-current-promotion.yml", cadenceHours: 3, cron: "0 */3 * * *" },
-    { workflow: "kric-current-facility-refresh.yml", cadenceHours: 2, cron: "17 */2 * * *" },
-    { workflow: "nationwide-candidate-refresh.yml", cadenceHours: 2, cron: "29 */2 * * *" },
-    { workflow: "recovered-failure-issues-close.yml", cadenceHours: 1, cron: "13 * * * *" },
-    { workflow: "retained-gwangju-timetable-refresh.yml", cadenceHours: 2, cron: "43 */2 * * *" },
-    { workflow: "seoul-current-accessibility-refresh.yml", cadenceHours: 2, cron: "31 */2 * * *" },
-    { workflow: "source-derivative-rebinding.yml", cadenceHours: 6, cron: "41 */6 * * *" },
-    { workflow: "source-reverification.yml", cadenceHours: 2, cron: "23 */2 * * *" },
-  ];
+
+  const platformContract = JSON.parse(mirrorBytes.toString("utf8"));
+  assert.equal(platformContract.schemaVersion, "PLATFORM_DATA_WORKFLOW_SCHEDULER_CONTRACT_V1");
+  assert.equal(platformContract.artifactKind, "platform-data-workflow-scheduler-contract");
+  assert.equal(platformContract.target.repository, repository);
+  assert.equal(platformContract.target.ref, "main");
+  assert.equal(platformContract.target.githubScheduleRole, "BACKUP_PATH");
+  assert.equal(`${platformContract.app.name}[bot]`, actual.dispatcher.login);
+  assert.equal(actual.workflows.length, platformContract.workflows.length);
+
   const hours = (value) => value * 3_600_000;
-  for (const { workflow, runName, cadenceHours, cron } of SUB_DAILY) {
-    const label = runName ?? workflow;
-    const item = actual.workflows.find((candidate) => candidate.workflow === workflow && candidate.runName === runName);
-    assert.equal(parseMaxAge(item.maxAge), hours(2 * cadenceHours + 1), label);
-    assert.ok(readFileSync(path.join(root, ".github/workflows", workflow), "utf8").includes(`- cron: "${cron}"`), `${label} keeps the GitHub schedule cron ${cron}`);
+  const expectedCronsByWorkflow = new Map();
+  for (const entry of platformContract.workflows) {
+    assert.match(entry.id, /^[a-z0-9-]+$/u);
+    assert.equal(entry.githubCron, expectedBackupCron(entry), `${entry.id} githubCron matches cadence`);
+    const yml = readFileSync(path.join(root, ".github/workflows", entry.workflow), "utf8");
+    assert.match(yml, /\n  workflow_dispatch:/u, `${entry.workflow} accepts workflow_dispatch`);
+    const runName = expectedRunNameForContractEntry(yml, entry);
+    const heartbeatItem = actual.workflows.find(
+      (candidate) => candidate.workflow === entry.workflow && candidate.runName === runName,
+    );
+    assert.ok(heartbeatItem, `${entry.id} (${entry.workflow}) has matching heartbeat policy entry`);
+    assert.equal(
+      parseMaxAge(heartbeatItem.maxAge),
+      hours(expectedHeartbeatMaxAgeHours(entry.everyHours)),
+      `${entry.id} maxAge matches cadence ${entry.everyHours}h`,
+    );
+    const list = expectedCronsByWorkflow.get(entry.workflow) ?? [];
+    list.push(entry.githubCron);
+    expectedCronsByWorkflow.set(entry.workflow, list);
   }
-  // 하루 한 번 도는 항목은 정기 주기에 3시간을 더한다.
-  const expiry = Object.fromEntries(actual.workflows.filter(({ workflow }) => workflow === DATAPACK_EXPIRY).map((item) => [item.runName, parseMaxAge(item.maxAge)]));
-  assert.equal(expiry["Data Pack Expiry Alert (provider-approval)"], hours(27));
+
+  for (const [workflow, expectedCrons] of expectedCronsByWorkflow) {
+    const yml = readFileSync(path.join(root, ".github/workflows", workflow), "utf8");
+    assert.deepEqual(
+      parseWorkflowScheduleCrons(yml, workflow),
+      expectedCrons,
+      `${workflow} on.schedule[].cron matches platform contract githubCron entries 1:1`,
+    );
+  }
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { evaluateGithubExpression } from "./github-expression.mjs";
+import { evaluateGithubExpression, evaluateGithubTemplate } from "./github-expression.mjs";
 import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 import { PROVIDER_BUDGET_BLOCK_STEP } from "./provider-call-budget.mjs";
 import { SOURCE_REVERIFICATION_CALL_EVIDENCE } from "./provider-call-ledger.mjs";
@@ -34,7 +34,25 @@ test("권한은 job에만 주고, 변수가 true일 때만 정기 실행이 돌�
   assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.event\.sender\.type == 'User'\) \|\| vars\.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION == 'true'\) \}\}\n/u);
   assert.match(yml, /\n    environment: datapack-release-check\n/u);
   assert.match(yml, /\n    timeout-minutes: 90\n/u);
-  assert.match(yml, /\nconcurrency:\n  group: source-reverification-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\n  cancel-in-progress: false\n/u);
+  const concurrencyGroup = /\nconcurrency:\n  group: ([^\n]+)\n  cancel-in-progress: false\n/u.exec(yml)?.[1];
+  assert.equal(
+    concurrencyGroup,
+    "source-reverification-${{ github.workflow }}-${{ github.ref }}-${{ inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule' }}",
+  );
+  const groupFor = (inputs = {}) => evaluateGithubTemplate(concurrencyGroup, {
+    github: { workflow: "Source Reverification", ref: "refs/heads/main" },
+    inputs,
+  });
+  const cronGroup = groupFor({});
+  const manualCollectGroup = groupFor({ replay_run_id: "" });
+  const replayGroupA = groupFor({ replay_run_id: "39369279984" });
+  const replayGroupB = groupFor({ replay_run_id: "39369279985" });
+  assert.equal(cronGroup, "source-reverification-Source Reverification-refs/heads/main-schedule");
+  assert.equal(manualCollectGroup, cronGroup, "일반 수동 수집과 정기 실행은 같은 수집 슬롯을 공유한다");
+  assert.equal(replayGroupA, "source-reverification-Source Reverification-refs/heads/main-replay-39369279984");
+  assert.notEqual(replayGroupA, cronGroup, "대기 중인 replay dispatch가 뒤따르는 정기 cron에 의해 대기열에서 대체되지 않는다");
+  assert.notEqual(replayGroupA, replayGroupB, "서로 다른 원본 run 재생은 서로의 대기 슬롯을 덮어쓰지 않는다");
+  assert.equal(groupFor({ replay_run_id: "39369279984" }), replayGroupA, "같은 replay_run_id 중복 dispatch는 같은 그룹에서 직렬화된다");
   assert.doesNotMatch(yml, /\n  [A-Z_]+: /u, "no workflow-level env");
 });
 
