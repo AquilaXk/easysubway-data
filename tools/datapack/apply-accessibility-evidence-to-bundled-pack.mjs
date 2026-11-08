@@ -30,15 +30,30 @@ function getTargetStationIds(pack) {
   return [...ids].filter(Boolean).sort(codepointCompare);
 }
 // #3036: 전국 팩에는 reviewed 역의 다른 노선 KRIC 행(사당 2호선 등)도 있으므로 역이 아니라 역-노선 단위로 바꾼다.
+function parseEdgeEndpointStationLine(node, fallbackLineId) {
+  if (typeof node !== "string" || !node.startsWith("station-")) return null;
+  const [stationId, nodeLineId] = node.split(":");
+  const lineId = nodeLineId || fallbackLineId;
+  if (!stationId || !lineId) return null;
+  return `${stationId}:${lineId}`;
+}
+
 function getTargetStationLineKeys(pack) {
   const keys = new Set();
   for (const row of [...(pack?.facilities ?? []), ...(pack?.stationFacilityEvidence ?? [])]) {
     if (row.stationId && row.lineId) keys.add(`${row.stationId}:${row.lineId}`);
   }
   for (const edge of pack?.networkEdges ?? []) {
-    for (const node of [edge.fromNodeId, edge.toNodeId]) {
-      if (typeof node === "string" && node.startsWith("station-") && node.includes(":")) keys.add(node);
+    const fromParts = typeof edge?.fromNodeId === "string" ? edge.fromNodeId.split(":") : [];
+    const toParts = typeof edge?.toNodeId === "string" ? edge.toNodeId.split(":") : [];
+    const edgeLineId = edge?.lineId || fromParts[1] || toParts[1];
+    const fromKey = parseEdgeEndpointStationLine(edge?.fromNodeId, edgeLineId);
+    const toKey = parseEdgeEndpointStationLine(edge?.toNodeId, edgeLineId);
+    if (!fromKey || !toKey) {
+      throw new Error(`reviewed networkEdge station-line node is invalid: ${String(edge?.id ?? "")}`);
     }
+    keys.add(fromKey);
+    keys.add(toKey);
   }
   return keys;
 }

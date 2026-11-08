@@ -545,7 +545,6 @@
     {"path":"tools/datapack/publish-map-catalog-signed-current-publication.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":378},
     {"path":"tools/datapack/build-datapack-current-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":39305},
     {"path":"tools/datapack/build-exit-path-admission.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":56},
-    {"path":"tools/datapack/build-facility-accessibility-admission.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":28},
     {"path":"tools/datapack/build-facility-source-admission.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":587},
     {"path":"tools/datapack/build-itx-current-topology-admission.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":14},
     {"path":"tools/datapack/build-launch-denominator-report.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":41},

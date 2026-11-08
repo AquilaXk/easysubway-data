@@ -5,7 +5,11 @@ import { pathToFileURL } from "node:url";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { assertFacilityAbsencesCovered, facilityAbsenceCoverageBySource } from "./lib/facility-evidence-states.mjs";
-import { KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS } from "./lib/kric-standard-facilities.mjs";
+import {
+  KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS,
+  kricFacilityStatusState,
+  kricStationContexts,
+} from "./lib/kric-standard-facilities.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -580,6 +584,8 @@ function partitionInputEvidence({ productionInput, stationContext, queryContext,
     addDenominatorEvidence(evidenceByDenominator, line, row.type, projected);
   }
 
+  const kricContexts = kricStationContexts(snapshot, snapshot.queries, stationContext.stationLines);
+
   for (const row of productionInput.accessibilityStatusEvidence) {
     const evidenceId = `STATUS:${sha256(canonicalJson(row))}`;
     if (row.sourceId !== SOURCE_ID || !REQUIRED_TYPES.includes(row.facilityType)) {
@@ -604,9 +610,10 @@ function partitionInputEvidence({ productionInput, stationContext, queryContext,
       blocking.push(evidenceId);
       continue;
     }
+    const kricStationContext = kricContexts.get(line.stationId);
     const unknown = row.evidenceKind === "UNKNOWN";
-    if (unknown) validateUnknownEvidence(row, query, snapshot);
-    else validateAbsenceEvidence(row, query, snapshot);
+    if (unknown) validateUnknownEvidence(row, query, snapshot, kricStationContext);
+    else validateAbsenceEvidence(row, query, snapshot, kricStationContext);
     const projected = canonicalObject({
       evidenceId,
       inputKind: unknown ? "EXPLICIT_UNKNOWN" : "EXPLICIT_ABSENCE",
@@ -670,8 +677,9 @@ function validatePresentEvidence(row, line, query, snapshot) {
   }
 }
 
-function validateAbsenceEvidence(row, query, snapshot) {
+function validateAbsenceEvidence(row, query, snapshot, kricStationContext) {
   const expectedCode = FACILITY_CODE_BY_TYPE[row.facilityType];
+  const expectedState = kricStationContext && kricFacilityStatusState(row.facilityType, kricStationContext);
   const expectedEvidenceHash = sha256(JSON.stringify({
     snapshotId: snapshot.snapshotId,
     query: providerTuple(query),
@@ -679,6 +687,7 @@ function validateAbsenceEvidence(row, query, snapshot) {
     evidenceKind: "NOT_EXISTS",
   }));
   if (query.rows.some(({ gubun }) => gubun === expectedCode)
+    || expectedState?.evidenceKind !== "NOT_EXISTS"
     || row.evidenceKind !== "NOT_EXISTS"
     || row.sourceSnapshotId !== snapshot.snapshotId
     || row.providerRecordHash !== query.providerRecordHash
@@ -686,7 +695,7 @@ function validateAbsenceEvidence(row, query, snapshot) {
     || row.provenanceKind !== "OFFICIAL_SOURCE"
     || row.installationStatus !== "NOT_INSTALLED"
     || row.operationalStatus !== "NOT_APPLICABLE"
-    || row.statusMeaning !== "EXHAUSTIVE_LIST_ABSENCE"
+    || row.statusMeaning !== expectedState.statusMeaning
     || row.strictRouteEligibleReason !== "FACILITY_NOT_INSTALLED"
     || row.confidence !== 100
     || row.verifiedAt !== snapshot.capturedAt || row.retrievedAt !== snapshot.capturedAt) {
@@ -699,7 +708,8 @@ const UNKNOWN_STATUS_MEANINGS = new Set(KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS);
 // QA 승인 2026-10-23: 칸마다 확인된 존재·부재 또는 명시적 UNKNOWN이면 받고, 확인된 칸 수는 scope의 minimumVerifiedRows 이상이어야 한다.
 const ADMITTED_DENOMINATOR_STATES = new Set(["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNKNOWN"]);
 
-function validateUnknownEvidence(row, query, snapshot) {
+function validateUnknownEvidence(row, query, snapshot, kricStationContext) {
+  const expectedState = kricStationContext && kricFacilityStatusState(row.facilityType, kricStationContext);
   const expectedEvidenceHash = sha256(JSON.stringify({
     snapshotId: snapshot.snapshotId,
     query: providerTuple(query),
@@ -707,6 +717,7 @@ function validateUnknownEvidence(row, query, snapshot) {
     evidenceKind: "UNKNOWN",
   }));
   if (query.rows.some(({ gubun }) => gubun === FACILITY_CODE_BY_TYPE[row.facilityType])
+    || expectedState?.evidenceKind !== "UNKNOWN"
     || row.sourceSnapshotId !== snapshot.snapshotId
     || row.providerRecordHash !== query.providerRecordHash
     || row.evidenceHash !== expectedEvidenceHash
@@ -714,6 +725,7 @@ function validateUnknownEvidence(row, query, snapshot) {
     || row.installationStatus !== "UNKNOWN"
     || row.operationalStatus !== "UNKNOWN"
     || !UNKNOWN_STATUS_MEANINGS.has(row.statusMeaning)
+    || row.statusMeaning !== expectedState.statusMeaning
     || row.strictRouteEligibleReason !== "FACILITY_PRESENCE_UNKNOWN"
     || row.confidence !== 0
     || row.verifiedAt !== snapshot.capturedAt || row.retrievedAt !== snapshot.capturedAt) {

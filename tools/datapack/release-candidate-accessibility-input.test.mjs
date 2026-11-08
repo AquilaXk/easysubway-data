@@ -160,3 +160,65 @@ test("#3036 syncCanonicalAccessibilityEvidence는 reviewed 역-노선의 접근�
   assert.deepEqual(pack.facilities.map(({ id }) => id), ["line-2-elevator", "line-4-elevator-reviewed"]);
   assert.deepEqual(pack.stationFacilityEvidence.map(({ lineId, reviewed }) => `${lineId}:${reviewed === true}`), ["seoul-2:false", "seoul-4:true"]);
 });
+
+test("#3036 syncCanonicalAccessibilityEvidence는 networkEdges의 3-segment/hub 역 노드를 건너뛰지 않고 대상 역-노선으로 인식한다", () => {
+  const kric = "kric-station-convenience-standard";
+  const facility = (stationId, lineId, id) => ({ id, stationId, lineId, type: "ELEVATOR", sourceId: kric });
+  const evidence = (stationId, lineId, evidenceKind) => ({ stationId, lineId, facilityType: "ELEVATOR", evidenceKind, sourceId: kric });
+  const reviewedSources = ["seoul-metro-accessibility", kric].map((id) => ({ id, updatedAt: "reviewed" }));
+  const canonical = {
+    manifest: { activePack: { id: "nationwide", version: "1" } },
+    packs: [{
+      id: "nationwide",
+      facilities: [
+        facility("station-sadang", "seoul-2", "sadang-line-2"),
+        facility("station-sadang", "seoul-4", "sadang-line-4-stale"),
+        facility("station-sangnoksu", "seoul-4", "sangnoksu-line-4-stale"),
+      ],
+      stationFacilityEvidence: [
+        evidence("station-sadang", "seoul-2", "EXISTS"),
+        evidence("station-sadang", "seoul-4", "EXISTS"),
+        evidence("station-sangnoksu", "seoul-4", "EXISTS"),
+      ],
+      networkEdges: [],
+      stationExits: [],
+      sourceInventory: reviewedSources.map(({ id }) => ({ id, updatedAt: "canonical" })),
+      minimumTableRows: {},
+    }],
+  };
+  syncCanonicalAccessibilityEvidence(canonical, {
+    facilities: [],
+    stationFacilityEvidence: [],
+    networkEdges: [
+      {
+        id: "edge-entry-sangnoksu",
+        edgeType: "ENTRY",
+        lineId: "seoul-4",
+        fromNodeId: "station-sangnoksu",
+        toNodeId: "station-sangnoksu",
+        sourceId: "seoul-metro-accessibility",
+      },
+      {
+        id: "edge-ride-sadang",
+        edgeType: "RIDE",
+        fromNodeId: "station-sadang:seoul-4:EXPRESS",
+        toNodeId: "station-sadang:seoul-4:LOCAL",
+        sourceId: "seoul-metro-accessibility",
+      },
+    ],
+    sourceInventory: reviewedSources,
+  });
+  const [pack] = canonical.packs;
+  assert.deepEqual(pack.facilities.map(({ id }) => id), ["sadang-line-2"]);
+  assert.deepEqual(pack.stationFacilityEvidence.map(({ stationId, lineId }) => `${stationId}:${lineId}`), ["station-sadang:seoul-2"]);
+
+  assert.throws(
+    () => syncCanonicalAccessibilityEvidence(structuredClone(canonical), {
+      facilities: [],
+      stationFacilityEvidence: [],
+      networkEdges: [{ id: "edge-unscoped", edgeType: "ENTRY", fromNodeId: "station-sadang", toNodeId: "station-sadang" }],
+      sourceInventory: reviewedSources,
+    }),
+    /reviewed networkEdge station-line node is invalid: edge-unscoped/,
+  );
+});
