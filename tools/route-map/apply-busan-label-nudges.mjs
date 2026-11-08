@@ -19,7 +19,7 @@
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync } from "node:fs";
 import { parsePathVertices, verticesToPath } from "./audit-octolinearity.mjs";
-import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 const VERT_MATCH_TOL = 5; // track 정점 매칭 반경(px) — 스냅 잔차 포함.
 
@@ -66,7 +66,7 @@ export function dedupeNearCorner(verts, corner) {
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     nudges: "tools/route-map/route-map-busan-label-nudges.json",
     check: false,

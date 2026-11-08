@@ -7,7 +7,7 @@
 // label_polygon·up/down_path를 정합화한다.
 //
 // 사용: node tools/route-map/fix-incheon-airport-terminals.mjs [--pack …] [--check]
-import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 const REGION = "수도권";
 const AREX_LINE = "line-e9e9a5b520a4";
@@ -16,7 +16,7 @@ const T2_NEW = { x: 331.344, y: 2952.222 }; // T1(331.344,2858.222) 한 칸 아�
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     check: false,
   };

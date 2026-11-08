@@ -522,6 +522,144 @@ test("혼자서도 상한을 넘는 줄은 단위로 묶지 않고 앞 줄만 �
   assertSamePicture(draws.map(([paint, path]) => ({ paint, path })), base, "넓은 둘째 줄");
 });
 
+// 부산 2줄 라벨(벡스코(시립미술관): 첫 줄 폭 140.41 <= 256, 둘째 줄 폭 269.55 > 256)에서
+// drawPath가 +1 되는 메커니즘 고정 시험(#1495).
+// 자르기 전(singleDraw 폴백)에는 [halo0, halo1, fill0, fill1]이 모두 1-블록 단위(mergeKey:
+// "HALO" 또는 "RED")가 되어 앞쪽 단일 1-블록 HALO 그룹과 halo0이 canJoin으로 합쳐져
+// drawPath가 4개가 된다(대신 halo0이 앞 HALO path에 이어 붙어 fill0과 path를 공유하지 못함).
+// 반면 splitByPieces로 자르면 첫 줄이 2-블록 단위 [[halo0], [fill0]](mergeKey: "HALO\nRED")로
+// 묶여 앞쪽 1-블록 HALO 그룹(mergeKey: "HALO")과 mergeKey가 달라 합쳐지지 못하므로
+// drawPath는 5개(+1)가 되고, 대신 첫 줄의 테두리와 글자가 path 하나를 공유해 paths 수는 1 줄어든다.
+test("부산 2줄 라벨 메커니즘: 둘째 줄만 상한(256)을 넘을 때 splitByPieces가 첫 줄을 2-블록 단위로 묶어 앞 1-블록 그룹과의 병합 대신 path 공유를 택한다(drawPath +1, paths -1)", () => {
+  const prevHaloOnly = rect(0, 0, 40, 10);
+  const line0 = rect(50, 0, 140, 10); // 폭 140 <= 256
+  const line1 = rect(51, 30, 270, 10); // 폭 270 > 256 (혼자서도 maxExtent 초과)
+
+  // 1) 실제 프로덕션 경로(splitByPieces): 첫 줄 [halo0, fill0]이 같은 path를 공유하는 2-블록 단위가 된다.
+  const splitDraws = [
+    [HALO, prevHaloOnly],
+    [HALO, line0],
+    [HALO, line1],
+    [RED, line0],
+    [RED, line1],
+  ];
+  const { base: withSplit } = mergeDraws(docOf(splitDraws));
+  assert.deepEqual(drawsOf(withSplit), [
+    [HALO, [0]],
+    [HALO, [50]],
+    [RED, [50]],
+    [HALO, [51]],
+    [RED, [51]],
+  ]);
+  assert.equal(withSplit.commands.length, 5, "첫 줄이 2-블록 단위(HALO\\nRED)라 앞 1-블록 HALO와 합쳐지지 않아 drawPath 5개");
+  assert.deepEqual(
+    withSplit.paths.map((p) => p.points.length),
+    [8, 8, 8],
+    "첫 줄의 테두리와 글자가 path 하나(8점)를 공유해 전체 path 좌표 합은 24개",
+  );
+  assert.equal(withSplit.commands[1].pathId, withSplit.commands[2].pathId, "첫 줄 halo0과 fill0은 같은 pathId를 쓴다");
+
+  // 2) 비교 기준(singleDraw 폴백과 동등한 1-블록 단위 열): halo0이 앞 1-블록 HALO와 canJoin으로 합쳐진다.
+  const line0FillCopy = rect(50.5, 0, 140, 10);
+  const singleUnitDraws = [
+    [HALO, prevHaloOnly],
+    [HALO, line0],
+    [HALO, line1],
+    [RED, line0FillCopy],
+    [RED, line1],
+  ];
+  const { base: withoutSplit } = mergeDraws(docOf(singleUnitDraws));
+  assert.deepEqual(drawsOf(withoutSplit), [
+    [HALO, [0, 50]],
+    [HALO, [51]],
+    [RED, [50.5]],
+    [RED, [51]],
+  ]);
+  assert.equal(withoutSplit.commands.length, 4, "1-블록 단위로 풀리면 halo0이 앞 HALO에 붙어 drawPath 4개");
+  assert.deepEqual(
+    withoutSplit.paths.map((p) => p.points.length),
+    [16, 8, 8],
+    "halo0이 앞 HALO에 이어 붙으면서 첫 줄 path가 테두리용·글자용 두 곳에 적혀 좌표 합은 32개",
+  );
+});
+
+// 대구 2줄 라벨 4곳(idx 263·317·335·367)의 Skia 차이 원인 분리 고정 시험(#1495).
+// 대구 2줄 라벨은 줄 간격이 좁아 두 줄의 흰 테두리 상자(halo0, halo1)가 서로 겹치므로
+// (!piecesDisjoint(blocks[0])) 2줄 전체는 한 단위가 되지 못한다. 이 중 첫 줄 글자(fill0)가
+// 둘째 줄 테두리(halo1)와 겹치지 않는 4곳은 splitByPieces + reorderKeepsPicture를 통해
+// [halo0, halo1, fill0, fill1] → [halo0, fill0, halo1, fill1] 순서로 줄 단위 분할된다.
+// 여기서 (A) 순서 변화 자체는 halo0과 halo1이 같은 불투명 흰색(0xffffffff, srcOver)이고
+// fill0이 halo1과 겹치지 않으므로 모든 픽셀에서 색상이 100% 동등하며, (B) Skia 차이는
+// 분할된 줄 단위가 이웃 라벨 줄 단위와 concatPaths로 복합 path로 합쳐질 때만 생김을 분리 검증한다.
+test("대구 2줄 라벨 원인 분리: halo0-halo1이 겹치고 fill0-halo1이 분리된 라벨의 줄 단위 재정렬은 픽셀 색상이 동등하며, 복합 path 병합 단계에서만 다중 윤곽선이 된다", () => {
+  // 줄 간격 13: 테두리 outset 2(폭 4 / 2)를 더한 halo0(y: -2..12)과 halo1(y: 11..25)은 y=[11,12]에서 겹치지만,
+  // fill0(y: 0..10)과 halo1(y: 11..25)은 겹치지 않는다(대구 2줄 라벨 4곳과 동일한 기하 조건).
+  const labelA0 = rect(0, 0, 30, 10);
+  const labelA1 = rect(1, 13, 30, 10);
+  const singleLabelDraws = [
+    [HALO, labelA0],
+    [HALO, labelA1],
+    [RED, labelA0],
+    [RED, labelA1],
+  ];
+
+  // (A) 단일 2줄 라벨에서 splitByPieces 재정렬 검증: 복합 path 병합 없이 순서만 [halo0, fill0, halo1, fill1]로 바뀐다.
+  const { base: reorderedOnly } = mergeDraws(docOf(singleLabelDraws), [], SMALL);
+  assert.deepEqual(drawsOf(reorderedOnly), [
+    [HALO, [0]],
+    [RED, [0]],
+    [HALO, [1]],
+    [RED, [1]],
+  ]);
+  assert.equal(reorderedOnly.paths.length, 2, "복합 path 병합 전에는 두 줄의 원본 path 2개 그대로다");
+
+  // 불투명 srcOver 래스터 오라클: 주어진 (x, y)에서 그리기 열이 최종 칠하는 색상을 계산한다.
+  const pointInBox = (px, py, box) => px >= box.minX && px <= box.maxX && py >= box.minY && py <= box.maxY;
+  const rasterColorAt = (drawSeq, px, py) => {
+    let color = 0x00000000;
+    for (const [paint, path] of drawSeq) {
+      if (pointInBox(px, py, boundsOf(paint, path))) {
+        color = paint.color; // 불투명(alpha=0xff) srcOver이므로 덮어쓴다.
+      }
+    }
+    return color;
+  };
+  const reorderedDraws = [
+    [HALO, labelA0],
+    [RED, labelA0],
+    [HALO, labelA1],
+    [RED, labelA1],
+  ];
+  // halo0 전용(5, -1), fill0 내부(5, 5), halo0∩halo1 교집합(5, 11.5), fill1 내부(5, 18), 배경(50, 50)
+  for (const [px, py] of [[5, -1], [5, 5], [5, 11.5], [5, 18], [50, 50]]) {
+    assert.equal(
+      rasterColorAt(reorderedDraws, px, py),
+      rasterColorAt(singleLabelDraws, px, py),
+      `(${px}, ${py})에서 재정렬 전후 불투명 픽셀 색상이 완전히 같아야 한다`,
+    );
+  }
+
+  // (B) 이웃 라벨 단위가 함께 있을 때: 재정렬된 줄 단위가 이웃 단위와 concatPaths로 합쳐져 복합 path(점 16개)가 만들어진다.
+  const labelB0 = rect(40, 0, 30, 10);
+  const withNeighborDraws = [
+    ...singleLabelDraws,
+    [HALO, labelB0],
+    [RED, labelB0],
+  ];
+  const { base: compoundMerged } = mergeDraws(docOf(withNeighborDraws), [], SMALL);
+  assert.deepEqual(drawsOf(compoundMerged), [
+    [HALO, [0]],
+    [RED, [0]],
+    [HALO, [1, 40]],
+    [RED, [1, 40]],
+  ]);
+  assert.deepEqual(
+    compoundMerged.paths.map((p) => p.points.length),
+    [8, 16],
+    "이웃 라벨과 병합된 줄 단위만 단일 윤곽선(점 8개)에서 복합 path(점 16개)로 바뀐다",
+  );
+});
+
 // ── 무작위 문서로 렌더 동등 계약을 확인한다 ─────────────────────────────────────
 
 function random(seed) {

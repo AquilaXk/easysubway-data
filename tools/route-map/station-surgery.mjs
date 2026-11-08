@@ -1,11 +1,11 @@
 // 공용 station 카탈로그 수술 헬퍼 (#1789 P0). split/merge 도구가 공유하는
 // 인자 파싱·FK-safe 노선 재지정·팩 open/write 스캐폴드를 한곳에 모아 중복을 없앤다.
-import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 /** {pack,index,check} 공통 인자 파서. */
 export function parsePackArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     check: false,
   };

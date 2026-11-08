@@ -20,6 +20,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm, writeFile as writeTemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 // 역 라벨을 track에 근접 배정할 때의 반경(root px). 라벨은 track에서 20~35px
 // 떨어져 있어(폰트 높이 근처) 이보다 크면 이웃 노선까지 삼킨다.
@@ -43,7 +44,7 @@ region 노선별 track geometry로 변환한다. --check는 파일을 쓰지 않
 
 function parseArgs(argv) {
   const options = {
-    geometry: null, pack: null, region: null, out: null, check: false,
+    geometry: null, pack: resolveBundledRouteMapPackPath(), region: null, out: null, check: false,
     source: "svg-strokes",
     snapRadius: SNAP_RADIUS,
     stitchTolerance: STITCH_TOLERANCE,

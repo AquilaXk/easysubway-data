@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync } from "node:zlib";
+import { resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
@@ -107,7 +108,7 @@ function quantile(sorted, q) {
 
 function parseArgs(argv) {
   const options = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     angleTolerance: 0.5,
     alignThreshold: 0.75,
     json: false,

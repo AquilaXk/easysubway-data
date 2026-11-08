@@ -22,11 +22,11 @@
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
-import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, repoRoot, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     region: "수도권",
     threshold: 48,
     exceptions: "tools/route-map/route-map-euclidean-spacing-exceptions.json",

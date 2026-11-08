@@ -12,19 +12,25 @@ const root = path.resolve(import.meta.dirname, "../..");
 // 앱이 여는 active pack(capital) 하나만 소유한다. base 카탈로그 팩(core)이 낡은
 // route map 레이어를 함께 들고 있으면 좌표·라이선스·역 집합이 capital과 어긋나
 // "단일 기준"이 깨진다(#1635 완료조건). 이 테스트가 그 재발산을 잡는다.
-function openPack(id) {
-  const index = JSON.parse(
+function readIndex() {
+  return JSON.parse(
     readFileSync(
       path.join(root, "apps/mobile/assets/datapacks/index.json"),
       "utf8",
     ),
   );
+}
+
+function openPack(id) {
+  const index = readIndex();
   const pack = index.packs.find((entry) => entry.id === id);
   assert.ok(pack, `${id} 팩이 index.json에 있어야 함`);
-  // index.json의 asset 경로는 apps/mobile 기준 상대경로다.
-  const sqliteBytes = gunzipSync(
-    readFileSync(path.join(root, "apps/mobile", pack.asset)),
-  );
+  // index.json의 asset/url 경로는 apps/mobile 기준 상대경로다.
+  const packRel = (pack.asset ?? pack.url).replace(/^\/+/, "");
+  const packFile = packRel.startsWith("apps/mobile/")
+    ? path.join(root, packRel)
+    : path.join(root, "apps/mobile", packRel);
+  const sqliteBytes = gunzipSync(readFileSync(packFile));
   const dir = mkdtempSync(path.join(tmpdir(), "route-map-single-source-"));
   const sqlitePath = path.join(dir, `${id}.sqlite`);
   writeFileSync(sqlitePath, sqliteBytes);
@@ -32,11 +38,48 @@ function openPack(id) {
   return { database, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
+function resolveActivePackId() {
+  const index = readIndex();
+  const active = index.packs.find(
+    (entry) => entry.id === "nationwide" || entry.id === "capital",
+  );
+  assert.ok(active, "nationwide 또는 capital 팩이 index.json에 있어야 함");
+  return active.id;
+}
+
 function count(database, sql, ...params) {
   return database.prepare(sql).get(...params).n;
 }
 
-test("route map 레이어는 active pack(capital)만 소유한다 — core는 비운다", () => {
+test("route map 레이어는 active pack(capital 또는 nationwide)만 소유한다 — core는 비운다", () => {
+  const index = readIndex();
+  const hasCore = index.packs.some((entry) => entry.id === "core");
+  if (!hasCore) {
+    assert.deepEqual(
+      index.packs.map((entry) => entry.id),
+      ["nationwide"],
+      "core가 없는 단일 팩 레이아웃은 nationwide 하나만 소유해야 함",
+    );
+    const { database, cleanup } = openPack("nationwide");
+    try {
+      assert.ok(
+        count(database, "SELECT COUNT(*) AS n FROM route_map_positions") > 0,
+        "nationwide.sqlite는 route_map_positions를 소유해야 함",
+      );
+      assert.equal(
+        count(
+          database,
+          "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='route_map_line_tracks'",
+        ),
+        1,
+        "nationwide.sqlite는 route_map_line_tracks 테이블을 소유해야 함",
+      );
+    } finally {
+      cleanup();
+    }
+    return;
+  }
+
   const { database, cleanup } = openPack("core");
   try {
     // base 카탈로그 팩은 route map 렌더 레이어를 소유하지 않는다.
@@ -57,7 +100,7 @@ test("route map 레이어는 active pack(capital)만 소유한다 — core는 �
 });
 
 test("capital route map은 전용궤도시설로 전환된 인천공항 자기부상선을 도식에서 제외한다", () => {
-  const { database, cleanup } = openPack("capital");
+  const { database, cleanup } = openPack(resolveActivePackId());
   try {
     // 정책: 노선도는 현재 운행 중이며 도시철도로 분류된 노선만 표시한다.
     // 인천공항 자기부상철도(line-cbe75f5287a1)는 도시철도 폐업 후 전용궤도시설로

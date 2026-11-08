@@ -7,7 +7,7 @@ import { canonicalJson } from "../datapack/lib/manifest-validation.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { normalizeSvgForCompile } from "./compile-basemap-vec.mjs";
 import { outlineBasemapText } from "./outline-basemap-text.mjs";
-import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, repoRoot, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 import { FULL_CANVAS_DECOR_IDS, inkBBoxOf, viewBoxOf } from "./svg-ink-bbox.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -152,7 +152,7 @@ export function verifySourceElementKeyRotation(expected, actual) {
 }
 
 export function generateGeometryProvenanceManifest({
-  pack = "apps/mobile/assets/datapacks/capital.sqlite.gz",
+  pack = resolveBundledRouteMapPackPath(),
 } = {}) {
   const opened = openPack(pack, "geometry-provenance-");
   try {

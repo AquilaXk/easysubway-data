@@ -742,6 +742,40 @@ test("display:none인 clipPath 정의도 참조할 수 있으므로 자기 displ
   );
 });
 
+test("바깥 clipPath 자식 중 display:none인 요소 안의 중첩 clipPath는 바깥 clipPath에 합쳐지지 않도록 제거되고 컴파일 입력에도 반영된다", () => {
+  const inputSvg =
+    '<svg viewBox="0 0 100 100">' +
+    '<clipPath id="outer">' +
+    '<g display="none"><clipPath id="inner"><rect id="leaked" x="50" y="50" width="20" height="20"/></clipPath></g>' +
+    '<rect id="kept" x="0" y="0" width="10" height="10"/>' +
+    "</clipPath>" +
+    '<rect id="target" clip-path="url(#outer)" width="100" height="100" fill="#ff0000"/>' +
+    "</svg>";
+  const expectedSvg =
+    '<svg viewBox="0 0 100 100">' +
+    '<clipPath id="outer"><rect id="kept" x="0" y="0" width="10" height="10"/></clipPath>' +
+    '<rect id="target" clip-path="url(#outer)" width="100" height="100" fill="#ff0000"/>' +
+    "</svg>";
+  const stripped = assertStripped(inputSvg, {
+    removed: ["inner", "leaked"],
+    kept: ["outer", "kept", "target"],
+  });
+  assert.equal(stripped, expectedSvg);
+  assert.equal(normalizeSvgForCompile(inputSvg), normalizeSvgForCompile(expectedSvg));
+  assert.doesNotThrow(() =>
+    expandAndStrip(
+      '<clipPath id="outer"><g display="none"><clipPath id="inner"><rect id="leaked" class="r" width="10" height="10"/></clipPath></g><rect id="kept" width="10" height="10"/></clipPath>',
+    ),
+  );
+  assert.throws(
+    () =>
+      expandAndStrip(
+        '<clipPath id="outer"><g display="none"><clipPath id="inner"><rect id="leaked" width="10" height="10"/></clipPath></g><rect id="kept" class="r" width="10" height="10"/></clipPath>',
+      ),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
 test("닫는 태그가 없는 숨김 요소는 조용히 넘기지 않고 실패한다", () => {
   assert.throws(() => stripHiddenElements('<svg><g id="open" opacity="0"><rect/></svg>'), /g의 닫는 태그를 찾지 못했습니다/);
 });

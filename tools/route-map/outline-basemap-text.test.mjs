@@ -477,3 +477,122 @@ test("같은 라벨이 반복돼도 글리프 윤곽선은 한 번만 꺼낸다"
   assert.equal(glyphCount, 8000);
   assert.equal(distinctGlyphOutlines, 2);
 });
+
+// Chrome 실측 라벨 상자(easy-subway-*-geometry.json labels[].bounds: getBBox 전진폭·em 상자)와
+// outlineBasemapText 글리프 윤곽선 잉크 상자(inkBBoxOf)의 배치 정합 고정 시험(#1495).
+// 단일 줄, 다중 줄 tspan, text-anchor="middle"/"end", 양·음수 letter-spacing 대표 라벨을 검증한다.
+test("Chrome 실측 라벨 상자(geometry.json)와 윤곽선 잉크 상자(inkBBoxOf)가 단일·다중 줄·앵커·자간 전반에서 정합한다", () => {
+  const roundBox = (box) => ({
+    minX: Number(box.minX.toFixed(3)),
+    minY: Number(box.minY.toFixed(3)),
+    maxX: Number(box.maxX.toFixed(3)),
+    maxY: Number(box.maxY.toFixed(3)),
+  });
+  const isolateFillLabelSvg = (normalizedSvg, textId) =>
+    normalizedSvg
+      .replace(/<(?:path|rect|circle|line|polygon|polyline|ellipse)\b[^>]*\/?>/g, "")
+      .replace(/<text\b[^>]*>[\s\S]*?<\/text>/g, (match) =>
+        match.includes(`id="${textId}"`) && !match.includes('fill="none"') && !match.includes("fill:none")
+          ? match
+          : "",
+      );
+
+  const fixtures = [
+    {
+      desc: "단일 줄 start 앵커(수도권 시청)",
+      region: "seoul",
+      geomFile: "easy-subway-sma-v4-geometry.json",
+      textId: "station-label-시청",
+      sourceElementKey: "26f9f4db8d38fa88e0e8a03cea903e7780eabd8ba2538474bc4baa13c4e48a29",
+      expectedChrome: { minX: 1678.848, minY: 1176.812, maxX: 1708.735, maxY: 1197.287 },
+      expectedInk: { minX: 1679.185, minY: 1179.363, maxX: 1707.129, maxY: 1194.711 },
+    },
+    {
+      desc: "다중 줄 tspan start 앵커(수도권 동대문역사문화공원)",
+      region: "seoul",
+      geomFile: "easy-subway-sma-v4-geometry.json",
+      textId: "station-label-동대문역사문화공원",
+      sourceElementKey: "55e6e4d492808f1c16ab5ed95e30ce3b69bf9bae0b42a08c6f28f53e2a994999",
+      expectedChrome: { minX: 2008.38, minY: 1141.697, maxX: 2083.099, maxY: 1179.462 },
+      expectedInk: { minX: 2008.869, minY: 1144.316, maxX: 2082.96, maxY: 1176.869 },
+    },
+    {
+      desc: "text-anchor=middle(수도권 일산 서해 배지)",
+      region: "seoul",
+      geomFile: "easy-subway-sma-v4-geometry.json",
+      textId: "transfer-station-badge-label-일산-서해선-1",
+      sourceElementKey: "8a057e6a7fcde035b5a3c102847f3947e02d75e934a523535646902ae93e797d",
+      expectedChrome: { minX: 739.388, minY: 396.891, maxX: 750.913, maxY: 405.081 },
+      expectedInk: { minX: 739.389, minY: 398.483, maxX: 750.541, maxY: 404.525 },
+    },
+    {
+      desc: "다중 줄 tspan + text-anchor=end(수도권 신정네거리)",
+      region: "seoul",
+      geomFile: "easy-subway-sma-v4-geometry.json",
+      textId: "station-label-신정네거리",
+      sourceElementKey: "59736367869fd7759458f4ff284ef1e64896885dc51871c7c4b3691fcc868eb1",
+      expectedChrome: { minX: 1005.253, minY: 1515.306, maxX: 1045.364, maxY: 1548.976 },
+      expectedInk: { minX: 1006.19, minY: 1517.508, maxX: 1044.034, maxY: 1546.756 },
+    },
+    {
+      desc: "양수 letter-spacing=0.15px + text-anchor=middle(수도권 기흥 에버라인 배지)",
+      region: "seoul",
+      geomFile: "easy-subway-sma-v4-geometry.json",
+      textId: "transfer-station-badge-label-기흥-에버라인-2",
+      sourceElementKey: "a2b2484d78a99b1f0b935ffdfafc9f1821797a2dc7b63f0c82cb1e385eafb610",
+      expectedChrome: { minX: 2072.006, minY: 2402.511, maxX: 2081.601, maxY: 2414.214 },
+      expectedInk: { minX: 2072.147, minY: 2403.289, maxX: 2081.128, maxY: 2413.456 },
+    },
+    {
+      desc: "다중 줄 tspan + 음수 letter-spacing=-1.26px(부산 국제금융센터·부산은행)",
+      region: "busan",
+      geomFile: "easy-subway-busan-v3-geometry.json",
+      textId: "station-label-uc804-ud3ec",
+      sourceElementKey: "244c94f9dc9593f38714c8334ef9c519001047bb8c96bb6a7ac0c952a5f0eca1",
+      expectedChrome: { minX: 6984.645, minY: 4452.205, maxX: 7242.927, maxY: 4570.708 },
+      expectedInk: { minX: 6985.886, minY: 4460.18, maxX: 7241.291, maxY: 4563.097 },
+    },
+    {
+      desc: "text-anchor=end + 음수 letter-spacing=-0.7px(대구 칠성시장)",
+      region: "daegu",
+      geomFile: "easy-subway-daegu-v3-geometry.json",
+      textId: "text160",
+      sourceElementKey: "f3b1f70292b09fe4d8acee9687cfac9a2b0e23e99f8d588416c5f19b2c7caec9",
+      expectedChrome: { minX: 2104.147, minY: 1090.563, maxX: 2219.154, maxY: 1130.563 },
+      expectedInk: { minX: 2105.32, minY: 1095.27, maxX: 2219.165, maxY: 1125.684 },
+    },
+    {
+      desc: "종점 음수 letter-spacing=-0.8px(대구 설화명곡)",
+      region: "daegu",
+      geomFile: "easy-subway-daegu-v3-geometry.json",
+      textId: "text142",
+      sourceElementKey: "27a1955524c16e4d19bd2f1ff95e31c55dd26db97400e04ec2cc5af26f07ff3c",
+      expectedChrome: { minX: 110.081, minY: 2120.19, maxX: 224.831, maxY: 2160.19 },
+      expectedInk: { minX: 110.75, minY: 2125.03, maxX: 224.529, maxY: 2155.245 },
+    },
+  ];
+
+  const geomCache = new Map();
+  for (const item of fixtures) {
+    if (!geomCache.has(item.geomFile)) {
+      geomCache.set(
+        item.geomFile,
+        JSON.parse(readFileSync(path.join(import.meta.dirname, "route-map-defs", item.geomFile), "utf8")),
+      );
+    }
+    const geom = geomCache.get(item.geomFile);
+    const labelEntry = geom.labels.find((l) => l.sourceElementKey === item.sourceElementKey);
+    assert.ok(labelEntry, `${item.desc}: geometry.json에 ${item.sourceElementKey} 라벨이 있어야 합니다`);
+    assert.deepEqual(labelEntry.bounds, item.expectedChrome, `${item.desc}: Chrome 실측 상자 기준값`);
+
+    const singleLabelSvg = isolateFillLabelSvg(normalizedByRegion.get(item.region), item.textId);
+    const actualInk = roundBox(inkBBoxOf(outlineBasemapText(singleLabelSvg).svg));
+    assert.deepEqual(actualInk, item.expectedInk, `${item.desc}: 윤곽선 잉크 상자 고정 기준값`);
+
+    // 글리프 잉크 상자는 Chrome getBBox(em 상자·전진폭) 내부에 정합해 자리잡아야 한다(베어링 오차 <= 0.02px).
+    assert.ok(actualInk.minX >= labelEntry.bounds.minX - 0.02, `${item.desc}: minX 정합`);
+    assert.ok(actualInk.maxX <= labelEntry.bounds.maxX + 0.02, `${item.desc}: maxX 정합`);
+    assert.ok(actualInk.minY >= labelEntry.bounds.minY - 0.02, `${item.desc}: minY 정합`);
+    assert.ok(actualInk.maxY <= labelEntry.bounds.maxY + 0.02, `${item.desc}: maxY 정합`);
+  }
+});

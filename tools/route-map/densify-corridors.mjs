@@ -6,7 +6,7 @@
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { spliceTrackToNode } from "./splice-transfer-convergence.mjs";
 import { parsePathVertices, verticesToPath } from "./audit-octolinearity.mjs";
-import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 import { denseHubs } from "./densify-hubs.mjs";
 
 const SNAP8 = [
@@ -138,7 +138,7 @@ export function applyNoSharedLine(g, memberLines, tracksByLine, repr, targetGap 
 }
 
 function parseArgs(argv) {
-  const o = { pack: "apps/mobile/assets/datapacks/capital.sqlite.gz", index: "apps/mobile/assets/datapacks/index.json", region: "수도권", threshold: 26, gap: 30, check: false };
+  const o = { pack: resolveBundledRouteMapPackPath(), index: "apps/mobile/assets/datapacks/index.json", region: "수도권", threshold: 26, gap: 30, check: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--pack") o.pack = argv[++i]; else if (a === "--index") o.index = argv[++i];

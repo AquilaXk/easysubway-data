@@ -646,7 +646,8 @@ function parseImportClauseTokens(tokens, clauseStart, fromIdx, testRelPosix, imp
   if (first?.type === 'id' && first.value !== 'type' && !isSharedHelperImport(testRelPosix, importPath, first.value)) {
     importedProdFns.set(first.value, first.value);
   }
-  for (let k = clauseStart; k < fromIdx; k++) {
+  let k = clauseStart;
+  while (k < fromIdx) {
     if (tokens[k].value === '*' && tokens[k + 1]?.value === 'as' && tokens[k + 2]?.type === 'id') {
       importedNamespaces.set(tokens[k + 2].value, importPath);
     } else if (tokens[k].type === 'punct' && tokens[k].value === '{') {
@@ -656,6 +657,7 @@ function parseImportClauseTokens(tokens, clauseStart, fromIdx, testRelPosix, imp
         k = closeBrace;
       }
     }
+    k += 1;
   }
 }
 
@@ -669,15 +671,22 @@ function isStaticImportStart(tokens, idx) {
 function collectImportedBindings(tokens, testRelPosix) {
   const importedProdFns = new Map();
   const importedNamespaces = new Map();
-  for (let idx = 0; idx < tokens.length; idx++) {
-    if (!isStaticImportStart(tokens, idx)) continue;
+  let idx = 0;
+  while (idx < tokens.length) {
+    if (!isStaticImportStart(tokens, idx)) {
+      idx += 1;
+      continue;
+    }
     const fromIdx = findImportFromIndex(tokens, idx + 1);
-    if (fromIdx === -1) continue;
+    if (fromIdx === -1) {
+      idx += 1;
+      continue;
+    }
     const importPath = tokens[fromIdx + 1].value.slice(1, -1);
     if (!isIgnoredImportPath(importPath)) {
       parseImportClauseTokens(tokens, idx + 1, fromIdx, testRelPosix, importPath, importedProdFns, importedNamespaces);
     }
-    idx = fromIdx + 1;
+    idx = fromIdx + 2;
   }
   return { importedProdFns, importedNamespaces };
 }

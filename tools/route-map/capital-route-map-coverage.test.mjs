@@ -5,11 +5,12 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import { expectedCountsByRegion } from "./enrich-capital-route-map-layer.mjs";
+import { cleanupPackDir, openDefaultPack, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 
-// #1638/#1639 회귀 가드: 커밋된 오프라인 팩(capital.sqlite.gz) 안의 각 지역이
+// #1638/#1639 회귀 가드: 커밋된 오프라인 팩(capital.sqlite.gz / nationwide.sqlite.gz) 안의 각 지역이
 // 구조화 노선도 커버리지(노선 선 path·라벨 폴리곤·환승 그룹·LOD)를 유지하는지
 // 검증한다. enrich 도구를 --check(읽기 전용)로 실행해 CI에도 배선한다. 누군가
 // enrich 단계 없이 build-datapack으로 팩을 재생성하면 up/down_path·label_polygon
@@ -20,7 +21,7 @@ async function regionCoverage(region) {
     [
       "tools/route-map/enrich-capital-route-map-layer.mjs",
       "--pack",
-      "apps/mobile/assets/datapacks/capital.sqlite.gz",
+      resolveBundledRouteMapPackPath(),
       "--index",
       "apps/mobile/assets/datapacks/index.json",
       "--region",
@@ -102,3 +103,29 @@ for (const [region, expected] of Object.entries(expectedCountsByRegion)) {
     );
   });
 }
+
+test("전 권역 route_map_positions 노선 수는 36개이며 카탈로그 lines는 자기부상 노선 유무에 따라 36 또는 37개다", () => {
+  const { db, dir } = openDefaultPack("capital-coverage-lines-");
+  try {
+    const totalExpectedRouteMapLines = Object.values(expectedCountsByRegion).reduce(
+      (sum, entry) => sum + entry.lines,
+      0,
+    );
+    assert.equal(totalExpectedRouteMapLines, 36);
+    const routeMapLines = db
+      .prepare("SELECT COUNT(DISTINCT line_id) AS n FROM route_map_positions")
+      .get().n;
+    assert.equal(routeMapLines, totalExpectedRouteMapLines);
+    const hasMaglevInCatalog =
+      db.prepare("SELECT COUNT(*) AS n FROM lines WHERE id = 'line-cbe75f5287a1'").get().n > 0;
+    const catalogLines = db.prepare("SELECT COUNT(*) AS n FROM lines").get().n;
+    assert.equal(
+      catalogLines,
+      hasMaglevInCatalog ? 37 : 36,
+      `카탈로그 노선 수는 자기부상(line-cbe75f5287a1) 유무에 따라 36 또는 37이어야 함 (실측 ${catalogLines})`,
+    );
+  } finally {
+    db.close();
+    cleanupPackDir(dir);
+  }
+});

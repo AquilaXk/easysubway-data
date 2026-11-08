@@ -9,10 +9,11 @@ import {
   reparentLine,
   reparentStation,
 } from "./station-surgery.mjs";
+import { resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 test("parsePackArgs는 기본값과 --pack/--index/--check를 파싱한다", () => {
   assert.deepEqual(parsePackArgs([]), {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     check: false,
   });

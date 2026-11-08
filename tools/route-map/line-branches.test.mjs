@@ -16,8 +16,12 @@ const branches = JSON.parse(
 
 function openCapital() {
   const index = JSON.parse(readFileSync(path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"));
-  const pack = index.packs.find((p) => p.id === "capital");
-  const bytes = gunzipSync(readFileSync(path.join(root, "apps/mobile", pack.asset)));
+  const pack = index.packs.find((p) => p.id === "nationwide" || p.id === "capital");
+  const packRel = (pack.url ?? pack.asset).replace(/^\/+/, "");
+  const packFile = packRel.startsWith("apps/mobile/")
+    ? path.join(root, packRel)
+    : path.join(root, "apps/mobile", packRel);
+  const bytes = gunzipSync(readFileSync(packFile));
   const dir = mkdtempSync(path.join(tmpdir(), "line-branches-"));
   const sqlitePath = path.join(dir, "capital.sqlite");
   writeFileSync(sqlitePath, bytes);

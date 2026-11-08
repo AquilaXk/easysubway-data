@@ -38,7 +38,7 @@
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { openPack, cleanupPackDir, repoRoot } from "./pack-io.mjs";
+import { openPack, cleanupPackDir, repoRoot, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 // ── 1) census-구동 반발 솔버 ────────────────────────────────────────────────
 
@@ -344,7 +344,7 @@ export function applyDeltasToSvg(svg, deltas, { mapScale = 0.455 } = {}) {
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
     region: "수도권",
     threshold: 48,

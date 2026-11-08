@@ -14,7 +14,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { parsePathVertices, verticesToPath } from "./audit-octolinearity.mjs";
-import { cleanupPackDir, openPack, repoRoot, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, repoRoot, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 function nearestNode(vertex, nodes) {
   let best = null;
@@ -26,7 +26,7 @@ function nearestNode(vertex, nodes) {
 }
 
 function parseArgs(argv) {
-  const o = { pack: "apps/mobile/assets/datapacks/capital.sqlite.gz", index: "apps/mobile/assets/datapacks/index.json", region: "수도권", threshold: 80, check: false, report: null };
+  const o = { pack: resolveBundledRouteMapPackPath(), index: "apps/mobile/assets/datapacks/index.json", region: "수도권", threshold: 80, check: false, report: null };
   for (let i = 0; i < argv.length; i += 1) {
     switch (argv[i]) {
       case "--region": o.region = argv[++i]; break;

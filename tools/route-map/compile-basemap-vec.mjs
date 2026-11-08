@@ -3181,7 +3181,7 @@ function hiddenScopeOfChildren(name, scope, removed) {
 }
 
 function isRemovedByHiddenRules(openTag, name, { inRemovedSubtree, insideClipPath }) {
-  if (inRemovedSubtree && !REFERENCEABLE_DEFINITIONS.has(name)) return true;
+  if (inRemovedSubtree && (insideClipPath || !REFERENCEABLE_DEFINITIONS.has(name))) return true;
   return HIDDEN_ELEMENT_RULES.some(
     ({ declares, appliesTo, ignoredByClipPath }) =>
       appliesTo(name) && declares(openTag) && !(ignoredByClipPath && insideClipPath),
@@ -3882,7 +3882,7 @@ export function buildLineOverlayIndex(regions, digests) {
 // 한 번에 굽는다(원본 불변). 컴파일러의 --input-dir 모드는 한 프로세스 안에서
 // isolate로 나눠 구워, 파일마다 dart를 다시 띄우는 비용(1회 약 0.27초)을 한 번으로
 // 줄인다. 산출 바이트는 파일 단위(-i/-o) 모드와 같다(#1484 실측 36/36 sha256 동일).
-function compileAll(jobs, outputDir, workDir) {
+export function compileAll(jobs, outputDir, workDir) {
   const inputDir = path.join(workDir, "svg");
   const compiledDir = path.join(workDir, "vec");
   mkdirSync(inputDir, { recursive: true });

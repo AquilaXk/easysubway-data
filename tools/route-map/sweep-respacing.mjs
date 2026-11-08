@@ -14,9 +14,9 @@ import {
   clusterCentroids,
   octolinearityViolations,
 } from "./audit-station-spacing.mjs";
-import { cleanupPackDir, openPack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
-const PACK = process.argv[2] ?? "apps/mobile/assets/datapacks/capital.sqlite.gz";
+const PACK = process.argv[2] ?? resolveBundledRouteMapPackPath();
 const REGION = process.argv[3] ?? "수도권";
 
 const { db, dir } = openPack(PACK, "sweep-");

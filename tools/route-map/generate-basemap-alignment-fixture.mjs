@@ -24,7 +24,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { buildAssignments } from "./apply-sma-svg-positions.mjs";
-import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, repoRoot, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 import { getRegionConfig } from "./sma-region-configs.mjs";
 
 function codeUnitCompare(a, b) {
@@ -33,7 +33,7 @@ function codeUnitCompare(a, b) {
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     geometry: "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
     region: "수도권",
     out: "tools/route-map/route-map-defs/seoul-alignment-fixture.json",

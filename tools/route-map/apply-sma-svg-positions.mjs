@@ -15,7 +15,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { openPack, writePack, cleanupPackDir } from "./pack-io.mjs";
+import { openPack, writePack, cleanupPackDir, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 import { assertReferentialIntegrity } from "./station-surgery.mjs";
 import { getRegionConfig, SEOUL } from "./sma-region-configs.mjs";
 
@@ -392,7 +392,7 @@ export function applyAssignments(db, assignments, insertableAssignments = [], co
 function parseArgs(argv) {
   const o = {
     extraction: null,
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     region: "seoul",
     check: false,

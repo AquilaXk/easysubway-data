@@ -8,10 +8,10 @@
 // Usage: node tools/route-map/converge-transfer-stations.mjs --region 수도권 [--check]
 
 import { isMainModule } from "../lib/is-main-module.mjs";
-import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 function parseArgs(argv) {
-  const o = { pack: "apps/mobile/assets/datapacks/capital.sqlite.gz", index: "apps/mobile/assets/datapacks/index.json", region: "수도권", check: false };
+  const o = { pack: resolveBundledRouteMapPackPath(), index: "apps/mobile/assets/datapacks/index.json", region: "수도권", check: false };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--region") o.region = argv[++i];
     else if (argv[i] === "--check") o.check = true;

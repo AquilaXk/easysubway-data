@@ -30,12 +30,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyCrossings, clusterCentroids } from "./audit-station-spacing.mjs";
 import { loadRegionRespaceGraph, medianStationChainLength } from "./respace-route-map.mjs";
-import { cleanupPackDir, openPack } from "./pack-io.mjs";
+import { cleanupPackDir, openDefaultPack } from "./pack-io.mjs";
 
 const KNOWN_FREE_CROSSING_BASELINE = 0; // 3호선×대경선 allowlist — 자유 교차 0(위 note 참고).
 
 test("대구권 실팩: 자유 교차 0(3호선×대경선 allowlist, #2068 완주)", () => {
-  const { db, dir } = openPack("apps/mobile/assets/datapacks/capital.sqlite.gz", "daegu-free-crossing-gate-");
+  const { db, dir } = openDefaultPack("daegu-free-crossing-gate-");
   try {
     const graph = loadRegionRespaceGraph(db, "대구권");
     const activeTracks = graph.tracks.filter((t) => t.nodeIds.length);

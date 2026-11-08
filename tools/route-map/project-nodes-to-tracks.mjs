@@ -15,7 +15,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { parsePathVertices } from "./audit-octolinearity.mjs";
-import { cleanupPackDir, openPack, repoRoot, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, repoRoot, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 export const CHECK_BASELINES = [{
   region: "수도권",
@@ -87,7 +87,7 @@ export function projectPointToPolylines(p, polylines) {
 
 function parseArgs(argv) {
   const options = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     region: "수도권",
     threshold: 100,

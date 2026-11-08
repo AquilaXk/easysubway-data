@@ -7,7 +7,7 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync } from "node:fs";
 import { capsuleAxis, capsuleTargets, spliceTrackToNode, transferGroups } from "./splice-transfer-convergence.mjs";
 import { parsePathVertices, verticesToPath } from "./audit-octolinearity.mjs";
-import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 /** 한 그룹을 override(targetSpan·axis·maxDist)로 수렴. convergeGroup과 동형·maxDist 전달. */
 export function applyOverrideGroup(group, override, tracksByLine) {
@@ -44,7 +44,7 @@ export function applyOverrideGroup(group, override, tracksByLine) {
 }
 
 function parseArgs(argv) {
-  const o = { pack: "apps/mobile/assets/datapacks/capital.sqlite.gz", index: "apps/mobile/assets/datapacks/index.json", region: "수도권", overrides: "tools/route-map/route-map-coordinate-overrides.json", check: false };
+  const o = { pack: resolveBundledRouteMapPackPath(), index: "apps/mobile/assets/datapacks/index.json", region: "수도권", overrides: "tools/route-map/route-map-coordinate-overrides.json", check: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--pack") o.pack = argv[++i];

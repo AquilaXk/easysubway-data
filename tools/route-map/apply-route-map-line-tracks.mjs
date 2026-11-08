@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { sha256 } from "../lib/hash.mjs";
+import { resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 // build-route-map-line-tracks가 만든 tracks.json(들)을 capital 팩의
 // route_map_line_tracks 테이블에 기록한다. 라이선스 메타데이터는 같은
@@ -17,7 +18,12 @@ function usage() {
 }
 
 function parseArgs(argv) {
-  const options = { pack: null, index: null, tracks: [], check: false };
+  const options = {
+    pack: resolveBundledRouteMapPackPath(),
+    index: "apps/mobile/assets/datapacks/index.json",
+    tracks: [],
+    check: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     switch (arg) {
@@ -125,8 +131,8 @@ function verifyLineTracks(database, tracksDoc) {
 
 async function updateIndex(indexPath, compressedBytes, sqliteBytes) {
   const index = JSON.parse(await readFile(indexPath, "utf8"));
-  const capital = index.packs.find((pack) => pack.id === "capital");
-  if (!capital) throw new Error("capital pack not found in datapack index");
+  const capital = index.packs.find((pack) => pack.id === "nationwide" || pack.id === "capital");
+  if (!capital) throw new Error("capital or nationwide pack not found in datapack index");
   capital.sha256 = sha256(compressedBytes);
   capital.sqliteSha256 = sha256(sqliteBytes);
   capital.byteSize = compressedBytes.length;
