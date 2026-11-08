@@ -20,10 +20,10 @@ import { assertFailureReportLast, assertNoExpressionInRunScripts, ifCondition, l
 // PR 코드를 실행하지 않고 API 데이터와 CI 결과만 읽는다. 쓰기 토큰(App 설치 토큰)은 승인 step 하나에서만 쓴다.
 const root = path.resolve(import.meta.dirname, "../..");
 const FILE = "automation-pr-automerge.yml";
-const { yml, steps, step } = loadWorkflow(root, FILE);
+const { yml, workflow, job, steps, step } = loadWorkflow(root, FILE);
 const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
-const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-const ciCode = ci.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
+const { yml: ciYml, workflow: ciWorkflow } = loadWorkflow(root, "ci.yml");
+const ciCode = ciYml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
 const APP_TOKEN_ACTION = "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510";
 const ELIGIBLE = "${{ steps.decision.outputs.state == 'ELIGIBLE' }}";
 
@@ -36,32 +36,41 @@ test("변수는 코드가 켜지지 않고 QA 보고 뒤 별도 설정 변경으
 });
 
 test("트리거는 CI 완료(workflow_run) 하나다. pull_request_target·push·schedule·dispatch가 없다", () => {
-  assert.match(yml, /\non:\n  workflow_run:\n    workflows: \[CI\]\n    types: \[completed\]\n/u);
-  for (const trigger of ["pull_request_target", "pull_request", "push", "schedule", "workflow_dispatch", "issue_comment", "pull_request_review"]) {
-    assert.doesNotMatch(code, new RegExp(String.raw`\n  ${trigger}:`, "u"), trigger);
-  }
+  assert.deepEqual(workflow.on, {
+    workflow_run: {
+      workflows: ["CI"],
+      types: ["completed"],
+    },
+  });
   assert.doesNotMatch(code, /pull_request_target/u);
 });
 
 test("job은 변수가 true이고 같은 저장소의 automation/ 브랜치 PR CI 완료일 때만 돌고(재실행될 첫 시도 실패는 제외, #1115) 권한은 job에만 있다", () => {
-  assert.match(yml, /\npermissions: \{\}\n/u);
-  assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1);
-  assert.match(yml, /\n    permissions:\n      actions: read\n      checks: read\n      contents: read\n      issues: write\n      pull-requests: read\n/u);
-  assert.doesNotMatch(code, /\n  (?:contents|issues|pull-requests|checks|actions|statuses): /u);
-  const condition = /\n    if: (\$\{\{[^\n]*\}\})\n/u.exec(yml)?.[1];
+  assert.deepEqual(workflow.permissions, {});
+  assert.equal(Object.keys(workflow.jobs).length, 1);
+  assert.deepEqual(job.permissions, {
+    actions: "read",
+    checks: "read",
+    contents: "read",
+    issues: "write",
+    "pull-requests": "read",
+  });
   assert.equal(
-    condition,
+    job.if,
     "${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' && github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository && !(vars.DATAPACK_AUTOMATION_CI_RERUN == 'true' && github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1) }}",
   );
-  assert.match(yml, /\n    name: Automation PR automerge\n/u);
-  assert.match(yml, /\nconcurrency:\n  group: automation-pr-automerge-\$\{\{ github\.event\.workflow_run\.head_branch \}\}\n  cancel-in-progress: false\n/u);
+  assert.equal(job.name, "Automation PR automerge");
+  assert.deepEqual(workflow.concurrency, {
+    group: "automation-pr-automerge-${{ github.event.workflow_run.head_branch }}",
+    "cancel-in-progress": false,
+  });
 });
 
 test("PR 코드를 checkout하거나 실행하지 않는다. checkout은 기본 브랜치 코드뿐이다", () => {
-  const checkouts = steps().filter(({ block }) => block.includes("uses: actions/checkout@"));
+  const checkouts = steps().filter(({ uses }) => uses?.startsWith("actions/checkout@"));
   assert.equal(checkouts.length, 1);
-  assert.match(checkouts[0].block, /uses: actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false(?:\n|$)/u);
-  assert.doesNotMatch(checkouts[0].block, /\n          ref:/u);
+  assert.equal(checkouts[0].uses, "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1");
+  assert.deepEqual(checkouts[0].with, { "persist-credentials": "false" });
   for (const forbidden of [/head_sha[^\n]*checkout/u, /refs\/pull/u, /pull_request\.head/u, /head\.ref/u, /\n\s+ref: /u, /actions\/download-artifact/u, /npm (?:ci|install)/u, /\bpnpm\b|\byarn\b/u]) {
     assert.doesNotMatch(code, forbidden, String(forbidden));
   }
@@ -73,22 +82,29 @@ test("PR 코드를 checkout하거나 실행하지 않는다. checkout은 기본 
 test("run 스크립트에는 표현식을 펼치지 않는다. 값은 env로 받아 셸 변수로만 쓴다", () => {
   assertNoExpressionInRunScripts({ steps, file: FILE });
   const decision = step("Decide whether the pull request may enter the merge queue");
-  assert.match(decision.block, /\n        id: decision\n/u);
-  assert.match(decision.block, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
-  assert.match(decision.block, /HEAD_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/u);
-  assert.match(decision.block, /RUN_CONCLUSION: \$\{\{ github\.event\.workflow_run\.conclusion \}\}/u);
-  assert.match(decision.block, /RUN_ID: \$\{\{ github\.event\.workflow_run\.id \}\}/u);
-  assert.ok(decision.block.includes('node tools/ci/automation-pr-policy.mjs decide --repository "${GITHUB_REPOSITORY}" --head-sha "${HEAD_SHA}" --run-conclusion "${RUN_CONCLUSION}" --run-id "${RUN_ID}" --github-output "${GITHUB_OUTPUT}"'));
+  assert.equal(decision.id, "decision");
+  assert.deepEqual(decision.env, {
+    GH_TOKEN: "${{ github.token }}",
+    HEAD_SHA: "${{ github.event.workflow_run.head_sha }}",
+    RUN_CONCLUSION: "${{ github.event.workflow_run.conclusion }}",
+    RUN_ID: "${{ github.event.workflow_run.id }}",
+  });
+  assert.ok(decision.run.includes('node tools/ci/automation-pr-policy.mjs decide --repository "${GITHUB_REPOSITORY}" --head-sha "${HEAD_SHA}" --run-conclusion "${RUN_CONCLUSION}" --run-id "${RUN_ID}" --github-output "${GITHUB_OUTPUT}"'));
 });
 
 test("쓰기 토큰은 App 설치 토큰 하나이고 pull_requests: write로만 받아 승인 step에서만 쓴다", () => {
   const all = steps();
-  const mint = all.filter(({ block }) => block.includes(`uses: ${APP_TOKEN_ACTION}`));
+  const mint = all.filter(({ uses }) => uses === APP_TOKEN_ACTION);
   assert.equal(mint.length, 1);
-  assert.equal(ifCondition(mint[0].block), ELIGIBLE);
-  assert.match(mint[0].block, /\n        id: app-token\n/u);
-  assert.match(mint[0].block, /\n          client-id: \$\{\{ secrets\.EASYSUBWAY_RELEASE_APP_CLIENT_ID \}\}\n          private-key: \$\{\{ secrets\.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY \}\}\n          owner: AquilaXk\n          repositories: easysubway-data\n          permission-pull-requests: write(?:\n|$)/u);
-  assert.doesNotMatch(mint[0].block, /permission-(contents|actions|workflows|issues|checks|statuses)/u);
+  assert.equal(ifCondition(mint[0]), ELIGIBLE);
+  assert.equal(mint[0].id, "app-token");
+  assert.deepEqual(mint[0].with, {
+    "client-id": "${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}",
+    "private-key": "${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}",
+    owner: "AquilaXk",
+    repositories: "easysubway-data",
+    "permission-pull-requests": "write",
+  });
   // secrets는 App 자격 둘뿐이고 그 step에서만 읽는다.
   assert.deepEqual([...new Set([...code.matchAll(/secrets\.(\w+)/gu)].map((match) => match[1]))].sort(), ["EASYSUBWAY_RELEASE_APP_CLIENT_ID", "EASYSUBWAY_RELEASE_APP_PRIVATE_KEY"]);
   assert.equal(code.split("secrets.").length - 1, 2);
@@ -97,9 +113,11 @@ test("쓰기 토큰은 App 설치 토큰 하나이고 pull_requests: write로만
   assert.deepEqual(uses.map(({ name }) => name), ["Record the policy attestation, mark ready and apply the automerge label"]);
   assert.equal(code.split("steps.app-token.outputs.token").length - 1, 1);
   // 나머지 step의 GH_TOKEN은 github.token이다.
-  for (const { name, block } of all) {
+  for (const { name, env } of all) {
     if (uses.some((item) => item.name === name)) continue;
-    assert.doesNotMatch(block, /GH_TOKEN: (?!\$\{\{ github\.token \}\})/u, name);
+    if (env.GH_TOKEN !== undefined) {
+      assert.equal(env.GH_TOKEN, "${{ github.token }}", name);
+    }
   }
 });
 
@@ -108,12 +126,18 @@ test("승인 step은 판정이 ELIGIBLE일 때만 기록 -> ready -> 라벨 순�
   const names = all.map(({ name }) => name);
   assert.ok(names.indexOf("Decide whether the pull request may enter the merge queue") < names.indexOf("Mint App token for the automerge approval"));
   const apply = step("Record the policy attestation, mark ready and apply the automerge label");
-  assert.equal(ifCondition(apply.block), ELIGIBLE);
+  assert.equal(ifCondition(apply), ELIGIBLE);
   assert.ok(names.indexOf("Mint App token for the automerge approval") < names.indexOf(apply.name));
-  for (const key of ["PULL_REQUEST: ${{ steps.decision.outputs.pull_request }}", "HEAD_SHA: ${{ steps.decision.outputs.head_sha }}", "EVIDENCE_SHA256: ${{ steps.decision.outputs.evidence_sha256 }}", "DRAFT: ${{ steps.decision.outputs.draft }}", "ATTESTED: ${{ steps.decision.outputs.attested }}", "LABELED: ${{ steps.decision.outputs.labeled }}", "GH_TOKEN: ${{ steps.app-token.outputs.token }}"]) {
-    assert.ok(apply.block.includes(`          ${key}\n`), key);
-  }
-  const script = apply.block.split("\n        run: |\n")[1];
+  assert.deepEqual(apply.env, {
+    PULL_REQUEST: "${{ steps.decision.outputs.pull_request }}",
+    HEAD_SHA: "${{ steps.decision.outputs.head_sha }}",
+    EVIDENCE_SHA256: "${{ steps.decision.outputs.evidence_sha256 }}",
+    DRAFT: "${{ steps.decision.outputs.draft }}",
+    ATTESTED: "${{ steps.decision.outputs.attested }}",
+    LABELED: "${{ steps.decision.outputs.labeled }}",
+    GH_TOKEN: "${{ steps.app-token.outputs.token }}",
+  });
+  const script = apply.run;
   assert.match(script, /\[\[ "\$\{PULL_REQUEST\}" =~ \^\[1-9\]\[0-9\]\*\$ && "\$\{HEAD_SHA\}" =~ \^\[0-9a-f\]\{40\}\$ && "\$\{EVIDENCE_SHA256\}" =~ \^\[0-9a-f\]\{64\}\$ \]\]/u);
   const record = script.indexOf('gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PULL_REQUEST}/comments" -f body="${marker}"');
   const ready = script.indexOf('gh pr ready "${PULL_REQUEST}" --repo "${GITHUB_REPOSITORY}"');
@@ -140,19 +164,31 @@ test("조건이 어긋나면 job이 실패하고 마지막 step이 #926 경로(r
 // ---------------------------------------------------------------------------
 // CI의 게이트 재계산 job
 // ---------------------------------------------------------------------------
-const gatesJob = /\n  automation_pr_gates:\n([\s\S]*?)(?=\n  [a-z_0-9]+:\n|\s*$)/u.exec(ciCode)?.[0] ?? "";
+const gatesJob = ciWorkflow.jobs.automation_pr_gates;
+const gatesJobRaw = /\n  automation_pr_gates:\n([\s\S]*?)(?=\n  [a-z_0-9]+:\n|\s*$)/u.exec(ciCode)?.[0] ?? "";
 
 test("CI는 automation/ 브랜치 PR에서만 게이트 재계산 job을 돌리고 이름이 라벨러가 읽는 context와 같다", () => {
   assert.ok(gatesJob, "automation_pr_gates job");
-  assert.match(gatesJob, new RegExp(String.raw`\n    name: ${AUTOMATION_PR_GATES_CONTEXT}\n`, "u"));
-  assert.match(gatesJob, /\n    if: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository && startsWith\(github\.event\.pull_request\.head\.ref, 'automation\/'\) \}\}\n/u);
-  assert.match(gatesJob, /\n    permissions:\n      contents: read\n      pull-requests: read\n    runs-on: ubuntu-latest\n/u);
-  assert.doesNotMatch(gatesJob, /secrets\.|id-token|\bwrite\b/u);
+  assert.equal(gatesJob.name, AUTOMATION_PR_GATES_CONTEXT);
+  assert.equal(
+    gatesJob.if,
+    "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'automation/') }}",
+  );
+  assert.deepEqual(gatesJob.permissions, {
+    contents: "read",
+    "pull-requests": "read",
+  });
+  assert.equal(gatesJob.runsOn, "ubuntu-latest");
+  assert.doesNotMatch(gatesJobRaw, /secrets\.|id-token|\bwrite\b/u);
 });
 
 test("게이트 재계산은 PR head 작업 트리에서 읽기 전용으로 돌고 Data contracts의 판정을 바꾸지 않는다", () => {
-  assert.match(gatesJob, /uses: actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}\n          persist-credentials: false\n/u);
-  const jobSteps = gatesJob.split("\n      - name: ").slice(1).map((block) => ({ name: block.split("\n")[0], block }));
+  const jobSteps = gatesJob.steps;
+  assert.equal(jobSteps[0].uses, "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1");
+  assert.deepEqual(jobSteps[0].with, {
+    ref: "${{ github.event.pull_request.head.sha }}",
+    "persist-credentials": "false",
+  });
   assertNoExpressionInRunScripts({ steps: () => jobSteps, file: "ci.yml automation_pr_gates" });
   const names = jobSteps.map(({ name }) => name);
   assert.deepEqual(names, [
@@ -163,23 +199,34 @@ test("게이트 재계산은 PR head 작업 트리에서 읽기 전용으로 돌
     "Recompute the ledger, ITX promotion and candidate gates on the pull request head",
     "Upload the evidence digest the gates saw",
   ]);
-  const classify = jobSteps[2].block;
-  assert.ok(classify.includes('node tools/ci/automation-pr-policy.mjs prepare --pull-request "${pull_file}" --github-output "${GITHUB_OUTPUT}"'));
-  const fetch = jobSteps[3].block;
-  assert.match(fetch, /if: \$\{\{ steps\.classify\.outputs\.applicable == 'true' \}\}/u);
-  assert.ok(fetch.includes('[[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]'));
-  assert.ok(fetch.includes('git fetch --no-tags --depth=1 origin "${BASE_SHA}"'));
-  const gates = jobSteps[4].block;
-  assert.match(gates, /if: \$\{\{ steps\.classify\.outputs\.applicable == 'true' \}\}/u);
-  assert.ok(gates.includes('node tools/ci/automation-pr-policy.mjs gates --pull-request "${PULL_FILE}" --repository-root "${GITHUB_WORKSPACE}" --digest-output "${RUNNER_TEMP}/evidence-digest.json"'));
+  const classify = jobSteps[2];
+  assert.ok(classify.run.includes('node tools/ci/automation-pr-policy.mjs prepare --pull-request "${pull_file}" --github-output "${GITHUB_OUTPUT}"'));
+  const fetch = jobSteps[3];
+  assert.equal(fetch.if, "${{ steps.classify.outputs.applicable == 'true' }}");
+  assert.ok(fetch.run.includes('[[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]'));
+  assert.ok(fetch.run.includes('git fetch --no-tags --depth=1 origin "${BASE_SHA}"'));
+  const gates = jobSteps[4];
+  assert.equal(gates.if, "${{ steps.classify.outputs.applicable == 'true' }}");
+  assert.ok(gates.run.includes('node tools/ci/automation-pr-policy.mjs gates --pull-request "${PULL_FILE}" --repository-root "${GITHUB_WORKSPACE}" --digest-output "${RUNNER_TEMP}/evidence-digest.json"'));
   // #986 F3: 게이트가 본 증거 블록의 digest를 artifact로 남긴다(읽기 전용 토큰으로 올린다). 라벨러가 현재 본문과 대조한다.
-  const upload = jobSteps[5].block;
-  assert.match(upload, /if: \$\{\{ steps\.classify\.outputs\.applicable == 'true' \}\}/u);
-  assert.match(upload, /uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9\n        with:\n          name: automation-pr-evidence\n          path: \$\{\{ runner\.temp \}\}\/evidence-digest\.json\n          overwrite: true\n          if-no-files-found: error\n          retention-days: 7(?:\n|$)/u);
+  const upload = jobSteps[5];
+  assert.equal(upload.if, "${{ steps.classify.outputs.applicable == 'true' }}");
+  assert.equal(upload.uses, "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9");
+  assert.deepEqual(upload.with, {
+    name: "automation-pr-evidence",
+    path: "${{ runner.temp }}/evidence-digest.json",
+    overwrite: "true",
+    "if-no-files-found": "error",
+    "retention-days": "7",
+  });
   // 이 check는 ruleset의 required가 아니다. required 집계(Data contracts)가 이 job을 기다리지 않는다.
-  const contracts = /\n  contracts:\n[\s\S]*$/u.exec(ciCode)[0];
-  assert.doesNotMatch(contracts, /automation_pr_gates/u);
-  assert.match(contracts, /needs: \[contracts_mobile_v19, contracts_shard_1, contracts_shard_2, contracts_shard_3, contracts_shard_4\]/u);
+  assert.deepEqual(ciWorkflow.jobs.contracts.needs, [
+    "contracts_mobile_v19",
+    "contracts_shard_1",
+    "contracts_shard_2",
+    "contracts_shard_3",
+    "contracts_shard_4",
+  ]);
 });
 
 // ---------------------------------------------------------------------------
