@@ -71,31 +71,6 @@ const ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_COLUMNS = `
   CHECK (fresh_until IS NOT NULL),
   CHECK (source_issue = 2649)
 `;
-const ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMN_NAMES = Object.freeze([
-  "service_class",
-  "timetable_artifact_id",
-  "timetable_artifact_sha256",
-  "canonical_pack_id",
-  "canonical_pack_sha256",
-  "canonical_pack_sqlite_sha256",
-  "admission_status",
-  "admission_eligible",
-  "fresh_until",
-  "source_issue",
-]);
-const ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_COLUMN_NAMES = Object.freeze([
-  "service_class",
-  "station_catalog_artifact_kind",
-  "station_catalog_manifest_version",
-  "station_catalog_pack_id",
-  "station_catalog_station_set_sha256",
-  "station_catalog_payload_sha256",
-  "station_catalog_manifest_sha256",
-  "admission_status",
-  "admission_eligible",
-  "fresh_until",
-  "source_issue",
-]);
 const ROUTE_SERVICE_ARTIFACT_EVIDENCE_LAYOUT = Object.freeze([
   ["service_class", "TEXT", 1, 1], ["timetable_artifact_id", "TEXT", 1, 0],
   ["timetable_artifact_sha256", "TEXT", 1, 0], ["canonical_pack_id", "TEXT", 1, 0],
@@ -185,7 +160,7 @@ async function admittedSource(contractPath, {
   return { contract, reference, source, sourceBytes, currentAdmission, currentProjection };
 }
 
-export function deriveAdmittedItxRideEdgeSetSha256(source) {
+function deriveAdmittedItxRideEdgeSetSha256(source) {
   const rides = deriveTopology(source).edges.map((edge) => ({
     edgeId: edge.id,
     fromNodeId: edge.fromNodeId,
@@ -253,6 +228,35 @@ export function parseAuthenticatedAdmittedSourceDocuments(reference, sourceBytes
   return { source: JSON.parse(sourceBytes), completeness: JSON.parse(completenessBytes) };
 }
 
+function assertAdmittedSourceAndCompletenessSchema(reference, source, completeness) {
+  if (source?.schemaVersion !== 1
+    || source?.artifactKind !== "itx-cheongchun-source-timetable"
+    || source?.artifactId !== reference.artifactId || source?.serviceId !== "ITX_CHEONGCHUN"
+    || source?.validationStatus !== "SUPPORTED" || source?.freshUntil !== reference.freshUntil
+    || source?.completenessEvidenceSha256 !== reference.completenessEvidenceSha256
+    || completeness?.schemaVersion !== 2
+    || completeness?.artifactKind !== "korail-itx-cheongchun-completeness-evidence"
+    || completeness?.serviceId !== "ITX_CHEONGCHUN"
+    || completeness?.validationMode !== "ADMISSION"
+    || completeness?.validationStatus !== "SUPPORTED"
+    || completeness?.materialization?.status !== "SUPPORTED"
+    || completeness?.admissionStatus !== source.promotionStatus
+    || !isUtcInstant(source?.observedAt)
+    || !isUtcInstant(completeness?.observedAt)
+    || completeness?.observedAt !== source.observedAt
+    || completeness?.sourceTimetableArtifact?.status !== source.promotionStatus
+    || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
+      .includes(source.promotionStatus)
+    || completeness?.sourceTimetableArtifact?.artifactId !== reference.artifactId
+    || completeness?.sourceTimetableArtifact?.policyVersion !== source.policyVersion
+    || completeness?.sourceTimetableArtifact?.freshUntil !== reference.freshUntil
+    || JSON.stringify(completeness?.selectedServiceDates) !== JSON.stringify(source.selectedServiceDates)
+    || !completeness?.allowedConsumerIssues?.includes("#1400")
+    || completeness?.credentialRedacted !== true) {
+    throw new Error("ITX topology source identity is invalid");
+  }
+}
+
 export function validateAdmittedSourceDocuments(
   contract,
   reference,
@@ -314,32 +318,7 @@ export function validateAdmittedSourceDocuments(
     || JSON.stringify(contractIdentity) !== JSON.stringify(completenessIdentity)) {
     throw new Error("ITX topology station catalog identity mismatch");
   }
-  if (source?.schemaVersion !== 1
-    || source?.artifactKind !== "itx-cheongchun-source-timetable"
-    || source?.artifactId !== reference.artifactId || source?.serviceId !== "ITX_CHEONGCHUN"
-    || source?.validationStatus !== "SUPPORTED" || source?.freshUntil !== reference.freshUntil
-    || source?.completenessEvidenceSha256 !== reference.completenessEvidenceSha256
-    || completeness?.schemaVersion !== 2
-    || completeness?.artifactKind !== "korail-itx-cheongchun-completeness-evidence"
-    || completeness?.serviceId !== "ITX_CHEONGCHUN"
-    || completeness?.validationMode !== "ADMISSION"
-    || completeness?.validationStatus !== "SUPPORTED"
-    || completeness?.materialization?.status !== "SUPPORTED"
-    || completeness?.admissionStatus !== source.promotionStatus
-    || !isUtcInstant(source?.observedAt)
-    || !isUtcInstant(completeness?.observedAt)
-    || completeness?.observedAt !== source.observedAt
-    || completeness?.sourceTimetableArtifact?.status !== source.promotionStatus
-    || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
-      .includes(source.promotionStatus)
-    || completeness?.sourceTimetableArtifact?.artifactId !== reference.artifactId
-    || completeness?.sourceTimetableArtifact?.policyVersion !== source.policyVersion
-    || completeness?.sourceTimetableArtifact?.freshUntil !== reference.freshUntil
-    || JSON.stringify(completeness?.selectedServiceDates) !== JSON.stringify(source.selectedServiceDates)
-    || !completeness?.allowedConsumerIssues?.includes("#1400")
-    || completeness?.credentialRedacted !== true) {
-    throw new Error("ITX topology source identity is invalid");
-  }
+  assertAdmittedSourceAndCompletenessSchema(reference, source, completeness);
   if (currentAdmission != null) {
     return validateItxCurrentTopologyAdmission(currentAdmission, {
       previousArtifactSha256: reference.sha256,
@@ -538,27 +517,12 @@ function routeServiceEvidence(contract, reference, source, canonicalPackIdentity
   };
 }
 
-export function deriveTopology(source) {
-  if (!Array.isArray(source?.stationSequences) || source.stationSequences.length === 0) {
-    throw new Error("ITX topology stationSequences must be non-empty");
-  }
-  const rosterStations = (source.stationRosters ?? [])
-    .flatMap(({ stations }) => stations ?? []);
-  const stations = new Map(rosterStations
-    .map(({ canonicalStationId, lineId }) => [
-      `${canonicalStationId}:${lineId}`,
-      { stationId: canonicalStationId, lineId },
-    ]));
-  const corridorSequences = new Map(rosterStations.map((station) => [
-    `${station.canonicalStationId}:${station.lineId}`,
-    station.corridorSequence,
-  ]));
-  if (stations.size === 0) throw new Error("ITX topology canonical station roster is empty");
+function collectTopologySequences(stationSequences, corridorSequences) {
   const servedStations = new Map();
   const edges = new Map();
   const adjacency = new Map();
   const directions = new Set();
-  for (const sequence of source.stationSequences) {
+  for (const sequence of stationSequences) {
     if (!Array.isArray(sequence.stops) || sequence.stops.length < 2) {
       throw new Error(`ITX topology sequence needs at least two stops: ${sequence.trainNumber ?? "unknown"}`);
     }
@@ -608,8 +572,10 @@ export function deriveTopology(source) {
   if (directions.size !== 2 || !directions.has("up") || !directions.has("down")) {
     throw new Error("ITX topology requires U/D station sequences");
   }
-  const expectedServedStationKeys = new Set((source.transitStopTimes ?? [])
-    .map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  return { servedStations, edges, adjacency };
+}
+
+function assertConnectedServedStationGraph(expectedServedStationKeys, servedStations, stations, adjacency) {
   if (expectedServedStationKeys.size === 0
     || expectedServedStationKeys.size !== servedStations.size
     || [...expectedServedStationKeys].some((key) => !servedStations.has(key))
@@ -630,6 +596,31 @@ export function deriveTopology(source) {
   if (visited.size !== expectedServedStationKeys.size) {
     throw new Error("ITX topology service stop graph must be connected");
   }
+}
+
+export function deriveTopology(source) {
+  if (!Array.isArray(source?.stationSequences) || source.stationSequences.length === 0) {
+    throw new Error("ITX topology stationSequences must be non-empty");
+  }
+  const rosterStations = (source.stationRosters ?? [])
+    .flatMap(({ stations }) => stations ?? []);
+  const stations = new Map(rosterStations
+    .map(({ canonicalStationId, lineId }) => [
+      `${canonicalStationId}:${lineId}`,
+      { stationId: canonicalStationId, lineId },
+    ]));
+  const corridorSequences = new Map(rosterStations.map((station) => [
+    `${station.canonicalStationId}:${station.lineId}`,
+    station.corridorSequence,
+  ]));
+  if (stations.size === 0) throw new Error("ITX topology canonical station roster is empty");
+  const { servedStations, edges, adjacency } = collectTopologySequences(
+    source.stationSequences,
+    corridorSequences,
+  );
+  const expectedServedStationKeys = new Set((source.transitStopTimes ?? [])
+    .map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  assertConnectedServedStationGraph(expectedServedStationKeys, servedStations, stations, adjacency);
   const topology = {
     stations: [...stations.values()].sort((left, right) => codepointCompare(left.stationId, right.stationId)
       || codepointCompare(left.lineId, right.lineId)),
@@ -1072,6 +1063,43 @@ export function assertStoredTopology(sqlitePath, topology, admissionEvidence, ed
   }
 }
 
+async function verifyStoredItxTopology({
+  contract,
+  reference,
+  source,
+  topology,
+  evidencePath,
+  indexPath,
+  inputGzipBytes,
+  topologySource,
+  admissionEvidence,
+  currentProjection,
+}) {
+  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  const index = JSON.parse(await readFile(indexPath, "utf8"));
+  const { inputSqliteBytes } = validateTopologyEvidence({
+    contract,
+    reference,
+    source,
+    topology,
+    evidence,
+    index,
+    inputGzipBytes,
+    admittedInput: topologySource,
+  });
+  const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-check-${randomUUID()}-`));
+  try {
+    const sqlitePath = path.join(directory, "capital.sqlite");
+    if (sha256(inputSqliteBytes) !== evidence.pack.outputSqliteSha256) {
+      throw new Error("ITX topology bundled SQLite identity is stale");
+    }
+    await writeFile(sqlitePath, inputSqliteBytes);
+    assertStoredTopology(sqlitePath, topology, admissionEvidence, currentProjection);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   const deriveFixtureRoot = option("--derive-fixture", null);
   const packPath = path.resolve(root, deriveFixtureRoot == null ? option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz") : path.join(deriveFixtureRoot, "assets/datapacks/capital.sqlite.gz"));
@@ -1135,29 +1163,18 @@ async function main() {
   }
   const inputGzipBytes = await readFile(packPath);
   if (check || immutableIntegrity) {
-    const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
-    const index = JSON.parse(await readFile(indexPath, "utf8"));
-    const { inputSqliteBytes } = validateTopologyEvidence({
+    await verifyStoredItxTopology({
       contract,
       reference,
       source,
       topology,
-      evidence,
-      index,
+      evidencePath,
+      indexPath,
       inputGzipBytes,
-      admittedInput: topologySource,
+      topologySource,
+      admissionEvidence,
+      currentProjection,
     });
-    const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-check-${randomUUID()}-`));
-    try {
-      const sqlitePath = path.join(directory, "capital.sqlite");
-      if (sha256(inputSqliteBytes) !== evidence.pack.outputSqliteSha256) {
-        throw new Error("ITX topology bundled SQLite identity is stale");
-      }
-      await writeFile(sqlitePath, inputSqliteBytes);
-      assertStoredTopology(sqlitePath, topology, admissionEvidence, currentProjection);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
     return;
   }
   const computed = await computeItxTopologyPack({

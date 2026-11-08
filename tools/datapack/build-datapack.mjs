@@ -574,195 +574,149 @@ export async function main(
   );
 }
 
-async function loadBuildInput(
-  args,
-  officialOdFareAdmissions,
-  officialOdFareAdmissionBytes,
-  repositoryRoot = root,
-) {
-  const fixtureArg = args.fixture;
-  const buildSpecArg = args["build-spec"];
-  const candidateFixtureOverrideArg = args["candidate-fixture-override"];
-  const routeCoverageAuthorityArg = args["server-route-coverage-authority"];
-  const stationLineInputArg = args["current-capital-station-line-input"];
-  const routeEdgeInputArg = args["current-capital-route-edge-input"];
-  const authorityArgs = [
-    candidateFixtureOverrideArg,
-    routeCoverageAuthorityArg,
-    stationLineInputArg,
-    routeEdgeInputArg,
-  ];
-  if (authorityArgs.some((value) => value != null) && authorityArgs.some((value) => value == null)) {
-    throw new Error("--candidate-fixture-override, --server-route-coverage-authority, --current-capital-station-line-input and --current-capital-route-edge-input must be provided together");
+async function loadFixtureModeInput(args, fixtureArg, authorityArgs, repositoryRoot) {
+  if (authorityArgs.some((value) => value != null)) {
+    throw new Error("candidate fixture override requires --build-spec");
   }
-  if ((fixtureArg == null) === (buildSpecArg == null)) {
-    throw new Error("exactly one of --fixture or --build-spec is required");
+  const fixture = JSON.parse(await readFile(path.resolve(repositoryRoot, fixtureArg), "utf8"));
+  rejectTestOnlyBuildInput(fixture);
+  if (Object.hasOwn(fixture, "assemblyInputs")) {
+    throw new Error("assembly inputs require --build-spec");
   }
-  if (fixtureArg != null) {
-    if (authorityArgs.some((value) => value != null)) {
-      throw new Error("candidate fixture override requires --build-spec");
+  const hasProductionPack = fixture.packs?.some(({ artifactKind }) => artifactKind === "production");
+  const fixtureChannel = fixture.manifest?.channel == null
+    ? null
+    : requiredString(fixture.manifest.channel, "manifest.channel");
+  if (hasProductionPack) {
+    if (process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY !== "true") {
+      throw new Error("production fixture builds are validation-only; release builds require --build-spec");
     }
-    const fixture = JSON.parse(await readFile(path.resolve(repositoryRoot, fixtureArg), "utf8"));
-    rejectTestOnlyBuildInput(fixture);
-    if (Object.hasOwn(fixture, "assemblyInputs")) {
-      throw new Error("assembly inputs require --build-spec");
-    }
-    const hasProductionPack = fixture.packs?.some(({ artifactKind }) => artifactKind === "production");
-    const fixtureChannel = fixture.manifest?.channel == null
-      ? null
-      : requiredString(fixture.manifest.channel, "manifest.channel");
-    if (hasProductionPack) {
-      if (process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY !== "true") {
-        throw new Error("production fixture builds are validation-only; release builds require --build-spec");
-      }
-    }
-    if (fixture.manifest.manifestVersion === 2 && (hasProductionPack || fixtureChannel === "production")) {
-      fixture.manifest = {
-        ...fixture.manifest,
-        manifestVersion: 2,
-        channel: fixtureChannel === "candidate" ? "candidate" : "dev",
-        releaseSequence: fixture.manifest.releaseSequence ?? 1,
-        publishedAt: fixture.manifest.publishedAt ?? buildPublishedAt(),
-        ...(hasProductionPack
-          ? { keyId: process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1" }
-          : {}),
-      };
-    }
-    if (args["test-only-itx-admission"] != null) {
-      const admissionPath = await resolveBuildInputPath(
-        args["test-only-itx-admission"],
-        "testOnlyItxAdmission",
-        repositoryRoot,
-      );
-      const admissionBytes = await readFile(admissionPath);
-      await materializeTestOnlyItxAdmission(fixture, JSON.parse(admissionBytes), admissionBytes);
-    }
-    return {
-      fixture,
-      candidateBuild: null,
-      artifactFreshUntil: null,
-      outputArtifactKind: hasProductionPack ? "fixture" : null,
-      validationOnlyProductionFixture: false,
+  }
+  if (fixture.manifest.manifestVersion === 2 && (hasProductionPack || fixtureChannel === "production")) {
+    fixture.manifest = {
+      ...fixture.manifest,
+      manifestVersion: 2,
+      channel: fixtureChannel === "candidate" ? "candidate" : "dev",
+      releaseSequence: fixture.manifest.releaseSequence ?? 1,
+      publishedAt: fixture.manifest.publishedAt ?? buildPublishedAt(),
+      ...(hasProductionPack
+        ? { keyId: process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1" }
+        : {}),
     };
   }
   if (args["test-only-itx-admission"] != null) {
-    throw new Error("--test-only-itx-admission cannot be used with --build-spec");
-  }
-
-  const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec", repositoryRoot);
-  const buildSpecBytes = await readFile(buildSpecPath);
-  const buildSpec = JSON.parse(buildSpecBytes);
-  const sourceFixturePath = await resolveBuildInputPath(
-    buildSpec.fixturePath,
-    "buildSpec.fixturePath",
-    repositoryRoot,
-  );
-  const sourceFixtureBytes = await readFile(sourceFixturePath);
-  const boundFixture = JSON.parse(sourceFixtureBytes);
-  assertBuildSpecFixtureSha256(buildSpec, sourceFixtureBytes, boundFixture);
-  // #899: 팩이 sha로 결속한 외부 공식 stop_times를 펼친다(결속 불일치는 실패).
-  const sourceFixture = expandExternalStopTimes(boundFixture, { repositoryRoot });
-  rejectTestOnlyBuildInput(sourceFixture);
-  const hasProductionPack = sourceFixture.packs?.some(({ artifactKind }) => artifactKind === "production") === true;
-  const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
-  const accessibilityReplaySourceFixture = replaysAccessibilityAuthority
-    ? structuredClone(sourceFixture)
-    : null;
-  const validationOnlyProductionFixture = hasProductionPack
-    && !replaysAccessibilityAuthority
-    && process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY === "true";
-  const validationNow = replaysAccessibilityAuthority
-    ? candidateReplayNow(buildSpec)
-    : candidateBuildNow();
-  const candidateValidation = await validateCandidateBuildSpec(
-    buildSpec,
-    sourceFixture,
-    officialOdFareAdmissions,
-    officialOdFareAdmissionBytes,
-    repositoryRoot,
-    validationNow,
-    { includePackAccessibilityFreshness: !replaysAccessibilityAuthority },
-  );
-  const { officialOdFareEvidence } = candidateValidation;
-  if (hasProductionPack && !replaysAccessibilityAuthority && !validationOnlyProductionFixture) {
-    throw new Error("production accessibility evidence mismatch: current full-capital authority is required");
-  }
-  let { artifactFreshUntil } = candidateValidation;
-  let fixture = validationOnlyProductionFixture
-    ? {
-        ...sourceFixture,
-        manifest: { ...sourceFixture.manifest, channel: "dev" },
-      }
-    : sourceFixture;
-  let overrideBinding = null;
-  if (candidateFixtureOverrideArg != null) {
-    const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({
-      buildSpec,
-      sourceFixture: accessibilityReplaySourceFixture,
+    const admissionPath = await resolveBuildInputPath(
+      args["test-only-itx-admission"],
+      "testOnlyItxAdmission",
       repositoryRoot,
-    });
-    const [candidateFixtureBytes, authorityBytes] = await Promise.all([
-      readFile(await resolveBuildInputPath(
-        candidateFixtureOverrideArg,
-        "candidateFixtureOverride",
-        repositoryRoot,
-      )),
-      readFile(await resolveBuildInputPath(
-        routeCoverageAuthorityArg,
-        "serverRouteCoverageAuthority",
-        repositoryRoot,
-      )),
-    ]);
-    const validated = validateCandidateFixtureOverride({
-      authorityBytes,
-      buildSpec,
-      buildSpecBytes,
-      candidateFixtureBytes,
-      projectedFixture,
-      sourceFixtureBytes,
-    });
-    fixture = transferValidatedItxStationCatalogEvidence(
-      sourceFixture,
-      validated.fixture,
     );
-    overrideBinding = validated.binding;
-    const [stationLineInputBytes, routeEdgeInputBytes, transferMetricsBytes] = await Promise.all([
-      readFile(await resolveBuildInputPath(
-        stationLineInputArg,
-        "current full-capital station-line input",
-        repositoryRoot,
-      )),
-      readFile(await resolveBuildInputPath(
-        routeEdgeInputArg,
-        "current full-capital route-edge input",
-        repositoryRoot,
-      )),
-      readFile(await resolveBuildInputPath(
-        "tools/datapack/release/current-transfer-topology-metrics.json",
-        "current transfer topology metrics",
-        repositoryRoot,
-      )),
-    ]);
-    validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
-      authority: validated.authority,
-      projectedFixture,
-      stationLineInputBytes,
-      routeEdgeInputBytes,
-      transferMetricsBytes,
-    });
-    const isNationwide = buildSpec?.productionScopeId === "nationwide_routing_android_v1"
-      && (Array.isArray(buildSpec?.sourceSnapshots) && buildSpec.sourceSnapshots.length > 10);
-    const accessibilityFreshUntil = candidateOverrideAccessibilityFreshUntil({
-      authority: validated.authority,
-      stationLineInputBytes,
-      validationNow,
-      isNationwide,
-    });
-    artifactFreshUntil = new Date(Math.min(
-      Date.parse(artifactFreshUntil),
-      Date.parse(accessibilityFreshUntil),
-    )).toISOString();
+    const admissionBytes = await readFile(admissionPath);
+    await materializeTestOnlyItxAdmission(fixture, JSON.parse(admissionBytes), admissionBytes);
   }
+  return {
+    fixture,
+    candidateBuild: null,
+    artifactFreshUntil: null,
+    outputArtifactKind: hasProductionPack ? "fixture" : null,
+    validationOnlyProductionFixture: false,
+  };
+}
+
+async function applyCandidateFixtureOverrideInput({
+  buildSpec,
+  buildSpecBytes,
+  accessibilityReplaySourceFixture,
+  sourceFixture,
+  sourceFixtureBytes,
+  candidateFixtureOverrideArg,
+  routeCoverageAuthorityArg,
+  stationLineInputArg,
+  routeEdgeInputArg,
+  repositoryRoot,
+  validationNow,
+  artifactFreshUntil,
+}) {
+  const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec,
+    sourceFixture: accessibilityReplaySourceFixture,
+    repositoryRoot,
+  });
+  const [candidateFixtureBytes, authorityBytes] = await Promise.all([
+    readFile(await resolveBuildInputPath(
+      candidateFixtureOverrideArg,
+      "candidateFixtureOverride",
+      repositoryRoot,
+    )),
+    readFile(await resolveBuildInputPath(
+      routeCoverageAuthorityArg,
+      "serverRouteCoverageAuthority",
+      repositoryRoot,
+    )),
+  ]);
+  const validated = validateCandidateFixtureOverride({
+    authorityBytes,
+    buildSpec,
+    buildSpecBytes,
+    candidateFixtureBytes,
+    projectedFixture,
+    sourceFixtureBytes,
+  });
+  const fixture = transferValidatedItxStationCatalogEvidence(
+    sourceFixture,
+    validated.fixture,
+  );
+  const overrideBinding = validated.binding;
+  const [stationLineInputBytes, routeEdgeInputBytes, transferMetricsBytes] = await Promise.all([
+    readFile(await resolveBuildInputPath(
+      stationLineInputArg,
+      "current full-capital station-line input",
+      repositoryRoot,
+    )),
+    readFile(await resolveBuildInputPath(
+      routeEdgeInputArg,
+      "current full-capital route-edge input",
+      repositoryRoot,
+    )),
+    readFile(await resolveBuildInputPath(
+      "tools/datapack/release/current-transfer-topology-metrics.json",
+      "current transfer topology metrics",
+      repositoryRoot,
+    )),
+  ]);
+  validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
+    authority: validated.authority,
+    projectedFixture,
+    stationLineInputBytes,
+    routeEdgeInputBytes,
+    transferMetricsBytes,
+  });
+  const isNationwide = buildSpec?.productionScopeId === "nationwide_routing_android_v1"
+    && (Array.isArray(buildSpec?.sourceSnapshots) && buildSpec.sourceSnapshots.length > 10);
+  const accessibilityFreshUntil = candidateOverrideAccessibilityFreshUntil({
+    authority: validated.authority,
+    stationLineInputBytes,
+    validationNow,
+    isNationwide,
+  });
+  const nextArtifactFreshUntil = new Date(Math.min(
+    Date.parse(artifactFreshUntil),
+    Date.parse(accessibilityFreshUntil),
+  )).toISOString();
+  return { fixture, overrideBinding, artifactFreshUntil: nextArtifactFreshUntil };
+}
+
+async function resolveCandidateBuildFreshnessAndProvenance({
+  buildSpec,
+  buildSpecBytes,
+  sourceFixture,
+  fixture,
+  officialOdFareEvidence,
+  overrideBinding,
+  validationNow,
+  artifactFreshUntil,
+  validationOnlyProductionFixture,
+  repositoryRoot,
+}) {
   // #913: 시간표 원천 신선도를 팩 만료에 반영한다. inventory는 network edge 증거와 같은 결속 입력
   // (buildSpec.networkEdgeEvidence.sourceInventory, 바이트 sha 고정)이고 spec sourceInventorySha256과 같아야 한다.
   // 대상은 발행 범위인 전국 후보의 production 팩이다. 수도권 pilot 범위(capital_pilot_android_v1) 팩의 4호선 pilot trip은
@@ -816,7 +770,7 @@ async function loadBuildInput(
       now: validationNow,
     }),
   });
-  artifactFreshUntil = artifactFreshness.freshUntil;
+  const resolvedFreshUntil = artifactFreshness.freshUntil;
   return {
     fixture,
     candidateBuild: {
@@ -829,10 +783,117 @@ async function loadBuildInput(
       ),
       artifactFreshness,
     },
-    artifactFreshUntil,
+    artifactFreshUntil: resolvedFreshUntil,
     outputArtifactKind: validationOnlyProductionFixture ? "fixture" : null,
     validationOnlyProductionFixture,
   };
+}
+
+async function loadBuildInput(
+  args,
+  officialOdFareAdmissions,
+  officialOdFareAdmissionBytes,
+  repositoryRoot = root,
+) {
+  const fixtureArg = args.fixture;
+  const buildSpecArg = args["build-spec"];
+  const candidateFixtureOverrideArg = args["candidate-fixture-override"];
+  const routeCoverageAuthorityArg = args["server-route-coverage-authority"];
+  const stationLineInputArg = args["current-capital-station-line-input"];
+  const routeEdgeInputArg = args["current-capital-route-edge-input"];
+  const authorityArgs = [
+    candidateFixtureOverrideArg,
+    routeCoverageAuthorityArg,
+    stationLineInputArg,
+    routeEdgeInputArg,
+  ];
+  if (authorityArgs.some((value) => value != null) && authorityArgs.some((value) => value == null)) {
+    throw new Error("--candidate-fixture-override, --server-route-coverage-authority, --current-capital-station-line-input and --current-capital-route-edge-input must be provided together");
+  }
+  if ((fixtureArg == null) === (buildSpecArg == null)) {
+    throw new Error("exactly one of --fixture or --build-spec is required");
+  }
+  if (fixtureArg != null) {
+    return loadFixtureModeInput(args, fixtureArg, authorityArgs, repositoryRoot);
+  }
+  if (args["test-only-itx-admission"] != null) {
+    throw new Error("--test-only-itx-admission cannot be used with --build-spec");
+  }
+
+  const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec", repositoryRoot);
+  const buildSpecBytes = await readFile(buildSpecPath);
+  const buildSpec = JSON.parse(buildSpecBytes);
+  const sourceFixturePath = await resolveBuildInputPath(
+    buildSpec.fixturePath,
+    "buildSpec.fixturePath",
+    repositoryRoot,
+  );
+  const sourceFixtureBytes = await readFile(sourceFixturePath);
+  const boundFixture = JSON.parse(sourceFixtureBytes);
+  assertBuildSpecFixtureSha256(buildSpec, sourceFixtureBytes, boundFixture);
+  // #899: 팩이 sha로 결속한 외부 공식 stop_times를 펼친다(결속 불일치는 실패).
+  const sourceFixture = expandExternalStopTimes(boundFixture, { repositoryRoot });
+  rejectTestOnlyBuildInput(sourceFixture);
+  const hasProductionPack = sourceFixture.packs?.some(({ artifactKind }) => artifactKind === "production") === true;
+  const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
+  const accessibilityReplaySourceFixture = replaysAccessibilityAuthority
+    ? structuredClone(sourceFixture)
+    : null;
+  const validationOnlyProductionFixture = hasProductionPack
+    && !replaysAccessibilityAuthority
+    && process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY === "true";
+  const validationNow = replaysAccessibilityAuthority
+    ? candidateReplayNow(buildSpec)
+    : candidateBuildNow();
+  const candidateValidation = await validateCandidateBuildSpec(
+    buildSpec,
+    sourceFixture,
+    officialOdFareAdmissions,
+    officialOdFareAdmissionBytes,
+    repositoryRoot,
+    validationNow,
+    { includePackAccessibilityFreshness: !replaysAccessibilityAuthority },
+  );
+  const { officialOdFareEvidence } = candidateValidation;
+  if (hasProductionPack && !replaysAccessibilityAuthority && !validationOnlyProductionFixture) {
+    throw new Error("production accessibility evidence mismatch: current full-capital authority is required");
+  }
+  let { artifactFreshUntil } = candidateValidation;
+  let fixture = validationOnlyProductionFixture
+    ? {
+        ...sourceFixture,
+        manifest: { ...sourceFixture.manifest, channel: "dev" },
+      }
+    : sourceFixture;
+  let overrideBinding = null;
+  if (candidateFixtureOverrideArg != null) {
+    ({ fixture, overrideBinding, artifactFreshUntil } = await applyCandidateFixtureOverrideInput({
+      buildSpec,
+      buildSpecBytes,
+      accessibilityReplaySourceFixture,
+      sourceFixture,
+      sourceFixtureBytes,
+      candidateFixtureOverrideArg,
+      routeCoverageAuthorityArg,
+      stationLineInputArg,
+      routeEdgeInputArg,
+      repositoryRoot,
+      validationNow,
+      artifactFreshUntil,
+    }));
+  }
+  return resolveCandidateBuildFreshnessAndProvenance({
+    buildSpec,
+    buildSpecBytes,
+    sourceFixture,
+    fixture,
+    officialOdFareEvidence,
+    overrideBinding,
+    validationNow,
+    artifactFreshUntil,
+    validationOnlyProductionFixture,
+    repositoryRoot,
+  });
 }
 
 export function transferValidatedItxStationCatalogEvidence(
@@ -1131,81 +1192,10 @@ function validateTestOnlyItxAdmission(admission) {
   return freshUntil;
 }
 
-function testOnlyItxTargetPack(fixture) {
-  const activePackId = requiredString(fixture?.manifest?.activePack?.id, "fixture.manifest.activePack.id");
-  const pack = fixture.packs?.find(({ id }) => id === activePackId);
-  if (!pack || (pack.artifactKind ?? "fixture") !== "fixture") {
-    throw new Error("test-only ITX admission can materialize only into the active fixture pack");
-  }
-  return pack;
-}
-
 function validateTestOnlyItxTimetableIdentity(admission) {
   if (admission.timetableArtifactIdentity?.sha256Source !== "FIXTURE_FILE_BYTES") {
     throw new Error("test-only ITX timetable identity must hash fixture file bytes");
   }
-}
-
-function validateTestOnlyItxStations(pack, admission, lineId) {
-  const stationIds = new Set((pack.stations ?? []).map(({ id }) => id));
-  const routeMapMembers = new Set((pack.routeMapPositions ?? [])
-    .filter(({ lineId: memberLineId, region }) => memberLineId === lineId && region === "수도권")
-    .map(({ stationId }) => stationId));
-  const admittedStationIds = new Set((admission.canonicalStations ?? []).map((station) => {
-    if (station.capitalRouteMapMember !== true) {
-      throw new Error(`test-only ITX station is not a capital route-map member: ${station.canonicalStationId}`);
-    }
-    return requiredString(station.canonicalStationId, "testOnlyItxAdmission.canonicalStations[].canonicalStationId");
-  }));
-  for (const stationId of admittedStationIds) {
-    if (!stationIds.has(stationId) || !routeMapMembers.has(stationId)) {
-      throw new Error(`test-only ITX canonical station membership is missing: ${stationId}`);
-    }
-  }
-  return admittedStationIds;
-}
-
-function deriveTestOnlyItxRows(admission, lineId, admittedStationIds, timetableHash) {
-  const trips = admission.transitTrips ?? [];
-  const stopTimes = admission.transitStopTimes ?? [];
-  const edges = [];
-  for (const trip of trips) {
-    if (trip.serviceClass !== "ITX_CHEONGCHUN" || trip.servicePattern !== "EXPRESS") {
-      throw new Error(`test-only ITX trip must be EXPRESS: ${trip.id}`);
-    }
-    const tripStops = stopTimes
-      .filter(({ tripId }) => tripId === trip.id)
-      .sort((left, right) => left.stopSequence - right.stopSequence);
-    if (tripStops.length < 2) {
-      throw new Error(`test-only ITX trip must have at least two stops: ${trip.id}`);
-    }
-    for (const stop of tripStops) {
-      if (stop.lineId !== lineId || !admittedStationIds.has(stop.stationId)) {
-        throw new Error(`test-only ITX stop is outside admitted canonical scope: ${trip.id}`);
-      }
-    }
-    for (let index = 1; index < tripStops.length; index += 1) {
-      const from = tripStops[index - 1];
-      const to = tripStops[index];
-      const durationSeconds = to.arrivalSeconds - from.departureSeconds;
-      if (!Number.isInteger(durationSeconds) || durationSeconds <= 0) {
-        throw new Error(`test-only ITX stop times are not increasing: ${trip.id}`);
-      }
-      edges.push({
-        id: `itx-cheongchun:${trip.id}:${from.stopSequence}-${to.stopSequence}`,
-        fromNodeId: `${from.stationId}:${lineId}:EXPRESS`,
-        toNodeId: `${to.stationId}:${lineId}:EXPRESS`,
-        durationSeconds,
-        distanceMeters: 0,
-        edgeType: "RIDE",
-        servicePattern: "EXPRESS",
-        serviceClass: "ITX_CHEONGCHUN",
-        evidenceHash: timetableHash,
-        lastVerifiedAt: admission.freshness.observedAt,
-      });
-    }
-  }
-  return { trips, stopTimes, edges };
 }
 
 function rejectTestOnlyBuildInput(fixture) {
@@ -2211,7 +2201,7 @@ function isReviewedAccessibilityEdge(edge, pack) {
 // - trip이 가리키는 원천 snapshot 중 원장 행이 없는 것(수도권·코레일 projection, 인천)은 inventory evidence의 수집 시각에
 //   정책 클래스를 적용해 유도한다.
 // trip이 가리키는 원천의 만료를 어느 쪽으로도 계산할 수 없거나 이미 만료됐으면 실패한다.
-export const TIMETABLE_SOURCE_CLASS_IDS = Object.freeze([
+const TIMETABLE_SOURCE_CLASS_IDS = Object.freeze([
   "official_static_timetable_confirmation", "planned_timetable",
   "busan_timetable_observation", "daegu_timetable_observation", "daejeon_timetable_observation", "incheon_timetable_observation",
 ]);
@@ -3479,7 +3469,7 @@ async function allowedBuildInputRoots(repositoryRoot = root) {
   return canonicalRoots;
 }
 
-function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
+function buildPackFieldProvenanceContext(pack, artifactKind) {
   const sourceUpdatedAt = new Map((pack.sourceInventory ?? []).map((source) => [source.id, source.updatedAt]));
   const sourceFields = new Map((pack.sourceInventory ?? []).map((source) => [source.id, new Set(source.fields ?? [])]));
   const sourceScopes = sourceCoverageScopeMap(pack.sourceInventory ?? []);
@@ -3558,6 +3548,20 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     }
   };
 
+  return {
+    records,
+    addRecord,
+    lineOperatorIds,
+    stationLineOperatorIds,
+    stationOperatorIds,
+    stationLineIds,
+  };
+}
+
+function emitCoreAndTopologyProvenance(
+  pack,
+  { addRecord, stationOperatorIds, stationLineIds, lineOperatorIds, stationLineOperatorIds },
+) {
   for (const station of pack.stations ?? []) {
     addRecord(
       station,
@@ -3594,6 +3598,9 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     const operatorIds = [lineOperatorIds.get(track.lineId)].filter(Boolean);
     addRecord(track, "route_map_line_track", entityId, "route_map_line_track", operatorIds, [track.lineId]);
   }
+}
+
+function emitTransitScheduleProvenance(pack, { addRecord, lineOperatorIds }) {
   const transitRouteLineIds = new Map((pack.transitRoutes ?? []).map((route) => [route.id, route.lineId]));
   const transitRouteOperatorIds = new Map();
   for (const route of pack.transitRoutes ?? []) {
@@ -3677,6 +3684,12 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
   for (const feedInfo of pack.transitFeedInfo ?? []) {
     addRecord(feedInfo, "transit_feed_info", "feed_info", "feed_info", scheduleOperatorIds, scheduleLineIds);
   }
+}
+
+function emitAccessibilityAndRealtimeProvenance(
+  pack,
+  { addRecord, stationOperatorIds, stationLineIds, lineOperatorIds },
+) {
   for (const facility of pack.facilities ?? []) {
     const operatorIds = [...(stationOperatorIds.get(facility.stationId) ?? [])];
     const lineIds = facility.lineId ? [facility.lineId] : [...(stationLineIds.get(facility.stationId) ?? [])];
@@ -3712,6 +3725,13 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
       );
     }
   }
+}
+
+function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
+  const ctx = buildPackFieldProvenanceContext(pack, artifactKind);
+  emitCoreAndTopologyProvenance(pack, ctx);
+  emitTransitScheduleProvenance(pack, ctx);
+  emitAccessibilityAndRealtimeProvenance(pack, ctx);
 
   return {
     id: pack.id,
@@ -3721,7 +3741,7 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     normalizedSourceInventorySha256: sha256(Buffer.from(JSON.stringify(pack.sourceInventory ?? []))),
     // #957: 원천 문장을 그대로 실은 파생 표의 원천 스냅샷 결속과 매핑 성공·실패 보고(개수와 제외 목록).
     ...(pack.transferGuideReport ? { derivedTables: { transfer_guide_steps: pack.transferGuideReport } } : {}),
-    records: records.sort((left, right) =>
+    records: ctx.records.sort((left, right) =>
       codepointCompare(`${left.entityType}:${left.entityId}:${left.field}:${left.sourceId}`, `${right.entityType}:${right.entityId}:${right.field}:${right.sourceId}`),
     ),
   };
@@ -4180,6 +4200,1094 @@ function assertCongestionRowsExistInPack(pack, stats) {
   }
 }
 
+function insertCoreCatalogAndGuideTables(database, pack) {
+  insertCatalogMetadata(database, pack);
+  insertRows(database, "operators", ["id", "name_ko", "name_en"], pack.operators, (row) => [
+    requiredString(row.id, "operators.id"),
+    requiredString(row.nameKo, "operators.nameKo"),
+    row.nameEn ?? "",
+  ]);
+  insertRows(database, "lines", ["id", "operator_id", "name_ko", "name_en", "color"], pack.lines, (row) => [
+    requiredString(row.id, "lines.id"),
+    requiredString(row.operatorId, "lines.operatorId"),
+    requiredString(row.nameKo, "lines.nameKo"),
+    row.nameEn ?? "",
+    row.color ?? "",
+  ]);
+  insertRows(
+    database,
+    "stations",
+    [
+      "id",
+      "name_ko",
+      "name_en",
+      "name_sub",
+      "normalized_name",
+      "region",
+      "latitude",
+      "longitude",
+      "data_quality_level",
+      "data_source_type",
+      "last_verified_at",
+    ],
+    pack.stations,
+    (row) => [
+      requiredString(row.id, "stations.id"),
+      requiredString(row.nameKo, "stations.nameKo"),
+      row.nameEn ?? "",
+      row.nameSub ?? "",
+      requiredString(row.normalizedName, "stations.normalizedName"),
+      row.region ?? "",
+      row.latitude ?? null,
+      row.longitude ?? null,
+      row.dataQualityLevel ?? "LEVEL_1",
+      row.dataSourceType ?? "OFFICIAL_FILE",
+      timestamp(row.lastVerifiedAt),
+    ],
+  );
+  insertRows(database, "station_aliases", ["station_id", "alias", "normalized_alias"], pack.stationAliases ?? [], (row) => [
+    requiredString(row.stationId, "stationAliases.stationId"),
+    requiredString(row.alias, "stationAliases.alias"),
+    requiredString(row.normalizedAlias, "stationAliases.normalizedAlias"),
+  ]);
+  insertRows(
+    database,
+    "station_lines",
+    ["station_id", "line_id", "station_code", "line_sequence", "platform_info"],
+    pack.stationLines,
+    (row) => [
+      requiredString(row.stationId, "stationLines.stationId"),
+      requiredString(row.lineId, "stationLines.lineId"),
+      row.stationCode ?? "",
+      requiredInteger(row.lineSequence, "stationLines.lineSequence"),
+      row.platformInfo ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_contacts",
+    ["station_id", "line_id", "phone", "phone_raw", "source_snapshot_id"],
+    pack.stationContacts ?? [],
+    (row) => [
+      requiredString(row.stationId ?? row.station_id, "stationContacts.stationId"),
+      requiredString(row.lineId ?? row.line_id, "stationContacts.lineId"),
+      requiredString(row.phone, "stationContacts.phone"),
+      requiredString(row.phoneRaw ?? row.phone_raw, "stationContacts.phoneRaw"),
+      requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "stationContacts.sourceSnapshotId"),
+    ],
+  );
+  insertRows(
+    database,
+    "transfer_guide_sources",
+    ["source_snapshot_id", "dataset_label", "attribution", "raw_sha256"],
+    pack.transferGuideSources ?? [],
+    (row) => [
+      requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "transferGuideSources.sourceSnapshotId"),
+      requiredString(row.datasetLabel ?? row.dataset_label, "transferGuideSources.datasetLabel"),
+      requiredString(row.attribution, "transferGuideSources.attribution"),
+      requiredString(row.rawSha256 ?? row.raw_sha256, "transferGuideSources.rawSha256"),
+    ],
+  );
+  insertRows(
+    database,
+    "transfer_guide_steps",
+    ["station_id", "from_line_id", "from_prev_station_id", "to_line_id", "to_next_station_id", "step_order", "detail", "source_snapshot_id"],
+    pack.transferGuideSteps ?? [],
+    (row) => [
+      requiredString(row.stationId ?? row.station_id, "transferGuideSteps.stationId"),
+      requiredString(row.fromLineId ?? row.from_line_id, "transferGuideSteps.fromLineId"),
+      requiredString(row.fromPrevStationId ?? row.from_prev_station_id, "transferGuideSteps.fromPrevStationId"),
+      requiredString(row.toLineId ?? row.to_line_id, "transferGuideSteps.toLineId"),
+      requiredString(row.toNextStationId ?? row.to_next_station_id, "transferGuideSteps.toNextStationId"),
+      requiredInteger(row.stepOrder ?? row.step_order, "transferGuideSteps.stepOrder"),
+      requiredString(row.detail, "transferGuideSteps.detail"),
+      requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "transferGuideSteps.sourceSnapshotId"),
+    ],
+  );
+}
+
+function insertFareTables(database, pack, officialOdFareAdmissions) {
+  insertRows(
+    database,
+    "fare_zones",
+    ["id", "name_ko", "region", "currency_code", "source_id"],
+    pack.fareZones ?? [],
+    (row) => [
+      requiredString(row.id, "fareZones.id"),
+      requiredString(row.nameKo, "fareZones.nameKo"),
+      requiredString(row.region, "fareZones.region"),
+      row.currencyCode ?? "KRW",
+      row.sourceId ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "fare_rules",
+    ["id", "zone_id", "base_card_fare", "base_cash_fare", "base_distance_meters", "additional_steps_json"],
+    pack.fareRules ?? [],
+    (row) => [
+      requiredString(row.id, "fareRules.id"),
+      requiredString(row.zoneId, "fareRules.zoneId"),
+      requiredNonNegativeInteger(row.baseCardFare, "fareRules.baseCardFare"),
+      requiredNonNegativeInteger(row.baseCashFare, "fareRules.baseCashFare"),
+      requiredNonNegativeInteger(row.baseDistanceMeters, "fareRules.baseDistanceMeters"),
+      canonicalFareAdditionalSteps(row.additionalSteps ?? [], "fareRules.additionalSteps"),
+    ],
+  );
+  insertRows(
+    database,
+    "fare_discounts",
+    ["id", "zone_id", "rider_type", "card_fare", "cash_fare", "free_ride", "description_ko"],
+    pack.fareDiscounts ?? [],
+    (row) => [
+      requiredString(row.id, "fareDiscounts.id"),
+      requiredString(row.zoneId, "fareDiscounts.zoneId"),
+      requiredString(row.riderType, "fareDiscounts.riderType"),
+      optionalNonNegativeInteger(row.cardFare, "fareDiscounts.cardFare"),
+      optionalNonNegativeInteger(row.cashFare, "fareDiscounts.cashFare"),
+      boolFlag(row.freeRide ?? false, "fareDiscounts.freeRide"),
+      row.descriptionKo ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_fare_zones",
+    ["station_id", "line_id", "zone_id"],
+    pack.stationFareZones ?? [],
+    (row) => [
+      requiredString(row.stationId, "stationFareZones.stationId"),
+      requiredString(row.lineId, "stationFareZones.lineId"),
+      requiredString(row.zoneId, "stationFareZones.zoneId"),
+    ],
+  );
+  const officialOdFareQuotes = (pack.officialOdFareQuotes ?? [])
+    .map((row) => {
+      const admission = officialOdFareAdmissions.get(row.sourceId);
+      return { admission, row, values: officialOdFareQuoteValues(row, admission) };
+    })
+    .sort((left, right) => codepointCompare(left.values[0], right.values[0])
+      || codepointCompare(left.values[1], right.values[1]));
+  for (const admission of new Set(officialOdFareQuotes.map(({ admission }) => admission))) {
+    const sourceQuotes = officialOdFareQuotes.filter(({ admission: rowAdmission }) => rowAdmission === admission);
+    if (sourceQuotes.length !== admission.quoteCount) {
+      throw new Error("officialOdFareQuotes count must match admission");
+    }
+    if (officialOdFareQuoteSetHash(sourceQuotes.map(({ row }) => row)) !== admission.quoteSetHash) {
+      throw new Error("officialOdFareQuotes quote set hash must match admission");
+    }
+  }
+  insertRows(
+    database,
+    "official_od_fare_quotes",
+    [
+      "origin_station_id",
+      "destination_station_id",
+      "source_id",
+      "snapshot_id",
+      "mapping_ledger_hash",
+      "gnrl_card_fare",
+      "gnrl_cash_fare",
+      "yung_card_fare",
+      "yung_cash_fare",
+      "child_card_fare",
+      "child_cash_fare",
+    ],
+    officialOdFareQuotes,
+    ({ values }) => values,
+  );
+}
+
+function insertTransitScheduleTables(database, pack) {
+  insertRows(
+    database,
+    "service_calendars",
+    [
+      "service_id",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+      "sunday",
+      "start_date",
+      "end_date",
+      "timezone",
+    ],
+    pack.serviceCalendars ?? [],
+    (row) => [
+      requiredString(row.serviceId, "serviceCalendars.serviceId"),
+      boolFlag(row.monday, "serviceCalendars.monday"),
+      boolFlag(row.tuesday, "serviceCalendars.tuesday"),
+      boolFlag(row.wednesday, "serviceCalendars.wednesday"),
+      boolFlag(row.thursday, "serviceCalendars.thursday"),
+      boolFlag(row.friday, "serviceCalendars.friday"),
+      boolFlag(row.saturday, "serviceCalendars.saturday"),
+      boolFlag(row.sunday, "serviceCalendars.sunday"),
+      serviceDate(row.startDate, "serviceCalendars.startDate"),
+      serviceDate(row.endDate, "serviceCalendars.endDate"),
+      row.timezone ?? "Asia/Seoul",
+    ],
+  );
+  insertRows(
+    database,
+    "service_calendar_dates",
+    ["service_id", "date", "exception_type"],
+    pack.serviceCalendarDates ?? [],
+    (row) => [
+      requiredString(row.serviceId, "serviceCalendarDates.serviceId"),
+      serviceDate(row.date, "serviceCalendarDates.date"),
+      requiredInteger(row.exceptionType, "serviceCalendarDates.exceptionType"),
+    ],
+  );
+  insertRows(
+    database,
+    "transit_routes",
+    ["id", "line_id", "route_short_name", "route_long_name", "direction_name", "timezone"],
+    pack.transitRoutes ?? [],
+    (row) => [
+      requiredString(row.id, "transitRoutes.id"),
+      requiredString(row.lineId, "transitRoutes.lineId"),
+      row.routeShortName ?? "",
+      row.routeLongName ?? "",
+      row.directionName ?? "",
+      row.timezone ?? "Asia/Seoul",
+    ],
+  );
+  insertRows(
+    database,
+    "transit_trips",
+    [
+      "id",
+      "route_id",
+      "service_id",
+      "trip_headsign",
+      "direction_id",
+      "service_pattern",
+      "service_class",
+      "service_day_start_seconds",
+    ],
+    pack.transitTrips ?? [],
+    (row) => [
+      requiredString(row.id, "transitTrips.id"),
+      requiredString(row.routeId, "transitTrips.routeId"),
+      requiredString(row.serviceId, "transitTrips.serviceId"),
+      row.tripHeadsign ?? "",
+      row.directionId ?? "",
+      row.servicePattern ?? "LOCAL",
+      row.serviceClass ?? "SUBWAY",
+      row.serviceDayStartSeconds ?? 0,
+    ],
+  );
+  insertRows(
+    database,
+    "transit_stop_times",
+    [
+      "trip_id",
+      "stop_sequence",
+      "station_id",
+      "line_id",
+      "arrival_seconds",
+      "departure_seconds",
+      "pickup_type",
+      "drop_off_type",
+    ],
+    // #918: 원천이 00:00~02:59로 적은 자정 이후 시각은 전날 운행일의 24시 이후 초로 싣는다(운행일 경계 03:00).
+    // 바꾼 뒤 trip 안 시각이 줄어들면(경계를 가로지르는 열차) validate-datapack의 순서 검사가 팩을 거부한다.
+    serviceDayStopTimes(pack.transitStopTimes ?? []),
+    (row) => [
+      requiredString(row.tripId, "transitStopTimes.tripId"),
+      requiredPositiveInteger(row.stopSequence, "transitStopTimes.stopSequence"),
+      requiredString(row.stationId, "transitStopTimes.stationId"),
+      requiredString(row.lineId, "transitStopTimes.lineId"),
+      requiredNonNegativeInteger(row.arrivalSeconds, "transitStopTimes.arrivalSeconds"),
+      requiredNonNegativeInteger(row.departureSeconds, "transitStopTimes.departureSeconds"),
+      row.pickupType ?? 0,
+      row.dropOffType ?? 0,
+    ],
+  );
+  insertRows(
+    database,
+    "transit_frequencies",
+    ["trip_id", "start_time_seconds", "end_time_seconds", "headway_seconds", "exact_times"],
+    pack.transitFrequencies ?? [],
+    (row) => [
+      requiredString(row.tripId, "transitFrequencies.tripId"),
+      requiredNonNegativeInteger(row.startTimeSeconds, "transitFrequencies.startTimeSeconds"),
+      requiredPositiveInteger(row.endTimeSeconds, "transitFrequencies.endTimeSeconds"),
+      requiredPositiveInteger(row.headwaySeconds, "transitFrequencies.headwaySeconds"),
+      boolFlag(row.exactTimes ?? false, "transitFrequencies.exactTimes"),
+    ],
+  );
+  insertRows(
+    database,
+    "transit_feed_info",
+    ["id", "feed_end_date"],
+    pack.transitFeedInfo ?? [],
+    (row) => [1, serviceDate(row.feedEndDate, "transitFeedInfo.feedEndDate")],
+  );
+  const routeServiceEvidence = validatedItxStationCatalogEvidence.get(pack);
+  if (routeServiceEvidence != null) {
+    const { artifactEvidence, stationCatalogEvidence } = routeServiceEvidence;
+    database.prepare("DELETE FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+    database.prepare("DELETE FROM route_service_station_catalog_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+    insertRows(
+      database,
+      "route_service_artifact_evidence",
+      [
+        "service_class",
+        "timetable_artifact_id",
+        "timetable_artifact_sha256",
+        "canonical_pack_id",
+        "canonical_pack_sha256",
+        "canonical_pack_sqlite_sha256",
+        "admission_status",
+        "admission_eligible",
+        "fresh_until",
+        "source_issue",
+      ],
+      [artifactEvidence],
+      (row) => [
+        requiredString(row.serviceClass, "routeServiceArtifactEvidence.artifactEvidence.serviceClass"),
+        requiredString(row.timetableArtifactId, "routeServiceArtifactEvidence.artifactEvidence.timetableArtifactId"),
+        requiredString(row.timetableArtifactSha256, "routeServiceArtifactEvidence.artifactEvidence.timetableArtifactSha256"),
+        requiredString(row.canonicalPackId, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackId"),
+        requiredString(row.canonicalPackSha256, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackSha256"),
+        requiredString(row.canonicalPackSqliteSha256, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackSqliteSha256"),
+        requiredString(row.admissionStatus, "routeServiceArtifactEvidence.artifactEvidence.admissionStatus"),
+        boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.artifactEvidence.admissionEligible"),
+        row.freshUntil ?? null,
+        requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.artifactEvidence.sourceIssue"),
+      ],
+    );
+    insertRows(
+      database,
+      "route_service_station_catalog_evidence",
+      [
+        "service_class",
+        "station_catalog_artifact_kind",
+        "station_catalog_manifest_version",
+        "station_catalog_pack_id",
+        "station_catalog_station_set_sha256",
+        "station_catalog_payload_sha256",
+        "station_catalog_manifest_sha256",
+        "admission_status",
+        "admission_eligible",
+        "fresh_until",
+        "source_issue",
+      ],
+      [stationCatalogEvidence],
+      (row) => [
+        requiredString(row.serviceClass, "routeServiceArtifactEvidence.stationCatalogEvidence.serviceClass"),
+        requiredString(row.stationCatalogArtifactKind, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogArtifactKind"),
+        requiredInteger(row.stationCatalogManifestVersion, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogManifestVersion"),
+        requiredString(row.stationCatalogPackId, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogPackId"),
+        requiredString(row.stationCatalogStationSetSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogStationSetSha256"),
+        requiredString(row.stationCatalogPayloadSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogPayloadSha256"),
+        requiredString(row.stationCatalogManifestSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogManifestSha256"),
+        requiredString(row.admissionStatus, "routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus"),
+        boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.stationCatalogEvidence.admissionEligible"),
+        row.freshUntil ?? null,
+        requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.stationCatalogEvidence.sourceIssue"),
+      ],
+    );
+  }
+}
+
+function insertRealtimeAndNetworkTables(database, pack, networkEdges) {
+  insertRows(
+    database,
+    "realtime_provider_line_mappings",
+    [
+      "provider_id",
+      "provider_line_id",
+      "line_id",
+      "source_id",
+      "supports_arrivals",
+      "supports_train_positions",
+      "mapping_confidence",
+      "updated_at",
+    ],
+    pack.realtimeProviderLineMappings ?? [],
+    (row) => [
+      requiredString(row.providerId, "realtimeProviderLineMappings.providerId"),
+      requiredString(row.providerLineId, "realtimeProviderLineMappings.providerLineId"),
+      requiredString(row.lineId, "realtimeProviderLineMappings.lineId"),
+      requiredString(row.sourceId, "realtimeProviderLineMappings.sourceId"),
+      boolFlag(row.supportsArrivals, "realtimeProviderLineMappings.supportsArrivals"),
+      boolFlag(row.supportsTrainPositions, "realtimeProviderLineMappings.supportsTrainPositions"),
+      row.mappingConfidence ?? "UNKNOWN",
+      timestamp(row.updatedAt),
+    ],
+  );
+  insertRows(
+    database,
+    "realtime_provider_station_mappings",
+    [
+      "provider_id",
+      "provider_line_id",
+      "provider_station_id",
+      "station_id",
+      "line_id",
+      "source_id",
+      "query_name",
+      "supports_arrivals",
+      "supports_train_positions",
+      "mapping_confidence",
+      "updated_at",
+    ],
+    pack.realtimeProviderStationMappings ?? [],
+    (row) => [
+      requiredString(row.providerId, "realtimeProviderStationMappings.providerId"),
+      requiredString(row.providerLineId, "realtimeProviderStationMappings.providerLineId"),
+      requiredString(row.providerStationId, "realtimeProviderStationMappings.providerStationId"),
+      requiredString(row.stationId, "realtimeProviderStationMappings.stationId"),
+      requiredString(row.lineId, "realtimeProviderStationMappings.lineId"),
+      requiredString(row.sourceId, "realtimeProviderStationMappings.sourceId"),
+      row.queryName ?? "",
+      boolFlag(row.supportsArrivals, "realtimeProviderStationMappings.supportsArrivals"),
+      boolFlag(row.supportsTrainPositions, "realtimeProviderStationMappings.supportsTrainPositions"),
+      row.mappingConfidence ?? "UNKNOWN",
+      timestamp(row.updatedAt),
+    ],
+  );
+  insertRows(
+    database,
+    "out_of_station_transfer_links",
+    [
+      "id",
+      "from_station_id",
+      "from_line_id",
+      "to_station_id",
+      "to_line_id",
+      "from_exit_id",
+      "to_exit_id",
+      "duration_seconds",
+      "distance_meters",
+      "bidirectional",
+      "requires_fare_exit",
+      "requires_reentry",
+      "covered_route",
+      "crossing_risk",
+      "slope_level",
+      "curb_cut_status",
+      "sidewalk_status",
+      "accessibility_status",
+      "stair_access_state",
+      "reliability_score",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "last_field_verified_at",
+      "evidence_hash",
+    ],
+    [...(pack.outOfStationTransferLinks ?? [])].sort(
+      (a, b) =>
+        (a.durationSeconds ?? 0) - (b.durationSeconds ?? 0) ||
+        codepointCompare(String(a.id), String(b.id)),
+    ),
+    (row) => [
+      requiredString(row.id, "outOfStationTransferLinks.id"),
+      requiredString(row.fromStationId, "outOfStationTransferLinks.fromStationId"),
+      requiredString(row.fromLineId, "outOfStationTransferLinks.fromLineId"),
+      requiredString(row.toStationId, "outOfStationTransferLinks.toStationId"),
+      requiredString(row.toLineId, "outOfStationTransferLinks.toLineId"),
+      row.fromExitId ?? null,
+      row.toExitId ?? null,
+      row.durationSeconds ?? 0,
+      row.distanceMeters ?? 0,
+      boolFlag(
+        isAsymmetricTransferLink(row) ? false : row.bidirectional,
+        "outOfStationTransferLinks.bidirectional",
+      ),
+      boolFlag(row.requiresFareExit ?? true, "outOfStationTransferLinks.requiresFareExit"),
+      boolFlag(row.requiresReentry ?? true, "outOfStationTransferLinks.requiresReentry"),
+      row.coveredRoute ?? "UNKNOWN",
+      row.crossingRisk ?? "UNKNOWN",
+      row.slopeLevel ?? 1,
+      row.curbCutStatus ?? "UNKNOWN",
+      row.sidewalkStatus ?? "UNKNOWN",
+      normalizedAccessibilityStatus(row.accessibilityStatus, "outOfStationTransferLinks.accessibilityStatus"),
+      row.stairAccessState ?? "UNKNOWN",
+      row.reliabilityScore ?? 100,
+      row.sourceId ?? "",
+      row.sourceSnapshotId ?? "",
+      row.providerRecordHash ?? "",
+      row.provenanceKind ?? "UNKNOWN",
+      row.verificationStatus ?? "UNKNOWN",
+      timestamp(row.lastFieldVerifiedAt ?? row.lastVerifiedAt),
+      row.evidenceHash ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "network_edges",
+    [
+      "id",
+      "from_node_id",
+      "to_node_id",
+      "duration_seconds",
+      "distance_meters",
+      "edge_type",
+      "service_pattern",
+      "service_class",
+      "includes_stairs",
+      "stair_access_state",
+      "accessibility_status",
+      "reliability_score",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "facility_id",
+      "last_verified_at",
+      "evidence_hash",
+    ],
+    networkEdges,
+    (row) => {
+      // AquilaXk/easysubway-backend#480: 서버 번들과 같은 계단 칸 규칙(상태 기준, 어긋나면 거부).
+      const { includesStairs, stairAccessState } = networkEdgeStairColumns(row, row.id);
+      const accessibilityStatus = normalizedAccessibilityStatus(
+        row.accessibilityStatus,
+        "networkEdges.accessibilityStatus",
+      );
+
+      return [
+        requiredString(row.id, "networkEdges.id"),
+        requiredString(row.fromNodeId, "networkEdges.fromNodeId"),
+        requiredString(row.toNodeId, "networkEdges.toNodeId"),
+        row.durationSeconds ?? 0,
+        row.distanceMeters ?? 0,
+        row.edgeType ?? "WALKWAY",
+        row.servicePattern ?? "",
+        row.serviceClass ?? "SUBWAY",
+        includesStairs,
+        stairAccessState,
+        accessibilityStatus,
+        row.reliabilityScore ?? 100,
+        row.sourceId ?? "",
+        row.sourceSnapshotId ?? "",
+        row.providerRecordHash ?? "",
+        row.provenanceKind ?? "UNKNOWN",
+        row.verificationStatus ?? "UNKNOWN",
+        row.facilityId ?? null,
+        timestamp(row.verifiedAt ?? row.lastVerifiedAt),
+        row.evidenceHash ?? "",
+      ];
+    },
+  );
+  insertRows(
+    database,
+    "route_map_positions",
+    [
+      "station_id",
+      "line_id",
+      "region",
+      "x",
+      "y",
+      "label_dx",
+      "label_dy",
+      "label_polygon",
+      "up_path",
+      "down_path",
+      "source_id",
+      "source_name",
+      "source_url",
+      "license",
+      "license_status",
+      "commercial_use_allowed",
+      "attribution_required",
+      "reviewed_at",
+      "updated_at",
+    ],
+    pack.routeMapPositions ?? [],
+    (row) => [
+      requiredString(row.stationId, "routeMapPositions.stationId"),
+      requiredString(row.lineId, "routeMapPositions.lineId"),
+      requiredString(row.region, "routeMapPositions.region"),
+      requiredNonNegativeFiniteNumber(row.x, "routeMapPositions.x"),
+      requiredNonNegativeFiniteNumber(row.y, "routeMapPositions.y"),
+      row.labelDx ?? 0,
+      row.labelDy ?? 0,
+      canonicalLabelPolygon(row.labelPolygon, "routeMapPositions.labelPolygon"),
+      row.upPath ?? "",
+      row.downPath ?? "",
+      requiredString(row.sourceId, "routeMapPositions.sourceId"),
+      requiredString(row.sourceName, "routeMapPositions.sourceName"),
+      requiredString(row.sourceUrl, "routeMapPositions.sourceUrl"),
+      requiredString(row.license, "routeMapPositions.license"),
+      requiredString(row.licenseStatus, "routeMapPositions.licenseStatus"),
+      boolFlag(row.commercialUseAllowed, "routeMapPositions.commercialUseAllowed"),
+      boolFlag(row.attributionRequired, "routeMapPositions.attributionRequired"),
+      timestamp(row.reviewedAt),
+      timestamp(row.updatedAt),
+    ],
+  );
+  insertRows(
+    database,
+    "route_map_line_tracks",
+    [
+      "region",
+      "line_id",
+      "track_index",
+      "path",
+      "svg_color",
+      "source_id",
+      "source_name",
+      "source_url",
+      "license",
+      "license_status",
+      "commercial_use_allowed",
+      "attribution_required",
+      "updated_at",
+    ],
+    pack.routeMapLineTracks ?? [],
+    (row) => [
+      requiredString(row.region, "routeMapLineTracks.region"),
+      requiredString(row.lineId, "routeMapLineTracks.lineId"),
+      requiredNonNegativeInteger(row.trackIndex, "routeMapLineTracks.trackIndex"),
+      requiredString(row.path, "routeMapLineTracks.path"),
+      row.svgColor ?? "",
+      requiredString(row.sourceId, "routeMapLineTracks.sourceId"),
+      requiredString(row.sourceName, "routeMapLineTracks.sourceName"),
+      requiredString(row.sourceUrl, "routeMapLineTracks.sourceUrl"),
+      requiredString(row.license, "routeMapLineTracks.license"),
+      requiredString(row.licenseStatus, "routeMapLineTracks.licenseStatus"),
+      boolFlag(row.commercialUseAllowed, "routeMapLineTracks.commercialUseAllowed"),
+      boolFlag(row.attributionRequired, "routeMapLineTracks.attributionRequired"),
+      timestamp(row.updatedAt),
+    ],
+  );
+}
+
+function insertAccessibilityAndPathwayTables(database, pack, isProductionPack) {
+  insertRows(
+    database,
+    "station_exits",
+    [
+      "id",
+      "station_id",
+      "exit_number",
+      "description",
+      "latitude",
+      "longitude",
+      "has_elevator_connection",
+      "source_id",
+      "source_snapshot_id",
+      "data_source_type",
+      "last_verified_at",
+    ],
+    pack.stationExits ?? [],
+    (row) => [
+      requiredString(row.id, "stationExits.id"),
+      requiredString(row.stationId, "stationExits.stationId"),
+      requiredString(row.exitNumber, "stationExits.exitNumber"),
+      row.description ?? "",
+      optionalLatitude(row.latitude, "stationExits.latitude"),
+      optionalLongitude(row.longitude, "stationExits.longitude"),
+      boolFlag(row.hasElevatorConnection, "stationExits.hasElevatorConnection"),
+      row.sourceId ?? "",
+      row.sourceSnapshotId ?? "",
+      row.dataSourceType ?? "OFFICIAL_FILE",
+      timestamp(row.lastVerifiedAt),
+    ],
+  );
+  insertRows(
+    database,
+    "facilities",
+    [
+      "id",
+      "station_id",
+      "exit_id",
+      "type",
+      "name",
+      "status",
+      "floor_from",
+      "floor_to",
+      "description",
+      "source_id",
+      "source_snapshot_id",
+      "provider_facility_ref",
+      "provider_record_hash",
+      "provenance_kind",
+      "verified_at",
+      "retrieved_at",
+      "evidence_hash",
+      "status_meaning",
+      "operational_status",
+      "installation_status",
+      "confidence",
+    ],
+    pack.facilities ?? [],
+    (row) => {
+      const id = requiredString(row.id, "facilities.id");
+      return [
+        id,
+        requiredString(row.stationId, "facilities.stationId"),
+        row.exitId ?? null,
+        requiredString(row.type, "facilities.type"),
+        requiredString(row.name, "facilities.name"),
+        row.status ?? "UNKNOWN",
+        row.floorFrom ?? "",
+        row.floorTo ?? "",
+        row.description ?? "",
+        productionFacilityString(row.sourceId, isProductionPack, "sourceId"),
+        productionFacilityString(row.sourceSnapshotId, isProductionPack, "sourceSnapshotId"),
+        productionFacilityString(row.providerFacilityRef, isProductionPack, "providerFacilityRef") || id,
+        productionFacilityString(row.providerRecordHash, isProductionPack, "providerRecordHash"),
+        productionFacilityString(row.provenanceKind, isProductionPack, "provenanceKind") || "UNKNOWN",
+        productionFacilityTimestamp(row.verifiedAt ?? row.lastVerifiedAt, isProductionPack, "verifiedAt") ?? 0,
+        productionFacilityTimestamp(row.retrievedAt, isProductionPack, "retrievedAt") ?? 0,
+        productionFacilityString(row.evidenceHash, isProductionPack, "evidenceHash"),
+        productionFacilityString(row.statusMeaning, isProductionPack, "statusMeaning"),
+        facilityOperationalStatus(row, isProductionPack),
+        facilityInstallationStatus(row, isProductionPack),
+        row.confidence ?? 0,
+      ];
+    },
+  );
+  insertRows(
+    database,
+    "station_facility_evidence",
+    [
+      "station_id",
+      "line_id",
+      "facility_type",
+      "evidence_kind",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "evidence_hash",
+      "provenance_kind",
+      "installation_status",
+      "operational_status",
+      "status_meaning",
+      "confidence",
+      "verified_at",
+      "retrieved_at",
+      "strict_route_eligible",
+      "strict_route_eligible_reason",
+    ],
+    pack.stationFacilityEvidence ?? [],
+    (row) => [
+      requiredString(row.stationId, "stationFacilityEvidence.stationId"),
+      requiredString(row.lineId, "stationFacilityEvidence.lineId"),
+      requiredString(row.facilityType, "stationFacilityEvidence.facilityType"),
+      requiredString(row.evidenceKind, "stationFacilityEvidence.evidenceKind"),
+      requiredString(row.sourceId, "stationFacilityEvidence.sourceId"),
+      requiredString(row.sourceSnapshotId, "stationFacilityEvidence.sourceSnapshotId"),
+      requiredString(row.providerRecordHash, "stationFacilityEvidence.providerRecordHash"),
+      requiredString(row.evidenceHash, "stationFacilityEvidence.evidenceHash"),
+      requiredString(row.provenanceKind, "stationFacilityEvidence.provenanceKind"),
+      row.installationStatus ?? "UNKNOWN",
+      row.operationalStatus ?? "UNKNOWN",
+      row.statusMeaning ?? "",
+      row.confidence ?? 0,
+      timestamp(row.verifiedAt) ?? 0,
+      timestamp(row.retrievedAt) ?? 0,
+      boolFlag(row.strictRouteEligible, "stationFacilityEvidence.strictRouteEligible"),
+      row.strictRouteEligibleReason ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_accessibility_summaries",
+    ["station_id", "summary", "warning"],
+    pack.stationAccessibilitySummaries ?? [],
+    (row) => [
+      requiredString(row.stationId, "stationAccessibilitySummaries.stationId"),
+      requiredString(row.summary, "stationAccessibilitySummaries.summary"),
+      row.warning ?? "",
+    ],
+  );
+  insertRows(database, "internal_route_nodes", ["id", "station_id", "label", "node_type"], pack.internalRouteNodes ?? [], (row) => [
+    requiredString(row.id, "internalRouteNodes.id"),
+    requiredString(row.stationId, "internalRouteNodes.stationId"),
+    requiredString(row.label, "internalRouteNodes.label"),
+    requiredString(row.nodeType, "internalRouteNodes.nodeType"),
+  ]);
+  insertRows(
+    database,
+    "internal_route_edges",
+    [
+      "id",
+      "from_node_id",
+      "to_node_id",
+      "edge_type",
+      "distance_meters",
+      "duration_seconds",
+      "includes_stairs",
+      "requires_elevator",
+      "requires_escalator",
+      "slope_level",
+      "width_level",
+      "reliability_score",
+      "accessibility_status",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "facility_id",
+      "last_verified_at",
+      "evidence_hash",
+      "instruction",
+    ],
+    pack.internalRouteEdges ?? [],
+    (row) => [
+      requiredString(row.id, "internalRouteEdges.id"),
+      requiredString(row.fromNodeId, "internalRouteEdges.fromNodeId"),
+      requiredString(row.toNodeId, "internalRouteEdges.toNodeId"),
+      row.edgeType ?? "WALK",
+      row.distanceMeters ?? 0,
+      row.durationSeconds ?? 0,
+      row.includesStairs ? 1 : 0,
+      row.requiresElevator ? 1 : 0,
+      row.requiresEscalator ? 1 : 0,
+      row.slopeLevel ?? 1,
+      row.widthLevel ?? 2,
+      row.reliabilityScore ?? 100,
+      normalizedAccessibilityStatus(row.accessibilityStatus, "internalRouteEdges.accessibilityStatus"),
+      row.sourceId ?? "",
+      row.sourceSnapshotId ?? "",
+      row.providerRecordHash ?? "",
+      row.provenanceKind ?? "UNKNOWN",
+      row.verificationStatus ?? "UNKNOWN",
+      row.facilityId ?? null,
+      timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
+      row.evidenceHash ?? "",
+      row.instruction ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_pathway_nodes",
+    ["id", "station_id", "line_id", "node_type", "label", "level", "legacy_internal_route_node_id"],
+    pack.stationPathwayNodes ?? [],
+    (row) => [
+      requiredString(row.id, "stationPathwayNodes.id"),
+      requiredString(row.stationId, "stationPathwayNodes.stationId"),
+      row.lineId ?? null,
+      requiredString(row.nodeType, "stationPathwayNodes.nodeType"),
+      requiredString(row.label, "stationPathwayNodes.label"),
+      row.level ?? "",
+      row.legacyInternalRouteNodeId ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_pathway_edges",
+    [
+      "id",
+      "from_node_id",
+      "to_node_id",
+      "edge_type",
+      "duration_seconds",
+      "distance_meters",
+      "bidirectional",
+      "includes_stairs",
+      "requires_elevator",
+      "requires_escalator",
+      "level_from",
+      "level_to",
+      "requires_facility_id",
+      "min_width_cm",
+      "slope_percent",
+      "vertical_meters",
+      "reliability_score",
+      "accessibility_status",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "last_verified_at",
+      "evidence_hash",
+      "instruction",
+      "legacy_internal_route_edge_id",
+    ],
+    pack.stationPathwayEdges ?? [],
+    (row) => [
+      requiredString(row.id, "stationPathwayEdges.id"),
+      requiredString(row.fromNodeId, "stationPathwayEdges.fromNodeId"),
+      requiredString(row.toNodeId, "stationPathwayEdges.toNodeId"),
+      row.edgeType ?? "WALK",
+      row.durationSeconds ?? 0,
+      row.distanceMeters ?? 0,
+      boolFlag(row.bidirectional, "stationPathwayEdges.bidirectional"),
+      boolFlag(row.includesStairs, "stationPathwayEdges.includesStairs"),
+      boolFlag(row.requiresElevator, "stationPathwayEdges.requiresElevator"),
+      boolFlag(row.requiresEscalator, "stationPathwayEdges.requiresEscalator"),
+      row.levelFrom ?? "",
+      row.levelTo ?? "",
+      row.requiresFacilityId ?? null,
+      row.minWidthCm ?? null,
+      row.slopePercent ?? null,
+      row.verticalMeters ?? null,
+      row.reliabilityScore ?? 100,
+      normalizedAccessibilityStatus(row.accessibilityStatus, "stationPathwayEdges.accessibilityStatus"),
+      row.sourceId ?? "",
+      row.sourceSnapshotId ?? "",
+      row.providerRecordHash ?? "",
+      row.provenanceKind ?? "UNKNOWN",
+      row.verificationStatus ?? "UNKNOWN",
+      timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
+      row.evidenceHash ?? "",
+      row.instruction ?? "",
+      row.legacyInternalRouteEdgeId ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "transfer_rules",
+    [
+      "id",
+      "from_station_id",
+      "from_line_id",
+      "to_station_id",
+      "to_line_id",
+      "transfer_type",
+      "min_transfer_seconds",
+      "pathway_edge_id",
+      "strict_step_free_pathway_edge_id",
+      "source_id",
+      "verification_status",
+    ],
+    [...(pack.transferRules ?? [])].sort(
+      (a, b) =>
+        (a.minTransferSeconds ?? 0) - (b.minTransferSeconds ?? 0) ||
+        codepointCompare(String(a.id), String(b.id)),
+    ),
+    (row) => [
+      requiredString(row.id, "transferRules.id"),
+      requiredString(row.fromStationId, "transferRules.fromStationId"),
+      requiredString(row.fromLineId, "transferRules.fromLineId"),
+      requiredString(row.toStationId, "transferRules.toStationId"),
+      requiredString(row.toLineId, "transferRules.toLineId"),
+      row.transferType ?? "IN_STATION",
+      row.minTransferSeconds ?? 0,
+      row.pathwayEdgeId ?? null,
+      row.strictStepFreePathwayEdgeId ?? null,
+      row.sourceId ?? "",
+      row.verificationStatus ?? "UNKNOWN",
+    ],
+  );
+  insertRows(
+    database,
+    "station_car_door_hints",
+    [
+      "id",
+      "station_id",
+      "line_id",
+      "direction",
+      "target_facility_type",
+      "car_number",
+      "door_number",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "last_verified_at",
+      "evidence_hash",
+    ],
+    pack.stationCarDoorHints ?? [],
+    (row) => {
+      const provenanceKind =
+        row.provenanceKind == null
+          ? "UNKNOWN"
+          : requiredString(row.provenanceKind, "stationCarDoorHints.provenanceKind");
+      const isOfficial = provenanceKind === "OFFICIAL";
+      return [
+        requiredString(row.id, "stationCarDoorHints.id"),
+        requiredString(row.stationId, "stationCarDoorHints.stationId"),
+        requiredString(row.lineId, "stationCarDoorHints.lineId"),
+        row.direction ?? "",
+        requiredString(row.targetFacilityType, "stationCarDoorHints.targetFacilityType"),
+        requiredInteger(row.carNumber, "stationCarDoorHints.carNumber"),
+        requiredInteger(row.doorNumber, "stationCarDoorHints.doorNumber"),
+        isOfficial ? requiredString(row.sourceId, "stationCarDoorHints.sourceId") : row.sourceId ?? "",
+        isOfficial
+          ? requiredString(row.sourceSnapshotId, "stationCarDoorHints.sourceSnapshotId")
+          : row.sourceSnapshotId ?? "",
+        isOfficial
+          ? requiredString(row.providerRecordHash, "stationCarDoorHints.providerRecordHash")
+          : row.providerRecordHash ?? "",
+        provenanceKind,
+        row.verificationStatus ?? "UNKNOWN",
+        timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
+        row.evidenceHash ?? "",
+      ];
+    },
+  );
+  insertRows(
+    database,
+    "data_quality_records",
+    ["id", "target_type", "target_id", "quality_level", "checked_at"],
+    pack.dataQualityRecords ?? [],
+    (row) => [
+      requiredString(row.id, "dataQualityRecords.id"),
+      requiredString(row.targetType, "dataQualityRecords.targetType"),
+      requiredString(row.targetId, "dataQualityRecords.targetId"),
+      requiredString(row.qualityLevel, "dataQualityRecords.qualityLevel"),
+      timestamp(row.checkedAt),
+    ],
+  );
+}
+
+function insertCongestionTables(database, pack, isProductionPack, repositoryRoot) {
+  let congestionStats = pack.stationCongestionStats ?? [];
+  let congestionSources = pack.stationCongestionSources ?? [];
+
+  if (isProductionPack) {
+    const { stats, sources } = loadSeoulMetroCongestionForBuild(repositoryRoot, pack);
+    congestionStats = stats;
+    congestionSources = sources;
+  }
+
+  assertCongestionRowsExistInPack(pack, congestionStats);
+
+  insertRows(
+    database,
+    "station_congestion_sources",
+    ["source_snapshot_id", "dataset_label", "captured_at", "attribution"],
+    congestionSources,
+    (row) => [
+      requiredString(row.source_snapshot_id ?? row.sourceSnapshotId, "station_congestion_sources.source_snapshot_id"),
+      requiredString(row.dataset_label ?? row.datasetLabel, "station_congestion_sources.dataset_label"),
+      requiredString(row.captured_at ?? row.capturedAt, "station_congestion_sources.captured_at"),
+      requiredString(row.attribution, "station_congestion_sources.attribution"),
+    ],
+  );
+
+  insertRows(
+    database,
+    "station_congestion_stats",
+    [
+      "station_id",
+      "line_id",
+      "direction",
+      "day_type",
+      "slot_start_minute",
+      "congestion_permille",
+      "source_snapshot_id",
+    ],
+    congestionStats,
+    (row) => [
+      requiredString(row.station_id ?? row.stationId, "station_congestion_stats.station_id"),
+      requiredString(row.line_id ?? row.lineId, "station_congestion_stats.line_id"),
+      requiredString(row.direction, "station_congestion_stats.direction"),
+      requiredString(row.day_type ?? row.dayType, "station_congestion_stats.day_type"),
+      requiredInteger(row.slot_start_minute ?? row.slotStartMinute, "station_congestion_stats.slot_start_minute"),
+      requiredNonNegativeInteger(row.congestion_permille ?? row.congestionPermille, "station_congestion_stats.congestion_permille"),
+      requiredString(row.source_snapshot_id ?? row.sourceSnapshotId, "station_congestion_stats.source_snapshot_id"),
+    ],
+  );
+}
+
 export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions, { repositoryRoot = root } = {}) {
   const database = new DatabaseSync(sqlitePath);
   const isProductionPack = pack.artifactKind === "production";
@@ -4188,1077 +5296,12 @@ export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissio
     database.exec(schema);
     database.exec("BEGIN IMMEDIATE");
     try {
-      insertCatalogMetadata(database, pack);
-      insertRows(database, "operators", ["id", "name_ko", "name_en"], pack.operators, (row) => [
-        requiredString(row.id, "operators.id"),
-        requiredString(row.nameKo, "operators.nameKo"),
-        row.nameEn ?? "",
-      ]);
-      insertRows(database, "lines", ["id", "operator_id", "name_ko", "name_en", "color"], pack.lines, (row) => [
-        requiredString(row.id, "lines.id"),
-        requiredString(row.operatorId, "lines.operatorId"),
-        requiredString(row.nameKo, "lines.nameKo"),
-        row.nameEn ?? "",
-        row.color ?? "",
-      ]);
-      insertRows(
-        database,
-        "stations",
-        [
-          "id",
-          "name_ko",
-          "name_en",
-          "name_sub",
-          "normalized_name",
-          "region",
-          "latitude",
-          "longitude",
-          "data_quality_level",
-          "data_source_type",
-          "last_verified_at",
-        ],
-        pack.stations,
-        (row) => [
-          requiredString(row.id, "stations.id"),
-          requiredString(row.nameKo, "stations.nameKo"),
-          row.nameEn ?? "",
-          row.nameSub ?? "",
-          requiredString(row.normalizedName, "stations.normalizedName"),
-          row.region ?? "",
-          row.latitude ?? null,
-          row.longitude ?? null,
-          row.dataQualityLevel ?? "LEVEL_1",
-          row.dataSourceType ?? "OFFICIAL_FILE",
-          timestamp(row.lastVerifiedAt),
-        ],
-      );
-      insertRows(database, "station_aliases", ["station_id", "alias", "normalized_alias"], pack.stationAliases ?? [], (row) => [
-        requiredString(row.stationId, "stationAliases.stationId"),
-        requiredString(row.alias, "stationAliases.alias"),
-        requiredString(row.normalizedAlias, "stationAliases.normalizedAlias"),
-      ]);
-      insertRows(
-        database,
-        "station_lines",
-        ["station_id", "line_id", "station_code", "line_sequence", "platform_info"],
-        pack.stationLines,
-        (row) => [
-          requiredString(row.stationId, "stationLines.stationId"),
-          requiredString(row.lineId, "stationLines.lineId"),
-          row.stationCode ?? "",
-          requiredInteger(row.lineSequence, "stationLines.lineSequence"),
-          row.platformInfo ?? "",
-        ],
-      );
-      insertRows(
-        database,
-        "station_contacts",
-        ["station_id", "line_id", "phone", "phone_raw", "source_snapshot_id"],
-        pack.stationContacts ?? [],
-        (row) => [
-          requiredString(row.stationId ?? row.station_id, "stationContacts.stationId"),
-          requiredString(row.lineId ?? row.line_id, "stationContacts.lineId"),
-          requiredString(row.phone, "stationContacts.phone"),
-          requiredString(row.phoneRaw ?? row.phone_raw, "stationContacts.phoneRaw"),
-          requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "stationContacts.sourceSnapshotId"),
-        ],
-      );
-      insertRows(
-        database,
-        "transfer_guide_sources",
-        ["source_snapshot_id", "dataset_label", "attribution", "raw_sha256"],
-        pack.transferGuideSources ?? [],
-        (row) => [
-          requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "transferGuideSources.sourceSnapshotId"),
-          requiredString(row.datasetLabel ?? row.dataset_label, "transferGuideSources.datasetLabel"),
-          requiredString(row.attribution, "transferGuideSources.attribution"),
-          requiredString(row.rawSha256 ?? row.raw_sha256, "transferGuideSources.rawSha256"),
-        ],
-      );
-      insertRows(
-        database,
-        "transfer_guide_steps",
-        ["station_id", "from_line_id", "from_prev_station_id", "to_line_id", "to_next_station_id", "step_order", "detail", "source_snapshot_id"],
-        pack.transferGuideSteps ?? [],
-        (row) => [
-          requiredString(row.stationId ?? row.station_id, "transferGuideSteps.stationId"),
-          requiredString(row.fromLineId ?? row.from_line_id, "transferGuideSteps.fromLineId"),
-          requiredString(row.fromPrevStationId ?? row.from_prev_station_id, "transferGuideSteps.fromPrevStationId"),
-          requiredString(row.toLineId ?? row.to_line_id, "transferGuideSteps.toLineId"),
-          requiredString(row.toNextStationId ?? row.to_next_station_id, "transferGuideSteps.toNextStationId"),
-          requiredInteger(row.stepOrder ?? row.step_order, "transferGuideSteps.stepOrder"),
-          requiredString(row.detail, "transferGuideSteps.detail"),
-          requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "transferGuideSteps.sourceSnapshotId"),
-        ],
-      );
-      insertRows(
-        database,
-        "fare_zones",
-        ["id", "name_ko", "region", "currency_code", "source_id"],
-        pack.fareZones ?? [],
-        (row) => [
-          requiredString(row.id, "fareZones.id"),
-          requiredString(row.nameKo, "fareZones.nameKo"),
-          requiredString(row.region, "fareZones.region"),
-          row.currencyCode ?? "KRW",
-          row.sourceId ?? "",
-        ],
-      );
-      insertRows(
-        database,
-        "fare_rules",
-        ["id", "zone_id", "base_card_fare", "base_cash_fare", "base_distance_meters", "additional_steps_json"],
-        pack.fareRules ?? [],
-        (row) => [
-          requiredString(row.id, "fareRules.id"),
-          requiredString(row.zoneId, "fareRules.zoneId"),
-          requiredNonNegativeInteger(row.baseCardFare, "fareRules.baseCardFare"),
-          requiredNonNegativeInteger(row.baseCashFare, "fareRules.baseCashFare"),
-          requiredNonNegativeInteger(row.baseDistanceMeters, "fareRules.baseDistanceMeters"),
-          canonicalFareAdditionalSteps(row.additionalSteps ?? [], "fareRules.additionalSteps"),
-        ],
-      );
-      insertRows(
-        database,
-        "fare_discounts",
-        ["id", "zone_id", "rider_type", "card_fare", "cash_fare", "free_ride", "description_ko"],
-        pack.fareDiscounts ?? [],
-        (row) => [
-          requiredString(row.id, "fareDiscounts.id"),
-          requiredString(row.zoneId, "fareDiscounts.zoneId"),
-          requiredString(row.riderType, "fareDiscounts.riderType"),
-          optionalNonNegativeInteger(row.cardFare, "fareDiscounts.cardFare"),
-          optionalNonNegativeInteger(row.cashFare, "fareDiscounts.cashFare"),
-          boolFlag(row.freeRide ?? false, "fareDiscounts.freeRide"),
-          row.descriptionKo ?? "",
-        ],
-      );
-      insertRows(
-        database,
-        "station_fare_zones",
-        ["station_id", "line_id", "zone_id"],
-        pack.stationFareZones ?? [],
-        (row) => [
-          requiredString(row.stationId, "stationFareZones.stationId"),
-          requiredString(row.lineId, "stationFareZones.lineId"),
-          requiredString(row.zoneId, "stationFareZones.zoneId"),
-        ],
-      );
-      const officialOdFareQuotes = (pack.officialOdFareQuotes ?? [])
-        .map((row) => {
-          const admission = officialOdFareAdmissions.get(row.sourceId);
-          return { admission, row, values: officialOdFareQuoteValues(row, admission) };
-        })
-        .sort((left, right) => codepointCompare(left.values[0], right.values[0])
-          || codepointCompare(left.values[1], right.values[1]));
-      for (const admission of new Set(officialOdFareQuotes.map(({ admission }) => admission))) {
-        const sourceQuotes = officialOdFareQuotes.filter(({ admission: rowAdmission }) => rowAdmission === admission);
-        if (sourceQuotes.length !== admission.quoteCount) {
-          throw new Error("officialOdFareQuotes count must match admission");
-        }
-        if (officialOdFareQuoteSetHash(sourceQuotes.map(({ row }) => row)) !== admission.quoteSetHash) {
-          throw new Error("officialOdFareQuotes quote set hash must match admission");
-        }
-      }
-      insertRows(
-        database,
-        "official_od_fare_quotes",
-        [
-          "origin_station_id",
-          "destination_station_id",
-          "source_id",
-          "snapshot_id",
-          "mapping_ledger_hash",
-          "gnrl_card_fare",
-          "gnrl_cash_fare",
-          "yung_card_fare",
-          "yung_cash_fare",
-          "child_card_fare",
-          "child_cash_fare",
-        ],
-        officialOdFareQuotes,
-        ({ values }) => values,
-      );
-      insertRows(
-        database,
-        "service_calendars",
-        [
-          "service_id",
-          "monday",
-          "tuesday",
-          "wednesday",
-          "thursday",
-          "friday",
-          "saturday",
-          "sunday",
-          "start_date",
-          "end_date",
-          "timezone",
-        ],
-        pack.serviceCalendars ?? [],
-        (row) => [
-          requiredString(row.serviceId, "serviceCalendars.serviceId"),
-          boolFlag(row.monday, "serviceCalendars.monday"),
-          boolFlag(row.tuesday, "serviceCalendars.tuesday"),
-          boolFlag(row.wednesday, "serviceCalendars.wednesday"),
-          boolFlag(row.thursday, "serviceCalendars.thursday"),
-          boolFlag(row.friday, "serviceCalendars.friday"),
-          boolFlag(row.saturday, "serviceCalendars.saturday"),
-          boolFlag(row.sunday, "serviceCalendars.sunday"),
-          serviceDate(row.startDate, "serviceCalendars.startDate"),
-          serviceDate(row.endDate, "serviceCalendars.endDate"),
-          row.timezone ?? "Asia/Seoul",
-        ],
-      );
-      insertRows(
-        database,
-        "service_calendar_dates",
-        ["service_id", "date", "exception_type"],
-        pack.serviceCalendarDates ?? [],
-        (row) => [
-          requiredString(row.serviceId, "serviceCalendarDates.serviceId"),
-          serviceDate(row.date, "serviceCalendarDates.date"),
-          requiredInteger(row.exceptionType, "serviceCalendarDates.exceptionType"),
-        ],
-      );
-      insertRows(
-        database,
-        "transit_routes",
-        ["id", "line_id", "route_short_name", "route_long_name", "direction_name", "timezone"],
-        pack.transitRoutes ?? [],
-        (row) => [
-          requiredString(row.id, "transitRoutes.id"),
-          requiredString(row.lineId, "transitRoutes.lineId"),
-          row.routeShortName ?? "",
-          row.routeLongName ?? "",
-          row.directionName ?? "",
-          row.timezone ?? "Asia/Seoul",
-        ],
-      );
-      insertRows(
-        database,
-        "transit_trips",
-        [
-          "id",
-          "route_id",
-          "service_id",
-          "trip_headsign",
-          "direction_id",
-          "service_pattern",
-          "service_class",
-          "service_day_start_seconds",
-        ],
-        pack.transitTrips ?? [],
-        (row) => [
-          requiredString(row.id, "transitTrips.id"),
-          requiredString(row.routeId, "transitTrips.routeId"),
-          requiredString(row.serviceId, "transitTrips.serviceId"),
-          row.tripHeadsign ?? "",
-          row.directionId ?? "",
-          row.servicePattern ?? "LOCAL",
-          row.serviceClass ?? "SUBWAY",
-          row.serviceDayStartSeconds ?? 0,
-        ],
-      );
-      insertRows(
-        database,
-        "transit_stop_times",
-        [
-          "trip_id",
-          "stop_sequence",
-          "station_id",
-          "line_id",
-          "arrival_seconds",
-          "departure_seconds",
-          "pickup_type",
-          "drop_off_type",
-        ],
-        // #918: 원천이 00:00~02:59로 적은 자정 이후 시각은 전날 운행일의 24시 이후 초로 싣는다(운행일 경계 03:00).
-        // 바꾼 뒤 trip 안 시각이 줄어들면(경계를 가로지르는 열차) validate-datapack의 순서 검사가 팩을 거부한다.
-        serviceDayStopTimes(pack.transitStopTimes ?? []),
-        (row) => [
-          requiredString(row.tripId, "transitStopTimes.tripId"),
-          requiredPositiveInteger(row.stopSequence, "transitStopTimes.stopSequence"),
-          requiredString(row.stationId, "transitStopTimes.stationId"),
-          requiredString(row.lineId, "transitStopTimes.lineId"),
-          requiredNonNegativeInteger(row.arrivalSeconds, "transitStopTimes.arrivalSeconds"),
-          requiredNonNegativeInteger(row.departureSeconds, "transitStopTimes.departureSeconds"),
-          row.pickupType ?? 0,
-          row.dropOffType ?? 0,
-        ],
-      );
-      insertRows(
-        database,
-        "transit_frequencies",
-        ["trip_id", "start_time_seconds", "end_time_seconds", "headway_seconds", "exact_times"],
-        pack.transitFrequencies ?? [],
-        (row) => [
-          requiredString(row.tripId, "transitFrequencies.tripId"),
-          requiredNonNegativeInteger(row.startTimeSeconds, "transitFrequencies.startTimeSeconds"),
-          requiredPositiveInteger(row.endTimeSeconds, "transitFrequencies.endTimeSeconds"),
-          requiredPositiveInteger(row.headwaySeconds, "transitFrequencies.headwaySeconds"),
-          boolFlag(row.exactTimes ?? false, "transitFrequencies.exactTimes"),
-        ],
-      );
-      insertRows(
-        database,
-        "transit_feed_info",
-        ["id", "feed_end_date"],
-        pack.transitFeedInfo ?? [],
-        (row) => [1, serviceDate(row.feedEndDate, "transitFeedInfo.feedEndDate")],
-      );
-      const routeServiceEvidence = validatedItxStationCatalogEvidence.get(pack);
-      if (routeServiceEvidence != null) {
-        const { artifactEvidence, stationCatalogEvidence } = routeServiceEvidence;
-        database.prepare("DELETE FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
-        database.prepare("DELETE FROM route_service_station_catalog_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
-        insertRows(
-          database,
-          "route_service_artifact_evidence",
-          [
-            "service_class",
-            "timetable_artifact_id",
-            "timetable_artifact_sha256",
-            "canonical_pack_id",
-            "canonical_pack_sha256",
-            "canonical_pack_sqlite_sha256",
-            "admission_status",
-            "admission_eligible",
-            "fresh_until",
-            "source_issue",
-          ],
-          [artifactEvidence],
-          (row) => [
-            requiredString(row.serviceClass, "routeServiceArtifactEvidence.artifactEvidence.serviceClass"),
-            requiredString(row.timetableArtifactId, "routeServiceArtifactEvidence.artifactEvidence.timetableArtifactId"),
-            requiredString(row.timetableArtifactSha256, "routeServiceArtifactEvidence.artifactEvidence.timetableArtifactSha256"),
-            requiredString(row.canonicalPackId, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackId"),
-            requiredString(row.canonicalPackSha256, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackSha256"),
-            requiredString(row.canonicalPackSqliteSha256, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackSqliteSha256"),
-            requiredString(row.admissionStatus, "routeServiceArtifactEvidence.artifactEvidence.admissionStatus"),
-            boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.artifactEvidence.admissionEligible"),
-            row.freshUntil ?? null,
-            requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.artifactEvidence.sourceIssue"),
-          ],
-        );
-        insertRows(
-          database,
-          "route_service_station_catalog_evidence",
-          [
-            "service_class",
-            "station_catalog_artifact_kind",
-            "station_catalog_manifest_version",
-            "station_catalog_pack_id",
-            "station_catalog_station_set_sha256",
-            "station_catalog_payload_sha256",
-            "station_catalog_manifest_sha256",
-            "admission_status",
-            "admission_eligible",
-            "fresh_until",
-            "source_issue",
-          ],
-          [stationCatalogEvidence],
-          (row) => [
-            requiredString(row.serviceClass, "routeServiceArtifactEvidence.stationCatalogEvidence.serviceClass"),
-            requiredString(row.stationCatalogArtifactKind, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogArtifactKind"),
-            requiredInteger(row.stationCatalogManifestVersion, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogManifestVersion"),
-            requiredString(row.stationCatalogPackId, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogPackId"),
-            requiredString(row.stationCatalogStationSetSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogStationSetSha256"),
-            requiredString(row.stationCatalogPayloadSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogPayloadSha256"),
-            requiredString(row.stationCatalogManifestSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogManifestSha256"),
-            requiredString(row.admissionStatus, "routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus"),
-            boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.stationCatalogEvidence.admissionEligible"),
-            row.freshUntil ?? null,
-            requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.stationCatalogEvidence.sourceIssue"),
-          ],
-        );
-      }
-      insertRows(
-        database,
-        "realtime_provider_line_mappings",
-        [
-          "provider_id",
-          "provider_line_id",
-          "line_id",
-          "source_id",
-          "supports_arrivals",
-          "supports_train_positions",
-          "mapping_confidence",
-          "updated_at",
-        ],
-        pack.realtimeProviderLineMappings ?? [],
-        (row) => [
-          requiredString(row.providerId, "realtimeProviderLineMappings.providerId"),
-          requiredString(row.providerLineId, "realtimeProviderLineMappings.providerLineId"),
-          requiredString(row.lineId, "realtimeProviderLineMappings.lineId"),
-          requiredString(row.sourceId, "realtimeProviderLineMappings.sourceId"),
-          boolFlag(row.supportsArrivals, "realtimeProviderLineMappings.supportsArrivals"),
-          boolFlag(row.supportsTrainPositions, "realtimeProviderLineMappings.supportsTrainPositions"),
-          row.mappingConfidence ?? "UNKNOWN",
-          timestamp(row.updatedAt),
-        ],
-      );
-      insertRows(
-        database,
-        "realtime_provider_station_mappings",
-        [
-          "provider_id",
-          "provider_line_id",
-          "provider_station_id",
-          "station_id",
-          "line_id",
-          "source_id",
-          "query_name",
-          "supports_arrivals",
-          "supports_train_positions",
-          "mapping_confidence",
-          "updated_at",
-        ],
-        pack.realtimeProviderStationMappings ?? [],
-        (row) => [
-          requiredString(row.providerId, "realtimeProviderStationMappings.providerId"),
-          requiredString(row.providerLineId, "realtimeProviderStationMappings.providerLineId"),
-          requiredString(row.providerStationId, "realtimeProviderStationMappings.providerStationId"),
-          requiredString(row.stationId, "realtimeProviderStationMappings.stationId"),
-          requiredString(row.lineId, "realtimeProviderStationMappings.lineId"),
-          requiredString(row.sourceId, "realtimeProviderStationMappings.sourceId"),
-          row.queryName ?? "",
-          boolFlag(row.supportsArrivals, "realtimeProviderStationMappings.supportsArrivals"),
-          boolFlag(row.supportsTrainPositions, "realtimeProviderStationMappings.supportsTrainPositions"),
-          row.mappingConfidence ?? "UNKNOWN",
-          timestamp(row.updatedAt),
-        ],
-      );
-      insertRows(
-        database,
-        "out_of_station_transfer_links",
-        [
-          "id",
-          "from_station_id",
-          "from_line_id",
-          "to_station_id",
-          "to_line_id",
-          "from_exit_id",
-          "to_exit_id",
-          "duration_seconds",
-          "distance_meters",
-          "bidirectional",
-          "requires_fare_exit",
-          "requires_reentry",
-          "covered_route",
-          "crossing_risk",
-          "slope_level",
-          "curb_cut_status",
-          "sidewalk_status",
-          "accessibility_status",
-          "stair_access_state",
-          "reliability_score",
-          "source_id",
-          "source_snapshot_id",
-          "provider_record_hash",
-          "provenance_kind",
-          "verification_status",
-          "last_field_verified_at",
-          "evidence_hash",
-        ],
-        [...(pack.outOfStationTransferLinks ?? [])].sort(
-          (a, b) =>
-            (a.durationSeconds ?? 0) - (b.durationSeconds ?? 0) ||
-            codepointCompare(String(a.id), String(b.id)),
-        ),
-        (row) => [
-          requiredString(row.id, "outOfStationTransferLinks.id"),
-          requiredString(row.fromStationId, "outOfStationTransferLinks.fromStationId"),
-          requiredString(row.fromLineId, "outOfStationTransferLinks.fromLineId"),
-          requiredString(row.toStationId, "outOfStationTransferLinks.toStationId"),
-          requiredString(row.toLineId, "outOfStationTransferLinks.toLineId"),
-          row.fromExitId ?? null,
-          row.toExitId ?? null,
-          row.durationSeconds ?? 0,
-          row.distanceMeters ?? 0,
-          boolFlag(
-            isAsymmetricTransferLink(row) ? false : row.bidirectional,
-            "outOfStationTransferLinks.bidirectional",
-          ),
-          boolFlag(row.requiresFareExit ?? true, "outOfStationTransferLinks.requiresFareExit"),
-          boolFlag(row.requiresReentry ?? true, "outOfStationTransferLinks.requiresReentry"),
-          row.coveredRoute ?? "UNKNOWN",
-          row.crossingRisk ?? "UNKNOWN",
-          row.slopeLevel ?? 1,
-          row.curbCutStatus ?? "UNKNOWN",
-          row.sidewalkStatus ?? "UNKNOWN",
-          normalizedAccessibilityStatus(row.accessibilityStatus, "outOfStationTransferLinks.accessibilityStatus"),
-          row.stairAccessState ?? "UNKNOWN",
-          row.reliabilityScore ?? 100,
-          row.sourceId ?? "",
-          row.sourceSnapshotId ?? "",
-          row.providerRecordHash ?? "",
-          row.provenanceKind ?? "UNKNOWN",
-          row.verificationStatus ?? "UNKNOWN",
-          timestamp(row.lastFieldVerifiedAt ?? row.lastVerifiedAt),
-          row.evidenceHash ?? "",
-        ],
-      );
-      insertRows(
-        database,
-        "network_edges",
-        [
-          "id",
-          "from_node_id",
-          "to_node_id",
-          "duration_seconds",
-          "distance_meters",
-          "edge_type",
-          "service_pattern",
-          "service_class",
-          "includes_stairs",
-          "stair_access_state",
-          "accessibility_status",
-          "reliability_score",
-          "source_id",
-          "source_snapshot_id",
-          "provider_record_hash",
-          "provenance_kind",
-          "verification_status",
-          "facility_id",
-          "last_verified_at",
-          "evidence_hash",
-        ],
-        networkEdges,
-        (row) => {
-          // AquilaXk/easysubway-backend#480: 서버 번들과 같은 계단 칸 규칙(상태 기준, 어긋나면 거부).
-          const { includesStairs, stairAccessState } = networkEdgeStairColumns(row, row.id);
-          const accessibilityStatus = normalizedAccessibilityStatus(
-            row.accessibilityStatus,
-            "networkEdges.accessibilityStatus",
-          );
-
-          return [
-            requiredString(row.id, "networkEdges.id"),
-            requiredString(row.fromNodeId, "networkEdges.fromNodeId"),
-            requiredString(row.toNodeId, "networkEdges.toNodeId"),
-            row.durationSeconds ?? 0,
-            row.distanceMeters ?? 0,
-            row.edgeType ?? "WALKWAY",
-            row.servicePattern ?? "",
-            row.serviceClass ?? "SUBWAY",
-            includesStairs,
-            stairAccessState,
-            accessibilityStatus,
-            row.reliabilityScore ?? 100,
-            row.sourceId ?? "",
-            row.sourceSnapshotId ?? "",
-            row.providerRecordHash ?? "",
-            row.provenanceKind ?? "UNKNOWN",
-            row.verificationStatus ?? "UNKNOWN",
-            row.facilityId ?? null,
-            timestamp(row.verifiedAt ?? row.lastVerifiedAt),
-            row.evidenceHash ?? "",
-          ];
-        },
-      );
-      insertRows(
-        database,
-        "route_map_positions",
-        [
-          "station_id",
-          "line_id",
-          "region",
-          "x",
-          "y",
-          "label_dx",
-          "label_dy",
-          "label_polygon",
-          "up_path",
-          "down_path",
-          "source_id",
-          "source_name",
-          "source_url",
-          "license",
-          "license_status",
-          "commercial_use_allowed",
-          "attribution_required",
-          "reviewed_at",
-          "updated_at",
-        ],
-        pack.routeMapPositions ?? [],
-        (row) => [
-          requiredString(row.stationId, "routeMapPositions.stationId"),
-          requiredString(row.lineId, "routeMapPositions.lineId"),
-          requiredString(row.region, "routeMapPositions.region"),
-          requiredNonNegativeFiniteNumber(row.x, "routeMapPositions.x"),
-          requiredNonNegativeFiniteNumber(row.y, "routeMapPositions.y"),
-          row.labelDx ?? 0,
-          row.labelDy ?? 0,
-          canonicalLabelPolygon(row.labelPolygon, "routeMapPositions.labelPolygon"),
-          row.upPath ?? "",
-          row.downPath ?? "",
-          requiredString(row.sourceId, "routeMapPositions.sourceId"),
-          requiredString(row.sourceName, "routeMapPositions.sourceName"),
-          requiredString(row.sourceUrl, "routeMapPositions.sourceUrl"),
-          requiredString(row.license, "routeMapPositions.license"),
-          requiredString(row.licenseStatus, "routeMapPositions.licenseStatus"),
-          boolFlag(row.commercialUseAllowed, "routeMapPositions.commercialUseAllowed"),
-          boolFlag(row.attributionRequired, "routeMapPositions.attributionRequired"),
-          timestamp(row.reviewedAt),
-          timestamp(row.updatedAt),
-        ],
-      );
-      insertRows(
-        database,
-        "route_map_line_tracks",
-        [
-          "region",
-          "line_id",
-          "track_index",
-          "path",
-          "svg_color",
-          "source_id",
-          "source_name",
-          "source_url",
-          "license",
-          "license_status",
-          "commercial_use_allowed",
-          "attribution_required",
-          "updated_at",
-        ],
-        pack.routeMapLineTracks ?? [],
-        (row) => [
-          requiredString(row.region, "routeMapLineTracks.region"),
-          requiredString(row.lineId, "routeMapLineTracks.lineId"),
-          requiredNonNegativeInteger(row.trackIndex, "routeMapLineTracks.trackIndex"),
-          requiredString(row.path, "routeMapLineTracks.path"),
-          row.svgColor ?? "",
-          requiredString(row.sourceId, "routeMapLineTracks.sourceId"),
-          requiredString(row.sourceName, "routeMapLineTracks.sourceName"),
-          requiredString(row.sourceUrl, "routeMapLineTracks.sourceUrl"),
-          requiredString(row.license, "routeMapLineTracks.license"),
-          requiredString(row.licenseStatus, "routeMapLineTracks.licenseStatus"),
-          boolFlag(row.commercialUseAllowed, "routeMapLineTracks.commercialUseAllowed"),
-          boolFlag(row.attributionRequired, "routeMapLineTracks.attributionRequired"),
-          timestamp(row.updatedAt),
-        ],
-      );
-      insertRows(
-        database,
-        "station_exits",
-        [
-          "id",
-          "station_id",
-          "exit_number",
-          "description",
-          "latitude",
-          "longitude",
-          "has_elevator_connection",
-          "source_id",
-          "source_snapshot_id",
-          "data_source_type",
-          "last_verified_at",
-        ],
-        pack.stationExits ?? [],
-        (row) => [
-          requiredString(row.id, "stationExits.id"),
-          requiredString(row.stationId, "stationExits.stationId"),
-          requiredString(row.exitNumber, "stationExits.exitNumber"),
-          row.description ?? "",
-          optionalLatitude(row.latitude, "stationExits.latitude"),
-          optionalLongitude(row.longitude, "stationExits.longitude"),
-          boolFlag(row.hasElevatorConnection, "stationExits.hasElevatorConnection"),
-          row.sourceId ?? "",
-          row.sourceSnapshotId ?? "",
-          row.dataSourceType ?? "OFFICIAL_FILE",
-          timestamp(row.lastVerifiedAt),
-        ],
-      );
-      insertRows(
-        database,
-        "facilities",
-        [
-          "id",
-          "station_id",
-          "exit_id",
-          "type",
-          "name",
-          "status",
-          "floor_from",
-          "floor_to",
-          "description",
-          "source_id",
-          "source_snapshot_id",
-          "provider_facility_ref",
-          "provider_record_hash",
-          "provenance_kind",
-          "verified_at",
-          "retrieved_at",
-          "evidence_hash",
-          "status_meaning",
-          "operational_status",
-          "installation_status",
-          "confidence",
-        ],
-        pack.facilities ?? [],
-        (row) => {
-          const id = requiredString(row.id, "facilities.id");
-          return [
-            id,
-            requiredString(row.stationId, "facilities.stationId"),
-            row.exitId ?? null,
-            requiredString(row.type, "facilities.type"),
-            requiredString(row.name, "facilities.name"),
-            row.status ?? "UNKNOWN",
-            row.floorFrom ?? "",
-            row.floorTo ?? "",
-            row.description ?? "",
-            productionFacilityString(row.sourceId, isProductionPack, "sourceId"),
-            productionFacilityString(row.sourceSnapshotId, isProductionPack, "sourceSnapshotId"),
-            productionFacilityString(row.providerFacilityRef, isProductionPack, "providerFacilityRef") || id,
-            productionFacilityString(row.providerRecordHash, isProductionPack, "providerRecordHash"),
-            productionFacilityString(row.provenanceKind, isProductionPack, "provenanceKind") || "UNKNOWN",
-            productionFacilityTimestamp(row.verifiedAt ?? row.lastVerifiedAt, isProductionPack, "verifiedAt") ?? 0,
-            productionFacilityTimestamp(row.retrievedAt, isProductionPack, "retrievedAt") ?? 0,
-            productionFacilityString(row.evidenceHash, isProductionPack, "evidenceHash"),
-            productionFacilityString(row.statusMeaning, isProductionPack, "statusMeaning"),
-            facilityOperationalStatus(row, isProductionPack),
-            facilityInstallationStatus(row, isProductionPack),
-            row.confidence ?? 0,
-          ];
-        },
-      );
-      insertRows(
-        database,
-        "station_facility_evidence",
-        [
-          "station_id",
-          "line_id",
-          "facility_type",
-          "evidence_kind",
-          "source_id",
-          "source_snapshot_id",
-          "provider_record_hash",
-          "evidence_hash",
-          "provenance_kind",
-          "installation_status",
-          "operational_status",
-          "status_meaning",
-          "confidence",
-          "verified_at",
-          "retrieved_at",
-          "strict_route_eligible",
-          "strict_route_eligible_reason",
-        ],
-        pack.stationFacilityEvidence ?? [],
-        (row) => [
-          requiredString(row.stationId, "stationFacilityEvidence.stationId"),
-          requiredString(row.lineId, "stationFacilityEvidence.lineId"),
-          requiredString(row.facilityType, "stationFacilityEvidence.facilityType"),
-          requiredString(row.evidenceKind, "stationFacilityEvidence.evidenceKind"),
-          requiredString(row.sourceId, "stationFacilityEvidence.sourceId"),
-          requiredString(row.sourceSnapshotId, "stationFacilityEvidence.sourceSnapshotId"),
-          requiredString(row.providerRecordHash, "stationFacilityEvidence.providerRecordHash"),
-          requiredString(row.evidenceHash, "stationFacilityEvidence.evidenceHash"),
-          requiredString(row.provenanceKind, "stationFacilityEvidence.provenanceKind"),
-          row.installationStatus ?? "UNKNOWN",
-          row.operationalStatus ?? "UNKNOWN",
-          row.statusMeaning ?? "",
-          row.confidence ?? 0,
-          timestamp(row.verifiedAt) ?? 0,
-          timestamp(row.retrievedAt) ?? 0,
-          boolFlag(row.strictRouteEligible, "stationFacilityEvidence.strictRouteEligible"),
-          row.strictRouteEligibleReason ?? "",
-        ],
-      );
-      insertRows(
-        database,
-        "station_accessibility_summaries",
-        ["station_id", "summary", "warning"],
-        pack.stationAccessibilitySummaries ?? [],
-        (row) => [
-          requiredString(row.stationId, "stationAccessibilitySummaries.stationId"),
-          requiredString(row.summary, "stationAccessibilitySummaries.summary"),
-          row.warning ?? "",
-        ],
-      );
-      insertRows(database, "internal_route_nodes", ["id", "station_id", "label", "node_type"], pack.internalRouteNodes ?? [], (row) => [
-        requiredString(row.id, "internalRouteNodes.id"),
-        requiredString(row.stationId, "internalRouteNodes.stationId"),
-        requiredString(row.label, "internalRouteNodes.label"),
-        requiredString(row.nodeType, "internalRouteNodes.nodeType"),
-      ]);
-      insertRows(
-        database,
-        "internal_route_edges",
-        [
-          "id",
-          "from_node_id",
-          "to_node_id",
-          "edge_type",
-          "distance_meters",
-          "duration_seconds",
-          "includes_stairs",
-          "requires_elevator",
-          "requires_escalator",
-          "slope_level",
-          "width_level",
-          "reliability_score",
-          "accessibility_status",
-          "source_id",
-          "source_snapshot_id",
-          "provider_record_hash",
-          "provenance_kind",
-          "verification_status",
-          "facility_id",
-          "last_verified_at",
-          "evidence_hash",
-          "instruction",
-        ],
-        pack.internalRouteEdges ?? [],
-        (row) => [
-          requiredString(row.id, "internalRouteEdges.id"),
-          requiredString(row.fromNodeId, "internalRouteEdges.fromNodeId"),
-          requiredString(row.toNodeId, "internalRouteEdges.toNodeId"),
-          row.edgeType ?? "WALK",
-          row.distanceMeters ?? 0,
-          row.durationSeconds ?? 0,
-          row.includesStairs ? 1 : 0,
-          row.requiresElevator ? 1 : 0,
-          row.requiresEscalator ? 1 : 0,
-          row.slopeLevel ?? 1,
-          row.widthLevel ?? 2,
-          row.reliabilityScore ?? 100,
-          normalizedAccessibilityStatus(row.accessibilityStatus, "internalRouteEdges.accessibilityStatus"),
-          row.sourceId ?? "",
-          row.sourceSnapshotId ?? "",
-          row.providerRecordHash ?? "",
-          row.provenanceKind ?? "UNKNOWN",
-          row.verificationStatus ?? "UNKNOWN",
-          row.facilityId ?? null,
-          timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
-          row.evidenceHash ?? "",
-          row.instruction ?? "",
-        ],
-      );
-      insertRows(
-        database,
-        "station_pathway_nodes",
-        ["id", "station_id", "line_id", "node_type", "label", "level", "legacy_internal_route_node_id"],
-        pack.stationPathwayNodes ?? [],
-        (row) => [
-          requiredString(row.id, "stationPathwayNodes.id"),
-          requiredString(row.stationId, "stationPathwayNodes.stationId"),
-          row.lineId ?? null,
-          requiredString(row.nodeType, "stationPathwayNodes.nodeType"),
-          requiredString(row.label, "stationPathwayNodes.label"),
-          row.level ?? "",
-          row.legacyInternalRouteNodeId ?? "",
-        ],
-      );
-      insertRows(
-        database,
-        "station_pathway_edges",
-        [
-          "id",
-          "from_node_id",
-          "to_node_id",
-          "edge_type",
-          "duration_seconds",
-          "distance_meters",
-          "bidirectional",
-          "includes_stairs",
-          "requires_elevator",
-          "requires_escalator",
-          "level_from",
-          "level_to",
-          "requires_facility_id",
-          "min_width_cm",
-          "slope_percent",
-          "vertical_meters",
-          "reliability_score",
-          "accessibility_status",
-          "source_id",
-          "source_snapshot_id",
-          "provider_record_hash",
-          "provenance_kind",
-          "verification_status",
-          "last_verified_at",
-          "evidence_hash",
-          "instruction",
-          "legacy_internal_route_edge_id",
-        ],
-        pack.stationPathwayEdges ?? [],
-        (row) => [
-          requiredString(row.id, "stationPathwayEdges.id"),
-          requiredString(row.fromNodeId, "stationPathwayEdges.fromNodeId"),
-          requiredString(row.toNodeId, "stationPathwayEdges.toNodeId"),
-          row.edgeType ?? "WALK",
-          row.durationSeconds ?? 0,
-          row.distanceMeters ?? 0,
-          boolFlag(row.bidirectional, "stationPathwayEdges.bidirectional"),
-          boolFlag(row.includesStairs, "stationPathwayEdges.includesStairs"),
-          boolFlag(row.requiresElevator, "stationPathwayEdges.requiresElevator"),
-          boolFlag(row.requiresEscalator, "stationPathwayEdges.requiresEscalator"),
-          row.levelFrom ?? "",
-          row.levelTo ?? "",
-          row.requiresFacilityId ?? null,
-          row.minWidthCm ?? null,
-          row.slopePercent ?? null,
-          row.verticalMeters ?? null,
-          row.reliabilityScore ?? 100,
-          normalizedAccessibilityStatus(row.accessibilityStatus, "stationPathwayEdges.accessibilityStatus"),
-          row.sourceId ?? "",
-          row.sourceSnapshotId ?? "",
-          row.providerRecordHash ?? "",
-          row.provenanceKind ?? "UNKNOWN",
-          row.verificationStatus ?? "UNKNOWN",
-          timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
-          row.evidenceHash ?? "",
-          row.instruction ?? "",
-          row.legacyInternalRouteEdgeId ?? "",
-        ],
-      );
-      insertRows(
-        database,
-        "transfer_rules",
-        [
-          "id",
-          "from_station_id",
-          "from_line_id",
-          "to_station_id",
-          "to_line_id",
-          "transfer_type",
-          "min_transfer_seconds",
-          "pathway_edge_id",
-          "strict_step_free_pathway_edge_id",
-          "source_id",
-          "verification_status",
-        ],
-        [...(pack.transferRules ?? [])].sort(
-          (a, b) =>
-            (a.minTransferSeconds ?? 0) - (b.minTransferSeconds ?? 0) ||
-            codepointCompare(String(a.id), String(b.id)),
-        ),
-        (row) => [
-          requiredString(row.id, "transferRules.id"),
-          requiredString(row.fromStationId, "transferRules.fromStationId"),
-          requiredString(row.fromLineId, "transferRules.fromLineId"),
-          requiredString(row.toStationId, "transferRules.toStationId"),
-          requiredString(row.toLineId, "transferRules.toLineId"),
-          row.transferType ?? "IN_STATION",
-          row.minTransferSeconds ?? 0,
-          row.pathwayEdgeId ?? null,
-          row.strictStepFreePathwayEdgeId ?? null,
-          row.sourceId ?? "",
-          row.verificationStatus ?? "UNKNOWN",
-        ],
-      );
-      insertRows(
-        database,
-        "station_car_door_hints",
-        [
-          "id",
-          "station_id",
-          "line_id",
-          "direction",
-          "target_facility_type",
-          "car_number",
-          "door_number",
-          "source_id",
-          "source_snapshot_id",
-          "provider_record_hash",
-          "provenance_kind",
-          "verification_status",
-          "last_verified_at",
-          "evidence_hash",
-        ],
-        pack.stationCarDoorHints ?? [],
-        (row) => {
-          const provenanceKind =
-            row.provenanceKind == null
-              ? "UNKNOWN"
-              : requiredString(row.provenanceKind, "stationCarDoorHints.provenanceKind");
-          const isOfficial = provenanceKind === "OFFICIAL";
-          return [
-            requiredString(row.id, "stationCarDoorHints.id"),
-            requiredString(row.stationId, "stationCarDoorHints.stationId"),
-            requiredString(row.lineId, "stationCarDoorHints.lineId"),
-            row.direction ?? "",
-            requiredString(row.targetFacilityType, "stationCarDoorHints.targetFacilityType"),
-            requiredInteger(row.carNumber, "stationCarDoorHints.carNumber"),
-            requiredInteger(row.doorNumber, "stationCarDoorHints.doorNumber"),
-            isOfficial ? requiredString(row.sourceId, "stationCarDoorHints.sourceId") : row.sourceId ?? "",
-            isOfficial
-              ? requiredString(row.sourceSnapshotId, "stationCarDoorHints.sourceSnapshotId")
-              : row.sourceSnapshotId ?? "",
-            isOfficial
-              ? requiredString(row.providerRecordHash, "stationCarDoorHints.providerRecordHash")
-              : row.providerRecordHash ?? "",
-            provenanceKind,
-            row.verificationStatus ?? "UNKNOWN",
-            timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
-            row.evidenceHash ?? "",
-          ];
-        },
-      );
-      insertRows(
-        database,
-        "data_quality_records",
-        ["id", "target_type", "target_id", "quality_level", "checked_at"],
-        pack.dataQualityRecords ?? [],
-        (row) => [
-          requiredString(row.id, "dataQualityRecords.id"),
-          requiredString(row.targetType, "dataQualityRecords.targetType"),
-          requiredString(row.targetId, "dataQualityRecords.targetId"),
-          requiredString(row.qualityLevel, "dataQualityRecords.qualityLevel"),
-          timestamp(row.checkedAt),
-        ],
-      );
-
-      let congestionStats = pack.stationCongestionStats ?? [];
-      let congestionSources = pack.stationCongestionSources ?? [];
-
-      if (isProductionPack) {
-        const { stats, sources } = loadSeoulMetroCongestionForBuild(repositoryRoot, pack);
-        congestionStats = stats;
-        congestionSources = sources;
-      }
-
-      assertCongestionRowsExistInPack(pack, congestionStats);
-
-      insertRows(
-        database,
-        "station_congestion_sources",
-        ["source_snapshot_id", "dataset_label", "captured_at", "attribution"],
-        congestionSources,
-        (row) => [
-          requiredString(row.source_snapshot_id ?? row.sourceSnapshotId, "station_congestion_sources.source_snapshot_id"),
-          requiredString(row.dataset_label ?? row.datasetLabel, "station_congestion_sources.dataset_label"),
-          requiredString(row.captured_at ?? row.capturedAt, "station_congestion_sources.captured_at"),
-          requiredString(row.attribution, "station_congestion_sources.attribution"),
-        ],
-      );
-
-      insertRows(
-        database,
-        "station_congestion_stats",
-        [
-          "station_id",
-          "line_id",
-          "direction",
-          "day_type",
-          "slot_start_minute",
-          "congestion_permille",
-          "source_snapshot_id",
-        ],
-        congestionStats,
-        (row) => [
-          requiredString(row.station_id ?? row.stationId, "station_congestion_stats.station_id"),
-          requiredString(row.line_id ?? row.lineId, "station_congestion_stats.line_id"),
-          requiredString(row.direction, "station_congestion_stats.direction"),
-          requiredString(row.day_type ?? row.dayType, "station_congestion_stats.day_type"),
-          requiredInteger(row.slot_start_minute ?? row.slotStartMinute, "station_congestion_stats.slot_start_minute"),
-          requiredNonNegativeInteger(row.congestion_permille ?? row.congestionPermille, "station_congestion_stats.congestion_permille"),
-          requiredString(row.source_snapshot_id ?? row.sourceSnapshotId, "station_congestion_stats.source_snapshot_id"),
-        ],
-      );
+      insertCoreCatalogAndGuideTables(database, pack);
+      insertFareTables(database, pack, officialOdFareAdmissions);
+      insertTransitScheduleTables(database, pack);
+      insertRealtimeAndNetworkTables(database, pack, networkEdges);
+      insertAccessibilityAndPathwayTables(database, pack, isProductionPack);
+      insertCongestionTables(database, pack, isProductionPack, repositoryRoot);
 
       database.exec("COMMIT");
       // ponytail: ANALYZE/optimize statistics differ across SQLite builds; the release artifact must not embed them.

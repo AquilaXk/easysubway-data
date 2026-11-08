@@ -222,16 +222,9 @@ async function boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha25
   return Buffer.from(bytes);
 }
 
-export async function resolveNationwideCandidateInputSnapshots({ sourceInventory, sourceSnapshots, fanIn, freshnessPolicy, readSourceBytes }) {
-  if (!Array.isArray(sourceSnapshots) || !Array.isArray(fanIn?.selectedSources) || typeof readSourceBytes !== "function"
-    || !Array.isArray(freshnessPolicy?.sourceClasses)) {
-    throw new Error("nationwide candidate input selection arguments are invalid");
-  }
-  const evaluatedAt = Date.parse(fanIn.evaluatedAt);
-  if (!Number.isFinite(evaluatedAt) || new Date(evaluatedAt).toISOString() !== fanIn.evaluatedAt) {
-    throw new Error("nationwide candidate input fan-in clock is invalid");
-  }
-  const selected = {};
+async function resolveLedgerSelectedInputSnapshots({
+  selected, sourceInventory, sourceSnapshots, fanIn, evaluatedAt, readSourceBytes,
+}) {
   for (const [key, sourceId] of Object.entries(LEDGER_SELECTED_INPUT_SOURCE_IDS)) {
     const head = terminalHead(sourceId, sourceSnapshots);
     const fanInRows = fanIn.selectedSources.filter((row) => row?.sourceId === sourceId);
@@ -252,6 +245,11 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
       bytes: await boundInputSnapshot({ sourceId, snapshotId: head.snapshotId, snapshotPath, rawSha256, ledgerHead: head, readSourceBytes }),
     };
   }
+}
+
+async function resolveAdmissionEvidenceInputSnapshots({
+  selected, sourceInventory, fanIn, freshnessPolicy, evaluatedAt, readSourceBytes,
+}) {
   // 인천 3개는 원장 행·fan-in 선택이 없다(원장·거버넌스 등록은 QA 라이선스 검토가 필요한 후속 이슈).
   // #862 결정 B: inventory admission evidence의 수집 시각에 정책 클래스(시간표 incheon_timetable_observation,
   // station-info route_graph_topology)를 적용해 신선도를 유도하고 후보 시계와 비교한다.
@@ -278,6 +276,11 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
       bytes: await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: null, readSourceBytes }),
     };
   }
+}
+
+async function resolveCapitalAndKorailTimetableSnapshots({
+  selected, sourceInventory, fanIn, freshnessPolicy, evaluatedAt, readSourceBytes,
+}) {
   // #899: 수도권 공식 시간표(KRIC 전체_도시철도운행정보 projection)도 원장 행이 없다. inventory admission evidence가
   // 가리키는 snapshot을 쓰고, 신선도는 원천 정책 클래스(official_static_timetable_confirmation, observedAt)로 유도한다.
   // #903: 같은 원천·같은 수집의 코레일 6개 노선 projection(korailScheduleAdmissionEvidence)도 같은 규칙으로 고른다.
@@ -304,6 +307,11 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
       bytes: await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: null, readSourceBytes }),
     };
   }
+}
+
+async function resolveContentBoundInputSnapshots({
+  selected, sourceInventory, sourceSnapshots, fanIn, evaluatedAt, readSourceBytes,
+}) {
   // #903: 대경선 계획 시각표·KRIC 역별 시간표 파생 스냅샷은 원장 head·fan-in으로 고르고, 스냅샷 내용 해시를
   // 원장 행·inventory evidence와 대조한다(두 스냅샷은 원본 sha를 최상위가 아닌 raw 블록에 둔다).
   for (const [key, sourceId] of Object.entries(CONTENT_BOUND_INPUT_SOURCE_IDS)) {
@@ -327,39 +335,60 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
     }
     selected[key] = { sourceId, snapshotId: head.snapshotId, path: snapshotPath, freshnessExpiresAt, bytes: Buffer.from(bytes) };
   }
+}
+
+async function resolveRetainedGwangjuTimetableSnapshot({
+  selected, sourceInventory, sourceSnapshots, fanIn, evaluatedAt, readSourceBytes,
+}) {
   // #913: 광주 1호선 시간표는 원장 head(fan-in 선택)가 결속한 KRIC 보관본의 계약 노선 projection이다.
   // 신선도는 보관본 head의 정책 신선도(fan-in 행)다. projection이 현재 head에서 만든 것이 아니면 실패한다.
-  {
-    const sourceId = RETAINED_GWANGJU_PROJECTION_SOURCE_ID;
-    const head = terminalHead(sourceId, sourceSnapshots);
-    const fanInRows = fanIn.selectedSources.filter((row) => row?.sourceId === sourceId);
-    if (fanInRows.length !== 1 || fanInRows[0].snapshotId !== head.snapshotId) {
-      throw new Error(`nationwide candidate input fan-in selection does not match ledger head for ${sourceId}`);
-    }
-    const freshnessExpiresAt = fanInRows[0].freshnessExpiresAt;
-    if (!(Date.parse(freshnessExpiresAt) > evaluatedAt)) throw new Error(`nationwide candidate input is expired for ${sourceId} retained Gwangju`);
-    const source = exactInventorySource(sourceInventory, sourceId);
-    const retainedEvidence = source.retainedScheduleAdmissionEvidence;
-    if (retainedEvidence?.snapshotId !== head.snapshotId) {
-      throw new Error(`nationwide candidate input admission evidence does not match ledger head for ${sourceId} retained Gwangju`);
-    }
-    const evidence = source[RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY];
-    if (typeof evidence?.snapshotPath !== "string" || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) {
-      throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId} ${RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY}`);
-    }
-    const bytes = await readSourceBytes(evidence.snapshotPath);
-    let snapshot;
-    try { snapshot = JSON.parse(bytes); } catch { throw new Error(`nationwide candidate input is invalid JSON for ${sourceId} retained Gwangju`); }
-    validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence, retainedHead: head });
-    const contract = head.retainedTimetableInputs?.contract;
-    if (!contract || createHash("sha256").update(canonicalJson(contract)).digest("hex") !== retainedEvidence.retainedContractSha256) {
-      throw new Error(`nationwide candidate retained Gwangju contract does not match the admitted head for ${sourceId}`);
-    }
-    selected.gwangjuTimetable = {
-      sourceId, snapshotId: evidence.snapshotId, path: evidence.snapshotPath, freshnessExpiresAt, bytes: Buffer.from(bytes),
-      retainedSnapshotId: head.snapshotId, contract, retainedEvidence,
-    };
+  const sourceId = RETAINED_GWANGJU_PROJECTION_SOURCE_ID;
+  const head = terminalHead(sourceId, sourceSnapshots);
+  const fanInRows = fanIn.selectedSources.filter((row) => row?.sourceId === sourceId);
+  if (fanInRows.length !== 1 || fanInRows[0].snapshotId !== head.snapshotId) {
+    throw new Error(`nationwide candidate input fan-in selection does not match ledger head for ${sourceId}`);
   }
+  const freshnessExpiresAt = fanInRows[0].freshnessExpiresAt;
+  if (!(Date.parse(freshnessExpiresAt) > evaluatedAt)) throw new Error(`nationwide candidate input is expired for ${sourceId} retained Gwangju`);
+  const source = exactInventorySource(sourceInventory, sourceId);
+  const retainedEvidence = source.retainedScheduleAdmissionEvidence;
+  if (retainedEvidence?.snapshotId !== head.snapshotId) {
+    throw new Error(`nationwide candidate input admission evidence does not match ledger head for ${sourceId} retained Gwangju`);
+  }
+  const evidence = source[RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY];
+  if (typeof evidence?.snapshotPath !== "string" || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) {
+    throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId} ${RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY}`);
+  }
+  const bytes = await readSourceBytes(evidence.snapshotPath);
+  let snapshot;
+  try { snapshot = JSON.parse(bytes); } catch { throw new Error(`nationwide candidate input is invalid JSON for ${sourceId} retained Gwangju`); }
+  validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence, retainedHead: head });
+  const contract = head.retainedTimetableInputs?.contract;
+  if (!contract || createHash("sha256").update(canonicalJson(contract)).digest("hex") !== retainedEvidence.retainedContractSha256) {
+    throw new Error(`nationwide candidate retained Gwangju contract does not match the admitted head for ${sourceId}`);
+  }
+  selected.gwangjuTimetable = {
+    sourceId, snapshotId: evidence.snapshotId, path: evidence.snapshotPath, freshnessExpiresAt, bytes: Buffer.from(bytes),
+    retainedSnapshotId: head.snapshotId, contract, retainedEvidence,
+  };
+}
+
+export async function resolveNationwideCandidateInputSnapshots({ sourceInventory, sourceSnapshots, fanIn, freshnessPolicy, readSourceBytes }) {
+  if (!Array.isArray(sourceSnapshots) || !Array.isArray(fanIn?.selectedSources) || typeof readSourceBytes !== "function"
+    || !Array.isArray(freshnessPolicy?.sourceClasses)) {
+    throw new Error("nationwide candidate input selection arguments are invalid");
+  }
+  const evaluatedAt = Date.parse(fanIn.evaluatedAt);
+  if (!Number.isFinite(evaluatedAt) || new Date(evaluatedAt).toISOString() !== fanIn.evaluatedAt) {
+    throw new Error("nationwide candidate input fan-in clock is invalid");
+  }
+  const selected = {};
+  const context = { selected, sourceInventory, sourceSnapshots, fanIn, freshnessPolicy, evaluatedAt, readSourceBytes };
+  await resolveLedgerSelectedInputSnapshots(context);
+  await resolveAdmissionEvidenceInputSnapshots(context);
+  await resolveCapitalAndKorailTimetableSnapshots(context);
+  await resolveContentBoundInputSnapshots(context);
+  await resolveRetainedGwangjuTimetableSnapshot(context);
   return selected;
 }
 
@@ -585,7 +614,7 @@ export async function resolveKricEscalatorSnapshot({ sourceInventory, sourceSnap
 //   실측 레코드 hash만 가진 행(공식 측정 거리)과 구별된다. 팩 v19에는 유도 표기 열이 없으므로 이 결속이 팩 행의 표기다.
 // - 실측 0초 방향은 유도 거리도 0이다. 서버 근거 판별(거리 > 0 또는 시간 > 0)이 0/0을 버리므로 값을 만들지 않고 사용 불가로 남긴다.
 // - 실측 원천이 부산교통공사 등 다른 공식 원천과 겹치면 우선순위가 정해지지 않았으므로 실패한다.
-export const STANDARD_PACE_DISTANCE_DERIVATION = "STANDARD_PACE_FROM_MEASURED_TIME";
+const STANDARD_PACE_DISTANCE_DERIVATION = "STANDARD_PACE_FROM_MEASURED_TIME";
 // 1.2 m/s를 정수 비율(12/10)로 곱한다. 초 × 12는 짝수라 반올림 경계(.5)가 생기지 않는다.
 const STANDARD_PACE_METERS_PER_SECOND = 1.2;
 const standardPaceDistanceMeters = (seconds) => Math.round((seconds * 12) / 10);
@@ -885,17 +914,7 @@ export function withCapitalKricFacilities({ pack, snapshot }) {
   };
 }
 
-export async function prepareNationwideCandidate({
-  repositoryRoot = root,
-  releaseSequence = 122,
-  candidateId: candidateIdOverride = null,
-  requestedBy: requestedByOption = null,
-  approvedBy: approvedByOption = null,
-  platformInfoMap = null,
-  writeFiles = false,
-  // #942: 후보 입력 매니페스트를 기록하거나 후보가 고정한 입력으로 재현할 때 저장소 읽기를 바꿔 끼운다.
-  readRepositoryFile = null,
-} = {}) {
+function resolveTwoPersonAuthority(requestedByOption, approvedByOption) {
   const requestedBy = requestedByOption
     || process.env.DATAPACK_REQUESTED_BY
     || (process.argv.find((a) => a.startsWith("--requested-by="))?.split("=")[1]);
@@ -912,9 +931,28 @@ export async function prepareNationwideCandidate({
   if (requestedBy.trim().toLowerCase() === approvedBy.trim().toLowerCase()) {
     throw new Error(`Two-person rule violation: requester and approver cannot be the same person (${requestedBy.trim()})`);
   }
+  return { requestedBy, approvedBy };
+}
 
+function parseMolitTransferCsvRows(molitTransferGzipBytes) {
+  const molitTransferUncompressed = gunzipSync(molitTransferGzipBytes);
+  const molitTransferText = new TextDecoder("euc-kr").decode(molitTransferUncompressed);
+  const molitLines = molitTransferText.split(/\r?\n/).filter(Boolean);
+  return molitLines.slice(1).map((line) => {
+    const parts = line.split(",");
+    return {
+      RAIL_OPR_ISTT_CD: parts[0],
+      LN_NM: parts[1],
+      STIN_NM: parts[2],
+      CHTN_MV_TP_ORDR: parts[3],
+      MV_CONT_DTL: parts[4],
+      CHTN_MV_CONT: parts.slice(5).join(","),
+    };
+  });
+}
+
+async function loadNationwideCandidateInputs({ repositoryRoot, readRepositoryFile }) {
   const read = readRepositoryFile ?? (async (rel) => readFile(path.join(repositoryRoot, rel)));
-
   const [
     targetsBytes, fanInBytes, snapshotsBytes, basePackBytes, overridesBytes, sourceInventoryBytes,
     transferMetricsBytes, freshnessPolicyBytes,
@@ -960,13 +998,6 @@ export async function prepareNationwideCandidate({
     readSourceBytes: read,
   });
   const inputJson = (key) => JSON.parse(inputSnapshots[key].bytes);
-  const incheonTopology = inputJson("incheonTopology");
-  const incheonLine1 = inputJson("incheonLine1");
-  const incheonLine2 = inputJson("incheonLine2");
-  const busanAccessibility = inputJson("busanAccessibility");
-  const daeguAccessibility = inputJson("daeguAccessibility");
-  const daejeonAccessibility = inputJson("daejeonAccessibility");
-  const gwangjuAccessibility = inputJson("gwangjuAccessibility");
   const transferMetrics = JSON.parse(transferMetricsBytes);
   if (transferMetrics.sourceIdentity?.sourceId !== seoulTransferHead.sourceId
     || transferMetrics.sourceIdentity?.rawSha256 !== seoulTransferHead.rawSha256) {
@@ -974,36 +1005,220 @@ export async function prepareNationwideCandidate({
   }
   const seoulTransferCapturedAt = requiredInstant(transferMetrics.sourceIdentity.capturedAt, "Seoul transfer capturedAt");
   const busanTransfer = await resolveBusanTransferMetrics({ fanIn, sourceInventory, read });
-  const kricConvenience = inputJson("kricConvenience");
-  const busanTimetable = inputJson("busanTimetable");
-  const daeguTimetable1 = inputJson("daeguTimetable1");
-  const daeguTimetable2 = inputJson("daeguTimetable2");
-  const daeguTimetable3 = inputJson("daeguTimetable3");
-  const daejeonTimetable = inputJson("daejeonTimetable");
-  // #913: 광주 1호선 시간표는 KRIC 보관본 projection(원장 head 결속)이다. 원천 만료가 지난 cyberstation snapshot은 쓰지 않는다.
   const gwangjuTimetable = inputSnapshots.gwangjuTimetable;
-  const gwangjuRetainedRecords = JSON.parse(gwangjuTimetable.bytes).records;
-  const capitalTimetable = inputJson("capitalTimetable");
-  const korailTimetable = inputJson("korailTimetable");
-  const daegyeongTimetable = inputJson("daegyeongTimetable");
-  const stationLinesTimetable = inputJson("stationLinesTimetable");
 
-  const molitTransferUncompressed = gunzipSync(molitTransferGzipBytes);
-  const molitTransferText = new TextDecoder("euc-kr").decode(molitTransferUncompressed);
-  const molitLines = molitTransferText.split(/\r?\n/).filter(Boolean);
-  const molitRows = molitLines.slice(1).map((line) => {
-    const parts = line.split(",");
-    return {
-      RAIL_OPR_ISTT_CD: parts[0],
-      LN_NM: parts[1],
-      STIN_NM: parts[2],
-      CHTN_MV_TP_ORDR: parts[3],
-      MV_CONT_DTL: parts[4],
-      CHTN_MV_CONT: parts.slice(5).join(","),
-    };
-  });
+  return {
+    read,
+    targets,
+    fanIn,
+    snapshots,
+    basePackBytes,
+    overridesBytes,
+    baseFixture,
+    pack,
+    sourceInventory,
+    freshnessPolicy,
+    molitAdmission,
+    molitTransferMeta,
+    molitTransferFreshUntil,
+    molitRows: parseMolitTransferCsvRows(molitTransferGzipBytes),
+    seoulTransferHead,
+    seoulTransferCapturedAt,
+    inputSnapshots,
+    incheonTopology: inputJson("incheonTopology"),
+    incheonLine1: inputJson("incheonLine1"),
+    incheonLine2: inputJson("incheonLine2"),
+    busanAccessibility: inputJson("busanAccessibility"),
+    daeguAccessibility: inputJson("daeguAccessibility"),
+    daejeonAccessibility: inputJson("daejeonAccessibility"),
+    gwangjuAccessibility: inputJson("gwangjuAccessibility"),
+    transferMetrics,
+    busanTransfer,
+    kricConvenience: inputJson("kricConvenience"),
+    busanTimetable: inputJson("busanTimetable"),
+    daeguTimetable1: inputJson("daeguTimetable1"),
+    daeguTimetable2: inputJson("daeguTimetable2"),
+    daeguTimetable3: inputJson("daeguTimetable3"),
+    daejeonTimetable: inputJson("daejeonTimetable"),
+    // #913: 광주 1호선 시간표는 KRIC 보관본 projection(원장 head 결속)이다. 원천 만료가 지난 cyberstation snapshot은 쓰지 않는다.
+    gwangjuTimetable,
+    gwangjuRetainedRecords: JSON.parse(gwangjuTimetable.bytes).records,
+    capitalTimetable: inputJson("capitalTimetable"),
+    korailTimetable: inputJson("korailTimetable"),
+    daegyeongTimetable: inputJson("daegyeongTimetable"),
+    stationLinesTimetable: inputJson("stationLinesTimetable"),
+  };
+}
 
-  // 1. Prepare edges and transfer rules
+const BUSAN_DAEGU_TRANSFER_INFO = new Map([
+  ["station-dbfe9e072d98", { molitStation: "동래", lineMapping: { "line-ab1a041f6266": "1호선", "line-d812a5bc1e5f": "4호선" } }],
+  ["station-1fc7a7c971c8", { molitStation: "서면", lineMapping: { "line-ab1a041f6266": "1호선", "line-eb7b47920390": "2호선" } }],
+  ["station-803200d76012", { molitStation: "연산", lineMapping: { "line-ab1a041f6266": "1호선", "line-d74614a04530": "3호선" } }],
+  ["station-85f3b04485c3", { molitStation: "덕천(부산과기대)", lineMapping: { "line-d74614a04530": "3호선", "line-eb7b47920390": "2호선" } }],
+  ["station-fbcc387e1db9", { molitStation: "벡스코(시립미술관)", lineMapping: { "line-eb7b47920390": "2호선", "line-f52eb59d8497": "동해선" } }],
+  ["station-2d67389c6338", { molitStation: "사상(서부터미널)", lineMapping: { "line-e4cce88f0d7f": "부산김해경전철", "line-eb7b47920390": "2호선" } }],
+  ["station-902ff39b9a39", { molitStation: "수영", lineMapping: { "line-d74614a04530": "3호선", "line-eb7b47920390": "2호선" } }],
+  ["station-623ba7995f56", { molitStation: "거제(법원.검찰청)", lineMapping: { "line-d74614a04530": "3호선", "line-f52eb59d8497": "동해선" } }],
+  ["station-e0daeeda6b37", { molitStation: "대저", lineMapping: { "line-d74614a04530": "3호선", "line-e4cce88f0d7f": "부산김해경전철" } }],
+  ["station-3b042820c466", { molitStation: "미남", lineMapping: { "line-d74614a04530": "3호선", "line-d812a5bc1e5f": "4호선" } }],
+  ["station-a94cb65fc5ee", { molitStation: "명덕(2.28민주운동기념회관)", lineMapping: { "line-0ffaa95b1b5d": "3호선", "line-5b8d9b05e7e6": "1호선" } }],
+  ["station-44dc03b65cae", { molitStation: "반월당", lineMapping: { "line-5b8d9b05e7e6": "1호선", "line-e2938a4cc492": "2호선" } }],
+  ["station-3de9d5097085", { molitStation: "청라언덕", lineMapping: { "line-0ffaa95b1b5d": "3호선", "line-e2938a4cc492": "2호선" } }],
+]);
+
+const OUT_OF_STATION_TRANSFER_CANDIDATE_DEFS = [
+  // 1. 수도권: 신촌 2호선 <-> 신촌 경의중앙선
+  { id: "out-link-sinchon-2-to-gj", fromStationId: "station-4e123a19a88f", fromLineId: "seoul-2", toStationId: "station-d6935359840d", toLineId: "line-6e39be0cb6e2" },
+  { id: "out-link-sinchon-gj-to-2", fromStationId: "station-d6935359840d", fromLineId: "line-6e39be0cb6e2", toStationId: "station-4e123a19a88f", toLineId: "seoul-2" },
+  // 2. 수도권: 석남 7호선 <-> 석남 인천2호선
+  { id: "out-link-seongnam-7-incheon2", fromStationId: "station-57db2f1fb4f6", fromLineId: "line-15b3b8a93259", toStationId: "station-37866f28b417", toLineId: "line-42b5805f3b5a", bidirectional: true },
+  // 3. 부산권: 동래 1호선 <-> 동래 동해선
+  { id: "out-link-dongnae-1-to-dh", fromStationId: "station-dbfe9e072d98", fromLineId: "line-ab1a041f6266", toStationId: "station-b65d6408d975", toLineId: "line-f52eb59d8497" },
+  { id: "out-link-dongnae-dh-to-1", fromStationId: "station-b65d6408d975", fromLineId: "line-f52eb59d8497", toStationId: "station-dbfe9e072d98", toLineId: "line-ab1a041f6266" },
+  // 4. 부산권: 부전 1호선 <-> 동해선
+  { id: "out-link-bujeon-1-to-dh", fromStationId: "station-9acc028dded4", fromLineId: "line-ab1a041f6266", toStationId: "station-ee8407a487c2", toLineId: "line-f52eb59d8497", bidirectional: true },
+  // 5. 대구권: 청라언덕 <-> 반월당
+  { id: "out-link-daegu-cheongna-to-banwoldang", fromStationId: "station-3de9d5097085", fromLineId: "line-e2938a4cc492", toStationId: "station-44dc03b65cae", toLineId: "line-5b8d9b05e7e6" },
+  { id: "out-link-daegu-banwoldang-to-cheongna", fromStationId: "station-44dc03b65cae", fromLineId: "line-5b8d9b05e7e6", toStationId: "station-3de9d5097085", toLineId: "line-e2938a4cc492" },
+  // 6. 대전권: 서대전네거리 <-> 오룡
+  { id: "out-link-daejeon-seodaejeon-to-oryong", fromStationId: "station-ee3cc9d04ee7", fromLineId: "line-7051a9c2525c", toStationId: "station-49f924643e04", toLineId: "line-7051a9c2525c" },
+  { id: "out-link-daejeon-oryong-to-seodaejeon", fromStationId: "station-49f924643e04", fromLineId: "line-7051a9c2525c", toStationId: "station-ee3cc9d04ee7", toLineId: "line-7051a9c2525c" },
+  // 7. 광주권: 광주송정역 <-> 도산
+  { id: "out-link-gwangju-songjeong-dosan", fromStationId: "station-45d732c94df2", fromLineId: "line-e57a361e8892", toStationId: "station-25f856602c61", toLineId: "line-e57a361e8892", bidirectional: true },
+];
+
+function buildInStationPathwaysAndTransferRules({ stationToLines, officialTransferMetricMap }) {
+  const stationPathwayNodes = [];
+  const stationPathwayEdges = [];
+  const transferEdges = [];
+  const transferEdgeDirections = new Set();
+  const transferRules = [];
+
+  for (const [stationId, lines] of stationToLines) {
+    if (lines.length <= 1) continue;
+    for (const lineId of lines) {
+      stationPathwayNodes.push({
+        id: `pathway-node-${stationId}-${lineId}`,
+        stationId,
+        lineId,
+        nodeType: "PLATFORM",
+        label: `${stationId}:${lineId} 승강장`,
+        level: "",
+        legacyInternalRouteNodeId: "",
+      });
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      for (let j = 0; j < lines.length; j++) {
+        if (i === j) continue;
+        const fromLine = lines[i];
+        const toLine = lines[j];
+        const ruleId = `rule-transfer-${stationId}-${fromLine}-${toLine}`;
+        const official = officialTransferMetricMap.get(`${stationId}:${fromLine}->${toLine}`);
+        const officialMetric = official?.metric;
+
+        // #872 S1: 공식 거리·시간이 없는 환승은 경로 행·route edge를 만들지 않는다. 규칙은 FK 없이 UNVERIFIED로 남겨
+        // 서버가 사용 불가로 드러내게 한다. MOLIT 환승 이동 원천은 거리·시간이 없어 여기서 쓰지 않는다.
+        // 무단차 간선은 공식 경로와 공식 거리가 함께 있는 원천이 생길 때만 만든다(현재 없음).
+        if (!official) {
+          transferRules.push({
+            id: ruleId,
+            fromStationId: stationId,
+            fromLineId: fromLine,
+            toStationId: stationId,
+            toLineId: toLine,
+            transferType: "IN_STATION",
+            minTransferSeconds: 0,
+            pathwayEdgeId: null,
+            strictStepFreePathwayEdgeId: null,
+            sourceId: "",
+            verificationStatus: "UNVERIFIED",
+          });
+          continue;
+        }
+        if (!["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(officialMetric.metricProvenance)) {
+          throw new Error(`nationwide candidate transfer metric provenance is not allowed: ${stationId} ${fromLine}->${toLine}`);
+        }
+        const normalized = {
+          edgeId: `transfer-${stationId}-${fromLine}-${toLine}`,
+          edgeType: "IN_STATION_TRANSFER",
+          fromNodeId: `${stationId}:${fromLine}`,
+          toNodeId: `${stationId}:${toLine}`,
+          durationSeconds: official.durationSeconds,
+          distanceMeters: officialMetric.distanceMeters,
+          servicePattern: "",
+          serviceClass: "SUBWAY",
+        };
+        transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
+        transferEdgeDirections.add(`${stationId}:${fromLine}->${toLine}`);
+
+        // D4(보완): 역방향 값(DERIVED_RECIPROCAL)은 #350 승인대로 길찾기 route edge에만 쓴다. production pathway 계약은
+        // DERIVED_RECIPROCAL을 받지 않으므로 경로 행을 만들지 않고, 규칙은 FK 없이 UNVERIFIED로 둔다.
+        if (officialMetric.metricProvenance === "DERIVED_RECIPROCAL") {
+          transferRules.push({
+            id: ruleId,
+            fromStationId: stationId,
+            fromLineId: fromLine,
+            toStationId: stationId,
+            toLineId: toLine,
+            transferType: "IN_STATION",
+            minTransferSeconds: official.durationSeconds,
+            pathwayEdgeId: null,
+            strictStepFreePathwayEdgeId: null,
+            sourceId: official.sourceId,
+            verificationStatus: "UNVERIFIED",
+          });
+          continue;
+        }
+
+        const walkPathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-walk`;
+        stationPathwayEdges.push({
+          id: walkPathwayEdgeId,
+          fromNodeId: `pathway-node-${stationId}-${fromLine}`,
+          toNodeId: `pathway-node-${stationId}-${toLine}`,
+          edgeType: "WALK",
+          durationSeconds: official.durationSeconds,
+          distanceMeters: officialMetric.distanceMeters,
+          bidirectional: false,
+          includesStairs: false,
+          requiresElevator: false,
+          requiresEscalator: false,
+          accessibilityStatus: "UNKNOWN",
+          reliabilityScore: 100,
+          sourceId: official.sourceId,
+          sourceSnapshotId: official.sourceSnapshotId,
+          providerRecordHash: officialMetric.sourceRecordSha256,
+          provenanceKind: "OFFICIAL_SOURCE",
+          verificationStatus: "VERIFIED",
+          lastVerifiedAt: official.lastVerifiedAt,
+          evidenceHash: officialMetric.sourceRecordSha256,
+          instruction: "환승 이동 경로",
+        });
+
+        transferRules.push({
+          id: ruleId,
+          fromStationId: stationId,
+          fromLineId: fromLine,
+          toStationId: stationId,
+          toLineId: toLine,
+          transferType: "IN_STATION",
+          minTransferSeconds: official.durationSeconds,
+          pathwayEdgeId: walkPathwayEdgeId,
+          strictStepFreePathwayEdgeId: null,
+          sourceId: official.sourceId,
+          verificationStatus: "VERIFIED",
+        });
+      }
+    }
+  }
+
+  return { stationPathwayNodes, stationPathwayEdges, transferEdges, transferEdgeDirections, transferRules };
+}
+
+async function prepareNationwideTransfersAndEdges({
+  pack, targets, seoulTransferHead, seoulTransferCapturedAt, transferMetrics, busanTransfer,
+  sourceInventory, snapshots, freshnessPolicy, evaluatedAt, read,
+}) {
   const selectedLines = new Set(targets.activeLineScopes.map((r) => r.lineId));
   const pairs = new Map();
   for (const row of pack.stationLines) {
@@ -1011,31 +1226,11 @@ export async function prepareNationwideCandidate({
     pairs.set(JSON.stringify([row.stationId, row.lineId]), row);
   }
 
-  // #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선은 만들지 않는다.
-  // 출구·엘리베이터는 역 정보(station-elevator path)로만 제공하고 경로 계산에 쓰지 않는다.
-
   const stationToLines = new Map();
   for (const { stationId, lineId } of pairs.values()) {
     if (!stationToLines.has(stationId)) stationToLines.set(stationId, []);
     stationToLines.get(stationId).push(lineId);
   }
-
-  const busanDaeguTransferInfo = new Map([
-    ["station-dbfe9e072d98", { molitStation: "동래", lineMapping: { "line-ab1a041f6266": "1호선", "line-d812a5bc1e5f": "4호선" } }],
-    ["station-1fc7a7c971c8", { molitStation: "서면", lineMapping: { "line-ab1a041f6266": "1호선", "line-eb7b47920390": "2호선" } }],
-    ["station-803200d76012", { molitStation: "연산", lineMapping: { "line-ab1a041f6266": "1호선", "line-d74614a04530": "3호선" } }],
-    ["station-85f3b04485c3", { molitStation: "덕천(부산과기대)", lineMapping: { "line-d74614a04530": "3호선", "line-eb7b47920390": "2호선" } }],
-    ["station-fbcc387e1db9", { molitStation: "벡스코(시립미술관)", lineMapping: { "line-eb7b47920390": "2호선", "line-f52eb59d8497": "동해선" } }],
-    ["station-2d67389c6338", { molitStation: "사상(서부터미널)", lineMapping: { "line-e4cce88f0d7f": "부산김해경전철", "line-eb7b47920390": "2호선" } }],
-    ["station-902ff39b9a39", { molitStation: "수영", lineMapping: { "line-d74614a04530": "3호선", "line-eb7b47920390": "2호선" } }],
-    ["station-623ba7995f56", { molitStation: "거제(법원.검찰청)", lineMapping: { "line-d74614a04530": "3호선", "line-f52eb59d8497": "동해선" } }],
-    ["station-e0daeeda6b37", { molitStation: "대저", lineMapping: { "line-d74614a04530": "3호선", "line-e4cce88f0d7f": "부산김해경전철" } }],
-    ["station-3b042820c466", { molitStation: "미남", lineMapping: { "line-d74614a04530": "3호선", "line-d812a5bc1e5f": "4호선" } }],
-    ["station-a94cb65fc5ee", { molitStation: "명덕(2.28민주운동기념회관)", lineMapping: { "line-0ffaa95b1b5d": "3호선", "line-5b8d9b05e7e6": "1호선" } }],
-    ["station-44dc03b65cae", { molitStation: "반월당", lineMapping: { "line-5b8d9b05e7e6": "1호선", "line-e2938a4cc492": "2호선" } }],
-    ["station-3de9d5097085", { molitStation: "청라언덕", lineMapping: { "line-0ffaa95b1b5d": "3호선", "line-e2938a4cc492": "2호선" } }],
-  ]);
-  const busanDaeguTransferStationIds = new Set(busanDaeguTransferInfo.keys());
 
   // #872 S3: 공식 환승 지표는 서울교통공사 지표와 부산교통공사 지표다. 방향마다 원천 id·snapshot·검증 시각과
   // 값(거리, 원천 시간)을 함께 들고, 두 원천이 같은 방향을 주장하면 실패한다.
@@ -1053,10 +1248,10 @@ export async function prepareNationwideCandidate({
   // #876: 실측 환승시간 원천을 우선순위 규칙으로 합친다. #878: 거리 없이 시간만 있는 방향은 표준 보행속도로 거리를 유도해 쓰고,
   // 실측 0초 방향만 사용 불가로 남는다.
   const measuredTransfer = await resolveSeoulMeasuredTransferMetrics({
-    sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
+    sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt, read,
   });
   const kricEscalator = await resolveKricEscalatorSnapshot({
-    sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
+    sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt, read,
   });
   const { byDirection: officialTransferMetricMap } = applyMeasuredTransferTimePrecedence({
     officialByDirection: distanceTransferMetricMap,
@@ -1068,131 +1263,9 @@ export async function prepareNationwideCandidate({
     },
   });
 
-  const stationPathwayNodes = [];
-  const stationPathwayEdges = [];
-  const transferEdges = [];
-  const transferEdgeDirections = new Set();
-  const transferRules = [];
-
-  for (const [stationId, lines] of stationToLines) {
-    if (lines.length > 1) {
-      for (const lineId of lines) {
-        stationPathwayNodes.push({
-          id: `pathway-node-${stationId}-${lineId}`,
-          stationId,
-          lineId,
-          nodeType: "PLATFORM",
-          label: `${stationId}:${lineId} 승강장`,
-          level: "",
-          legacyInternalRouteNodeId: "",
-        });
-      }
-
-      for (let i = 0; i < lines.length; i++) {
-        for (let j = 0; j < lines.length; j++) {
-          if (i === j) continue;
-          const fromLine = lines[i];
-          const toLine = lines[j];
-          const ruleId = `rule-transfer-${stationId}-${fromLine}-${toLine}`;
-          const official = officialTransferMetricMap.get(`${stationId}:${fromLine}->${toLine}`);
-          const officialMetric = official?.metric;
-
-          // #872 S1: 공식 거리·시간이 없는 환승은 경로 행·route edge를 만들지 않는다. 규칙은 FK 없이 UNVERIFIED로 남겨
-          // 서버가 사용 불가로 드러내게 한다. MOLIT 환승 이동 원천은 거리·시간이 없어 여기서 쓰지 않는다.
-          // 무단차 간선은 공식 경로와 공식 거리가 함께 있는 원천이 생길 때만 만든다(현재 없음).
-          if (!official) {
-            transferRules.push({
-              id: ruleId,
-              fromStationId: stationId,
-              fromLineId: fromLine,
-              toStationId: stationId,
-              toLineId: toLine,
-              transferType: "IN_STATION",
-              minTransferSeconds: 0,
-              pathwayEdgeId: null,
-              strictStepFreePathwayEdgeId: null,
-              sourceId: "",
-              verificationStatus: "UNVERIFIED",
-            });
-            continue;
-          }
-          if (!["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(officialMetric.metricProvenance)) {
-            throw new Error(`nationwide candidate transfer metric provenance is not allowed: ${stationId} ${fromLine}->${toLine}`);
-          }
-          const normalized = {
-            edgeId: `transfer-${stationId}-${fromLine}-${toLine}`,
-            edgeType: "IN_STATION_TRANSFER",
-            fromNodeId: `${stationId}:${fromLine}`,
-            toNodeId: `${stationId}:${toLine}`,
-            durationSeconds: official.durationSeconds,
-            distanceMeters: officialMetric.distanceMeters,
-            servicePattern: "",
-            serviceClass: "SUBWAY",
-          };
-          transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
-          transferEdgeDirections.add(`${stationId}:${fromLine}->${toLine}`);
-
-          // D4(보완): 역방향 값(DERIVED_RECIPROCAL)은 #350 승인대로 길찾기 route edge에만 쓴다. production pathway 계약은
-          // DERIVED_RECIPROCAL을 받지 않으므로 경로 행을 만들지 않고, 규칙은 FK 없이 UNVERIFIED로 둔다.
-          if (officialMetric.metricProvenance === "DERIVED_RECIPROCAL") {
-            transferRules.push({
-              id: ruleId,
-              fromStationId: stationId,
-              fromLineId: fromLine,
-              toStationId: stationId,
-              toLineId: toLine,
-              transferType: "IN_STATION",
-              minTransferSeconds: official.durationSeconds,
-              pathwayEdgeId: null,
-              strictStepFreePathwayEdgeId: null,
-              sourceId: official.sourceId,
-              verificationStatus: "UNVERIFIED",
-            });
-            continue;
-          }
-
-          const walkPathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-walk`;
-
-          stationPathwayEdges.push({
-            id: walkPathwayEdgeId,
-            fromNodeId: `pathway-node-${stationId}-${fromLine}`,
-            toNodeId: `pathway-node-${stationId}-${toLine}`,
-            edgeType: "WALK",
-            durationSeconds: official.durationSeconds,
-            distanceMeters: officialMetric.distanceMeters,
-            bidirectional: false,
-            includesStairs: false,
-            requiresElevator: false,
-            requiresEscalator: false,
-            accessibilityStatus: "UNKNOWN",
-            reliabilityScore: 100,
-            sourceId: official.sourceId,
-            sourceSnapshotId: official.sourceSnapshotId,
-            providerRecordHash: officialMetric.sourceRecordSha256,
-            provenanceKind: "OFFICIAL_SOURCE",
-            verificationStatus: "VERIFIED",
-            lastVerifiedAt: official.lastVerifiedAt,
-            evidenceHash: officialMetric.sourceRecordSha256,
-            instruction: "환승 이동 경로",
-          });
-
-          transferRules.push({
-            id: ruleId,
-            fromStationId: stationId,
-            fromLineId: fromLine,
-            toStationId: stationId,
-            toLineId: toLine,
-            transferType: "IN_STATION",
-            minTransferSeconds: official.durationSeconds,
-            pathwayEdgeId: walkPathwayEdgeId,
-            strictStepFreePathwayEdgeId: null,
-            sourceId: official.sourceId,
-            verificationStatus: "VERIFIED",
-          });
-        }
-      }
-    }
-  }
+  const {
+    stationPathwayNodes, stationPathwayEdges, transferEdges, transferEdgeDirections, transferRules,
+  } = buildInStationPathwaysAndTransferRules({ stationToLines, officialTransferMetricMap });
 
   // #876(#866 D1 선행): 실측·부산 원천이 뒷받침하는 역내 환승 간선의 끝점은 그 원천 레코드로 TRANSFER 칸을 닫는다.
   // 서울 거리 원천은 아래 기존 경로(지표가 닿는 역-노선)로 닫는다.
@@ -1221,28 +1294,8 @@ export async function prepareNationwideCandidate({
     }],
   ]);
 
-  // 역 밖 환승 후보(끝점만). 공식 거리·시간·접근성 근거가 없으므로 값을 싣지 않는다.
-  // admitOutOfStationTransferLinks가 공식 VERIFIED 근거가 있는 링크만 남기고, 나머지는 제외 사유 목록으로 돌려준다(#872).
-  const outOfStationTransferCandidates = [
-    // 1. 수도권: 신촌 2호선 <-> 신촌 경의중앙선
-    { id: "out-link-sinchon-2-to-gj", fromStationId: "station-4e123a19a88f", fromLineId: "seoul-2", toStationId: "station-d6935359840d", toLineId: "line-6e39be0cb6e2" },
-    { id: "out-link-sinchon-gj-to-2", fromStationId: "station-d6935359840d", fromLineId: "line-6e39be0cb6e2", toStationId: "station-4e123a19a88f", toLineId: "seoul-2" },
-    // 2. 수도권: 석남 7호선 <-> 석남 인천2호선
-    { id: "out-link-seongnam-7-incheon2", fromStationId: "station-57db2f1fb4f6", fromLineId: "line-15b3b8a93259", toStationId: "station-37866f28b417", toLineId: "line-42b5805f3b5a", bidirectional: true },
-    // 3. 부산권: 동래 1호선 <-> 동래 동해선
-    { id: "out-link-dongnae-1-to-dh", fromStationId: "station-dbfe9e072d98", fromLineId: "line-ab1a041f6266", toStationId: "station-b65d6408d975", toLineId: "line-f52eb59d8497" },
-    { id: "out-link-dongnae-dh-to-1", fromStationId: "station-b65d6408d975", fromLineId: "line-f52eb59d8497", toStationId: "station-dbfe9e072d98", toLineId: "line-ab1a041f6266" },
-    // 4. 부산권: 부전 1호선 <-> 동해선
-    { id: "out-link-bujeon-1-to-dh", fromStationId: "station-9acc028dded4", fromLineId: "line-ab1a041f6266", toStationId: "station-ee8407a487c2", toLineId: "line-f52eb59d8497", bidirectional: true },
-    // 5. 대구권: 청라언덕 <-> 반월당
-    { id: "out-link-daegu-cheongna-to-banwoldang", fromStationId: "station-3de9d5097085", fromLineId: "line-e2938a4cc492", toStationId: "station-44dc03b65cae", toLineId: "line-5b8d9b05e7e6" },
-    { id: "out-link-daegu-banwoldang-to-cheongna", fromStationId: "station-44dc03b65cae", fromLineId: "line-5b8d9b05e7e6", toStationId: "station-3de9d5097085", toLineId: "line-e2938a4cc492" },
-    // 6. 대전권: 서대전네거리 <-> 오룡
-    { id: "out-link-daejeon-seodaejeon-to-oryong", fromStationId: "station-ee3cc9d04ee7", fromLineId: "line-7051a9c2525c", toStationId: "station-49f924643e04", toLineId: "line-7051a9c2525c" },
-    { id: "out-link-daejeon-oryong-to-seodaejeon", fromStationId: "station-49f924643e04", fromLineId: "line-7051a9c2525c", toStationId: "station-ee3cc9d04ee7", toLineId: "line-7051a9c2525c" },
-    // 7. 광주권: 광주송정역 <-> 도산
-    { id: "out-link-gwangju-songjeong-dosan", fromStationId: "station-45d732c94df2", fromLineId: "line-e57a361e8892", toStationId: "station-25f856602c61", toLineId: "line-e57a361e8892", bidirectional: true },
-  ].map((candidate) => ({ bidirectional: false, ...candidate, provenanceKind: "UNVERIFIED", verificationStatus: "UNVERIFIED" }));
+  const outOfStationTransferCandidates = OUT_OF_STATION_TRANSFER_CANDIDATE_DEFS
+    .map((candidate) => ({ bidirectional: false, ...candidate, provenanceKind: "UNVERIFIED", verificationStatus: "UNVERIFIED" }));
   const { admitted: outOfStationTransferLinks, excluded: excludedOutOfStationTransferLinks } =
     admitOutOfStationTransferLinks(outOfStationTransferCandidates, { sourceInventory, sourceSnapshots: snapshots });
 
@@ -1261,18 +1314,40 @@ export async function prepareNationwideCandidate({
     return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
   });
 
-  // 2. Prepare nationwide canonical pack
+  return {
+    pairs,
+    stationToLines,
+    measuredTransfer,
+    kricEscalator,
+    stationPathwayNodes,
+    stationPathwayEdges,
+    transferEdges,
+    transferRules,
+    officialEndpointRecords,
+    officialEndpointSources,
+    outOfStationTransferCandidates,
+    outOfStationTransferLinks,
+    excludedOutOfStationTransferLinks,
+    rides,
+    rideEdges,
+  };
+}
+
+function initializeNationwidePackAndOfficialTimetables({
+  baseFixture, targets, stationPathwayNodes, stationPathwayEdges, transferRules,
+  outOfStationTransferLinks, rides, incheonTopology, incheonTopologySnapshotId,
+  incheonLine1, incheonLine2, capitalTimetable, korailTimetable, stationLinesTimetable,
+  daegyeongTimetable, sourceInventory, snapshots, evaluatedAt,
+}) {
   const nationwideFixture = structuredClone(baseFixture);
   const nationwidePack = nationwideFixture.packs[0];
   nationwidePack.coverageLineOperatorScopes = targets.activeLineScopes;
   nationwidePack.stationPathwayNodes = stationPathwayNodes;
   nationwidePack.stationPathwayEdges = stationPathwayEdges;
   nationwidePack.transferRules = transferRules;
-  const cleanOutOfStationTransferLinks = packOutOfStationTransferLinks(outOfStationTransferLinks);
-  nationwidePack.outOfStationTransferLinks = cleanOutOfStationTransferLinks;
+  nationwidePack.outOfStationTransferLinks = packOutOfStationTransferLinks(outOfStationTransferLinks);
   nationwidePack.networkEdges = rides;
 
-  // 2.1 Extract out-of-station route edges
   const outOfStationNetworkEdgesList = outOfStationTransferNetworkEdges(nationwidePack);
   const outOfStationEdges = outOfStationNetworkEdgesList.map((edge) => {
     const normalized = {
@@ -1288,8 +1363,6 @@ export async function prepareNationwideCandidate({
     return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
   });
 
-  // 2.2 Preserve authentic base timetable routes, trips, stop times, and calendars,
-  // excluding Incheon items which will be cleanly materialized by materializeIncheonTimetable below.
   const incheonSourceIds = new Set(["incheon-line1-train-timetable", "incheon-line2-train-timetable"]);
   nationwidePack.sourceInventory = (baseFixture.packs[0].sourceInventory ?? []).filter((s) => !incheonSourceIds.has(s.id));
   nationwidePack.serviceCalendars = (baseFixture.packs[0].serviceCalendars ?? []).filter((c) => !c.serviceId.startsWith("incheon-line"));
@@ -1304,7 +1377,7 @@ export async function prepareNationwideCandidate({
   const incheonNow = new Date(Math.max(Date.parse(incheonLine1.capturedAt), Date.parse(incheonLine2.capturedAt)) + 1000);
   const materializedFixture = materializeIncheonTimetable({
     baseFixture: nationwideFixture,
-    topologySnapshot: { ...incheonTopology, snapshotId: inputSnapshots.incheonTopology.snapshotId },
+    topologySnapshot: { ...incheonTopology, snapshotId: incheonTopologySnapshotId },
     timetableSnapshots: { 1: incheonLine1, 2: incheonLine2 },
     inventory: sourceInventory,
     now: incheonNow,
@@ -1374,10 +1447,20 @@ export async function prepareNationwideCandidate({
 
   // #903: 대경선(코레일 광역전철 계획 시각표)을 승인 snapshot 그대로 싣는다(부모 topology·원장 결속은 materializer가 검증).
   Object.assign(finalPack, materializeKorailTimetable({
-    pack: finalPack, snapshot: daegyeongTimetable, inventory: sourceInventory, ledger: snapshots, now: new Date(fanIn.evaluatedAt),
+    pack: finalPack, snapshot: daegyeongTimetable, inventory: sourceInventory, ledger: snapshots, now: new Date(evaluatedAt),
   }));
 
-  function findRegionalStationId(lineId, rawName) {
+  return {
+    materializedFixture,
+    finalPack,
+    outOfStationEdges,
+    capitalSchedule,
+    officialLineTimetableReport,
+  };
+}
+
+function createRegionalStationIdFinder(finalPack) {
+  return function findRegionalStationId(lineId, rawName) {
     const name = regionalProviderStationNameKey(rawName);
     const candidates = finalPack.stationLines.filter((sl) => sl.lineId === lineId);
     const found = candidates.find((sl) => {
@@ -1386,267 +1469,121 @@ export async function prepareNationwideCandidate({
     });
     if (!found) throw new Error(`Station not found: ${lineId} ${rawName}`);
     return found.stationId;
+  };
+}
+
+function appendProviderRegionalAccessibility({
+  regionalFacilities,
+  regionalEvidence,
+  finalPack,
+  findRegionalStationId,
+  providerSlug,
+  sourceId,
+  snapshotId,
+  snapshot,
+  descriptionPrefix,
+  typeRowAt = (row) => row,
+  recordHashPayload = (row, t) => ({
+    stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
+    elevator: row.elevator, escalator: row.escalator, wheelchair_lift: row.wheelchair_lift,
+  }),
+}) {
+  for (const [rowIndex, row] of snapshot.rows.entries()) {
+    const stationId = findRegionalStationId(row.lineId, row.stationName);
+    const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
+    const types = regionalFacilityTypeCounts(providerSlug, typeRowAt(row, rowIndex));
+    for (const t of types) {
+      if (t.count === null) continue;
+      const exists = t.count > 0;
+      const providerRecordHash = sha256(JSON.stringify(recordHashPayload(row, t)));
+      const id = `facility-${providerSlug}-${row.stationCode}-${t.slug}`;
+      regionalFacilities.push({
+        id,
+        stationId,
+        lineId: row.lineId,
+        exitId: null,
+        type: t.type,
+        name: `${stationName}역 ${t.labelKo} 설치 정보`,
+        status: "UNKNOWN",
+        floorFrom: "",
+        floorTo: "",
+        description: exists
+          ? `${descriptionPrefix} 기준 ${t.labelKo} ${t.count}대 설치 정보이며 실시간 운행 상태가 아닙니다.`
+          : `${descriptionPrefix} 기준 ${t.labelKo} 미설치(count=0) 기록이며 실시간 운행 상태가 아닙니다.`,
+        sourceId,
+        sourceSnapshotId: snapshotId,
+        providerFacilityRef: `${providerSlug}-accessibility-${row.stationCode}-${t.slug}`,
+        providerRecordHash,
+        provenanceKind: "OFFICIAL_SOURCE",
+        statusMeaning: "STATIC_LOCATION",
+        operationalStatus: "UNKNOWN",
+        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
+        verifiedAt: snapshot.capturedAt,
+        retrievedAt: snapshot.capturedAt,
+        evidenceHash: snapshot.rowsSha256,
+        confidence: 80,
+        derivationKind: "OFFICIAL",
+        lastVerifiedAt: snapshot.capturedAt,
+      });
+      regionalEvidence.push({
+        stationId,
+        lineId: row.lineId,
+        facilityType: t.type,
+        evidenceKind: exists ? "EXISTS" : "NOT_EXISTS",
+        sourceId,
+        sourceSnapshotId: snapshotId,
+        providerRecordHash,
+        evidenceHash: snapshot.rowsSha256,
+        provenanceKind: "OFFICIAL_SOURCE",
+        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
+        operationalStatus: "UNKNOWN",
+        statusMeaning: "STATIC_LOCATION",
+        confidence: 80,
+        verifiedAt: snapshot.capturedAt,
+        retrievedAt: snapshot.capturedAt,
+        strictRouteEligible: false,
+        strictRouteEligibleReason: exists ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED",
+      });
+    }
   }
+}
 
-  const busanSnapshotId = inputSnapshots.busanAccessibility.snapshotId;
-  const daeguSnapshotId = inputSnapshots.daeguAccessibility.snapshotId;
-  const daejeonSnapshotId = inputSnapshots.daejeonAccessibility.snapshotId;
-  const gwangjuSnapshotId = inputSnapshots.gwangjuAccessibility.snapshotId;
-
+function integrateRegionalAndCapitalAccessibilityFacilities({
+  finalPack, inputSnapshots, busanAccessibility, daeguAccessibility, daejeonAccessibility,
+  gwangjuAccessibility, kricConvenience, kricEscalator, findRegionalStationId,
+}) {
   const regionalFacilities = [];
   const regionalEvidence = [];
   const busanObservedRows = observedBusanAccessibilityRows(busanAccessibility);
 
   // 1. Busan — count는 잠긴 snapshot의 보존 원문에 명시된 값만 쓴다(빈 필드는 미관측).
-  for (const [rowIndex, row] of busanAccessibility.rows.entries()) {
-    const stationId = findRegionalStationId(row.lineId, row.stationName);
-    const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
-    const types = regionalFacilityTypeCounts("busan", busanObservedRows[rowIndex]);
-    for (const t of types) {
-      if (t.count === null) continue;
-      const exists = t.count > 0;
-      const providerRecordHash = sha256(JSON.stringify({
-        stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
-        wl_i: row.wl_i, wl_o: row.wl_o, el_i: row.el_i, el_o: row.el_o, es: row.es,
-      }));
-      const id = `facility-busan-${row.stationCode}-${t.slug}`;
-      regionalFacilities.push({
-        id,
-        stationId,
-        lineId: row.lineId,
-        exitId: null,
-        type: t.type,
-        name: `${stationName}역 ${t.labelKo} 설치 정보`,
-        status: "UNKNOWN",
-        floorFrom: "",
-        floorTo: "",
-        description: exists
-          ? `부산교통공사 편의시설 API 기준 ${t.labelKo} ${t.count}대 설치 정보이며 실시간 운행 상태가 아닙니다.`
-          : `부산교통공사 편의시설 API 기준 ${t.labelKo} 미설치(count=0) 기록이며 실시간 운행 상태가 아닙니다.`,
-        sourceId: "busan-transportation-accessibility",
-        sourceSnapshotId: busanSnapshotId,
-        providerFacilityRef: `busan-accessibility-${row.stationCode}-${t.slug}`,
-        providerRecordHash,
-        provenanceKind: "OFFICIAL_SOURCE",
-        statusMeaning: "STATIC_LOCATION",
-        operationalStatus: "UNKNOWN",
-        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
-        verifiedAt: busanAccessibility.capturedAt,
-        retrievedAt: busanAccessibility.capturedAt,
-        evidenceHash: busanAccessibility.rowsSha256,
-        confidence: 80,
-        derivationKind: "OFFICIAL",
-        lastVerifiedAt: busanAccessibility.capturedAt,
-      });
-      regionalEvidence.push({
-        stationId,
-        lineId: row.lineId,
-        facilityType: t.type,
-        evidenceKind: exists ? "EXISTS" : "NOT_EXISTS",
-        sourceId: "busan-transportation-accessibility",
-        sourceSnapshotId: busanSnapshotId,
-        providerRecordHash,
-        evidenceHash: busanAccessibility.rowsSha256,
-        provenanceKind: "OFFICIAL_SOURCE",
-        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
-        operationalStatus: "UNKNOWN",
-        statusMeaning: "STATIC_LOCATION",
-        confidence: 80,
-        verifiedAt: busanAccessibility.capturedAt,
-        retrievedAt: busanAccessibility.capturedAt,
-        strictRouteEligible: false,
-        strictRouteEligibleReason: exists ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED",
-      });
-    }
-  }
+  appendProviderRegionalAccessibility({
+    regionalFacilities,
+    regionalEvidence,
+    finalPack,
+    findRegionalStationId,
+    providerSlug: "busan",
+    sourceId: "busan-transportation-accessibility",
+    snapshotId: inputSnapshots.busanAccessibility.snapshotId,
+    snapshot: busanAccessibility,
+    descriptionPrefix: "부산교통공사 편의시설 API",
+    typeRowAt: (_row, rowIndex) => busanObservedRows[rowIndex],
+    recordHashPayload: (row, t) => ({
+      stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
+      wl_i: row.wl_i, wl_o: row.wl_o, el_i: row.el_i, el_o: row.el_o, es: row.es,
+    }),
+  });
 
-  // 2. Daegu
-  for (const row of daeguAccessibility.rows) {
-    const stationId = findRegionalStationId(row.lineId, row.stationName);
-    const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
-    const types = regionalFacilityTypeCounts("daegu", row);
-    for (const t of types) {
-      if (t.count === null) continue;
-      const exists = t.count > 0;
-      const providerRecordHash = sha256(JSON.stringify({
-        stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
-        elevator: row.elevator, escalator: row.escalator, wheelchair_lift: row.wheelchair_lift,
-      }));
-      const id = `facility-daegu-${row.stationCode}-${t.slug}`;
-      regionalFacilities.push({
-        id,
-        stationId,
-        lineId: row.lineId,
-        exitId: null,
-        type: t.type,
-        name: `${stationName}역 ${t.labelKo} 설치 정보`,
-        status: "UNKNOWN",
-        floorFrom: "",
-        floorTo: "",
-        description: exists
-          ? `대구교통공사 역사별 장애인 편의시설 현황 기준 ${t.labelKo} ${t.count}대 설치 정보이며 실시간 운행 상태가 아닙니다.`
-          : `대구교통공사 역사별 장애인 편의시설 현황 기준 ${t.labelKo} 미설치(count=0) 기록이며 실시간 운행 상태가 아닙니다.`,
-        sourceId: "daegu-transportation-accessibility",
-        sourceSnapshotId: daeguSnapshotId,
-        providerFacilityRef: `daegu-accessibility-${row.stationCode}-${t.slug}`,
-        providerRecordHash,
-        provenanceKind: "OFFICIAL_SOURCE",
-        statusMeaning: "STATIC_LOCATION",
-        operationalStatus: "UNKNOWN",
-        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
-        verifiedAt: daeguAccessibility.capturedAt,
-        retrievedAt: daeguAccessibility.capturedAt,
-        evidenceHash: daeguAccessibility.rowsSha256,
-        confidence: 80,
-        derivationKind: "OFFICIAL",
-        lastVerifiedAt: daeguAccessibility.capturedAt,
-      });
-      regionalEvidence.push({
-        stationId,
-        lineId: row.lineId,
-        facilityType: t.type,
-        evidenceKind: exists ? "EXISTS" : "NOT_EXISTS",
-        sourceId: "daegu-transportation-accessibility",
-        sourceSnapshotId: daeguSnapshotId,
-        providerRecordHash,
-        evidenceHash: daeguAccessibility.rowsSha256,
-        provenanceKind: "OFFICIAL_SOURCE",
-        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
-        operationalStatus: "UNKNOWN",
-        statusMeaning: "STATIC_LOCATION",
-        confidence: 80,
-        verifiedAt: daeguAccessibility.capturedAt,
-        retrievedAt: daeguAccessibility.capturedAt,
-        strictRouteEligible: false,
-        strictRouteEligibleReason: exists ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED",
-      });
-    }
-  }
-
-  // 3. Daejeon
-  for (const row of daejeonAccessibility.rows) {
-    const stationId = findRegionalStationId(row.lineId, row.stationName);
-    const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
-    const types = regionalFacilityTypeCounts("daejeon", row);
-    for (const t of types) {
-      if (t.count === null) continue;
-      const exists = t.count > 0;
-      const providerRecordHash = sha256(JSON.stringify({
-        stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
-        elevator: row.elevator, escalator: row.escalator, wheelchair_lift: row.wheelchair_lift,
-      }));
-      const id = `facility-daejeon-${row.stationCode}-${t.slug}`;
-      regionalFacilities.push({
-        id,
-        stationId,
-        lineId: row.lineId,
-        exitId: null,
-        type: t.type,
-        name: `${stationName}역 ${t.labelKo} 설치 정보`,
-        status: "UNKNOWN",
-        floorFrom: "",
-        floorTo: "",
-        description: exists
-          ? `대전교통공사 역별 편의시설 현황 기준 ${t.labelKo} ${t.count}대 설치 정보이며 실시간 운행 상태가 아닙니다.`
-          : `대전교통공사 역별 편의시설 현황 기준 ${t.labelKo} 미설치(count=0) 기록이며 실시간 운행 상태가 아닙니다.`,
-        sourceId: "daejeon-transportation-accessibility",
-        sourceSnapshotId: daejeonSnapshotId,
-        providerFacilityRef: `daejeon-accessibility-${row.stationCode}-${t.slug}`,
-        providerRecordHash,
-        provenanceKind: "OFFICIAL_SOURCE",
-        statusMeaning: "STATIC_LOCATION",
-        operationalStatus: "UNKNOWN",
-        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
-        verifiedAt: daejeonAccessibility.capturedAt,
-        retrievedAt: daejeonAccessibility.capturedAt,
-        evidenceHash: daejeonAccessibility.rowsSha256,
-        confidence: 80,
-        derivationKind: "OFFICIAL",
-        lastVerifiedAt: daejeonAccessibility.capturedAt,
-      });
-      regionalEvidence.push({
-        stationId,
-        lineId: row.lineId,
-        facilityType: t.type,
-        evidenceKind: exists ? "EXISTS" : "NOT_EXISTS",
-        sourceId: "daejeon-transportation-accessibility",
-        sourceSnapshotId: daejeonSnapshotId,
-        providerRecordHash,
-        evidenceHash: daejeonAccessibility.rowsSha256,
-        provenanceKind: "OFFICIAL_SOURCE",
-        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
-        operationalStatus: "UNKNOWN",
-        statusMeaning: "STATIC_LOCATION",
-        confidence: 80,
-        verifiedAt: daejeonAccessibility.capturedAt,
-        retrievedAt: daejeonAccessibility.capturedAt,
-        strictRouteEligible: false,
-        strictRouteEligibleReason: exists ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED",
-      });
-    }
-  }
-
-  // 4. Gwangju
-  for (const row of gwangjuAccessibility.rows) {
-    const stationId = findRegionalStationId(row.lineId, row.stationName);
-    const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
-    const types = regionalFacilityTypeCounts("gwangju", row);
-    for (const t of types) {
-      if (t.count === null) continue;
-      const exists = t.count > 0;
-      const providerRecordHash = sha256(JSON.stringify({
-        stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
-        elevator: row.elevator, escalator: row.escalator, wheelchair_lift: row.wheelchair_lift,
-      }));
-      const id = `facility-gwangju-${row.stationCode}-${t.slug}`;
-      regionalFacilities.push({
-        id,
-        stationId,
-        lineId: row.lineId,
-        exitId: null,
-        type: t.type,
-        name: `${stationName}역 ${t.labelKo} 설치 정보`,
-        status: "UNKNOWN",
-        floorFrom: "",
-        floorTo: "",
-        description: exists
-          ? `광주교통공사 역사별 장애인 편의시설 현황 기준 ${t.labelKo} ${t.count}대 설치 정보이며 실시간 운행 상태가 아닙니다.`
-          : `광주교통공사 역사별 장애인 편의시설 현황 기준 ${t.labelKo} 미설치(count=0) 기록이며 실시간 운행 상태가 아닙니다.`,
-        sourceId: "gwangju-transportation-accessibility",
-        sourceSnapshotId: gwangjuSnapshotId,
-        providerFacilityRef: `gwangju-accessibility-${row.stationCode}-${t.slug}`,
-        providerRecordHash,
-        provenanceKind: "OFFICIAL_SOURCE",
-        statusMeaning: "STATIC_LOCATION",
-        operationalStatus: "UNKNOWN",
-        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
-        verifiedAt: gwangjuAccessibility.capturedAt,
-        retrievedAt: gwangjuAccessibility.capturedAt,
-        evidenceHash: gwangjuAccessibility.rowsSha256,
-        confidence: 80,
-        derivationKind: "OFFICIAL",
-        lastVerifiedAt: gwangjuAccessibility.capturedAt,
-      });
-      regionalEvidence.push({
-        stationId,
-        lineId: row.lineId,
-        facilityType: t.type,
-        evidenceKind: exists ? "EXISTS" : "NOT_EXISTS",
-        sourceId: "gwangju-transportation-accessibility",
-        sourceSnapshotId: gwangjuSnapshotId,
-        providerRecordHash,
-        evidenceHash: gwangjuAccessibility.rowsSha256,
-        provenanceKind: "OFFICIAL_SOURCE",
-        installationStatus: exists ? "INSTALLED" : "NOT_INSTALLED",
-        operationalStatus: "UNKNOWN",
-        statusMeaning: "STATIC_LOCATION",
-        confidence: 80,
-        verifiedAt: gwangjuAccessibility.capturedAt,
-        retrievedAt: gwangjuAccessibility.capturedAt,
-        strictRouteEligible: false,
-        strictRouteEligibleReason: exists ? "OPERATION_STATUS_UNKNOWN" : "FACILITY_NOT_INSTALLED",
-      });
-    }
+  // 2. Daegu, 3. Daejeon, 4. Gwangju
+  for (const [providerSlug, sourceId, snapshotId, snapshot, descriptionPrefix] of [
+    ["daegu", "daegu-transportation-accessibility", inputSnapshots.daeguAccessibility.snapshotId, daeguAccessibility, "대구교통공사 역사별 장애인 편의시설 현황"],
+    ["daejeon", "daejeon-transportation-accessibility", inputSnapshots.daejeonAccessibility.snapshotId, daejeonAccessibility, "대전교통공사 역별 편의시설 현황"],
+    ["gwangju", "gwangju-transportation-accessibility", inputSnapshots.gwangjuAccessibility.snapshotId, gwangjuAccessibility, "광주교통공사 역사별 장애인 편의시설 현황"],
+  ]) {
+    appendProviderRegionalAccessibility({
+      regionalFacilities, regionalEvidence, finalPack, findRegionalStationId,
+      providerSlug, sourceId, snapshotId, snapshot, descriptionPrefix,
+    });
   }
 
   finalPack.facilities.push(...regionalFacilities);
@@ -1656,30 +1593,36 @@ export async function prepareNationwideCandidate({
   }));
   // #3036: 표준이 남긴 에스컬레이터 원천 밖 UNKNOWN 칸을 에스컬레이터 원천 증거로 바꾼다(등록 전이면 표준의 칸 그대로다).
   if (kricEscalator) Object.assign(finalPack, withCapitalKricFacilities({ pack: finalPack, snapshot: kricEscalator.snapshot }));
+}
 
-  const packSource = (source, updatedAt) => {
-    const coverageScope = structuredClone(source.coverageScope);
-    if (source.id === "molit-railway-transfer-movement") {
-      delete coverageScope.mappingStatus;
-      coverageScope.regionIds = ["busan", "daegu"];
-      coverageScope.operatorIds = ["busan-transportation", "daegu-transportation"];
-      coverageScope.sourceDomains = ["indoor_movement_paths"];
-    }
-    return {
-      id: source.id,
-      owner: source.owner,
-      url: source.datasetUrl,
-      license: source.license.name,
-      licenseStatus: "redistributable",
-      redistributionAllowed: true,
-      updateFrequency: source.updateFrequency,
-      updatedAt,
-      fields: [...source.fieldsProvided],
-      coverageScope,
-    };
+function buildPackSourceEntry(source, updatedAt) {
+  const coverageScope = structuredClone(source.coverageScope);
+  if (source.id === "molit-railway-transfer-movement") {
+    delete coverageScope.mappingStatus;
+    coverageScope.regionIds = ["busan", "daegu"];
+    coverageScope.operatorIds = ["busan-transportation", "daegu-transportation"];
+    coverageScope.sourceDomains = ["indoor_movement_paths"];
+  }
+  return {
+    id: source.id,
+    owner: source.owner,
+    url: source.datasetUrl,
+    license: source.license.name,
+    licenseStatus: "redistributable",
+    redistributionAllowed: true,
+    updateFrequency: source.updateFrequency,
+    updatedAt,
+    fields: [...source.fieldsProvided],
+    coverageScope,
   };
+}
 
-  // Integrate Regional Timetables (Busan, Daegu, Daejeon, Gwangju)
+async function integrateRegionalAndRetainedGwangjuTimetables({
+  finalPack, sourceInventory, fanIn, read, busanTimetable, busanAccessibility,
+  daeguTimetable1, daeguTimetable2, daeguTimetable3, daeguAccessibility,
+  daejeonTimetable, daejeonAccessibility, gwangjuAccessibility,
+  gwangjuTimetable, gwangjuRetainedRecords,
+}) {
   const regionalSchedule = integrateRegionalTimetables({
     finalPack,
     // #919: 공휴일은 KASI 특일 정보 기준 목록(fetch-kasi 테스트가 2026년 원문과 같음을 고정)이다.
@@ -1766,7 +1709,7 @@ export async function prepareNationwideCandidate({
   for (const { reason } of timetableQuarantine) {
     timetableQuarantineByReason[reason] = (timetableQuarantineByReason[reason] ?? 0) + 1;
   }
-  const regionalTimetableQuarantine = {
+  return {
     schemaVersion: 1,
     artifactKind: "datapack-regional-timetable-quarantine",
     issue: "https://github.com/AquilaXk/easysubway-data/issues/855",
@@ -1793,13 +1736,9 @@ export async function prepareNationwideCandidate({
     },
     rows: timetableQuarantine,
   };
-  if (writeFiles) {
-    await writeFile(path.join(repositoryRoot, REGIONAL_TIMETABLE_QUARANTINE_PATH), jsonBytes(regionalTimetableQuarantine));
-    await writeFile(path.join(repositoryRoot, CAPITAL_TIMETABLE_REPORT_PATH), jsonBytes(capitalSchedule.report));
-    await writeFile(path.join(repositoryRoot, OFFICIAL_LINE_TIMETABLE_REPORT_PATH), jsonBytes(officialLineTimetableReport));
-  }
+}
 
-  // Expand nationwide station_car_door_hints with KRIC elevator platform door positions
+function expandNationwideCarDoorHints({ finalPack, kricConvenience }) {
   const seenCarDoorKey = new Set();
   const mergedCarDoorHints = [];
   const quarantinedCarDoorHints = [];
@@ -1824,65 +1763,61 @@ export async function prepareNationwideCandidate({
         for (const m of matches) {
           const car = parseInt(m[1], 10);
           const door = parseInt(m[2], 10);
-          if (car >= 1 && car <= 10 && door >= 1 && door <= 10) {
-            const prefix = part.slice(0, m.index);
-            let direction = "BOTH";
-            if (prefix.includes("상선") || prefix.includes("상행")) direction = "UP";
-            else if (prefix.includes("하선") || prefix.includes("하행")) direction = "DOWN";
-            else if (prefix.includes("내선")) direction = "INNER";
-            else if (prefix.includes("외선")) direction = "OUTER";
+          if (car < 1 || car > 10 || door < 1 || door > 10) continue;
+          const prefix = part.slice(0, m.index);
+          let direction = "BOTH";
+          if (prefix.includes("상선") || prefix.includes("상행")) direction = "UP";
+          else if (prefix.includes("하선") || prefix.includes("하행")) direction = "DOWN";
+          else if (prefix.includes("내선")) direction = "INNER";
+          else if (prefix.includes("외선")) direction = "OUTER";
 
-            let targetFacilityType = "ELEVATOR";
-            if (row.gubun === "WCLF") targetFacilityType = "WHEELCHAIR_LIFT";
-
-            const key = `${q.stationId}:${q.lineId}:${direction}:${targetFacilityType}:${car}:${door}`;
-            if (!seenCarDoorKey.has(key)) {
-              seenCarDoorKey.add(key);
-              const hash = sha256(canonicalJson({
-                stationId: q.stationId,
-                lineId: q.lineId,
-                direction,
-                targetFacilityType,
-                carNumber: car,
-                doorNumber: door,
-                dtlLoc: loc,
-              }));
-              const hint = {
-                id: `cardoor-${q.stationId}-${q.lineId}-${direction}-${targetFacilityType}-${car}-${door}-${hash.slice(0, 16)}`,
-                stationId: q.stationId,
-                lineId: q.lineId,
-                direction,
-                targetFacilityType,
-                carNumber: car,
-                doorNumber: door,
-                sourceId: "kric-station-convenience-standard",
-                sourceSnapshotId: kricConvenience.snapshotId,
-                providerRecordHash: q.providerRecordHash,
-                provenanceKind: "OFFICIAL_SOURCE",
-                verificationStatus: "VERIFIED",
-                lastVerifiedAt: kricConvenience.capturedAt,
-                evidenceHash: kricConvenience.rawSha256,
-              };
-              kricCarDoorHintCount += 1;
-              const reasons = carDoorHintContractViolations(hint);
-              if (reasons.length > 0) {
-                quarantinedCarDoorHints.push({
-                  id: hint.id,
-                  stationId: hint.stationId,
-                  lineId: hint.lineId,
-                  direction: hint.direction,
-                  targetFacilityType: hint.targetFacilityType,
-                  carNumber: hint.carNumber,
-                  doorNumber: hint.doorNumber,
-                  gubun: row.gubun ?? "",
-                  dtlLoc: loc,
-                  providerRecordHash: hint.providerRecordHash,
-                  reasons,
-                });
-              } else {
-                mergedCarDoorHints.push(hint);
-              }
-            }
+          const targetFacilityType = row.gubun === "WCLF" ? "WHEELCHAIR_LIFT" : "ELEVATOR";
+          const key = `${q.stationId}:${q.lineId}:${direction}:${targetFacilityType}:${car}:${door}`;
+          if (seenCarDoorKey.has(key)) continue;
+          seenCarDoorKey.add(key);
+          const hash = sha256(canonicalJson({
+            stationId: q.stationId,
+            lineId: q.lineId,
+            direction,
+            targetFacilityType,
+            carNumber: car,
+            doorNumber: door,
+            dtlLoc: loc,
+          }));
+          const hint = {
+            id: `cardoor-${q.stationId}-${q.lineId}-${direction}-${targetFacilityType}-${car}-${door}-${hash.slice(0, 16)}`,
+            stationId: q.stationId,
+            lineId: q.lineId,
+            direction,
+            targetFacilityType,
+            carNumber: car,
+            doorNumber: door,
+            sourceId: "kric-station-convenience-standard",
+            sourceSnapshotId: kricConvenience.snapshotId,
+            providerRecordHash: q.providerRecordHash,
+            provenanceKind: "OFFICIAL_SOURCE",
+            verificationStatus: "VERIFIED",
+            lastVerifiedAt: kricConvenience.capturedAt,
+            evidenceHash: kricConvenience.rawSha256,
+          };
+          kricCarDoorHintCount += 1;
+          const reasons = carDoorHintContractViolations(hint);
+          if (reasons.length > 0) {
+            quarantinedCarDoorHints.push({
+              id: hint.id,
+              stationId: hint.stationId,
+              lineId: hint.lineId,
+              direction: hint.direction,
+              targetFacilityType: hint.targetFacilityType,
+              carNumber: hint.carNumber,
+              doorNumber: hint.doorNumber,
+              gubun: row.gubun ?? "",
+              dtlLoc: loc,
+              providerRecordHash: hint.providerRecordHash,
+              reasons,
+            });
+          } else {
+            mergedCarDoorHints.push(hint);
           }
         }
       }
@@ -1895,7 +1830,7 @@ export async function prepareNationwideCandidate({
   for (const { reasons } of quarantinedCarDoorHints) {
     for (const reason of reasons) quarantineByReason[reason] = (quarantineByReason[reason] ?? 0) + 1;
   }
-  const carDoorHintQuarantine = {
+  return {
     schemaVersion: 1,
     artifactKind: "datapack-car-door-hint-quarantine",
     issue: "https://github.com/AquilaXk/easysubway-data/issues/854",
@@ -1920,10 +1855,16 @@ export async function prepareNationwideCandidate({
     },
     rows: quarantinedCarDoorHints,
   };
-  if (writeFiles) {
-    await writeFile(path.join(repositoryRoot, CAR_DOOR_HINT_QUARANTINE_PATH), jsonBytes(carDoorHintQuarantine));
-  }
+}
 
+function finalizeNationwidePackAndExternalStopTimes({
+  materializedFixture, finalPack, sourceInventory, freshnessPolicy,
+  busanAccessibility, busanTimetable, daeguAccessibility, daeguTimetable1, daeguTimetable2, daeguTimetable3,
+  daejeonAccessibility, daejeonTimetable, gwangjuAccessibility, molitTransferMeta,
+  busanTransfer, measuredTransfer, kricEscalator, stationPathwayNodes, stationPathwayEdges,
+  transferRules, outOfStationTransferLinks, rides, outOfStationEdges, platformInfoMap,
+  basePackBytes, fanIn, overridesBytes, gwangjuTimetable,
+}) {
   const regionalSourcesToAdd = [
     {
       id: "kric-station-platform",
@@ -1952,7 +1893,7 @@ export async function prepareNationwideCandidate({
     if (!finalPack.sourceInventory.some((s) => s.id === item.id)) {
       const source = sourceInventory.sources.find((s) => s.id === item.id);
       if (!source) throw new Error(`Source not found in inventory: ${item.id}`);
-      finalPack.sourceInventory.push(packSource(source, item.updatedAt));
+      finalPack.sourceInventory.push(buildPackSourceEntry(source, item.updatedAt));
     }
   }
 
@@ -1968,7 +1909,6 @@ export async function prepareNationwideCandidate({
     transferPackSource.fields = [...new Set([...transferPackSource.fields, ...citingTables])];
     transferPackSource.coverageScope.sourceDomains = [...new Set([...transferPackSource.coverageScope.sourceDomains, ...transferDomains])];
   }
-
 
   const defaultPlatformMap = buildNationwidePlatformInfoMap(finalPack);
   finalPack.stationLines = finalPack.stationLines.map((sl) => {
@@ -2039,12 +1979,13 @@ export async function prepareNationwideCandidate({
     }, ...materializedFixture.packs.slice(1)],
   };
   const nationwidePackBytes = Buffer.from(`${JSON.stringify(writtenFixture)}\n`);
-  if (writeFiles) {
-    await writeFile(path.join(repositoryRoot, OFFICIAL_STOP_TIMES_PATH), officialStopTimes.bytes);
-    await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
-  }
+  return { nationwidePackRelPath, officialStopTimes, nationwidePackBytes };
+}
 
-  // 3. Prepare route edges
+function buildNationwideRouteEdgeInput({
+  transferEdges, outOfStationEdges, rideEdges, fanIn, snapshots, finalPack,
+  candidateIdOverride, releaseSequence, pairs,
+}) {
   const routeEdges = [...transferEdges, ...outOfStationEdges, ...rideEdges]
     .sort((a, b) => Buffer.compare(Buffer.from(a.edgeId), Buffer.from(b.edgeId)));
 
@@ -2086,11 +2027,263 @@ export async function prepareNationwideCandidate({
 
   const routeInputRelPath = "tools/datapack/release/nationwide-route-edge-input.json";
   const routeInputBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(routeInput));
-  if (writeFiles) {
-    await writeFile(path.join(repositoryRoot, routeInputRelPath), routeInputBytes);
-  }
 
-  // 3.1 Prepare nationwide station-line input with complete accessibility evidence rows
+  return {
+    candidateId,
+    scopeId,
+    sourceSetSha256,
+    stationSetSha256,
+    lineOperatorMap,
+    routeInput,
+    routeInputRelPath,
+    routeInputBytes,
+  };
+}
+
+function buildFacilityEvidenceRow({
+  stationLineCandidate, stationId, lineId, operatorId, key,
+  kricMap, kricMeta, busanMap, busanObservedByCode, busanMeta,
+  daeguMap, daeguMeta, daejeonMap, daejeonMeta, gwangjuMap, gwangjuMeta,
+}) {
+  const baseRow = (sourceMeta, { state, providerRecordHash, evidenceKind, evidenceReason }) => ({
+    ...stationLineCandidate,
+    stationId,
+    lineId,
+    operatorId,
+    domain: "FACILITY",
+    state,
+    sourceId: sourceMeta.sourceId,
+    sourceSnapshotId: sourceMeta.snapshotId,
+    evidenceRawSha256: sourceMeta.rawSha,
+    providerRecordHash,
+    capturedAt: sourceMeta.capturedAt,
+    freshUntil: sourceMeta.freshUntil,
+    provenanceId: sourceMeta.rawSha,
+    licenseId: sourceMeta.licenseId,
+    mappingContractVersion: "station-line-v1",
+    materializerVersion: "1",
+    evidenceKind,
+    evidenceReason,
+  });
+  const unknownHash = () => sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" }));
+
+  if (kricMap.has(key)) {
+    const q = kricMap.get(key);
+    if (q.status === "UNVERIFIED_EVIDENCE_BLOCKED") {
+      return baseRow(kricMeta, {
+        state: "UNKNOWN",
+        providerRecordHash: unknownHash(),
+        evidenceKind: "PROVIDER_NO_DATA",
+        evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+      });
+    }
+    return baseRow(kricMeta, {
+      state: "VERIFIED_PRESENT",
+      providerRecordHash: q.providerRecordHash,
+      evidenceKind: "OBSERVED",
+      evidenceReason: "OFFICIAL_FACILITY_OBSERVED",
+    });
+  }
+  if (busanMap.has(key)) {
+    const r = busanMap.get(key);
+    const facilityState = busanFacilityState(busanObservedByCode.get(r.stationCode));
+    if (facilityState === "UNKNOWN") {
+      return baseRow(busanMeta, {
+        state: "UNKNOWN",
+        providerRecordHash: unknownHash(),
+        evidenceKind: "PROVIDER_NO_DATA",
+        evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+      });
+    }
+    const hasFac = facilityState === "VERIFIED_PRESENT";
+    return baseRow(busanMeta, {
+      state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+      providerRecordHash: sha256(canonicalJson(r)),
+      evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
+      evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
+    });
+  }
+  for (const [map, meta] of [[daeguMap, daeguMeta], [daejeonMap, daejeonMeta]]) {
+    if (map.has(key)) {
+      const r = map.get(key);
+      const hasFac = (r.elevator > 0) || (r.wheelchair_lift > 0) || (r.escalator > 0);
+      return baseRow(meta, {
+        state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+        providerRecordHash: sha256(canonicalJson(r)),
+        evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
+        evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
+      });
+    }
+  }
+  if (gwangjuMap.has(key)) {
+    const r = gwangjuMap.get(key);
+    const facilityState = gwangjuFacilityState(r);
+    if (facilityState === "UNKNOWN") {
+      return baseRow(gwangjuMeta, {
+        state: "UNKNOWN",
+        providerRecordHash: unknownHash(),
+        evidenceKind: "PROVIDER_NO_DATA",
+        evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+      });
+    }
+    const hasFac = facilityState === "VERIFIED_PRESENT";
+    return baseRow(gwangjuMeta, {
+      state: facilityState,
+      providerRecordHash: sha256(canonicalJson(r)),
+      evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
+      evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
+    });
+  }
+  return baseRow(kricMeta, {
+    state: "UNKNOWN",
+    providerRecordHash: unknownHash(),
+    evidenceKind: "PROVIDER_NO_DATA",
+    evidenceReason: "FACILITY_DATA_NOT_PROVIDED",
+  });
+}
+
+function buildTransferEvidenceRow({
+  stationLineCandidate, stationId, lineId, operatorId, key,
+  stationToLines, outOfStationTransferStationIds, busanDaeguTransferStationIds,
+  transferMetrics, officialEndpointRecords, officialEndpointSources,
+  molitRows, seoulMeta, molitMeta,
+}) {
+  const isTransfer = (stationToLines.get(stationId)?.length ?? 0) > 1 || outOfStationTransferStationIds.has(stationId);
+  const isBusanDaeguTransfer = busanDaeguTransferStationIds.has(stationId);
+  const matchedMetrics = (transferMetrics?.metrics ?? []).filter(
+    (m) => m.stationId === stationId && (m.fromLineId === lineId || m.toLineId === lineId)
+  );
+  const endpointRecords = officialEndpointRecords.get(key);
+
+  if (!isTransfer) {
+    return {
+      ...stationLineCandidate,
+      stationId,
+      lineId,
+      operatorId,
+      domain: "TRANSFER",
+      state: "NOT_APPLICABLE",
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: seoulMeta.snapshotId,
+      evidenceRawSha256: seoulMeta.rawSha,
+      providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "TRANSFER", state: "NOT_APPLICABLE" })),
+      capturedAt: seoulMeta.capturedAt,
+      freshUntil: seoulMeta.freshUntil,
+      provenanceId: seoulMeta.rawSha,
+      licenseId: seoulMeta.licenseId,
+      mappingContractVersion: "station-line-v1",
+      materializerVersion: "1",
+      evidenceKind: "CURRENT_APPLICABILITY_RULE",
+      evidenceReason: "canonical transfer applicability",
+    };
+  }
+  if (endpointRecords && matchedMetrics.length === 0) {
+    // #876: 서울 거리 지표가 닿지 않는 끝점은 간선을 뒷받침하는 실측·부산 원천 레코드로 닫는다. 부산 환승 간선 끝점은
+    // MOLIT 환승 존재 대신 부산교통공사 공식 레코드가 근거다(#872: MOLIT는 새 근거로 쓰지 않는다).
+    const source = officialEndpointSources.get(endpointRecords.sourceId);
+    return {
+      ...stationLineCandidate,
+      stationId,
+      lineId,
+      operatorId,
+      domain: "TRANSFER",
+      state: "VERIFIED_PRESENT",
+      sourceId: endpointRecords.sourceId,
+      sourceSnapshotId: source.sourceSnapshotId,
+      evidenceRawSha256: source.rawSha256,
+      providerRecordHash: sha256(canonicalJson(endpointRecords.metrics)),
+      capturedAt: source.capturedAt,
+      freshUntil: source.freshUntil,
+      provenanceId: source.rawSha256,
+      licenseId: source.licenseId,
+      mappingContractVersion: "station-line-v1",
+      materializerVersion: "1",
+      evidenceKind: "OBSERVED",
+      evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
+    };
+  }
+  if (isBusanDaeguTransfer) {
+    const info = BUSAN_DAEGU_TRANSFER_INFO.get(stationId);
+    const molitLine = info?.lineMapping[lineId];
+    let lineMatched = molitRows.filter((r) => r.STIN_NM === info?.molitStation && r.LN_NM === molitLine);
+    if (lineMatched.length === 0) {
+      lineMatched = molitRows.filter((r) => r.STIN_NM === info?.molitStation);
+    }
+    const transferLineRecordHash = sha256(canonicalJson(lineMatched));
+
+    return {
+      ...stationLineCandidate,
+      stationId,
+      lineId,
+      operatorId,
+      domain: "TRANSFER",
+      state: "VERIFIED_PRESENT",
+      sourceId: "molit-railway-transfer-movement",
+      sourceSnapshotId: molitMeta.snapshotId,
+      evidenceRawSha256: molitMeta.rawSha,
+      providerRecordHash: transferLineRecordHash,
+      capturedAt: molitMeta.capturedAt,
+      freshUntil: molitMeta.freshUntil,
+      provenanceId: molitMeta.rawSha,
+      licenseId: molitMeta.licenseId,
+      mappingContractVersion: "station-line-v1",
+      materializerVersion: "1",
+      evidenceKind: "OBSERVED",
+      evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
+    };
+  }
+  if (matchedMetrics.length > 0) {
+    return {
+      ...stationLineCandidate,
+      stationId,
+      lineId,
+      operatorId,
+      domain: "TRANSFER",
+      state: "VERIFIED_PRESENT",
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: seoulMeta.snapshotId,
+      evidenceRawSha256: seoulMeta.rawSha,
+      providerRecordHash: sha256(canonicalJson(matchedMetrics)),
+      capturedAt: seoulMeta.capturedAt,
+      freshUntil: seoulMeta.freshUntil,
+      provenanceId: seoulMeta.rawSha,
+      licenseId: seoulMeta.licenseId,
+      mappingContractVersion: "station-line-v1",
+      materializerVersion: "1",
+      evidenceKind: "OBSERVED",
+      evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
+    };
+  }
+  return {
+    ...stationLineCandidate,
+    stationId,
+    lineId,
+    operatorId,
+    domain: "TRANSFER",
+    state: "UNKNOWN",
+    sourceId: "seoul-metro-transfer-distance-duration",
+    sourceSnapshotId: seoulMeta.snapshotId,
+    evidenceRawSha256: seoulMeta.rawSha,
+    providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "TRANSFER", state: "UNKNOWN" })),
+    capturedAt: seoulMeta.capturedAt,
+    freshUntil: seoulMeta.freshUntil,
+    provenanceId: seoulMeta.rawSha,
+    licenseId: seoulMeta.licenseId,
+    mappingContractVersion: "station-line-v1",
+    materializerVersion: "1",
+    evidenceKind: "PROVIDER_NO_DATA",
+    evidenceReason: "TRANSFER_DATA_NOT_PROVIDED",
+  };
+}
+
+function buildNationwideStationLineInput({
+  pairs, lineOperatorMap, candidateId, sourceSetSha256, stationSetSha256,
+  fanIn, inputSnapshots, kricConvenience, seoulTransferHead, seoulTransferCapturedAt,
+  molitAdmission, molitTransferMeta, molitTransferFreshUntil, molitRows,
+  busanAccessibility, daeguAccessibility, daejeonAccessibility, gwangjuAccessibility,
+  findRegionalStationId, outOfStationTransferCandidates, stationToLines,
+  transferMetrics, officialEndpointRecords, officialEndpointSources,
+}) {
   const stationLinesForAccessibility = [...pairs.values()].map(({ stationId, lineId }) => ({
     stationId,
     lineId,
@@ -2106,34 +2299,41 @@ export async function prepareNationwideCandidate({
     stationSetSha256,
   };
 
-  const kricConvenienceRawSha = kricConvenience.rawSha256;
-  const kricConvenienceLicenseId = fanInHead(fanIn, "kric-station-convenience-standard").licenseRecordSha256;
-  const kricConvenienceCapturedAt = kricConvenience.capturedAt;
-  const kricConvenienceFreshUntil = inputSnapshots.kricConvenience.freshnessExpiresAt;
+  const kricMeta = {
+    sourceId: "kric-station-convenience-standard",
+    snapshotId: inputSnapshots.kricConvenience.snapshotId,
+    rawSha: kricConvenience.rawSha256,
+    licenseId: fanInHead(fanIn, "kric-station-convenience-standard").licenseRecordSha256,
+    capturedAt: kricConvenience.capturedAt,
+    freshUntil: inputSnapshots.kricConvenience.freshnessExpiresAt,
+  };
+  const seoulMeta = {
+    snapshotId: seoulTransferHead.snapshotId,
+    rawSha: seoulTransferHead.rawSha256,
+    licenseId: seoulTransferHead.licenseRecordSha256,
+    capturedAt: seoulTransferCapturedAt,
+    freshUntil: seoulTransferHead.freshnessExpiresAt,
+  };
+  const molitMeta = {
+    snapshotId: molitAdmission.snapshotId,
+    rawSha: molitAdmission.rawSha256,
+    licenseId: molitTransferMeta.licenseSha256,
+    capturedAt: molitTransferMeta.capturedAt,
+    freshUntil: molitTransferFreshUntil,
+  };
 
-  const seoulTransferRawSha = seoulTransferHead.rawSha256;
-  const seoulTransferLicenseId = seoulTransferHead.licenseRecordSha256;
-  const seoulTransferSnapshotId = seoulTransferHead.snapshotId;
-  const seoulTransferFreshUntil = seoulTransferHead.freshnessExpiresAt;
-
-  const molitTransferRawSha = molitAdmission.rawSha256;
-  const molitTransferLicenseId = molitTransferMeta.licenseSha256;
-  const molitTransferCapturedAt = molitTransferMeta.capturedAt;
-
-  const regionalAccessibility = (key, sourceId, snapshot) => ({
+  const regionalAccessibilityMeta = (key, sourceId, snapshot) => ({
+    sourceId,
+    snapshotId: inputSnapshots[key].snapshotId,
     rawSha: snapshot.rawSha256,
     licenseId: fanInHead(fanIn, sourceId).licenseRecordSha256,
     capturedAt: snapshot.capturedAt,
     freshUntil: inputSnapshots[key].freshnessExpiresAt,
   });
-  const busan = regionalAccessibility("busanAccessibility", "busan-transportation-accessibility", busanAccessibility);
-  const daegu = regionalAccessibility("daeguAccessibility", "daegu-transportation-accessibility", daeguAccessibility);
-  const daejeon = regionalAccessibility("daejeonAccessibility", "daejeon-transportation-accessibility", daejeonAccessibility);
-  const gwangju = regionalAccessibility("gwangjuAccessibility", "gwangju-transportation-accessibility", gwangjuAccessibility);
-  const { rawSha: busanRawSha, licenseId: busanLicenseId, capturedAt: busanCapturedAt, freshUntil: busanFreshUntil } = busan;
-  const { rawSha: daeguRawSha, licenseId: daeguLicenseId, capturedAt: daeguCapturedAt, freshUntil: daeguFreshUntil } = daegu;
-  const { rawSha: daejeonRawSha, licenseId: daejeonLicenseId, capturedAt: daejeonCapturedAt, freshUntil: daejeonFreshUntil } = daejeon;
-  const { rawSha: gwangjuRawSha, licenseId: gwangjuLicenseId, capturedAt: gwangjuCapturedAt, freshUntil: gwangjuFreshUntil } = gwangju;
+  const busanMeta = regionalAccessibilityMeta("busanAccessibility", "busan-transportation-accessibility", busanAccessibility);
+  const daeguMeta = regionalAccessibilityMeta("daeguAccessibility", "daegu-transportation-accessibility", daeguAccessibility);
+  const daejeonMeta = regionalAccessibilityMeta("daejeonAccessibility", "daejeon-transportation-accessibility", daejeonAccessibility);
+  const gwangjuMeta = regionalAccessibilityMeta("gwangjuAccessibility", "gwangju-transportation-accessibility", gwangjuAccessibility);
 
   const busanMap = new Map(busanAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
   const busanObservedByCode = new Map(observedBusanAccessibilityRows(busanAccessibility).map((r) => [r.stationCode, r]));
@@ -2146,348 +2346,23 @@ export async function prepareNationwideCandidate({
   const outOfStationTransferStationIds = new Set(
     outOfStationTransferCandidates.flatMap((l) => [l.fromStationId, l.toStationId])
   );
+  const busanDaeguTransferStationIds = new Set(BUSAN_DAEGU_TRANSFER_INFO.keys());
 
   const evidenceRows = [];
   for (const { stationId, lineId, operatorId } of stationLinesForAccessibility) {
     const key = `${stationId}\0${lineId}`;
-
-    // FACILITY
-    if (kricMap.has(key)) {
-      const q = kricMap.get(key);
-      if (q.status === "UNVERIFIED_EVIDENCE_BLOCKED") {
-        evidenceRows.push({
-          ...stationLineCandidate,
-          stationId,
-          lineId,
-          operatorId,
-          domain: "FACILITY",
-          state: "UNKNOWN",
-          sourceId: "kric-station-convenience-standard",
-          sourceSnapshotId: inputSnapshots.kricConvenience.snapshotId,
-          evidenceRawSha256: kricConvenienceRawSha,
-          providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
-          capturedAt: kricConvenienceCapturedAt,
-          freshUntil: kricConvenienceFreshUntil,
-          provenanceId: kricConvenienceRawSha,
-          licenseId: kricConvenienceLicenseId,
-          mappingContractVersion: "station-line-v1",
-          materializerVersion: "1",
-          evidenceKind: "PROVIDER_NO_DATA",
-          evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
-        });
-      } else {
-        evidenceRows.push({
-          ...stationLineCandidate,
-          stationId,
-          lineId,
-          operatorId,
-          domain: "FACILITY",
-          state: "VERIFIED_PRESENT",
-          sourceId: "kric-station-convenience-standard",
-          sourceSnapshotId: inputSnapshots.kricConvenience.snapshotId,
-          evidenceRawSha256: kricConvenienceRawSha,
-          providerRecordHash: q.providerRecordHash,
-          capturedAt: kricConvenienceCapturedAt,
-          freshUntil: kricConvenienceFreshUntil,
-          provenanceId: kricConvenienceRawSha,
-          licenseId: kricConvenienceLicenseId,
-          mappingContractVersion: "station-line-v1",
-          materializerVersion: "1",
-          evidenceKind: "OBSERVED",
-          evidenceReason: "OFFICIAL_FACILITY_OBSERVED",
-        });
-      }
-    } else if (busanMap.has(key)) {
-      const r = busanMap.get(key);
-      const facilityState = busanFacilityState(busanObservedByCode.get(r.stationCode));
-      if (facilityState === "UNKNOWN") {
-        evidenceRows.push({
-          ...stationLineCandidate,
-          stationId,
-          lineId,
-          operatorId,
-          domain: "FACILITY",
-          state: "UNKNOWN",
-          sourceId: "busan-transportation-accessibility",
-          sourceSnapshotId: busanSnapshotId,
-          evidenceRawSha256: busanRawSha,
-          providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
-          capturedAt: busanCapturedAt,
-          freshUntil: busanFreshUntil,
-          provenanceId: busanRawSha,
-          licenseId: busanLicenseId,
-          mappingContractVersion: "station-line-v1",
-          materializerVersion: "1",
-          evidenceKind: "PROVIDER_NO_DATA",
-          evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
-        });
-      } else {
-        const hasFac = facilityState === "VERIFIED_PRESENT";
-        evidenceRows.push({
-          ...stationLineCandidate,
-          stationId,
-          lineId,
-          operatorId,
-          domain: "FACILITY",
-          state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
-          sourceId: "busan-transportation-accessibility",
-          sourceSnapshotId: busanSnapshotId,
-          evidenceRawSha256: busanRawSha,
-          providerRecordHash: sha256(canonicalJson(r)),
-          capturedAt: busanCapturedAt,
-          freshUntil: busanFreshUntil,
-          provenanceId: busanRawSha,
-          licenseId: busanLicenseId,
-          mappingContractVersion: "station-line-v1",
-          materializerVersion: "1",
-          evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
-          evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
-        });
-      }
-    } else if (daeguMap.has(key)) {
-      const r = daeguMap.get(key);
-      const hasFac = (r.elevator > 0) || (r.wheelchair_lift > 0) || (r.escalator > 0);
-      evidenceRows.push({
-        ...stationLineCandidate,
-        stationId,
-        lineId,
-        operatorId,
-        domain: "FACILITY",
-        state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
-        sourceId: "daegu-transportation-accessibility",
-        sourceSnapshotId: daeguSnapshotId,
-        evidenceRawSha256: daeguRawSha,
-        providerRecordHash: sha256(canonicalJson(r)),
-        capturedAt: daeguCapturedAt,
-        freshUntil: daeguFreshUntil,
-        provenanceId: daeguRawSha,
-        licenseId: daeguLicenseId,
-        mappingContractVersion: "station-line-v1",
-        materializerVersion: "1",
-        evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
-        evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
-      });
-    } else if (daejeonMap.has(key)) {
-      const r = daejeonMap.get(key);
-      const hasFac = (r.elevator > 0) || (r.wheelchair_lift > 0) || (r.escalator > 0);
-      evidenceRows.push({
-        ...stationLineCandidate,
-        stationId,
-        lineId,
-        operatorId,
-        domain: "FACILITY",
-        state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
-        sourceId: "daejeon-transportation-accessibility",
-        sourceSnapshotId: daejeonSnapshotId,
-        evidenceRawSha256: daejeonRawSha,
-        providerRecordHash: sha256(canonicalJson(r)),
-        capturedAt: daejeonCapturedAt,
-        freshUntil: daejeonFreshUntil,
-        provenanceId: daejeonRawSha,
-        licenseId: daejeonLicenseId,
-        mappingContractVersion: "station-line-v1",
-        materializerVersion: "1",
-        evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
-        evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
-      });
-    } else if (gwangjuMap.has(key)) {
-      const r = gwangjuMap.get(key);
-      const facilityState = gwangjuFacilityState(r);
-      if (facilityState === "UNKNOWN") {
-        evidenceRows.push({
-          ...stationLineCandidate,
-          stationId,
-          lineId,
-          operatorId,
-          domain: "FACILITY",
-          state: "UNKNOWN",
-          sourceId: "gwangju-transportation-accessibility",
-          sourceSnapshotId: gwangjuSnapshotId,
-          evidenceRawSha256: gwangjuRawSha,
-          providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
-          capturedAt: gwangjuCapturedAt,
-          freshUntil: gwangjuFreshUntil,
-          provenanceId: gwangjuRawSha,
-          licenseId: gwangjuLicenseId,
-          mappingContractVersion: "station-line-v1",
-          materializerVersion: "1",
-          evidenceKind: "PROVIDER_NO_DATA",
-          evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
-        });
-      } else {
-        const hasFac = facilityState === "VERIFIED_PRESENT";
-        evidenceRows.push({
-          ...stationLineCandidate,
-          stationId,
-          lineId,
-          operatorId,
-          domain: "FACILITY",
-          state: facilityState,
-          sourceId: "gwangju-transportation-accessibility",
-          sourceSnapshotId: gwangjuSnapshotId,
-          evidenceRawSha256: gwangjuRawSha,
-          providerRecordHash: sha256(canonicalJson(r)),
-          capturedAt: gwangjuCapturedAt,
-          freshUntil: gwangjuFreshUntil,
-          provenanceId: gwangjuRawSha,
-          licenseId: gwangjuLicenseId,
-          mappingContractVersion: "station-line-v1",
-          materializerVersion: "1",
-          evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
-          evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
-        });
-      }
-    } else {
-      evidenceRows.push({
-        ...stationLineCandidate,
-        stationId,
-        lineId,
-        operatorId,
-        domain: "FACILITY",
-        state: "UNKNOWN",
-        sourceId: "kric-station-convenience-standard",
-        sourceSnapshotId: inputSnapshots.kricConvenience.snapshotId,
-        evidenceRawSha256: kricConvenienceRawSha,
-        providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
-        capturedAt: kricConvenienceCapturedAt,
-        freshUntil: kricConvenienceFreshUntil,
-        provenanceId: kricConvenienceRawSha,
-        licenseId: kricConvenienceLicenseId,
-        mappingContractVersion: "station-line-v1",
-        materializerVersion: "1",
-        evidenceKind: "PROVIDER_NO_DATA",
-        evidenceReason: "FACILITY_DATA_NOT_PROVIDED",
-      });
-    }
-
+    evidenceRows.push(buildFacilityEvidenceRow({
+      stationLineCandidate, stationId, lineId, operatorId, key,
+      kricMap, kricMeta, busanMap, busanObservedByCode, busanMeta,
+      daeguMap, daeguMeta, daejeonMap, daejeonMeta, gwangjuMap, gwangjuMeta,
+    }));
     // EXIT: #873 승강장 기준 경로에서는 출구 이동 증거를 경로 판단에 쓰지 않는다. 원장 근거 없는 하드코딩 행을 만들지 않는다.
-
-    // TRANSFER
-    const isTransfer = (stationToLines.get(stationId)?.length ?? 0) > 1 || outOfStationTransferStationIds.has(stationId);
-    const isBusanDaeguTransfer = busanDaeguTransferStationIds.has(stationId);
-    const matchedMetrics = (transferMetrics?.metrics ?? []).filter(
-      (m) => m.stationId === stationId && (m.fromLineId === lineId || m.toLineId === lineId)
-    );
-    const endpointRecords = officialEndpointRecords.get(key);
-    if (!isTransfer) {
-      evidenceRows.push({
-        ...stationLineCandidate,
-        stationId,
-        lineId,
-        operatorId,
-        domain: "TRANSFER",
-        state: "NOT_APPLICABLE",
-        sourceId: "seoul-metro-transfer-distance-duration",
-        sourceSnapshotId: seoulTransferSnapshotId,
-        evidenceRawSha256: seoulTransferRawSha,
-        providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "TRANSFER", state: "NOT_APPLICABLE" })),
-        capturedAt: seoulTransferCapturedAt,
-        freshUntil: seoulTransferFreshUntil,
-        provenanceId: seoulTransferRawSha,
-        licenseId: seoulTransferLicenseId,
-        mappingContractVersion: "station-line-v1",
-        materializerVersion: "1",
-        evidenceKind: "CURRENT_APPLICABILITY_RULE",
-        evidenceReason: "canonical transfer applicability",
-      });
-    } else if (endpointRecords && matchedMetrics.length === 0) {
-      // #876: 서울 거리 지표가 닿지 않는 끝점은 간선을 뒷받침하는 실측·부산 원천 레코드로 닫는다. 부산 환승 간선 끝점은
-      // MOLIT 환승 존재 대신 부산교통공사 공식 레코드가 근거다(#872: MOLIT는 새 근거로 쓰지 않는다).
-      const source = officialEndpointSources.get(endpointRecords.sourceId);
-      evidenceRows.push({
-        ...stationLineCandidate,
-        stationId,
-        lineId,
-        operatorId,
-        domain: "TRANSFER",
-        state: "VERIFIED_PRESENT",
-        sourceId: endpointRecords.sourceId,
-        sourceSnapshotId: source.sourceSnapshotId,
-        evidenceRawSha256: source.rawSha256,
-        providerRecordHash: sha256(canonicalJson(endpointRecords.metrics)),
-        capturedAt: source.capturedAt,
-        freshUntil: source.freshUntil,
-        provenanceId: source.rawSha256,
-        licenseId: source.licenseId,
-        mappingContractVersion: "station-line-v1",
-        materializerVersion: "1",
-        evidenceKind: "OBSERVED",
-        evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
-      });
-    } else if (isBusanDaeguTransfer) {
-      const info = busanDaeguTransferInfo.get(stationId);
-      const molitLine = info?.lineMapping[lineId];
-      let lineMatched = molitRows.filter((r) => r.STIN_NM === info?.molitStation && r.LN_NM === molitLine);
-      if (lineMatched.length === 0) {
-        lineMatched = molitRows.filter((r) => r.STIN_NM === info?.molitStation);
-      }
-      const transferLineRecordHash = sha256(canonicalJson(lineMatched));
-
-      evidenceRows.push({
-        ...stationLineCandidate,
-        stationId,
-        lineId,
-        operatorId,
-        domain: "TRANSFER",
-        state: "VERIFIED_PRESENT",
-        sourceId: "molit-railway-transfer-movement",
-        sourceSnapshotId: molitAdmission.snapshotId,
-        evidenceRawSha256: molitTransferRawSha,
-        providerRecordHash: transferLineRecordHash,
-        capturedAt: molitTransferCapturedAt,
-        freshUntil: molitTransferFreshUntil,
-        provenanceId: molitTransferRawSha,
-        licenseId: molitTransferLicenseId,
-        mappingContractVersion: "station-line-v1",
-        materializerVersion: "1",
-        evidenceKind: "OBSERVED",
-        evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
-      });
-    } else {
-      if (matchedMetrics.length > 0) {
-        evidenceRows.push({
-          ...stationLineCandidate,
-          stationId,
-          lineId,
-          operatorId,
-          domain: "TRANSFER",
-          state: "VERIFIED_PRESENT",
-          sourceId: "seoul-metro-transfer-distance-duration",
-          sourceSnapshotId: seoulTransferSnapshotId,
-          evidenceRawSha256: seoulTransferRawSha,
-          providerRecordHash: sha256(canonicalJson(matchedMetrics)),
-          capturedAt: seoulTransferCapturedAt,
-          freshUntil: seoulTransferFreshUntil,
-          provenanceId: seoulTransferRawSha,
-          licenseId: seoulTransferLicenseId,
-          mappingContractVersion: "station-line-v1",
-          materializerVersion: "1",
-          evidenceKind: "OBSERVED",
-          evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
-        });
-      } else {
-        evidenceRows.push({
-          ...stationLineCandidate,
-          stationId,
-          lineId,
-          operatorId,
-          domain: "TRANSFER",
-          state: "UNKNOWN",
-          sourceId: "seoul-metro-transfer-distance-duration",
-          sourceSnapshotId: seoulTransferSnapshotId,
-          evidenceRawSha256: seoulTransferRawSha,
-          providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "TRANSFER", state: "UNKNOWN" })),
-          capturedAt: seoulTransferCapturedAt,
-          freshUntil: seoulTransferFreshUntil,
-          provenanceId: seoulTransferRawSha,
-          licenseId: seoulTransferLicenseId,
-          mappingContractVersion: "station-line-v1",
-          materializerVersion: "1",
-          evidenceKind: "PROVIDER_NO_DATA",
-          evidenceReason: "TRANSFER_DATA_NOT_PROVIDED",
-        });
-      }
-    }
+    evidenceRows.push(buildTransferEvidenceRow({
+      stationLineCandidate, stationId, lineId, operatorId, key,
+      stationToLines, outOfStationTransferStationIds, busanDaeguTransferStationIds,
+      transferMetrics, officialEndpointRecords, officialEndpointSources,
+      molitRows, seoulMeta, molitMeta,
+    }));
   }
 
   const stationLineInput = {
@@ -2498,10 +2373,15 @@ export async function prepareNationwideCandidate({
 
   const stationLineInputRelPath = "tools/datapack/release/nationwide-station-line-input.json";
   const stationLineInputBytes = Buffer.from(canonicalCurrentCapitalStationLineInputJson(stationLineInput));
-  if (writeFiles) {
-    await writeFile(path.join(repositoryRoot, stationLineInputRelPath), stationLineInputBytes);
-  }
 
+  return {
+    stationLineInput,
+    stationLineInputRelPath,
+    stationLineInputBytes,
+  };
+}
+
+function resolveGitHeadSha(repositoryRoot) {
   const gitBin = process.env.GIT_BIN || "git";
   let gitSha;
   try {
@@ -2512,7 +2392,10 @@ export async function prepareNationwideCandidate({
   if (!/^[0-9a-f]{40}$/.test(gitSha)) {
     throw new Error(`Invalid git HEAD commit sha: "${gitSha}"`);
   }
+  return gitSha;
+}
 
+async function verifyCapitalTopologyEvidence({ fanIn, sourceInventory, read }) {
   // 수도권 topology 네트워크 증거: fan-in head → inventory admission → 재검증 증거(공식 도구의 파일 이름 규칙) → 기준 snapshot.
   const capitalHead = fanInHead(fanIn, "capital-route-topology");
   const capitalAdmissionEvidence = exactInventorySource(sourceInventory, "capital-route-topology").capitalTopologyAdmissionEvidence;
@@ -2537,13 +2420,20 @@ export async function prepareNationwideCandidate({
   const capitalBaselinePath = `tools/datapack/sources/${capitalReverification.baseline.snapshotId}.json`;
   const capitalBaselineBytes = await read(capitalBaselinePath);
 
-  const itxCoverageContractPath = "tools/datapack/itx-cheongchun-coverage-contract.json";
-  const itxCoverageContractBytes = await read(itxCoverageContractPath);
-  const itxTopologyEvidencePath = deriveApprovedItxTopologyEvidencePath(
-    JSON.parse(itxCoverageContractBytes).sourceTimetableArtifact,
-  );
-  const itxTopologyEvidenceBytes = await read(itxTopologyEvidencePath);
+  return {
+    capitalHead,
+    capitalCandidatePath,
+    capitalCandidateBytes,
+    capitalCandidate,
+    capitalReverificationPath,
+    capitalReverificationBytes,
+    capitalReverification,
+    capitalBaselinePath,
+    capitalBaselineBytes,
+  };
+}
 
+async function verifyOfficialOdFareEvidence({ finalPack, read }) {
   // 공식 OD 운임 증거: 팩에 실린 quote의 원천 admission(승인 묶음)에서 build-datapack이 검증하는 전체 형태로 만든다.
   const odFareAdmissionBytes = await read("tools/datapack/official-od-fare-admission.json");
   const odFareQuoteSourceIds = [...new Set((finalPack.officialOdFareQuotes ?? []).map(({ sourceId }) => sourceId))];
@@ -2556,6 +2446,37 @@ export async function prepareNationwideCandidate({
     || odFareQuotes.some(({ snapshotId }) => snapshotId !== odFareAdmission.snapshotId)) {
     throw new Error("nationwide candidate official OD fare quotes do not match the approved admission");
   }
+  return {
+    odFareSourceId,
+    odFareAdmission,
+    odFareAdmissionBytes,
+    odFareQuotes,
+  };
+}
+
+async function buildNationwideCandidatePreparation({
+  repositoryRoot, fanIn, sourceInventory, inputSnapshots, finalPack, read,
+  scopeId, nationwidePackRelPath, candidateId, releaseSequence,
+  requestedBy, approvedBy, routeInputRelPath, routeInputBytes,
+  stationLineInputRelPath, stationLineInputBytes,
+}) {
+  const gitSha = resolveGitHeadSha(repositoryRoot);
+  const {
+    capitalHead, capitalCandidatePath, capitalCandidateBytes, capitalCandidate,
+    capitalReverificationPath, capitalReverificationBytes, capitalReverification,
+    capitalBaselinePath, capitalBaselineBytes,
+  } = await verifyCapitalTopologyEvidence({ fanIn, sourceInventory, read });
+
+  const itxCoverageContractPath = "tools/datapack/itx-cheongchun-coverage-contract.json";
+  const itxCoverageContractBytes = await read(itxCoverageContractPath);
+  const itxTopologyEvidencePath = deriveApprovedItxTopologyEvidencePath(
+    JSON.parse(itxCoverageContractBytes).sourceTimetableArtifact,
+  );
+  const itxTopologyEvidenceBytes = await read(itxTopologyEvidencePath);
+
+  const {
+    odFareSourceId, odFareAdmission, odFareAdmissionBytes, odFareQuotes,
+  } = await verifyOfficialOdFareEvidence({ finalPack, read });
 
   const preparation = {
     schemaVersion: 1,
@@ -2640,6 +2561,122 @@ export async function prepareNationwideCandidate({
   };
 
   const preparationRelPath = "tools/datapack/release/nationwide-candidate-preparation.json";
+  return { preparation, preparationRelPath };
+}
+
+export async function prepareNationwideCandidate({
+  repositoryRoot = root,
+  releaseSequence = 122,
+  candidateId: candidateIdOverride = null,
+  requestedBy: requestedByOption = null,
+  approvedBy: approvedByOption = null,
+  platformInfoMap = null,
+  writeFiles = false,
+  // #942: 후보 입력 매니페스트를 기록하거나 후보가 고정한 입력으로 재현할 때 저장소 읽기를 바꿔 끼운다.
+  readRepositoryFile = null,
+} = {}) {
+  const { requestedBy, approvedBy } = resolveTwoPersonAuthority(requestedByOption, approvedByOption);
+  const inputs = await loadNationwideCandidateInputs({ repositoryRoot, readRepositoryFile });
+  const {
+    read, targets, fanIn, snapshots, basePackBytes, overridesBytes, baseFixture, pack,
+    sourceInventory, freshnessPolicy, molitAdmission, molitTransferMeta, molitTransferFreshUntil,
+    molitRows, seoulTransferHead, seoulTransferCapturedAt, inputSnapshots,
+    incheonTopology, incheonLine1, incheonLine2, busanAccessibility, daeguAccessibility,
+    daejeonAccessibility, gwangjuAccessibility, transferMetrics, busanTransfer, kricConvenience,
+    busanTimetable, daeguTimetable1, daeguTimetable2, daeguTimetable3, daejeonTimetable,
+    gwangjuTimetable, gwangjuRetainedRecords, capitalTimetable, korailTimetable,
+    daegyeongTimetable, stationLinesTimetable,
+  } = inputs;
+
+  const {
+    pairs, stationToLines, measuredTransfer, kricEscalator, stationPathwayNodes,
+    stationPathwayEdges, transferEdges, transferRules, officialEndpointRecords,
+    officialEndpointSources, outOfStationTransferCandidates, outOfStationTransferLinks,
+    excludedOutOfStationTransferLinks, rides, rideEdges,
+  } = await prepareNationwideTransfersAndEdges({
+    pack, targets, seoulTransferHead, seoulTransferCapturedAt, transferMetrics, busanTransfer,
+    sourceInventory, snapshots, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
+  });
+
+  const {
+    materializedFixture, finalPack, outOfStationEdges, capitalSchedule, officialLineTimetableReport,
+  } = initializeNationwidePackAndOfficialTimetables({
+    baseFixture, targets, stationPathwayNodes, stationPathwayEdges, transferRules,
+    outOfStationTransferLinks, rides, incheonTopology,
+    incheonTopologySnapshotId: inputSnapshots.incheonTopology.snapshotId,
+    incheonLine1, incheonLine2, capitalTimetable, korailTimetable, stationLinesTimetable,
+    daegyeongTimetable, sourceInventory, snapshots, evaluatedAt: fanIn.evaluatedAt,
+  });
+
+  const findRegionalStationId = createRegionalStationIdFinder(finalPack);
+  integrateRegionalAndCapitalAccessibilityFacilities({
+    finalPack, inputSnapshots, busanAccessibility, daeguAccessibility, daejeonAccessibility,
+    gwangjuAccessibility, kricConvenience, kricEscalator, findRegionalStationId,
+  });
+
+  const regionalTimetableQuarantine = await integrateRegionalAndRetainedGwangjuTimetables({
+    finalPack, sourceInventory, fanIn, read, busanTimetable, busanAccessibility,
+    daeguTimetable1, daeguTimetable2, daeguTimetable3, daeguAccessibility,
+    daejeonTimetable, daejeonAccessibility, gwangjuAccessibility,
+    gwangjuTimetable, gwangjuRetainedRecords,
+  });
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, REGIONAL_TIMETABLE_QUARANTINE_PATH), jsonBytes(regionalTimetableQuarantine));
+    await writeFile(path.join(repositoryRoot, CAPITAL_TIMETABLE_REPORT_PATH), jsonBytes(capitalSchedule.report));
+    await writeFile(path.join(repositoryRoot, OFFICIAL_LINE_TIMETABLE_REPORT_PATH), jsonBytes(officialLineTimetableReport));
+  }
+
+  const carDoorHintQuarantine = expandNationwideCarDoorHints({ finalPack, kricConvenience });
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, CAR_DOOR_HINT_QUARANTINE_PATH), jsonBytes(carDoorHintQuarantine));
+  }
+
+  const {
+    nationwidePackRelPath, officialStopTimes, nationwidePackBytes,
+  } = finalizeNationwidePackAndExternalStopTimes({
+    materializedFixture, finalPack, sourceInventory, freshnessPolicy,
+    busanAccessibility, busanTimetable, daeguAccessibility, daeguTimetable1, daeguTimetable2, daeguTimetable3,
+    daejeonAccessibility, daejeonTimetable, gwangjuAccessibility, molitTransferMeta,
+    busanTransfer, measuredTransfer, kricEscalator, stationPathwayNodes, stationPathwayEdges,
+    transferRules, outOfStationTransferLinks, rides, outOfStationEdges, platformInfoMap,
+    basePackBytes, fanIn, overridesBytes, gwangjuTimetable,
+  });
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, OFFICIAL_STOP_TIMES_PATH), officialStopTimes.bytes);
+    await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
+  }
+
+  const {
+    candidateId, scopeId, sourceSetSha256, stationSetSha256, lineOperatorMap,
+    routeInput, routeInputRelPath, routeInputBytes,
+  } = buildNationwideRouteEdgeInput({
+    transferEdges, outOfStationEdges, rideEdges, fanIn, snapshots, finalPack,
+    candidateIdOverride, releaseSequence, pairs,
+  });
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, routeInputRelPath), routeInputBytes);
+  }
+
+  const {
+    stationLineInput, stationLineInputRelPath, stationLineInputBytes,
+  } = buildNationwideStationLineInput({
+    pairs, lineOperatorMap, candidateId, sourceSetSha256, stationSetSha256,
+    fanIn, inputSnapshots, kricConvenience, seoulTransferHead, seoulTransferCapturedAt,
+    molitAdmission, molitTransferMeta, molitTransferFreshUntil, molitRows,
+    busanAccessibility, daeguAccessibility, daejeonAccessibility, gwangjuAccessibility,
+    findRegionalStationId, outOfStationTransferCandidates, stationToLines,
+    transferMetrics, officialEndpointRecords, officialEndpointSources,
+  });
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, stationLineInputRelPath), stationLineInputBytes);
+  }
+
+  const { preparation, preparationRelPath } = await buildNationwideCandidatePreparation({
+    repositoryRoot, fanIn, sourceInventory, inputSnapshots, finalPack, read,
+    scopeId, nationwidePackRelPath, candidateId, releaseSequence,
+    requestedBy, approvedBy, routeInputRelPath, routeInputBytes,
+    stationLineInputRelPath, stationLineInputBytes,
+  });
   if (writeFiles) {
     await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
   }
