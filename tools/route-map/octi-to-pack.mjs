@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 import { makeToDesignFromParams } from "./export-loom-geojson.mjs";
 import { verticesToPath } from "./audit-octolinearity.mjs";
 import { projectPointToPolylines } from "./project-nodes-to-tracks.mjs";
-import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 // ── 순수 기하 ────────────────────────────────────────────────────────────
 
@@ -254,7 +254,7 @@ export function buildTracksAndCenters(geojson, toDesign, { bundleSpacing, eps, t
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     region: "수도권",
     loom: null,

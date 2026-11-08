@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { sha256 } from "../lib/hash.mjs";
+import { resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 // region별 기대 역 point/노선 수 — QA 회귀 방지용 고정값. 새 region을 enrich할 때
 // 여기에 등록해야 exact-count 검증이 동작한다. (segment path 수는 positions-lines로
@@ -29,8 +30,8 @@ positions inside the capital pack. --check validates without rewriting files.`;
 
 function parseArgs(argv) {
   const options = {
-    pack: null,
-    index: null,
+    pack: resolveBundledRouteMapPackPath(),
+    index: "apps/mobile/assets/datapacks/index.json",
     region: "수도권",
     check: false,
     qaReport: null,
@@ -410,9 +411,9 @@ function assertLabelCollisionBudget(labelCollisionQa, maxLabelOverlaps) {
 
 async function updateIndex(indexPath, compressedBytes, sqliteBytes) {
   const index = JSON.parse(await readFile(indexPath, "utf8"));
-  const capital = index.packs.find((pack) => pack.id === "capital");
+  const capital = index.packs.find((pack) => pack.id === "nationwide" || pack.id === "capital");
   if (!capital) {
-    throw new Error("capital pack not found in datapack index");
+    throw new Error("capital or nationwide pack not found in datapack index");
   }
   capital.sha256 = sha256(compressedBytes);
   capital.sqliteSha256 = sha256(sqliteBytes);

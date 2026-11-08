@@ -11,7 +11,7 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync } from "node:fs";
 import { octilinearPolyline } from "./octolinearize-line-tracks.mjs";
 import { parsePathVertices, pointToSegmentDistance, verticesToPath } from "./audit-octolinearity.mjs";
-import { openPack, writePack, cleanupPackDir } from "./pack-io.mjs";
+import { openPack, writePack, cleanupPackDir, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -251,7 +251,7 @@ function applyConvergence(db, groups, oracle, selected, tracksByLine, check, reg
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     region: "수도권",
     oracle: "tools/route-map/oracle-transfer-spans.json",

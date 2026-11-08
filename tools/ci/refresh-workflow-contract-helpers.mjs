@@ -47,9 +47,11 @@ function parseScalar(raw) {
 }
 
 function parseKeyValue(trimmed) {
-  const match = /^([A-Za-z0-9_.-]+):(?:\s*(.*))?$/u.exec(trimmed);
-  if (!match) return null;
-  return { key: match[1], rest: (match[2] ?? "").trim() };
+  const colonIdx = trimmed.indexOf(":");
+  if (colonIdx <= 0) return null;
+  const key = trimmed.slice(0, colonIdx);
+  if (!/^[A-Za-z0-9_.-]+$/u.test(key)) return null;
+  return { key, rest: trimmed.slice(colonIdx + 1).trim() };
 }
 
 function firstMeaningfulIndex(lines, start, end) {
@@ -264,15 +266,28 @@ function parseKvNodeValue(kv, lines, childStart, childEnd) {
   return kv.rest ? parseScalar(kv.rest) : parseYamlNode(lines, childStart, childEnd);
 }
 
+function parseKvStringMapOrScalar(kv, lines, childStart, childEnd, baseIndent) {
+  return kv.rest ? parseScalar(kv.rest) : parseStepStringMap(lines, childStart, childEnd, baseIndent);
+}
+
+const JOB_STRUCTURED_PARSERS = {
+  environment: (kv, lines, childStart, childEnd) =>
+    kv.rest ? stripQuotes(kv.rest) : parseKvNodeValue(kv, lines, childStart, childEnd),
+  permissions: (kv, lines, childStart, childEnd) => parseKvStringMapOrScalar(kv, lines, childStart, childEnd, 6),
+  concurrency: (kv, lines, childStart, childEnd) => parseKvNodeValue(kv, lines, childStart, childEnd),
+  env: (kv, lines, childStart, childEnd) => parseKvStringMapOrScalar(kv, lines, childStart, childEnd, 6),
+  needs: (kv, lines, childStart, childEnd) => parseKvNodeValue(kv, lines, childStart, childEnd),
+  outputs: (kv, lines, childStart, childEnd) => parseKvStringMapOrScalar(kv, lines, childStart, childEnd, 6),
+  steps: (_kv, lines, childStart, childEnd) => parseStepsSection(lines, childStart, childEnd, 6),
+};
+
 function applyJobStructuredProperty(job, kv, lines, childStart, childEnd) {
-  if (kv.key === "environment") job.environment = kv.rest ? stripQuotes(kv.rest) : parseKvNodeValue(kv, lines, childStart, childEnd);
-  else if (kv.key === "permissions") job.permissions = kv.rest ? parseScalar(kv.rest) : parseStepStringMap(lines, childStart, childEnd, 6);
-  else if (kv.key === "concurrency") job.concurrency = parseKvNodeValue(kv, lines, childStart, childEnd);
-  else if (kv.key === "env") job.env = kv.rest ? parseScalar(kv.rest) : parseStepStringMap(lines, childStart, childEnd, 6);
-  else if (kv.key === "needs") job.needs = parseKvNodeValue(kv, lines, childStart, childEnd);
-  else if (kv.key === "outputs") job.outputs = kv.rest ? parseScalar(kv.rest) : parseStepStringMap(lines, childStart, childEnd, 6);
-  else if (kv.key === "steps") job.steps = parseStepsSection(lines, childStart, childEnd, 6);
-  else applyJobScalarProperty(job, kv.key, kv.rest);
+  const parser = JOB_STRUCTURED_PARSERS[kv.key];
+  if (parser) {
+    job[kv.key] = parser(kv, lines, childStart, childEnd);
+    return;
+  }
+  applyJobScalarProperty(job, kv.key, kv.rest);
 }
 
 function parseSingleJob(id, lines, start, end) {
@@ -373,7 +388,14 @@ export function ifCondition(stepOrBlock) {
     return stepOrBlock.if ?? null;
   }
   if (typeof stepOrBlock !== "string") return null;
-  return /\n\s*if:\s*([^\n]+)/u.exec(stepOrBlock)?.[1]?.trim() ?? null;
+  for (const line of stepOrBlock.split("\n").slice(1)) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("if:")) {
+      const afterColon = trimmed.slice(3);
+      if (afterColon.length > 0) return afterColon.trim();
+    }
+  }
+  return null;
 }
 
 function findMatchingSteps(allSteps, name) {

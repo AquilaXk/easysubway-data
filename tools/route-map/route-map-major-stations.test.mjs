@@ -60,10 +60,14 @@ function openCapitalPack() {
       "utf8",
     ),
   );
-  const pack = index.packs.find((entry) => entry.id === "capital");
-  const sqliteBytes = gunzipSync(
-    readFileSync(path.join(root, "apps/mobile", pack.asset)),
+  const pack = index.packs.find(
+    (entry) => entry.id === "nationwide" || entry.id === "capital",
   );
+  const packRel = (pack.asset ?? pack.url).replace(/^\/+/, "");
+  const packFile = packRel.startsWith("apps/mobile/")
+    ? path.join(root, packRel)
+    : path.join(root, "apps/mobile", packRel);
+  const sqliteBytes = gunzipSync(readFileSync(packFile));
   const dir = mkdtempSync(path.join(tmpdir(), "major-stations-"));
   const sqlitePath = path.join(dir, "capital.sqlite");
   writeFileSync(sqlitePath, sqliteBytes);

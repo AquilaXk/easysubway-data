@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { sha256 } from "../lib/hash.mjs";
+import { resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 // 공식 노선 색(route-map-line-colors.json)을 capital 팩의 lines.color에 반영한다.
 // 위키에서 확정된 노선만 교체하고, 미확정 노선은 데이터팩 노선도(원본 SVG)에서
@@ -17,8 +18,8 @@ function usage() {
 
 function parseArgs(argv) {
   const options = {
-    pack: null,
-    index: null,
+    pack: resolveBundledRouteMapPackPath(),
+    index: "apps/mobile/assets/datapacks/index.json",
     colors: "tools/route-map/route-map-line-colors.json",
     check: false,
   };
@@ -137,9 +138,9 @@ function assertLineColors(summary) {
 
 async function updateIndex(indexPath, compressedBytes, sqliteBytes) {
   const index = JSON.parse(await readFile(indexPath, "utf8"));
-  const capital = index.packs.find((pack) => pack.id === "capital");
+  const capital = index.packs.find((pack) => pack.id === "nationwide" || pack.id === "capital");
   if (!capital) {
-    throw new Error("capital pack not found in datapack index");
+    throw new Error("capital or nationwide pack not found in datapack index");
   }
   capital.sha256 = sha256(compressedBytes);
   capital.sqliteSha256 = sha256(sqliteBytes);

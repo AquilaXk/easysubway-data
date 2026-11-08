@@ -9,7 +9,7 @@ import {
   loadRegionRespaceGraph,
   medianStationChainLength,
 } from "./respace-route-map.mjs";
-import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, repoRoot, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 /** hasStationEnds chain arc length 분포 (nearest-rank 분위수). */
 export function chainLengthStats(graph) {
@@ -214,7 +214,7 @@ export function octolinearityViolations(tracksPoints, { toleranceDeg = 0.5 } = {
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     region: "수도권",
     json: null,
     compare: null,

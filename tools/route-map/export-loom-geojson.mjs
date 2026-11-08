@@ -11,7 +11,7 @@
 // 사용: node tools/route-map/export-loom-geojson.mjs [--pack …] [--region 수도권] [--out capital.geojson]
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { writeFileSync } from "node:fs";
-import { cleanupPackDir, openPack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 export const round6 = (v) => Math.round(v * 1e6) / 1e6;
 
@@ -118,7 +118,7 @@ export function splitHighDegreeNodes(nodeCoord, edgeList) {
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     region: "수도권",
     out: null,
   };

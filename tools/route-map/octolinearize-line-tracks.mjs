@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { verticesToPath } from "./audit-octolinearity.mjs";
-import { cleanupPackDir, openPack, repoRoot, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, repoRoot, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 /**
  * 두 노드 a→b를 8방향 세그먼트 목록(정점 배열)으로 잇는다. 도그레그 1회 허용.
@@ -114,7 +114,7 @@ export function octilinearPolyline(nodes) {
 }
 
 function parseArgs(argv) {
-  const o = { pack: "apps/mobile/assets/datapacks/capital.sqlite.gz", index: "apps/mobile/assets/datapacks/index.json", region: "수도권", lines: [], all: false, branches: null, check: false };
+  const o = { pack: resolveBundledRouteMapPackPath(), index: "apps/mobile/assets/datapacks/index.json", region: "수도권", lines: [], all: false, branches: null, check: false };
   for (let i = 0; i < argv.length; i += 1) {
     switch (argv[i]) {
       case "--region": o.region = argv[++i]; break;

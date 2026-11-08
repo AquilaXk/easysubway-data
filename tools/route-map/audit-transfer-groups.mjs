@@ -6,7 +6,7 @@
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, repoRoot, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const compareStrings = (a, b) => a.localeCompare(b, "en");
@@ -208,7 +208,7 @@ function appendLineViolation(violations, name, stationId, actual, expected) {
 
 function parseArgs(argv) {
   const options = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     region: "수도권",
     json: null,
     strict: false,

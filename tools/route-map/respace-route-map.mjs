@@ -487,11 +487,11 @@ export function respaceGraph(graph, options) {
   };
 }
 
-import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
+import { cleanupPackDir, openPack, resolveBundledRouteMapPackPath, writePack } from "./pack-io.mjs";
 
 function parseArgs(argv) {
   const o = {
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     index: "apps/mobile/assets/datapacks/index.json",
     region: "수도권",
     min: 1.0,

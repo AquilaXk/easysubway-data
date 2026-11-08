@@ -25,7 +25,7 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { canonicalStationName, resolveLineMap } from "./apply-sma-svg-positions.mjs";
-import { openPack, cleanupPackDir, repoRoot } from "./pack-io.mjs";
+import { openPack, cleanupPackDir, repoRoot, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 import { SEOUL } from "./sma-region-configs.mjs";
 
 function resolveRepo(p) {
@@ -122,7 +122,7 @@ export function main() {
   const o = {
     svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
     geometry: "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     dryRun: false,
     json: null,
   };

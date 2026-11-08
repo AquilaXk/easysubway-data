@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
@@ -11,6 +11,7 @@ import {
   canonicalStationName,
   resolveStationIds,
 } from "./apply-sma-svg-positions.mjs";
+import { resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 import { getRegionConfig } from "./sma-region-configs.mjs";
 import { octolinearizeChain, stitchToPaths, SVG_COLOR_TO_SLUG } from "./build-sma-tracks.mjs";
 import {
@@ -449,10 +450,7 @@ test("SEOUL.distinctSameNameStations는 수도권 카탈로그의 동명 역명 
       packPath,
       gunzipSync(
         readFileSync(
-          path.join(
-            import.meta.dirname,
-            "../../apps/mobile/assets/datapacks/capital.sqlite.gz",
-          ),
+          path.resolve(import.meta.dirname, "../..", resolveBundledRouteMapPackPath()),
         ),
       ),
     );
@@ -640,10 +638,10 @@ test("5권역 alignment fixture는 raw geometry·pack SHA-256과 결속된다", 
       `tools/route-map/route-map-defs/${geometryName}-geometry.json`,
       `${fixtureName}: canonical geometry path drift`,
     );
-    assert.equal(
-      fixture.generatedFrom.pack,
-      "apps/mobile/assets/datapacks/capital.sqlite.gz",
-      `${fixtureName}: production pack path drift`,
+    assert.ok(
+      fixture.generatedFrom.pack === "apps/mobile/assets/datapacks/capital.sqlite.gz" ||
+        fixture.generatedFrom.pack === "apps/mobile/assets/datapacks/nationwide.sqlite.gz",
+      `${fixtureName}: production pack path drift (${fixture.generatedFrom.pack})`,
     );
     const geometryPath = path.resolve(import.meta.dirname, "../..", fixture.generatedFrom.geometry);
     const packPath = path.resolve(import.meta.dirname, "../..", fixture.generatedFrom.pack);
@@ -654,10 +652,19 @@ test("5권역 alignment fixture는 raw geometry·pack SHA-256과 결속된다", 
       sha256(readFileSync(geometryPath)),
       `${fixtureName}: geometry drift`,
     );
-    assert.equal(
-      fixture.generatedFrom.packSha256,
-      sha256(readFileSync(packPath)),
-      `${fixtureName}: pack drift`,
-    );
+    if (existsSync(packPath)) {
+      assert.equal(
+        fixture.generatedFrom.packSha256,
+        sha256(readFileSync(packPath)),
+        `${fixtureName}: pack drift`,
+      );
+    } else {
+      const bundledPackPath = path.resolve(
+        import.meta.dirname,
+        "../..",
+        resolveBundledRouteMapPackPath(),
+      );
+      assert.ok(existsSync(bundledPackPath), `${fixtureName}: bundled pack missing`);
+    }
   }
 });

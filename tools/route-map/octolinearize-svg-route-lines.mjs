@@ -37,7 +37,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveLineMap } from "./apply-sma-svg-positions.mjs";
 import { octilinearSegment, splitAtOutlierGaps } from "./octolinearize-line-tracks.mjs";
-import { openPack, cleanupPackDir, repoRoot } from "./pack-io.mjs";
+import { openPack, cleanupPackDir, repoRoot, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 import { SEOUL } from "./sma-region-configs.mjs";
 
 function resolveRepo(p) {
@@ -289,7 +289,7 @@ export function buildLineRuns(db, region, lineId, branches) {
 function parseArgs(argv) {
   const o = {
     svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
-    pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    pack: resolveBundledRouteMapPackPath(),
     region: "수도권",
     branches: "tools/route-map/line-branches.json",
     filletRadius: 6,

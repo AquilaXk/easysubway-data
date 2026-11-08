@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -17,7 +17,7 @@ import {
   normalizeSvgForCompile,
   variantManifestEntry,
 } from "./compile-basemap-vec.mjs";
-import { cleanupPackDir, openPack } from "./pack-io.mjs";
+import { cleanupPackDir, openDefaultPack, resolveBundledRouteMapPackPath } from "./pack-io.mjs";
 import { REGION_CONFIGS } from "./sma-region-configs.mjs";
 import { decodeVec, encodeVec, VERB } from "./vec-codec.mjs";
 
@@ -81,10 +81,7 @@ function syntheticSvg(body) {
 }
 
 test("슬러그→lines.id 등록부는 기존 이름 규칙(접두+접미)으로 찾은 픽스처 팩 노선 id와 같다", () => {
-  const { db, dir } = openPack(
-    "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    "basemap-line-overlays-",
-  );
+  const { db, dir } = openDefaultPack("basemap-line-overlays-");
   try {
     for (const config of Object.values(REGION_CONFIGS)) {
       assert.deepEqual(
@@ -101,6 +98,59 @@ test("슬러그→lines.id 등록부는 기존 이름 규칙(접두+접미)으�
   } finally {
     db.close();
     cleanupPackDir(dir);
+  }
+});
+
+test("resolveBundledRouteMapPackPath와 openDefaultPack은 nationwide.sqlite.gz 단일 레이아웃과 capital.sqlite.gz 레이아웃 양쪽에서 동작한다", () => {
+  const packBytes = readFileSync(path.join(root, resolveBundledRouteMapPackPath(root)));
+  const layouts = [
+    {
+      id: "nationwide",
+      asset: "assets/datapacks/nationwide.sqlite.gz",
+      expectedRelPath: "apps/mobile/assets/datapacks/nationwide.sqlite.gz",
+    },
+    {
+      id: "capital",
+      asset: "assets/datapacks/capital.sqlite.gz",
+      expectedRelPath: "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    },
+  ];
+  for (const layout of layouts) {
+    const tempRoot = mkdtempSync(path.join(tmpdir(), `pack-compat-${layout.id}-`));
+    try {
+      const datapacksDir = path.join(tempRoot, "apps/mobile/assets/datapacks");
+      mkdirSync(datapacksDir, { recursive: true });
+      writeFileSync(path.join(tempRoot, layout.expectedRelPath), packBytes);
+      const indexPath = path.join(datapacksDir, "index.json");
+      writeFileSync(
+        indexPath,
+        JSON.stringify({ packs: [{ id: layout.id, asset: layout.asset }] }, null, 2),
+      );
+
+      assert.equal(resolveBundledRouteMapPackPath(tempRoot), layout.expectedRelPath);
+      const { db, dir } = openDefaultPack(`basemap-line-overlays-${layout.id}-`, tempRoot);
+      try {
+        for (const config of Object.values(REGION_CONFIGS)) {
+          assert.deepEqual(
+            Object.fromEntries(resolveLineMap(db, config)),
+            config.slugToLineId,
+            `${layout.id}/${config.id}: resolveLineMap 정합`,
+          );
+        }
+      } finally {
+        db.close();
+        cleanupPackDir(dir);
+      }
+
+      unlinkSync(indexPath);
+      assert.equal(
+        resolveBundledRouteMapPackPath(tempRoot),
+        layout.expectedRelPath,
+        `${layout.id}: index.json이 없을 때도 파일 존재 순서로 해석한다`,
+      );
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   }
 });
 
