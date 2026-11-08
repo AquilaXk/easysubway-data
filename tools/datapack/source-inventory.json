@@ -9177,8 +9177,8 @@
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
       "updateFrequency": "daily",
-      "observedDataUpdatedAt": "2026-11-07",
-      "retrievedAt": "2026-11-07",
+      "observedDataUpdatedAt": "2026-11-08",
+      "retrievedAt": "2026-11-08",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -9242,23 +9242,23 @@
           "productionUseAllowed": true,
           "unlockStatus": "not_required"
         },
-        "productionUseNoteKo": "fresh KRIC escalator snapshot kric-station-escalator-detailed-20261107T163200352Z registration verified."
+        "productionUseNoteKo": "fresh KRIC escalator snapshot kric-station-escalator-detailed-20261108T164202956Z registration verified."
       },
       "accessibilityAdmissionEvidence": {
         "issue": 3036,
         "decision": "APPROVED",
         "licenseEvidenceHash": "2953cce5b977132db7e7a428c677e6d292401f77c40a1e8f8dd84af5a3e61df2",
         "productionUseAllowed": true,
-        "snapshotId": "kric-station-escalator-detailed-20261107T163200352Z",
-        "snapshotPath": "tools/datapack/sources/kric-station-escalator-detailed-20261107T163200352Z.json",
-        "capturedAt": "2026-11-07T16:32:00.352Z",
-        "observedAt": "2026-11-07T16:32:00.352Z",
-        "freshUntil": "2026-11-08T16:32:00.352Z",
+        "snapshotId": "kric-station-escalator-detailed-20261108T164202956Z",
+        "snapshotPath": "tools/datapack/sources/kric-station-escalator-detailed-20261108T164202956Z.json",
+        "capturedAt": "2026-11-08T16:42:02.956Z",
+        "observedAt": "2026-11-08T16:42:02.956Z",
+        "freshUntil": "2026-11-09T16:42:02.956Z",
         "absenceEvidenceMode": "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED",
         "rawSha256": "385620d7341835dc78ed775ee1e90c3c8e615286f287eeac26437b93101b7bd3",
         "contentSha256": "62d15d5e35bd6240a276c513bfd3b394341766221bb357a7e8c1a5e910c8d187",
         "schemaFingerprint": "bf492f17cab7aa5ff8bb4ca4426162d6833bb6de639d1c3613d4ec2e47f892ab",
-        "snapshotFileSha256": "5a4a86751a944e1450224095f50dd9575bde1693ceacd06cf789823f4d4a1db8"
+        "snapshotFileSha256": "bd7196a0f8ad59fe00466009965dfd75ab51a2b836a1ec1d948b73bab41b16fb"
       }
     }
   ]
