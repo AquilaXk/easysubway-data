@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   buildNationwidePublicApiSearchPlan,
   collectNationwidePublicApiCoverage,
+  mergePartialCoverageReaudit,
   summarizeUnresolvedDiagnostics,
 } from "./collect-nationwide-public-api-coverage.mjs";
 
@@ -1184,4 +1185,42 @@ test("같은 id의 builtin과 catalog 후보 충돌 시 catalog 후보의 필드
   const candidateIds = searchPlan.entries[0].knownProviderCandidateIds;
   assert.equal(candidateIds.length, 1);
   assert.equal(candidateIds[0], "kric-nationwide-station-interval-distance");
+});
+
+test("전체 크롤과 부분 재감사는 auditScope로 감사 범위를 명시하고 부분 재감사 병합은 전체 크롤 generatedAt을 보존한다 (#3036 7-47)", async () => {
+  const fullNow = new Date("2026-07-25T09:12:39.105Z");
+  const fullResolutions = await collectNationwidePublicApiCoverage({
+    searchPlan: plan(),
+    credentials: { KRIC_SERVICE_KEY: "key" },
+    fetchImpl: async () => xmlResponse(),
+    now: fullNow,
+  });
+  assert.deepEqual(fullResolutions.auditScope, {
+    mode: "FULL_SEARCH_PLAN",
+    auditedEntryCount: 1,
+    totalSearchPlanEntryCount: 1,
+  });
+
+  const reauditNow = new Date("2026-10-23T10:18:48.032Z");
+  const subsetResolutions = await collectNationwidePublicApiCoverage({
+    searchPlan: plan(),
+    credentials: { KRIC_SERVICE_KEY: "key" },
+    fetchImpl: async () => xmlResponse(),
+    now: reauditNow,
+  });
+  const merged = mergePartialCoverageReaudit({
+    baseResolutions: fullResolutions,
+    subsetResolutions,
+    totalSearchPlanEntryCount: 187,
+    now: reauditNow,
+  });
+  assert.equal(merged.generatedAt, "2026-07-25T09:12:39.105Z");
+  assert.deepEqual(merged.auditScope, {
+    mode: "PARTIAL_REAUDIT",
+    fullCrawlGeneratedAt: "2026-07-25T09:12:39.105Z",
+    reauditedAt: "2026-10-23T10:18:48.032Z",
+    auditedEntryCount: 1,
+    totalSearchPlanEntryCount: 187,
+  });
+  assert.equal(merged.entries[0].checkedAt, "2026-10-23T10:18:48.032Z");
 });

@@ -1078,10 +1078,17 @@
       "sha256": "faa56850aefdc93a1fb579a892885b08673709bf3667fe98334466e0d0d1a8dd"
     },
     "resolutions": {
+      "auditScope": {
+        "auditedEntryCount": 4,
+        "fullCrawlGeneratedAt": "2026-07-25T09:12:39.105Z",
+        "mode": "PARTIAL_REAUDIT",
+        "reauditedAt": "2026-10-23T10:18:48.032Z",
+        "totalSearchPlanEntryCount": 187
+      },
       "entryCount": 4,
-      "generatedAt": "2026-10-23T10:18:48.032Z",
+      "generatedAt": "2026-07-25T09:12:39.105Z",
       "path": "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
-      "sha256": "20233bed53047e7557badc5ccb358d2493fbe5f4fd73cf3d86dc87417008676d"
+      "sha256": "0f56cdb286109a7c44a8e602936133c58ef2719c7f4949e0add09aa4b413846d"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",

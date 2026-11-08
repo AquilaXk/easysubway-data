@@ -383,8 +383,53 @@ export async function collectNationwidePublicApiCoverage({
     targetVersion: searchPlan.targetVersion,
     searchPlanSha256: sha256(JSON.stringify(searchPlan)),
     generatedAt: now.toISOString(),
+    auditScope: {
+      mode: "FULL_SEARCH_PLAN",
+      auditedEntryCount: searchPlan.entries.length,
+      totalSearchPlanEntryCount: searchPlan.entries.length,
+    },
     entries,
     unresolved,
+  };
+}
+
+export function mergePartialCoverageReaudit({
+  baseResolutions,
+  subsetResolutions,
+  totalSearchPlanEntryCount = (baseResolutions?.entries?.length ?? 0) + (baseResolutions?.unresolved?.length ?? 0),
+  now = new Date(),
+}) {
+  if (!baseResolutions || typeof baseResolutions !== "object" || !Array.isArray(baseResolutions.entries) || !Array.isArray(baseResolutions.unresolved)) {
+    throw new Error("baseResolutions is invalid");
+  }
+  if (!subsetResolutions || typeof subsetResolutions !== "object" || !Array.isArray(subsetResolutions.entries) || !Array.isArray(subsetResolutions.unresolved)) {
+    throw new Error("subsetResolutions is invalid");
+  }
+  const keyOf = (entry) => `${entry.regionId}:${entry.operatorId}:${entry.lineId}:${entry.sourceDomain}`;
+  const subsetKeys = new Set([
+    ...subsetResolutions.entries.map(keyOf),
+    ...subsetResolutions.unresolved.map(keyOf),
+  ]);
+  const fullCrawlGeneratedAt = baseResolutions.auditScope?.fullCrawlGeneratedAt ?? baseResolutions.generatedAt;
+  const entriesByKey = new Map(baseResolutions.entries.filter((entry) => !subsetKeys.has(keyOf(entry))).map((entry) => [keyOf(entry), entry]));
+  for (const entry of subsetResolutions.entries) entriesByKey.set(keyOf(entry), entry);
+  const unresolvedByKey = new Map(baseResolutions.unresolved.filter((entry) => !subsetKeys.has(keyOf(entry))).map((entry) => [keyOf(entry), entry]));
+  for (const entry of subsetResolutions.unresolved) unresolvedByKey.set(keyOf(entry), entry);
+  return {
+    schemaVersion: 1,
+    artifactKind: "nationwide-coverage-resolutions",
+    targetVersion: baseResolutions.targetVersion,
+    searchPlanSha256: baseResolutions.searchPlanSha256,
+    generatedAt: fullCrawlGeneratedAt,
+    auditScope: {
+      mode: "PARTIAL_REAUDIT",
+      fullCrawlGeneratedAt,
+      reauditedAt: now.toISOString(),
+      auditedEntryCount: subsetResolutions.entries.length + subsetResolutions.unresolved.length,
+      totalSearchPlanEntryCount,
+    },
+    entries: [...entriesByKey.values()],
+    unresolved: [...unresolvedByKey.values()],
   };
 }
 
@@ -864,7 +909,10 @@ function parseArgs(argv) {
   if (argv.length === 4 && argv[0] === "--plan" && argv[2] === "--output") {
     return { mode: "collect", plan: argv[1], output: argv[3] };
   }
-  throw new Error("usage: collect-nationwide-public-api-coverage.mjs --targets <targets.json> --fixture <fixture.json> --source-candidates <source-candidates.json> --inventory <source-inventory.json> --plan-output <plan.json> | --plan <plan.json> --output <resolutions.json>");
+  if (argv.length === 6 && argv[0] === "--plan" && argv[2] === "--merge-into" && argv[4] === "--output") {
+    return { mode: "collect", plan: argv[1], mergeInto: argv[3], output: argv[5] };
+  }
+  throw new Error("usage: collect-nationwide-public-api-coverage.mjs --targets <targets.json> --fixture <fixture.json> --source-candidates <source-candidates.json> --inventory <source-inventory.json> --plan-output <plan.json> | --plan <plan.json> [--merge-into <base-resolutions.json>] --output <resolutions.json>");
 }
 
 async function main(argv) {
@@ -883,7 +931,15 @@ async function main(argv) {
     return;
   }
   const searchPlan = JSON.parse(await readFile(args.plan, "utf8"));
-  const resolutions = await collectNationwidePublicApiCoverage({ searchPlan });
+  const now = new Date();
+  const collected = await collectNationwidePublicApiCoverage({ searchPlan, now });
+  const resolutions = args.mergeInto === undefined
+    ? collected
+    : mergePartialCoverageReaudit({
+      baseResolutions: JSON.parse(await readFile(args.mergeInto, "utf8")),
+      subsetResolutions: collected,
+      now,
+    });
   await writeFile(args.output, `${JSON.stringify(resolutions, null, 2)}\n`);
   console.log(`public API coverage search complete: unsupported=${resolutions.entries.length} unresolved=${resolutions.unresolved.length}`);
   console.log(`sanitized diagnostics: ${summarizeUnresolvedDiagnostics(resolutions.unresolved).join(", ")}`);
