@@ -7928,7 +7928,7 @@
       "requiredForProductionPack": true,
       "updateFrequency": "irregular-on-change",
       "observedDataUpdatedAt": "2026-06-21",
-      "retrievedAt": "2026-11-07",
+      "retrievedAt": "2026-11-08",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -7973,7 +7973,7 @@
         "issue": 1397,
         "candidateId": "seoulmetro-station-line-info",
         "sourceId": "seoulmetro-station-line-info",
-        "snapshotId": "seoulmetro-station-line-info-revalidated-20261107",
+        "snapshotId": "seoulmetro-station-line-info-revalidated-20261108",
         "decision": "APPROVED",
         "approvedBy": "aquilaXk10",
         "approvedAt": "2026-07-12T00:00:00+09:00",
@@ -7997,9 +7997,9 @@
           "productionUseAllowed": false
         },
         "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다.",
-        "revalidationEvidenceSha256": "0d4bca20354f1a9e8e658775213bdd14de9c224d209b20adf1712a04c97ceb80",
+        "revalidationEvidenceSha256": "b3cae2729d7120159c1d65b123854d6d91966e618da0a8fc765dffebebc3f6b9",
         "revalidationResponseSha256": "99248eeb6d1296db6454d3e62f4c8249d823998e0f49b77337546e19f02db756",
-        "revalidatedAt": "2026-11-07T22:04:34.096Z",
+        "revalidatedAt": "2026-11-08T22:17:55.713Z",
         "rawObjectUri": "oci://easysubway-datapacks/source-raw/seoulmetro-station-line-info/20260813/6e6060813eb9d029d5ffc0259a59553b37bfbd902fe1e03ff8246da3453bc29b.json"
       }
     },
