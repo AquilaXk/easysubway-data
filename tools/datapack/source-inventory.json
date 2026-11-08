@@ -1339,8 +1339,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "realtime",
-      "observedDataUpdatedAt": "2026-11-07",
-      "retrievedAt": "2026-11-07",
+      "observedDataUpdatedAt": "2026-11-08",
+      "retrievedAt": "2026-11-08",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -1385,10 +1385,10 @@
         "issue": 2326,
         "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
-        "snapshotId": "daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111",
-        "snapshotPath": "tools/datapack/sources/daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111.json",
-        "capturedAt": "2026-11-07T09:22:13.864Z",
-        "freshUntil": "2026-11-14T09:22:13.864Z",
+        "snapshotId": "daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d",
+        "snapshotPath": "tools/datapack/sources/daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d.json",
+        "capturedAt": "2026-11-08T18:43:42.826Z",
+        "freshUntil": "2026-11-15T18:43:42.826Z",
         "stationCount": 22,
         "edgeCount": 42,
         "excludedTransferCount": 0,
@@ -1411,7 +1411,7 @@
         "mappingSha256": "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
         "stationCodesSha256": "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
         "stationCodeSourceId": "daejeon-station-distance-fare",
-        "stationCodeSnapshotId": "daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111",
+        "stationCodeSnapshotId": "daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d",
         "stationCodeContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
       },
       "admissionEvidence": {
@@ -1502,7 +1502,7 @@
         "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
         "rowsSha256": "5888ab731dbe76b9b4791c30224664a12c37a25da50c5423d4266bc3c02c44a9",
         "topologySourceId": "daejeon-station-distance-fare",
-        "topologySnapshotId": "daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111",
+        "topologySnapshotId": "daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d",
         "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
       },
       "admissionEvidence": {
@@ -1584,8 +1584,8 @@
         "issue": 2476,
         "materializer": "tools/datapack/materialize-daejeon-accessibility.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-accessibility.test.mjs",
-        "snapshotId": "daejeon-transportation-accessibility-fe3ec2817b2f80ef78d5b152f16fe508f8d993696dcc2d466d8df988990349e6-20261107",
-        "snapshotPath": "tools/datapack/sources/daejeon-transportation-accessibility-fe3ec2817b2f80ef78d5b152f16fe508f8d993696dcc2d466d8df988990349e6-20261107.json",
+        "snapshotId": "daejeon-transportation-accessibility-d230e1c632527dcba6746f73dd7ebe6043473e1856357944529b450559c14f8d",
+        "snapshotPath": "tools/datapack/sources/daejeon-transportation-accessibility-d230e1c632527dcba6746f73dd7ebe6043473e1856357944529b450559c14f8d.json",
         "capturedAt": "2026-11-07T09:22:28.001Z",
         "freshUntil": "2026-11-08T09:22:28.001Z",
         "stationCount": 22,
@@ -1598,12 +1598,12 @@
           "15041361"
         ],
         "topologySourceId": "daejeon-station-distance-fare",
-        "topologySnapshotId": "daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111",
+        "topologySnapshotId": "daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d",
         "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
         "topologyLineages": [
           {
             "sourceId": "daejeon-station-distance-fare",
-            "snapshotId": "daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111",
+            "snapshotId": "daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d",
             "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
             "lineId": "line-7051a9c2525c"
           }
@@ -1686,9 +1686,9 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-daejeon-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-route-map-positions.test.mjs",
-        "snapshotId": "daejeon-transportation-route-map-positions-fc4e87007a4b8d038f77fe32b2adba57fa6f0e7c1cb2a503ed90783a44439511",
-        "snapshotPath": "tools/datapack/sources/daejeon-transportation-route-map-positions-fc4e87007a4b8d038f77fe32b2adba57fa6f0e7c1cb2a503ed90783a44439511.json",
-        "snapshotSha256": "fc4e87007a4b8d038f77fe32b2adba57fa6f0e7c1cb2a503ed90783a44439511",
+        "snapshotId": "daejeon-transportation-route-map-positions-3c3686fa0f433d8da6294e105a6ddb7cbfc6b3617d36961b2d0d4152fc57ddea",
+        "snapshotPath": "tools/datapack/sources/daejeon-transportation-route-map-positions-3c3686fa0f433d8da6294e105a6ddb7cbfc6b3617d36961b2d0d4152fc57ddea.json",
+        "snapshotSha256": "3c3686fa0f433d8da6294e105a6ddb7cbfc6b3617d36961b2d0d4152fc57ddea",
         "capturedAt": "2026-07-25T03:00:00.000Z",
         "stationCount": 22,
         "rawStationCount": 22,
@@ -1707,12 +1707,12 @@
         },
         "observedDataUpdatedAt": "2026-06-25",
         "topologySourceId": "daejeon-station-distance-fare",
-        "topologySnapshotId": "daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111",
+        "topologySnapshotId": "daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d",
         "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
         "topologyLineages": [
           {
             "sourceId": "daejeon-station-distance-fare",
-            "snapshotId": "daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111",
+            "snapshotId": "daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d",
             "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
             "lineId": "line-7051a9c2525c"
           }
@@ -6561,7 +6561,7 @@
         "mappingSha256": "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
         "stationCodesSha256": "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
         "stationCodeSourceId": "daejeon-station-distance-fare",
-        "stationCodeSnapshotId": "daejeon-station-distance-fare-e3e41036961d913400c53980ba64ea4b492ba17738b0b2097cbb1c78d40f5111",
+        "stationCodeSnapshotId": "daejeon-station-distance-fare-a5d2a8b145ef6e0a8910a3dc8f176f3a81f18fc15a5a419141566522eeb31a0d",
         "stationCodeContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
       }
     },
