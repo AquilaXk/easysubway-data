@@ -141,6 +141,64 @@ export function evaluateDecompressedBudget(payloadBytesByComponent, maxTotalByte
   };
 }
 
+function buildCandidateMetadata(artifact, repositoryGitSha) {
+  return {
+    repository: "AquilaXk/easysubway-data",
+    gitSha: repositoryGitSha,
+    bundleId: artifact.manifest.bundleId,
+    releaseSequence: artifact.manifest.releaseSequence,
+    stationSetSha256: artifact.manifest.stationSetSha256,
+    sourceSnapshotSetHash: artifact.provenance.sourceSnapshotSetHash,
+    signingInputSha256: artifact.signingInputSha256,
+    signedManifestRawSha256: artifact.signedManifestRawSha256,
+    payloadRootSha256: artifact.manifest.payloadSha256,
+    componentInventorySha256: artifact.componentInventorySha256,
+    componentDigests: Object.fromEntries(COMPONENTS.map((component) => [
+      component,
+      artifact.manifest[`${component}Sha256`],
+    ])),
+    activeFrom: artifact.manifest.activeFrom,
+    freshUntil: artifact.manifest.freshUntil,
+    keyId: artifact.manifest.keyId,
+  };
+}
+
+async function writeFinalOutputDirectory({
+  outputParent,
+  output,
+  artifactInventoryBytes,
+  evaluationBytes,
+  sourceFreshnessBytes,
+  materializationBytes,
+  finalBytes,
+  release,
+  final,
+  input,
+}) {
+  const temp = await mkdtemp(path.join(outputParent, ".server-route-final-"));
+  try {
+    for (const [name, bytes] of [
+      ["artifact-inventory.json", artifactInventoryBytes],
+      ["route-edge-evaluation.json", evaluationBytes],
+      ["source-freshness.json", sourceFreshnessBytes],
+      ["station-line-accessibility.json", materializationBytes],
+    ]) {
+      await writeFile(path.join(temp, name), bytes, { flag: "wx" });
+    }
+    await writeFile(path.join(temp, "server-route-bundle-final.json"), finalBytes, { flag: "wx" });
+    await assertExactOutput(temp);
+    if (release !== null) {
+      await input.beforeReleaseOutput?.();
+      await assertEvidenceFilesUnchanged(release.files);
+      assertReleaseCandidateFresh(final.candidate.freshUntil, (input.clock ?? Date.now)());
+    }
+    await rename(temp, output);
+  } catch (error) {
+    await rm(temp, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 export async function buildServerRouteBundleFinalEvidence(input) {
   if (input.beforeReleaseOutput !== undefined && typeof input.beforeReleaseOutput !== "function") {
     throw new Error("beforeReleaseOutput must be a function");
@@ -196,25 +254,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
     materializationBytes,
     outputParent,
   });
-  const candidate = {
-      repository: "AquilaXk/easysubway-data",
-      gitSha: repositoryGitSha,
-      bundleId: artifact.manifest.bundleId,
-      releaseSequence: artifact.manifest.releaseSequence,
-      stationSetSha256: artifact.manifest.stationSetSha256,
-      sourceSnapshotSetHash: artifact.provenance.sourceSnapshotSetHash,
-      signingInputSha256: artifact.signingInputSha256,
-      signedManifestRawSha256: artifact.signedManifestRawSha256,
-      payloadRootSha256: artifact.manifest.payloadSha256,
-      componentInventorySha256: artifact.componentInventorySha256,
-      componentDigests: Object.fromEntries(COMPONENTS.map((component) => [
-        component,
-        artifact.manifest[`${component}Sha256`],
-      ])),
-      activeFrom: artifact.manifest.activeFrom,
-      freshUntil: artifact.manifest.freshUntil,
-      keyId: artifact.manifest.keyId,
-  };
+  const candidate = buildCandidateMetadata(artifact, repositoryGitSha);
   const eligibility = await routeAccessibilityEligibilityGate({
     reportPath: input.eligibilityReportPath,
     candidate,
@@ -257,28 +297,18 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   const final = release?.final ?? prePublicationFinal;
   const finalBytes = Buffer.from(canonicalServerRouteBundleFinalJson(final));
 
-  const temp = await mkdtemp(path.join(outputParent, ".server-route-final-"));
-  try {
-    for (const [name, bytes] of [
-      ["artifact-inventory.json", artifactInventoryBytes],
-      ["route-edge-evaluation.json", evaluationBytes],
-      ["source-freshness.json", sourceFreshnessBytes],
-      ["station-line-accessibility.json", materializationBytes],
-    ]) {
-      await writeFile(path.join(temp, name), bytes, { flag: "wx" });
-    }
-    await writeFile(path.join(temp, "server-route-bundle-final.json"), finalBytes, { flag: "wx" });
-    await assertExactOutput(temp);
-    if (release !== null) {
-      await input.beforeReleaseOutput?.();
-      await assertEvidenceFilesUnchanged(release.files);
-      assertReleaseCandidateFresh(final.candidate.freshUntil, (input.clock ?? Date.now)());
-    }
-    await rename(temp, output);
-  } catch (error) {
-    await rm(temp, { recursive: true, force: true });
-    throw error;
-  }
+  await writeFinalOutputDirectory({
+    outputParent,
+    output,
+    artifactInventoryBytes,
+    evaluationBytes,
+    sourceFreshnessBytes,
+    materializationBytes,
+    finalBytes,
+    release,
+    final,
+    input,
+  });
   return final;
 }
 
@@ -454,6 +484,21 @@ function assertReleaseCandidateFresh(freshUntil, now) {
   }
 }
 
+async function verifySignedArtifactManifest(artifactRoot, signingInputBytes) {
+  const manifestBytes = await readNonEmptyRegular(path.join(artifactRoot, "manifest.json"), "signed manifest");
+  const signedManifest = parseCanonicalJson(manifestBytes, "signed manifest");
+  validateArtifactComponentManifest(signedManifest);
+  if (!Buffer.from(canonicalJson(withoutSignature(signedManifest))).equals(signingInputBytes)) {
+    throw new Error("signed manifest does not match signing input");
+  }
+  if (signedManifest.keyId !== signingKeyId()) throw new Error("signed manifest keyId mismatch");
+  if (signedManifest.signature.algorithm !== SIGNATURE_ALGORITHM
+    || !verifyRsaSha256Signature(signingPublicKey(), signingInputBytes, signedManifest.signature.value)) {
+    throw new Error("signed manifest signature mismatch");
+  }
+  return { manifestBytes, signedManifestRawSha256: sha256(manifestBytes) };
+}
+
 async function inspectArtifact(artifactRoot, fixed, maxTotalDecompressedBytes = fixed.buildContract.value.maxTotalDecompressedBytes) {
   const rootEntries = (await readdir(artifactRoot)).sort(bytewise);
   const signed = canonicalJson(rootEntries) === canonicalJson([...SIGNED_ARTIFACT_ROOT_FILES].sort(bytewise));
@@ -477,22 +522,9 @@ async function inspectArtifact(artifactRoot, fixed, maxTotalDecompressedBytes = 
     ...manifest,
     signature: { algorithm: SIGNATURE_ALGORITHM, value: "AA" },
   });
-  let manifestBytes = null;
-  let signedManifestRawSha256 = null;
-  if (signed) {
-    manifestBytes = await readNonEmptyRegular(path.join(artifactRoot, "manifest.json"), "signed manifest");
-    const signedManifest = parseCanonicalJson(manifestBytes, "signed manifest");
-    validateArtifactComponentManifest(signedManifest);
-    if (!Buffer.from(canonicalJson(withoutSignature(signedManifest))).equals(signingInputBytes)) {
-      throw new Error("signed manifest does not match signing input");
-    }
-    if (signedManifest.keyId !== signingKeyId()) throw new Error("signed manifest keyId mismatch");
-    if (signedManifest.signature.algorithm !== SIGNATURE_ALGORITHM
-      || !verifyRsaSha256Signature(signingPublicKey(), signingInputBytes, signedManifest.signature.value)) {
-      throw new Error("signed manifest signature mismatch");
-    }
-    signedManifestRawSha256 = sha256(manifestBytes);
-  }
+  const { manifestBytes, signedManifestRawSha256 } = signed
+    ? await verifySignedArtifactManifest(artifactRoot, signingInputBytes)
+    : { manifestBytes: null, signedManifestRawSha256: null };
   const provenance = parseCanonicalJson(provenanceBytes, "provenance");
   const compatibility = parseCanonicalJson(compatibilityBytes, "compatibility");
   validateMetadata({ manifest, provenance, compatibility, fixed });
@@ -561,6 +593,116 @@ async function inspectArtifact(artifactRoot, fixed, maxTotalDecompressedBytes = 
   };
 }
 
+function assertEmbeddedElevatorAndTransitionTables(database, routeEdges) {
+  assertEmbeddedTable(database, "station_elevator_path", [
+    { name: "path_id", type: "TEXT", notnull: 1, pk: 1 },
+    { name: "station_id", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "line_id", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "next_station_id", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "exit_no", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "platform_direction", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "step", type: "INTEGER", notnull: 1, pk: 2 },
+    { name: "detail", type: "TEXT", notnull: 1, pk: 0 },
+  ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_elevator_path);
+  assertEmbeddedTable(database, "station_elevator_path_facility", [
+    { name: "path_id", type: "TEXT", notnull: 1, pk: 1 },
+    { name: "group_kind", type: "TEXT", notnull: 1, pk: 2 },
+    { name: "facility_id", type: "TEXT", notnull: 1, pk: 3 },
+  ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_elevator_path_facility);
+  if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='facilities'").get()) {
+    throw new Error("facilities table is missing");
+  }
+  const orphanPaths = database.prepare(
+    "SELECT DISTINCT path_id FROM station_elevator_path_facility WHERE path_id NOT IN (SELECT path_id FROM station_elevator_path) ORDER BY path_id",
+  ).all();
+  if (orphanPaths.length > 0) {
+    throw new Error(`station_elevator_path_facility contains orphan path_id: ${orphanPaths.map((row) => row.path_id).join(", ")}`);
+  }
+  const hasFacilitiesTable = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='facilities'").get());
+  const orphanFacilities = database.prepare(hasFacilitiesTable
+    ? "SELECT DISTINCT facility_id FROM station_elevator_path_facility WHERE facility_id NOT IN (SELECT id FROM facilities) ORDER BY facility_id"
+    : "SELECT DISTINCT facility_id FROM station_elevator_path_facility ORDER BY facility_id").all();
+  if (orphanFacilities.length > 0) {
+    throw new Error(`station_elevator_path_facility contains orphan facility_id: ${orphanFacilities.map((row) => row.facility_id).join(", ")}`);
+  }
+  // #827: 무단차 요구 행은 번들 경로·시설 묶음과 route edge의 승강장 노드(#873)로 다시 만든 결과와 정확히 같아야 한다.
+  assertEmbeddedTable(database, "transition_facility_requirement", [
+    { name: "transition_key", type: "TEXT", notnull: 1, pk: 1 },
+    { name: "path_id", type: "TEXT", notnull: 1, pk: 2 },
+    { name: "direction_next_station_id", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "group_kind", type: "TEXT", notnull: 1, pk: 3 },
+    { name: "facility_id", type: "TEXT", notnull: 1, pk: 4 },
+  ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transition_facility_requirement);
+  const requirements = sortTransitionFacilityRequirements(database.prepare(
+    "SELECT transition_key, path_id, direction_next_station_id, group_kind, facility_id FROM transition_facility_requirement",
+  ).all());
+  if (requirements.length === 0) throw new Error("transition_facility_requirement is empty");
+  const stepFreeInputs = readBundledStepFreeInputs(database);
+  validateTransitionFacilityRequirements({ ...stepFreeInputs, requirements, routeEdges });
+  if (canonicalJson(buildTransitionFacilityRequirements({ ...stepFreeInputs, routeEdges })) !== canonicalJson(requirements)) {
+    throw new Error("transition_facility_requirement does not match station elevator path derivation");
+  }
+  // #837: 승강장 연단 간격 등급 행은 번들 station_lines에 속한 역·노선에만 있어야 한다.
+  assertEmbeddedTable(database, "station_platform_gaps", [
+    { name: "id", type: "TEXT", notnull: 0, pk: 1 },
+    { name: "station_id", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "line_id", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "direction", type: "TEXT", notnull: 0, pk: 0 },
+    { name: "platform_position", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "car_number", type: "INTEGER", notnull: 0, pk: 0 },
+    { name: "door_number", type: "INTEGER", notnull: 0, pk: 0 },
+    { name: "gap_grade", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "height_diff_grade", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "curved", type: "INTEGER", notnull: 1, pk: 0 },
+    { name: "source_snapshot_id", type: "TEXT", notnull: 1, pk: 0 },
+  ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_platform_gaps);
+  if (database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='station_lines'").get()) {
+    const orphanPlatformGaps = database.prepare(
+      "SELECT DISTINCT station_id, line_id FROM station_platform_gaps WHERE (station_id, line_id) NOT IN (SELECT station_id, line_id FROM station_lines) ORDER BY station_id, line_id",
+    ).all();
+    if (orphanPlatformGaps.length > 0) {
+      throw new Error(`station_platform_gaps contains orphan station-line: ${orphanPlatformGaps.map((row) => `${row.station_id}/${row.line_id}`).join(", ")}`);
+    }
+  }
+}
+
+async function assertEmbeddedTransferStairAndTopologyInvariants(database, input, temporary) {
+  // #925: 환승 계단 근거 행은 route-edge 입력의 역 안 환승 간선만 가리킨다(emit 단계가 topology STEP_FREE 집합과 같음을 검사한다).
+  assertEmbeddedTable(database, "transfer_stair_access_evidence", [
+    { name: "edge_id", type: "TEXT", notnull: 1, pk: 1 },
+    { name: "from_direction_station_id", type: "TEXT", notnull: 1, pk: 2 },
+    { name: "to_direction_station_id", type: "TEXT", notnull: 1, pk: 3 },
+    { name: "path_sha256", type: "TEXT", notnull: 1, pk: 4 },
+    { name: "source_snapshot_id", type: "TEXT", notnull: 1, pk: 0 },
+    { name: "duration_basis", type: "TEXT", notnull: 1, pk: 0 },
+  ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transfer_stair_access_evidence);
+  const foreignSnapshotIds = database.prepare("SELECT DISTINCT source_snapshot_id FROM transfer_stair_access_evidence WHERE source_snapshot_id <> ? ORDER BY source_snapshot_id")
+    .all(input.transferStairSnapshotId).map((row) => row.source_snapshot_id);
+  if (foreignSnapshotIds.length > 0) {
+    throw new Error(`transfer_stair_access_evidence source_snapshot_id does not match the admitted MOLIT snapshot: ${foreignSnapshotIds.join(", ")}`);
+  }
+  const inStationTransferEdgeIds = new Set(input.routeEdges
+    .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map(({ edgeId }) => edgeId));
+  const evidenceEdgeIds = database.prepare("SELECT DISTINCT edge_id FROM transfer_stair_access_evidence ORDER BY edge_id").all()
+    .map((row) => row.edge_id);
+  const orphanTransferStairEdges = evidenceEdgeIds.filter((edgeId) => !inStationTransferEdgeIds.has(edgeId));
+  if (orphanTransferStairEdges.length > 0) {
+    throw new Error(`transfer_stair_access_evidence contains edge_id outside in-station transfer route edges: ${orphanTransferStairEdges.join(", ")}`);
+  }
+  // #944 F4: topology의 STEP_FREE 역 안 환승 간선 집합은 근거 간선 집합과 정확히 같고, STEP_FREE 간선에는 계단이 없다.
+  const { edges: topology, transferRules } = await readEmbeddedTopology(input.topologyPayloadBytes, temporary);
+  const stairedStepFree = topology.filter(({ stairAccessState, includesStairs }) => stairAccessState === "STEP_FREE" && includesStairs !== 0)
+    .map(({ id }) => id);
+  if (stairedStepFree.length > 0) throw new Error(`network_edges STEP_FREE edge includes stairs: ${stairedStepFree.join(", ")}`);
+  const stepFreeTransfers = topology.filter(({ edgeType, stairAccessState }) => edgeType === "IN_STATION_TRANSFER" && stairAccessState === "STEP_FREE")
+    .map(({ id }) => id).sort(bytewise);
+  if (canonicalJson(stepFreeTransfers) !== canonicalJson([...evidenceEdgeIds].sort(bytewise))) {
+    throw new Error("transfer_stair_access_evidence does not match network_edges STEP_FREE in-station transfers");
+  }
+  // #951: 간선 출처·검증 상태 칸은 원천 근거(원천 칸·transfer_rules)와 모순되지 않아야 한다.
+  assertBundleEdgeProvenanceInvariants({ edges: topology, transferRules });
+}
+
 async function assertEmbeddedEvidence(input) {
   const temporary = await mkdtemp(path.join(input.outputParent, ".server-route-evidence-inspect-"));
   const sqlitePath = path.join(temporary, "accessibility.sqlite");
@@ -592,110 +734,8 @@ async function assertEmbeddedEvidence(input) {
       { name: "materialization_digest", type: "TEXT", notnull: 1, pk: 0 },
       { name: "canonical_json", type: "TEXT", notnull: 1, pk: 0 },
     ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.route_accessibility_edge_evidence);
-    assertEmbeddedTable(database, "station_elevator_path", [
-      { name: "path_id", type: "TEXT", notnull: 1, pk: 1 },
-      { name: "station_id", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "line_id", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "next_station_id", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "exit_no", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "platform_direction", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "step", type: "INTEGER", notnull: 1, pk: 2 },
-      { name: "detail", type: "TEXT", notnull: 1, pk: 0 },
-    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_elevator_path);
-    assertEmbeddedTable(database, "station_elevator_path_facility", [
-      { name: "path_id", type: "TEXT", notnull: 1, pk: 1 },
-      { name: "group_kind", type: "TEXT", notnull: 1, pk: 2 },
-      { name: "facility_id", type: "TEXT", notnull: 1, pk: 3 },
-    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_elevator_path_facility);
-    if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='facilities'").get()) {
-      throw new Error("facilities table is missing");
-    }
-    const orphanPaths = database.prepare(
-      "SELECT DISTINCT path_id FROM station_elevator_path_facility WHERE path_id NOT IN (SELECT path_id FROM station_elevator_path) ORDER BY path_id",
-    ).all();
-    if (orphanPaths.length > 0) {
-      throw new Error(`station_elevator_path_facility contains orphan path_id: ${orphanPaths.map((row) => row.path_id).join(", ")}`);
-    }
-    const hasFacilitiesTable = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='facilities'").get());
-    const orphanFacilities = database.prepare(hasFacilitiesTable
-      ? "SELECT DISTINCT facility_id FROM station_elevator_path_facility WHERE facility_id NOT IN (SELECT id FROM facilities) ORDER BY facility_id"
-      : "SELECT DISTINCT facility_id FROM station_elevator_path_facility ORDER BY facility_id").all();
-    if (orphanFacilities.length > 0) {
-      throw new Error(`station_elevator_path_facility contains orphan facility_id: ${orphanFacilities.map((row) => row.facility_id).join(", ")}`);
-    }
-    // #827: 무단차 요구 행은 번들 경로·시설 묶음과 route edge의 승강장 노드(#873)로 다시 만든 결과와 정확히 같아야 한다.
-    assertEmbeddedTable(database, "transition_facility_requirement", [
-      { name: "transition_key", type: "TEXT", notnull: 1, pk: 1 },
-      { name: "path_id", type: "TEXT", notnull: 1, pk: 2 },
-      { name: "direction_next_station_id", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "group_kind", type: "TEXT", notnull: 1, pk: 3 },
-      { name: "facility_id", type: "TEXT", notnull: 1, pk: 4 },
-    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transition_facility_requirement);
-    const requirements = sortTransitionFacilityRequirements(database.prepare(
-      "SELECT transition_key, path_id, direction_next_station_id, group_kind, facility_id FROM transition_facility_requirement",
-    ).all());
-    if (requirements.length === 0) throw new Error("transition_facility_requirement is empty");
-    const stepFreeInputs = readBundledStepFreeInputs(database);
-    validateTransitionFacilityRequirements({ ...stepFreeInputs, requirements, routeEdges: input.routeEdges });
-    if (canonicalJson(buildTransitionFacilityRequirements({ ...stepFreeInputs, routeEdges: input.routeEdges })) !== canonicalJson(requirements)) {
-      throw new Error("transition_facility_requirement does not match station elevator path derivation");
-    }
-    // #837: 승강장 연단 간격 등급 행은 번들 station_lines에 속한 역·노선에만 있어야 한다.
-    assertEmbeddedTable(database, "station_platform_gaps", [
-      { name: "id", type: "TEXT", notnull: 0, pk: 1 },
-      { name: "station_id", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "line_id", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "direction", type: "TEXT", notnull: 0, pk: 0 },
-      { name: "platform_position", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "car_number", type: "INTEGER", notnull: 0, pk: 0 },
-      { name: "door_number", type: "INTEGER", notnull: 0, pk: 0 },
-      { name: "gap_grade", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "height_diff_grade", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "curved", type: "INTEGER", notnull: 1, pk: 0 },
-      { name: "source_snapshot_id", type: "TEXT", notnull: 1, pk: 0 },
-    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_platform_gaps);
-    if (database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='station_lines'").get()) {
-      const orphanPlatformGaps = database.prepare(
-        "SELECT DISTINCT station_id, line_id FROM station_platform_gaps WHERE (station_id, line_id) NOT IN (SELECT station_id, line_id FROM station_lines) ORDER BY station_id, line_id",
-      ).all();
-      if (orphanPlatformGaps.length > 0) {
-        throw new Error(`station_platform_gaps contains orphan station-line: ${orphanPlatformGaps.map((row) => `${row.station_id}/${row.line_id}`).join(", ")}`);
-      }
-    }
-    // #925: 환승 계단 근거 행은 route-edge 입력의 역 안 환승 간선만 가리킨다(emit 단계가 topology STEP_FREE 집합과 같음을 검사한다).
-    assertEmbeddedTable(database, "transfer_stair_access_evidence", [
-      { name: "edge_id", type: "TEXT", notnull: 1, pk: 1 },
-      { name: "from_direction_station_id", type: "TEXT", notnull: 1, pk: 2 },
-      { name: "to_direction_station_id", type: "TEXT", notnull: 1, pk: 3 },
-      { name: "path_sha256", type: "TEXT", notnull: 1, pk: 4 },
-      { name: "source_snapshot_id", type: "TEXT", notnull: 1, pk: 0 },
-      { name: "duration_basis", type: "TEXT", notnull: 1, pk: 0 },
-    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transfer_stair_access_evidence);
-    const foreignSnapshotIds = database.prepare("SELECT DISTINCT source_snapshot_id FROM transfer_stair_access_evidence WHERE source_snapshot_id <> ? ORDER BY source_snapshot_id")
-      .all(input.transferStairSnapshotId).map((row) => row.source_snapshot_id);
-    if (foreignSnapshotIds.length > 0) {
-      throw new Error(`transfer_stair_access_evidence source_snapshot_id does not match the admitted MOLIT snapshot: ${foreignSnapshotIds.join(", ")}`);
-    }
-    const inStationTransferEdgeIds = new Set(input.routeEdges
-      .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map(({ edgeId }) => edgeId));
-    const evidenceEdgeIds = database.prepare("SELECT DISTINCT edge_id FROM transfer_stair_access_evidence ORDER BY edge_id").all()
-      .map((row) => row.edge_id);
-    const orphanTransferStairEdges = evidenceEdgeIds.filter((edgeId) => !inStationTransferEdgeIds.has(edgeId));
-    if (orphanTransferStairEdges.length > 0) {
-      throw new Error(`transfer_stair_access_evidence contains edge_id outside in-station transfer route edges: ${orphanTransferStairEdges.join(", ")}`);
-    }
-    // #944 F4: topology의 STEP_FREE 역 안 환승 간선 집합은 근거 간선 집합과 정확히 같고, STEP_FREE 간선에는 계단이 없다.
-    const { edges: topology, transferRules } = await readEmbeddedTopology(input.topologyPayloadBytes, temporary);
-    const stairedStepFree = topology.filter(({ stairAccessState, includesStairs }) => stairAccessState === "STEP_FREE" && includesStairs !== 0)
-      .map(({ id }) => id);
-    if (stairedStepFree.length > 0) throw new Error(`network_edges STEP_FREE edge includes stairs: ${stairedStepFree.join(", ")}`);
-    const stepFreeTransfers = topology.filter(({ edgeType, stairAccessState }) => edgeType === "IN_STATION_TRANSFER" && stairAccessState === "STEP_FREE")
-      .map(({ id }) => id).sort(bytewise);
-    if (canonicalJson(stepFreeTransfers) !== canonicalJson([...evidenceEdgeIds].sort(bytewise))) {
-      throw new Error("transfer_stair_access_evidence does not match network_edges STEP_FREE in-station transfers");
-    }
-    // #951: 간선 출처·검증 상태 칸은 원천 근거(원천 칸·transfer_rules)와 모순되지 않아야 한다.
-    assertBundleEdgeProvenanceInvariants({ edges: topology, transferRules });
+    assertEmbeddedElevatorAndTransitionTables(database, input.routeEdges);
+    await assertEmbeddedTransferStairAndTopologyInvariants(database, input, temporary);
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest
