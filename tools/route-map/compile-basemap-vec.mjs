@@ -1009,12 +1009,63 @@ export function resolveMediaBlocks(css) {
   }
 }
 
+const STYLE_OPEN_TAG = "<style";
+const STYLE_CLOSE_TAG = "</style>";
+
+function isStyleTagBoundary(ch) {
+  return ch === ">" || ch === "/" || ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+}
+
+function nextStyleBlock(svgText, fromIndex) {
+  for (
+    let start = svgText.indexOf(STYLE_OPEN_TAG, fromIndex);
+    start >= 0;
+    start = svgText.indexOf(STYLE_OPEN_TAG, start + STYLE_OPEN_TAG.length)
+  ) {
+    if (!isStyleTagBoundary(svgText[start + STYLE_OPEN_TAG.length])) continue;
+    const openEnd = svgText.indexOf(">", start + STYLE_OPEN_TAG.length);
+    if (openEnd < 0) return null;
+    if (svgText[openEnd - 1] === "/") {
+      return { start, bodyStart: openEnd + 1, bodyEnd: openEnd + 1, end: openEnd + 1 };
+    }
+    const closeStart = svgText.indexOf(STYLE_CLOSE_TAG, openEnd + 1);
+    return closeStart < 0
+      ? null
+      : { start, bodyStart: openEnd + 1, bodyEnd: closeStart, end: closeStart + STYLE_CLOSE_TAG.length };
+  }
+  return null;
+}
+
+function extractStyleContents(svgText) {
+  const contents = [];
+  for (let cursor = 0, block = nextStyleBlock(svgText, 0); block; block = nextStyleBlock(svgText, cursor)) {
+    contents.push(svgText.slice(block.bodyStart, block.bodyEnd));
+    cursor = block.end;
+  }
+  return contents.join("\n");
+}
+
+function stripStyleBlocks(svgText) {
+  let result = "";
+  let cursor = 0;
+  for (let block = nextStyleBlock(svgText, 0); block; block = nextStyleBlock(svgText, cursor)) {
+    result += svgText.slice(cursor, block.start).trimEnd();
+    cursor = block.end;
+  }
+  return result + svgText.slice(cursor);
+}
+
+function stripImportantSuffix(rawValue) {
+  const trimmed = rawValue.trim();
+  return trimmed.endsWith("!important")
+    ? trimmed.slice(0, -"!important".length).trimEnd()
+    : trimmed;
+}
+
 /** `<style>` 블록에서 규칙 목록을 읽는다(소스 순서 유지). */
 export function parseStylesheet(svgText) {
   const css = decodeXmlText(
-    [...svgText.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
-      .map((match) => match[1])
-      .join("\n")
+    extractStyleContents(svgText)
       .replaceAll("<![CDATA[", "")
       .replaceAll("]]>", ""),
   ).replace(/\/\*[\s\S]*?\*\//g, "");
@@ -1037,8 +1088,8 @@ export function parseStylesheet(svgText) {
         customProperties,
       );
       if (property.startsWith("--")) continue; // 정의 자체는 렌더하지 않는다.
-      const important = /!important\s*$/.test(rawValue);
-      const value = rawValue.replace(/\s*!important\s*$/, "").trim();
+      const value = stripImportantSuffix(rawValue);
+      const important = value.length !== rawValue.trim().length;
       const neutral = isRenderNeutralDeclaration(property, value);
       if (
         !neutral &&
@@ -1148,6 +1199,14 @@ function parseInlineStyle(openTag) {
   return declarations;
 }
 
+// 여는 태그에서 닫는 `>` 또는 `/>`와 그 앞 공백을 결정론적 슬라이싱으로 떼어 낸다.
+function splitOpenTagEnd(openTag) {
+  const withoutBracket = openTag.slice(0, -1).trimEnd();
+  const selfClosing = withoutBracket.endsWith("/");
+  const head = selfClosing ? withoutBracket.slice(0, -1).trimEnd() : withoutBracket;
+  return { head, selfClosing };
+}
+
 function withInlineStyle(openTag, declarations) {
   const serialized = encodeXmlAttributeValue(
     [...declarations].map(([property, value]) => `${property}:${value}`).join(";"),
@@ -1155,8 +1214,8 @@ function withInlineStyle(openTag, declarations) {
   if (/\sstyle="[^"]*"/.test(openTag)) {
     return openTag.replace(/\sstyle="[^"]*"/, ` style="${serialized}"`);
   }
-  const selfClosing = /\/\s*>$/.test(openTag);
-  return `${openTag.replace(/\s*\/?>$/, "")} style="${serialized}"${selfClosing ? " />" : ">"}`;
+  const { head, selfClosing } = splitOpenTagEnd(openTag);
+  return `${head} style="${serialized}"${selfClosing ? " />" : ">"}`;
 }
 
 // 캐스케이드: !important → 특이도 → 소스 순서. 뒤에 오는 것이 이긴다.
@@ -1175,9 +1234,8 @@ function setPresentationAttribute(openTag, property, value) {
   const pattern = new RegExp(`\\s${property}="[^"]*"`);
   const attribute = ` ${property}="${encodeXmlAttributeValue(value)}"`;
   if (pattern.test(openTag)) return openTag.replace(pattern, attribute);
-  let head = openTag.slice(0, -1).trimEnd();
-  if (head.endsWith("/")) head = head.slice(0, -1).trimEnd();
-  return `${head}${attribute}${/\/\s*>$/.test(openTag) ? " />" : ">"}`;
+  const { head, selfClosing } = splitOpenTagEnd(openTag);
+  return `${head}${attribute}${selfClosing ? " />" : ">"}`;
 }
 
 // 요소에 걸린 선언을 캐스케이드(!important → 특이도 → 소스 순서, 뒤에 오는 것이 이긴다)로 가려
@@ -1259,12 +1317,7 @@ export function applyStylesheet(svgText) {
   // 전개가 끝난 `<style>` 블록은 컴파일 입력에서 지운다 — 컴파일러가 읽지 않는
   // 원본 CSS가 남아 있으면 "요소 선언이 정본"이라는 이 단계의 계약이 흐려지고,
   // 뒤따르는 단계(font-weight 확정 등)가 죽은 텍스트까지 훑는다.
-  for (;;) {
-    const next = result.replace(/\s*<style\b[^>]*>[\s\S]*?<\/style>/g, "");
-    if (next === result) break;
-    result = next;
-  }
-  return result;
+  return stripStyleBlocks(result);
 }
 
 // compiled-map-coordinate-layer 래퍼의 `scale(k)`에서 k를 파싱한다(없으면 1).
@@ -1887,9 +1940,7 @@ function collectShapeBounds(text, matrix, visit) {
 // <style> 블록에서 .station-label-<role> { ... font-size:<n>px ... } 규칙을
 // role → local px 맵으로 읽는다(gwangju처럼 인라인 font-size가 없는 경우 폴백).
 function stationLabelFontSizesByRole(svgText) {
-  const css = [...svgText.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)]
-    .map((match) => match[1])
-    .join("\n");
+  const css = extractStyleContents(svgText);
   const byRole = {};
   for (const role of ownerLabelRoles) {
     const rule = css.match(
@@ -2851,9 +2902,7 @@ export function flattenTextScale(svgText) {
       const residualTransform = serializeSimilarity(residual, `${describe}의 잔여 transform`);
       openTag = /\stransform="[^"]*"/.test(openTag)
         ? openTag.replace(/\stransform="[^"]*"/, ` transform="${residualTransform}"`)
-        : `${openTag.replace(/\s*(\/?)>$/, "")} transform="${residualTransform}"${
-            /\/\s*>$/.test(openTag) ? " />" : ">"
-          }`;
+        : withProperty(openTag, "transform", residualTransform);
       edits.push({ start: child.start, length: child.openTag.length, openTag });
       (function walkTspans(parent) {
         for (const tspan of parent.children) {
@@ -2924,10 +2973,9 @@ function withAbsoluteTextPosition(openTag, x, y) {
   if (!name) {
     throw new Error(`텍스트 위치 태그를 해석하지 못했습니다: ${openTag}`);
   }
-  const selfClosing = /\/\s*>$/.test(openTag);
-  const attributes = openTag
+  const { head, selfClosing } = splitOpenTagEnd(openTag);
+  const attributes = head
     .slice(1 + name.length)
-    .replace(/\s*\/?>$/, "")
     .replace(/\s+(?:dx|dy|x|y)="[^"]*"/g, "");
   return `<${name}${attributes} x="${x}" y="${y}"${selfClosing ? " /" : ""}>`;
 }
@@ -3057,18 +3105,45 @@ export function completePartialTextPositions(svgText) {
 // "이 요소가 컴파일 입력에서 지워지는가"는 `isRemovedByHiddenRules` 하나가 답한다. 숨김 제거기와
 // 스타일시트 전개(분류되지 않은 선언을 버리는 요소는 던진다)가 모두 이 판정을 쓰므로, 제거기가
 // 남기는 요소에서 선언이 조용히 사라지는 틈이 없다.
-const DISPLAY_NONE_ATTRIBUTE = /\sdisplay="none"/;
-const DISPLAY_NONE_STYLE = /\sstyle="[^"]*(?<![\w-])display\s*:\s*none\s*(?:!important\s*)?[;"]/;
-const OPACITY_ZERO_ATTRIBUTE = /\sopacity="0(?:\.0+)?"/;
-const OPACITY_ZERO_STYLE = /\sstyle="[^"]*(?<![\w-])opacity\s*:\s*0(?:\.0+)?\s*(?:!important\s*)?[;"]/;
+const STYLE_ATTR_RE = /\sstyle="([^"]*)"/;
+const DISPLAY_ATTR_RE = /\sdisplay="([^"]*)"/;
+const DISPLAY_STYLE_DECL_RE = /(?:^|;)\s*display\s*:\s*([^;"]*)/;
+const OPACITY_ATTR_RE = /\sopacity="([^"]*)"/;
+const OPACITY_STYLE_DECL_RE = /(?:^|;)\s*opacity\s*:\s*([^;"]*)/;
 
-/** 여는 태그 자체가 display:none을 선언하는지(속성형·인라인 style형). `font-display:none`은 아니다. */
+function effectiveTagProperty(openTag, styleRe, attrRe) {
+  const style = STYLE_ATTR_RE.exec(openTag)?.[1];
+  if (style !== undefined) {
+    const styled = styleRe.exec(style)?.[1];
+    if (styled !== undefined) return stripImportantSuffix(styled);
+  }
+  const attr = attrRe.exec(openTag)?.[1];
+  return attr === undefined ? null : attr.trim();
+}
+
+/** 여는 태그의 유효 display 선언이 none인지(인라인 style이 동명 속성을 이긴다). `font-display:none`은 아니다. */
 function declaresDisplayNone(openTag) {
-  return DISPLAY_NONE_ATTRIBUTE.test(openTag) || DISPLAY_NONE_STYLE.test(openTag);
+  return effectiveTagProperty(openTag, DISPLAY_STYLE_DECL_RE, DISPLAY_ATTR_RE) === "none";
 }
 
 function declaresOpacityZero(openTag) {
-  return OPACITY_ZERO_ATTRIBUTE.test(openTag) || OPACITY_ZERO_STYLE.test(openTag);
+  const value = effectiveTagProperty(openTag, OPACITY_STYLE_DECL_RE, OPACITY_ATTR_RE);
+  return value !== null && /^0(?:\.0+)?$/.test(value);
+}
+
+// 컴파일러(_readSubtree)는 정의 요소라도 자신의 display가 none이면 서브트리째 버린다.
+// 사양상 display가 적용되지 않는 정의 일곱 가지는 남길 때 자기 display 선언을 함께 벗긴다.
+function withoutDisplayDeclaration(openTag) {
+  return openTag
+    .replace(/\sdisplay="[^"]*"/g, "")
+    .replace(/\sstyle="([^"]*)"/, (_m, styleValue) => {
+      const kept = styleValue
+        .split(";")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item) => !/^display\s*:/.test(item));
+      return kept.length ? ` style="${kept.join(";")}"` : "";
+    });
 }
 
 // 참조할 수 있는 정의 → 자기 자신의 opacity가 적용되는지(위 설명).
@@ -3148,7 +3223,9 @@ class HiddenElementStripper {
       inRemovedSubtree: this.#suppressed,
       insideClipPath: this.#clipDepth > 0,
     });
-    if (!dropped) this.#output += tag;
+    if (!dropped) {
+      this.#output += REFERENCEABLE_DEFINITIONS.has(name) ? withoutDisplayDeclaration(tag) : tag;
+    }
     if (tag.endsWith("/>")) return;
     const frame = { name, emitted: !dropped, hiddenStart: dropped && !this.#suppressed, suppressedBefore: this.#suppressed };
     this.#frames.push(frame);
@@ -3305,9 +3382,8 @@ function stripPropertyDeclarations(markup, property) {
 
 // 여는 태그에 property="value"를 덧붙인다(자기폐쇄 여부 유지).
 function withProperty(openTag, property, value) {
-  const selfClosing = /\/\s*>$/.test(openTag);
-  const body = openTag.replace(/\s*\/?>$/, "");
-  return `${body} ${property}="${value}"${selfClosing ? " />" : ">"}`;
+  const { head, selfClosing } = splitOpenTagEnd(openTag);
+  return `${head} ${property}="${value}"${selfClosing ? " />" : ">"}`;
 }
 
 // 요소 서브트리를 한쪽 paint만 남긴 사본으로 만든다.

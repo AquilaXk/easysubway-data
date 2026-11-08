@@ -264,11 +264,13 @@ function visibleOpenTags(svgText) {
 const HIDDEN_FORMS_SVG =
   '<svg><path id="a" display="none"/><path id="b" style="display:none"/><path id="c" style="fill:red; display : none !important"/>' +
   '<path id="d" opacity="0"/><path id="e" opacity="0.0"/><path id="f" style="opacity:0"/><path id="g" style="opacity : 0.0 !important"/>' +
+  '<path id="j" display="inline" style="display:none"/><path id="k" opacity="1" style="opacity:0"/>' +
   '<g id="h" opacity="0"><path id="inner-h" d="M0 0"/></g><g id="i" style="display:none"><g><path id="inner-i"/></g></g>' +
   '<path id="shown-1" opacity="0.5"/><path id="shown-2" style="opacity:.05"/><path id="shown-3" style="display:inline"/>' +
-  '<path id="shown-4" fill-opacity="0" stroke-opacity="0"/><g id="shown-5"><path id="shown-6"/></g></svg>';
+  '<path id="shown-4" fill-opacity="0" stroke-opacity="0"/><g id="shown-5"><path id="shown-6"/></g>' +
+  '<path id="shown-7" display="none" style="display:inline"/><path id="shown-8" opacity="0" style="opacity:1"/></svg>';
 const idsOf = (markup) => [...markup.matchAll(/id="([^"]+)"/g)].map(([, id]) => id);
-const SHOWN_IDS = ["shown-1", "shown-2", "shown-3", "shown-4", "shown-5", "shown-6"];
+const SHOWN_IDS = ["shown-1", "shown-2", "shown-3", "shown-4", "shown-5", "shown-6", "shown-7", "shown-8"];
 
 test("가시성 오라클은 사양이 정하는 숨김 형태를 모두 알아본다", () => {
   assert.deepEqual(idsOf(visibleOpenTags(HIDDEN_FORMS_SVG)), SHOWN_IDS);
