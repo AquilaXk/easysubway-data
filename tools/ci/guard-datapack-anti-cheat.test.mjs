@@ -323,3 +323,73 @@ test('checkCircularOracles keeps flagging production functions next to the share
     ],
   );
 });
+
+test('checkCircularOracles allows literal bindings and object keys named action even when another scope binds action from a production call', (t) => {
+  const violations = circularOracleViolationsFor(t, {
+    'tools/ci/scoped-action.test.mjs':
+      'import { runRedispatch } from "./redispatch-blocked-workflows.mjs";\n' +
+      ASSERT_IMPORT +
+      'function testOne() {\n' +
+      '  const action = runRedispatch({ id: 1 }).action;\n' +
+      '  assert.equal(action, "DISPATCH");\n' +
+      '}\n' +
+      'function testTwo() {\n' +
+      '  const action = "DISPATCH";\n' +
+      '  assert.equal(runRedispatch({ id: 2 }).action, action);\n' +
+      '  assert.deepEqual(runRedispatch({ id: 2 }), { workflow: "ci", action: "DISPATCH" });\n' +
+      '  assert.deepEqual(runRedispatch({ id: 2 }), { workflow: "ci", action });\n' +
+      '}\n',
+  });
+  assert.deepEqual(violations, []);
+});
+
+test('checkCircularOracles blocks circular oracles disguised via expectedLiteral, derived bindings, destructuring, multiline init, or aliases', (t) => {
+  const violations = circularOracleViolationsFor(t, {
+    'tools/datapack/derived-copy.test.mjs':
+      'import { computeRoute } from "./route.mjs";\n' +
+      ASSERT_IMPORT +
+      'const rawResult = computeRoute("a");\n' +
+      'const expectedLiteral = rawResult.summary;\n' +
+      'assert.equal(computeRoute("a").summary, expectedLiteral);\n',
+    'tools/datapack/destructured-object.test.mjs':
+      'import { computeRoute } from "./route.mjs";\n' +
+      ASSERT_IMPORT +
+      'const { summary: expectedLiteral } = computeRoute("a");\n' +
+      'assert.equal(computeRoute("a").summary, expectedLiteral);\n',
+    'tools/datapack/destructured-array.test.mjs':
+      'import { computeRoute } from "./route.mjs";\n' +
+      ASSERT_IMPORT +
+      'const [expectedLiteral] = computeRoute("a");\n' +
+      'assert.equal(computeRoute("a")[0], expectedLiteral);\n',
+    'tools/datapack/multiline-init.test.mjs':
+      'import { computeRoute } from "./route.mjs";\n' +
+      ASSERT_IMPORT +
+      'const expectedLiteral =\n' +
+      '  computeRoute("a");\n' +
+      'assert.equal(computeRoute("a"), expectedLiteral);\n',
+    'tools/datapack/aliased-fn.test.mjs':
+      'import { computeRoute } from "./route.mjs";\n' +
+      'import * as routeNs from "./route.mjs";\n' +
+      ASSERT_IMPORT +
+      'const fnAlias = computeRoute;\n' +
+      'const expectedLiteral = fnAlias("a");\n' +
+      'assert.equal(routeNs.computeRoute("a"), expectedLiteral);\n',
+    'tools/datapack/default-import-alias.test.mjs':
+      'import computeDefault from "./route.mjs";\n' +
+      ASSERT_IMPORT +
+      'const fnAlias = computeDefault;\n' +
+      'const expectedLiteral = fnAlias("a");\n' +
+      'assert.equal(computeDefault("a"), expectedLiteral);\n',
+  });
+  assert.deepEqual(
+    violations.map((violation) => violation.target.replace(/\\/g, '/')).sort(),
+    [
+      'tools/datapack/aliased-fn.test.mjs',
+      'tools/datapack/default-import-alias.test.mjs',
+      'tools/datapack/derived-copy.test.mjs',
+      'tools/datapack/destructured-array.test.mjs',
+      'tools/datapack/destructured-object.test.mjs',
+      'tools/datapack/multiline-init.test.mjs',
+    ],
+  );
+});

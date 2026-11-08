@@ -219,10 +219,86 @@ test("FACILITY admission은 pilot의 2개 station-line 가정 없이 injected mu
   input.productionInput.supportedV1Scope.includedLineIds.push(extraLineId);
   input.productionInput.supportedV1Scope.facilityCoverageDenominator.expectedRows = 9;
 
+  assert.throws(
+    () => buildFacilitySourceAdmission(input),
+    /FACILITY explicit absence identity mismatch/,
+  );
+
+  const snapshot = JSON.parse(Buffer.from(input.snapshotBytes).toString("utf8"));
+  const sangnoksuQuery = snapshot.queries.find((query) => query.stationId === "station-sangnoksu" && query.lineId === "seoul-4");
+  const sangnoksuLift = input.productionInput.accessibilityStatusEvidence.find((row) =>
+    row.stationId === "station-sangnoksu" && row.lineId === "seoul-4" && row.facilityType === "WHEELCHAIR_LIFT");
+  Object.assign(sangnoksuLift, {
+    evidenceKind: "UNKNOWN",
+    installationStatus: "UNKNOWN",
+    operationalStatus: "UNKNOWN",
+    statusMeaning: "STATION_LINE_NOT_QUERIED",
+    strictRouteEligibleReason: "FACILITY_PRESENCE_UNKNOWN",
+    confidence: 0,
+    evidenceHash: sha256(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      query: providerTuple(sangnoksuQuery),
+      type: "WHEELCHAIR_LIFT",
+      evidenceKind: "UNKNOWN",
+    })),
+  });
+
   const result = buildFacilitySourceAdmission(input);
   assert.equal(result.decision, "NO_GO");
   assert.equal(result.queryPartition.summary.missingTargetCount, 1);
   assert.equal(result.denominatorRows.length, 9);
+});
+
+test("#3036 FACILITY admission은 역 단위 부재(NOT_EXISTS)와 UNKNOWN 규칙을 직접 강제한다", async () => {
+  const escalatorAsAbsent = await historicalFacilityFixtureInput();
+  const snapshot = JSON.parse(Buffer.from(escalatorAsAbsent.snapshotBytes).toString("utf8"));
+  const sadangQuery = snapshot.queries.find((query) => query.stationId === "station-sadang" && query.lineId === "seoul-4");
+  escalatorAsAbsent.productionInput.supportedV1Scope.facilityAbsenceCoverage
+    .find(({ sourceId }) => sourceId === "kric-station-convenience-standard")
+    .facilityTypes.push("ESCALATOR");
+  const sadangEscalator = escalatorAsAbsent.productionInput.accessibilityStatusEvidence.find((row) =>
+    row.stationId === "station-sadang" && row.lineId === "seoul-4" && row.facilityType === "ESCALATOR");
+  Object.assign(sadangEscalator, {
+    evidenceKind: "NOT_EXISTS",
+    installationStatus: "NOT_INSTALLED",
+    operationalStatus: "NOT_APPLICABLE",
+    statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+    strictRouteEligibleReason: "FACILITY_NOT_INSTALLED",
+    confidence: 100,
+    evidenceHash: sha256(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      query: providerTuple(sadangQuery),
+      type: "ESCALATOR",
+      evidenceKind: "NOT_EXISTS",
+    })),
+  });
+  assert.throws(
+    () => buildFacilitySourceAdmission(escalatorAsAbsent),
+    /FACILITY explicit absence identity mismatch/,
+  );
+
+  const falseUnknown = await historicalFacilityFixtureInput();
+  const sangnoksuQuery = snapshot.queries.find((query) => query.stationId === "station-sangnoksu" && query.lineId === "seoul-4");
+  const sangnoksuLift = falseUnknown.productionInput.accessibilityStatusEvidence.find((row) =>
+    row.stationId === "station-sangnoksu" && row.lineId === "seoul-4" && row.facilityType === "WHEELCHAIR_LIFT");
+  Object.assign(sangnoksuLift, {
+    evidenceKind: "UNKNOWN",
+    installationStatus: "UNKNOWN",
+    operationalStatus: "UNKNOWN",
+    statusMeaning: "STATION_LINE_NOT_QUERIED",
+    strictRouteEligibleReason: "FACILITY_PRESENCE_UNKNOWN",
+    confidence: 0,
+    evidenceHash: sha256(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      query: providerTuple(sangnoksuQuery),
+      type: "WHEELCHAIR_LIFT",
+      evidenceKind: "UNKNOWN",
+    })),
+  });
+  assert.throws(
+    () => buildFacilitySourceAdmission(falseUnknown),
+    /FACILITY explicit unknown identity mismatch/,
+  );
 });
 
 test("FACILITY admission은 scope에 선언만 된 unused operator를 거부한다", async () => {

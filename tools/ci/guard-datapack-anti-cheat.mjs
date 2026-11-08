@@ -236,233 +236,819 @@ export function checkCircularOracles(repoRoot = REPO_ROOT) {
     }
   }
 
-  function checkFileCircularOracles(content, rel, fileViolations) {
-    const testRelPosix = rel.split(sep).join('/');
-    const importedProdFns = new Set();
-    const importRegex = /import\s*\{([^}]+)\}\s*from\s*['"](\.{1,2}\/[^'"]+)['"]/gs;
-    let importMatch;
-    while ((importMatch = importRegex.exec(content)) !== null) {
-      const importSpecifiers = importMatch[1];
-      const importPath = importMatch[2];
-      if (importPath.includes('.test.mjs') || importPath.includes('fixtures') || importPath.includes('test-support')) {
+  function tokenizeJs(code) {
+    const tokens = [];
+    const len = code.length;
+    let i = 0;
+    let line = 1;
+    let braceDepth = 0;
+    const templateBraceStack = [];
+
+    const advanceChar = () => {
+      const ch = code[i++];
+      if (ch === '\n') line++;
+      return ch;
+    };
+
+    const scanTemplateBody = () => {
+      let start = i;
+      while (i < len) {
+        const ch = code[i];
+        if (ch === '\\') {
+          advanceChar();
+          if (i < len) advanceChar();
+          continue;
+        }
+        if (ch === '$' && code[i + 1] === '{') {
+          tokens.push({ type: 'string', value: code.slice(start, i), start, end: i, line });
+          const exprStart = i;
+          advanceChar();
+          advanceChar();
+          tokens.push({ type: 'punct', value: '(', start: exprStart, end: i, line });
+          templateBraceStack.push(braceDepth);
+          return;
+        }
+        if (ch === '`') {
+          const endPos = i + 1;
+          advanceChar();
+          tokens.push({ type: 'string', value: code.slice(start, endPos), start, end: endPos, line });
+          tokens.push({ type: 'punct', value: ')', start: endPos - 1, end: endPos, line });
+          return;
+        }
+        advanceChar();
+      }
+      tokens.push({ type: 'punct', value: ')', start: i, end: i, line });
+    };
+
+    const canStartRegex = () => {
+      if (tokens.length === 0) return true;
+      const prev = tokens[tokens.length - 1];
+      if (prev.type === 'punct') {
+        return prev.value !== ')' && prev.value !== ']' && prev.value !== '++' && prev.value !== '--';
+      }
+      if (prev.type === 'id') {
+        return [
+          'return', 'throw', 'case', 'typeof', 'void', 'delete',
+          'await', 'yield', 'in', 'of', 'instanceof', 'new', 'else', 'do',
+        ].includes(prev.value);
+      }
+      return false;
+    };
+
+    const multiPuncts = [
+      '===', '!==', '>>>', '...', '==', '!=', '<=', '>=', '=>',
+      '&&', '||', '??', '?.', '++', '--', '+=', '-=', '*=', '/=', '%=', '**', '<<', '>>',
+    ];
+
+    while (i < len) {
+      const ch = code[i];
+      if (ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n') {
+        advanceChar();
         continue;
       }
-      const specs = importSpecifiers.split(',');
-      for (const spec of specs) {
-        const trimmed = spec.trim();
-        if (!trimmed) continue;
-        const [importedName, localName = importedName] = trimmed.split(/\s+as\s+/).map((part) => part.trim());
-        if (isSharedHelperImport(testRelPosix, importPath, importedName)) continue;
-        importedProdFns.add(localName);
+      if (ch === '/' && code[i + 1] === '/') {
+        while (i < len && code[i] !== '\n') advanceChar();
+        continue;
       }
-    }
-    if (importedProdFns.size === 0) return;
-
-    const varToFnMap = new Map();
-    const constRegex = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]*)/g;
-    let constMatch;
-    while ((constMatch = constRegex.exec(content)) !== null) {
-      const varName = constMatch[1];
-      const rightExpr = constMatch[2];
-      for (const fnName of importedProdFns) {
-        const callRegex = new RegExp(`\\b${fnName}\\s*\\(`);
-        if (callRegex.test(rightExpr)) {
-          varToFnMap.set(varName, fnName);
-          break;
+      if (ch === '/' && code[i + 1] === '*') {
+        advanceChar();
+        advanceChar();
+        while (i < len && !(code[i] === '*' && code[i + 1] === '/')) advanceChar();
+        if (i < len) {
+          advanceChar();
+          advanceChar();
         }
+        continue;
       }
-    }
-
-    const assertRegex = /assert\s*\.\s*(?:equal|strictEqual|deepEqual|deepStrictEqual)\s*\(/g;
-    let assertMatch;
-    while ((assertMatch = assertRegex.exec(content)) !== null) {
-      const startIndex = assertMatch.index;
-      const argsStartIndex = assertMatch.index + assertMatch[0].length;
-
-      let depth = 1;
-      let i = argsStartIndex;
-      let inString = false;
-      let stringChar = '';
-      let escape = false;
-
-      while (i < content.length && depth > 0) {
-        const ch = content[i];
-        if (escape) {
-          escape = false;
-        } else if (ch === '\\') {
-          escape = true;
-        } else if (inString) {
-          if (ch === stringChar) inString = false;
-        } else if (ch === "'" || ch === '"' || ch === '`') {
-          inString = true;
-          stringChar = ch;
-        } else if (ch === '(' || ch === '[' || ch === '{') {
-          depth++;
-        } else if (ch === ')' || ch === ']' || ch === '}') {
-          depth--;
-        }
-        i++;
-      }
-
-      if (depth !== 0) continue;
-      const argsContent = content.slice(argsStartIndex, i - 1);
-
-      let splitDepth = 0;
-      let inStr = false;
-      let strCh = '';
-      let esc = false;
-      let commaIndex = -1;
-
-      for (let j = 0; j < argsContent.length; j++) {
-        const c = argsContent[j];
-        if (esc) {
-          esc = false;
-        } else if (c === '\\') {
-          esc = true;
-        } else if (inStr) {
-          if (c === strCh) inStr = false;
-        } else if (c === "'" || c === '"' || c === '`') {
-          inStr = true;
-          strCh = c;
-        } else if (c === '(' || c === '[' || c === '{') {
-          splitDepth++;
-        } else if (c === ')' || c === ']' || c === '}') {
-          splitDepth--;
-        } else if (c === ',' && splitDepth === 0) {
-          commaIndex = j;
-          break;
-        }
-      }
-
-      if (commaIndex === -1) continue;
-      const argA = argsContent.slice(0, commaIndex).trim();
-
-      const remainingArgs = argsContent.slice(commaIndex + 1);
-      let secondCommaIndex = -1;
-      let bDepth = 0;
-      let bInStr = false;
-      let bStrCh = '';
-      let bEsc = false;
-
-      for (let k = 0; k < remainingArgs.length; k++) {
-        const c = remainingArgs[k];
-        if (bEsc) {
-          bEsc = false;
-        } else if (c === '\\') {
-          bEsc = true;
-        } else if (bInStr) {
-          if (c === bStrCh) bInStr = false;
-        } else if (c === "'" || c === '"' || c === '`') {
-          bInStr = true;
-          bStrCh = c;
-        } else if (c === '(' || c === '[' || c === '{') {
-          bDepth++;
-        } else if (c === ')' || c === ']' || c === '}') {
-          bDepth--;
-        } else if (c === ',' && bDepth === 0) {
-          secondCommaIndex = k;
-          break;
-        }
-      }
-
-      const argB = (secondCommaIndex !== -1 ? remainingArgs.slice(0, secondCommaIndex) : remainingArgs).trim();
-
-      function stripStrings(code) {
-        let out = '';
-        let sInStr = false;
-        let sQuote = '';
-        let sEsc = false;
-        for (let idx = 0; idx < code.length; idx++) {
-          const ch = code[idx];
-          if (sEsc) { sEsc = false; continue; }
-          if (ch === '\\') { sEsc = true; continue; }
-          if (sInStr) {
-            if (ch === sQuote) sInStr = false;
-            continue;
-          }
-          if (ch === "'" || ch === '"' || ch === '`') {
-            sInStr = true;
-            sQuote = ch;
-            continue;
-          }
-          out += ch;
-        }
-        return out;
-      }
-
-      const cleanA = stripStrings(argA);
-      const cleanB = stripStrings(argB);
-
-      function getSources(cleanText) {
-        const sources = new Map();
-        for (const fn of importedProdFns) {
-          const r = new RegExp(`\\b${fn}\\s*\\(`);
-          if (r.test(cleanText)) {
-            if (!sources.has(fn)) sources.set(fn, new Set());
-            sources.get(fn).add('DIRECT');
-          }
-        }
-        for (const [varName, fn] of varToFnMap.entries()) {
-          const r = new RegExp(`(?<![.\\w$?])\\b${varName}\\b`);
-          if (r.test(cleanText)) {
-            if (!sources.has(fn)) sources.set(fn, new Set());
-            sources.get(fn).add(`VAR:${varName}`);
-          }
-        }
-        return sources;
-      }
-
-      const sourcesA = getSources(cleanA);
-      const sourcesB = getSources(cleanB);
-
-      const circularFns = [];
-      for (const [fn, sA] of sourcesA.entries()) {
-        if (sourcesB.has(fn)) {
-          const sB = sourcesB.get(fn);
-          let isCircular = false;
-          for (const originA of sA) {
-            for (const originB of sB) {
-              if (originA === 'DIRECT' || originB === 'DIRECT' || originA !== originB) {
-                isCircular = true;
-                break;
-              }
-            }
-            if (isCircular) break;
-          }
-          if (isCircular) {
-            circularFns.push(fn);
-          }
-        }
-      }
-
-      if (circularFns.length > 0) {
-        const upToAssert = content.slice(0, startIndex);
-        const lines = upToAssert.split('\n');
-        let prevLine = '';
-        for (let l = lines.length - 2; l >= 0; l--) {
-          const trimmed = lines[l].trim();
-          if (trimmed.length > 0) {
-            prevLine = trimmed;
+      if (ch === "'" || ch === '"') {
+        const start = i;
+        const startLine = line;
+        const quote = advanceChar();
+        while (i < len) {
+          const c = advanceChar();
+          if (c === '\\') {
+            if (i < len) advanceChar();
+          } else if (c === quote) {
             break;
           }
         }
+        tokens.push({ type: 'string', value: code.slice(start, i), start, end: i, line: startLine });
+        continue;
+      }
+      if (ch === '`') {
+        const start = i;
+        const startLine = line;
+        advanceChar();
+        tokens.push({ type: 'punct', value: '(', start, end: i, line: startLine });
+        scanTemplateBody();
+        continue;
+      }
+      if (ch === '/' && canStartRegex()) {
+        const start = i;
+        const startLine = line;
+        advanceChar();
+        let inClass = false;
+        while (i < len) {
+          const c = code[i];
+          if (c === '\n') break;
+          advanceChar();
+          if (c === '\\') {
+            if (i < len && code[i] !== '\n') advanceChar();
+          } else if (c === '[') {
+            inClass = true;
+          } else if (c === ']') {
+            inClass = false;
+          } else if (c === '/' && !inClass) {
+            while (i < len && /[a-z]/i.test(code[i])) advanceChar();
+            break;
+          }
+        }
+        tokens.push({ type: 'literal', value: code.slice(start, i), start, end: i, line: startLine });
+        continue;
+      }
+      if (/[0-9]/.test(ch)) {
+        const start = i;
+        const startLine = line;
+        while (i < len && /[0-9a-fA-FxXoObBn_.]/.test(code[i])) advanceChar();
+        tokens.push({ type: 'literal', value: code.slice(start, i), start, end: i, line: startLine });
+        continue;
+      }
+      if (/[A-Za-z_$]/.test(ch)) {
+        const start = i;
+        const startLine = line;
+        while (i < len && /[\w$]/.test(code[i])) advanceChar();
+        tokens.push({ type: 'id', value: code.slice(start, i), start, end: i, line: startLine });
+        continue;
+      }
+      if (ch === '{') {
+        const start = i;
+        advanceChar();
+        braceDepth++;
+        tokens.push({ type: 'punct', value: '{', start, end: i, line });
+        continue;
+      }
+      if (ch === '}') {
+        const start = i;
+        advanceChar();
+        if (
+          templateBraceStack.length > 0 &&
+          braceDepth === templateBraceStack[templateBraceStack.length - 1]
+        ) {
+          templateBraceStack.pop();
+          tokens.push({ type: 'punct', value: ')', start, end: i, line });
+          tokens.push({ type: 'punct', value: ',', start, end: i, line });
+          scanTemplateBody();
+          continue;
+        }
+        braceDepth = Math.max(0, braceDepth - 1);
+        tokens.push({ type: 'punct', value: '}', start, end: i, line });
+        continue;
+      }
 
-        const allowMatch = prevLine.match(/^\/\/\s*anti-cheat-allow:\s*circular-oracle(?:\s*--\s*(.*))?$/);
-        if (allowMatch) {
-          const reason = (allowMatch[1] || '').trim();
-          if (reason.length > 0) {
+      let matchedMulti = false;
+      for (const mp of multiPuncts) {
+        if (code.startsWith(mp, i)) {
+          const start = i;
+          const startLine = line;
+          for (let k = 0; k < mp.length; k++) advanceChar();
+          tokens.push({ type: 'punct', value: mp, start, end: i, line: startLine });
+          matchedMulti = true;
+          break;
+        }
+      }
+      if (matchedMulti) continue;
+
+      const start = i;
+      const startLine = line;
+      advanceChar();
+      tokens.push({ type: 'punct', value: ch, start, end: i, line: startLine });
+    }
+
+    return tokens;
+  }
+
+  function findMatchingClose(tokens, openIdx) {
+    const openVal = tokens[openIdx]?.value;
+    const closeVal = openVal === '(' ? ')' : openVal === '[' ? ']' : openVal === '{' ? '}' : null;
+    if (!closeVal) return -1;
+    let depth = 1;
+    for (let i = openIdx + 1; i < tokens.length; i++) {
+      const v = tokens[i].value;
+      if (tokens[i].type === 'punct') {
+        if (v === openVal) depth++;
+        else if (v === closeVal) {
+          depth--;
+          if (depth === 0) return i;
+        }
+      }
+    }
+    return -1;
+  }
+
+  function splitTopLevelItems(tokens, startIdx, endIdx, delimiter = ',') {
+    const ranges = [];
+    let itemStart = startIdx;
+    let pDepth = 0;
+    let bDepth = 0;
+    let cDepth = 0;
+    for (let i = startIdx; i < endIdx; i++) {
+      const t = tokens[i];
+      if (t.type === 'punct') {
+        if (t.value === '(') pDepth++;
+        else if (t.value === ')') pDepth = Math.max(0, pDepth - 1);
+        else if (t.value === '[') bDepth++;
+        else if (t.value === ']') bDepth = Math.max(0, bDepth - 1);
+        else if (t.value === '{') cDepth++;
+        else if (t.value === '}') cDepth = Math.max(0, cDepth - 1);
+        else if (t.value === delimiter && pDepth === 0 && bDepth === 0 && cDepth === 0) {
+          ranges.push([itemStart, i]);
+          itemStart = i + 1;
+        }
+      }
+    }
+    ranges.push([itemStart, endIdx]);
+    return ranges;
+  }
+
+  function extractBoundNamesFromPattern(tokens, startIdx) {
+    const first = tokens[startIdx];
+    if (!first) return { names: [], nextIdx: startIdx };
+    if (first.type === 'id') {
+      return { names: [first.value], nextIdx: startIdx + 1 };
+    }
+    if (first.type === 'punct' && (first.value === '{' || first.value === '[')) {
+      const closeIdx = findMatchingClose(tokens, startIdx);
+      if (closeIdx === -1) return { names: [], nextIdx: startIdx + 1 };
+      const names = [];
+      const isObj = first.value === '{';
+      const items = splitTopLevelItems(tokens, startIdx + 1, closeIdx, ',');
+      for (const [iStart, iEnd] of items) {
+        if (iStart >= iEnd) continue;
+        const eqParts = splitTopLevelItems(tokens, iStart, iEnd, '=');
+        const [lhsStart, lhsEnd] = eqParts[0];
+        if (lhsStart >= lhsEnd) continue;
+        if (tokens[lhsStart].type === 'punct' && tokens[lhsStart].value === '...') {
+          const sub = extractBoundNamesFromPattern(tokens, lhsStart + 1);
+          names.push(...sub.names);
+          continue;
+        }
+        if (isObj) {
+          const colonParts = splitTopLevelItems(tokens, lhsStart, lhsEnd, ':');
+          if (colonParts.length > 1) {
+            const [targetStart] = colonParts[1];
+            const sub = extractBoundNamesFromPattern(tokens, targetStart);
+            names.push(...sub.names);
+          } else if (tokens[lhsStart].type === 'id') {
+            names.push(tokens[lhsStart].value);
+          }
+        } else {
+          const sub = extractBoundNamesFromPattern(tokens, lhsStart);
+          names.push(...sub.names);
+        }
+      }
+      return { names, nextIdx: closeIdx + 1 };
+    }
+    return { names: [], nextIdx: startIdx + 1 };
+  }
+
+  const PREV_CONTINUES_PUNCTS = new Set([
+    '=', '+=', '-=', '*=', '/=', '%=', '+', '-', '*', '/', '%', '**',
+    '&&', '||', '??', '?', ':', '.', '?.', '=>', '!', '~',
+    '==', '===', '!=', '!==', '<', '>', '<=', '>=', '(', '[', '{',
+  ]);
+  const PREV_CONTINUES_IDS = new Set([
+    'await', 'new', 'typeof', 'void', 'delete', 'in', 'instanceof', 'of', 'return', 'throw', 'yield', 'async',
+  ]);
+  const NEXT_CONTINUES_PUNCTS = new Set([
+    '.', '?.', '[', '(', '?', ':', '+', '-', '*', '/', '%', '**',
+    '&&', '||', '??', '==', '===', '!=', '!==', '<', '>', '<=', '>=', '=>',
+  ]);
+  const NEXT_CONTINUES_IDS = new Set(['in', 'instanceof']);
+
+  function findExpressionEnd(tokens, startIdx) {
+    let pDepth = 0;
+    let bDepth = 0;
+    let cDepth = 0;
+    for (let k = startIdx; k < tokens.length; k++) {
+      const t = tokens[k];
+      if (t.type === 'punct') {
+        if (t.value === '(') pDepth++;
+        else if (t.value === ')') {
+          if (pDepth === 0) return k;
+          pDepth--;
+        } else if (t.value === '[') bDepth++;
+        else if (t.value === ']') {
+          if (bDepth === 0) return k;
+          bDepth--;
+        } else if (t.value === '{') cDepth++;
+        else if (t.value === '}') {
+          if (cDepth === 0) return k;
+          cDepth--;
+        } else if ((t.value === ';' || t.value === ',') && pDepth === 0 && bDepth === 0 && cDepth === 0) {
+          return k;
+        }
+      }
+      if (pDepth === 0 && bDepth === 0 && cDepth === 0 && k + 1 < tokens.length) {
+        const next = tokens[k + 1];
+        if (next.line > t.line) {
+          const prevContinues =
+            (t.type === 'punct' && PREV_CONTINUES_PUNCTS.has(t.value)) ||
+            (t.type === 'id' && PREV_CONTINUES_IDS.has(t.value));
+          const nextContinues =
+            (next.type === 'punct' && NEXT_CONTINUES_PUNCTS.has(next.value)) ||
+            (next.type === 'id' && NEXT_CONTINUES_IDS.has(next.value));
+          if (!prevContinues && !nextContinues) {
+            return k + 1;
+          }
+        }
+      }
+    }
+    return tokens.length;
+  }
+
+  function checkFileCircularOracles(content, rel, fileViolations) {
+    const testRelPosix = rel.split(sep).join('/');
+    const importedProdFns = new Map();
+    const importedNamespaces = new Map();
+
+    const importStmtRegex = /(?:^|[\n;])\s*import\s+((?:(?!\bimport\b)[^;])+?)\s+from\s*['"](\.{1,2}\/[^'"]+)['"]/g;
+    let importMatch;
+    while ((importMatch = importStmtRegex.exec(content)) !== null) {
+      const clause = importMatch[1].trim();
+      const importPath = importMatch[2];
+      if (
+        importPath.includes('.test.mjs') ||
+        importPath.includes('fixtures') ||
+        importPath.includes('test-support')
+      ) {
+        continue;
+      }
+
+      const nsMatch = clause.match(/\*\s+as\s+([A-Za-z_$][\w$]*)/);
+      if (nsMatch) {
+        importedNamespaces.set(nsMatch[1], importPath);
+      }
+
+      const namedMatch = clause.match(/\{([\s\S]*?)\}/);
+      if (namedMatch) {
+        const specs = namedMatch[1].split(',');
+        for (const spec of specs) {
+          const trimmed = spec.trim();
+          if (!trimmed) continue;
+          const [importedName, localName = importedName] = trimmed
+            .split(/\s+as\s+/)
+            .map((part) => part.trim());
+          if (isSharedHelperImport(testRelPosix, importPath, importedName)) continue;
+          importedProdFns.set(localName, importedName);
+        }
+      }
+
+      const beforeBraceOrStar = clause
+        .replace(/\{[\s\S]*?\}/, '')
+        .replace(/\*\s+as\s+[A-Za-z_$][\w$]*/, '')
+        .replace(/,/g, '')
+        .trim();
+      if (beforeBraceOrStar && /^[A-Za-z_$][\w$]*$/.test(beforeBraceOrStar) && beforeBraceOrStar !== 'type') {
+        if (!isSharedHelperImport(testRelPosix, importPath, beforeBraceOrStar)) {
+          importedProdFns.set(beforeBraceOrStar, beforeBraceOrStar);
+        }
+      }
+    }
+
+    if (importedProdFns.size === 0 && importedNamespaces.size === 0) return;
+
+    const tokens = tokenizeJs(content);
+    const scopeStack = [{ vars: new Map(), fnAliases: new Map(), literalTokens: new Map() }];
+
+    const lookupVar = (name) => {
+      for (let s = scopeStack.length - 1; s >= 0; s--) {
+        if (scopeStack[s].vars.has(name)) {
+          return scopeStack[s].vars.get(name);
+        }
+      }
+      return null;
+    };
+
+    const lookupLiteralTokens = (name) => {
+      for (let s = scopeStack.length - 1; s >= 0; s--) {
+        if (scopeStack[s].literalTokens.has(name)) {
+          return scopeStack[s].literalTokens.get(name);
+        }
+      }
+      return null;
+    };
+
+    const setExistingOrCurrentVar = (name, sourceMap, litToks = null) => {
+      for (let s = scopeStack.length - 1; s >= 0; s--) {
+        if (scopeStack[s].vars.has(name)) {
+          scopeStack[s].vars.set(name, sourceMap);
+          if (litToks) scopeStack[s].literalTokens.set(name, litToks);
+          else scopeStack[s].literalTokens.delete(name);
+          return;
+        }
+      }
+      const top = scopeStack[scopeStack.length - 1];
+      top.vars.set(name, sourceMap);
+      if (litToks) top.literalTokens.set(name, litToks);
+      else top.literalTokens.delete(name);
+    };
+
+    const lookupFnAlias = (name) => {
+      for (let s = scopeStack.length - 1; s >= 0; s--) {
+        if (scopeStack[s].fnAliases.has(name)) {
+          return scopeStack[s].fnAliases.get(name);
+        }
+      }
+      return null;
+    };
+
+    const buildCallOrigin = (callTokenIdx, openParenIdx) => {
+      const closeParenIdx = findMatchingClose(tokens, openParenIdx);
+      if (closeParenIdx === -1) return `${callTokenIdx}:`;
+      const parts = [];
+      for (let p = openParenIdx + 1; p < closeParenIdx; p++) {
+        const t = tokens[p];
+        const prev = p > openParenIdx + 1 ? tokens[p - 1] : null;
+        const next = p + 1 < closeParenIdx ? tokens[p + 1] : null;
+        if (
+          t.type === 'id' &&
+          !(prev?.type === 'punct' && (prev.value === '.' || prev.value === '?.')) &&
+          !(next?.type === 'punct' && next.value === ':' && prev?.type === 'punct' && (prev.value === '{' || prev.value === ','))
+        ) {
+          const lit = lookupLiteralTokens(t.value);
+          if (lit) {
+            parts.push(lit);
+            continue;
+          }
+        }
+        parts.push(t.value);
+      }
+      return `${callTokenIdx}:${parts.join(' ')}`;
+    };
+
+    const addSourceOrigin = (sources, fnName, origin) => {
+      if (!sources.has(fnName)) sources.set(fnName, new Set());
+      sources.get(fnName).add(origin);
+    };
+
+    const mergeSourceMaps = (target, incoming) => {
+      for (const [fnName, origins] of incoming.entries()) {
+        for (const origin of origins) {
+          addSourceOrigin(target, fnName, origin);
+        }
+      }
+    };
+
+    const evaluateExpressionSources = (startIdx, endIdx) => {
+      const sources = new Map();
+      const arrowParams = new Set();
+      const prodCallArgIntervals = [];
+      const fnBodyIntervals = [];
+
+      for (let k = startIdx; k < endIdx; k++) {
+        const tok = tokens[k];
+        if (tok.type === 'punct' && tok.value === '=>') {
+          if (tokens[k + 1]?.type === 'punct' && tokens[k + 1].value === '{') {
+            const closeBrace = findMatchingClose(tokens, k + 1);
+            if (closeBrace !== -1) {
+              fnBodyIntervals.push([k + 1, closeBrace]);
+            }
+          } else {
+            const exprEnd = findExpressionEnd(tokens, k + 1);
+            fnBodyIntervals.push([k + 1, exprEnd]);
+          }
+        }
+        if (tok.type === 'id' && tok.value === 'function') {
+          let braceIdx = k + 1;
+          if (tokens[braceIdx]?.type === 'id') braceIdx++;
+          if (tokens[braceIdx]?.type === 'punct' && tokens[braceIdx].value === '(') {
+            const closeParen = findMatchingClose(tokens, braceIdx);
+            if (closeParen !== -1 && tokens[closeParen + 1]?.type === 'punct' && tokens[closeParen + 1].value === '{') {
+              const closeBrace = findMatchingClose(tokens, closeParen + 1);
+              if (closeBrace !== -1) {
+                fnBodyIntervals.push([closeParen + 1, closeBrace]);
+              }
+            }
+          }
+        }
+        if (
+          tok.type === 'id' &&
+          tokens[k + 1]?.type === 'punct' &&
+          tokens[k + 1].value === '(' &&
+          tokens[k - 1]?.type === 'punct' &&
+          (tokens[k - 1].value === '{' || tokens[k - 1].value === ',')
+        ) {
+          const closeParen = findMatchingClose(tokens, k + 1);
+          if (closeParen !== -1 && tokens[closeParen + 1]?.type === 'punct' && tokens[closeParen + 1].value === '{') {
+            const closeBrace = findMatchingClose(tokens, closeParen + 1);
+            if (closeBrace !== -1) {
+              fnBodyIntervals.push([closeParen + 1, closeBrace]);
+            }
+          }
+        }
+        if (tok.type === 'id' && tokens[k + 1]?.type === 'punct' && tokens[k + 1].value === '=>') {
+          arrowParams.add(tok.value);
+          continue;
+        }
+        if (tok.type === 'punct' && tok.value === '(') {
+          const closeParen = findMatchingClose(tokens, k);
+          if (closeParen !== -1 && closeParen < endIdx && tokens[closeParen + 1]?.value === '=>') {
+            for (let p = k + 1; p < closeParen; p++) {
+              if (tokens[p].type === 'id') arrowParams.add(tokens[p].value);
+            }
+          }
+        }
+      }
+
+      const isInsideInterval = (pos, intervals) => {
+        for (const [s, e] of intervals) {
+          if (pos >= s && pos <= e) return true;
+        }
+        return false;
+      };
+
+      for (let k = startIdx; k < endIdx; k++) {
+        if (isInsideInterval(k, fnBodyIntervals) || isInsideInterval(k, prodCallArgIntervals)) continue;
+        const tok = tokens[k];
+        if (tok.type !== 'id') continue;
+        const prev = k > startIdx ? tokens[k - 1] : null;
+        const next = k + 1 < endIdx ? tokens[k + 1] : null;
+
+        if (prev?.type === 'punct' && (prev.value === '.' || prev.value === '?.')) {
+          if (next?.type === 'punct' && next.value === '(') {
+            const closeParen = findMatchingClose(tokens, k + 1);
+            if (closeParen !== -1) prodCallArgIntervals.push([k + 1, closeParen]);
+            const objTok = k - 2 >= startIdx ? tokens[k - 2] : null;
+            const beforeObjTok = k - 3 >= startIdx ? tokens[k - 3] : null;
+            if (
+              objTok?.type === 'id' &&
+              !(beforeObjTok?.type === 'punct' && (beforeObjTok.value === '.' || beforeObjTok.value === '?.')) &&
+              importedNamespaces.has(objTok.value)
+            ) {
+              const importPath = importedNamespaces.get(objTok.value);
+              if (!isSharedHelperImport(testRelPosix, importPath, tok.value)) {
+                addSourceOrigin(sources, tok.value, buildCallOrigin(k, k + 1));
+              }
+            }
+          }
+          continue;
+        }
+
+        if (
+          next?.type === 'punct' &&
+          next.value === ':' &&
+          prev?.type === 'punct' &&
+          (prev.value === '{' || prev.value === ',')
+        ) {
+          continue;
+        }
+
+        if (arrowParams.has(tok.value)) continue;
+
+        if (next?.type === 'punct' && next.value === '(') {
+          let matchedProdCall = false;
+          const origin = buildCallOrigin(k, k + 1);
+          if (importedProdFns.has(tok.value)) {
+            addSourceOrigin(sources, importedProdFns.get(tok.value), origin);
+            matchedProdCall = true;
+          } else {
+            const aliased = lookupFnAlias(tok.value);
+            if (aliased) {
+              for (const fn of aliased) {
+                addSourceOrigin(sources, fn, origin);
+              }
+              matchedProdCall = true;
+            }
+          }
+          if (matchedProdCall) {
+            const closeParen = findMatchingClose(tokens, k + 1);
+            if (closeParen !== -1) {
+              prodCallArgIntervals.push([k + 1, closeParen]);
+            }
             continue;
           }
         }
 
-        const { line, snippet } = getLineAndSnippet(content, startIndex, i - startIndex);
-        fileViolations.push({
-          gate: 'ANTI-CIRCULAR-ORACLE',
-          target: rel,
-          line,
-          snippet,
-          message: `Circular oracle detected: assertion compares results produced by the same production function "${circularFns.join(', ')}". Use independent golden expected values or independent oracles.`,
-        });
+        const boundSources = lookupVar(tok.value);
+        if (boundSources && boundSources.size > 0) {
+          mergeSourceMaps(sources, boundSources);
+        }
+      }
+
+      return sources;
+    };
+
+    const resolveAliasTargets = (startIdx, endIdx) => {
+      if (endIdx - startIdx === 1 && tokens[startIdx].type === 'id') {
+        const idName = tokens[startIdx].value;
+        if (importedProdFns.has(idName)) {
+          return new Set([importedProdFns.get(idName)]);
+        }
+        const existingAlias = lookupFnAlias(idName);
+        if (existingAlias && existingAlias.size > 0) {
+          return new Set(existingAlias);
+        }
+      }
+      if (
+        endIdx - startIdx === 3 &&
+        tokens[startIdx].type === 'id' &&
+        importedNamespaces.has(tokens[startIdx].value) &&
+        tokens[startIdx + 1].value === '.' &&
+        tokens[startIdx + 2].type === 'id'
+      ) {
+        const importPath = importedNamespaces.get(tokens[startIdx].value);
+        const member = tokens[startIdx + 2].value;
+        if (!isSharedHelperImport(testRelPosix, importPath, member)) {
+          return new Set([member]);
+        }
+      }
+      return null;
+    };
+
+    const extractPureLiteralSignature = (startIdx, endIdx, rhsSources) => {
+      if (rhsSources.size > 0 || endIdx <= startIdx) return null;
+      const parts = [];
+      for (let p = startIdx; p < endIdx; p++) {
+        parts.push(tokens[p].value);
+      }
+      return parts.join(' ');
+    };
+
+    const verifiedOrigins = new Set();
+
+    const markExpressionOriginsVerified = (sources) => {
+      for (const origins of sources.values()) {
+        for (const origin of origins) {
+          verifiedOrigins.add(origin);
+        }
+      }
+    };
+
+    for (let idx = 0; idx < tokens.length; idx++) {
+      const tok = tokens[idx];
+
+      if (tok.type === 'punct' && tok.value === '{') {
+        scopeStack.push({ vars: new Map(), fnAliases: new Map(), literalTokens: new Map() });
+        continue;
+      }
+      if (tok.type === 'punct' && tok.value === '}') {
+        if (scopeStack.length > 1) scopeStack.pop();
+        continue;
+      }
+
+      if (tok.type === 'id' && (tok.value === 'const' || tok.value === 'let' || tok.value === 'var')) {
+        let declIdx = idx + 1;
+        while (declIdx < tokens.length) {
+          const { names, nextIdx } = extractBoundNamesFromPattern(tokens, declIdx);
+          if (names.length === 0) break;
+          const currentScope = scopeStack[scopeStack.length - 1];
+          if (tokens[nextIdx]?.type === 'punct' && tokens[nextIdx].value === '=') {
+            const rhsStart = nextIdx + 1;
+            const rhsEnd = findExpressionEnd(tokens, rhsStart);
+            const rhsSources = evaluateExpressionSources(rhsStart, rhsEnd);
+            const aliasSet = names.length === 1 ? resolveAliasTargets(rhsStart, rhsEnd) : null;
+            const litSig = names.length === 1 ? extractPureLiteralSignature(rhsStart, rhsEnd, rhsSources) : null;
+            for (const name of names) {
+              currentScope.vars.set(name, rhsSources);
+              if (aliasSet) {
+                currentScope.fnAliases.set(name, aliasSet);
+              } else {
+                currentScope.fnAliases.delete(name);
+              }
+              if (litSig) {
+                currentScope.literalTokens.set(name, litSig);
+              } else {
+                currentScope.literalTokens.delete(name);
+              }
+            }
+            declIdx = rhsEnd;
+          } else {
+            for (const name of names) {
+              currentScope.vars.set(name, new Map());
+              currentScope.fnAliases.delete(name);
+              currentScope.literalTokens.delete(name);
+            }
+            declIdx = nextIdx;
+          }
+          if (tokens[declIdx]?.type === 'punct' && tokens[declIdx].value === ',') {
+            declIdx++;
+          } else {
+            break;
+          }
+        }
+        continue;
+      }
+
+      if (
+        tok.type === 'id' &&
+        tokens[idx + 1]?.type === 'punct' &&
+        tokens[idx + 1].value === '=' &&
+        !(tokens[idx - 1]?.type === 'punct' && (tokens[idx - 1].value === '.' || tokens[idx - 1].value === '?.'))
+      ) {
+        const rhsStart = idx + 2;
+        const rhsEnd = findExpressionEnd(tokens, rhsStart);
+        const rhsSources = evaluateExpressionSources(rhsStart, rhsEnd);
+        const litSig = extractPureLiteralSignature(rhsStart, rhsEnd, rhsSources);
+        setExistingOrCurrentVar(tok.value, rhsSources, litSig);
+        const aliasSet = resolveAliasTargets(rhsStart, rhsEnd);
+        if (aliasSet) {
+          scopeStack[scopeStack.length - 1].fnAliases.set(tok.value, aliasSet);
+        }
+        continue;
+      }
+
+      if (
+        tok.type === 'id' &&
+        tok.value === 'assert' &&
+        tokens[idx + 1]?.type === 'punct' &&
+        tokens[idx + 1].value === '.' &&
+        tokens[idx + 2]?.type === 'id' &&
+        ['equal', 'strictEqual', 'deepEqual', 'deepStrictEqual'].includes(tokens[idx + 2].value) &&
+        tokens[idx + 3]?.type === 'punct' &&
+        tokens[idx + 3].value === '('
+      ) {
+        const openParenIdx = idx + 3;
+        const closeParenIdx = findMatchingClose(tokens, openParenIdx);
+        if (closeParenIdx === -1) continue;
+
+        const argRanges = splitTopLevelItems(tokens, openParenIdx + 1, closeParenIdx, ',');
+        if (argRanges.length < 2) continue;
+
+        const [argAStart, argAEnd] = argRanges[0];
+        const [argBStart, argBEnd] = argRanges[1];
+        const sourcesA = evaluateExpressionSources(argAStart, argAEnd);
+        const sourcesB = evaluateExpressionSources(argBStart, argBEnd);
+
+        const splitOrigin = (origin) => {
+          const colonPos = origin.indexOf(':');
+          return {
+            callId: origin.slice(0, colonPos),
+            argSig: origin.slice(colonPos + 1),
+          };
+        };
+
+        const circularFns = [];
+        for (const [fn, sA] of sourcesA.entries()) {
+          if (sourcesB.has(fn)) {
+            const sB = sourcesB.get(fn);
+            let isCircular = false;
+            for (const originA of sA) {
+              if (verifiedOrigins.has(originA)) continue;
+              const parsedA = splitOrigin(originA);
+              for (const originB of sB) {
+                if (verifiedOrigins.has(originB)) continue;
+                const parsedB = splitOrigin(originB);
+                if (parsedA.callId !== parsedB.callId && parsedA.argSig === parsedB.argSig) {
+                  isCircular = true;
+                  break;
+                }
+              }
+              if (isCircular) break;
+            }
+            if (isCircular) {
+              circularFns.push(fn);
+            }
+          }
+        }
+
+        if (circularFns.length > 0) {
+          const startIndex = tok.start;
+          const endIndex = tokens[closeParenIdx].end;
+          const upToAssert = content.slice(0, startIndex);
+          const lines = upToAssert.split('\n');
+          let prevLine = '';
+          for (let l = lines.length - 2; l >= 0; l--) {
+            const trimmed = lines[l].trim();
+            if (trimmed.length > 0) {
+              prevLine = trimmed;
+              break;
+            }
+          }
+
+          const allowMatch = prevLine.match(
+            /^\/\/\s*anti-cheat-allow:\s*circular-oracle(?:\s*--\s*(.*))?$/,
+          );
+          if (allowMatch) {
+            const reason = (allowMatch[1] || '').trim();
+            if (reason.length > 0) {
+              markExpressionOriginsVerified(sourcesA);
+              markExpressionOriginsVerified(sourcesB);
+              continue;
+            }
+          }
+
+          const { line, snippet } = getLineAndSnippet(content, startIndex, endIndex - startIndex);
+          fileViolations.push({
+            gate: 'ANTI-CIRCULAR-ORACLE',
+            target: rel,
+            line,
+            snippet,
+            message: `Circular oracle detected: assertion compares results produced by the same production function "${circularFns.join(', ')}". Use independent golden expected values or independent oracles.`,
+          });
+        } else {
+          markExpressionOriginsVerified(sourcesA);
+          markExpressionOriginsVerified(sourcesB);
+        }
       }
     }
   }
