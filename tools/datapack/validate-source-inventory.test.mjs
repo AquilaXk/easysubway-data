@@ -11,32 +11,89 @@ import { sha256 } from "../lib/hash.mjs";
 const root = path.resolve(import.meta.dirname, "../..");
 stageLocalMobileFixture({ repositoryRoot: root });
 
+async function readWorktreeInventory() {
+  return JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+}
+
+async function readWorktreeCandidates() {
+  return JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
+}
+
+function runValidateInventory(args) {
+  return execFileAsync(
+    process.execPath,
+    ["tools/datapack/validate-source-inventory.mjs", ...args],
+    { cwd: root },
+  );
+}
+
+async function withMutatedInventory(prefix, mutator, fn, extraArgs = []) {
+  const inventory = await readWorktreeInventory();
+  mutator(inventory);
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-${prefix}-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  try {
+    await fn(() => runValidateInventory(["--inventory", inventoryPath, ...extraArgs]));
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+}
+
+async function withMutatedCandidates(prefix, mutator, fn) {
+  const candidates = await readWorktreeCandidates();
+  mutator(candidates);
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-candidate-${prefix}-${Date.now()}`);
+  const candidatesPath = path.join(outputDir, "source-candidates.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(candidatesPath, `${JSON.stringify(candidates, null, 2)}\n`);
+  try {
+    await fn(() => runValidateInventory(["--candidates", candidatesPath]));
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+}
+
 test("official snapshot admission validates exact non-production raw binding", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-official-snapshot-admission-"));
   try {
-    const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-    const candidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
+    const inventory = await readWorktreeInventory();
+    const candidates = await readWorktreeCandidates();
     const inventoryPath = path.join(directory, "inventory.json");
     const candidatesPath = path.join(directory, "candidates.json");
     const source = inventory.sources.find(({ id }) => id === "molit-railway-transfer-movement");
     const candidate = candidates.candidates.find(({ id }) => id === "molit-railway-transfer-movement");
     const binding = structuredClone(candidate.rawSnapshotAdmission);
+
+    const syncAndValidate = async () => {
+      await writeFile(inventoryPath, JSON.stringify(inventory));
+      await writeFile(candidatesPath, JSON.stringify(candidates));
+      return runValidateInventory(["--inventory", inventoryPath, "--candidates", candidatesPath]);
+    };
+
+    const resetBinding = () => {
+      source.rawSnapshotAdmission = structuredClone(binding);
+      candidate.rawSnapshotAdmission = structuredClone(binding);
+    };
+
     assert.equal(source.coverageScope.mappingStatus, "UNMAPPED_RAW_SNAPSHOT");
     assert.deepEqual(source.coverageScope.regionIds, []);
     assert.deepEqual(source.coverageScope.operatorIds, []);
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root });
+    await syncAndValidate();
+
     for (const value of [undefined, true]) {
       if (value === undefined) delete source.productionUseAllowed;
       else source.productionUseAllowed = value;
-      await writeFile(inventoryPath, JSON.stringify(inventory));
       await assert.rejects(
-        execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root }),
+        syncAndValidate(),
         /coverageScope.mappingStatus requires a non-production raw snapshot/,
       );
       source.productionUseAllowed = false;
     }
+
     const metadata = JSON.parse(await readFile(binding.metadataPath, "utf8"));
     assert.equal(metadata.observedRailOperatorCodes.length, 18);
     const rawBytes = gunzipSync(await readFile(path.join(path.dirname(binding.metadataPath), metadata.gzipPath)));
@@ -56,20 +113,18 @@ test("official snapshot admission validates exact non-production raw binding", a
     };
     source.rawSnapshotAdmission = structuredClone(alternateBinding);
     candidate.rawSnapshotAdmission = structuredClone(alternateBinding);
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root });
-    source.rawSnapshotAdmission = structuredClone(binding);
-    candidate.rawSnapshotAdmission = structuredClone(binding);
+    await syncAndValidate();
+    resetBinding();
+
     const mappedSource = inventory.sources.find(({ id }) => id !== source.id);
     const mappedRegionIds = mappedSource.coverageScope.regionIds;
     mappedSource.coverageScope.regionIds = [];
-    await writeFile(inventoryPath, JSON.stringify(inventory));
     await assert.rejects(
-      execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root }),
+      syncAndValidate(),
       /coverageScope.regionIds must be a non-empty array/,
     );
     mappedSource.coverageScope.regionIds = mappedRegionIds;
+
     // #862: 판이 바뀌면 고정 날짜가 실제 값과 같아질 수 있어, 현재 metadata에서 하루 뒤로 바꾼 값을 쓴다.
     const metadataOnlyMutation = { ...metadata, freshUntil: new Date(Date.parse(metadata.freshUntil) + 86_400_000).toISOString() };
     const metadataOnlyMutationBytes = Buffer.from(JSON.stringify(metadataOnlyMutation));
@@ -79,41 +134,34 @@ test("official snapshot admission validates exact non-production raw binding", a
     source.rawSnapshotAdmission.metadataPath = metadataOnlyMutationPath;
     source.rawSnapshotAdmission.metadataFileSha256 = sha256(metadataOnlyMutationBytes);
     candidate.rawSnapshotAdmission = structuredClone(source.rawSnapshotAdmission);
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root }), /official snapshot metadata mismatch/);
-    source.rawSnapshotAdmission = structuredClone(binding);
-    candidate.rawSnapshotAdmission = structuredClone(binding);
+    await assert.rejects(syncAndValidate(), /official snapshot metadata mismatch/);
+    resetBinding();
+
     const invalidTimestampMetadataBytes = Buffer.from(JSON.stringify({ ...metadata, capturedAt: "2026-07-29" }));
     const invalidTimestampMetadataPath = path.join(directory, "invalid-timestamp.json");
     await writeFile(invalidTimestampMetadataPath, invalidTimestampMetadataBytes);
     source.rawSnapshotAdmission.metadataPath = invalidTimestampMetadataPath;
     source.rawSnapshotAdmission.metadataFileSha256 = sha256(invalidTimestampMetadataBytes);
     candidate.rawSnapshotAdmission = structuredClone(source.rawSnapshotAdmission);
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root }), /RFC 3339 UTC timestamp/);
-    source.rawSnapshotAdmission = structuredClone(binding);
-    candidate.rawSnapshotAdmission = structuredClone(binding);
+    await assert.rejects(syncAndValidate(), /RFC 3339 UTC timestamp/);
+    resetBinding();
+
     candidate.admissionStatus = "PENDING";
-    await writeFile(candidatesPath, JSON.stringify(candidates));
     await assert.rejects(
-      execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root }),
+      syncAndValidate(),
       /official snapshot admissionStatus invalid/,
     );
     candidate.admissionStatus = "official_snapshot_admitted";
+
     source.rawSnapshotAdmission.rawSha256 = "0".repeat(64);
     candidate.rawSnapshotAdmission.rawSha256 = "0".repeat(64);
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root }), /raw hash is not the pinned provider artifact/);
-    source.rawSnapshotAdmission = structuredClone(binding);
-    candidate.rawSnapshotAdmission = structuredClone(binding);
+    await assert.rejects(syncAndValidate(), /raw hash is not the pinned provider artifact/);
+    resetBinding();
+
     candidates.candidates = candidates.candidates.filter(({ id }) => id !== candidate.id);
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root }), /official snapshot requires an admitted candidate/);
+    await assert.rejects(syncAndValidate(), /official snapshot requires an admitted candidate/);
     candidates.candidates.push(candidate);
+
     const mutatedRawBytes = Buffer.from(rawBytes);
     mutatedRawBytes[mutatedRawBytes.length - 1] ^= 1;
     const mutatedGzipBytes = gzipSync(mutatedRawBytes, { mtime: 0 });
@@ -132,452 +180,275 @@ test("official snapshot admission validates exact non-production raw binding", a
     };
     source.rawSnapshotAdmission = structuredClone(mutatedBinding);
     candidate.rawSnapshotAdmission = structuredClone(mutatedBinding);
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(execFileAsync("node", ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath, "--candidates", candidatesPath], { cwd: root }), /raw hash is not the pinned provider artifact/);
-  } finally { await rm(directory, { recursive: true, force: true }); }
+    await assert.rejects(syncAndValidate(), /raw hash is not the pinned provider artifact/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("source inventory 검증기는 required source의 라이선스와 갱신일 누락을 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  invalidInventory.sources[0].license.type = "";
-  invalidInventory.sources[1].observedDataUpdatedAt = "";
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /license.type is required|observedDataUpdatedAt is required/,
+  await withMutatedInventory(
+    "missing-fields",
+    (inventory) => {
+      inventory.sources[0].license.type = "";
+      inventory.sources[1].observedDataUpdatedAt = "";
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /license.type is required|observedDataUpdatedAt is required/);
+    },
   );
 });
 
 test("source inventory 검증기는 알 수 없는 라이선스 유형을 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  invalidInventory.sources[0].license.type = "UNKNOWN";
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-unknown-license-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /license.type must be KOGL-1/,
+  await withMutatedInventory(
+    "unknown-license",
+    (inventory) => {
+      inventory.sources[0].license.type = "UNKNOWN";
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /license.type must be KOGL-1/);
+    },
   );
 });
 
 test("source inventory 검증기는 공공데이터포털 이용허락범위 제한 없음 source를 허용한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const freeUseInventory = structuredClone(sourceInventory);
-  freeUseInventory.sources[0].license = {
-    type: "PUBLIC_DATA_FREE_USE",
-    name: "공공데이터포털 이용허락범위 제한 없음",
-    attribution: "공공데이터포털 이용허락범위 제한 없음",
-    commercialUseAllowed: true,
-    derivativeWorkAllowed: true,
-    redistributionAllowed: true,
-    evidenceUrl: "https://www.data.go.kr/data/15098554/openapi.do",
-  };
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-free-use-license-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(freeUseInventory, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/validate-source-inventory.mjs",
-      "--inventory",
-      inventoryPath,
-    ],
-    { cwd: root },
+  await withMutatedInventory(
+    "free-use-license",
+    (inventory) => {
+      inventory.sources[0].license = {
+        type: "PUBLIC_DATA_FREE_USE",
+        name: "공공데이터포털 이용허락범위 제한 없음",
+        attribution: "공공데이터포털 이용허락범위 제한 없음",
+        commercialUseAllowed: true,
+        derivativeWorkAllowed: true,
+        redistributionAllowed: true,
+        evidenceUrl: "https://www.data.go.kr/data/15098554/openapi.do",
+      };
+    },
+    async (validate) => {
+      await assert.doesNotReject(validate());
+    },
   );
 });
 
 test("source inventory 검증기는 coverageScope 누락을 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  delete invalidInventory.sources[0].coverageScope;
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-coverage-scope-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /coverageScope must be an object/,
+  await withMutatedInventory(
+    "coverage-scope",
+    (inventory) => {
+      delete inventory.sources[0].coverageScope;
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /coverageScope must be an object/);
+    },
   );
 });
 
 test("source inventory 검증기는 중복 lineIds를 거부한다", async () => {
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  inventory.sources[0].coverageScope.lineIds = ["seoul-4", "seoul-4"];
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-line-scope-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath],
-      { cwd: root },
-    ),
-    /coverageScope\.lineIds must not contain duplicates/,
+  await withMutatedInventory(
+    "line-scope",
+    (inventory) => {
+      inventory.sources[0].coverageScope.lineIds = ["seoul-4", "seoul-4"];
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /coverageScope\.lineIds must not contain duplicates/);
+    },
   );
 });
 
 test("source inventory 검증기는 schedule/realtime/facility capability 누락을 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  delete invalidInventory.sources[0].capabilities;
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-capabilities-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /capabilities must be an object/,
+  await withMutatedInventory(
+    "capabilities",
+    (inventory) => {
+      delete inventory.sources[0].capabilities;
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /capabilities must be an object/);
+    },
   );
 });
 
 test("source inventory 검증기는 provider 조건이 막힌 live ETA 승격을 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  const realtimeSource = invalidInventory.sources.find((source) => source.id === "seoul-realtime-arrival-station-info");
-  realtimeSource.capabilities = {
-    schedule: {
-      status: "UNSUPPORTED",
-      productionUseAllowed: false,
-      coverageStatus: "NOT_PROVIDED_BY_SOURCE",
-      updateFrequency: realtimeSource.updateFrequency,
-      unsupportedNotes: "realtime arrival source does not provide scheduled timetable data",
+  await withMutatedInventory(
+    "live-eta",
+    (inventory) => {
+      const realtimeSource = inventory.sources.find((source) => source.id === "seoul-realtime-arrival-station-info");
+      realtimeSource.capabilities = {
+        schedule: {
+          status: "UNSUPPORTED",
+          productionUseAllowed: false,
+          coverageStatus: "NOT_PROVIDED_BY_SOURCE",
+          updateFrequency: realtimeSource.updateFrequency,
+          unsupportedNotes: "realtime arrival source does not provide scheduled timetable data",
+        },
+        realtime: {
+          status: "CANDIDATE",
+          productionUseAllowed: false,
+          liveEtaEligible: true,
+          rateLimitStatus: "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
+          coverageStatus: "SOURCE_INVENTORY_COVERED",
+          updateFrequency: realtimeSource.updateFrequency,
+          unsupportedNotes: "provider terms and rate limits are not approved for production live ETA",
+        },
+        facility: {
+          status: "UNSUPPORTED",
+          productionUseAllowed: false,
+          coverageStatus: "NOT_PROVIDED_BY_SOURCE",
+          updateFrequency: realtimeSource.updateFrequency,
+          unsupportedNotes: "realtime arrival source does not provide facility data",
+        },
+      };
     },
-    realtime: {
-      status: "CANDIDATE",
-      productionUseAllowed: false,
-      liveEtaEligible: false,
-      rateLimitStatus: "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
-      coverageStatus: "SOURCE_INVENTORY_COVERED",
-      updateFrequency: realtimeSource.updateFrequency,
-      unsupportedNotes: "provider terms and rate limits are not approved for production live ETA",
+    async (validate) => {
+      await assert.rejects(validate(), /live ETA requires compatible provider terms and rate limits/);
     },
-    facility: {
-      status: "UNSUPPORTED",
-      productionUseAllowed: false,
-      coverageStatus: "NOT_PROVIDED_BY_SOURCE",
-      updateFrequency: realtimeSource.updateFrequency,
-      unsupportedNotes: "realtime arrival source does not provide facility data",
-    },
-  };
-  realtimeSource.capabilities.realtime.liveEtaEligible = true;
-  realtimeSource.capabilities.realtime.rateLimitStatus = "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA";
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-live-eta-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /live ETA requires compatible provider terms and rate limits/,
   );
 });
 
 test("source inventory 검증기는 candidate capability의 production 사용 승격을 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  const scheduleSource = invalidInventory.sources.find((source) => source.id === "molit-tago-subway-info");
-  scheduleSource.capabilities.schedule.productionUseAllowed = true;
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-candidate-production-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /productionUseAllowed requires SUPPORTED status/,
+  await withMutatedInventory(
+    "candidate-production",
+    (inventory) => {
+      const scheduleSource = inventory.sources.find((source) => source.id === "molit-tago-subway-info");
+      scheduleSource.capabilities.schedule.productionUseAllowed = true;
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /productionUseAllowed requires SUPPORTED status/);
+    },
   );
 });
 
 test("source inventory 검증기는 admitted candidate의 admission evidence 누락을 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  const source = invalidInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
-  delete source.admissionEvidence;
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-admission-evidence-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /molit-tago-subway-info\.admissionEvidence must be an object/,
+  await withMutatedInventory(
+    "admission-evidence",
+    (inventory) => {
+      const source = inventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
+      delete source.admissionEvidence;
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /molit-tago-subway-info\.admissionEvidence must be an object/);
+    },
   );
 });
 
 test("source inventory 검증기는 admitted candidate sample evidence hash 불일치를 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  const source = invalidInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
-  source.admissionEvidence.sampleEvidenceHash = sha256("wrong-sample-evidence");
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-admission-hash-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /molit-tago-subway-info\.admissionEvidence\.sampleEvidenceHash must be/,
+  await withMutatedInventory(
+    "admission-hash",
+    (inventory) => {
+      const source = inventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
+      source.admissionEvidence.sampleEvidenceHash = sha256("wrong-sample-evidence");
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /molit-tago-subway-info\.admissionEvidence\.sampleEvidenceHash must be/);
+    },
   );
 });
 
 test("source inventory 검증기는 admitted candidate live sample evidence hash 누락을 거부한다", async () => {
-  const sourceCandidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
-  const invalidCandidates = structuredClone(sourceCandidates);
-  const candidate = invalidCandidates.candidates.find((entry) => entry.id === "molit-tago-subway-info");
-  delete candidate.evidence.liveSampleEvidenceHash;
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-candidate-admission-hash-${Date.now()}`);
-  const candidatesPath = path.join(outputDir, "source-candidates.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(candidatesPath, `${JSON.stringify(invalidCandidates, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--candidates",
-        candidatesPath,
-      ],
-      { cwd: root },
-    ),
-    /molit-tago-subway-info\.evidence\.liveSampleEvidenceHash is required/,
+  await withMutatedCandidates(
+    "admission-hash",
+    (candidates) => {
+      const candidate = candidates.candidates.find((entry) => entry.id === "molit-tago-subway-info");
+      delete candidate.evidence.liveSampleEvidenceHash;
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /molit-tago-subway-info\.evidence\.liveSampleEvidenceHash is required/);
+    },
   );
 });
 
 test("source inventory 검증기는 v1 optional source가 production 필수로 남는 것을 거부한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const invalidInventory = structuredClone(sourceInventory);
-  invalidInventory.sources.find((source) => source.id === "kric-disabled-toilet").requiredForProductionPack = true;
-
-  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-optional-scope-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-        "--scope",
-        "release/product-gates/production-datapack-scope.json",
-      ],
-      { cwd: root },
-    ),
-    /optional source .* must not be requiredForProductionPack/,
+  await withMutatedInventory(
+    "optional-scope",
+    (inventory) => {
+      inventory.sources.find((source) => source.id === "kric-disabled-toilet").requiredForProductionPack = true;
+    },
+    async (validate) => {
+      await assert.rejects(validate(), /optional source .* must not be requiredForProductionPack/);
+    },
+    ["--scope", "release/product-gates/production-datapack-scope.json"],
   );
 });
 
 test("source inventory 검증기는 admitted candidate의 quota evidence 누락을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-source-admission-quota-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  const promotedInventoryPath = path.join(outputDir, "source-inventory.quota-blocked-production.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const source = inventory.sources.find((entry) => entry.id === "seoul-realtime-arrival-station-info");
-  delete source.admissionEvidence.quotaEvidence;
-  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        inventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /seoul-realtime-arrival-station-info\.admissionEvidence\.quotaEvidence must be an object/,
+  await withMutatedInventory(
+    "admission-quota",
+    (inventory) => {
+      const source = inventory.sources.find((entry) => entry.id === "seoul-realtime-arrival-station-info");
+      delete source.admissionEvidence.quotaEvidence;
+    },
+    async (validate) => {
+      await assert.rejects(
+        validate(),
+        /seoul-realtime-arrival-station-info\.admissionEvidence\.quotaEvidence must be an object/,
+      );
+    },
   );
 
-  const promotedInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const promotedSource = promotedInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
-  promotedSource.capabilities.schedule.status = "SUPPORTED";
-  promotedSource.capabilities.schedule.productionUseAllowed = true;
-  await writeFile(promotedInventoryPath, `${JSON.stringify(promotedInventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-source-inventory.mjs",
-        "--inventory",
-        promotedInventoryPath,
-      ],
-      { cwd: root },
-    ),
-    /molit-tago-subway-info\.admissionEvidence\.quotaEvidence\.productionUseAllowed must be true when source has production capability/,
+  await withMutatedInventory(
+    "admission-quota-promoted",
+    (promotedInventory) => {
+      const promotedSource = promotedInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
+      promotedSource.capabilities.schedule.status = "SUPPORTED";
+      promotedSource.capabilities.schedule.productionUseAllowed = true;
+    },
+    async (validate) => {
+      await assert.rejects(
+        validate(),
+        /molit-tago-subway-info\.admissionEvidence\.quotaEvidence\.productionUseAllowed must be true when source has production capability/,
+      );
+    },
   );
 });
 
 test("source inventory 검증기는 같은 shared quota store의 hard limit 불일치를 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-shared-quota-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const trainPosition = inventory.sources.find((entry) => entry.id === "seoul-topis-realtime-train-position");
-  trainPosition.admissionEvidence.quotaEvidence.runtimeDailyHardLimit = 799;
-  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath],
-      { cwd: root },
-    ),
-    /shared quota store realtime_provider_call_quota_state must use identical runtime hard limits/,
+  await withMutatedInventory(
+    "shared-quota",
+    (inventory) => {
+      const trainPosition = inventory.sources.find((entry) => entry.id === "seoul-topis-realtime-train-position");
+      trainPosition.admissionEvidence.quotaEvidence.runtimeDailyHardLimit = 799;
+    },
+    async (validate) => {
+      await assert.rejects(
+        validate(),
+        /shared quota store realtime_provider_call_quota_state must use identical runtime hard limits/,
+      );
+    },
   );
 });
 
 test("source inventory 검증기는 guarded realtime quota의 shared store 누락을 거부한다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-guarded-quota-store-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const arrival = inventory.sources.find((entry) => entry.id === "seoul-realtime-arrival-station-info");
-  delete arrival.admissionEvidence.quotaEvidence.sharedQuotaStore;
-  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath],
-      { cwd: root },
-    ),
-    /seoul-realtime-arrival-station-info\.guarded realtime requires sharedQuotaStore/,
+  await withMutatedInventory(
+    "guarded-quota-store",
+    (inventory) => {
+      const arrival = inventory.sources.find((entry) => entry.id === "seoul-realtime-arrival-station-info");
+      delete arrival.admissionEvidence.quotaEvidence.sharedQuotaStore;
+    },
+    async (validate) => {
+      await assert.rejects(
+        validate(),
+        /seoul-realtime-arrival-station-info\.guarded realtime requires sharedQuotaStore/,
+      );
+    },
   );
 });
 
 test("source inventory는 official OD fare admission hash 쌍을 함께 요구한다", async () => {
-  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const sourceInventory = await readWorktreeInventory();
   const validInventory = structuredClone(sourceInventory);
   const fareSource = validInventory.sources.find(({ id }) => id === "seoul-metro-official-od-fares");
   const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-inventory-"));
+  const writeAndValidate = async (name, doc) => {
+    const filePath = path.join(workspace, `${name}.json`);
+    await writeFile(filePath, JSON.stringify(doc));
+    return runValidateInventory(["--inventory", filePath]);
+  };
   try {
-    const validPath = path.join(workspace, "valid.json");
-    await writeFile(validPath, JSON.stringify(validInventory));
-    await execFileAsync(process.execPath, [
-      "tools/datapack/validate-source-inventory.mjs", "--inventory", validPath,
-    ], { cwd: root });
+    await writeAndValidate("valid", validInventory);
 
     const invalidInventory = structuredClone(validInventory);
     delete invalidInventory.sources.find(({ id }) => id === fareSource.id).fareStationLineMappingLedgerHash;
-    const invalidPath = path.join(workspace, "invalid.json");
-    await writeFile(invalidPath, JSON.stringify(invalidInventory));
     await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/validate-source-inventory.mjs", "--inventory", invalidPath,
-      ], { cwd: root }),
+      writeAndValidate("invalid", invalidInventory),
       /fareStationLineMappingLedgerHash must be a sha256 hex string/,
     );
 
@@ -585,23 +456,15 @@ test("source inventory는 official OD fare admission hash 쌍을 함께 요구�
     const nonFareSource = nonFareInventory.sources.find(({ id }) => id === "kric-disabled-toilet");
     nonFareSource.officialOdFareAdmissionHash = "a".repeat(64);
     nonFareSource.fareStationLineMappingLedgerHash = "b".repeat(64);
-    const nonFarePath = path.join(workspace, "non-fare.json");
-    await writeFile(nonFarePath, JSON.stringify(nonFareInventory));
     await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/validate-source-inventory.mjs", "--inventory", nonFarePath,
-      ], { cwd: root }),
+      writeAndValidate("non-fare", nonFareInventory),
       /official OD fare references require all six official fare fields/,
     );
 
     const partialFareInventory = structuredClone(nonFareInventory);
     partialFareInventory.sources.find(({ id }) => id === "kric-disabled-toilet").fieldsProvided.push("gnrlCardFare");
-    const partialFarePath = path.join(workspace, "partial-fare.json");
-    await writeFile(partialFarePath, JSON.stringify(partialFareInventory));
     await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/validate-source-inventory.mjs", "--inventory", partialFarePath,
-      ], { cwd: root }),
+      writeAndValidate("partial-fare", partialFareInventory),
       /official OD fare references require all six official fare fields/,
     );
   } finally {
@@ -610,8 +473,8 @@ test("source inventory는 official OD fare admission hash 쌍을 함께 요구�
 });
 
 test("official OD fare candidate admission은 inventory hash 쌍과 일치해야 한다", async () => {
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  const candidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
+  const inventory = await readWorktreeInventory();
+  const candidates = await readWorktreeCandidates();
   const source = inventory.sources.find(({ id }) => id === "seoul-metro-official-od-fares");
   const candidate = candidates.candidates.find(({ id }) => id === "seoul-metro-official-od-fares");
   const admissionBundle = JSON.parse(
@@ -626,54 +489,47 @@ test("official OD fare candidate admission은 inventory hash 쌍과 일치해야
     const inventoryPath = path.join(workspace, "inventory.json");
     const candidatesPath = path.join(workspace, "candidates.json");
     const admissionPath = path.join(workspace, "admission.json");
-    const validate = () => execFileAsync(process.execPath, [
-      "tools/datapack/validate-source-inventory.mjs",
-      "--inventory", inventoryPath,
-      "--candidates", candidatesPath,
-      "--official-od-fare-admission", admissionPath,
-    ], { cwd: root });
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await writeFile(admissionPath, JSON.stringify(admissionBundle, null, 2) + "\n");
-    await validate();
+    const syncAndValidate = async (admissionBytes = JSON.stringify(admissionBundle, null, 2) + "\n") => {
+      await writeFile(inventoryPath, JSON.stringify(inventory));
+      await writeFile(candidatesPath, JSON.stringify(candidates));
+      await writeFile(admissionPath, admissionBytes);
+      return runValidateInventory([
+        "--inventory", inventoryPath,
+        "--candidates", candidatesPath,
+        "--official-od-fare-admission", admissionPath,
+      ]);
+    };
+
+    await syncAndValidate();
 
     candidate.evidence.fareStationLineMappingLedgerHash = "c".repeat(64);
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(validate(), /fareStationLineMappingLedgerHash must match/);
+    await assert.rejects(syncAndValidate(), /fareStationLineMappingLedgerHash must match/);
 
     candidate.evidence.fareStationLineMappingLedgerHash = source.fareStationLineMappingLedgerHash;
     candidate.domain = "accessibility_facilities";
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(validate(), /candidate domain must be "official_od_fares"/);
+    await assert.rejects(syncAndValidate(), /candidate domain must be "official_od_fares"/);
 
     candidate.domain = "official_od_fares";
     source.coverageScope.sourceDomains = ["accessibility_facilities"];
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(validate(), /source domain must be official_od_fares/);
+    await assert.rejects(syncAndValidate(), /source domain must be official_od_fares/);
 
     source.coverageScope.sourceDomains = ["official_od_fares"];
     candidate.admissionStatus = "evidence_recorded_admin_review_required";
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await assert.rejects(validate(), /official OD fare source requires an admitted candidate/);
+    await assert.rejects(syncAndValidate(), /official OD fare source requires an admitted candidate/);
 
     candidate.admissionStatus = "official_od_fare_admitted_to_production_inventory";
     admission.decision = "REJECTED";
     const rejectedBytes = JSON.stringify(admissionBundle, null, 2) + "\n";
     source.officialOdFareAdmissionHash = sha256(rejectedBytes);
     candidate.evidence.officialOdFareAdmissionHash = source.officialOdFareAdmissionHash;
-    await writeFile(inventoryPath, JSON.stringify(inventory));
-    await writeFile(candidatesPath, JSON.stringify(candidates));
-    await writeFile(admissionPath, rejectedBytes);
-    await assert.rejects(validate(), /admission decision must be "APPROVED"/);
+    await assert.rejects(syncAndValidate(rejectedBytes), /admission decision must be "APPROVED"/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test("candidate productionUseAdmission이 승인된 admitted source는 inventory에서도 productionUseAllowed와 production capability를 켜야 한다", async () => {
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const inventory = await readWorktreeInventory();
   const movementSource = inventory.sources.find(({ id }) => id === "kric-station-movement-standard");
   assert.ok(movementSource);
   assert.equal(movementSource.productionUseAllowed, true);
@@ -683,33 +539,29 @@ test("candidate productionUseAdmission이 승인된 admitted source는 inventory
   assert.equal(movementSource.admissionEvidence.quotaEvidence.productionUseAllowed, true);
   assert.equal(movementSource.admissionEvidence.quotaEvidence.unlockStatus, "unlocked");
 
-  const workspace = await mkdtemp(path.join(tmpdir(), "movement-production-admission-"));
-  try {
-    const disabledSourceInventory = structuredClone(inventory);
-    disabledSourceInventory.sources.find(({ id }) => id === "kric-station-movement-standard").productionUseAllowed = false;
-    const disabledSourcePath = path.join(workspace, "disabled-source.json");
-    await writeFile(disabledSourcePath, JSON.stringify(disabledSourceInventory));
-    await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/validate-source-inventory.mjs", "--inventory", disabledSourcePath,
-      ], { cwd: root }),
-      /kric-station-movement-standard must enable productionUseAllowed and a production capability when candidate productionUseAdmission is approved/,
-    );
+  await withMutatedInventory(
+    "disabled-source",
+    (doc) => {
+      doc.sources.find(({ id }) => id === "kric-station-movement-standard").productionUseAllowed = false;
+    },
+    async (validate) => {
+      await assert.rejects(
+        validate(),
+        /kric-station-movement-standard must enable productionUseAllowed and a production capability when candidate productionUseAdmission is approved/,
+      );
+    },
+  );
 
-    const disabledCapabilityInventory = structuredClone(inventory);
-    disabledCapabilityInventory.sources.find(
-      ({ id }) => id === "kric-station-movement-standard",
-    ).capabilities.facility.productionUseAllowed = false;
-    const disabledCapabilityPath = path.join(workspace, "disabled-capability.json");
-    await writeFile(disabledCapabilityPath, JSON.stringify(disabledCapabilityInventory));
-    await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/validate-source-inventory.mjs", "--inventory", disabledCapabilityPath,
-      ], { cwd: root }),
-      /kric-station-movement-standard must enable productionUseAllowed and a production capability when candidate productionUseAdmission is approved/,
-    );
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
+  await withMutatedInventory(
+    "disabled-capability",
+    (doc) => {
+      doc.sources.find(({ id }) => id === "kric-station-movement-standard").capabilities.facility.productionUseAllowed = false;
+    },
+    async (validate) => {
+      await assert.rejects(
+        validate(),
+        /kric-station-movement-standard must enable productionUseAllowed and a production capability when candidate productionUseAdmission is approved/,
+      );
+    },
+  );
 });
-
