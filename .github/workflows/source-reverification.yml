@@ -24,6 +24,11 @@ on:
         required: false
         default: ""
         type: string
+      allow_same_day_budget_retry:
+        description: Unblock the daily failed-attempt limit for one manual retry when daily call budget remains
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -64,6 +69,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
           REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
+          ALLOW_SAME_DAY_BUDGET_RETRY: ${{ github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User' && inputs.allow_same_day_budget_retry == true && 'true' || 'false' }}
         run: |
           set -euo pipefail
           decision_root="${RUNNER_TEMP}/source-reverification-decision/${GITHUB_RUN_ID}"
@@ -83,7 +89,7 @@ jobs:
           gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 1000 --json number,title,body,author > "${decision_root}/issues.json"
           # #3036: 같은 KST 날 앞선 run이 원천별로 보낸 요청 수(각 run의 계측 artifact)를 공급자 호출 전에 읽는다. 읽지 못하면 예산 대상 묶음만 막힌다.
           node tools/ci/provider-call-ledger.mjs --ledger "${decision_root}/provider-call-ledger.json"
-          node tools/ci/decide-source-reverification.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --policy release/product-gates/datapack-freshness-sla.json --prs "${decision_root}/prs.json" --automation-branches "${decision_root}/automation-branches.txt" --runs "${decision_root}/runs.json" --issues "${decision_root}/issues.json" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --call-budget release/product-gates/provider-daily-call-budget.json --provider-call-ledger "${decision_root}/provider-call-ledger.json" --replay-run-id "${REPLAY_RUN_ID}" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/decide-source-reverification.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --policy release/product-gates/datapack-freshness-sla.json --prs "${decision_root}/prs.json" --automation-branches "${decision_root}/automation-branches.txt" --runs "${decision_root}/runs.json" --issues "${decision_root}/issues.json" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --call-budget release/product-gates/provider-daily-call-budget.json --provider-call-ledger "${decision_root}/provider-call-ledger.json" --replay-run-id "${REPLAY_RUN_ID}" --allow-same-day-budget-retry "${ALLOW_SAME_DAY_BUDGET_RETRY}" --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}

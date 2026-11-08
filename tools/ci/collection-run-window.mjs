@@ -84,6 +84,49 @@ export function kstQuotaWindow(now) {
   };
 }
 
+function parseOptionalTimestamp(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") return Number.NaN;
+  return Date.parse(value);
+}
+
+/**
+ * run이 해당 KST 하루 창([window.startMillis, window.endMillis])에 속하는지 판정한다(#3036 7-43).
+ * - 당일 KST 창 안에서 생성된 run(created_at in [startMillis, endMillis])은 당일 집계 대상이다.
+ * - 자정 직전(created_at < startMillis)에 생성됐더라도 run_started_at 또는 updated_at이 당일 KST 창([startMillis, endMillis])과 겹치면
+ *   자정을 넘겨 실행된 run으로 보아 당일 집계 대상에 포함한다.
+ * - 단, updated_at이 startMillis 이전이거나 collector step 종료 시각(collectorCompletedAt)이 startMillis 이전이면 전날 KST에 이미 수집이 끝난 run이므로 제외한다.
+ */
+export function runOverlapsKstWindow(run, window, { collectorCompletedAt } = {}) {
+  if (!run || typeof run !== "object" || !window || typeof window !== "object") return false;
+  const createdAt = typeof run.created_at === "string" ? Date.parse(run.created_at) : Number.NaN;
+  if (!Number.isFinite(createdAt) || createdAt > window.endMillis) return false;
+  const startedAt = parseOptionalTimestamp(run.run_started_at);
+  const updatedAt = parseOptionalTimestamp(run.updated_at);
+  if (Number.isNaN(startedAt) || Number.isNaN(updatedAt)) return false;
+  if (startedAt !== null && (startedAt < createdAt || startedAt > window.endMillis)) return false;
+  if (updatedAt !== null && (updatedAt < createdAt || updatedAt > window.endMillis)) return false;
+  if (collectorCompletedAt !== undefined && collectorCompletedAt !== null) {
+    const completedMillis = typeof collectorCompletedAt === "string" ? Date.parse(collectorCompletedAt) : Number.NaN;
+    if (!Number.isFinite(completedMillis) || completedMillis < window.startMillis || completedMillis > window.endMillis) return false;
+  }
+  if (createdAt >= window.startMillis) return true;
+  if (updatedAt !== null && updatedAt < window.startMillis) return false;
+  return (startedAt !== null && startedAt >= window.startMillis) || (updatedAt !== null && updatedAt >= window.startMillis);
+}
+
+function completedBeforeKstWindow(run, window) {
+  const createdAt = typeof run?.created_at === "string" ? Date.parse(run.created_at) : Number.NaN;
+  if (!Number.isFinite(createdAt) || createdAt >= window.startMillis) return false;
+  const startedAt = parseOptionalTimestamp(run.run_started_at);
+  const updatedAt = parseOptionalTimestamp(run.updated_at);
+  if (Number.isNaN(startedAt) || Number.isNaN(updatedAt)) return false;
+  if (startedAt === null && updatedAt === null) return false;
+  if (startedAt !== null && startedAt < createdAt) return false;
+  if (updatedAt !== null && updatedAt < createdAt) return false;
+  return (startedAt === null || startedAt < window.startMillis) && (updatedAt === null || updatedAt < window.startMillis);
+}
+
 function validateRun(run, window, context, event) {
   const workflow = context.workflowFile;
   if (!run || typeof run !== "object" || Array.isArray(run)
@@ -91,10 +134,12 @@ function validateRun(run, window, context, event) {
     || !Number.isSafeInteger(run.run_attempt) || run.run_attempt <= 0) {
     throw failure(COLLECTION_WINDOW_REASON.RUN_RECORD_INVALID, { workflow });
   }
-  const createdAt = Date.parse(run.created_at);
   if (run.event !== event || run.head_branch !== EXPECTED_BRANCH
-    || run.path !== `.github/workflows/${workflow}`
-    || !Number.isFinite(createdAt) || createdAt < window.startMillis || createdAt > window.endMillis) {
+    || run.path !== `.github/workflows/${workflow}`) {
+    throw failure(COLLECTION_WINDOW_REASON.RUN_IDENTITY_MISMATCH, { workflow });
+  }
+  if (completedBeforeKstWindow(run, window)) return null;
+  if (!runOverlapsKstWindow(run, window)) {
     throw failure(COLLECTION_WINDOW_REASON.RUN_IDENTITY_MISMATCH, { workflow });
   }
   return run;
@@ -193,7 +238,7 @@ async function listRunJobs({ run, token, fetchImpl, context }) {
 
 // 이 run이 collector에 들어갔다면 그 결과({ outcome, completedAt }), 공급자를 부르지 않았다면 null.
 // run이 아직 끝나지 않았으면 collector step이 이미 실패했어도 진행 중이다: 뒤따르는 증거 artifact 업로드가 끝나기 전에는 쓴 요청 수를 증명할 수 없다.
-async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
+async function previousRunCollectorOutcome({ run, token, fetchImpl, context, window }) {
   const jobs = await listRunJobs({ run, token, fetchImpl, context });
   const jobIds = new Set();
   const results = [];
@@ -204,7 +249,15 @@ async function previousRunCollectorOutcome({ run, token, fetchImpl, context }) {
   }
   for (const outcome of OUTCOME_PRECEDENCE) {
     const result = results.find((candidate) => candidate?.outcome === outcome);
-    if (result !== undefined) return run.status === RUN_COMPLETED ? result : { outcome: COLLECTION_OUTCOME.RUNNING, completedAt: null };
+    if (result !== undefined) {
+      const resolved = run.status === RUN_COMPLETED ? result : { outcome: COLLECTION_OUTCOME.RUNNING, completedAt: null };
+      if (window !== undefined && Date.parse(run.created_at) < window.startMillis
+        && resolved.completedAt !== null
+        && !runOverlapsKstWindow(run, window, { collectorCompletedAt: resolved.completedAt })) {
+        return null;
+      }
+      return resolved;
+    }
   }
   return null;
 }
@@ -225,7 +278,10 @@ async function listWindowRuns({ window, token, fetchImpl, context, event }) {
   }
   if (body.total_count > MAX_RUNS) throw failure(COLLECTION_WINDOW_REASON.RUN_LIST_LIMIT, { workflow });
   if (body.workflow_runs.length !== body.total_count) throw failure(COLLECTION_WINDOW_REASON.GITHUB_API_BODY_INVALID, { workflow });
-  return body.workflow_runs.map((run) => ({ run: validateRun(run, window, context, event), context }));
+  return body.workflow_runs
+    .map((run) => validateRun(run, window, context, event))
+    .filter((run) => run !== null)
+    .map((run) => ({ run, context }));
 }
 
 /**
@@ -258,7 +314,7 @@ export async function inspectCollectionWindow({ env, now, fetchImpl, contexts })
   const entered = [];
   for (const { run, context } of runs) {
     if (run.id === runId) continue;
-    const result = await previousRunCollectorOutcome({ run, token, fetchImpl, context }); // NOSONAR -- 순차가 의도다: GitHub REST 권장대로 같은 토큰의 요청을 동시에 보내지 않아 secondary rate limit을 피한다
+    const result = await previousRunCollectorOutcome({ run, token, fetchImpl, context, window }); // NOSONAR -- 순차가 의도다: GitHub REST 권장대로 같은 토큰의 요청을 동시에 보내지 않아 secondary rate limit을 피한다
     if (result !== null) entered.push({ run, context, ...result });
   }
   return { runId, window, token, entered };

@@ -68,8 +68,9 @@ test("판정 step이 claim·수집보다 먼저 돌고 PR·run·브랜치 목록
   assert.doesNotMatch(block, /--status "?completed|--status completed/u);
   assert.match(block, /jq -s 'add \| unique_by\(\.databaseId\)' "\$\{decision_root\}"\/runs\/\*\.json > "\$\{decision_root\}\/runs\.json"/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
-  assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --issues "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --call-budget release\/product-gates\/provider-daily-call-budget\.json --provider-call-ledger "\$\{decision_root\}\/provider-call-ledger\.json" --replay-run-id "\$\{REPLAY_RUN_ID\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --issues "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --call-budget release\/product-gates\/provider-daily-call-budget\.json --provider-call-ledger "\$\{decision_root\}\/provider-call-ledger\.json" --replay-run-id "\$\{REPLAY_RUN_ID\}" --allow-same-day-budget-retry "\$\{ALLOW_SAME_DAY_BUDGET_RETRY\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
   assert.match(block, /\n          REPLAY_RUN_ID: \$\{\{ inputs\.replay_run_id \}\}\n/u);
+  assert.match(block, /\n          ALLOW_SAME_DAY_BUDGET_RETRY: \$\{\{ github\.event_name == 'workflow_dispatch' && github\.event\.sender\.type == 'User' && inputs\.allow_same_day_budget_retry == true && 'true' \|\| 'false' \}\}\n/u);
   before("Decide which P7D sources are due", "Claim exact main before provider access");
 });
 
@@ -267,8 +268,8 @@ test("action은 SHA로 고정하고 광역 스테이징·강제 push를 쓰지 �
   assert.doesNotMatch(yml, /git add -A|git add \.|--force|push -f/u);
 });
 
-test("dispatch는 재생할 원본 run id(replay_run_id)를 선택 입력으로 받는다 (#3036)", () => {
-  assert.match(yml, /\n  workflow_dispatch:\n    inputs:\n      replay_run_id:\n        description: [^\n]+\n        required: false\n        default: ""\n        type: string\n/u);
+test("dispatch는 재생할 원본 run id(replay_run_id)와 같은 날 수동 예산 재시도 해금(allow_same_day_budget_retry)을 선택 입력으로 받는다 (#3036)", () => {
+  assert.match(yml, /\n  workflow_dispatch:\n    inputs:\n      replay_run_id:\n        description: [^\n]+\n        required: false\n        default: ""\n        type: string\n      allow_same_day_budget_retry:\n        description: [^\n]+\n        required: false\n        default: false\n        type: boolean\n/u);
 });
 
 test("재생은 claim 뒤에 원본 run이 main의 이 workflow인지 확인하고 그 run의 artifact를 받은 뒤에 controller를 돌린다 (#3036)", () => {

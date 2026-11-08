@@ -20,9 +20,24 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
+import { buildAttemptRecord, emitAttemptRecord } from "./lib/source-fetch-telemetry.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import {
+  evaluateCoverageReauditCallAllowance,
+  formatProviderBudgetBlockReason,
+  parseProviderCallBudgetPolicy,
+  parseProviderCallLedger,
+} from "../ci/provider-call-budget.mjs";
+
+export const COVERAGE_REAUDIT_DEFAULT_OPERATION_ID = "data-go-search-searchData";
+export const DEFAULT_PARTIAL_REAUDIT_LINE_IDS = Object.freeze([
+  "line-e4cce88f0d7f",
+  "line-0ffaa95b1b5d",
+  "line-5b8d9b05e7e6",
+  "line-e2938a4cc492",
+]);
 
 const PUBLIC_API_ORIGINS = new Set([
   "https://api.odcloud.kr",
@@ -433,6 +448,156 @@ export function mergePartialCoverageReaudit({
   };
 }
 
+function normalizeReauditTokens(value, label) {
+  if (value === undefined || value === null || value === "") return [];
+  const rawList = typeof value === "string" ? value.split(",") : value;
+  if (!Array.isArray(rawList) || rawList.length === 0) {
+    throw new Error(`COVERAGE_REAUDIT_INPUT_INVALID: ${label} must be a non-empty list`);
+  }
+  const normalized = rawList.map((item) => (typeof item === "string" ? item.trim() : ""));
+  if (normalized.some((item) => item === "")) {
+    throw new Error(`COVERAGE_REAUDIT_INPUT_INVALID: ${label} contains an empty token`);
+  }
+  return [...new Set(normalized)];
+}
+
+function queryRequestKey(query) {
+  return JSON.stringify({
+    endpoint: query.endpoint,
+    method: query.method ?? "GET",
+    format: query.format,
+    credentialEnv: query.credentialEnv,
+    credentialPlacement: query.credentialPlacement ?? "query",
+    query: query.query,
+  });
+}
+
+function queryOperationId(query) {
+  return `${query.providerId}-${query.operation}`;
+}
+
+export function selectCoverageReauditSearchPlan(searchPlan, {
+  scope = "PARTIAL",
+  lineIds,
+  sourceDomains,
+  baseResolutions,
+} = {}) {
+  validatePlan(searchPlan);
+  if (scope === "FULL") {
+    return { ...searchPlan, entries: [...searchPlan.entries] };
+  }
+  if (scope !== "PARTIAL") {
+    throw new Error(`COVERAGE_REAUDIT_SCOPE_INVALID: scope must be PARTIAL or FULL (received ${String(scope)})`);
+  }
+  const requestedLineIds = normalizeReauditTokens(lineIds, "lineIds");
+  const requestedDomains = normalizeReauditTokens(sourceDomains, "sourceDomains");
+  const entryKey = (entry) => `${entry.regionId}:${entry.operatorId}:${entry.lineId}:${entry.sourceDomain}`;
+  const planLineIds = new Set(searchPlan.entries.map(({ lineId }) => lineId));
+
+  let effectiveLineIds;
+  let unsupportedKeys = null;
+  if (baseResolutions !== undefined && baseResolutions !== null) {
+    if (typeof baseResolutions !== "object" || !Array.isArray(baseResolutions.entries) || baseResolutions.entries.length === 0) {
+      throw new Error("COVERAGE_REAUDIT_INPUT_INVALID: baseResolutions.entries must be a non-empty array");
+    }
+    unsupportedKeys = new Set(baseResolutions.entries.map(entryKey));
+    const baseLineIds = [...new Set(baseResolutions.entries.map(({ lineId }) => lineId))];
+    effectiveLineIds = requestedLineIds.length > 0 ? requestedLineIds : baseLineIds;
+  } else {
+    effectiveLineIds = requestedLineIds.length > 0 ? requestedLineIds : [...DEFAULT_PARTIAL_REAUDIT_LINE_IDS];
+  }
+
+  for (const lineId of effectiveLineIds) {
+    if (!planLineIds.has(lineId)) {
+      throw new Error(`COVERAGE_REAUDIT_LINE_NOT_FOUND: ${lineId}`);
+    }
+  }
+  const lineIdSet = new Set(effectiveLineIds);
+  const domainSet = requestedDomains.length > 0 ? new Set(requestedDomains) : null;
+  const selectedEntries = searchPlan.entries.filter((entry) => {
+    if (!lineIdSet.has(entry.lineId)) return false;
+    if (domainSet !== null) return domainSet.has(entry.sourceDomain);
+    if (unsupportedKeys !== null) return unsupportedKeys.has(entryKey(entry));
+    return true;
+  });
+  if (selectedEntries.length === 0) {
+    throw new Error("COVERAGE_REAUDIT_EMPTY_SELECTION: no search plan entries matched the reaudit scope");
+  }
+  return {
+    ...searchPlan,
+    entries: selectedEntries,
+  };
+}
+
+export function estimateCoverageReauditProviderCalls(firstArg = {}, secondArg = {}) {
+  const options = Array.isArray(firstArg?.entries)
+    ? { ...secondArg, searchPlan: firstArg }
+    : firstArg;
+  const {
+    searchPlan,
+    scope = "PARTIAL",
+    lineIds,
+    sourceDomains,
+    baseResolutions,
+  } = options ?? {};
+  const selectedPlan = selectCoverageReauditSearchPlan(searchPlan, { scope, lineIds, sourceDomains, baseResolutions });
+  const seenKeysByOperation = new Map();
+  for (const entry of selectedPlan.entries) {
+    for (const query of entry.queries) {
+      const operationId = queryOperationId(query);
+      let seen = seenKeysByOperation.get(operationId);
+      if (!seen) {
+        seen = new Set();
+        seenKeysByOperation.set(operationId, seen);
+      }
+      seen.add(queryRequestKey(query));
+    }
+  }
+  const expectedRequests = Object.fromEntries(
+    [...seenKeysByOperation.entries()]
+      .sort(([left], [right]) => alphabeticalCompare(left, right))
+      .map(([operationId, keys]) => [operationId, keys.size]),
+  );
+  const totalExpectedCalls = Object.values(expectedRequests).reduce((sum, count) => sum + count, 0);
+  return {
+    scope,
+    lineIds: [...new Set(selectedPlan.entries.map(({ lineId }) => lineId))],
+    auditedEntryCount: selectedPlan.entries.length,
+    totalSearchPlanEntryCount: searchPlan.entries.length,
+    expectedRequests,
+    totalExpectedCalls,
+  };
+}
+
+export function evaluateCoverageReauditBudget({
+  searchPlan,
+  scope = "PARTIAL",
+  lineIds,
+  sourceDomains,
+  baseResolutions,
+  policy,
+  ledger,
+  allowSameDayBudgetRetry = false,
+} = {}) {
+  const estimate = estimateCoverageReauditProviderCalls({
+    searchPlan,
+    scope,
+    lineIds,
+    sourceDomains,
+    baseResolutions,
+  });
+  const allowance = evaluateCoverageReauditCallAllowance({
+    policy,
+    ledger,
+    expectedRequests: estimate.expectedRequests,
+    allowSameDayBudgetRetry,
+  });
+  return {
+    ...allowance,
+    estimate,
+  };
+}
+
 function planReferencesDataGoCredential(searchPlan) {
   return Array.isArray(searchPlan?.entries) && searchPlan.entries.some((entry) => (
     Array.isArray(entry?.queries) && entry.queries.some((query) => (
@@ -541,18 +706,12 @@ async function runQuery(query, credentials, fetchImpl, requestCache) {
   const authorization = query.credentialPlacement === "header"
     ? { [query.credentialParam]: `Infuser ${credential}` }
     : {};
-  const requestKey = JSON.stringify({
-    endpoint: query.endpoint,
-    method: query.method ?? "GET",
-    format: query.format,
-    credentialEnv: query.credentialEnv,
-    credentialPlacement: query.credentialPlacement ?? "query",
-    query: query.query,
-  });
+  const requestKey = queryRequestKey(query);
+  const operationId = queryOperationId(query);
   let fetchedPromise = requestCache.get(requestKey);
   if (!fetchedPromise) {
     fetchedPromise = query.format === "json"
-      ? fetchAllDataGoPages({ query, url, authorization, fetchImpl })
+      ? fetchAllDataGoPages({ query, url, authorization, fetchImpl, operationId })
       : fetchPublicApiPage({
         url,
         request: {
@@ -561,6 +720,7 @@ async function runQuery(query, credentials, fetchImpl, requestCache) {
         },
         expectedContentTypes: new Set(["application/xml", "text/xml"]),
         fetchImpl,
+        operationId,
       });
     requestCache.set(requestKey, fetchedPromise);
   }
@@ -593,7 +753,7 @@ async function runQuery(query, credentials, fetchImpl, requestCache) {
   };
 }
 
-async function fetchAllDataGoPages({ query, url, authorization, fetchImpl }) {
+async function fetchAllDataGoPages({ query, url, authorization, fetchImpl, operationId }) {
   const firstOffset = Number(query.query.page ?? 0);
   const pageSize = Number(query.query.size ?? 10_000);
   if (firstOffset !== 0 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 10_000) {
@@ -615,6 +775,7 @@ async function fetchAllDataGoPages({ query, url, authorization, fetchImpl }) {
       },
       expectedContentTypes: new Set(["application/json"]),
       fetchImpl,
+      operationId,
     });
     if (fetched.reasonCode) return fetched;
     const parsed = parseDataGoSearchPage(fetched.raw);
@@ -651,13 +812,30 @@ async function fetchAllDataGoPages({ query, url, authorization, fetchImpl }) {
   return { reasonCode: "PUBLIC_API_SEARCH_INCOMPLETE", totalCount, collectedCount: rows.length, pageDiagnostics };
 }
 
-async function fetchPublicApiPage({ url, request, expectedContentTypes, fetchImpl }) {
+async function fetchPublicApiPage({ url, request, expectedContentTypes, fetchImpl, operationId = COVERAGE_REAUDIT_DEFAULT_OPERATION_ID }) {
   let response;
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const startedAt = Date.now();
     try {
       response = await fetchImpl(url, { ...request, signal: AbortSignal.timeout(15_000) });
+      emitAttemptRecord(buildAttemptRecord({
+        sourceId: operationId,
+        url,
+        attempt: attempt + 1,
+        response,
+        durationMs: Date.now() - startedAt,
+        nextDelayMs: null,
+      }));
       break;
     } catch (error) {
+      emitAttemptRecord(buildAttemptRecord({
+        sourceId: operationId,
+        url,
+        attempt: attempt + 1,
+        error,
+        durationMs: Date.now() - startedAt,
+        nextDelayMs: null,
+      }));
       if (attempt === 1) {
         return { reasonCode: "PUBLIC_API_FETCH_FAILED", attempts: 2, transportReason: transportReason(error) };
       }
@@ -892,6 +1070,42 @@ function requiredString(value, label) {
   return value;
 }
 
+function parseCollectOptions(argv) {
+  const keys = new Map([
+    ["--plan", "plan"],
+    ["--merge-into", "mergeInto"],
+    ["--output", "output"],
+    ["--scope", "scope"],
+    ["--line-ids", "lineIds"],
+    ["--call-budget", "callBudget"],
+    ["--provider-call-ledger", "providerCallLedger"],
+    ["--allow-same-day-budget-retry", "allowSameDayBudgetRetry"],
+  ]);
+  const values = { mode: "collect", dryRun: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--dry-run") {
+      if (values.dryRun) throw new Error("COVERAGE_REAUDIT_INPUT_INVALID: duplicate --dry-run");
+      values.dryRun = true;
+      continue;
+    }
+    const key = keys.get(token);
+    const next = argv[index + 1];
+    if (!key || Object.hasOwn(values, key) || typeof next !== "string") {
+      throw new Error("usage: collect-nationwide-public-api-coverage.mjs --targets <targets.json> --fixture <fixture.json> --source-candidates <source-candidates.json> --inventory <source-inventory.json> --plan-output <plan.json> | --plan <plan.json> [--merge-into <base-resolutions.json>] [--scope <PARTIAL|FULL>] [--line-ids <csv>] [--call-budget <budget.json> --provider-call-ledger <ledger.json>] [--allow-same-day-budget-retry <true|false>] [--dry-run] --output <resolutions.json>");
+    }
+    values[key] = next;
+    index += 1;
+  }
+  if (!Object.hasOwn(values, "plan") || (!Object.hasOwn(values, "output") && !values.dryRun)) {
+    throw new Error("usage: collect-nationwide-public-api-coverage.mjs --targets <targets.json> --fixture <fixture.json> --source-candidates <source-candidates.json> --inventory <source-inventory.json> --plan-output <plan.json> | --plan <plan.json> [--merge-into <base-resolutions.json>] [--scope <PARTIAL|FULL>] [--line-ids <csv>] [--call-budget <budget.json> --provider-call-ledger <ledger.json>] [--allow-same-day-budget-retry <true|false>] [--dry-run] --output <resolutions.json>");
+  }
+  if (Boolean(values.callBudget) !== Boolean(values.providerCallLedger)) {
+    throw new Error("COVERAGE_REAUDIT_INPUT_INVALID: --call-budget and --provider-call-ledger must be provided together");
+  }
+  return values;
+}
+
 function parseArgs(argv) {
   // --inventory는 필수다. inventory 없이 만든 plan은 이미 admission된 requirement까지 재크롤해
   // unresolved 우선순위를 부풀리므로 CLI 경계에서 fail closed 한다.
@@ -906,43 +1120,104 @@ function parseArgs(argv) {
       output: argv[9],
     };
   }
-  if (argv.length === 4 && argv[0] === "--plan" && argv[2] === "--output") {
-    return { mode: "collect", plan: argv[1], output: argv[3] };
-  }
-  if (argv.length === 6 && argv[0] === "--plan" && argv[2] === "--merge-into" && argv[4] === "--output") {
-    return { mode: "collect", plan: argv[1], mergeInto: argv[3], output: argv[5] };
-  }
-  throw new Error("usage: collect-nationwide-public-api-coverage.mjs --targets <targets.json> --fixture <fixture.json> --source-candidates <source-candidates.json> --inventory <source-inventory.json> --plan-output <plan.json> | --plan <plan.json> [--merge-into <base-resolutions.json>] --output <resolutions.json>");
+  return parseCollectOptions(argv);
 }
 
-async function main(argv) {
+function parseCliAllowSameDayBudgetRetry(rawValue, env = process.env) {
+  if (rawValue === undefined || rawValue === "" || rawValue === "false") return false;
+  if (rawValue !== "true") {
+    throw new Error("COVERAGE_REAUDIT_INPUT_INVALID: --allow-same-day-budget-retry must be true or false");
+  }
+  if (env?.GITHUB_EVENT_NAME === "schedule") {
+    throw new Error("COVERAGE_REAUDIT_INPUT_INVALID: --allow-same-day-budget-retry is only permitted on manual workflow_dispatch");
+  }
+  return true;
+}
+
+export async function main(argv, {
+  now = new Date(),
+  env = process.env,
+  fetchImpl = fetch,
+  readText = (file) => readFile(file, "utf8"),
+  writeText = (file, text) => writeFile(file, text),
+  log = console.log,
+} = {}) {
   const args = parseArgs(argv);
+  const readJson = async (file) => JSON.parse(await readText(file));
   if (args.mode === "build") {
-    const targets = JSON.parse(await readFile(args.targets, "utf8"));
-    const fixture = JSON.parse(await readFile(args.fixture, "utf8"));
-    const sourceCandidates = JSON.parse(await readFile(args.sourceCandidates, "utf8"));
-    const inventory = JSON.parse(await readFile(args.inventory, "utf8"));
+    const targets = await readJson(args.targets);
+    const fixture = await readJson(args.fixture);
+    const sourceCandidates = await readJson(args.sourceCandidates);
+    const inventory = await readJson(args.inventory);
     const plan = buildNationwidePublicApiSearchPlan({ targets, fixture, sourceCandidates, inventory });
     const launchDomainCount = targets.requiredSourceDomains
       .filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED").length;
     const admittedCount = targets.activeLineScopes.length * launchDomainCount - plan.entries.length;
-    await writeFile(args.output, `${JSON.stringify(plan, null, 2)}\n`);
-    console.log(`public API coverage search plan ready: entries=${plan.entries.length} admittedExcluded=${admittedCount}`);
-    return;
+    await writeText(args.output, `${JSON.stringify(plan, null, 2)}\n`);
+    log(`public API coverage search plan ready: entries=${plan.entries.length} admittedExcluded=${admittedCount}`);
+    return plan;
   }
-  const searchPlan = JSON.parse(await readFile(args.plan, "utf8"));
-  const now = new Date();
-  const collected = await collectNationwidePublicApiCoverage({ searchPlan, now });
-  const resolutions = args.mergeInto === undefined
+  const searchPlan = await readJson(args.plan);
+  const baseResolutions = args.mergeInto === undefined ? undefined : await readJson(args.mergeInto);
+  const hasPartialScope = args.scope !== undefined || (args.lineIds !== undefined && args.lineIds !== "");
+  const effectiveScope = args.scope ?? (hasPartialScope ? "PARTIAL" : "FULL");
+  const effectivePlan = hasPartialScope
+    ? selectCoverageReauditSearchPlan(searchPlan, { scope: effectiveScope, lineIds: args.lineIds, baseResolutions })
+    : searchPlan;
+  let budgetDecision = null;
+  if (args.callBudget) {
+    const policy = parseProviderCallBudgetPolicy(await readJson(args.callBudget));
+    const ledger = parseProviderCallLedger(await readJson(args.providerCallLedger));
+    const allowSameDayBudgetRetry = parseCliAllowSameDayBudgetRetry(args.allowSameDayBudgetRetry, env);
+    budgetDecision = evaluateCoverageReauditBudget({
+      searchPlan,
+      scope: effectiveScope,
+      lineIds: args.lineIds,
+      baseResolutions,
+      policy,
+      ledger,
+      allowSameDayBudgetRetry,
+    });
+    if (!budgetDecision.allowed) {
+      throw new Error(formatProviderBudgetBlockReason(budgetDecision));
+    }
+  }
+  if (args.dryRun) {
+    const estimate = budgetDecision?.estimate ?? estimateCoverageReauditProviderCalls({
+      searchPlan,
+      scope: effectiveScope,
+      lineIds: args.lineIds,
+      baseResolutions,
+    });
+    const summary = {
+      dryRun: true,
+      estimate,
+      ...(budgetDecision ? { budget: { allowed: budgetDecision.allowed, attempts: budgetDecision.attempts, used: budgetDecision.used } } : {}),
+    };
+    if (args.output) {
+      await writeText(args.output, `${JSON.stringify(summary, null, 2)}\n`);
+    }
+    log(JSON.stringify(summary));
+    return summary;
+  }
+  const collected = await collectNationwidePublicApiCoverage({
+    searchPlan: effectivePlan,
+    credentials: env,
+    fetchImpl,
+    now,
+  });
+  const resolutions = baseResolutions === undefined
     ? collected
     : mergePartialCoverageReaudit({
-      baseResolutions: JSON.parse(await readFile(args.mergeInto, "utf8")),
+      baseResolutions,
       subsetResolutions: collected,
+      totalSearchPlanEntryCount: searchPlan.entries.length,
       now,
     });
-  await writeFile(args.output, `${JSON.stringify(resolutions, null, 2)}\n`);
-  console.log(`public API coverage search complete: unsupported=${resolutions.entries.length} unresolved=${resolutions.unresolved.length}`);
-  console.log(`sanitized diagnostics: ${summarizeUnresolvedDiagnostics(resolutions.unresolved).join(", ")}`);
+  await writeText(args.output, `${JSON.stringify(resolutions, null, 2)}\n`);
+  log(`public API coverage search complete: unsupported=${resolutions.entries.length} unresolved=${resolutions.unresolved.length}`);
+  log(`sanitized diagnostics: ${summarizeUnresolvedDiagnostics(resolutions.unresolved).join(", ")}`);
+  return resolutions;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

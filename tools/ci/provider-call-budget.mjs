@@ -20,18 +20,40 @@ export const PROVIDER_BUDGET_REASON = Object.freeze({
   ATTEMPTS_EXHAUSTED: "PROVIDER_DAILY_ATTEMPTS_EXHAUSTED",
   BUDGET_INSUFFICIENT: "PROVIDER_DAILY_BUDGET_INSUFFICIENT",
 });
+export const PROVIDER_BUDGET_REASON_KO = Object.freeze({
+  [PROVIDER_BUDGET_REASON.EVIDENCE_MISSING]: "앞선 run의 요청 수 계측 또는 당일 호출 원장 누락",
+  [PROVIDER_BUDGET_REASON.ATTEMPTS_EXHAUSTED]: "일일 시도/실패 한도 도달",
+  [PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT]: "일일 잔여 호출 예산 부족",
+});
+export const UNREADABLE_LEDGER_REASON_KO = Object.freeze({
+  ENV_INVALID: "실행 환경 또는 재시도(rerun) 조건 부적합으로 당일 호출 원장 조회 실패",
+  GITHUB_API_STATUS: "GitHub API 응답 오류로 당일 호출 원장 조회 실패",
+  GITHUB_API_REQUEST_FAILED: "GitHub API 요청 실패로 당일 호출 원장 조회 실패",
+  GITHUB_API_BODY_INVALID: "GitHub API 응답 본문 형식 오류로 당일 호출 원장 조회 실패",
+  RUN_LIST_LIMIT: "당일 실행 목록 조회 상한 초과로 당일 호출 원장 조회 실패",
+  RUN_RECORD_INVALID: "실행 기록 형식 오류로 당일 호출 원장 조회 실패",
+  RUN_IDENTITY_MISMATCH: "실행 식별 정보 불일치로 당일 호출 원장 조회 실패",
+  CURRENT_RUN_MISMATCH: "현재 실행(첫 시도) 식별 불일치로 당일 호출 원장 조회 실패",
+  JOB_LIST_EMPTY: "이전 실행의 job 목록 누락으로 당일 호출 원장 조회 실패",
+  JOB_LIST_LIMIT: "이전 실행의 job 목록 상한 초과로 당일 호출 원장 조회 실패",
+  JOB_RECORD_INVALID: "이전 실행의 job 기록 형식 오류로 당일 호출 원장 조회 실패",
+  COLLECTOR_STEP_SHAPE: "수집 step 상태 확인 불가로 당일 호출 원장 조회 실패",
+  INTERNAL_ERROR: "내부 오류로 당일 호출 원장 조회 실패",
+});
 /** 묶음이 예산에 막히면 job을 실패시키는 source-reverification step. 관리자 자동화 상태가 같은 이름으로 오늘의 막힘을 찾는다. */
 export const PROVIDER_BUDGET_BLOCK_STEP = "Fail recipes blocked by the provider daily call budget";
 
 const POLICY_KIND = "provider-daily-call-budget-policy";
 // 한 KST 날 run 목록은 event마다 한 페이지 MAX_WINDOW_RUNS_PER_EVENT개까지라서 기록 항목도 그 곱을 넘지 않는다(collection-run-window).
 const MAX_LEDGER_ENTRIES = MAX_WINDOW_RUNS_PER_EVENT * SOURCE_REVERIFICATION_EVENTS.length;
+const MAX_RETRY_MARGIN_RATIO = 1;
 const OUTCOMES = new Set(["SUCCEEDED", "RUNNING", "FAILED"]);
 const QUOTA_WINDOW = /^\d{4}-\d{2}-\d{2}$/u;
 const REASON_CODE = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
 const positiveInteger = (value) => Number.isSafeInteger(value) && value > 0;
 const nonnegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0;
+const validRetryMarginRatio = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= MAX_RETRY_MARGIN_RATIO;
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 function policyInvalid(detail) {
@@ -42,22 +64,84 @@ function inputInvalid(detail) {
   throw new Error(`PROVIDER_BUDGET_INPUT_INVALID: ${detail}`);
 }
 
+function parseRetryReserveMap(map, invalid = policyInvalid) {
+  if (map === undefined) return Object.freeze({});
+  if (!isPlainObject(map)) invalid("retryReserveCallsPerOperation");
+  for (const [sourceId, reserve] of Object.entries(map)) {
+    if (!isSafeToken(sourceId) || !nonnegativeInteger(reserve)) invalid(`retryReserveCallsPerOperation ${sourceId}`);
+  }
+  return Object.freeze({ ...map });
+}
+
 function parseOperation(operation) {
   if (!isPlainObject(operation) || !isSafeToken(operation.sourceId)) policyInvalid("operation sourceId");
   if (!positiveInteger(operation.dailyRequestLimit)) policyInvalid(`${operation.sourceId} dailyRequestLimit must be a positive integer`);
   if (typeof operation.expectedRequestsEvidence !== "string" || operation.expectedRequestsEvidence === "") policyInvalid(`${operation.sourceId} expectedRequestsEvidence`);
   if (typeof operation.datasetUrl !== "string" || !operation.datasetUrl.startsWith("https://")) policyInvalid(`${operation.sourceId} datasetUrl`);
-  return Object.freeze({ sourceId: operation.sourceId, dailyRequestLimit: operation.dailyRequestLimit, expectedRequestsEvidence: operation.expectedRequestsEvidence });
+  if (operation.retryReserveCalls !== undefined && !nonnegativeInteger(operation.retryReserveCalls)) {
+    policyInvalid(`${operation.sourceId} retryReserveCalls must be a nonnegative integer`);
+  }
+  if (operation.retryMarginRatio !== undefined && !validRetryMarginRatio(operation.retryMarginRatio)) {
+    policyInvalid(`${operation.sourceId} retryMarginRatio must be between 0 and ${MAX_RETRY_MARGIN_RATIO}`);
+  }
+  return Object.freeze({
+    sourceId: operation.sourceId,
+    dailyRequestLimit: operation.dailyRequestLimit,
+    expectedRequestsEvidence: operation.expectedRequestsEvidence,
+    ...(operation.retryReserveCalls === undefined ? {} : { retryReserveCalls: operation.retryReserveCalls }),
+    ...(operation.retryMarginRatio === undefined ? {} : { retryMarginRatio: operation.retryMarginRatio }),
+  });
+}
+
+function parseCoverageReauditPolicy(coverageReaudit) {
+  if (coverageReaudit === undefined) return undefined;
+  if (!isPlainObject(coverageReaudit) || !isSafeToken(coverageReaudit.operationId)) {
+    policyInvalid("coverageReaudit operationId");
+  }
+  if (typeof coverageReaudit.datasetUrl !== "string" || !coverageReaudit.datasetUrl.startsWith("https://")) {
+    policyInvalid(`${coverageReaudit.operationId} datasetUrl`);
+  }
+  if (!positiveInteger(coverageReaudit.dailyRequestLimit)) {
+    policyInvalid(`${coverageReaudit.operationId} dailyRequestLimit must be a positive integer`);
+  }
+  if (!positiveInteger(coverageReaudit.maxCollectionsPerDay)) {
+    policyInvalid("coverageReaudit maxCollectionsPerDay must be a positive integer");
+  }
+  if (coverageReaudit.retryReserveCalls !== undefined && !nonnegativeInteger(coverageReaudit.retryReserveCalls)) {
+    policyInvalid(`${coverageReaudit.operationId} retryReserveCalls must be a nonnegative integer`);
+  }
+  if (coverageReaudit.retryMarginRatio !== undefined && !validRetryMarginRatio(coverageReaudit.retryMarginRatio)) {
+    policyInvalid(`coverageReaudit retryMarginRatio must be between 0 and ${MAX_RETRY_MARGIN_RATIO}`);
+  }
+  return Object.freeze({
+    operationId: coverageReaudit.operationId,
+    datasetUrl: coverageReaudit.datasetUrl,
+    dailyRequestLimit: coverageReaudit.dailyRequestLimit,
+    maxCollectionsPerDay: coverageReaudit.maxCollectionsPerDay,
+    ...(coverageReaudit.retryMarginRatio === undefined ? {} : { retryMarginRatio: coverageReaudit.retryMarginRatio }),
+    ...(coverageReaudit.retryReserveCalls === undefined ? {} : { retryReserveCalls: coverageReaudit.retryReserveCalls }),
+  });
 }
 
 /** release/product-gates/provider-daily-call-budget.json을 판정이 쓰는 모양으로 읽는다. 어긋나면 추정하지 않고 실패한다. */
 export function parseProviderCallBudgetPolicy(policy) {
   if (!isPlainObject(policy) || policy.schemaVersion !== 1 || policy.artifactKind !== POLICY_KIND || policy.quotaWindow !== "KST_DAY") policyInvalid("header");
   if (!positiveInteger(policy.maxCollectionsPerDay)) policyInvalid("maxCollectionsPerDay must be a positive integer");
+  if (policy.retryMarginRatio !== undefined && !validRetryMarginRatio(policy.retryMarginRatio)) {
+    policyInvalid(`retryMarginRatio must be between 0 and ${MAX_RETRY_MARGIN_RATIO}`);
+  }
+  const retryReserveCallsPerOperation = parseRetryReserveMap(policy.retryReserveCallsPerOperation, policyInvalid);
   if (!Array.isArray(policy.operations) || policy.operations.length === 0) policyInvalid("operations");
   const operations = policy.operations.map(parseOperation);
   if (new Set(operations.map(({ sourceId }) => sourceId)).size !== operations.length) policyInvalid("duplicate operation sourceId");
-  return Object.freeze({ maxCollectionsPerDay: policy.maxCollectionsPerDay, operations: Object.freeze(operations) });
+  const coverageReaudit = parseCoverageReauditPolicy(policy.coverageReaudit);
+  return Object.freeze({
+    maxCollectionsPerDay: policy.maxCollectionsPerDay,
+    ...(policy.retryMarginRatio === undefined ? {} : { retryMarginRatio: policy.retryMarginRatio }),
+    ...(Object.keys(retryReserveCallsPerOperation).length === 0 ? {} : { retryReserveCallsPerOperation }),
+    operations: Object.freeze(operations),
+    ...(coverageReaudit === undefined ? {} : { coverageReaudit }),
+  });
 }
 
 function parseRequestCounts(requestCounts) {
@@ -91,33 +175,169 @@ export function parseProviderCallLedger(ledger) {
   return Object.freeze({ quotaWindow: ledger.quotaWindow, entries: Object.freeze(entries), unreadableReason: null });
 }
 
+/**
+ * operation별 예상 요청 수에 더할 재시도 여유분(retry reserve)을 계산한다(#3036 7-43).
+ * 명시적 retryReserveCallsPerOperation 또는 operation.retryReserveCalls가 있으면 우선 적용하고,
+ * 없으면 retryMarginRatio(기본 0)에 따른 올림 여유분(ceil(baseExpected * ratio))을 반환한다.
+ */
+export function resolveRetryReserveCalls({
+  operation,
+  baseExpected,
+  baseExpectedCount,
+  policy,
+  retryMarginRatio,
+  retryReserveCallsPerOperation,
+}) {
+  const base = baseExpectedCount ?? baseExpected;
+  if (!positiveInteger(base)) inputInvalid(`expected requests for ${operation.sourceId} must be a positive integer`);
+  if (retryReserveCallsPerOperation !== undefined) parseRetryReserveMap(retryReserveCallsPerOperation, inputInvalid);
+  if (retryMarginRatio !== undefined && !validRetryMarginRatio(retryMarginRatio)) {
+    inputInvalid(`retryMarginRatio must be between 0 and ${MAX_RETRY_MARGIN_RATIO}`);
+  }
+  const explicitReserve = retryReserveCallsPerOperation?.[operation.sourceId]
+    ?? policy?.retryReserveCallsPerOperation?.[operation.sourceId]
+    ?? operation.retryReserveCalls;
+  if (explicitReserve !== undefined) {
+    if (!nonnegativeInteger(explicitReserve)) inputInvalid(`retryReserveCalls for ${operation.sourceId} must be a nonnegative integer`);
+    return explicitReserve;
+  }
+  const ratio = retryMarginRatio ?? operation.retryMarginRatio ?? policy?.retryMarginRatio ?? 0;
+  return ratio > 0 ? Math.ceil(base * ratio) : 0;
+}
+
+/** 코드 뒤에 사람이 읽을 수 있는 한글 사유 설명을 덧붙여 반환한다(#3036 7-43). */
+export function formatProviderBudgetBlockReason({ reason, detail }) {
+  const label = PROVIDER_BUDGET_REASON_KO[reason];
+  const prefix = label ? `${reason} (${label})` : reason;
+  return `${prefix}: ${detail}`;
+}
+
 const refuse = (reason, detail) => ({ allowed: false, reason, detail });
 
 /**
  * 같은 KST 날 이 묶음(sourceIds)을 공급자에게 보내도 되는가.
- * @param {{ policy: ReturnType<typeof parseProviderCallBudgetPolicy>, ledger: ReturnType<typeof parseProviderCallLedger>, sourceIds: string[], expectedRequests: Record<string, number> }} input
- *   expectedRequests: 묶음이 이번에 operation마다 보낼 요청 수(마지막 성공 수집 snapshot의 requestCount).
+ * @param {{
+ *   policy: ReturnType<typeof parseProviderCallBudgetPolicy>,
+ *   ledger: ReturnType<typeof parseProviderCallLedger>,
+ *   sourceIds: string[],
+ *   expectedRequests: Record<string, number>,
+ *   retryMarginRatio?: number,
+ *   retryReserveCallsPerOperation?: Record<string, number>,
+ *   allowSameDayBudgetRetry?: boolean
+ * }} input
+ *   expectedRequests: 묶음이 이번에 operation마다 보낼 기본 요청 수(마지막 성공 수집 snapshot의 requestCount).
+ *   allowSameDayBudgetRetry: 수동 workflow_dispatch에서 당일 실패로 시도 상한(maxCollectionsPerDay)에 걸렸을 때 1회 추가 재시도를 허용할지 여부(일일 1,000건 쿼터 한도는 그대로 유지).
  * @returns {{ allowed: true, attempts: number, used: Record<string, number> } | { allowed: false, reason: string, detail: string }}
  */
-export function evaluateProviderCallAllowance({ policy, ledger, sourceIds, expectedRequests }) {
+export function evaluateProviderCallAllowance({
+  policy,
+  ledger,
+  sourceIds,
+  expectedRequests,
+  retryMarginRatio,
+  retryReserveCallsPerOperation,
+  allowSameDayBudgetRetry = false,
+}) {
+  if (typeof allowSameDayBudgetRetry !== "boolean") inputInvalid("allowSameDayBudgetRetry must be a boolean");
   const group = new Set(sourceIds);
   const operations = policy.operations.filter(({ sourceId }) => group.has(sourceId));
   if (operations.length === 0) return { allowed: true, attempts: 0, used: {} };
-  for (const { sourceId } of operations) {
+  const reserveBySource = {};
+  for (const operation of operations) {
+    const { sourceId } = operation;
     if (!positiveInteger(expectedRequests?.[sourceId])) inputInvalid(`expected requests for ${sourceId} must be a positive integer`);
+    reserveBySource[sourceId] = resolveRetryReserveCalls({
+      operation,
+      baseExpected: expectedRequests[sourceId],
+      policy,
+      retryMarginRatio,
+      retryReserveCallsPerOperation,
+    });
   }
-  if (ledger.entries === null) return refuse(PROVIDER_BUDGET_REASON.EVIDENCE_MISSING, `the call ledger could not be read: ${ledger.unreadableReason}`);
+  if (ledger.entries === null) {
+    const unreadableKo = UNREADABLE_LEDGER_REASON_KO[ledger.unreadableReason] ?? "당일 호출 원장 조회 실패";
+    return refuse(
+      PROVIDER_BUDGET_REASON.EVIDENCE_MISSING,
+      `the call ledger could not be read: ${ledger.unreadableReason} (${unreadableKo})`,
+    );
+  }
   const unproven = ledger.entries.filter(({ requestCounts }) => requestCounts === null);
-  if (unproven.length > 0) return refuse(PROVIDER_BUDGET_REASON.EVIDENCE_MISSING, `no request counts for run ${unproven.map(({ runId }) => runId).join(", ")}`);
+  if (unproven.length > 0) {
+    return refuse(
+      PROVIDER_BUDGET_REASON.EVIDENCE_MISSING,
+      `no request counts for run ${unproven.map(({ runId }) => runId).join(", ")} (앞선 run의 요청 수 계측 누락)`,
+    );
+  }
   const countOf = (entry, sourceId) => entry.requestCounts[sourceId] ?? 0;
-  const attempts = ledger.entries.filter((entry) => operations.some(({ sourceId }) => countOf(entry, sourceId) > 0)).length;
-  if (attempts >= policy.maxCollectionsPerDay) {
-    return refuse(PROVIDER_BUDGET_REASON.ATTEMPTS_EXHAUSTED, `${attempts} run(s) already sent this group's requests today, the limit is ${policy.maxCollectionsPerDay}`);
+  const groupEntries = ledger.entries.filter((entry) => operations.some(({ sourceId }) => countOf(entry, sourceId) > 0));
+  const attempts = groupEntries.length;
+  const allAttemptsFailed = attempts > 0 && groupEntries.every(({ outcome }) => outcome === "FAILED");
+  const effectiveMaxAttempts = allowSameDayBudgetRetry && allAttemptsFailed
+    ? policy.maxCollectionsPerDay + 1
+    : policy.maxCollectionsPerDay;
+  if (attempts >= effectiveMaxAttempts) {
+    const limitLabel = effectiveMaxAttempts > policy.maxCollectionsPerDay
+      ? `${policy.maxCollectionsPerDay} (plus 1 manual retry)`
+      : String(policy.maxCollectionsPerDay);
+    return refuse(
+      PROVIDER_BUDGET_REASON.ATTEMPTS_EXHAUSTED,
+      `${attempts} run(s) already sent this group's requests today, the limit is ${limitLabel} (일일 시도 상한 도달)`,
+    );
   }
   const used = Object.fromEntries(operations.map(({ sourceId }) => [sourceId, ledger.entries.reduce((sum, entry) => sum + countOf(entry, sourceId), 0)]));
-  const short = operations.filter(({ sourceId, dailyRequestLimit }) => used[sourceId] + expectedRequests[sourceId] > dailyRequestLimit);
+  const short = operations.filter(({ sourceId, dailyRequestLimit }) => (
+    used[sourceId] + expectedRequests[sourceId] + reserveBySource[sourceId] > dailyRequestLimit
+  ));
   if (short.length > 0) {
-    return refuse(PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT, short.map(({ sourceId, dailyRequestLimit }) => `${sourceId} used ${used[sourceId]} + expected ${expectedRequests[sourceId]} exceeds the daily limit ${dailyRequestLimit}`).join("; "));
+    return refuse(
+      PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT,
+      `${short.map(({ sourceId, dailyRequestLimit }) => {
+        const reserve = reserveBySource[sourceId];
+        const expectedText = reserve > 0
+          ? `expected ${expectedRequests[sourceId] + reserve} (base ${expectedRequests[sourceId]} + retryReserve ${reserve})`
+          : `expected ${expectedRequests[sourceId]}`;
+        return `${sourceId} used ${used[sourceId]} + ${expectedText} exceeds the daily limit ${dailyRequestLimit}`;
+      }).join("; ")} (일일 잔여 호출 예산 부족)`,
+    );
   }
   return { allowed: true, attempts, used };
+}
+
+/**
+ * 공식 미지원 근거 재감사(coverageReaudit) 시 필요한 operation별 예상 호출 수를 당일 호출 예산 정책으로 평가한다(#3036 7-47).
+ */
+export function evaluateCoverageReauditCallAllowance({
+  policy,
+  ledger,
+  expectedRequests,
+  sourceIds = Object.keys(expectedRequests ?? {}),
+  retryMarginRatio,
+  retryReserveCallsPerOperation,
+  allowSameDayBudgetRetry = false,
+}) {
+  const reauditPolicy = policy?.coverageReaudit
+    ? {
+      maxCollectionsPerDay: policy.coverageReaudit.maxCollectionsPerDay,
+      ...(policy.coverageReaudit.retryMarginRatio === undefined ? {} : { retryMarginRatio: policy.coverageReaudit.retryMarginRatio }),
+      operations: [
+        {
+          sourceId: policy.coverageReaudit.operationId,
+          datasetUrl: policy.coverageReaudit.datasetUrl,
+          dailyRequestLimit: policy.coverageReaudit.dailyRequestLimit,
+          expectedRequestsEvidence: "coverageReauditSearchPlan",
+          ...(policy.coverageReaudit.retryReserveCalls === undefined ? {} : { retryReserveCalls: policy.coverageReaudit.retryReserveCalls }),
+          ...(policy.coverageReaudit.retryMarginRatio === undefined ? {} : { retryMarginRatio: policy.coverageReaudit.retryMarginRatio }),
+        },
+      ],
+    }
+    : policy;
+  return evaluateProviderCallAllowance({
+    policy: reauditPolicy,
+    ledger,
+    sourceIds,
+    expectedRequests,
+    retryMarginRatio,
+    retryReserveCallsPerOperation,
+    allowSameDayBudgetRetry,
+  });
 }

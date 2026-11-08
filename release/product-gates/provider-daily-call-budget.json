@@ -28,26 +28,39 @@
   },
   "maxCollectionsPerDay": 3,
   "maxCollectionsPerDayBasis": "같은 KST 날 한 묶음을 공급자에게 다시 보내는 run은 정기 1회와 재시도 2회까지다(ITX 수집의 하루 시도 상한과 같다). 묶음 한 번이 topology 114건을 쓰므로 3회는 342건이고, 2시간 주기로 4시간에 걸쳐 시도한다. 시간표는 한 번에 342건이라 예산이 먼저 두 번으로 막는다. 2026-10-20에는 끊김이 12시간 이어져 8회가 topology 912건을 썼다.",
+  "retryMarginRatio": 0.25,
+  "retryMarginBasis": "부분 실패·일시 오류 재시도로 한 묶음의 실제 요청 수가 마지막 성공 수집분(expectedRequests)보다 늘어날 수 있다. 각 operation 예상 요청 수에 25% 재시도 여유분(올림)을 더해 하루 1,000건 한도 소진 전에 보수적으로 막는다.",
   "operations": [
     {
       "sourceId": "busan-transportation-route-topology",
       "datasetUrl": "https://www.data.go.kr/data/15001019/openapi.do",
       "dailyRequestLimit": 1000,
-      "expectedRequestsEvidence": "topologyAdmissionEvidence"
+      "expectedRequestsEvidence": "topologyAdmissionEvidence",
+      "retryReserveCalls": 29
     },
     {
       "sourceId": "busan-transportation-accessibility",
       "datasetUrl": "https://www.data.go.kr/data/15001020/openapi.do",
       "dailyRequestLimit": 1000,
-      "expectedRequestsEvidence": "accessibilityAdmissionEvidence"
+      "expectedRequestsEvidence": "accessibilityAdmissionEvidence",
+      "retryReserveCalls": 29
     },
     {
       "sourceId": "busan-transportation-timetable",
       "datasetUrl": "https://www.data.go.kr/data/15000522/openapi.do",
       "dailyRequestLimit": 1000,
-      "expectedRequestsEvidence": "scheduleAdmissionEvidence"
+      "expectedRequestsEvidence": "scheduleAdmissionEvidence",
+      "retryReserveCalls": 86
     }
   ],
+  "coverageReaudit": {
+    "operationId": "data-go-search-searchData",
+    "datasetUrl": "https://www.data.go.kr/data/15077093/openapi.do",
+    "dailyRequestLimit": 1000,
+    "maxCollectionsPerDay": 2,
+    "retryMarginRatio": 0.25,
+    "retryReserveCalls": 4
+  },
   "unbudgetedOperations": [
     {
       "provider": "KRIC 철도산업정보센터 OpenAPI",

@@ -258,3 +258,52 @@ test("CLI: 기록을 파일로 쓰고, run 창을 읽지 못하면 이유를 담
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("7-43(3): KST 자정 직전에 생성되어 자정을 넘겨 수행된 run(run_started_at / updated_at이 당일 창과 겹치는 run)은 당일 예산에 포함하고, 전날 이미 끝난 run은 제외한다 (#3036)", async () => {
+  // KST 2026-10-20 창: [2026-10-19T15:00:00.000Z, 2026-10-20T14:59:59.999Z]
+  // 1) run 701: 14:58Z 생성, 15:02Z 시작, 15:10Z 종료 -> 자정을 넘겨 수행되었으므로 당일 집계에 포함
+  // 2) run 702: 14:40Z 생성, 14:41Z 시작, 14:55Z 종료(updated_at 14:55Z) -> 전날 KST에서 이미 끝났으므로 제외
+  // 3) run 703: 14:50Z 생성, collector step은 14:58Z에 종료됐으나 후속 step 때문에 run updated_at만 15:01Z인 경우 -> 수집 자체는 전날 끝났으므로 제외
+  const crossingRun = run(701, "2026-10-19T14:58:00Z", {
+    run_started_at: "2026-10-19T15:02:00Z",
+    updated_at: "2026-10-19T15:10:00Z",
+  });
+  const finishedYesterdayRun = run(702, "2026-10-19T14:40:00Z", {
+    run_started_at: "2026-10-19T14:41:00Z",
+    updated_at: "2026-10-19T14:55:00Z",
+  });
+  const collectorFinishedYesterdayRun = run(703, "2026-10-19T14:50:00Z", {
+    run_started_at: "2026-10-19T14:50:10Z",
+    updated_at: "2026-10-19T15:01:00Z",
+  });
+  const crossingTelemetry = [
+    JSON.stringify({ sourceId: TOPOLOGY, host: "data.humetro.busan.kr", attempt: 1, outcome: "success", durationMs: 100, nextDelayMs: null, recordedAt: "2026-10-19T14:59:50.000Z" }),
+    JSON.stringify({ sourceId: TOPOLOGY, host: "data.humetro.busan.kr", attempt: 1, outcome: "success", durationMs: 100, nextDelayMs: null, recordedAt: "2026-10-19T15:02:10.000Z" }),
+    JSON.stringify({ sourceId: TOPOLOGY, host: "data.humetro.busan.kr", attempt: 1, outcome: "success", durationMs: 100, nextDelayMs: null, recordedAt: "2026-10-19T15:03:10.000Z" }),
+  ].join("\n");
+  const fixture = github({
+    runs: {
+      workflow_dispatch: [crossingRun, finishedYesterdayRun, collectorFinishedYesterdayRun, currentRun()],
+    },
+    jobs: {
+      701: [job(701, "failure", {
+        steps: [{ name: STEP, status: "completed", conclusion: "failure", completed_at: "2026-10-19T15:09:00Z" }],
+      })],
+      702: [job(702, "failure", {
+        steps: [{ name: STEP, status: "completed", conclusion: "failure", completed_at: "2026-10-19T14:54:00Z" }],
+      })],
+      703: [job(703, "failure", {
+        steps: [{ name: STEP, status: "completed", conclusion: "failure", completed_at: "2026-10-19T14:58:00Z" }],
+      })],
+    },
+    artifacts: {
+      701: crossingTelemetry,
+      702: telemetry({ [TOPOLOGY]: 114 }),
+      703: telemetry({ [TOPOLOGY]: 114 }),
+    },
+  });
+  const ledger = await read(fixture);
+  assert.deepEqual(ledger.entries, [
+    { runId: 701, outcome: "FAILED", requestCounts: { [TOPOLOGY]: 2 } },
+  ]);
+});
