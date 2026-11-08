@@ -463,9 +463,26 @@ test("CLI는 부산 묶음 예산 거부를 recipe 목록과 이유로 GITHUB_OU
   const outputs = [];
   const result = await main(cliArgs("claims.txt"), { now: NOW, log() {}, readText: async (file) => (file in texts ? texts[file] : JSON.stringify(files[file])), appendText: async (file, text) => outputs.push(text) });
   assert.equal(result.state, "BUDGET_BLOCKED");
-  assert.match(outputs[0], /\nbudget_blocked=busan-topology,busan-accessibility,busan-timetable\nbudget_blocked_reason=PROVIDER_DAILY_BUDGET_INSUFFICIENT: busan-transportation-route-topology used 900 \+ expected 114 exceeds the daily limit 1000\n$/u);
+  assert.match(outputs[0], /\nbudget_blocked=busan-topology,busan-accessibility,busan-timetable\nbudget_blocked_reason=PROVIDER_DAILY_BUDGET_INSUFFICIENT \(일일 잔여 호출 예산 부족\): busan-transportation-route-topology used 900 \+ expected 114 exceeds the daily limit 1000 \(일일 잔여 호출 예산 부족\)\n$/u);
   const brokenSnapshot = { ...texts, "tools/datapack/sources/busan-transportation-timetable.json": JSON.stringify({ requestCount: 0 }) };
   await assert.rejects(main(cliArgs("claims.txt"), { now: NOW, log() {}, readText: async (file) => (file in brokenSnapshot ? brokenSnapshot[file] : JSON.stringify(files[file])), appendText: async () => {} }), /REVERIFICATION_INPUT_INVALID: busan-transportation-timetable/u);
+});
+
+test("7-43(2): CLI는 수동 workflow_dispatch에서 --allow-same-day-budget-retry true를 받아 당일 실패 상한(3회)을 1회 풀되, schedule에서는 거부한다 (#3036)", async () => {
+  const files = { "inv.json": cliInventory(), "led.json": busanDue(), "pol.json": POLICY, "prs.json": [], "runs.json": [], "issues.json": [] };
+  const texts = cliTexts([spent(1, 114), spent(2, 114), spent(3, 114)]);
+  const readText = async (file) => (file in texts ? texts[file] : JSON.stringify(files[file]));
+  const blocked = await main(cliArgs("claims.txt", ["--allow-same-day-budget-retry", "false"]), { now: NOW, env: { GITHUB_EVENT_NAME: "workflow_dispatch" }, log() {}, readText, appendText: async () => {} });
+  assert.equal(blocked.state, "BUDGET_BLOCKED");
+
+  const unblocked = await main(cliArgs("claims.txt", ["--allow-same-day-budget-retry", "true"]), { now: NOW, env: { GITHUB_EVENT_NAME: "workflow_dispatch" }, log() {}, readText, appendText: async () => {} });
+  assert.equal(unblocked.state, "RUN");
+  assert.deepEqual(unblocked.recipes, ["busan-topology", "busan-accessibility", "busan-timetable"]);
+
+  await assert.rejects(
+    main(cliArgs("claims.txt", ["--allow-same-day-budget-retry", "true"]), { now: NOW, env: { GITHUB_EVENT_NAME: "schedule" }, log() {}, readText, appendText: async () => {} }),
+    /REVERIFICATION_INPUT_INVALID: allowSameDayBudgetRetry is only permitted on manual workflow_dispatch/u,
+  );
 });
 
 // #3036: 부산 묶음은 공급자(data.go.kr 개발계정)의 operation별 KST 하루 1,000건 안에서만 시작한다.
@@ -479,7 +496,7 @@ test("부산 묶음의 남은 하루 예산이 모자라면 묶음을 시작하�
   assert.deepEqual(result.due, []);
   assert.deepEqual(result.budgetBlocked, [{
     recipeIds: ["busan-topology", "busan-accessibility", "busan-timetable"], reason: PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT,
-    detail: "busan-transportation-route-topology used 912 + expected 114 exceeds the daily limit 1000",
+    detail: "busan-transportation-route-topology used 912 + expected 114 exceeds the daily limit 1000 (일일 잔여 호출 예산 부족)",
   }]);
 });
 

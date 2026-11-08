@@ -46,7 +46,7 @@ import { requiredUtcInstant } from "../datapack/lib/utc-instant.mjs";
 import { REVERIFICATION_RECIPES, dependencyGroups } from "../datapack/source-reverification-recipes.mjs";
 import { isReplayRunId } from "./decide-itx-current-promotion.mjs";
 import { activeRuns, ownPullRequestsByBranch, parseAutomationBranches, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
-import { evaluateProviderCallAllowance, parseProviderCallBudgetPolicy, parseProviderCallLedger } from "./provider-call-budget.mjs";
+import { evaluateProviderCallAllowance, formatProviderBudgetBlockReason, parseProviderCallBudgetPolicy, parseProviderCallLedger } from "./provider-call-budget.mjs";
 import { REFRESH_CLAIM_PREFIXES, isoDurationMs } from "./refresh-open-pr-age.mjs";
 import { blockedRecipeIdsOf, failureIssuesOf } from "./report-refresh-failure.mjs";
 
@@ -203,7 +203,8 @@ function classifyUnboundClaim(branch, runs) {
 }
 
 const isProviderBudget = (budget) => Array.isArray(budget?.policy?.operations) && Object.hasOwn(budget, "ledger")
-  && budget.expectedRequests !== null && typeof budget.expectedRequests === "object";
+  && budget.expectedRequests !== null && typeof budget.expectedRequests === "object"
+  && (budget.allowSameDayBudgetRetry === undefined || typeof budget.allowSameDayBudgetRetry === "boolean");
 
 function assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits, replayRunId, providerBudget }) {
   if ((replayRunId !== undefined && !isReplayRunId(replayRunId)) || !isProviderBudget(providerBudget) || !Array.isArray(pullRequests) || !Array.isArray(openIssues) || !Array.isArray(automationBranches) || !Array.isArray(runs) || !validRepository(repository)
@@ -288,7 +289,7 @@ function parseArgs(argv) {
   const keys = new Map([
     ["--inventory", "inventory"], ["--ledger", "ledger"], ["--policy", "policy"], ["--prs", "prs"], ["--automation-branches", "automationBranches"], ["--runs", "runs"], ["--issues", "issues"],
     ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--issue-limit", "issueLimit"], ["--replay-run-id", "replayRunId"], ["--github-output", "githubOutput"],
-    ["--call-budget", "callBudget"], ["--provider-call-ledger", "providerCallLedger"],
+    ["--call-budget", "callBudget"], ["--provider-call-ledger", "providerCallLedger"], ["--allow-same-day-budget-retry", "allowSameDayBudgetRetry"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -300,6 +301,15 @@ function parseArgs(argv) {
     if (!Object.hasOwn(values, key)) fail("REVERIFICATION_INPUT_INVALID", `missing --${key}`);
   }
   return values;
+}
+
+function parseAllowSameDayBudgetRetry(rawValue, env = process.env) {
+  if (rawValue === undefined || rawValue === "" || rawValue === "false") return false;
+  if (rawValue !== "true") fail("REVERIFICATION_INPUT_INVALID", "allowSameDayBudgetRetry must be true or false");
+  if (env?.GITHUB_EVENT_NAME === "schedule") {
+    fail("REVERIFICATION_INPUT_INVALID", "allowSameDayBudgetRetry is only permitted on manual workflow_dispatch");
+  }
+  return true;
 }
 
 const SNAPSHOT_PATH = /^tools\/datapack\/sources\/[^/]+\.json$/u;
@@ -315,17 +325,21 @@ async function expectedRequestsOf({ budgetPolicy, inventory, readJson }) {
   })));
 }
 
-const budgetBlockReason = ({ reason, detail }) => `${reason}: ${detail}`;
+const budgetBlockReason = ({ reason, detail }) => formatProviderBudgetBlockReason({ reason, detail });
 
 export async function main(argv, {
-  now = new Date(), log = console.log, readText = (file) => readFile(file, "utf8"), appendText = (file, text) => appendFile(file, text),
+  now = new Date(), env = process.env, log = console.log, readText = (file) => readFile(file, "utf8"), appendText = (file, text) => appendFile(file, text),
 } = {}) {
   const values = parseArgs(argv);
+  const allowSameDayBudgetRetry = parseAllowSameDayBudgetRetry(values.allowSameDayBudgetRetry, env);
   const readJson = async (file) => JSON.parse(await readText(file));
   const inventory = await readJson(values.inventory);
   const budgetPolicy = parseProviderCallBudgetPolicy(await readJson(values.callBudget));
   const providerBudget = {
-    policy: budgetPolicy, ledger: parseProviderCallLedger(await readJson(values.providerCallLedger)), expectedRequests: await expectedRequestsOf({ budgetPolicy, inventory, readJson }),
+    policy: budgetPolicy,
+    ledger: parseProviderCallLedger(await readJson(values.providerCallLedger)),
+    expectedRequests: await expectedRequestsOf({ budgetPolicy, inventory, readJson }),
+    ...(allowSameDayBudgetRetry ? { allowSameDayBudgetRetry: true } : {}),
   };
   const result = decideSourceReverification({
     inventory, ledger: await readJson(values.ledger), policy: await readJson(values.policy), providerBudget,

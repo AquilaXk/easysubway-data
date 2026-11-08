@@ -7,9 +7,14 @@ import { KRIC_ACCESSIBILITY_OPERATIONS } from "../datapack/collect-kric-accessib
 import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
 import {
   PROVIDER_BUDGET_REASON,
+  PROVIDER_BUDGET_REASON_KO,
+  UNREADABLE_LEDGER_REASON_KO,
+  evaluateCoverageReauditCallAllowance,
   evaluateProviderCallAllowance,
+  formatProviderBudgetBlockReason,
   parseProviderCallBudgetPolicy,
   parseProviderCallLedger,
+  resolveRetryReserveCalls,
 } from "./provider-call-budget.mjs";
 
 // 부산 원천(data.go.kr 개발계정)의 KST 하루 operation별 호출 예산(Refs AquilaXk/easysubway#3036, data #1435).
@@ -36,7 +41,7 @@ test("남은 예산이 묶음이 쓸 요청보다 적으면 PROVIDER_DAILY_BUDGE
   const result = allowance([entry(1, { [TOPOLOGY]: 100 }), entry(2, { [TOPOLOGY]: 790 })]);
   assert.equal(result.allowed, false);
   assert.equal(result.reason, PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT);
-  assert.match(result.detail, /busan-transportation-route-topology used 890 \+ expected 114 exceeds the daily limit 1000/u);
+  assert.match(result.detail, /busan-transportation-route-topology used 890 \+ expected 114 exceeds the daily limit 1000 \(일일 잔여 호출 예산 부족\)/u);
   assert.deepEqual(allowance([entry(1, { [TOPOLOGY]: 100 }), entry(2, { [TOPOLOGY]: 786 })]), { allowed: true, attempts: 2, used: { [TOPOLOGY]: 886, [ACCESSIBILITY]: 0, [TIMETABLE]: 0 } });
 });
 
@@ -54,11 +59,11 @@ test("실패한 run이 쓴 요청도 예산에서 뺀다: 결과(성공·실패)
 
 test("앞선 run의 요청 수를 읽지 못하면 추정하지 않고 PROVIDER_CALL_EVIDENCE_MISSING으로 막는다 (fail closed)", () => {
   const missing = allowance([entry(1, { [TOPOLOGY]: 10 }), { runId: 2, outcome: "RUNNING", requestCounts: null }]);
-  assert.deepEqual(missing, { allowed: false, reason: PROVIDER_BUDGET_REASON.EVIDENCE_MISSING, detail: "no request counts for run 2" });
+  assert.deepEqual(missing, { allowed: false, reason: PROVIDER_BUDGET_REASON.EVIDENCE_MISSING, detail: "no request counts for run 2 (앞선 run의 요청 수 계측 누락)" });
   const unreadable = evaluateProviderCallAllowance({
     policy: POLICY, ledger: parseProviderCallLedger({ schemaVersion: 1, quotaWindow: null, entries: null, unreadableReason: "GITHUB_API_STATUS" }), sourceIds: BUSAN_GROUP, expectedRequests: EXPECTED,
   });
-  assert.deepEqual(unreadable, { allowed: false, reason: PROVIDER_BUDGET_REASON.EVIDENCE_MISSING, detail: "the call ledger could not be read: GITHUB_API_STATUS" });
+  assert.deepEqual(unreadable, { allowed: false, reason: PROVIDER_BUDGET_REASON.EVIDENCE_MISSING, detail: "the call ledger could not be read: GITHUB_API_STATUS (GitHub API 응답 오류로 당일 호출 원장 조회 실패)" });
 });
 
 test("예산 대상이 아닌 묶음은 기록을 읽지 못해도 막지 않는다", () => {
@@ -70,9 +75,111 @@ test("같은 KST 날 묶음을 공급자에게 보낸 run이 상한(3)에 닿으
   const cheap = (runId) => entry(runId, { [TOPOLOGY]: 4 });
   assert.equal(allowance([cheap(1), cheap(2)]).allowed, true);
   const result = allowance([cheap(1), cheap(2), cheap(3)]);
-  assert.deepEqual(result, { allowed: false, reason: PROVIDER_BUDGET_REASON.ATTEMPTS_EXHAUSTED, detail: "3 run(s) already sent this group's requests today, the limit is 3" });
+  assert.deepEqual(result, { allowed: false, reason: PROVIDER_BUDGET_REASON.ATTEMPTS_EXHAUSTED, detail: "3 run(s) already sent this group's requests today, the limit is 3 (일일 시도 상한 도달)" });
   // 묶음 operation을 부르지 않은 run(다른 원천만 수집)은 시도로 세지 않는다.
   assert.equal(allowance([cheap(1), cheap(2), entry(3, { "gwangju-route-topology": 40 })]).allowed, true);
+});
+
+test("7-43(1): 재시도 여유분(retryMarginRatio / retryReserveCallsPerOperation / operation.retryReserveCalls)을 반영해 보수적으로 잔여 예산을 판정한다 (#3036)", () => {
+  const marginPolicy = parseProviderCallBudgetPolicy({
+    schemaVersion: 1,
+    artifactKind: "provider-daily-call-budget-policy",
+    quotaWindow: "KST_DAY",
+    maxCollectionsPerDay: 3,
+    retryMarginRatio: 0.25,
+    operations: BUSAN_GROUP.map((sourceId, index) => ({
+      sourceId,
+      datasetUrl: `https://www.data.go.kr/data/${index}/openapi.do`,
+      dailyRequestLimit: 1000,
+      expectedRequestsEvidence: "topologyAdmissionEvidence",
+    })),
+  });
+  assert.equal(resolveRetryReserveCalls({ baseExpectedCount: 114, operation: marginPolicy.operations[0], policy: marginPolicy }), 29);
+  // 기본 114건만 보면 860 + 114 = 974 <= 1000이지만, 재시도 여유분 29건을 더하면 860 + 143 = 1003 > 1000이라 쿼터 소진 전에 차단한다.
+  const blocked = evaluateProviderCallAllowance({
+    policy: marginPolicy,
+    ledger: ledger([entry(1, { [TOPOLOGY]: 860 })]),
+    sourceIds: BUSAN_GROUP,
+    expectedRequests: EXPECTED,
+  });
+  assert.equal(blocked.allowed, false);
+  assert.equal(blocked.reason, PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT);
+  assert.match(blocked.detail, /used 860 \+ expected 143 \(base 114 \+ retryReserve 29\) exceeds the daily limit 1000/u);
+
+  // 명시적 retryReserveCallsPerOperation 인자로 덮어쓸 수 있다.
+  const explicitOverride = evaluateProviderCallAllowance({
+    policy: POLICY,
+    ledger: ledger([entry(1, { [TOPOLOGY]: 880 })]),
+    sourceIds: BUSAN_GROUP,
+    expectedRequests: EXPECTED,
+    retryReserveCallsPerOperation: { [TOPOLOGY]: 10 },
+  });
+  assert.equal(explicitOverride.allowed, false);
+  assert.match(explicitOverride.detail, /used 880 \+ expected 124 \(base 114 \+ retryReserve 10\)/u);
+});
+
+test("7-43(2): allowSameDayBudgetRetry가 true면 당일 실패 횟수 상한(3회)에 걸렸을 때 1회 수동 재시도를 허용하되, 일일 1,000건 한도와 이미 성공한 run은 넘지 못한다 (#3036)", () => {
+  const failedAttempt = (runId, count = 114) => entry(runId, { [TOPOLOGY]: count });
+  const threeFailed = [failedAttempt(1), failedAttempt(2), failedAttempt(3)];
+  assert.equal(evaluateProviderCallAllowance({ policy: POLICY, ledger: ledger(threeFailed), sourceIds: BUSAN_GROUP, expectedRequests: EXPECTED }).allowed, false);
+
+  // 수동 해금 1회 허용 (3회 실패 상태에서 4번째 시도는 허용)
+  const unblocked = evaluateProviderCallAllowance({
+    policy: POLICY,
+    ledger: ledger(threeFailed),
+    sourceIds: BUSAN_GROUP,
+    expectedRequests: EXPECTED,
+    allowSameDayBudgetRetry: true,
+  });
+  assert.equal(unblocked.allowed, true);
+  assert.equal(unblocked.attempts, 3);
+
+  // 이미 4회 시도했으면 allowSameDayBudgetRetry여도 막힌다(+1회만 허용).
+  const fourFailed = [...threeFailed, failedAttempt(4)];
+  const fourthBlocked = evaluateProviderCallAllowance({
+    policy: POLICY,
+    ledger: ledger(fourFailed),
+    sourceIds: BUSAN_GROUP,
+    expectedRequests: EXPECTED,
+    allowSameDayBudgetRetry: true,
+  });
+  assert.equal(fourthBlocked.allowed, false);
+  assert.equal(fourthBlocked.reason, PROVIDER_BUDGET_REASON.ATTEMPTS_EXHAUSTED);
+
+  // 앞선 run 중 이미 성공한 run이 있으면 수동 재시도 해금 대상이 아니다.
+  const withSuccess = [failedAttempt(1), failedAttempt(2), { runId: 3, outcome: "SUCCEEDED", requestCounts: { [TOPOLOGY]: 114 } }];
+  assert.equal(evaluateProviderCallAllowance({
+    policy: POLICY,
+    ledger: ledger(withSuccess),
+    sourceIds: BUSAN_GROUP,
+    expectedRequests: EXPECTED,
+    allowSameDayBudgetRetry: true,
+  }).allowed, false);
+
+  // 일일 총 호출 예산 1,000건 한도는 allowSameDayBudgetRetry여도 절대 넘지 못한다.
+  const overQuota = [failedAttempt(1, 300), failedAttempt(2, 300), failedAttempt(3, 300)];
+  const quotaBlocked = evaluateProviderCallAllowance({
+    policy: POLICY,
+    ledger: ledger(overQuota),
+    sourceIds: BUSAN_GROUP,
+    expectedRequests: EXPECTED,
+    allowSameDayBudgetRetry: true,
+  });
+  assert.equal(quotaBlocked.allowed, false);
+  assert.equal(quotaBlocked.reason, PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT);
+});
+
+test("7-43(4): formatProviderBudgetBlockReason은 코드 뒤에 사람이 읽을 수 있는 한글 사유 설명을 함께 남긴다 (#3036)", () => {
+  for (const reason of Object.values(PROVIDER_BUDGET_REASON)) {
+    assert.equal(typeof PROVIDER_BUDGET_REASON_KO[reason], "string");
+    assert.ok(PROVIDER_BUDGET_REASON_KO[reason].length > 0);
+  }
+  assert.ok(Object.keys(UNREADABLE_LEDGER_REASON_KO).length >= 10);
+  const formatted = formatProviderBudgetBlockReason({
+    reason: PROVIDER_BUDGET_REASON.ATTEMPTS_EXHAUSTED,
+    detail: "3 run(s) already sent this group's requests today, the limit is 3 (일일 시도 상한 도달)",
+  });
+  assert.equal(formatted, "PROVIDER_DAILY_ATTEMPTS_EXHAUSTED (일일 시도/실패 한도 도달): 3 run(s) already sent this group's requests today, the limit is 3 (일일 시도 상한 도달)");
 });
 
 test("이번 묶음의 예상 요청 수가 없거나 양의 정수가 아니면 판정하지 않고 실패한다", () => {
@@ -109,6 +216,9 @@ test("정책 형식 검사: 한도·상한은 양의 정수이고 원천은 한 
     { ...base, operations: [op, op] },
     { ...base, operations: [{ ...op, dailyRequestLimit: 0 }] },
     { ...base, operations: [{ ...op, expectedRequestsEvidence: "" }] },
+    { ...base, retryMarginRatio: -0.1 },
+    { ...base, retryMarginRatio: 2.5 },
+    { ...base, operations: [{ ...op, retryReserveCalls: -1 }] },
   ]) assert.throws(() => parseProviderCallBudgetPolicy(policy), /^Error: PROVIDER_BUDGET_POLICY_INVALID/u);
 });
 
@@ -152,13 +262,40 @@ test("2026-10-20 재현: 시도 상한이 없어도 예산 판정만으로 8번�
 
 const committedPolicy = JSON.parse(await readFile(path.resolve(import.meta.dirname, "../../release/product-gates/provider-daily-call-budget.json"), "utf8"));
 
-test("저장소 정책: 부산 세 operation(15001019·15001020·15000522)이 하루 1,000건이고, 같은 재확인 묶음에 속하며 상한은 3이다", () => {
+test("저장소 정책: 부산 세 operation(15001019·15001020·15000522)이 하루 1,000건이고, 재시도 여유분과 coverageReaudit 예산 정책이 정의돼 있다", () => {
   const policy = parseProviderCallBudgetPolicy(committedPolicy);
   assert.equal(policy.maxCollectionsPerDay, 3);
-  assert.deepEqual(policy.operations.map(({ sourceId, dailyRequestLimit }) => [sourceId, dailyRequestLimit]), BUSAN_GROUP.map((sourceId) => [sourceId, 1000]));
+  assert.equal(policy.retryMarginRatio, 0.25);
+  assert.deepEqual(policy.operations.map(({ sourceId, dailyRequestLimit, retryReserveCalls }) => [sourceId, dailyRequestLimit, retryReserveCalls]), [
+    [TOPOLOGY, 1000, 29],
+    [ACCESSIBILITY, 1000, 29],
+    [TIMETABLE, 1000, 86],
+  ]);
   assert.deepEqual(committedPolicy.operations.map(({ datasetUrl }) => datasetUrl.match(/\/data\/(\d+)\//u)[1]), ["15001019", "15001020", "15000522"]);
   const recipeSources = new Set(REVERIFICATION_RECIPES.filter(({ id }) => id.startsWith("busan-")).flatMap(({ sourceIds }) => sourceIds));
   for (const { sourceId } of policy.operations) assert.ok(recipeSources.has(sourceId), `${sourceId} belongs to a reverification recipe`);
+  // 7-47: 공식 미지원 근거 재감사(data-go-search-searchData) 예산 정책 확인
+  assert.deepEqual(policy.coverageReaudit, {
+    operationId: "data-go-search-searchData",
+    datasetUrl: "https://www.data.go.kr/data/15077093/openapi.do",
+    dailyRequestLimit: 1000,
+    maxCollectionsPerDay: 2,
+    retryMarginRatio: 0.25,
+    retryReserveCalls: 4,
+  });
+  const reauditOk = evaluateCoverageReauditCallAllowance({
+    policy,
+    ledger: ledger([]),
+    expectedRequests: { "data-go-search-searchData": 16 },
+  });
+  assert.deepEqual(reauditOk, { allowed: true, attempts: 0, used: { "data-go-search-searchData": 0 } });
+  const reauditBlocked = evaluateCoverageReauditCallAllowance({
+    policy,
+    ledger: ledger([entry(1, { "data-go-search-searchData": 985 })]),
+    expectedRequests: { "data-go-search-searchData": 16 },
+  });
+  assert.equal(reauditBlocked.allowed, false);
+  assert.equal(reauditBlocked.reason, PROVIDER_BUDGET_REASON.BUDGET_INSUFFICIENT);
   // 한도 근거는 확인한 것과 가정한 것을 나눠 적는다: 확인 항목은 모두 확인일이 있고 URL은 공공데이터포털이며, 가정은 비어 있지 않다.
   const { verified, assumed } = committedPolicy.dailyRequestLimitBasis;
   assert.ok(verified.length > 0);

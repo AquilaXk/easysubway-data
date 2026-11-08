@@ -15,7 +15,7 @@ import { pathToFileURL } from "node:url";
 import { COLLECTION_OUTCOME, COLLECTION_REPOSITORY, CollectionWindowError, downloadArtifactWithGh, inspectCollectionWindow, readEvidenceFile } from "./collection-run-window.mjs";
 import { isSafeToken } from "../lib/safe-token.mjs";
 import { INTERNAL_ERROR_REASON } from "./failure-reason.mjs";
-import { PROVIDER_CALL_LEDGER_SCHEMA_VERSION, SOURCE_REVERIFICATION_EVENTS } from "./provider-call-budget.mjs";
+import { PROVIDER_CALL_LEDGER_SCHEMA_VERSION, SOURCE_REVERIFICATION_EVENTS, UNREADABLE_LEDGER_REASON_KO } from "./provider-call-budget.mjs";
 
 /** source-reverification이 매 run 올리는 증거 artifact(`<artifactPrefix>-<run id>`)와 그 안의 시도별 계측 파일. */
 export const SOURCE_REVERIFICATION_CALL_EVIDENCE = Object.freeze({
@@ -29,6 +29,22 @@ export const SOURCE_REVERIFICATION_CALL_EVIDENCE = Object.freeze({
   maxBytes: 16 * 1024 * 1024,
 });
 
+/** public-api-coverage-reaudit가 매 run 올리는 증거 artifact(`<artifactPrefix>-<run id>`)와 그 안의 시도별 계측 파일. */
+export const PUBLIC_API_COVERAGE_REAUDIT_CALL_EVIDENCE = Object.freeze({
+  workflowFile: "public-api-coverage-reaudit.yml",
+  events: SOURCE_REVERIFICATION_EVENTS,
+  jobName: "Public API coverage reaudit",
+  collectorStepName: "Reaudit official unsupported public API coverage",
+  artifactPrefix: "public-api-coverage-reaudit-calls",
+  file: "source-fetch-telemetry.jsonl",
+  maxBytes: 16 * 1024 * 1024,
+});
+
+const CALL_EVIDENCE_BY_WORKFLOW = new Map([
+  [SOURCE_REVERIFICATION_CALL_EVIDENCE.workflowFile, SOURCE_REVERIFICATION_CALL_EVIDENCE],
+  [PUBLIC_API_COVERAGE_REAUDIT_CALL_EVIDENCE.workflowFile, PUBLIC_API_COVERAGE_REAUDIT_CALL_EVIDENCE],
+]);
+
 // source-fetch-telemetry의 기록 형식: 원천 id는 안전한 토큰, 시도 번호는 1부터, 결과는 네 가지다.
 const ATTEMPT_OUTCOMES = new Set(["success", "http_error", "retryable_result", "error"]);
 
@@ -36,7 +52,7 @@ function telemetryInvalid(detail) {
   throw new Error(`PROVIDER_CALL_TELEMETRY_INVALID: ${detail}`);
 }
 
-function attemptSourceId(line, index) {
+function parseAttemptLine(line, index, window) {
   let record;
   try {
     record = JSON.parse(line);
@@ -48,29 +64,42 @@ function attemptSourceId(line, index) {
     || !Number.isSafeInteger(record.attempt) || record.attempt < 1 || !ATTEMPT_OUTCOMES.has(record.outcome)) {
     return telemetryInvalid(`line ${index + 1} is not an attempt record`);
   }
-  return record.sourceId;
+  if (record.recordedAt !== undefined) {
+    if (typeof record.recordedAt !== "string" || record.recordedAt.length === 0) {
+      return telemetryInvalid(`line ${index + 1} recordedAt must be a timestamp string`);
+    }
+    const recordedMillis = Date.parse(record.recordedAt);
+    if (!Number.isFinite(recordedMillis)) {
+      return telemetryInvalid(`line ${index + 1} recordedAt is not a valid timestamp`);
+    }
+    if (window !== null && window !== undefined && (recordedMillis < window.startMillis || recordedMillis > window.endMillis)) {
+      return { sourceId: record.sourceId, inWindow: false };
+    }
+  }
+  return { sourceId: record.sourceId, inWindow: true };
 }
 
 /** 시도별 계측 파일(JSONL)의 원천 id별 시도 수. 공급자에 닿지 못한 시도(전송 오류)도 센다. 빈 파일은 0건이고, 읽을 수 없는 줄이 하나라도 있으면 실패한다. */
-export function countTelemetryRequests(bytes) {
+export function countTelemetryRequests(bytes, { window = null } = {}) {
   const text = bytes.toString("utf8");
   const counts = {};
   if (text === "") return counts;
   const lines = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n");
   lines.forEach((line, index) => {
-    const sourceId = attemptSourceId(line, index);
-    counts[sourceId] = (counts[sourceId] ?? 0) + 1;
+    const { sourceId, inWindow } = parseAttemptLine(line, index, window);
+    if (inWindow) {
+      counts[sourceId] = (counts[sourceId] ?? 0) + 1;
+    }
   });
   return counts;
 }
 
-async function readRunRequestCounts({ runId, token, downloadArtifact }) {
+async function readRunRequestCounts({ runId, token, downloadArtifact, window = null, evidence = SOURCE_REVERIFICATION_CALL_EVIDENCE }) {
   const directory = await mkdtemp(path.join(tmpdir(), "provider-call-evidence-"));
   try {
-    const evidence = SOURCE_REVERIFICATION_CALL_EVIDENCE;
     await downloadArtifact({ repository: COLLECTION_REPOSITORY, runId, artifactName: `${evidence.artifactPrefix}-${runId}`, directory, token });
     const bytes = await readEvidenceFile(directory, evidence.file, evidence.maxBytes);
-    return bytes === null ? null : countTelemetryRequests(bytes);
+    return bytes === null ? null : countTelemetryRequests(bytes, { window });
   } catch {
     return null;
   } finally {
@@ -79,14 +108,20 @@ async function readRunRequestCounts({ runId, token, downloadArtifact }) {
 }
 
 /**
- * 같은 KST 날 이 run 밖에서 수집 step에 들어간 source-reverification run과 그 run이 원천별로 보낸 요청 수.
+ * 같은 KST 날 이 run 밖에서 수집 step에 들어간 workflow run과 그 run이 원천별로 보낸 요청 수.
  * 아직 끝나지 않은 run은 증거 업로드 전이라 요청 수가 null이다.
  */
-export async function readProviderCallLedger({ env = process.env, now = new Date(), fetchImpl = globalThis.fetch, downloadArtifact = downloadArtifactWithGh } = {}) {
-  const { window, token, entered } = await inspectCollectionWindow({ env, now, fetchImpl, contexts: [SOURCE_REVERIFICATION_CALL_EVIDENCE] });
+export async function readProviderCallLedger({
+  env = process.env,
+  now = new Date(),
+  fetchImpl = globalThis.fetch,
+  downloadArtifact = downloadArtifactWithGh,
+  evidence = SOURCE_REVERIFICATION_CALL_EVIDENCE,
+} = {}) {
+  const { window, token, entered } = await inspectCollectionWindow({ env, now, fetchImpl, contexts: [evidence] });
   const entries = [];
-  for (const { run, outcome } of entered) {
-    const requestCounts = outcome === COLLECTION_OUTCOME.RUNNING ? null : await readRunRequestCounts({ runId: run.id, token, downloadArtifact }); // NOSONAR -- 순차가 의도다: GitHub REST 권장대로 같은 토큰의 artifact 내려받기를 동시에 보내지 않아 secondary rate limit을 피한다
+  for (const { run, outcome, context } of entered) {
+    const requestCounts = outcome === COLLECTION_OUTCOME.RUNNING ? null : await readRunRequestCounts({ runId: run.id, token, downloadArtifact, window, evidence: context ?? evidence }); // NOSONAR -- 순차가 의도다: GitHub REST 권장대로 같은 토큰의 artifact 내려받기를 동시에 보내지 않아 secondary rate limit을 피한다
     entries.push({ runId: run.id, outcome, requestCounts });
   }
   entries.sort((left, right) => left.runId - right.runId);
@@ -94,10 +129,17 @@ export async function readProviderCallLedger({ env = process.env, now = new Date
 }
 
 function ledgerArguments(argv) {
-  if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--ledger" || typeof argv[1] !== "string" || !path.isAbsolute(argv[1])) {
-    throw new Error("PROVIDER_CALL_LEDGER_ARGUMENTS: usage: provider-call-ledger.mjs --ledger <absolute path>");
+  if (!Array.isArray(argv) || (argv.length !== 2 && argv.length !== 4) || argv[0] !== "--ledger" || typeof argv[1] !== "string" || !path.isAbsolute(argv[1])) {
+    throw new Error("PROVIDER_CALL_LEDGER_ARGUMENTS: usage: provider-call-ledger.mjs --ledger <absolute path> [--workflow <workflowFile>]");
   }
-  return argv[1];
+  if (argv.length === 2) {
+    return { output: argv[1], evidence: SOURCE_REVERIFICATION_CALL_EVIDENCE };
+  }
+  const evidence = argv[2] === "--workflow" ? CALL_EVIDENCE_BY_WORKFLOW.get(argv[3]) : undefined;
+  if (!evidence) {
+    throw new Error("PROVIDER_CALL_LEDGER_ARGUMENTS: usage: provider-call-ledger.mjs --ledger <absolute path> [--workflow <workflowFile>]");
+  }
+  return { output: argv[1], evidence };
 }
 
 // run 창을 읽지 못한 이유는 코드만 남긴다(원문에는 URL·토큰이 섞일 수 있다).
@@ -105,10 +147,10 @@ const unreadableReasonOf = (error) => (error instanceof CollectionWindowError ? 
 
 /** 기록을 파일로 쓴다. 이미 있는 파일은 덮어쓰지 않는다. run 창을 읽지 못하면 이유를 담은 읽을 수 없는 기록을 쓰고 정상 종료한다. */
 export async function runProviderCallLedgerCli({ argv = process.argv.slice(2), env = process.env, now = new Date(), fetchImpl = globalThis.fetch, downloadArtifact } = {}) {
-  const output = ledgerArguments(argv);
+  const { output, evidence } = ledgerArguments(argv);
   let ledger;
   try {
-    ledger = await readProviderCallLedger({ env, now, fetchImpl, downloadArtifact });
+    ledger = await readProviderCallLedger({ env, now, fetchImpl, downloadArtifact, evidence });
   } catch (error) {
     ledger = { schemaVersion: PROVIDER_CALL_LEDGER_SCHEMA_VERSION, quotaWindow: null, entries: null, unreadableReason: unreadableReasonOf(error) };
   }
@@ -123,7 +165,10 @@ export async function runProviderCallLedgerCli({ argv = process.argv.slice(2), e
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const ledger = await runProviderCallLedgerCli();
-    if (ledger.entries === null) process.stdout.write(`::warning title=Provider call ledger::the call ledger could not be read (${ledger.unreadableReason}); budget-guarded groups are blocked this run.\n`);
+    if (ledger.entries === null) {
+      const reasonKo = UNREADABLE_LEDGER_REASON_KO[ledger.unreadableReason] ?? UNREADABLE_LEDGER_REASON_KO.INTERNAL_ERROR;
+      process.stdout.write(`::warning title=Provider call ledger::the call ledger could not be read (${ledger.unreadableReason}: ${reasonKo}); budget-guarded groups are blocked this run.\n`);
+    }
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

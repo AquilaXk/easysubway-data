@@ -3,11 +3,18 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  COVERAGE_REAUDIT_DEFAULT_OPERATION_ID,
+  DEFAULT_PARTIAL_REAUDIT_LINE_IDS,
   buildNationwidePublicApiSearchPlan,
   collectNationwidePublicApiCoverage,
+  estimateCoverageReauditProviderCalls,
+  evaluateCoverageReauditBudget,
+  main,
   mergePartialCoverageReaudit,
+  selectCoverageReauditSearchPlan,
   summarizeUnresolvedDiagnostics,
 } from "./collect-nationwide-public-api-coverage.mjs";
+import { parseProviderCallBudgetPolicy, parseProviderCallLedger } from "../ci/provider-call-budget.mjs";
 
 const target = {
   regionId: "busan",
@@ -1223,4 +1230,83 @@ test("전체 크롤과 부분 재감사는 auditScope로 감사 범위를 명시
     totalSearchPlanEntryCount: 187,
   });
   assert.equal(merged.entries[0].checkedAt, "2026-10-23T10:18:48.032Z");
+});
+
+test("7-47: estimateCoverageReauditProviderCalls는 부분 재감사(부산김해 1건·대구 3건) 실행 시 중복 질의를 제거한 operation별 예상 호출 수를 결정론적으로 산출하고 일일 호출 예산과 연동한다 (#3036)", async () => {
+  const [searchPlanRaw, resolutionsRaw, budgetPolicyRaw] = await Promise.all([
+    readFile(new URL("./release/nationwide-public-api-coverage-search-plan-20260725.json", import.meta.url), "utf8"),
+    readFile(new URL("./release/nationwide-public-api-coverage-resolutions-20260725.json", import.meta.url), "utf8"),
+    readFile(new URL("../../release/product-gates/provider-daily-call-budget.json", import.meta.url), "utf8"),
+  ]);
+  const searchPlan = JSON.parse(searchPlanRaw);
+  const baseResolutions = JSON.parse(resolutionsRaw);
+  const policy = parseProviderCallBudgetPolicy(JSON.parse(budgetPolicyRaw));
+
+  const selected = selectCoverageReauditSearchPlan(searchPlan, {
+    scope: "PARTIAL",
+    lineIds: DEFAULT_PARTIAL_REAUDIT_LINE_IDS,
+    baseResolutions,
+  });
+  assert.equal(selected.entries.length, 4);
+
+  const estimate = estimateCoverageReauditProviderCalls({
+    searchPlan,
+    scope: "PARTIAL",
+    lineIds: DEFAULT_PARTIAL_REAUDIT_LINE_IDS,
+    baseResolutions,
+  });
+  assert.deepEqual(estimate, {
+    scope: "PARTIAL",
+    lineIds: [...DEFAULT_PARTIAL_REAUDIT_LINE_IDS],
+    auditedEntryCount: 4,
+    totalSearchPlanEntryCount: 187,
+    expectedRequests: { [COVERAGE_REAUDIT_DEFAULT_OPERATION_ID]: 16 },
+    totalExpectedCalls: 16,
+  });
+
+  // 잔여 예산 충분 시 허용
+  const allowedDecision = evaluateCoverageReauditBudget({
+    searchPlan,
+    scope: "PARTIAL",
+    lineIds: DEFAULT_PARTIAL_REAUDIT_LINE_IDS,
+    baseResolutions,
+    policy,
+    ledger: parseProviderCallLedger({ schemaVersion: 1, quotaWindow: "2026-10-23", entries: [] }),
+  });
+  assert.equal(allowedDecision.allowed, true);
+
+  // 잔여 예산 부족 시(985 + 기본 16 + 재시도 여유분 4 = 1005 > 1000) fail-closed 차단 및 호출 0회 보장
+  let networkCalls = 0;
+  const exhaustedLedger = {
+    schemaVersion: 1,
+    quotaWindow: "2026-10-23",
+    entries: [{ runId: 1, outcome: "FAILED", requestCounts: { [COVERAGE_REAUDIT_DEFAULT_OPERATION_ID]: 985 } }],
+  };
+  await assert.rejects(
+    main([
+      "--plan", "plan.json",
+      "--merge-into", "resolutions.json",
+      "--scope", "PARTIAL",
+      "--line-ids", DEFAULT_PARTIAL_REAUDIT_LINE_IDS.join(","),
+      "--call-budget", "budget.json",
+      "--provider-call-ledger", "ledger.json",
+      "--output", "out.json",
+    ], {
+      readText: async (file) => {
+        if (file === "plan.json") return searchPlanRaw;
+        if (file === "resolutions.json") return resolutionsRaw;
+        if (file === "budget.json") return budgetPolicyRaw;
+        if (file === "ledger.json") return JSON.stringify(exhaustedLedger);
+        throw new Error(`unexpected file: ${file}`);
+      },
+      writeText: async () => {},
+      fetchImpl: async () => {
+        networkCalls += 1;
+        return new Response("{}", { status: 200 });
+      },
+      log() {},
+    }),
+    /PROVIDER_DAILY_BUDGET_INSUFFICIENT \(일일 잔여 호출 예산 부족\)/u,
+  );
+  assert.equal(networkCalls, 0);
 });
