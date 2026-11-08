@@ -10,6 +10,7 @@ import {
   formatProviderFailureEvidence,
   requiresControlOperation,
 } from "./provider-call-integrity.mjs";
+import { fetchBytesWithSourceRetry } from "./source-collection-retry.mjs";
 
 const libDir = path.dirname(fileURLToPath(import.meta.url));
 export const TOOL_DIRECTORY = path.resolve(libDir, "..");
@@ -498,6 +499,67 @@ async function readErrorResponseBody(response) {
   }
 }
 
+export async function defaultHttpGetBuffer(urlOrOptions = {}, maybeOptions = {}) {
+  const options = typeof urlOrOptions === "string" || urlOrOptions instanceof URL
+    ? { ...maybeOptions, url: urlOrOptions }
+    : urlOrOptions;
+  const {
+    url,
+    fetchImpl = fetch,
+    accept = "application/xml,text/xml",
+    label = "source candidate evidence",
+    timeoutMs = 30_000,
+    isTransientResult,
+    resultCodeOf,
+    sleep,
+    sleepImpl,
+    budget,
+    retryBudget,
+    random,
+    randomImpl,
+  } = options;
+  const { response, bytes } = await fetchBytesWithSourceRetry({
+    url,
+    fetchImpl: async (requestUrl, init) => {
+      const response = await fetchImpl(requestUrl, init);
+      if (typeof response?.arrayBuffer === "function") return response;
+      return {
+        ok: response?.ok,
+        status: response?.status,
+        url: response?.url,
+        headers: response?.headers,
+        body: response?.body,
+        text: typeof response?.text === "function" ? () => response.text() : undefined,
+        arrayBuffer: async () => {
+          if (!response?.ok) {
+            const raw = await readErrorResponseBody(response);
+            return Buffer.from(raw ?? "", "utf8");
+          }
+          const raw = await response.text();
+          return Buffer.from(raw, "utf8");
+        },
+      };
+    },
+    accept,
+    label,
+    timeoutMs,
+    isTransientResult,
+    resultCodeOf,
+    transportFailure: (error) => error,
+    sleep: sleepImpl ?? sleep,
+    budget: retryBudget ?? budget,
+    random: randomImpl ?? random,
+  });
+  return {
+    response,
+    bytes,
+    ok: Boolean(response?.ok),
+    status: response?.status ?? null,
+    contentType: response?.headers?.get?.("content-type") ?? null,
+    body: bytes,
+  };
+}
+
 // provider 요청과 body 수신. 이 구간의 실패는 전부 분류를 달고 나간다.
 async function readProviderResponse({
   request,
@@ -506,38 +568,39 @@ async function readProviderResponse({
   failureEvidence,
   requestFailureLabel,
   credentialSignalResultCodes,
+  retry,
 }) {
   const liveUrl = new URL(request.sampleUrl);
   liveUrl.searchParams.set("serviceKey", serviceKey);
   const transportEvidence = { failureEvidence, response: null, raw: null, format: request.format };
 
   let response;
+  let bytes;
   try {
-    response = await fetchImpl(liveUrl, {
-      redirect: "error",
-      signal: AbortSignal.timeout(30_000),
-      headers: { accept: request.format === "json" ? "application/json" : "application/xml,text/xml" },
-    });
+    ({ response, bytes } = await defaultHttpGetBuffer({
+      url: liveUrl,
+      fetchImpl,
+      accept: request.format === "json" ? "application/json" : "application/xml,text/xml",
+      label: requestFailureLabel,
+      timeoutMs: 30_000,
+      ...retry,
+    }));
   } catch (error) {
-    // DNS·TLS·redirect 거부·timeout은 응답 분기 전에 reject된다. 분류 없이 빠져나가지 않게 근거를 붙인다.
+    // DNS·TLS·redirect 거부·timeout·body 스트림 끊김은 분류 없이 빠져나가지 않게 근거를 붙인다.
     throw await classifiedProviderError(error, transportEvidence);
   }
   if (!response.ok) {
     // 401·403은 credential 신호로 지원한다고 선언한 경로다. 본문을 버리면 provider result code가 사라져
     // 대조군이 성공해도 blocker 승격에 필요한 근거를 만들 수 없다.
-    const errorBody = await readErrorResponseBody(response);
+    const rawText = bytes.length > 0 ? bytes.toString("utf8") : await readErrorResponseBody(response);
+    const errorBody = rawText == null
+      ? null
+      : (rawText.length > MAX_RETAINED_ERROR_BODY_LENGTH ? rawText.slice(0, MAX_RETAINED_ERROR_BODY_LENGTH) : rawText);
     const { providerResultCode } = providerResponseSignal({ raw: errorBody, format: request.format, credentialSignalResultCodes });
     const evidence = await failureEvidence({ response, raw: errorBody, format: request.format });
     throw new Error(`${requestFailureLabel} ${response.status} resultCode=${safeResultCode(providerResultCode)}${evidence}`);
   }
-  try {
-    // body 스트림이 끊기면 응답을 받지 못한 것과 같다. HTTP status를 근거로 쓰지 않고 전송 실패로 닫는다.
-    // 여기서도 본문을 잘라내지 않는다. sample evidence의 해시·row 수·schema fingerprint가
-    // 본문 전체를 전제로 하므로 자르면 산출물이 깨진다. 크기는 provider가 정한다.
-    return { response, rawResponse: await response.text() };
-  } catch (error) {
-    throw await classifiedProviderError(error, transportEvidence);
-  }
+  return { response, rawResponse: bytes.toString("utf8") };
 }
 
 async function assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence }) {
@@ -579,8 +642,17 @@ export async function collectSourceCandidateEvidence({
   validateScriptName,
   controlOperation = null,
   credentialSignalResultCodes = null,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   requiredText(serviceKey, serviceKeyLabel);
+  const retry = {
+    sleep: sleepImpl ?? retryOptions.sleep,
+    budget: retryBudget ?? retryOptions.budget,
+    random: randomImpl ?? retryOptions.random,
+  };
   const failureEvidence = ({ response, raw, format }) => providerFailureEvidence({
     controlOperation,
     credentialSignalResultCodes,
@@ -628,6 +700,7 @@ export async function collectSourceCandidateEvidence({
       failureEvidence,
       requestFailureLabel,
       credentialSignalResultCodes,
+      retry,
     });
     await writeFile(rawPath, rawResponse, { mode: 0o600 });
     await assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence });

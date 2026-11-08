@@ -5,7 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { automationPrEvidenceBlock, itxPromotionAllowedPaths, parseAutomationPrEvidence, refreshEvidenceBlock } from "./automation-pr-evidence.mjs";
+import {
+  automationPrEvidenceBlock,
+  buildCandidateRefreshPrEvidenceBlock,
+  itxPromotionAllowedPaths,
+  parseAutomationPrEvidence,
+  refreshEvidenceBlock,
+} from "./automation-pr-evidence.mjs";
 import {
   AUTOMATION_PR_APP,
   AUTOMATION_STAGE_WORKFLOWS,
@@ -19,7 +25,9 @@ import {
   evaluateAutomationPullRequest,
   main,
   recomputeAutomationGates,
+  validateCandidateEvidence,
 } from "./automation-pr-policy.mjs";
+import { computeChangedQueriesSummarySha256 } from "../datapack/run-candidate-journey-golden-diff.mjs";
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
 import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "../datapack/refresh-nationwide-candidate.mjs";
 import { evaluateEvidenceChange } from "../datapack/run-source-reverification.mjs";
@@ -1372,4 +1380,61 @@ test("CLI prepare: 갱신 PR은 대상이고 증거의 base sha를 내보낸다.
     await writeFile(pullFile, JSON.stringify(crossed));
     await assert.rejects(main(["prepare", "--pull-request", pullFile, "--github-output", path.join(dir, "out2.txt")]), /AUTOMATION_PR_BRANCH/u);
   });
+});
+
+test("validateCandidateEvidence는 선택적 goldenDiffReport와 PR 본문의 Journey golden diff 증거 줄을 검증한다", () => {
+  const zeroSha = computeChangedQueriesSummarySha256([]);
+  const zeroReport = {
+    schemaVersion: 1,
+    baselineBundleDir: "/baseline",
+    candidateBundleDir: "/candidate",
+    queryCount: 24,
+    unchangedCount: 24,
+    changedCount: 0,
+    changedQueries: [],
+    diffSummarySha256: zeroSha,
+  };
+  const candidateInfo = { ...CANDIDATE, paths: CANDIDATE_PATHS };
+  const bodyWithGoldenLine = buildCandidateRefreshPrEvidenceBlock({
+    runUrl: RUN_URL,
+    baseSha: BASE,
+    headSha: HEAD,
+    candidate: candidateInfo,
+    goldenDiffReport: zeroReport,
+  });
+
+  // Legacy call without goldenDiffReport continues to pass
+  const legacyResult = validateCandidateEvidence(parseAutomationPrEvidence(bodyWithGoldenLine));
+  assert.equal(legacyResult.valid, true);
+  assert.equal(legacyResult.goldenDiffValidation, null);
+
+  // With goldenDiffReport and matching body line -> PASS
+  const verified = validateCandidateEvidence(bodyWithGoldenLine, { goldenDiffReport: zeroReport });
+  assert.equal(verified.valid, true);
+  assert.equal(verified.goldenDiffValidation.mode, "ZERO_DIFF");
+
+  // Body missing `- Journey golden diff: ...` line when goldenDiffReport is provided -> FAIL
+  const bodyWithoutGoldenLine = buildCandidateRefreshPrEvidenceBlock({
+    runUrl: RUN_URL,
+    baseSha: BASE,
+    headSha: HEAD,
+    candidate: candidateInfo,
+  });
+  assert.throws(
+    () => validateCandidateEvidence(bodyWithoutGoldenLine, { goldenDiffReport: zeroReport }),
+    /AUTOMATION_PR_CANDIDATE_GATE: PR 본문에 Journey golden diff 증거 줄이 없거나 리포트와 다르다/u,
+  );
+
+  // Undeclared changed queries -> FAIL
+  const changedReport = {
+    ...zeroReport,
+    unchangedCount: 23,
+    changedCount: 1,
+    changedQueries: [{ id: "seoul-01" }],
+    diffSummarySha256: computeChangedQueriesSummarySha256([{ id: "seoul-01" }]),
+  };
+  assert.throws(
+    () => validateCandidateEvidence(parseAutomationPrEvidence(bodyWithGoldenLine), { goldenDiffReport: changedReport }),
+    /AUTOMATION_PR_CANDIDATE_GATE: JOURNEY_GOLDEN_DIFF_UNDECLARED_CHANGES/u,
+  );
 });

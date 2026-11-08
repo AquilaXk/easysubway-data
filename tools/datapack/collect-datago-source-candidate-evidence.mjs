@@ -97,6 +97,10 @@ export async function collectDatagoSourceCandidateEvidence({
   fetchImpl = fetch,
   runnerTemp = process.env.RUNNER_TEMP,
   serviceKey = process.env.DATA_GO_KR_SERVICE_KEY,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions,
 } = {}) {
   const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey);
   if (!path.isAbsolute(requiredText(runnerTemp, "RUNNER_TEMP"))) {
@@ -119,6 +123,10 @@ export async function collectDatagoSourceCandidateEvidence({
       writeStagedCandidates: Boolean(candidatesDocument),
       buildScriptName: "build-source-candidate-sample-evidence.mjs",
       validateScriptName: "validate-source-candidate-sample.mjs",
+      sleepImpl,
+      retryBudget,
+      randomImpl,
+      retryOptions,
     });
   } catch (error) {
     throw new Error(sanitizeDatagoErrorMessage(error, serviceKey, normalizedServiceKey));

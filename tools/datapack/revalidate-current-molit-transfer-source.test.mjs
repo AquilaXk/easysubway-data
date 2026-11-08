@@ -214,7 +214,7 @@ test("content/schema/total pagination drift는 output 없이 fail closed한다",
   }
 });
 
-test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실패한다", async () => {
+test("credential/HTTP/transport boundary는 bounded retry와 raw reflection 없이 실패한다", async () => {
   let oversizedCancelled = false;
   let chunkIndex = 0;
   const cases = [
@@ -225,17 +225,17 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
       expectedCode: "MOLIT_TRANSFER_REVALIDATION_CREDENTIAL",
     },
     ...[
-      [401, "PROVIDER_HTTP_AUTHORIZATION"],
-      [429, "PROVIDER_HTTP_RATE_LIMIT"],
-      [503, "PROVIDER_HTTP_SERVER"],
-      [418, "PROVIDER_HTTP_OTHER"],
-    ].map(([status, code]) => ({
+      [401, "PROVIDER_HTTP_AUTHORIZATION", 1],
+      [429, "PROVIDER_HTTP_RATE_LIMIT", 2],
+      [503, "PROVIDER_HTTP_SERVER", 3],
+      [418, "PROVIDER_HTTP_OTHER", 1],
+    ].map(([status, code, expectedCalls]) => ({
       env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
       fetchImpl: async () => new Response(`provider body ${serviceKey}`, {
         status,
         headers: { "content-type": "text/plain" },
       }),
-      expectedCalls: 1,
+      expectedCalls,
       expectedCode: `MOLIT_TRANSFER_REVALIDATION_${code}`,
     })),
     {
@@ -248,20 +248,20 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
       expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_CONTENT_TYPE",
     },
     ...[
-      ["ENOTFOUND", "PROVIDER_DNS"],
-      ["ERR_TLS_CERT_ALTNAME_INVALID", "PROVIDER_TLS"],
-      ["SELF_SIGNED_CERT_IN_CHAIN", "PROVIDER_TLS"],
-      ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "PROVIDER_TLS"],
-    ].map(([causeCode, code]) => ({
+      ["ENOTFOUND", "PROVIDER_DNS", 3],
+      ["ERR_TLS_CERT_ALTNAME_INVALID", "PROVIDER_TLS", 1],
+      ["SELF_SIGNED_CERT_IN_CHAIN", "PROVIDER_TLS", 1],
+      ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "PROVIDER_TLS", 1],
+    ].map(([causeCode, code, expectedCalls]) => ({
       env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
       fetchImpl: async () => { throw Object.assign(new Error(serviceKey), { cause: { code: causeCode } }); },
-      expectedCalls: 1,
+      expectedCalls,
       expectedCode: `MOLIT_TRANSFER_REVALIDATION_${code}`,
     })),
     {
       env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
       fetchImpl: async () => { throw Object.assign(new Error(serviceKey), { name: "TimeoutError" }); },
-      expectedCalls: 1,
+      expectedCalls: 3,
       expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_TIMEOUT",
     },
     {
@@ -312,6 +312,7 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
         runCurrentMolitTransferSourceRevalidation({
           argv: ["--observed-at", observedAt, "--output", output],
           env: entry.env,
+          sleepImpl: async () => {},
           fetchImpl: async (...args) => { calls += 1; return entry.fetchImpl(...args); },
           repositoryRoot: root,
         }),

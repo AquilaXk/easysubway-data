@@ -115,6 +115,10 @@ export async function collectKricSourceCandidateEvidence({
   fetchImpl = fetch,
   runnerTemp = process.env.RUNNER_TEMP,
   serviceKey = process.env.KRIC_SERVICE_KEY,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions,
 } = {}) {
   requiredText(serviceKey, "KRIC_SERVICE_KEY");
   if (!path.isAbsolute(requiredText(runnerTemp, "RUNNER_TEMP"))) {
@@ -166,6 +170,10 @@ export async function collectKricSourceCandidateEvidence({
     validateScriptName: "validate-source-candidate-sample.mjs",
     controlOperation: integrity?.controlOperation ?? null,
     credentialSignalResultCodes: integrity?.credentialSignalResultCodes ?? null,
+    sleepImpl,
+    retryBudget,
+    randomImpl,
+    retryOptions,
   });
 }
 

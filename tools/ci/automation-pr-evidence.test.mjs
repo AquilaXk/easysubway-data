@@ -8,6 +8,7 @@ import {
   AUTOMATION_PR_EVIDENCE_MARKER,
   AUTOMATION_PR_STAGES,
   automationPrEvidenceBlock,
+  buildCandidateRefreshPrEvidenceBlock,
   candidateRefreshEvidenceBlock,
   derivativeRebindingPullRequestBody,
   itxPromotionPullRequestBody,
@@ -17,6 +18,7 @@ import {
   registrationPullRequestBody,
   sourceReverificationPullRequestBody,
 } from "./automation-pr-evidence.mjs";
+import { computeChangedQueriesSummarySha256 } from "../datapack/run-candidate-journey-golden-diff.mjs";
 
 // #969: 2단계(자동 병합 정책)가 읽는 자동화 PR 출력 계약(이슈 §7). PR 본문의 기계 판독 블록은 색인일 뿐이고 정책은 diff와 원장에서 다시 계산해 대조한다.
 // 블록은 정확히 하나여야 하고, 알려진 키·값만 받는다(조용히 정규화하지 않는다). base/head 커밋에 결속된다.
@@ -368,4 +370,66 @@ test("CLI source-reverification-body는 원장 게이트 출력과 controller �
   // controller 결과에 증거 행 목록이 없으면 빈 목록으로 보지 않고 실패한다.
   await writeFile(file("result.json"), JSON.stringify({ steps: [RV_STEP] }));
   await assert.rejects(main(args.map((value) => (value === file("body.md") ? file("third.md") : value))), /AUTOMATION_PR_EVIDENCE_INVALID: source-reverification: the controller result lacks/u);
+});
+
+test("buildCandidateRefreshPrEvidenceBlock과 candidate-refresh-block CLI는 선택적 goldenDiffReport를 검증하고 증거 줄을 기록한다", async (t) => {
+  const zeroSha = computeChangedQueriesSummarySha256([]);
+  const zeroReport = {
+    schemaVersion: 1,
+    baselineBundleDir: "/baseline",
+    candidateBundleDir: "/candidate",
+    queryCount: 24,
+    unchangedCount: 24,
+    changedCount: 0,
+    changedQueries: [],
+    diffSummarySha256: zeroSha,
+  };
+  const withGoldenDiff = buildCandidateRefreshPrEvidenceBlock({
+    runUrl: RUN_URL,
+    baseSha: BASE,
+    headSha: HEAD,
+    candidate: CANDIDATE,
+    goldenDiffReport: zeroReport,
+  });
+  assert.match(withGoldenDiff, /^- Journey golden diff: status=GO mode=ZERO_DIFF queryCount=24 unchangedCount=24 changedCount=0 diffSummarySha256=[0-9a-f]{64}\n<!-- easysubway-automation-pr:v1 /u);
+  assert.deepEqual(parseAutomationPrEvidence(withGoldenDiff, { headSha: HEAD }).candidate, CANDIDATE);
+
+  const undeclaredReport = {
+    ...zeroReport,
+    unchangedCount: 23,
+    changedCount: 1,
+    changedQueries: [{ id: "seoul-01" }],
+    diffSummarySha256: computeChangedQueriesSummarySha256([{ id: "seoul-01" }]),
+  };
+  assert.throws(
+    () => buildCandidateRefreshPrEvidenceBlock({
+      runUrl: RUN_URL,
+      baseSha: BASE,
+      headSha: HEAD,
+      candidate: CANDIDATE,
+      goldenDiffReport: undeclaredReport,
+    }),
+    /AUTOMATION_PR_EVIDENCE_INVALID: JOURNEY_GOLDEN_DIFF_UNDECLARED_CHANGES/u,
+  );
+
+  const directory = await mkdtemp(path.join(os.tmpdir(), "automation-pr-evidence-golden-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = (name) => path.join(directory, name);
+  await writeFile(file("spec.json"), JSON.stringify(CANDIDATE));
+  await writeFile(file("paths.txt"), `${CANDIDATE.paths.join("\n")}\n`);
+  await writeFile(file("golden.json"), JSON.stringify(zeroReport));
+  const lines = [];
+  await main(
+    [
+      "candidate-refresh-block",
+      "--build-spec", file("spec.json"),
+      "--changed-paths", file("paths.txt"),
+      "--golden-diff-report", file("golden.json"),
+      "--base-sha", BASE,
+      "--head-sha", HEAD,
+      "--run-url", RUN_URL,
+    ],
+    { write: (chunk) => lines.push(chunk) },
+  );
+  assert.match(lines.join(""), /^- Journey golden diff: status=GO mode=ZERO_DIFF /u);
 });

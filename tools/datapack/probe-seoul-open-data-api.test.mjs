@@ -42,6 +42,7 @@ test("서울시 path-key API probe는 retryable 응답 뒤 bounded backoff를 �
   const evidence = await probeSeoulOpenDataApi({
     sourceId: "seoul-topis-realtime-station-arrival",
     serviceKey: "key",
+    randomImpl: () => 0.25,
     sleepImpl: async (milliseconds) => delays.push(milliseconds),
     fetchImpl: async () => {
       attempts += 1;
@@ -105,14 +106,15 @@ test("서울시 path-key API probe는 HTTP와 schema 및 transport 오류를 fai
     let attempts = 0;
     await assert.rejects(probeSeoulOpenDataApi({
       ...base,
+      randomImpl: () => 0.25,
       sleepImpl: async (milliseconds) => delays.push(milliseconds),
       fetchImpl: async () => {
         attempts += 1;
-        throw new Error("network details must stay in cause");
+        throw Object.assign(new Error("network details must stay in cause"), { code: "ECONNRESET" });
       },
     }), /Seoul open data API transport failure/);
-    assert.equal(attempts, 2);
-    assert.deepEqual(delays, [500]);
+    assert.equal(attempts, 3);
+    assert.deepEqual(delays, [500, 1000]);
   });
 });
 
@@ -167,13 +169,19 @@ test("서울시 path-key API probe는 Sheet envelope와 provider/schema 오류�
   assert.match(decodeURI(requestedUrl.pathname), /\/1\/5\/\/\/4호선$/);
 
   await t.test("provider failure", async () => {
+    let attempts = 0;
     await assert.rejects(probeSeoulOpenDataApi({
       sourceId: "seoul-topis-realtime-train-position",
       serviceKey: "key",
-      fetchImpl: async () => new Response(JSON.stringify({
-        errorMessage: { status: 500, code: "ERROR-500" },
-      }), { status: 200, headers: { "content-type": "application/json" } }),
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        attempts += 1;
+        return new Response(JSON.stringify({
+          errorMessage: { status: 500, code: "ERROR-500" },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
     }), /provider resultCode ERROR-500/);
+    assert.equal(attempts, 3);
   });
 
   await t.test("empty rows", async () => {
@@ -188,12 +196,18 @@ test("서울시 path-key API probe는 Sheet envelope와 provider/schema 오류�
   });
 
   await t.test("Sheet top-level provider failure", async () => {
+    let attempts = 0;
     await assert.rejects(probeSeoulOpenDataApi({
       sourceId: "seoulmetro-station-line-info",
       serviceKey: "key",
-      fetchImpl: async () => new Response(JSON.stringify({
-        RESULT: { CODE: "INFO-200", MESSAGE: "해당하는 데이터가 없습니다" },
-      }), { status: 200, headers: { "content-type": "application/json" } }),
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        attempts += 1;
+        return new Response(JSON.stringify({
+          RESULT: { CODE: "INFO-200", MESSAGE: "해당하는 데이터가 없습니다" },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
     }), /provider resultCode INFO-200/);
+    assert.equal(attempts, 1);
   });
 });

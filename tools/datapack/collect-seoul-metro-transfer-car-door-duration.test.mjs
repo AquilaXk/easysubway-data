@@ -89,5 +89,16 @@ test("수집기는 키 없는 고정 다운로드 URL만 호출하고 응답 파
   assert.ok(!/serviceKey/iu.test(DOWNLOAD_URL));
   assert.equal(snapshot.sourceFileName, FILE_NAME);
   assert.equal(contentDispositionFileName(header), FILE_NAME);
-  await assert.rejects(collectSeoulMetroTransferCarDoorDuration({ fetchImpl: async () => new Response("x", { status: 500 }) }), /HTTP 500/u);
+  let attempts = 0;
+  await assert.rejects(
+    collectSeoulMetroTransferCarDoorDuration({
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        attempts += 1;
+        return new Response("x", { status: 500 });
+      },
+    }),
+    /HTTP 500/u,
+  );
+  assert.equal(attempts, 3);
 });

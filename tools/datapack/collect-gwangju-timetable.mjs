@@ -3,6 +3,12 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import {
+  classifyDataGoResultCode,
+  isRetryAfterExceedsCap,
+  withSourceCollectionRetry,
+} from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "gwangju-transportation-timetable";
@@ -56,11 +62,20 @@ export async function collectGwangjuTimetable({
   fetchImpl = fetch,
   now = new Date(),
   concurrency = 4,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
-  const first = await collectPage({ pageNo: 1, key, fetchImpl });
+  const retry = {
+    sleep: sleepImpl ?? retryOptions.sleep,
+    budget: retryBudget ?? retryOptions.budget,
+    random: randomImpl ?? retryOptions.random,
+  };
+  const first = await collectPage({ pageNo: 1, key, fetchImpl, retry });
   const pageCount = Math.ceil(first.totalCount / first.numOfRows);
   if (!Number.isSafeInteger(pageCount) || pageCount < 1 || pageCount > 100) {
     throw new Error(`Gwangju timetable schema mismatch: pageCount=${safeToken(String(pageCount))}`);
@@ -74,7 +89,7 @@ export async function collectGwangjuTimetable({
       const pageNo = nextPageNo;
       nextPageNo += 1;
       try {
-        pages[pageNo - 1] = await collectPage({ pageNo, key, fetchImpl });
+        pages[pageNo - 1] = await collectPage({ pageNo, key, fetchImpl, retry });
       } catch (error) {
         failure = error;
       }
@@ -134,13 +149,12 @@ export async function collectGwangjuTimetable({
   };
 }
 
-async function collectPage({ pageNo, key, fetchImpl }) {
+async function collectPage({ pageNo, key, fetchImpl, retry }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("pageNo", String(pageNo));
   url.searchParams.set("numOfRows", "500");
-  const response = await fetchPageOnce(url, fetchImpl);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const { response, bytes } = await fetchPageWithRetry(url, fetchImpl, retry);
   const rawSha256 = sha256(bytes);
   if (!response.ok) {
     throw new Error(`Gwangju timetable HTTP ${response.status}; rawBytes=${bytes.length}; rawSha256=${rawSha256}`);
@@ -151,7 +165,7 @@ async function collectPage({ pageNo, key, fetchImpl }) {
   }
   const { raw, responseEncoding } = decodeXml(bytes);
   const resultCode = scalar(raw, "resultCode");
-  if (resultCode !== "00") {
+  if (classifyDataGoResultCode(resultCode) !== "success") {
     throw new Error(`Gwangju timetable provider resultCode ${safeToken(resultCode ?? "missing")}; rawSha256=${rawSha256}`);
   }
   const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(raw)?.[1];
@@ -213,15 +227,36 @@ function validateRows(rows) {
   }
 }
 
-async function fetchPageOnce(url, fetchImpl) {
+function extractXmlResultCode(bytes) {
   try {
-    return await fetchImpl(url, {
-      redirect: "error",
-      signal: AbortSignal.timeout(15_000),
-      headers: { accept: "application/xml,text/xml" },
+    return scalar(decodeXml(bytes).raw, "resultCode");
+  } catch {
+    return null;
+  }
+}
+
+async function fetchPageWithRetry(url, fetchImpl, retry) {
+  try {
+    return await withSourceCollectionRetry(async () => {
+      const response = await fetchImpl(url, {
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+        headers: { accept: "application/xml,text/xml" },
+      });
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const resultCode = response.ok ? extractXmlResultCode(bytes) : null;
+      return { response, bytes, resultCode };
+    }, {
+      label: "Gwangju timetable",
+      url,
+      isTransientResult: ({ response, resultCode }) => response.ok && classifyDataGoResultCode(resultCode) === "transient",
+      resultCodeOf: ({ resultCode }) => resultCode ?? undefined,
+      ...retry,
     });
   } catch (error) {
-    const code = error?.code ?? error?.cause?.code ?? "UNKNOWN";
+    if (isRetryAfterExceedsCap(error)) throw error;
+    const cause = unwrapTransientRetryFailure(error);
+    const code = cause?.code ?? cause?.cause?.code ?? "UNKNOWN";
     throw new Error(`Gwangju timetable transport failure; code=${safeToken(String(code))}`);
   }
 }

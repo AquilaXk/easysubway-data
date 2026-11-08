@@ -2,19 +2,37 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { inspect } from "node:util";
 
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
+  RESULT_CODE_TABLE,
   RETRY_AFTER_EXCEEDS_CAP,
   SOURCE_COLLECTION_RETRY_POLICY,
+  classifyDataGoResultCode,
+  classifySeoulOpenDataResultCode,
   fetchBytesWithSourceRetry,
   isRetryAfterExceedsCap,
   isTransientDataGoKrResultCode,
   isTransientKricResultCode,
+  seoulOpenDataResultCodeOf,
   transportFailureWithCode,
   withRequestInterval,
   withSourceCollectionRetry,
 } from "./source-collection-retry.mjs";
 import { assertErrorOmitsSecrets } from "./source-collection-retry-test-support.mjs";
+import { defaultHttpGetBuffer } from "./source-candidate-evidence-collector.mjs";
 import { createTransientRetryBudget } from "./transient-retry.mjs";
+import { collectSeoulPlatformGap } from "../collect-seoul-metro-platform-gap.mjs";
+import { collectSeoulMetroCongestion } from "../collect-seoul-metro-congestion.mjs";
+import { collectSeoulStationContact } from "../collect-seoul-metro-station-contact.mjs";
+import {
+  DEFAULT_JOURNEY_GOLDEN_DIFF_DECLARATION_PATH,
+  computeChangedQueriesSummarySha256,
+  formatJourneyGoldenDiffEvidenceLine,
+  runCandidateJourneyGoldenDiff,
+  validateCandidateJourneyGoldenDiffReport,
+} from "../run-candidate-journey-golden-diff.mjs";
 
 // 원천 수집 표준 정책(data #1334): 최대 3회 시도, full jitter base 2s·cap 20s, Retry-After 우선(cap 초과는 fail-closed), 429는 힌트 없으면 1회만.
 const timeoutError = () => Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
@@ -285,4 +303,330 @@ test("withRequestInterval로 감싼 fetchImpl을 공유하는 동시 요청은 �
     { url: "https://example.test/1", aborted: false },
     { url: "https://example.test/2", aborted: false },
   ]);
+});
+
+test("RESULT_CODE_TABLE.seoulOpenData는 불변으로 동결되고 서울 열린데이터광장 INFO/ERROR 코드를 정확히 분류한다", () => {
+  assert.equal(Object.isFrozen(RESULT_CODE_TABLE), true);
+  assert.equal(Object.isFrozen(RESULT_CODE_TABLE.seoulOpenData), true);
+  assert.equal(Object.isFrozen(RESULT_CODE_TABLE.seoulOpenData.success), true);
+  assert.equal(Object.isFrozen(RESULT_CODE_TABLE.seoulOpenData.empty), true);
+  assert.equal(Object.isFrozen(RESULT_CODE_TABLE.seoulOpenData.transient), true);
+  assert.equal(Object.isFrozen(RESULT_CODE_TABLE.seoulOpenData.terminal), true);
+  assert.deepEqual(RESULT_CODE_TABLE.seoulOpenData, {
+    success: ["INFO-000"],
+    empty: ["INFO-200"],
+    transient: ["ERROR-500", "ERROR-600"],
+    terminal: [
+      "INFO-100",
+      "ERROR-300",
+      "ERROR-301",
+      "ERROR-310",
+      "ERROR-331",
+      "ERROR-332",
+      "ERROR-333",
+      "ERROR-334",
+      "ERROR-335",
+      "ERROR-336",
+      "ERROR-337",
+      "ERROR-601",
+    ],
+  });
+
+  assert.equal(classifySeoulOpenDataResultCode("INFO-000"), "success");
+  assert.equal(classifySeoulOpenDataResultCode(" INFO-200 "), "empty");
+  for (const code of ["ERROR-500", "ERROR-600"]) {
+    assert.equal(classifySeoulOpenDataResultCode(code), "transient", code);
+  }
+  for (const code of RESULT_CODE_TABLE.seoulOpenData.terminal) {
+    assert.equal(classifySeoulOpenDataResultCode(code), "terminal", code);
+  }
+  assert.equal(classifySeoulOpenDataResultCode("UNKNOWN-999"), "unknown");
+  assert.equal(classifySeoulOpenDataResultCode(null), "unknown");
+
+  assert.equal(seoulOpenDataResultCodeOf({ RESULT: { CODE: " ERROR-500 " } }), "ERROR-500");
+  assert.equal(
+    seoulOpenDataResultCodeOf({ getStnbySftfclt: { RESULT: { CODE: "INFO-000" } } }),
+    "INFO-000",
+  );
+  assert.equal(seoulOpenDataResultCodeOf({ getStnbySftfclt: { RESULT: { CODE: "   " } } }), null);
+  assert.equal(seoulOpenDataResultCodeOf(null), null);
+
+  assert.equal(classifyDataGoResultCode("00"), "success");
+  assert.equal(classifyDataGoResultCode("03"), "empty");
+  assert.equal(classifyDataGoResultCode("05"), "transient");
+  assert.equal(classifyDataGoResultCode("20"), "terminal");
+  assert.equal(classifyDataGoResultCode("999"), "unknown");
+});
+
+test("수동 CLI 수집기(collectSeoulPlatformGap·collectSeoulStationContact·collectSeoulMetroCongestion·defaultHttpGetBuffer)는 일시 오류만 재시도하고 영구 오류는 즉시 실패한다", async () => {
+  const gapRow = {
+    LINE: "1호선",
+    STTN: "서울역",
+    OPR_SEC: "상행",
+    C1: "5(고무발판)",
+  };
+  let gapCalls = 0;
+  const gapResult = await collectSeoulPlatformGap({
+    serviceKey: "test-seoul-key",
+    sleepImpl: async () => {},
+    fetchImpl: async () => {
+      gapCalls += 1;
+      if (gapCalls === 1) {
+        return new Response(JSON.stringify({ RESULT: { CODE: "ERROR-500", MESSAGE: "서버 오류" } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (gapCalls === 2) {
+        return new Response("", { status: 503 });
+      }
+      return new Response(
+        JSON.stringify({
+          TbSubwayLineInfo: {
+            list_total_count: 1,
+            RESULT: { CODE: "INFO-000", MESSAGE: "정상" },
+            row: [gapRow],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+  assert.equal(gapCalls, 3);
+  assert.equal(gapResult.snapshot.rows.length, 1);
+
+  for (const terminalCode of ["INFO-100", "ERROR-300"]) {
+    let terminalCalls = 0;
+    await assert.rejects(
+      collectSeoulPlatformGap({
+        serviceKey: "test-seoul-key",
+        sleepImpl: async () => {},
+        fetchImpl: async () => {
+          terminalCalls += 1;
+          return new Response(JSON.stringify({ RESULT: { CODE: terminalCode, MESSAGE: "오류" } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      }),
+      new RegExp(terminalCode),
+    );
+    assert.equal(terminalCalls, 1);
+  }
+
+  let contactCalls = 0;
+  await assert.rejects(
+    collectSeoulStationContact({
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        contactCalls += 1;
+        return new Response("unavailable", { status: 503 });
+      },
+    }),
+    /HTTP 503/,
+  );
+  assert.equal(contactCalls, 3);
+
+  let contactTerminalCalls = 0;
+  await assert.rejects(
+    collectSeoulStationContact({
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        contactTerminalCalls += 1;
+        return new Response("forbidden", { status: 403 });
+      },
+    }),
+    /HTTP 403/,
+  );
+  assert.equal(contactTerminalCalls, 1);
+
+  let congestionCalls = 0;
+  await assert.rejects(
+    collectSeoulMetroCongestion({
+      serviceKey: "test-datago-key",
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        congestionCalls += 1;
+        return new Response("gateway timeout", { status: 504 });
+      },
+    }),
+    /HTTP 504/,
+  );
+  assert.equal(congestionCalls, 3);
+
+  let bufferCalls = 0;
+  const bufferResult = await defaultHttpGetBuffer("https://apis.data.go.kr/B553766/sample", {
+    sleepImpl: async () => {},
+    fetchImpl: async () => {
+      bufferCalls += 1;
+      if (bufferCalls === 1) {
+        return new Response("temporary error", { status: 502, headers: { "content-type": "text/plain" } });
+      }
+      return new Response("ok-body", { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  assert.equal(bufferCalls, 2);
+  assert.equal(bufferResult.ok, true);
+  assert.equal(bufferResult.status, 200);
+  assert.equal(bufferResult.body.toString("utf8"), "ok-body");
+});
+
+test("validateCandidateJourneyGoldenDiffReport와 runCandidateJourneyGoldenDiff는 ZERO_DIFF·DECLARED_DIFF·불일치 fail-closed를 검증한다", async () => {
+  const defaultDeclaration = JSON.parse(await readFile(DEFAULT_JOURNEY_GOLDEN_DIFF_DECLARATION_PATH, "utf8"));
+  const zeroSha = computeChangedQueriesSummarySha256([]);
+  const zeroReport = {
+    schemaVersion: 1,
+    baselineBundleDir: "/baseline/bundle",
+    candidateBundleDir: "/candidate/bundle",
+    queryCount: 24,
+    unchangedCount: 24,
+    changedCount: 0,
+    changedQueries: [],
+    diffSummarySha256: zeroSha,
+  };
+
+  const zeroValidation = validateCandidateJourneyGoldenDiffReport(zeroReport, defaultDeclaration);
+  assert.deepEqual(zeroValidation, {
+    status: "GO",
+    mode: "ZERO_DIFF",
+    queryCount: 24,
+    unchangedCount: 24,
+    changedCount: 0,
+    changedQueryIds: [],
+    diffSummarySha256: zeroSha,
+    reason: null,
+  });
+  assert.match(
+    formatJourneyGoldenDiffEvidenceLine(zeroValidation),
+    /^- Journey golden diff: status=GO mode=ZERO_DIFF queryCount=24 unchangedCount=24 changedCount=0 diffSummarySha256=[0-9a-f]{64}$/,
+  );
+
+  // Stale declaration when changedCount === 0 but allowChangedQueries === true
+  assert.throws(
+    () => validateCandidateJourneyGoldenDiffReport(zeroReport, {
+      schemaVersion: 1,
+      allowChangedQueries: true,
+      declaredChangedQueryIds: ["seoul-01"],
+      declaredDiffSha256: "a".repeat(64),
+      reason: "stale declaration",
+    }),
+    /JOURNEY_GOLDEN_DIFF_STALE_DECLARATION/,
+  );
+
+  const changedEntries = [
+    { id: "busan-02", baselineMinutes: 28, candidateMinutes: 26 },
+    { id: "seoul-01", baselineMinutes: 42, candidateMinutes: 40 },
+  ];
+  const changedSha = computeChangedQueriesSummarySha256(changedEntries);
+  const changedReport = {
+    schemaVersion: 1,
+    baselineBundleDir: "/baseline/bundle",
+    candidateBundleDir: "/candidate/bundle",
+    queryCount: 24,
+    unchangedCount: 22,
+    changedCount: 2,
+    changedQueries: changedEntries,
+    diffSummarySha256: changedSha,
+  };
+
+  // Undeclared changes must fail closed
+  assert.throws(
+    () => validateCandidateJourneyGoldenDiffReport(changedReport, defaultDeclaration),
+    /JOURNEY_GOLDEN_DIFF_UNDECLARED_CHANGES/,
+  );
+
+  // Declared changes with matching reason, ids, and sha256 pass
+  const declaredValidation = validateCandidateJourneyGoldenDiffReport(changedReport, {
+    schemaVersion: 1,
+    allowChangedQueries: true,
+    declaredChangedQueryIds: ["busan-02", "seoul-01"],
+    declaredDiffSha256: changedSha,
+    reason: "시간표 갱신에 따른 배차 간격 반영",
+  });
+  assert.equal(declaredValidation.status, "GO");
+  assert.equal(declaredValidation.mode, "DECLARED_DIFF");
+  assert.deepEqual(declaredValidation.changedQueryIds, ["busan-02", "seoul-01"]);
+
+  // Mismatched query IDs or SHA256 or missing reason must fail closed
+  assert.throws(
+    () => validateCandidateJourneyGoldenDiffReport(changedReport, {
+      schemaVersion: 1,
+      allowChangedQueries: true,
+      declaredChangedQueryIds: ["seoul-01"],
+      declaredDiffSha256: changedSha,
+      reason: "일부 누락",
+    }),
+    /JOURNEY_GOLDEN_DIFF_QUERY_IDS_MISMATCH/,
+  );
+  assert.throws(
+    () => validateCandidateJourneyGoldenDiffReport(changedReport, {
+      schemaVersion: 1,
+      allowChangedQueries: true,
+      declaredChangedQueryIds: ["busan-02", "seoul-01"],
+      declaredDiffSha256: "0".repeat(64),
+      reason: "해시 불일치",
+    }),
+    /JOURNEY_GOLDEN_DIFF_SHA256_MISMATCH/,
+  );
+  assert.throws(
+    () => validateCandidateJourneyGoldenDiffReport(changedReport, {
+      schemaVersion: 1,
+      allowChangedQueries: true,
+      declaredChangedQueryIds: ["busan-02", "seoul-01"],
+      declaredDiffSha256: changedSha,
+      reason: "   ",
+    }),
+    /JOURNEY_GOLDEN_DIFF_REASON_REQUIRED/,
+  );
+
+  // End-to-end runner with --golden-diff-input and --report-out
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "golden-diff-runner-test-"));
+  try {
+    const inputPath = path.join(tempDir, "raw-report.json");
+    const outPath = path.join(tempDir, "validated-report.json");
+    await writeFile(inputPath, JSON.stringify({
+      schemaVersion: 1,
+      queryCount: 24,
+      unchangedCount: 24,
+      changedCount: 0,
+      changedQueries: [],
+    }));
+    const { report, validation } = await runCandidateJourneyGoldenDiff({
+      baselineBundleDir: "/baseline/bundle",
+      candidateBundleDir: "/candidate/bundle",
+      goldenDiffInputPath: inputPath,
+      reportOutPath: outPath,
+    });
+    assert.equal(validation.mode, "ZERO_DIFF");
+    assert.equal(report.diffSummarySha256, zeroSha);
+    const written = JSON.parse(await readFile(outPath, "utf8"));
+    assert.equal(written.validation.status, "GO");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("withSourceCollectionRetry와 fetchBytesWithSourceRetry는 recordTelemetry=false일 때 계측 파일에 시도 줄을 기록하지 않는다 (#1699)", async (t) => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "retry-no-telemetry-"));
+  const telemetryPath = path.join(tempDir, "telemetry.jsonl");
+  const prevTelemetry = process.env.SOURCE_FETCH_TELEMETRY_PATH;
+  t.after(async () => {
+    if (prevTelemetry === undefined) delete process.env.SOURCE_FETCH_TELEMETRY_PATH;
+    else process.env.SOURCE_FETCH_TELEMETRY_PATH = prevTelemetry;
+    await rm(tempDir, { recursive: true, force: true });
+  });
+  await writeFile(telemetryPath, "");
+  process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
+
+  const { bytes } = await fetchBytesWithSourceRetry({
+    url: "https://example.test/replay",
+    fetchImpl: async () => new Response("replayed", { status: 200 }),
+    accept: "application/xml",
+    label: "Retained replay",
+    sourceId: "retained-replay-test",
+    recordTelemetry: false,
+    transportFailure: (err) => err,
+  });
+  assert.equal(bytes.toString("utf8"), "replayed");
+  assert.equal(await readFile(telemetryPath, "utf8"), "");
 });

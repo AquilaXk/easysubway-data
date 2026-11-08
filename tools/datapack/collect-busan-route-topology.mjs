@@ -129,7 +129,7 @@ async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBu
     if (!lineIdForStationCode(stationCode)) throw new Error("stationCode must be an admitted Busan station code");
     url.searchParams.set("scode", stationCode);
   }
-  const { response, bytes: rawBytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl);
+  const { response, bytes: rawBytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl, key !== "retained-replay");
   const rawEvidence = `rawBytes=${rawBytes.length}; rawSha256=${sha256(rawBytes)}`;
   if (!response.ok) throw new Error(`Busan route topology HTTP ${response.status}; ${rawEvidence}`);
   validateResponseContentType(response, rawEvidence);
@@ -541,7 +541,7 @@ function isTransientProviderBody(rawBytes) {
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs, #1099, #1334).
 // 200 응답이어도 data.go.kr 코드 체계(부산교통공사 게이트웨이도 같은 이름을 쓴다)의 envelope resultCode가 일시 오류 코드(01·02·04·05·30·99)면 다시 보낸다.
 // 인증·형식 오류는 재시도하지 않는다. 한도를 다 쓰면 마지막 응답(HTTP 오류·provider 오류)이나 전송 오류를 기존 오류와 원본 증거로 드러낸다.
-function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
+function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl, recordTelemetry = true) {
   return fetchBytesWithSourceRetry({
     url,
     fetchImpl,
@@ -550,6 +550,7 @@ function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
     sourceId: SOURCE_ID,
     isTransientResult: ({ response, bytes }) => response.ok && isTransientProviderBody(bytes),
     transportFailure: (failure) => new Error("Busan route topology transport failure", { cause: failure }),
+    recordTelemetry,
     sleep: sleepImpl,
     budget: retryBudget,
     random: randomImpl,
