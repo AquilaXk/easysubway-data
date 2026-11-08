@@ -284975,5 +284975,49 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "gwangju-transportation-accessibility",
+    "snapshotId": "gwangju-transportation-accessibility-d8fd506e1db4a91ca02c22ae99e39ed556d1a43139f2063bb5279d048353d902-20261109",
+    "previousSnapshotId": "gwangju-transportation-accessibility-799e21a5fb869bbcf543e47ad8b3561ba10c6e6f66468232fc6d3b03bf42ed4e-20261107",
+    "capturedAt": "2026-11-08T18:43:40.275Z",
+    "retrievedAt": "2026-11-08T18:43:40.275Z",
+    "sourceUpdatedAt": null,
+    "provider": "광주교통공사",
+    "rowCount": 20,
+    "coverageCount": 20,
+    "rawSha256": "0e48d767d88e120a86149cf5a5793f6dde946a5838979043a2618f669fb62225",
+    "contentSha256": "282cafd4a88f30f40a1973242c46c0273252eabf3db6494a706f3da24def47ae",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/gwangju-transportation-accessibility/20261109/779dcc1a1316b287a2fd974cc6099720ab23b0e6c9c17268b55e088bc4627f60.json",
+    "rawObjectSha256": "779dcc1a1316b287a2fd974cc6099720ab23b0e6c9c17268b55e088bc4627f60",
+    "rawReceiptSha256": "8c144c89892f3be4c0e3be4cc2d06884c702c30aff31e9c405f4b00ffe8367f3",
+    "byteSize": 28112,
+    "freshUntil": "2026-11-09T18:43:40.275Z",
+    "freshnessExpiresAt": "2027-02-06T18:43:40.275Z",
+    "rawRetentionExpiresAt": "2027-02-06T18:43:40.275Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "8977e8bd737d84ac0e88a2c6da010795c7b828a3d9975a7314fbc27eeaf6b810",
+    "schemaFingerprint": "b8957b47d46353adc79c2448121cf77a14334dcb882504723b956fa15755650d",
+    "redactedRequestFingerprint": "178fab4f3006c91562d42e287eb30b3c0a9689400a970e659f34488d35230eed",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "0532458dc81590ad020987ddb34ef301ab96a86d1475325f94c8c956066f8b84"
+    },
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
