@@ -10,22 +10,54 @@ import { evaluateGithubExpression } from "./github-expression.mjs";
 import { ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const workflowPath = path.join(root, ".github/workflows/kric-current-facility-refresh.yml");
+const FILE = "kric-current-facility-refresh.yml";
+const workflowPath = path.join(root, ".github/workflows", FILE);
+const { yml, workflow, job, steps, step } = loadWorkflow(root, FILE);
+
+function kricStep(shortName) {
+  return step(`KRIC current facility refresh / ${shortName}`);
+}
+
+function kricStepIndex(shortName) {
+  return steps().findIndex(({ name }) => name === `KRIC current facility refresh / ${shortName}`);
+}
+
+function evaluateCollectCondition(condition, state) {
+  return evaluateGithubExpression(condition, {
+    steps: { decision: { outputs: { state, source_id: "kric-station-escalator-detailed" } } },
+  });
+}
+
+function runRecoveredSourceScript(script, journalPath) {
+  return execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: root,
+    env: { ...process.env, SOURCE_JOURNAL: journalPath },
+    encoding: "utf8",
+  });
+}
 
 test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () => {
   assert.ok(existsSync(workflowPath));
-  const yml = readFileSync(workflowPath, "utf8");
-  assert.match(yml, /cron: "17 \*\/2 \* \* \*"/);
-  assert.match(yml, /workflow_dispatch:/);
-  assert.match(yml, /cancel-in-progress: false/);
-  assert.match(yml, /contents: write/);
-  assert.match(yml, /pull-requests: write/);
-  assert.match(yml, /actions: read/);
-  assert.match(yml, /persist-credentials: false/);
-  assert.match(yml, /fetch-depth: 0/);
-  assert.match(yml, /node-version: "24\.19\.0"/);
-  assert.match(yml, /environment: datapack-release-check/);
-  assert.match(yml, /github\.ref == 'refs\/heads\/main'/);
+  assert.deepEqual(workflow.on, {
+    schedule: [{ cron: "17 */2 * * *" }],
+    workflow_dispatch: {},
+  });
+  assert.equal(workflow.concurrency["cancel-in-progress"], false);
+  assert.deepEqual(job.permissions, {
+    actions: "read",
+    contents: "write",
+    "pull-requests": "write",
+    issues: "write",
+  });
+  assert.deepEqual(kricStep("Checkout repository").with, {
+    "fetch-depth": "0",
+    "persist-credentials": "false",
+  });
+  assert.deepEqual(kricStep("Set up Node.js").with, {
+    "node-version": "24.19.0",
+  });
+  assert.equal(job.environment, "datapack-release-check");
+  assert.equal(job.if, "${{ github.ref == 'refs/heads/main' }}");
   // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
   assert.match(yml, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
   assert.doesNotMatch(yml, /gh pr list[^\n]*--state all --limit/u);
@@ -44,7 +76,7 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /run-current-capital-facility-operation\.mjs --phase prepare --source-id "\$\{KRIC_REFRESH_SOURCE_ID\}" --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}" --expected-main-sha "\$\{KRIC_REFRESH_MAIN_SHA\}" --expected-facility-head-sha "\$\{KRIC_REFRESH_MAIN_SHA\}"/);
   assert.match(yml, /run-current-capital-facility-operation\.mjs --phase collect --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}"/);
   assert.match(yml, /run-current-capital-facility-operation\.mjs --phase finalize --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}"/);
-  assert.equal((yml.match(/run-current-capital-facility-operation\.mjs --phase (?:prepare|collect|finalize)/g) ?? []).length, 3);
+  assert.equal([...yml.matchAll(/run-current-capital-facility-operation\.mjs --phase (?:prepare|collect|finalize)/gu)].length, 3);
   assert.match(yml, /KRIC_SERVICE_KEY.*nonempty single line/);
   assert.match(yml, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL.*nonempty single line/);
   assert.match(yml, /automation\/629-kric-facility-refresh-\$\{GITHUB_RUN_ID\}/);
@@ -65,15 +97,15 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /git ls-files --others --exclude-standard/);
   assert.match(yml, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
   assert.equal(
-    (yml.match(/grep -Eq '\^tools\/datapack\/sources\/\[\^\/\]\+\\\.json\$'/g) ?? []).length,
+    [...yml.matchAll(/grep -Eq '\^tools\/datapack\/sources\/\[\^\/\]\+\\\.json\$'/gu)].length,
     2,
   );
   assert.equal(
-    (yml.match(/printf '%s\\n' "\$\{changed\}"/g) ?? []).length,
+    [...yml.matchAll(/printf '%s\\n' "\$\{changed\}"/gu)].length,
     2,
   );
   assert.equal(
-    (yml.match(/printf 'KRIC_REFRESH_BRANCH=%s\\n'/g) ?? []).length,
+    [...yml.matchAll(/printf 'KRIC_REFRESH_BRANCH=%s\\n'/gu)].length,
     1,
   );
   assert.doesNotMatch(yml, /\\\\\.json|%s\\\\n/);
@@ -86,7 +118,6 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
 });
 
 test("KRIC refresh workflow only uploads sanitized decision and operation evidence", () => {
-  const yml = readFileSync(workflowPath, "utf8");
   assert.match(yml, /decision\.json/);
   assert.match(yml, /journal\.json/);
   assert.match(yml, /raw-receipt\.json/);
@@ -97,7 +128,6 @@ test("KRIC refresh workflow only uploads sanitized decision and operation eviden
 });
 
 test("KRIC refresh workflow ends at ledger registration and never commits candidate-side outputs (#862 결정 C)", () => {
-  const yml = readFileSync(workflowPath, "utf8");
   for (const candidateSide of [
     "candidate-build-spec.json",
     "release-request.json",
@@ -106,13 +136,12 @@ test("KRIC refresh workflow ends at ledger registration and never commits candid
     assert.equal(yml.includes(candidateSide), false, `${candidateSide} belongs to the nationwide candidate refresh`);
   }
   assert.equal(
-    (yml.match(/'tools\/datapack\/\(release\/source-snapshots\\\.json\|source-inventory\\\.json\|sources\/\[\^\/\]\+\\\.json\)'/g) ?? []).length,
+    [...yml.matchAll(/'tools\/datapack\/\(release\/source-snapshots\\\.json\|source-inventory\\\.json\|sources\/\[\^\/\]\+\\\.json\)'/gu)].length,
     2,
   );
 });
 
 test("KRIC refresh workflow recovers a published claim through the same registration-only output set", () => {
-  const yml = readFileSync(workflowPath, "utf8");
   assert.match(yml, /gh run download "\$\{source_run_id\}"/);
   assert.match(yml, /--phase recover-published/);
   assert.match(yml, /--phase finalize/);
@@ -123,110 +152,92 @@ test("KRIC refresh workflow recovers a published claim through the same registra
 
 // #995: claim head subject를 git으로 읽어 넘기던 방식은 claim 판정 증거(claim 뒤 커밋 제목)가 대신한다.
 test("KRIC refresh workflow classifies PR-less claims from run and publication evidence before any recovery or claim", () => {
-  const yml = readFileSync(workflowPath, "utf8");
-  const stepOf = (name) => {
-    const start = yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
-    assert.notEqual(start, -1, `missing workflow step: ${name}`);
-    const end = yml.indexOf("\n      - name: ", start + 1);
-    return yml.slice(start, end === -1 ? yml.length : end);
-  };
-  const decision = stepOf("Read due state");
-  assert.doesNotMatch(decision, /git fetch|git log -1|claim_subject|while IFS=/);
-  const collect = decision.indexOf("node tools/ci/collect-automation-prs.mjs");
-  const evidence = decision.indexOf('node tools/ci/claim-orphans.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"');
+  const decision = kricStep("Read due state");
+  assert.doesNotMatch(decision.run, /git fetch|git log -1|claim_subject|while IFS=/);
+  const collect = decision.run.indexOf("node tools/ci/collect-automation-prs.mjs");
+  const evidence = decision.run.indexOf('node tools/ci/claim-orphans.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"');
   assert.ok(collect !== -1 && evidence > collect);
-  assert.ok(decision.indexOf("decide-current-kric-facility-refresh.mjs") > evidence);
-  assert.match(decision, /--claims "\$\{claims\}" \\\n\s+--claim-evidence "\$\{claim_evidence\}"/);
-  assert.doesNotMatch(decision, /gh run list/);
-  assert.match(yml, /\n    permissions:\n      actions: read\n/);
-  const cleanup = stepOf("Remove abandoned claims named by the decision");
-  assert.match(cleanup, /\n        if: \$\{\{ steps\.decision\.outputs\.cleanup_claims != '' \}\}\n/);
-  assert.match(cleanup, /\n          CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}\n/);
-  const script = cleanup.split("\n        run: |")[1];
-  assert.doesNotMatch(script, /\$\{\{/);
-  assert.match(script, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow kric-current-facility-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}" --refs "\$\{RUNNER_TEMP\}\/kric-current-facility-refresh\/claims\.txt"/);
-  const running = stepOf("Note refresh waiting on a running producer");
-  assert.match(running, /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'CLAIM_IN_PROGRESS' \}\}\n/);
-  const order = (name) => yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
-  assert.ok(order("Read due state") < order("Remove abandoned claims named by the decision"));
-  assert.ok(order("Remove abandoned claims named by the decision") < order("Recover claimed refresh"));
-  assert.ok(order("Remove abandoned claims named by the decision") < order("Create durable claim"));
+  assert.ok(decision.run.indexOf("decide-current-kric-facility-refresh.mjs") > evidence);
+  assert.match(decision.run, /--claims "\$\{claims\}" \\\n\s+--claim-evidence "\$\{claim_evidence\}"/);
+  assert.doesNotMatch(decision.run, /gh run list/);
+  assert.equal(job.permissions.actions, "read");
+  const cleanup = kricStep("Remove abandoned claims named by the decision");
+  assert.equal(ifCondition(cleanup), "${{ steps.decision.outputs.cleanup_claims != '' }}");
+  assert.equal(cleanup.env.CLEANUP_CLAIMS, "${{ steps.decision.outputs.cleanup_claims }}");
+  assert.doesNotMatch(cleanup.run, /\$\{\{/);
+  assert.match(cleanup.run, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow kric-current-facility-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}" --refs "\$\{RUNNER_TEMP\}\/kric-current-facility-refresh\/claims\.txt"/);
+  const running = kricStep("Note refresh waiting on a running producer");
+  assert.equal(ifCondition(running), "${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}");
+  assert.ok(kricStepIndex("Read due state") < kricStepIndex("Remove abandoned claims named by the decision"));
+  assert.ok(kricStepIndex("Remove abandoned claims named by the decision") < kricStepIndex("Recover claimed refresh"));
+  assert.ok(kricStepIndex("Remove abandoned claims named by the decision") < kricStepIndex("Create durable claim"));
 });
 
 // #995 F1: finalize phase가 raw object를 OCI에 게시하고 등록한다. 그 phase를 별도 step으로 둬야 claim 정리가 "게시 step까지 갔는지"로 판정할 수 있다.
 test("KRIC refresh workflow runs prepare and collect before a separate publish-and-register step", () => {
-  const yml = readFileSync(workflowPath, "utf8");
-  const stepOf = (name) => {
-    const start = yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
-    assert.notEqual(start, -1, `missing workflow step: ${name}`);
-    const end = yml.indexOf("\n      - name: ", start + 1);
-    return yml.slice(start, end === -1 ? yml.length : end);
-  };
-  const collect = stepOf("Collect current snapshot");
-  const publish = stepOf("Publish and register current snapshot");
-  assert.match(collect, /--phase prepare/);
-  assert.match(collect, /--phase collect/);
-  assert.doesNotMatch(collect, /--phase finalize/);
-  assert.match(publish, /--phase finalize --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}"/);
-  assert.match(publish, /cp "\$\{KRIC_REFRESH_OPERATION_ROOT\}\/receipt\.json" "\$\{KRIC_REFRESH_OPERATION_ROOT\}\/raw-receipt\.json"/);
-  assert.match(publish, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}/);
-  const at = (name) => yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
-  assert.ok(at("Create durable claim") < at("Collect current snapshot") && at("Collect current snapshot") < at("Publish and register current snapshot") && at("Publish and register current snapshot") < at("Finalize claimed refresh branch"));
+  const collect = kricStep("Collect current snapshot");
+  const publish = kricStep("Publish and register current snapshot");
+  assert.ok(collect.run.includes("--phase prepare"));
+  assert.ok(collect.run.includes("--phase collect"));
+  assert.doesNotMatch(collect.run, /--phase finalize/);
+  assert.ok(publish.run.includes('--phase finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"'));
+  assert.ok(publish.run.includes('cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"'));
+  assert.equal(publish.env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL, "${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}");
+  assert.ok(
+    kricStepIndex("Create durable claim") < kricStepIndex("Collect current snapshot") &&
+      kricStepIndex("Collect current snapshot") < kricStepIndex("Publish and register current snapshot") &&
+      kricStepIndex("Publish and register current snapshot") < kricStepIndex("Finalize claimed refresh branch"),
+  );
   assert.equal(yml.includes("Collect and bind current snapshot"), false);
 });
 
 // 게시된 뒤 등록 전에 실패한 run을 사람이 설명하려면 journal(단계 기록)과 decision이 항상 남아 있어야 한다.
 test("KRIC refresh workflow always uploads decision.json and journal.json (and raw-receipt.json when it exists)", () => {
-  const yml = readFileSync(workflowPath, "utf8");
-  const start = yml.indexOf("      - name: KRIC current facility refresh / Upload sanitized evidence\n");
-  const upload = yml.slice(start, yml.indexOf("\n      - name: ", start + 1));
-  assert.match(upload, /\n        if: \$\{\{ always\(\) \}\}\n/);
-  assert.match(upload, /decision\.json/);
-  assert.match(upload, /journal\.json/);
-  assert.match(upload, /raw-receipt\.json/);
-  assert.match(upload, /if-no-files-found: ignore/);
+  const upload = kricStep("Upload sanitized evidence");
+  assert.equal(ifCondition(upload), "${{ always() }}");
+  assert.ok(upload.with.path.includes("decision.json"));
+  assert.ok(upload.with.path.includes("journal.json"));
+  assert.ok(upload.with.path.includes("raw-receipt.json"));
+  assert.equal(upload.with["if-no-files-found"], "ignore");
   assert.equal(yml.includes("Detect retained publication receipt"), false);
 });
 
 // #995 F4: 판정이 보존 artifact가 없거나 만료된 claim을 복구 대상에서 빼므로, recover step의 Abandon 경로는 경합 구간에서만 닿는다.
 test("KRIC recover step documents when the Abandon path can still run", () => {
-  const yml = readFileSync(workflowPath, "utf8");
-  const recover = yml.slice(yml.indexOf("Recover claimed refresh"), yml.indexOf("Create durable claim"));
-  assert.match(recover, /# #995: 이 Abandon 경로는 판정이 보존 artifact를 AVAILABLE로 본 뒤 이 step까지 사이에 artifact가 만료·삭제된 경우에만 닿는다/);
-  assert.match(recover, /Abandon 커밋이 남은 claim은 다음 판정이 정리 대상으로 보고하고 지운다/);
+  const recover = kricStep("Recover claimed refresh");
+  assert.match(recover.run, /# #995: 이 Abandon 경로는 판정이 보존 artifact를 AVAILABLE로 본 뒤 이 step까지 사이에 artifact가 만료·삭제된 경우에만 닿는다/);
+  assert.match(recover.run, /Abandon 커밋이 남은 claim은 다음 판정이 정리 대상으로 보고하고 지운다/);
 });
 
 // #3036: run 하나는 판정이 고른 원천 하나를 갱신한다. 수집 step은 판정의 source_id를 env로 받아 prepare에 넘기고, 복구 step은 보존한 journal의 원천을 넘긴다.
 const PHASES = ["DUE", "EXPIRED", "NOT_DUE", "OPEN_PR", "RECOVER_CLAIM", "CLAIM_IN_PROGRESS"];
 test("#3036 KRIC refresh collect step runs only for DUE or EXPIRED and passes the decided source id through env", () => {
-  const { step } = loadWorkflow(root, "kric-current-facility-refresh.yml");
-  const collect = step("KRIC current facility refresh / Collect current snapshot").block;
-  const runs = (state) => evaluateGithubExpression(ifCondition(collect), { steps: { decision: { outputs: { state, source_id: "kric-station-escalator-detailed" } } } });
-  assert.deepEqual(PHASES.map((state) => [state, Boolean(runs(state))]), PHASES.map((state) => [state, state === "DUE" || state === "EXPIRED"]));
-  assert.match(collect, /\n          KRIC_REFRESH_SOURCE_ID: \$\{\{ steps\.decision\.outputs\.source_id \}\}\n/u);
-  const script = collect.split("\n        run: |")[1];
-  assert.doesNotMatch(script, /\$\{\{/u);
-  assert.equal((script.match(/--source-id "\$\{KRIC_REFRESH_SOURCE_ID\}"/gu) ?? []).length, 1);
-  assert.ok(script.indexOf("--source-id") < script.indexOf("--phase collect"));
+  const collect = kricStep("Collect current snapshot");
+  assert.deepEqual(
+    PHASES.map((state) => [state, Boolean(evaluateCollectCondition(ifCondition(collect), state))]),
+    PHASES.map((state) => [state, state === "DUE" || state === "EXPIRED"]),
+  );
+  assert.equal(collect.env.KRIC_REFRESH_SOURCE_ID, "${{ steps.decision.outputs.source_id }}");
+  assert.doesNotMatch(collect.run, /\$\{\{/u);
+  assert.equal([...collect.run.matchAll(/--source-id "\$\{KRIC_REFRESH_SOURCE_ID\}"/gu)].length, 1);
+  assert.ok(collect.run.indexOf("--source-id") < collect.run.indexOf("--phase collect"));
 });
 
 test("#3036 KRIC refresh recovery prepares the target for the source recorded in the retained journal", () => {
-  const { step } = loadWorkflow(root, "kric-current-facility-refresh.yml");
-  const recover = step("KRIC current facility refresh / Recover claimed refresh").block;
-  const read = /source_id="\$\(SOURCE_JOURNAL="\$\{source_root\}\/journal\.json" node --input-type=module -e '\n([\s\S]*?)\n\s*'\)"/u.exec(recover);
+  const recover = kricStep("Recover claimed refresh");
+  const read = /source_id="\$\(SOURCE_JOURNAL="\$\{source_root\}\/journal\.json" node --input-type=module -e '\n([\s\S]*?)\n\s*'\)"/u.exec(recover.run);
   assert.ok(read, "the recovery step reads the source id from the retained journal");
-  assert.ok(recover.indexOf(read[0]) < recover.indexOf('--phase prepare --source-id "${source_id}" --operation-root "${target_root}"'));
+  assert.ok(recover.run.indexOf(read[0]) < recover.run.indexOf('--phase prepare --source-id "${source_id}" --operation-root "${target_root}"'));
   const directory = mkdtempSync(path.join(tmpdir(), "kric-recover-source-"));
   try {
     const journal = path.join(directory, "journal.json");
-    const run = () => execFileSync(process.execPath, ["--input-type=module", "-e", read[1]], { cwd: root, env: { ...process.env, SOURCE_JOURNAL: journal }, encoding: "utf8" });
     writeFileSync(journal, JSON.stringify({ phase: "FINALIZE_STARTED", sourceId: "kric-station-escalator-detailed" }));
-    assert.equal(run(), "kric-station-escalator-detailed");
+    assert.equal(runRecoveredSourceScript(read[1], journal), "kric-station-escalator-detailed");
     writeFileSync(journal, JSON.stringify({ phase: "FINALIZE_STARTED" }));
-    assert.equal(run(), "kric-station-convenience-standard", "a journal from before #3036 has no source id and could only be the standard source");
+    assert.equal(runRecoveredSourceScript(read[1], journal), "kric-station-convenience-standard", "a journal from before #3036 has no source id and could only be the standard source");
     for (const sourceId of ["kric-station-escalator", "", null]) {
       writeFileSync(journal, JSON.stringify({ phase: "FINALIZE_STARTED", sourceId }));
-      assert.equal(run(), sourceId ?? "null", `a present source id is passed on as written for prepare to judge: ${JSON.stringify(sourceId)}`);
+      assert.equal(runRecoveredSourceScript(read[1], journal), sourceId ?? "null", `a present source id is passed on as written for prepare to judge: ${JSON.stringify(sourceId)}`);
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -235,22 +246,19 @@ test("#3036 KRIC refresh recovery prepares the target for the source recorded in
 
 // #3036 선택 원천의 재시도 쿨다운: 판정은 열린 실패 이슈의 원천 실패 시각 표지를 읽는다(source-reverification의 표지 판정과 같은 경로).
 test("#3036 KRIC refresh decision reads the open failure issues the way source reverification does", () => {
-  const { step } = loadWorkflow(root, "kric-current-facility-refresh.yml");
-  const decision = step("KRIC current facility refresh / Read due state").block;
-  assert.match(decision, /issues="\$\{RUNNER_TEMP\}\/kric-current-facility-refresh\/open-issues\.json"/u);
-  assert.match(decision, /gh issue list --repo "\$\{GITHUB_REPOSITORY\}" --state open --limit 1000 --json number,title,body,author > "\$\{issues\}"/u);
-  assert.match(decision, /--claim-evidence "\$\{claim_evidence\}" \\\n\s+--issues "\$\{issues\}" \\\n/u);
-  assert.ok(decision.indexOf("gh issue list") < decision.indexOf("decide-current-kric-facility-refresh.mjs"));
+  const decision = kricStep("Read due state");
+  assert.ok(decision.run.includes('issues="${RUNNER_TEMP}/kric-current-facility-refresh/open-issues.json"'));
+  assert.ok(decision.run.includes('gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 1000 --json number,title,body,author > "${issues}"'));
+  assert.match(decision.run, /--claim-evidence "\$\{claim_evidence\}" \\\n\s+--issues "\$\{issues\}" \\\n/u);
+  assert.ok(decision.run.indexOf("gh issue list") < decision.run.indexOf("decide-current-kric-facility-refresh.mjs"));
 });
 
 test("#3036 KRIC refresh failure report names the failed source from the decision or the recovered journal", () => {
-  const { step } = loadWorkflow(root, "kric-current-facility-refresh.yml");
-  const report = step("KRIC current facility refresh / Report refresh failure as an issue").block;
-  assert.match(report, /\n          DECISION_SOURCE_ID: \$\{\{ steps\.decision\.outputs\.source_id \}\}\n/u);
-  const script = report.split("\n        run: |")[1];
-  assert.doesNotMatch(script, /\$\{\{/u);
-  assert.match(script, /failed_source_id="\$\{DECISION_SOURCE_ID:-\$\{KRIC_REFRESH_RECOVERED_SOURCE_ID:-\}\}"/u);
-  assert.match(script, /--run-id "\$\{GITHUB_RUN_ID\}" --source-id "\$\{failed_source_id\}"/u);
-  const recover = step("KRIC current facility refresh / Recover claimed refresh").block;
-  assert.match(recover, /printf 'KRIC_REFRESH_RECOVERED_SOURCE_ID=%s\\n' "\$\{source_id\}" >> "\$\{GITHUB_ENV\}"/u);
+  const report = kricStep("Report refresh failure as an issue");
+  assert.equal(report.env.DECISION_SOURCE_ID, "${{ steps.decision.outputs.source_id }}");
+  assert.doesNotMatch(report.run, /\$\{\{/u);
+  assert.ok(report.run.includes('failed_source_id="${DECISION_SOURCE_ID:-${KRIC_REFRESH_RECOVERED_SOURCE_ID:-}}"'));
+  assert.ok(report.run.includes('--run-id "${GITHUB_RUN_ID}" --source-id "${failed_source_id}"'));
+  const recover = kricStep("Recover claimed refresh");
+  assert.ok(recover.run.includes('printf \'KRIC_REFRESH_RECOVERED_SOURCE_ID=%s\\n\' "${source_id}" >> "${GITHUB_ENV}"'));
 });

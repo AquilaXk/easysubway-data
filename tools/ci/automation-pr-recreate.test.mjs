@@ -396,36 +396,56 @@ test("CLI plan은 닫을 대상 수를 출력하고 알 수 없는 명령·인�
 // workflow 계약
 // ---------------------------------------------------------------------------
 const FILE = "automation-pr-behind-recreate.yml";
-const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
+const { yml, workflow, job, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
 const APP_TOKEN_ACTION = "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510";
 const NEEDED = "${{ steps.plan.outputs.targets != '0' }}";
 
 test("트리거는 main push와 CI 완료이고 변수가 true일 때만 돈다. pull_request_target과 PR 코드 checkout이 없다", () => {
-  assert.match(yml, /\non:\n  push:\n    branches: \[main\]\n  workflow_run:\n    workflows: \[CI\]\n    types: \[completed\]\n/u);
-  for (const trigger of ["pull_request_target", "pull_request", "schedule", "workflow_dispatch"]) assert.doesNotMatch(code, new RegExp(String.raw`\n  ${trigger}:`, "u"), trigger);
+  assert.deepEqual(workflow.on, {
+    push: {
+      branches: ["main"],
+    },
+    workflow_run: {
+      workflows: ["CI"],
+      types: ["completed"],
+    },
+  });
   assert.doesNotMatch(code, /pull_request_target/u);
   assert.equal(
-    /\n    if: (\$\{\{[^\n]*\}\})\n/u.exec(yml)?.[1],
+    job.if,
     "${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' && (github.event_name == 'push' || (github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository)) }}",
   );
-  const checkouts = steps().filter(({ block }) => block.includes("uses: actions/checkout@"));
+  const checkouts = steps().filter(({ uses }) => uses?.startsWith("actions/checkout@"));
   assert.equal(checkouts.length, 1);
-  assert.doesNotMatch(checkouts[0].block, /\n          ref:/u);
+  assert.equal(checkouts[0].with.ref, undefined);
   for (const forbidden of [/refs\/pull/u, /pull_request\.head/u, /head_sha/u, /actions\/download-artifact/u, /gh pr merge|update-branch|--admin/u, /gh pr create/u]) assert.doesNotMatch(code, forbidden, String(forbidden));
   assert.deepEqual([...new Set([...code.matchAll(/node (\S+)/gu)].map((match) => match[1]))], ["tools/ci/automation-pr-recreate.mjs", "tools/ci/report-refresh-failure.mjs"]);
 });
 
 test("권한은 job 하나에만 있고 쓰기는 ref 삭제(contents)와 workflow 재실행(actions)뿐이다. PR 닫기는 App 토큰(pull_requests: write)으로 한다", () => {
-  assert.match(yml, /\npermissions: \{\}\n/u);
-  assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1);
-  assert.match(yml, /\n    permissions:\n      actions: write\n      contents: write\n      issues: write\n      pull-requests: read\n/u);
-  assert.match(yml, /\n    concurrency:\n      group: automation-pr-recreate\n      cancel-in-progress: false\n/u);
-  const mint = steps().filter(({ block }) => block.includes(`uses: ${APP_TOKEN_ACTION}`));
+  assert.deepEqual(workflow.permissions, {});
+  assert.equal(Object.keys(workflow.jobs).length, 1);
+  assert.deepEqual(job.permissions, {
+    actions: "write",
+    contents: "write",
+    issues: "write",
+    "pull-requests": "read",
+  });
+  assert.deepEqual(job.concurrency, {
+    group: "automation-pr-recreate",
+    "cancel-in-progress": false,
+  });
+  const mint = steps().filter(({ uses }) => uses === APP_TOKEN_ACTION);
   assert.equal(mint.length, 1);
-  assert.equal(ifCondition(mint[0].block), NEEDED);
-  assert.match(mint[0].block, /\n          owner: AquilaXk\n          repositories: easysubway-data\n          permission-pull-requests: write(?:\n|$)/u);
-  assert.doesNotMatch(mint[0].block, /permission-(contents|actions|workflows|issues|checks|statuses)/u);
+  assert.equal(ifCondition(mint[0]), NEEDED);
+  assert.deepEqual(mint[0].with, {
+    "client-id": "${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}",
+    "private-key": "${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}",
+    owner: "AquilaXk",
+    repositories: "easysubway-data",
+    "permission-pull-requests": "write",
+  });
   assert.deepEqual([...new Set([...code.matchAll(/secrets\.(\w+)/gu)].map((match) => match[1]))].sort(), ["EASYSUBWAY_RELEASE_APP_CLIENT_ID", "EASYSUBWAY_RELEASE_APP_PRIVATE_KEY"]);
   assert.equal(code.split("steps.app-token.outputs.token").length - 1, 1);
 });
@@ -442,14 +462,14 @@ test("계획(읽기)이 먼저고, 닫을 대상이 있을 때만 App 토큰을 
   ]);
   assertNoExpressionInRunScripts({ steps, file: FILE });
   const plan = step("Plan the behind automation pull requests");
-  assert.match(plan.block, /\n        id: plan\n/u);
-  assert.match(plan.block, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
-  assert.ok(plan.block.includes('node tools/ci/automation-pr-recreate.mjs plan --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"'));
+  assert.equal(plan.id, "plan");
+  assert.equal(plan.env.GH_TOKEN, "${{ github.token }}");
+  assert.ok(plan.run.includes('node tools/ci/automation-pr-recreate.mjs plan --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"'));
   const run = step("Close behind automation pull requests and request a fresh run");
-  assert.equal(ifCondition(run.block), NEEDED);
-  assert.match(run.block, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
-  assert.match(run.block, /APP_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}/u);
-  assert.ok(run.block.includes('node tools/ci/automation-pr-recreate.mjs run --repository "${GITHUB_REPOSITORY}"'));
+  assert.equal(ifCondition(run), NEEDED);
+  assert.equal(run.env.GH_TOKEN, "${{ github.token }}");
+  assert.equal(run.env.APP_TOKEN, "${{ steps.app-token.outputs.token }}");
+  assert.ok(run.run.includes('node tools/ci/automation-pr-recreate.mjs run --repository "${GITHUB_REPOSITORY}"'));
 });
 
 test("실패하면 마지막 step이 #926 경로로 이슈를 연다", () => {
@@ -471,10 +491,10 @@ test("단계마다 재생성 방식이 정해져 있다: ITX 승격은 보관 ca
   });
   // 공급자 호출을 하루 한 번으로 묶는 예산 가드(guard-itx-current-collection-budget)에 등록된 수집 workflow는 모두 닫지 않는 방식이다.
   const guard = readFileSync(path.resolve(import.meta.dirname, "guard-itx-current-collection-budget.mjs"), "utf8");
-  const guarded = [...guard.matchAll(/workflowFile: "([^"]+)"/gu)].map((match) => match[1]).filter((workflow) => workflow !== "itx-current-collection.yml");
+  const guarded = [...guard.matchAll(/workflowFile: "([^"]+)"/gu)].map((match) => match[1]).filter((workflowFile) => workflowFile !== "itx-current-collection.yml");
   assert.deepEqual(guarded.sort(), ["itx-current-promotion.yml"]);
-  for (const workflow of guarded) {
-    const stage = Object.keys(AUTOMATION_STAGE_WORKFLOWS).find((candidate) => AUTOMATION_STAGE_WORKFLOWS[candidate] === workflow);
+  for (const workflowFile of guarded) {
+    const stage = Object.keys(AUTOMATION_STAGE_WORKFLOWS).find((candidate) => AUTOMATION_STAGE_WORKFLOWS[candidate] === workflowFile);
     assert.notEqual(STAGE_RECREATE_MODE[stage], RECREATE_MODE.CLOSE, `${stage}: 하루 한 번 수집분을 들고 있어 단순히 닫으면 그날 수집분을 잃는다`);
   }
 });
@@ -556,7 +576,7 @@ test("수도권 topology 갱신 PR은 같은 KST 날 만들어졌으면 닫지 �
 });
 
 test("워크플로: 재생 입력 dispatch를 위해 actions: write 하나만 쓰고 artifact는 REST 조회로만 읽는다 (다운로드·PR 코드 실행 없음)", () => {
-  assert.match(yml, /\n    permissions:\n      actions: write\n/u);
+  assert.equal(job.permissions.actions, "write");
   const header = yml.split("\n").filter((line) => line.startsWith("#")).join("\n");
   assert.match(header, /replay_run_id/u);
   assert.match(header, /#1127/u);
@@ -638,8 +658,8 @@ test("F2: 재생 run을 받는 변수 DATAPACK_SCHEDULED_ITX_PROMOTION이 true�
 
 test("F2: workflow가 변수를 plan과 run step에 env로 넘긴다", () => {
   for (const name of ["Plan the behind automation pull requests", "Close behind automation pull requests and request a fresh run"]) {
-    assert.match(step(name).block, /\n          DATAPACK_SCHEDULED_ITX_PROMOTION: \$\{\{ vars\.DATAPACK_SCHEDULED_ITX_PROMOTION \}\}\n/u, name);
-    assert.match(step(name).block, /\n          DATAPACK_SCHEDULED_SOURCE_REVERIFICATION: \$\{\{ vars\.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION \}\}\n/u, name);
+    assert.equal(step(name).env.DATAPACK_SCHEDULED_ITX_PROMOTION, "${{ vars.DATAPACK_SCHEDULED_ITX_PROMOTION }}", name);
+    assert.equal(step(name).env.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION, "${{ vars.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION }}", name);
   }
   assertNoExpressionInRunScripts({ steps, file: FILE });
 });
