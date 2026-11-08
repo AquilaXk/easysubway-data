@@ -50,7 +50,7 @@ import {
   readNationwideCandidateRefreshState,
 } from "../datapack/refresh-nationwide-candidate.mjs";
 import { isObject } from "../lib/is-object.mjs";
-import { GITHUB_API_REASON, INTERNAL_ERROR_REASON, formatReasonLine } from "./failure-reason.mjs";
+import { GITHUB_API_REASON, INTERNAL_ERROR_REASON, formatReasonLine, recordFailureReason } from "./failure-reason.mjs";
 
 const execFileAsync = promisify(execFile);
 const GIT = "/usr/bin/git";
@@ -766,12 +766,14 @@ function failureDetails(error) {
 }
 
 /** CLI 진입점. 실패하면 오류 메시지 뒤에 사유 줄(reason=...)을 stderr 마지막 줄로 쓰고 1을 돌려준다. */
-export async function runCli(argv, { api = ghApi, log = (line) => process.stdout.write(`${line}\n`), stderr = process.stderr } = {}) {
+export async function runCli(argv, { api = ghApi, log = (line) => process.stdout.write(`${line}\n`), stderr = process.stderr, env = process.env } = {}) {
   try {
     await main(argv, { api, log });
     return 0;
   } catch (error) {
-    stderr.write(`${message(error)}\n${formatReasonLine(failureDetails(error))}\n`);
+    const reasonLine = formatReasonLine(failureDetails(error));
+    recordFailureReason(reasonLine, { env });
+    stderr.write(`${message(error)}\n${reasonLine}\n`);
     return 1;
   }
 }

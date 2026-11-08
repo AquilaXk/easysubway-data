@@ -6,6 +6,7 @@ import { normalizeDataGoKrServiceKey } from "../datapack/lib/provider-call-integ
 import {
   createSecretSyncError,
   formatSecretSyncReasonLine,
+  recordFailureReason,
   SECRET_SYNC_REASON,
 } from "./failure-reason.mjs";
 import { syncGhSecret } from "./lib/sync-gh-secret.mjs";
@@ -128,8 +129,9 @@ async function main() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    process.stderr.write(`${FAILURE_MESSAGE}\n${formatSecretSyncReasonLine(error, SECRET_NAMES)}\n`);
+    const reasonLine = formatSecretSyncReasonLine(error, SECRET_NAMES);
+    recordFailureReason(reasonLine, { env: process.env });
+    process.stderr.write(`${FAILURE_MESSAGE}\n${reasonLine}\n`);
     process.exitCode = 1;
   });
 }
-

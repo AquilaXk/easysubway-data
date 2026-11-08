@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { assertErrorOmitsSecrets } from "../datapack/lib/source-collection-retry-test-support.mjs";
+import { guardFailureReasonPath, isValidReasonLine, recordFailureReason } from "./failure-reason.mjs";
 import { guardItxCurrentCollectionBudget, runItxCurrentCollectionBudgetGuardCli } from "./guard-itx-current-collection-budget.mjs";
 
 // 2026-10-22 14:47~15:00 UTC GitHub Actions 장애 때 가드 세 곳이 같은 한 줄만 남기고 멈췄다. 실패한 검사와 이유가 로그·영수증에 남아야 한다.
@@ -347,4 +348,43 @@ test("허용 판정: 같은 날 다른 수집이 없으면 stdout에 결과를 �
   assert.equal(result.status, 0);
   assert.equal(result.stdout, "false\n");
   assert.equal(result.stderr, "");
+});
+
+test("가드 실패 사유(reason=)는 RUNNER_TEMP runId 파일과 GITHUB_STEP_SUMMARY에 함께 남고, 형식이 틀린 사유는 거부한다 (#3036 7-20)", async () => {
+  for (const valid of [
+    "reason=QUOTA_EXHAUSTED",
+    "reason=QUOTA_EXHAUSTED allowance=ITX_COLLECTED_TODAY",
+    "reason=GITHUB_API_STATUS status=500 workflow=itx-current-collection.yml",
+    "reason=RECEIPT_WRITE_FAILED cause=GITHUB_API_STATUS",
+    "reason=SECRET_MISSING,SECRET_INVALID secret=DATA_GO_KR_SERVICE_KEY",
+  ]) {
+    assert.equal(isValidReasonLine(valid), true, valid);
+  }
+  for (const invalid of [
+    null,
+    "",
+    "QUOTA_EXHAUSTED",
+    "reason=quota_exhausted",
+    "reason=QUOTA_EXHAUSTED unknown=1",
+    "reason=QUOTA_EXHAUSTED\nreason=INTERNAL_ERROR",
+    `reason=${"A".repeat(200)}`,
+  ]) {
+    assert.equal(isValidReasonLine(invalid), false, String(invalid));
+  }
+  assert.equal(guardFailureReasonPath({ RUNNER_TEMP: "/tmp/runner", GITHUB_RUN_ID: "12345" }), "/tmp/runner/easysubway-guard-failure-reason-12345.txt");
+  assert.equal(guardFailureReasonPath({ RUNNER_TEMP: "relative/runner", GITHUB_RUN_ID: "12345" }), null);
+  assert.equal(guardFailureReasonPath({ RUNNER_TEMP: "/tmp/runner", GITHUB_RUN_ID: "0" }), null);
+  assert.equal(guardFailureReasonPath({ RUNNER_TEMP: "/tmp/runner", GITHUB_RUN_ID: "abc" }), null);
+  assert.throws(() => recordFailureReason("not-a-reason", { env: {} }), /reason/iu);
+
+  await withDirectory(async (directory) => {
+    const summaryPath = path.join(directory, "step-summary.md");
+    const result = runGuard(["--probe", "extra"], {
+      envOverrides: { RUNNER_TEMP: directory, GITHUB_STEP_SUMMARY: summaryPath },
+    });
+    assert.equal(result.status, 1);
+    const reasonFile = guardFailureReasonPath({ RUNNER_TEMP: directory, GITHUB_RUN_ID: String(CURRENT_RUN) });
+    assert.equal(await readFile(reasonFile, "utf8"), "reason=ARGUMENT_INVALID\n");
+    assert.equal(await readFile(summaryPath, "utf8"), "- 가드 실패 사유: `reason=ARGUMENT_INVALID`\n");
+  });
 });

@@ -3,7 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { COLLECTION_REPOSITORY, COLLECTION_WINDOW_REASON, CollectionWindowError, inspectCollectionWindow } from "./collection-run-window.mjs";
-import { INTERNAL_ERROR_REASON, formatReasonLine } from "./failure-reason.mjs";
+import { INTERNAL_ERROR_REASON, formatReasonLine, recordFailureReason } from "./failure-reason.mjs";
 import { ITX_COLLECTION_LEDGER_SCHEMA_VERSION, ITX_COLLECTION_OUTCOME, evaluateItxCollectionAllowance } from "./itx-collection-allowance.mjs";
 import { readCollectionRequestCount } from "./itx-collection-evidence.mjs";
 
@@ -245,7 +245,9 @@ async function main() {
       process.stdout.write(`${JSON.stringify(await runItxCurrentCollectionBudgetGuardCli())}\n`);
     }
   } catch (error) {
-    process.stderr.write(`${FAILURE_MESSAGE}\n${formatReasonLine(asGuardError(error))}\n`);
+    const reasonLine = formatReasonLine(asGuardError(error));
+    recordFailureReason(reasonLine, { env: process.env });
+    process.stderr.write(`${FAILURE_MESSAGE}\n${reasonLine}\n`);
     process.exitCode = 1;
   }
 }

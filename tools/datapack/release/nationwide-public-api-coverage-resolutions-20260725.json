@@ -3,7 +3,14 @@
   "artifactKind": "nationwide-coverage-resolutions",
   "targetVersion": "2026-07-13",
   "searchPlanSha256": "70727554d8b049b622a0e376cd7b9bb7b964cc49a4c92877af1c0d4c0bc7ea6d",
-  "generatedAt": "2026-10-23T10:18:48.032Z",
+  "generatedAt": "2026-07-25T09:12:39.105Z",
+  "auditScope": {
+    "mode": "PARTIAL_REAUDIT",
+    "fullCrawlGeneratedAt": "2026-07-25T09:12:39.105Z",
+    "reauditedAt": "2026-10-23T10:18:48.032Z",
+    "auditedEntryCount": 4,
+    "totalSearchPlanEntryCount": 187
+  },
   "entries": [
     {
       "regionId": "busan",

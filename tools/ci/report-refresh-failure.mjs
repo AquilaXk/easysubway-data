@@ -13,6 +13,7 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { guardFailureReasonPath, isValidReasonLine } from "./failure-reason.mjs";
 import { REVERIFICATION_BLOCKING_CODES } from "./source-reverification-paths.mjs";
 
 export const REFRESH_WORKFLOWS = Object.freeze({
@@ -105,6 +106,8 @@ const blockMarker = ({ recipeId, code }) => `<!-- reverification-blocked:${recip
 const SOURCE_ID = FAILURE_RECIPE_ID;
 const SOURCE_MARKER = /^<!-- refresh-source-failed:([^:\s]+):(\S+) -->$/gmu;
 const sourceMarker = ({ sourceId, failedAt }) => `<!-- refresh-source-failed:${sourceId}:${failedAt} -->`;
+const REASON_MARKER = /^<!-- refresh-failure-reason:(.+) -->$/gmu;
+const reasonMarker = (reason) => `<!-- refresh-failure-reason:${reason} -->`;
 const blocksOf = (text) => [...text.matchAll(BLOCK_MARKER)].map(([, recipeId, code]) => ({ recipeId, code })).filter(({ code }) => REVERIFICATION_BLOCKING_CODES.includes(code));
 
 /** 이슈 본문에 표지가 남은 막힌 recipe id(중복 없음). */
@@ -124,6 +127,15 @@ function sourceFailuresIn(block) {
   });
 }
 
+function failureReasonIn(block) {
+  const matches = [...block.matchAll(REASON_MARKER)].map(([, reason]) => reason);
+  if (matches.length > 1) fail("REASON_MARKER");
+  const [reason] = matches;
+  if (reason === undefined) return null;
+  if (!isValidReasonLine(reason)) fail("REASON_MARKER");
+  return reason;
+}
+
 // 원천마다 마지막 실패 시각 하나만 남긴다(최근 순, 같은 시각이면 원천 id 순). 이번 실패의 원천이 있으면 그 원천의 시각을 갱신한다.
 function mergedSourceFailures(existing, sourceId, failedAt) {
   const latest = new Map(existing.map((entry) => [entry.sourceId, entry]));
@@ -132,7 +144,7 @@ function mergedSourceFailures(existing, sourceId, failedAt) {
 }
 
 // 이슈 본문의 상태 블록: 보고한 실패 run(최근 순)과 마지막 보고 시각. 같은 run을 다시 보고하지 않는 근거다.
-function statusBlock(runUrls, reportedAt, blocks = [], sourceFailures = []) {
+function statusBlock(runUrls, reportedAt, blocks = [], sourceFailures = [], failureReason = null) {
   return [
     STATUS_START,
     `- 마지막 실패 보고 시각(UTC): ${reportedAt}`,
@@ -140,6 +152,7 @@ function statusBlock(runUrls, reportedAt, blocks = [], sourceFailures = []) {
     ...runUrls.map((url) => `  - ${url}`),
     ...blocks,
     ...sourceFailures.map(sourceMarker),
+    ...(failureReason === null ? [] : [reasonMarker(failureReason)]),
     STATUS_END,
   ].join("\n");
 }
@@ -150,7 +163,13 @@ function readStatus(body) {
   if (begin === -1 || end === -1 || end < begin || body.indexOf(STATUS_START, begin + 1) !== -1) fail("STATUS_BLOCK");
   const block = body.slice(begin, end);
   const runUrls = [...block.matchAll(/^  - (https:\/\/github\.com\/\S+\/actions\/runs\/\d+)$/gmu)].map((match) => match[1]);
-  return { runUrls, blocks: blocksOf(block), sourceFailures: sourceFailuresIn(block), replace: (next) => `${body.slice(0, begin)}${next}${body.slice(end + STATUS_END.length)}` };
+  return {
+    runUrls,
+    blocks: blocksOf(block),
+    sourceFailures: sourceFailuresIn(block),
+    failureReason: failureReasonIn(block),
+    replace: (next) => `${body.slice(0, begin)}${next}${body.slice(end + STATUS_END.length)}`,
+  };
 }
 
 function comments(issue) {
@@ -169,7 +188,7 @@ function planOrphanComment({ input, orphan, issue, status, issueComments, report
   return {
     action: "comment",
     issueNumber: issue.number,
-    ...(recorded ? {} : { issueBody: status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt, mergedBlocks(status.blocks, []), status.sourceFailures)) }),
+    ...(recorded ? {} : { issueBody: status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt, mergedBlocks(status.blocks, []), status.sourceFailures, status.failureReason)) }),
     duplicateNumbers,
     body: [
       orphanMarker(orphan.branch),
@@ -183,6 +202,11 @@ function planOrphanComment({ input, orphan, issue, status, issueComments, report
 /** 상태 블록 안의 원천별 마지막 실패 시각 표지. 형식이 틀린 표지는 추정하지 않고 실패한다. 호출자는 failureIssuesOf가 거른 봇 이슈만 넘긴다. */
 export function sourceFailuresOf(body) {
   return readStatus(body).sourceFailures;
+}
+
+/** 상태 블록 안의 마지막 가드 실패 사유(`reason=...`). 표지가 없으면 null이고 형식이 틀리면 실패한다. */
+export function failureReasonOf(body) {
+  return readStatus(body).failureReason;
 }
 
 /**
@@ -238,12 +262,21 @@ function validatedSourceId(sourceId) {
 
 const sourceLines = (sourceId) => (sourceId === undefined ? [] : [`- 실패 원천: ${inlineCode(sourceId)}`]);
 
+function validatedReason(reason) {
+  if (reason === undefined || reason === "") return undefined;
+  if (!isValidReasonLine(reason)) fail("REASON", "reason must be a formatted reason line");
+  return reason;
+}
+
+const reasonLines = (reason) => (reason === undefined ? [] : [`- 가드 사유: ${inlineCode(reason)}`]);
+
 const failureIssueTitle = (workflowFile) => `[Fix] 원천 자동 갱신 실패: ${REPORTABLE_WORKFLOWS[workflowFile]} (${workflowFile})`;
 
-export function planRefreshFailureReport({ repository, workflowFile, runId, openIssues, now, orphan: orphanInput, failures = [], overdue = [], sourceId: sourceIdInput }) {
+export function planRefreshFailureReport({ repository, workflowFile, runId, openIssues, now, orphan: orphanInput, failures = [], overdue = [], sourceId: sourceIdInput, reason: reasonInput }) {
   const input = validated({ repository, workflowFile, runId });
   const orphan = validatedOrphan(orphanInput);
   const sourceId = validatedSourceId(sourceIdInput);
+  const reason = validatedReason(reasonInput);
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CLOCK");
   if (!Array.isArray(openIssues)) fail("ISSUES");
   const marker = refreshFailureMarker(input.workflowFile);
@@ -261,7 +294,8 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
     if (status.runUrls.includes(input.runUrl) || issueComments.some(({ body }) => body.includes(input.runUrl))) {
       return { action: "skip", issueNumber: issue.number, duplicateNumbers };
     }
-    const issueBody = status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt, mergedBlocks(status.blocks, failures), mergedSourceFailures(status.sourceFailures, sourceId, reportedAt)));
+    const nextReason = reason ?? status.failureReason;
+    const issueBody = status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt, mergedBlocks(status.blocks, failures), mergedSourceFailures(status.sourceFailures, sourceId, reportedAt), nextReason));
     const lastNotice = Math.max(
       instant(issue.createdAt, "ISSUES"),
       ...issueComments.filter(({ body }) => body.includes(COMMENT_MARKER)).map(({ createdAt }) => instant(createdAt, "ISSUES")),
@@ -276,6 +310,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
         COMMENT_MARKER,
         ...noticeLines(input, overdue),
         ...sourceLines(sourceId),
+        ...reasonLines(reason),
         ...chainNote(input.workflowFile),
         "- 같은 workflow의 실패는 하루에 한 번만 댓글로 알린다. 그 사이 실패 run은 이슈 본문 상태 블록에 쌓인다.",
         ...(duplicateNumbers.length > 0
@@ -295,6 +330,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       "### 배경",
       ...reportBackground(input, { orphan, overdue }),
       ...sourceLines(sourceId),
+      ...reasonLines(reason),
       ...chainNote(input.workflowFile),
       ...(mergedBlocks([], failures).length > 0
         ? ["- 공급처 응답이 고정 기대 관측과 달라져 사람이 기대값을 고쳐야 풀리는 recipe가 있다(상태 블록의 표지). 이 이슈가 열려 있는 동안 그 recipe는 다시 수집하지 않는다. 기대값을 고친 뒤 이 이슈를 닫으면 다음 실행이 다시 수집한다."]
@@ -306,7 +342,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       "- 다음 run이 성공하면 `recovered-failure-issues-close.yml`이 성공 run URL을 남기고 이 이슈를 자동으로 닫는다(표지가 남은 이슈와 PR 단위 workflow의 이슈는 사람이 닫는다).",
       "",
       "### 실패 상태",
-      statusBlock([input.runUrl], reportedAt, mergedBlocks([], failures), mergedSourceFailures([], sourceId, reportedAt)),
+      statusBlock([input.runUrl], reportedAt, mergedBlocks([], failures), mergedSourceFailures([], sourceId, reportedAt), reason ?? null),
       "",
       "Refs #860",
       "Refs #870",
@@ -314,11 +350,19 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
   };
 }
 
-// --failures(원천 재확인 controller가 쓴 실패 목록), --overdue(재확인 판정의 연체 recipe, 쉼표 목록), --source-id(실패한 원천, 빈 값은 원천 없음)만 선택이다.
+// --failures(원천 재확인 controller가 쓴 실패 목록), --overdue(재확인 판정의 연체 recipe, 쉼표 목록), --source-id(실패한 원천, 빈 값은 원천 없음), --reason(가드 실패 사유)만 선택이다.
 const REQUIRED_ARGUMENTS = Object.freeze(["workflowFile", "repository", "runId"]);
 
 function parseArgs(argv) {
-  const names = new Map([["--workflow", "workflowFile"], ["--repository", "repository"], ["--run-id", "runId"], ["--failures", "failuresPath"], ["--overdue", "overdueList"], ["--source-id", "sourceId"]]);
+  const names = new Map([
+    ["--workflow", "workflowFile"],
+    ["--repository", "repository"],
+    ["--run-id", "runId"],
+    ["--failures", "failuresPath"],
+    ["--overdue", "overdueList"],
+    ["--source-id", "sourceId"],
+    ["--reason", "reason"],
+  ]);
   const values = {};
   if (!Array.isArray(argv) || argv.length % 2 !== 0) fail("ARGUMENTS");
   for (let index = 0; index < argv.length; index += 2) {
@@ -387,6 +431,17 @@ async function readFailures(file, readText) {
   return failures;
 }
 
+async function readGuardReason(env, runId, readText) {
+  const file = guardFailureReasonPath(env, runId);
+  if (file === null) return undefined;
+  try {
+    return (await readText(file)).trim();
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
 /** 저장소의 열린 이슈(최대 1000개). 보고와 자동 종료가 같은 필드를 읽는다. */
 export async function listOpenIssues(repository, runGh) {
   try {
@@ -399,22 +454,29 @@ export async function listOpenIssues(repository, runGh) {
   }
 }
 
+async function resolveFailureReason({ reasonArg, env, runId, readText }) {
+  if (reasonArg !== undefined && reasonArg !== "") return validatedReason(reasonArg);
+  return validatedReason(await readGuardReason(env, runId, readText));
+}
+
 export const PARENT_EPIC_NUMBER = 870;
 
 export async function reportRefreshFailure({
   argv = process.argv.slice(2),
+  env = process.env,
   runGh = defaultRunGh,
   now = () => new Date(),
   orphan,
   readText = (file) => readFile(file, "utf8"),
   parentEpicNumber = PARENT_EPIC_NUMBER,
 } = {}) {
-  const { failuresPath, overdueList, sourceId, ...args } = parseArgs(argv);
+  const { failuresPath, overdueList, sourceId, reason: reasonArg, ...args } = parseArgs(argv);
   const input = validated(args);
   const overdue = parseOverdue(overdueList);
+  const reason = await resolveFailureReason({ reasonArg, env, runId: input.runId, readText });
   const failures = await readFailures(failuresPath, readText);
   const openIssues = await listOpenIssues(input.repository, runGh);
-  const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures, overdue, sourceId });
+  const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures, overdue, sourceId, reason });
   if (plan.action === "create") {
     const createdOutput = await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
     const createdMatch = /\/issues\/([1-9]\d*)\s*$/u.exec(String(createdOutput ?? ""));

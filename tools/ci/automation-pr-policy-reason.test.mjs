@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+
+import { guardFailureReasonPath } from "./failure-reason.mjs";
 
 // 2026-10-22 automation-pr-automerge.yml의 판정 step이 실패했을 때 로그에서 실패 이유를 한눈에 찾을 수 없었다.
 // 판정 CLI를 실제 프로세스로 띄우고, GitHub API는 PATH 앞에 둔 가짜 `gh`로 대신해 stderr의 마지막 줄(reason=...)을 확인한다.
@@ -22,13 +24,13 @@ async function withDirectory(callback) {
   }
 }
 
-async function runPolicy(directory, args, ghScript = "exit 99") {
+async function runPolicy(directory, args, ghScript = "exit 99", envOverrides = {}) {
   const bin = path.join(directory, "bin");
   await mkdir(bin, { recursive: true });
   await writeFile(path.join(bin, "gh"), `#!/bin/sh\n${ghScript}\n`);
   await chmod(path.join(bin, "gh"), 0o755);
   const result = spawnSync(process.execPath, [POLICY, ...args], {
-    env: { PATH: `${bin}:/usr/bin:/bin`, GH_TOKEN: TOKEN },
+    env: { PATH: `${bin}:/usr/bin:/bin`, GH_TOKEN: TOKEN, ...envOverrides },
     encoding: "utf8",
   });
   assert.equal(result.error, undefined);
@@ -87,5 +89,17 @@ test("성공 판정(대상 아님)은 stderr 없이 stdout에 판정을 쓰고 0
     assert.equal(result.status, 0);
     assert.deepEqual(result.lines, []);
     assert.match(result.stdout, /자동화 PR 판정: NOT_APPLICABLE/u);
+  });
+});
+
+test("판정 CLI 실패는 RUNNER_TEMP runId 파일과 GITHUB_STEP_SUMMARY에 사유(reason=)를 남긴다 (#3036 7-20)", async () => {
+  await withDirectory(async (directory) => {
+    const summaryPath = path.join(directory, "step-summary.md");
+    const envOverrides = { RUNNER_TEMP: directory, GITHUB_RUN_ID: "39799412785", GITHUB_STEP_SUMMARY: summaryPath };
+    const result = await runPolicy(directory, ["decide", "--repository", REPOSITORY], "exit 99", envOverrides);
+    assert.equal(result.status, 1);
+    const reasonFile = guardFailureReasonPath(envOverrides);
+    assert.equal(await readFile(reasonFile, "utf8"), "reason=AUTOMATION_PR_INPUT\n");
+    assert.equal(await readFile(summaryPath, "utf8"), "- 가드 실패 사유: `reason=AUTOMATION_PR_INPUT`\n");
   });
 });

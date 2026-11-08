@@ -190,6 +190,7 @@ export function buildNationwideCoverageTally({
         ...inputRecord(inputs, "resolutions"),
         generatedAt: resolutions.generatedAt ?? null,
         entryCount: resolutions.entries.length,
+        ...(resolutions.auditScope === undefined ? {} : { auditScope: validateAuditScope(resolutions.auditScope) }),
       },
     },
     denominator: {
@@ -390,6 +391,7 @@ function indexResolutions(targets, resolutions, scopes, domains) {
   if (!Array.isArray(resolutions.entries)) {
     throw new Error("coverage resolutions entries must be an array");
   }
+  validateAuditScope(resolutions.auditScope);
   const requirementKeys = new Set(
     scopes.flatMap((scope) => domains.map((domain) => requirementKey(scope, domain.id))),
   );
@@ -434,6 +436,33 @@ function indexResolutions(targets, resolutions, scopes, domains) {
     });
   }
   return byKey;
+}
+
+function validateAuditScope(auditScope) {
+  if (auditScope === undefined) return undefined;
+  if (!auditScope || typeof auditScope !== "object" || Array.isArray(auditScope)) {
+    throw new Error("coverage resolutions auditScope must be an object");
+  }
+  const { mode, auditedEntryCount, totalSearchPlanEntryCount } = auditScope;
+  if (!Number.isInteger(auditedEntryCount) || auditedEntryCount < 0) {
+    throw new Error("coverage resolutions auditScope.auditedEntryCount must be a non-negative integer");
+  }
+  if (!Number.isInteger(totalSearchPlanEntryCount) || totalSearchPlanEntryCount < auditedEntryCount) {
+    throw new Error("coverage resolutions auditScope.totalSearchPlanEntryCount must be an integer >= auditedEntryCount");
+  }
+  if (mode === "FULL_SEARCH_PLAN") {
+    return { mode, auditedEntryCount, totalSearchPlanEntryCount };
+  }
+  if (mode === "PARTIAL_REAUDIT") {
+    return {
+      mode,
+      fullCrawlGeneratedAt: isoInstant(auditScope.fullCrawlGeneratedAt, "coverage resolutions auditScope.fullCrawlGeneratedAt"),
+      reauditedAt: isoInstant(auditScope.reauditedAt, "coverage resolutions auditScope.reauditedAt"),
+      auditedEntryCount,
+      totalSearchPlanEntryCount,
+    };
+  }
+  throw new Error(`coverage resolutions auditScope.mode is invalid: ${mode ?? "missing"}`);
 }
 
 function validateTargets(targets) {
