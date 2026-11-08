@@ -28,7 +28,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: source-reverification-${{ github.workflow }}-${{ github.ref }}
+  group: source-reverification-${{ github.workflow }}-${{ github.ref }}-${{ inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule' }}
   cancel-in-progress: false
 
 jobs:
