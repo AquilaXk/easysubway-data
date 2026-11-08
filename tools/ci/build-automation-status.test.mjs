@@ -469,9 +469,59 @@ test("기한이 지난 공식 미지원 근거는 자동 갱신 없는 이미 �
   assert.equal(snapshot.expiringSourcesTotalCount, 3);
   assert.deepEqual(snapshot.expiringSources[0], {
     sourceId: "coverage-daegu-daegu-transportation-line-0ffaa95b1b5d-realtime-arrivals",
-    name: "공식 미지원 근거 재감사 (daegu realtime_arrivals line-0ffaa95b1b5d)",
+    name: "공식 미지원 근거 재감사 (daegu realtime_arrivals 3호선)",
     evidence: "coverageResolution", freshUntil: iso(-1), refreshStage: null, refreshState: "NONE",
   });
+});
+
+test("전국 coverage resolutions의 활성 36개 노선은 모두 내부 해시(line-*)가 아닌 한글 노선명으로 표시한다 (#3036 7-47)", () => {
+  const targets = JSON.parse(readFileSync(new URL("../datapack/nationwide-coverage-targets.json", import.meta.url), "utf8"));
+  const uniqueScopes = [...new Map(targets.activeLineScopes.map((scope) => [scope.lineId, scope])).values()];
+  assert.equal(uniqueScopes.length, 36);
+  const entries = uniqueScopes.map((scope, index) => resolutionEntry(index - 10, {
+    regionId: scope.regionId,
+    operatorId: scope.operatorId,
+    lineId: scope.lineId,
+    sourceDomain: "realtime_arrivals",
+  }));
+  for (const entry of entries) {
+    const [item] = withResolutions(entry).expiringSources;
+    assert.doesNotMatch(item.name, /\bline-[0-9a-f]+\b/u, `${entry.lineId} should resolve to Korean line name`);
+    assert.doesNotMatch(item.name, /\b(?:seoul-2|seoul-4|shinbundang)\b/u, `${entry.lineId} should resolve to Korean line name`);
+  }
+  const customNamed = withResolutions(resolutionEntry(-1, { lineId: "line-custom000001", lineName: "임시선" })).expiringSources[0];
+  assert.equal(customNamed.name, "공식 미지원 근거 재감사 (daegu realtime_arrivals 임시선)");
+});
+
+test("열린 실패 이슈 본문에 가드 사유 표지(refresh-failure-reason)가 있으면 관리자 스냅샷 제목 끝에 사유를 붙인다 (#3036 7-20)", () => {
+  const snapshot = buildAutomationStatus({
+    ...emptyInputs(),
+    issues: [
+      {
+        number: 16,
+        title: "[Fix] 원천 자동 갱신 실패: KRIC 역 편의시설·에스컬레이터 정기 갱신 (kric-current-facility-refresh.yml)",
+        url: "https://github.com/AquilaXk/easysubway-data/issues/16",
+        createdAt: hoursAgo(1),
+        author: { login: "app/github-actions" },
+        body: "<!-- refresh-failure-status:start -->\n<!-- refresh-failure-reason:reason=SECRET_MISSING secret=KRIC_SERVICE_KEY -->\n<!-- refresh-failure-status:end -->",
+      },
+      {
+        number: 15,
+        title: `[Fix] 원천 자동 갱신 실패: ${"가".repeat(280)}`,
+        url: "https://github.com/AquilaXk/easysubway-data/issues/15",
+        createdAt: hoursAgo(2),
+        author: { login: "app/github-actions" },
+        body: "<!-- refresh-failure-reason:reason=AUTOMATION_PR_CI -->",
+      },
+    ],
+  });
+  assert.equal(
+    snapshot.failureIssues[0].title,
+    "[Fix] 원천 자동 갱신 실패: KRIC 역 편의시설·에스컬레이터 정기 갱신 (kric-current-facility-refresh.yml) [reason=SECRET_MISSING secret=KRIC_SERVICE_KEY]",
+  );
+  assert.deepEqual(Object.keys(snapshot.failureIssues[0]), ["number", "title", "url", "createdAt"]);
+  assert.ok([...snapshot.failureIssues[1].title].length <= 300);
+  assert.ok(snapshot.failureIssues[1].title.endsWith(" [reason=AUTOMATION_PR_CI]"));
 });
 
 test("만료된 공식 미지원 근거는 먼 미래에 만료되는 원천에 밀려 목록에서 잘리지 않는다", () => {

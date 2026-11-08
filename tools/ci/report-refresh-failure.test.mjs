@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { guardFailureReasonPath } from "./failure-reason.mjs";
 import {
   CHAIN_ROLLBACK_NOTE,
   CHAIN_WORKFLOWS,
@@ -14,6 +15,7 @@ import {
   REFRESH_WORKFLOWS,
   defaultRunGh,
   failureIssuesOf,
+  failureReasonOf,
   planRefreshFailureReport,
   recordedRunIdsOf,
   refreshFailureMarker,
@@ -637,4 +639,71 @@ test("CLI의 --source-id는 식별자이거나 빈 값(원천 없음)일 때만 
     },
     now: () => start,
   }), /REFRESH_FAILURE_REPORT_SUB_ISSUE_LINK/u);
+});
+
+test("가드 실패 사유(reason=)는 실패 이슈 본문·재알림 댓글·상태 블록 표지에 기록되고, 사유 없는 후속 보고는 이전 사유를 유지한다 (#3036 7-20)", () => {
+  const firstReason = "reason=QUOTA_EXHAUSTED allowance=ITX_COLLECTED_TODAY";
+  const created = kricReport(1, start, { openIssues: [], sourceId: KRIC_ESCALATOR, reason: firstReason });
+  assert.equal(created.action, "create");
+  assert.match(created.body, /- 실패 원천: `kric-station-escalator-detailed`\n- 가드 사유: `reason=QUOTA_EXHAUSTED allowance=ITX_COLLECTED_TODAY`/u);
+  assert.ok(created.body.includes(`<!-- refresh-failure-reason:${firstReason} -->`));
+  assert.equal(failureReasonOf(created.body), firstReason);
+
+  const withoutReason = kricReport(2, new Date(start.getTime() + hours(2)), { openIssues: [kricIssue(created)] });
+  assert.equal(withoutReason.action, "status");
+  assert.equal(failureReasonOf(withoutReason.issueBody), firstReason);
+
+  const updatedReason = "reason=GITHUB_API_STATUS status=502 workflow=kric-current-facility-refresh.yml";
+  const nextDay = new Date(start.getTime() + COMMENT_INTERVAL_MS);
+  const commented = kricReport(3, nextDay, {
+    openIssues: [kricIssue({ ...created, body: withoutReason.issueBody })],
+    sourceId: KRIC_STANDARD,
+    reason: updatedReason,
+  });
+  assert.equal(commented.action, "comment");
+  assert.match(commented.body, /- 실패 원천: `kric-station-convenience-standard`\n- 가드 사유: `reason=GITHUB_API_STATUS status=502 workflow=kric-current-facility-refresh\.yml`/u);
+  assert.equal(failureReasonOf(commented.issueBody), updatedReason);
+
+  const orphan = kricReport(4, new Date(nextDay.getTime() + hours(1)), {
+    openIssues: [kricIssue({ ...created, body: commented.issueBody })],
+    orphan: orphanClaim({ branch: "automation/629-kric-facility-refresh-4" }),
+  });
+  assert.equal(orphan.action, "comment");
+  assert.equal(failureReasonOf(orphan.issueBody), updatedReason);
+
+  const unnamed = kricReport(5, start, { openIssues: [] });
+  assert.doesNotMatch(unnamed.body, /가드 사유|refresh-failure-reason/u);
+  assert.equal(failureReasonOf(unnamed.body), null);
+});
+
+test("CLI는 --reason 또는 RUNNER_TEMP의 가드 사유 파일을 읽고, 형식이 틀린 사유는 거부한다 (#3036 7-20)", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "refresh-reason-"));
+  try {
+    const runWith = (argv, env = {}) => reportRefreshFailure({
+      argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "42", ...argv],
+      env,
+      runGh: async (args) => {
+        if (args[1] === "list") return "[]";
+        if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
+        if (args[0] === "api" && args.includes("--jq")) return "777888\n";
+        return "{}";
+      },
+      now: () => start,
+    });
+
+    const reasonFile = guardFailureReasonPath({ RUNNER_TEMP: dir, GITHUB_RUN_ID: "42" });
+    await writeFile(reasonFile, "reason=SECRET_MISSING secret=KRIC_SERVICE_KEY\n");
+    const fromEnvFile = await runWith([], { RUNNER_TEMP: dir, GITHUB_RUN_ID: "42" });
+    assert.match(fromEnvFile.body, /- 가드 사유: `reason=SECRET_MISSING secret=KRIC_SERVICE_KEY`/u);
+    assert.equal(failureReasonOf(fromEnvFile.body), "reason=SECRET_MISSING secret=KRIC_SERVICE_KEY");
+
+    const fromCli = await runWith(["--reason", "reason=AUTOMATION_PR_CI"], { RUNNER_TEMP: dir, GITHUB_RUN_ID: "42" });
+    assert.equal(failureReasonOf(fromCli.body), "reason=AUTOMATION_PR_CI");
+
+    await assert.rejects(runWith(["--reason", "not-valid"]), /REFRESH_FAILURE_REPORT_REASON/u);
+    await writeFile(reasonFile, "bad-reason-in-file\n");
+    await assert.rejects(runWith([], { RUNNER_TEMP: dir, GITHUB_RUN_ID: "42" }), /REFRESH_FAILURE_REPORT_REASON/u);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

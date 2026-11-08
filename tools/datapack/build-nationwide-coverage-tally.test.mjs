@@ -847,3 +847,28 @@ test("tally 산출물은 wall-clock을 쓰지 않고 결정적이다", async () 
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("resolutions.auditScope가 있으면 검증해 inputs.resolutions에 싣고, 어긋난 auditScope는 거부한다 (#3036 7-47)", () => {
+  const auditScope = {
+    mode: "PARTIAL_REAUDIT",
+    fullCrawlGeneratedAt: "2026-07-25T09:12:39.105Z",
+    reauditedAt: "2026-10-23T10:18:48.032Z",
+    auditedEntryCount: 4,
+    totalSearchPlanEntryCount: 187,
+  };
+  const ledger = buildFixtureLedger({
+    targets: fixtureTargets(),
+    inventory: fixtureInventory([operatorAMembershipSource()]),
+    resolutions: { ...fixtureResolutions([fixtureResolutionEntry()]), auditScope },
+  });
+  assert.deepEqual(ledger.inputs.resolutions.auditScope, auditScope);
+
+  assert.throws(
+    () => buildFixtureLedger({
+      targets: fixtureTargets(),
+      inventory: fixtureInventory([operatorAMembershipSource()]),
+      resolutions: { ...fixtureResolutions([fixtureResolutionEntry()]), auditScope: { mode: "UNKNOWN" } },
+    }),
+    /auditScope/u,
+  );
+});

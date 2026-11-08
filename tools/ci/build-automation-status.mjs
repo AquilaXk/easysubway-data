@@ -28,6 +28,7 @@ import { planBehindRecreation } from "./automation-pr-recreate.mjs";
 import { parseDeployRunName } from "./datapack-release-chain.mjs";
 import { kstQuotaWindow } from "./collection-run-window.mjs";
 import { dueReverificationRecipes, overdueReverificationRecipes } from "./decide-source-reverification.mjs";
+import { isValidReasonLine } from "./failure-reason.mjs";
 import { PROVIDER_BUDGET_BLOCK_STEP, parseProviderCallBudgetPolicy } from "./provider-call-budget.mjs";
 import { REFRESH_STAGES } from "./refresh-stage-contracts.mjs";
 
@@ -36,6 +37,8 @@ const STUCK_PULL_AGE_HOURS = 6;
 const STALE_CLAIM_AGE_HOURS = 2;
 const FAILURE_ISSUE_LIMIT = 20;
 const FAILURE_TITLE = "원천 자동 갱신 실패";
+const ISSUE_TITLE_MAX_CHARS = 300;
+const FAILURE_REASON_MARKER = /<!-- refresh-failure-reason:(reason=[^\n]+?) -->/u;
 const BOT_LOGINS = new Set(["app/github-actions", "github-actions[bot]"]);
 const PULL_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d{0,9}$/u;
 const PULL_TITLE_MAX_CHARS = 120;
@@ -251,11 +254,51 @@ function expiringSourceOf(source, context) {
   };
 }
 
+const COVERAGE_LINE_NAMES = new Map([
+  ["line-ab1a041f6266", "1호선"],
+  ["line-d74614a04530", "3호선"],
+  ["line-d812a5bc1e5f", "4호선"],
+  ["line-eb7b47920390", "2호선"],
+  ["line-f52eb59d8497", "동해"],
+  ["line-e4cce88f0d7f", "부산김해경전철"],
+  ["line-15b3b8a93259", "7호선"],
+  ["line-42b5805f3b5a", "인천2호선"],
+  ["line-98718184f016", "인천1호선"],
+  ["line-051552e50435", "서해선"],
+  ["line-41a8c75ec9d8", "3호선"],
+  ["line-472a81add377", "1호선"],
+  ["line-54a7b980b7c3", "경춘"],
+  ["line-558d0bd8312d", "수인분당"],
+  ["line-6e39be0cb6e2", "경의중앙"],
+  ["line-e4939a4b4713", "경강"],
+  ["seoul-4", "4호선"],
+  ["line-2b2d9eaa53d0", "8호선"],
+  ["line-aefa08ccc0a9", "신림선"],
+  ["shinbundang", "신분당"],
+  ["line-62096860ab09", "의정부"],
+  ["line-5500c1600f71", "김포골드라인"],
+  ["line-30886152e4f8", "우이신설"],
+  ["line-8604048b6430", "GTX-A"],
+  ["line-e9e9a5b520a4", "공항"],
+  ["line-f0e747248a31", "9호선"],
+  ["line-828f04afc588", "에버라인"],
+  ["line-3f41718e0833", "6호선"],
+  ["line-80fc4d5350d4", "5호선"],
+  ["seoul-2", "2호선"],
+  ["line-0ffaa95b1b5d", "3호선"],
+  ["line-5b8d9b05e7e6", "1호선"],
+  ["line-e2938a4cc492", "2호선"],
+  ["line-8f7ed01f290a", "대경선"],
+  ["line-7051a9c2525c", "1호선"],
+  ["line-e57a361e8892", "1호선"],
+]);
+
 /** 사람이 id로 알아볼 수 있는 이름과, 원천 id 계약(소문자·숫자·하이픈)을 따르는 resolution 항목 id. */
-function coverageResolutionIdentity({ regionId, operatorId, lineId, sourceDomain }) {
+function coverageResolutionIdentity({ regionId, operatorId, lineId, lineName, sourceDomain }) {
   const sourceId = `coverage-${[regionId, operatorId, lineId, sourceDomain].join("-")}`.replaceAll("_", "-");
   if (!SOURCE_ID.test(sourceId)) throw inventoryError(`coverage resolution id ${sourceId} does not match the snapshot contract`);
-  return { sourceId, name: sourceName(`공식 미지원 근거 재감사 (${regionId} ${sourceDomain} ${lineId})`, sourceId) };
+  const lineLabel = lineName ?? COVERAGE_LINE_NAMES.get(lineId) ?? lineId;
+  return { sourceId, name: sourceName(`공식 미지원 근거 재감사 (${regionId} ${sourceDomain} ${lineLabel})`, sourceId) };
 }
 
 /**
@@ -345,6 +388,15 @@ export async function loadSourceFreshnessInputs({ env = process.env, root = REPO
   return Object.fromEntries(entries);
 }
 
+function failureIssueTitleWithReason(issue) {
+  const match = typeof issue.body === "string" ? FAILURE_REASON_MARKER.exec(issue.body) : null;
+  const reason = match?.[1];
+  if (!isValidReasonLine(reason)) return issue.title;
+  const suffix = ` [${reason}]`;
+  const maxPrefixChars = Math.max(0, ISSUE_TITLE_MAX_CHARS - [...suffix].length);
+  return `${[...issue.title].slice(0, maxPrefixChars).join("")}${suffix}`;
+}
+
 export function buildAutomationStatus({
   now, repository, manifest, stageRuns = {}, issues = [], openPulls = [], claimRefs = [], behind = { actions: [], anomalies: [] },
   sourceInventory, sourceLedger, freshnessPolicy, providerCallBudget, coverageResolutions, refreshRuns = {}, budgetBlockedRuns = [],
@@ -358,7 +410,7 @@ export function buildAutomationStatus({
     .filter((issue) => typeof issue?.title === "string" && issue.title.includes(FAILURE_TITLE) && BOT_LOGINS.has(issue.author?.login))
     .sort((left, right) => right.number - left.number)
     .slice(0, FAILURE_ISSUE_LIMIT)
-    .map((issue) => ({ number: issue.number, title: issue.title, url: issue.url, createdAt: issue.createdAt }));
+    .map((issue) => ({ number: issue.number, title: failureIssueTitleWithReason(issue), url: issue.url, createdAt: issue.createdAt }));
 
   const behindNumbers = new Set([...behind.actions, ...behind.anomalies].map((item) => item.number));
   const automationPulls = openPulls.filter((pull) => isOwnAutomationPull(pull, repository));
@@ -530,7 +582,7 @@ export async function main(env = process.env, { execGhImpl = execGh, fetchImpl =
     apis: { data: dataApi, hub: appApi, platform: appApi },
     listFailureIssues: async () => JSON.parse(await execGhImpl([
       "issue", "list", "--repo", repository, "--state", "open", "--limit", "100", "--search", `"${FAILURE_TITLE}" in:title`,
-      "--json", "number,title,url,createdAt,author",
+      "--json", "number,title,url,createdAt,author,body",
     ], env.GH_TOKEN)),
     fetchManifest: async () => {
       const response = await fetchImpl(`${withoutTrailingSlashes(manifestBase)}/catalog/current.json`, { signal: AbortSignal.timeout(20_000) });
