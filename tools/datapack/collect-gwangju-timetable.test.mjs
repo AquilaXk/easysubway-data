@@ -180,25 +180,39 @@ test("광주 timetable collector는 credential과 provider body 없이 transport
   let calls = 0;
   await assert.rejects(collectGwangjuTimetable({
     serviceKey: "never-print-gwangju-key",
+    sleepImpl: async () => {},
     fetchImpl: async () => { calls += 1; throw transport; },
   }), (error) => {
     assert.match(error.message, /transport failure; code=ENOTFOUND/);
     assert.doesNotMatch(error.message, /never-print|secret-bearing/);
     return true;
   });
-  assert.equal(calls, 1);
+  assert.equal(calls, 3);
 });
 
-test("광주 timetable collector는 첫 HTTP 실패를 재시도하지 않는다", async () => {
-  for (const status of [429, 500]) {
+test("광주 timetable collector는 일시적 HTTP/resultCode만 재시도하고 영구 오류는 즉시 실패한다", async () => {
+  for (const [status, expectedCalls] of [[429, 2], [500, 3], [403, 1]]) {
     let calls = 0;
     await assert.rejects(collectGwangjuTimetable({
       serviceKey: "key",
+      sleepImpl: async () => {},
       fetchImpl: async () => {
         calls += 1;
         return new Response("unavailable", { status });
       },
     }), new RegExp(`HTTP ${status}`));
-    assert.equal(calls, 1);
+    assert.equal(calls, expectedCalls);
+  }
+  for (const [resultCode, expectedCalls] of [["05", 3], ["20", 1]]) {
+    let calls = 0;
+    await assert.rejects(collectGwangjuTimetable({
+      serviceKey: "key",
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        calls += 1;
+        return xmlResponse({ resultCode });
+      },
+    }), new RegExp(`provider resultCode ${resultCode}`));
+    assert.equal(calls, expectedCalls);
   }
 });

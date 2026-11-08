@@ -59,7 +59,27 @@ export class RetryAfterExceedsCapError extends Error {
 //     KRIC 키는 operation별 활용신청이 필수이고 미신청이면 30이 돌아온다.
 //   - 30: data.go.kr는 게이트웨이 노드 사이 키 동기화 지연으로 간헐 발생해 일시로 본다(같은 키로 여러 run이 통과). KRIC는 미신청 operation이라 재시도해도 풀리지 않는다고 보고 즉시 실패시킨다.
 //     이는 실측 근거가 있는 선택이지 KRIC 공식 문서의 정의가 아니다. 방금 승인된 operation의 전파 지연이 관측되면 재검토한다.
-const RESULT_CODE_TABLE = Object.freeze([
+const SEOUL_OPEN_DATA_RESULT_CODES = Object.freeze({
+  success: Object.freeze(["INFO-000"]),
+  empty: Object.freeze(["INFO-200"]),
+  transient: Object.freeze(["ERROR-500", "ERROR-600"]),
+  terminal: Object.freeze([
+    "INFO-100",
+    "ERROR-300",
+    "ERROR-301",
+    "ERROR-310",
+    "ERROR-331",
+    "ERROR-332",
+    "ERROR-333",
+    "ERROR-334",
+    "ERROR-335",
+    "ERROR-336",
+    "ERROR-337",
+    "ERROR-601",
+  ]),
+});
+
+export const RESULT_CODE_TABLE = Object.freeze(Object.assign([
   { code: "01", name: "APPLICATION_ERROR", dataGoKr: "transient", kric: "transient" },
   { code: "02", name: "DB_ERROR", dataGoKr: "transient", kric: "transient" },
   { code: "04", name: "HTTP_ERROR", dataGoKr: "transient", kric: "transient" },
@@ -75,19 +95,70 @@ const RESULT_CODE_TABLE = Object.freeze([
   { code: "32", name: "UNREGISTERED_IP_ERROR", dataGoKr: "fatal", kric: "fatal" },
   { code: "33", name: "UNSIGNED_CALL_ERROR", dataGoKr: "fatal", kric: "fatal" },
   { code: "99", name: "UNKNOWN_ERROR", dataGoKr: "transient", kric: "transient" },
-]);
+], {
+  seoulOpenData: SEOUL_OPEN_DATA_RESULT_CODES,
+}));
 //   - 부산교통공사 OpenAPI(data.humetro.busan.kr)도 dataGoKr 열을 쓴다. 별도 오류코드 문서는 없지만 실패 응답이 data.go.kr 표준 이름(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)으로
 //     resultCode 30을 내려 같은 코드 체계로 본다(근거: source-reverification run 39119028493, 2026-10-18T10:23Z, https://github.com/AquilaXk/easysubway-data/issues/1333 코멘트).
 //     같은 key로 02:23·04:47·06:23 run은 통과했다. 간헐 30 관측은 1건뿐이므로 추가 표본이 생기면 재검토한다. 키가 실제 미등록이면 3회 모두 30이라 소진 뒤 resultCode 30으로 실패한다.
 const transientCodesOf = (origin) => new Set(RESULT_CODE_TABLE.filter((row) => row[origin] === "transient").map(({ code }) => code));
+const fatalCodesOf = (origin) => new Set(RESULT_CODE_TABLE.filter((row) => row[origin] === "fatal").map(({ code }) => code));
 const TRANSIENT_DATA_GO_KR_RESULT_CODES = transientCodesOf("dataGoKr");
+const FATAL_DATA_GO_KR_RESULT_CODES = fatalCodesOf("dataGoKr");
 const TRANSIENT_KRIC_RESULT_CODES = transientCodesOf("kric");
+const SEOUL_SUCCESS_CODES = new Set(SEOUL_OPEN_DATA_RESULT_CODES.success);
+const SEOUL_EMPTY_CODES = new Set(SEOUL_OPEN_DATA_RESULT_CODES.empty);
+const SEOUL_TRANSIENT_CODES = new Set(SEOUL_OPEN_DATA_RESULT_CODES.transient);
+const SEOUL_TERMINAL_CODES = new Set(SEOUL_OPEN_DATA_RESULT_CODES.terminal);
+
+/** 공공데이터포털 envelope의 resultCode 분류("success" | "empty" | "transient" | "terminal" | "unknown"). */
+export function classifyDataGoResultCode(code) {
+  if (typeof code !== "string") return "unknown";
+  const normalized = code.trim();
+  if (normalized === "00") return "success";
+  if (normalized === "03") return "empty";
+  if (TRANSIENT_DATA_GO_KR_RESULT_CODES.has(normalized)) return "transient";
+  if (FATAL_DATA_GO_KR_RESULT_CODES.has(normalized)) return "terminal";
+  return "unknown";
+}
 
 /** 공공데이터포털 envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientDataGoKrResultCode = (resultCode) => TRANSIENT_DATA_GO_KR_RESULT_CODES.has(resultCode);
 
 /** KRIC OpenAPI 응답의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientKricResultCode = (resultCode) => TRANSIENT_KRIC_RESULT_CODES.has(resultCode);
+
+/** 서울 열린데이터광장 응답 payload에서 RESULT.CODE를 추출한다. 없으면 null이다. */
+export function seoulOpenDataResultCodeOf(payload) {
+  let target = payload;
+  if (Buffer.isBuffer(target) || typeof target === "string") {
+    try {
+      target = JSON.parse(typeof target === "string" ? target : target.toString("utf8"));
+    } catch {
+      return null;
+    }
+  }
+  if (!target || typeof target !== "object" || Array.isArray(target)) return null;
+  const topCode = target.RESULT?.CODE;
+  if (typeof topCode === "string" && topCode.trim() !== "") return topCode.trim();
+  for (const entry of Object.values(target)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const nestedCode = entry.RESULT?.CODE;
+    if (typeof nestedCode === "string" && nestedCode.trim() !== "") return nestedCode.trim();
+  }
+  return null;
+}
+
+/** 서울 열린데이터광장 RESULT.CODE 분류("success" | "empty" | "transient" | "terminal" | "unknown"). */
+export function classifySeoulOpenDataResultCode(code) {
+  if (typeof code !== "string") return "unknown";
+  const normalized = code.trim();
+  if (SEOUL_SUCCESS_CODES.has(normalized)) return "success";
+  if (SEOUL_EMPTY_CODES.has(normalized)) return "empty";
+  if (SEOUL_TRANSIENT_CODES.has(normalized)) return "transient";
+  if (SEOUL_TERMINAL_CODES.has(normalized)) return "terminal";
+  return "unknown";
+}
 
 /** KRIC JSON 응답 본문(바이트)의 header.resultCode. 본문이 JSON이 아니면 undefined다. */
 export const kricJsonResultCodeOf = (bytes) => {
@@ -127,6 +198,7 @@ export function withSourceCollectionRetry(attempt, {
   sourceId = sourceIdFromLabel(label),
   url,
   resultCodeOf = () => undefined,
+  recordTelemetry = true,
   random,
   sleep,
   budget,
@@ -160,7 +232,7 @@ export function withSourceCollectionRetry(attempt, {
   const flushAttempt = (nextDelayMs) => {
     const observed = pending;
     pending = undefined;
-    if (observed === undefined) return;
+    if (!recordTelemetry || observed === undefined) return;
     try {
       const { result, error } = observed;
       const response = error === undefined ? responseOf(result) : undefined;
@@ -257,7 +329,7 @@ export const transportFailureWithCode = (label) => (failure) => {
  * @returns {Promise<{ response: Response, bytes: Buffer }>}
  */
 export async function fetchBytesWithSourceRetry({
-  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, resultCodeOf, sleep, budget, random, timeoutMs = 15_000, headers = {},
+  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, resultCodeOf, recordTelemetry = true, sleep, budget, random, timeoutMs = 15_000, headers = {},
 }) {
   try {
     return await withSourceCollectionRetry(async () => {
@@ -266,7 +338,7 @@ export async function fetchBytesWithSourceRetry({
         : AbortSignal.timeout(timeoutMs);
       const response = await fetchImpl(url, { redirect: "error", signal, headers: { accept, ...headers } });
       return { response, bytes: Buffer.from(await response.arrayBuffer()) };
-    }, { label, sourceId, url, isTransientResult, resultCodeOf, sleep, budget, random });
+    }, { label, sourceId, url, isTransientResult, resultCodeOf, recordTelemetry, sleep, budget, random });
   } catch (error) {
     if (!isRetryAfterExceedsCap(error)) throw transportFailure(unwrapTransientRetryFailure(error));
     const { rawEvidence } = error;

@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const DEFAULT_ENDPOINT = "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do?&useCache=false";
@@ -13,7 +15,7 @@ const DEFAULT_INF_SEQ = "1";
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 function canonicalUtc(value, label) {
-  if (typeof value !== "string" || !ISO_INSTANT.test(value) || isNaN(Date.parse(value))) {
+  if (typeof value !== "string" || !ISO_INSTANT.test(value) || Number.isNaN(Date.parse(value))) {
     throw new Error(`${label} must be a canonical UTC instant`);
   }
   return new Date(value).toISOString();
@@ -75,22 +77,37 @@ export async function fetchSeoulMetroStationContactFile({
   seq = DEFAULT_SEQ,
   infSeq = DEFAULT_INF_SEQ,
   fetchImpl = fetch,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   const form = new URLSearchParams({ infId, seq, infSeq });
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form.toString(),
-    signal: AbortSignal.timeout(30_000),
+  const { response, buffer } = await withSourceCollectionRetry(async () => {
+    const res = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form.toString(),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) return { response: res, buffer: null };
+    return { response: res, buffer: await res.arrayBuffer() };
+  }, {
+    label: "Seoul Metro station contact file download",
+    url: endpoint,
+    sleep: sleepImpl ?? retryOptions.sleep,
+    budget: retryBudget ?? retryOptions.budget,
+    random: randomImpl ?? retryOptions.random,
+  }).catch((error) => {
+    throw unwrapTransientRetryFailure(error);
   });
 
   if (!response.ok) {
     throw new Error(`Seoul data file download failed: HTTP ${response.status}`);
   }
 
-  const buffer = await response.arrayBuffer();
   // Server returns EUC-KR (CP949) encoded CSV
   const decoder = new TextDecoder("euc-kr");
   const text = decoder.decode(buffer);
@@ -108,6 +125,10 @@ export async function collectSeoulStationContact({
   seq = DEFAULT_SEQ,
   infSeq = DEFAULT_INF_SEQ,
   fetchImpl = fetch,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   const instant = canonicalUtc(capturedAt, "capturedAt");
   const { rawBuffer, decodedText } = await fetchSeoulMetroStationContactFile({
@@ -116,6 +137,10 @@ export async function collectSeoulStationContact({
     seq,
     infSeq,
     fetchImpl,
+    sleepImpl,
+    retryBudget,
+    randomImpl,
+    retryOptions,
   });
 
   const rows = parseSeoulMetroStationContactCsv(decodedText);

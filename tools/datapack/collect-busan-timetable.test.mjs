@@ -514,3 +514,28 @@ defineTelemetrySourceIdTests({
     randomImpl: () => 0,
   }),
 });
+
+// #1699: register-busan-timetable의 인메모리 retained-replay 검증은 실제 원천 HTTP 호출이 아니므로 하루 호출 예산 계측에 기록하지 않는다.
+test("부산 timetable collector는 retained-replay 인메모리 검증 시 SOURCE_FETCH_TELEMETRY_PATH에 계측 줄을 쓰지 않는다 (#1699)", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "busan-timetable-replay-telemetry-"));
+  const telemetryPath = path.join(dir, "telemetry.jsonl");
+  const prevTelemetry = process.env.SOURCE_FETCH_TELEMETRY_PATH;
+  t.after(async () => {
+    if (prevTelemetry === undefined) delete process.env.SOURCE_FETCH_TELEMETRY_PATH;
+    else process.env.SOURCE_FETCH_TELEMETRY_PATH = prevTelemetry;
+    await rm(dir, { recursive: true, force: true });
+  });
+  await writeFile(telemetryPath, "");
+  process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
+
+  const replayed = await collectBusanTimetable({
+    serviceKey: "retained-replay",
+    stationScopes: topology.scope,
+    now: new Date("2026-07-20T09:00:00.000Z"),
+    fetchImpl: stationTimetableFetch,
+    sleepImpl: async () => {},
+    randomImpl: () => 0,
+  });
+  assert.equal(replayed.requestCount, 342);
+  assert.equal(await readFile(telemetryPath, "utf8"), "");
+});

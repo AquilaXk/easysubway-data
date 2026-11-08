@@ -4,6 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import {
+  classifySeoulOpenDataResultCode,
+  seoulOpenDataResultCodeOf,
+  withSourceCollectionRetry,
+} from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 // 서울 열린데이터광장 OpenAPI(8088)는 HTTP만 연다(2026-10-20 실측: https로 연결하면 ERR_SSL_WRONG_VERSION_NUMBER). probe-seoul-open-data-api.mjs와 같은 공식 HTTP-only provider다.
@@ -12,7 +18,7 @@ const PAGE_SIZE = 1000;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 function canonicalUtc(value, label) {
-  if (typeof value !== "string" || !ISO_INSTANT.test(value) || isNaN(Date.parse(value))) {
+  if (typeof value !== "string" || !ISO_INSTANT.test(value) || Number.isNaN(Date.parse(value))) {
     throw new Error(`${label} must be a canonical UTC instant`);
   }
   return new Date(value).toISOString();
@@ -24,15 +30,37 @@ export async function fetchSeoulPlatformGapPage({
   end = 1000,
   fetchImpl = fetch,
   endpoint = DEFAULT_ENDPOINT,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   if (!serviceKey) throw new Error("serviceKey is required");
   const url = `${endpoint.replace("{serviceKey}", encodeURIComponent(serviceKey))}/${start}/${end}/`;
-  const response = await fetchImpl(url, {
-    signal: AbortSignal.timeout(30_000),
-    headers: { accept: "application/json" },
-  });
+  let outcome;
+  try {
+    outcome = await withSourceCollectionRetry(async () => {
+      const response = await fetchImpl(url, {
+        signal: AbortSignal.timeout(30_000),
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) return { response, text: "", resultCode: null };
+      const text = await response.text();
+      return { response, text, resultCode: seoulOpenDataResultCodeOf(text) };
+    }, {
+      label: "Seoul open data platform gap API",
+      url,
+      isTransientResult: ({ response, resultCode }) => response.ok && classifySeoulOpenDataResultCode(resultCode) === "transient",
+      resultCodeOf: ({ resultCode }) => resultCode ?? undefined,
+      sleep: sleepImpl ?? retryOptions.sleep,
+      budget: retryBudget ?? retryOptions.budget,
+      random: randomImpl ?? retryOptions.random,
+    });
+  } catch (error) {
+    throw unwrapTransientRetryFailure(error);
+  }
+  const { response, text } = outcome;
   if (!response.ok) throw new Error(`Seoul open data API HTTP ${response.status}`);
-  const text = await response.text();
   let json;
   try {
     json = JSON.parse(text);
@@ -40,9 +68,11 @@ export async function fetchSeoulPlatformGapPage({
     throw new Error("Seoul open data API invalid JSON response", { cause: error });
   }
   const root = json?.TbSubwayLineInfo;
-  const resultCode = root?.RESULT?.CODE;
-  if (resultCode !== "INFO-000") {
-    throw new Error(`Seoul open data API error: ${resultCode} - ${root?.RESULT?.MESSAGE ?? ""}`);
+  const resultCode = seoulOpenDataResultCodeOf(json) ?? root?.RESULT?.CODE;
+  const classification = classifySeoulOpenDataResultCode(resultCode);
+  if (classification !== "success" || root?.RESULT?.CODE !== "INFO-000") {
+    const message = root?.RESULT?.MESSAGE ?? json?.RESULT?.MESSAGE ?? "";
+    throw new Error(`Seoul open data API error: ${resultCode} (${classification}) - ${message}`);
   }
   const totalCount = root?.list_total_count ?? 0;
   const rows = root?.row ?? [];
@@ -59,6 +89,10 @@ export async function collectSeoulPlatformGap({
   fetchImpl = fetch,
   endpoint = DEFAULT_ENDPOINT,
   limit = null,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   const instant = canonicalUtc(capturedAt, "capturedAt");
   const firstPage = await fetchSeoulPlatformGapPage({
@@ -67,6 +101,10 @@ export async function collectSeoulPlatformGap({
     end: Math.min(PAGE_SIZE, limit ?? PAGE_SIZE),
     fetchImpl,
     endpoint,
+    sleepImpl,
+    retryBudget,
+    randomImpl,
+    retryOptions,
   });
 
   const totalCount = limit !== null ? Math.min(limit, firstPage.totalCount) : firstPage.totalCount;
@@ -82,6 +120,10 @@ export async function collectSeoulPlatformGap({
       end: currentEnd,
       fetchImpl,
       endpoint,
+      sleepImpl,
+      retryBudget,
+      randomImpl,
+      retryOptions,
     });
     allRows.push(...page.rows);
     rawPages.push({ start: currentStart, end: currentEnd, rawText: page.rawText });

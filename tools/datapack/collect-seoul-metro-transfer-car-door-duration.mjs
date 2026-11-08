@@ -3,6 +3,8 @@ import { lstat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 // #876(QA 결정 2026-10-02): 서울교통공사_서울 도시철도 환승정보(data.go.kr 15098252) 원문 파일 수집기.
@@ -31,11 +33,29 @@ const DIRECTION = /^\S(?:.*\S)? 방면$/u;
 const DURATION = /^(?:\d{2}:[0-5]\d)?$/u;
 const MAX_RAW_BYTES = 4 * 1024 * 1024;
 
-export async function collectSeoulMetroTransferCarDoorDuration({ fetchImpl = fetch, now = new Date() } = {}) {
+export async function collectSeoulMetroTransferCarDoorDuration({
+  fetchImpl = fetch,
+  now = new Date(),
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
+} = {}) {
   const capturedAt = instant(now);
-  const response = await fetchImpl(DOWNLOAD_URL, { redirect: "error" });
+  const { response, rawBytes } = await withSourceCollectionRetry(async () => {
+    const res = await fetchImpl(DOWNLOAD_URL, { redirect: "error" });
+    if (!res?.ok) return { response: res, rawBytes: Buffer.alloc(0) };
+    return { response: res, rawBytes: Buffer.from(await res.arrayBuffer()) };
+  }, {
+    label: "Seoul transfer car-door file download",
+    url: DOWNLOAD_URL,
+    sleep: sleepImpl ?? retryOptions.sleep,
+    budget: retryBudget ?? retryOptions.budget,
+    random: randomImpl ?? retryOptions.random,
+  }).catch((error) => {
+    throw unwrapTransientRetryFailure(error);
+  });
   if (!response?.ok) throw new Error(`Seoul transfer car-door file download failed: HTTP ${response?.status}`);
-  const rawBytes = Buffer.from(await response.arrayBuffer());
   return buildSeoulMetroTransferSnapshot({
     rawBytes,
     capturedAt,

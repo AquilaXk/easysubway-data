@@ -5,7 +5,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  RESULT_CODE_TABLE,
+  classifySeoulOpenDataResultCode,
   isRetryAfterExceedsCap,
+  seoulOpenDataResultCodeOf,
   withSourceCollectionRetry,
 } from "./lib/source-collection-retry.mjs";
 import { SourceFetchTelemetryWriteError } from "./lib/source-fetch-telemetry.mjs";
@@ -469,28 +472,16 @@ async function responseBytes(response, source, expectedContentType) {
   return Buffer.concat(chunks, byteLength);
 }
 
-const TRANSIENT_SEOUL_RESULT_CODES = new Set(["ERROR-500", "ERROR-600"]);
+export const SEOUL_RESULT_CLASSIFICATION = RESULT_CODE_TABLE.seoulOpenData;
 
 function seoulOpenApiResultCodeOf(bytes) {
   if (!Buffer.isBuffer(bytes)) return undefined;
-  try {
-    const parsed = JSON.parse(bytes.toString("utf8"));
-    const code = parsed?.SearchSTNBySubwayLineInfo?.RESULT?.CODE
-      ?? parsed?.SearchInfoBySubwayNameService?.RESULT?.CODE
-      ?? parsed?.RESULT?.CODE;
-    return typeof code === "string" ? code : undefined;
-  } catch {
-    return undefined;
-  }
+  return seoulOpenDataResultCodeOf(bytes) ?? undefined;
 }
 
 export function isRetryableSeoulOpenApiPayload(rawBody) {
-  const bytes = Buffer.isBuffer(rawBody)
-    ? rawBody
-    : typeof rawBody === "string"
-      ? Buffer.from(rawBody, "utf8")
-      : null;
-  return bytes !== null && TRANSIENT_SEOUL_RESULT_CODES.has(seoulOpenApiResultCodeOf(bytes));
+  if (!Buffer.isBuffer(rawBody) && typeof rawBody !== "string") return false;
+  return classifySeoulOpenDataResultCode(seoulOpenDataResultCodeOf(rawBody)) === "transient";
 }
 
 async function fetchSourceResponse({ source, url, init, fetchImpl, expectedContentType, sleep, random }) {

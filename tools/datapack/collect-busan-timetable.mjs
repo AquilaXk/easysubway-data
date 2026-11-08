@@ -114,7 +114,7 @@ async function collectResponse({ station, day, key, fetchImpl, sleepImpl, random
   url.searchParams.set("day", day);
   url.searchParams.set("pageNo", "1");
   url.searchParams.set("numOfRows", "999");
-  const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl);
+  const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl, key !== "retained-replay");
   const rawSha256 = sha256(bytes);
   if (!response.ok) throw new Error(`Busan timetable HTTP ${response.status}; rawBytes=${bytes.length}; rawSha256=${rawSha256}`);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
@@ -204,7 +204,7 @@ export function normalizeBusanTimetableScope(scope) {
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs).
 // 본문 수신 중 timeout도 같은 GET을 다시 보내고(#1333: 본문 timeout 한 번이 부산 그룹 3개 recipe를 롤백했다),
 // 200 응답이어도 data.go.kr 코드 체계(부산교통공사 게이트웨이도 같은 이름을 쓴다)의 envelope resultCode가 일시 오류 코드(01·02·04·05·30·99)면 다시 보낸다. 소진하면 마지막 응답이 아래 검증에서 resultCode와 함께 실패한다.
-function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl) {
+function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl, recordTelemetry = true) {
   return fetchBytesWithSourceRetry({
     url,
     fetchImpl,
@@ -217,6 +217,7 @@ function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl) {
       const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";
       return new Error(`Busan timetable transport failure; code=${safeToken(String(code))}`);
     },
+    recordTelemetry,
     sleep: sleepImpl,
     random: randomImpl,
   });

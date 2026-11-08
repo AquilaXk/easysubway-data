@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
@@ -60,19 +62,32 @@ export async function collectSeoulMetroCongestion({
   now = new Date(),
   targetUddi,
   datasetLabel,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   // Preflight validate credentials
   const normalizedKey = normalizeDataGoKrServiceKey(serviceKey);
+  const retry = {
+    sleep: sleepImpl ?? retryOptions.sleep,
+    budget: retryBudget ?? retryOptions.budget,
+    random: randomImpl ?? retryOptions.random,
+  };
 
   let selectedUddi = targetUddi;
   let label = datasetLabel;
 
   if (!selectedUddi || !label) {
-    const oasResponse = await fetchImpl(oasUrl);
+    const { response: oasResponse, oasDoc } = await withSourceCollectionRetry(async () => {
+      const res = await fetchImpl(oasUrl);
+      if (!res.ok) return { response: res, oasDoc: null };
+      return { response: res, oasDoc: await res.json() };
+    }, { label: "Seoul Metro congestion OAS", url: oasUrl, ...retry })
+      .catch((error) => { throw unwrapTransientRetryFailure(error); });
     if (!oasResponse.ok) {
       throw new Error(`failed to fetch OAS document from ${oasUrl}: HTTP ${oasResponse.status}`);
     }
-    const oasDoc = await oasResponse.json();
     const resolution = selectLatestOasUddi(oasDoc);
     selectedUddi = selectedUddi ?? resolution.uddi;
     label = label ?? resolution.datasetLabel;
@@ -83,18 +98,22 @@ export async function collectSeoulMetroCongestion({
   endpointUrl.searchParams.set("perPage", "2000");
   endpointUrl.searchParams.set("returnType", "JSON");
 
-  const response = await fetchImpl(endpointUrl.href, {
-    headers: {
-      Authorization: `Infuser ${normalizedKey}`,
-      Accept: "application/json",
-    },
-  });
+  const { response, rawText } = await withSourceCollectionRetry(async () => {
+    const res = await fetchImpl(endpointUrl.href, {
+      headers: {
+        Authorization: `Infuser ${normalizedKey}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return { response: res, rawText: "" };
+    return { response: res, rawText: await res.text() };
+  }, { label: "Seoul Metro congestion ODCloud API", url: endpointUrl.href, ...retry })
+    .catch((error) => { throw unwrapTransientRetryFailure(error); });
 
   if (!response.ok) {
     throw new Error(`failed to fetch congestion data: HTTP ${response.status}`);
   }
 
-  const rawText = await response.text();
   const parsed = JSON.parse(rawText);
 
   const totalCount = parsed.totalCount;

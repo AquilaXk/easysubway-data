@@ -858,12 +858,12 @@ test("KRIC evidence collector는 기대 성공 형태가 아닌 대조군 응답
 
 test("KRIC evidence collector는 전송 실패도 분류와 근거를 남긴다", async () => {
   const transportFailures = [
-    ["DNS 실패", () => Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } })],
-    ["timeout", () => Object.assign(new Error("The operation was aborted"), { name: "TimeoutError" })],
-    ["redirect 거부", () => new TypeError("unexpected redirect")],
+    ["DNS 실패", () => Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }), 3],
+    ["timeout", () => Object.assign(new Error("The operation was aborted"), { name: "TimeoutError" }), 3],
+    ["redirect 거부", () => new TypeError("unexpected redirect"), 1],
   ];
 
-  for (const [label, buildError] of transportFailures) {
+  for (const [label, buildError, expectedCalls] of transportFailures) {
     const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-transport-"));
     const calls = [];
     try {
@@ -873,6 +873,7 @@ test("KRIC evidence collector는 전송 실패도 분류와 근거를 남긴다"
           candidatesDocument: integrityDocument([candidate]),
           runnerTemp,
           serviceKey: INTEGRITY_SERVICE_KEY,
+          sleepImpl: async () => {},
           fetchImpl: async (url) => {
             calls.push(url);
             throw buildError();
@@ -885,7 +886,7 @@ test("KRIC evidence collector는 전송 실패도 분류와 근거를 남긴다"
           return true;
         },
       );
-      assert.equal(calls.length, 1, label);
+      assert.equal(calls.length, expectedCalls, label);
       await assertCollectorCleanup(runnerTemp);
     } finally {
       await rm(runnerTemp, { recursive: true, force: true });
@@ -960,6 +961,7 @@ test("KRIC evidence collector는 sanitized sample 검증 실패에도 분류와 
 
 test("KRIC evidence collector는 body 전송 실패도 전송 오류로 분류한다", async () => {
   const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-body-transport-"));
+  let calls = 0;
   try {
     await assert.rejects(
       collectKricSourceCandidateEvidence({
@@ -967,14 +969,18 @@ test("KRIC evidence collector는 body 전송 실패도 전송 오류로 분류�
         candidatesDocument: integrityDocument([candidate]),
         runnerTemp,
         serviceKey: INTEGRITY_SERVICE_KEY,
-        fetchImpl: async () => ({
-          ok: true,
-          status: 200,
-          headers: new Headers({ "content-type": "application/json" }),
-          text: async () => {
-            throw Object.assign(new Error("terminated"), { cause: { code: "ECONNRESET" } });
-          },
-        }),
+        sleepImpl: async () => {},
+        fetchImpl: async () => {
+          calls += 1;
+          return {
+            ok: true,
+            status: 200,
+            headers: new Headers({ "content-type": "application/json" }),
+            text: async () => {
+              throw Object.assign(new Error("terminated"), { cause: { code: "ECONNRESET" } });
+            },
+          };
+        },
       }),
       (error) => {
         assert.match(error.message, /failureClass=transport-error/);
@@ -983,6 +989,7 @@ test("KRIC evidence collector는 body 전송 실패도 전송 오류로 분류�
         return true;
       },
     );
+    assert.equal(calls, 3);
     await assertCollectorCleanup(runnerTemp);
   } finally {
     await rm(runnerTemp, { recursive: true, force: true });

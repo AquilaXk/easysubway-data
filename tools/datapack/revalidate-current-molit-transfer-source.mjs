@@ -12,6 +12,8 @@ import {
   molitRailwayTransferMovementEditionFromSnapshotId,
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -198,22 +200,34 @@ function requestUrl(endpoint, serviceKey, page) {
   return url;
 }
 
-async function fetchPage({ fetchImpl, endpoint, serviceKey, page, expectedTotalCount }) {
-  let response;
+async function fetchPage({ fetchImpl, endpoint, serviceKey, page, expectedTotalCount, retry }) {
+  const url = requestUrl(endpoint, serviceKey, page);
+  let outcome;
   try {
-    response = await fetchImpl(requestUrl(endpoint, serviceKey, page), {
-      redirect: "error",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
+    outcome = await withSourceCollectionRetry(async () => {
+      const response = await fetchImpl(url, {
+        redirect: "error",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
+      });
+      if (!response || !Number.isSafeInteger(response.status)) fail("PROVIDER_NETWORK");
+      if (!response.ok) return { response, bytes: null };
+      if (!/^application\/json(?:\s*;|$)/iu.test(response.headers.get("content-type") ?? "")) {
+        fail("PROVIDER_CONTENT_TYPE");
+      }
+      const bytes = await readBoundedResponseBody(response);
+      return { response, bytes };
+    }, {
+      label: "MOLIT transfer source revalidation",
+      url,
+      ...retry,
     });
   } catch (error) {
-    fail(classifyTransportFailure(error));
+    const unwrapped = unwrapTransientRetryFailure(error);
+    if (/^MOLIT_TRANSFER_REVALIDATION_/u.test(unwrapped?.message ?? "")) throw unwrapped;
+    fail(classifyTransportFailure(unwrapped));
   }
-  if (!response || !Number.isSafeInteger(response.status)) fail("PROVIDER_NETWORK");
+  const { response, bytes } = outcome;
   if (!response.ok) fail(classifyHttpFailure(response.status));
-  if (!/^application\/json(?:\s*;|$)/iu.test(response.headers.get("content-type") ?? "")) {
-    fail("PROVIDER_CONTENT_TYPE");
-  }
-  const bytes = await readBoundedResponseBody(response);
   let document;
   try {
     document = JSON.parse(bytes.toString("utf8"));
@@ -322,7 +336,7 @@ function canonicalProviderRow(row) {
   return projected;
 }
 
-async function collectProviderObservation({ fetchImpl, serviceKey, locked }) {
+async function collectProviderObservation({ fetchImpl, serviceKey, locked, retry }) {
   const pageCount = Math.ceil(locked.metadata.rowCount / PER_PAGE);
   if (pageCount < 1 || pageCount > 100) fail("PAGINATION");
   const rows = [];
@@ -334,6 +348,7 @@ async function collectProviderObservation({ fetchImpl, serviceKey, locked }) {
       serviceKey,
       page,
       expectedTotalCount: locked.metadata.rowCount,
+      retry,
     });
     rows.push(...result.rows);
     pageResponseSha256.push(result.responseSha256);
@@ -499,6 +514,10 @@ export async function runCurrentMolitTransferSourceRevalidation({
   readFileImpl = readFile,
   publishFixture = {},
   repositoryRoot = path.resolve(import.meta.dirname, "../.."),
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   try {
     const args = parseArgs(argv);
@@ -524,7 +543,12 @@ export async function runCurrentMolitTransferSourceRevalidation({
       } catch {
         fail("CREDENTIAL");
       }
-      observation = await collectProviderObservation({ fetchImpl, serviceKey, locked });
+      const retry = {
+        sleep: sleepImpl ?? retryOptions.sleep,
+        budget: retryBudget ?? retryOptions.budget,
+        random: randomImpl ?? retryOptions.random,
+      };
+      observation = await collectProviderObservation({ fetchImpl, serviceKey, locked, retry });
       operation = {
         method: "GET",
         operationId: `15130556-v1-uddi-${ENDPOINT_PATTERN.exec(locked.endpoint)[1]}`,

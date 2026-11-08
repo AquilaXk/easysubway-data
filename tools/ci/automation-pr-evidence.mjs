@@ -19,6 +19,19 @@ import { parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 import { REFRESH_STAGES, REFRESH_STAGE_IDS, isRefreshStage, refreshPathShapeViolation, refreshSourceRowsMatch } from "./refresh-stage-contracts.mjs";
 import { SOURCE_REVERIFICATION_RECIPE_IDS, isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
 import { isObject } from "../lib/is-object.mjs";
+import {
+  DEFAULT_JOURNEY_GOLDEN_DIFF_DECLARATION_PATH,
+  formatJourneyGoldenDiffEvidenceLine,
+  validateCandidateJourneyGoldenDiffReport,
+} from "../datapack/run-candidate-journey-golden-diff.mjs";
+
+const DEFAULT_GOLDEN_DIFF_DECLARATION = Object.freeze({
+  schemaVersion: 1,
+  allowChangedQueries: false,
+  declaredChangedQueryIds: Object.freeze([]),
+  declaredDiffSha256: null,
+  reason: null,
+});
 
 export const AUTOMATION_PR_EVIDENCE_MARKER = "easysubway-automation-pr:v1";
 export const AUTOMATION_PR_STAGES = Object.freeze(["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion", "source-reverification", ...REFRESH_STAGE_IDS]);
@@ -191,8 +204,38 @@ export function registrationPullRequestBody({ runUrl, baseSha, headSha, policy, 
   ].join("\n");
 }
 
-export function candidateRefreshEvidenceBlock({ runUrl, baseSha, headSha, candidate }) {
-  return automationPrEvidenceBlock({ stage: "candidate-refresh", runUrl, baseSha, headSha, policy: null, sources: [], steps: [], candidate });
+export function buildCandidateRefreshPrEvidenceBlock({
+  runUrl,
+  baseSha,
+  headSha,
+  candidate,
+  goldenDiffReport,
+  declaration = DEFAULT_GOLDEN_DIFF_DECLARATION,
+}) {
+  const block = automationPrEvidenceBlock({
+    stage: "candidate-refresh",
+    runUrl,
+    baseSha,
+    headSha,
+    policy: null,
+    sources: [],
+    steps: [],
+    candidate,
+  });
+  if (goldenDiffReport === undefined || goldenDiffReport === null) {
+    return block;
+  }
+  let validation;
+  try {
+    validation = validateCandidateJourneyGoldenDiffReport(goldenDiffReport, declaration);
+  } catch (error) {
+    invalid(error instanceof Error ? error.message : String(error));
+  }
+  return `${formatJourneyGoldenDiffEvidenceLine(validation)}\n${block}`;
+}
+
+export function candidateRefreshEvidenceBlock(options) {
+  return buildCandidateRefreshPrEvidenceBlock(options);
 }
 
 export function derivativeRebindingPullRequestBody({ runUrl, baseSha, headSha, policy, sources, steps }) {
@@ -373,7 +416,18 @@ export async function main(argv, { write = (chunk) => process.stdout.write(chunk
     const { candidateId, releaseSequence, sourceSnapshotSetHash } = await readJson(values["build-spec"]);
     // 후보 PR이 바꾼 경로 전체(#986 F4). 2단계 정책이 API diff와 정확히 대조하고 후보 갱신 도구의 출력 목록 안인지 본다.
     const paths = [...new Set((await readFile(values["changed-paths"], "utf8")).split("\n").filter(Boolean))].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-    write(`${candidateRefreshEvidenceBlock({ ...common(), candidate: { candidateId, releaseSequence, sourceSnapshotSetHash, paths } })}\n`);
+    const goldenDiffReport = Object.hasOwn(values, "golden-diff-report")
+      ? await readJson(values["golden-diff-report"])
+      : undefined;
+    const declaration = Object.hasOwn(values, "golden-diff-report")
+      ? await readJson(values["golden-diff-declaration"] ?? DEFAULT_JOURNEY_GOLDEN_DIFF_DECLARATION_PATH)
+      : undefined;
+    write(`${buildCandidateRefreshPrEvidenceBlock({
+      ...common(),
+      candidate: { candidateId, releaseSequence, sourceSnapshotSetHash, paths },
+      goldenDiffReport,
+      declaration,
+    })}\n`);
   } else {
     fail("AUTOMATION_PR_EVIDENCE_ARGUMENTS");
   }

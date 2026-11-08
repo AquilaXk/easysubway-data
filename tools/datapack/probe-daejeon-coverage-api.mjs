@@ -44,7 +44,12 @@ export async function probeDaejeonCoverageApi({
   validateOperationQuery(sourceId, requestQuery, query !== undefined);
   for (const [name, value] of Object.entries(requestQuery)) url.searchParams.set(name, value);
 
-  const { response, bytes: responseBytes } = await fetchWithRetry(url, fetchImpl, { sleepImpl, retryBudget, randomImpl });
+  const { response, bytes: responseBytes } = await fetchWithRetry(url, fetchImpl, {
+    sleepImpl,
+    retryBudget,
+    randomImpl,
+    recordTelemetry: key !== "retained-replay",
+  });
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
   const raw = responseBytes.toString("utf8");
   if (!response.ok) {
@@ -91,7 +96,7 @@ export async function probeDaejeonCoverageApi({
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·500·502·503·504와 전송 오류)으로 같은 GET을 다시 보낸다(#1099, #1334).
 // 200 응답이어도 공공데이터포털 envelope resultCode가 일시 오류 코드(01·02·04·05·30·99)면 다시 보낸다. 인증·쿼터·형식 오류는 재시도하지 않는다.
 // 한도를 다 쓰면 마지막 응답(HTTP 오류·provider 오류)을 기존 오류와 원문 해시 진단으로 드러내고, 전송 오류는 오류 코드만 남긴다.
-function fetchWithRetry(url, fetchImpl, { sleepImpl, retryBudget, randomImpl }) {
+function fetchWithRetry(url, fetchImpl, { sleepImpl, retryBudget, randomImpl, recordTelemetry = true }) {
   return fetchBytesWithSourceRetry({
     url,
     fetchImpl,
@@ -99,6 +104,7 @@ function fetchWithRetry(url, fetchImpl, { sleepImpl, retryBudget, randomImpl }) 
     label: "Daejeon coverage API",
     isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(xmlScalar(bytes.toString("utf8"), "resultCode")),
     transportFailure: transportFailureWithCode("Daejeon coverage API"),
+    recordTelemetry,
     sleep: sleepImpl,
     budget: retryBudget,
     random: randomImpl,

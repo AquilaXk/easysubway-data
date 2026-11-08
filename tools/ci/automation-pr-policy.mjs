@@ -51,6 +51,19 @@ import {
 } from "../datapack/refresh-nationwide-candidate.mjs";
 import { isObject } from "../lib/is-object.mjs";
 import { GITHUB_API_REASON, INTERNAL_ERROR_REASON, formatReasonLine, recordFailureReason } from "./failure-reason.mjs";
+import {
+  DEFAULT_JOURNEY_GOLDEN_DIFF_DECLARATION_PATH,
+  formatJourneyGoldenDiffEvidenceLine,
+  validateCandidateJourneyGoldenDiffReport,
+} from "../datapack/run-candidate-journey-golden-diff.mjs";
+
+const DEFAULT_GOLDEN_DIFF_DECLARATION = Object.freeze({
+  schemaVersion: 1,
+  allowChangedQueries: false,
+  declaredChangedQueryIds: Object.freeze([]),
+  declaredDiffSha256: null,
+  reason: null,
+});
 
 const execFileAsync = promisify(execFile);
 const GIT = "/usr/bin/git";
@@ -381,6 +394,33 @@ function treeAndBaseFiles(repositoryRoot) {
   };
 }
 
+export function validateCandidateEvidence(
+  evidenceOrBody,
+  { goldenDiffReport, declaration = DEFAULT_GOLDEN_DIFF_DECLARATION, body } = {},
+) {
+  const effectiveBody = typeof evidenceOrBody === "string" ? evidenceOrBody : body;
+  const evidence = typeof evidenceOrBody === "string"
+    ? parseAutomationPrEvidence(evidenceOrBody)
+    : evidenceOrBody;
+  if (!isObject(evidence) || evidence.stage !== "candidate-refresh" || !isObject(evidence.candidate)) {
+    throw codedError("CANDIDATE_GATE", "후보 갱신 증거 블록 형식이 아니다");
+  }
+  if (goldenDiffReport === undefined || goldenDiffReport === null) {
+    return { valid: true, goldenDiffValidation: null };
+  }
+  let validation;
+  try {
+    validation = validateCandidateJourneyGoldenDiffReport(goldenDiffReport, declaration);
+  } catch (error) {
+    throw codedError("CANDIDATE_GATE", message(error));
+  }
+  const expectedLine = formatJourneyGoldenDiffEvidenceLine(validation);
+  if (typeof effectiveBody === "string" && !effectiveBody.split(/\r?\n/u).includes(expectedLine)) {
+    throw codedError("CANDIDATE_GATE", `PR 본문에 Journey golden diff 증거 줄이 없거나 리포트와 다르다 (기대: ${expectedLine})`);
+  }
+  return { valid: true, goldenDiffValidation: validation };
+}
+
 /**
  * 원장 게이트와 ITX 승격 게이트를 PR head에서 다시 계산하고 증거 블록과 대조한다. 블록의 PASS 주장을 믿지 않는다.
  * @returns {Promise<{ violations: { code: string, detail: string }[] }>}
@@ -392,6 +432,9 @@ export async function recomputeAutomationGates({
   verifyItx = verifyItxGatePromotion,
   readCandidateState = readNationwideCandidateRefreshState,
   candidateViolations = nationwideCandidateRefreshViolations,
+  goldenDiffReport = null,
+  goldenDiffDeclaration = DEFAULT_GOLDEN_DIFF_DECLARATION,
+  pullBody = null,
 }) {
   const violations = [];
   const violate = (code, detail) => violations.push({ code, detail });
@@ -532,6 +575,13 @@ export async function recomputeAutomationGates({
       const { candidateId, releaseSequence, sourceSnapshotSetHash } = state.buildSpec ?? {};
       const { candidateId: claimedId, releaseSequence: claimedSequence, sourceSnapshotSetHash: claimedHash } = evidence.candidate;
       if (!sameJson({ candidateId, releaseSequence, sourceSnapshotSetHash }, { candidateId: claimedId, releaseSequence: claimedSequence, sourceSnapshotSetHash: claimedHash })) violate("EVIDENCE_DRIFT", "증거 블록의 후보 식별이 커밋된 후보 build spec과 다르다");
+    }
+    if (goldenDiffReport !== null) {
+      try {
+        validateCandidateEvidence(evidence, { goldenDiffReport, declaration: goldenDiffDeclaration, body: pullBody });
+      } catch (error) {
+        violate("CANDIDATE_GATE", message(error).replace(/^AUTOMATION_PR_CANDIDATE_GATE:\s*/u, ""));
+      }
     }
   }
   return { violations };
@@ -728,12 +778,28 @@ export async function main(argv, { api = ghApi, log = (line) => process.stdout.w
     writeOutputs(values["github-output"], { applicable: "true", base_sha: evidence.baseSha });
     log(`자동화 PR 게이트 대상: ${stage}`);
   } else if (command === "gates") {
-    const values = parseOptions(rest, ["pull-request", "repository-root", "digest-output"]);
+    const values = parseOptions(
+      rest,
+      ["pull-request", "repository-root", "digest-output", "golden-diff-report", "golden-diff-declaration"],
+      ["github-output", "digest-output", "golden-diff-report", "golden-diff-declaration"],
+    );
     const pull = await readPull(values["pull-request"]);
     const evidence = parseAutomationPrEvidence(pull.body, { headSha: pull.head.sha });
     const head = (await execFileAsync(GIT, ["rev-parse", "HEAD"], { cwd: values["repository-root"] })).stdout.trim();
     if (head !== pull.head.sha) throw codedError("HEAD_MISMATCH", `작업 트리 head(${head})가 PR head(${pull.head.sha})와 다르다`);
-    const { violations } = await recomputeAutomationGates({ evidence, repositoryRoot: path.resolve(values["repository-root"]) });
+    const goldenDiffReport = values["golden-diff-report"] !== undefined
+      ? JSON.parse(await readFile(values["golden-diff-report"], "utf8"))
+      : null;
+    const goldenDiffDeclaration = values["golden-diff-report"] !== undefined
+      ? JSON.parse(await readFile(values["golden-diff-declaration"] ?? DEFAULT_JOURNEY_GOLDEN_DIFF_DECLARATION_PATH, "utf8"))
+      : DEFAULT_GOLDEN_DIFF_DECLARATION;
+    const { violations } = await recomputeAutomationGates({
+      evidence,
+      repositoryRoot: path.resolve(values["repository-root"]),
+      goldenDiffReport,
+      goldenDiffDeclaration,
+      pullBody: pull.body,
+    });
     if (violations.length > 0) throw violationsError(violations);
     if (values["digest-output"] !== undefined) await writeEvidenceDigest({ file: values["digest-output"], pull, evidence });
     log(`자동화 PR 게이트 재계산 통과: ${evidence.stage}`);

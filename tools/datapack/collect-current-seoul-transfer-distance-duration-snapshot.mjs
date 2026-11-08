@@ -7,6 +7,8 @@ import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { CANDIDATES_PATH, sanitizeErrorMessage } from "./lib/source-candidate-evidence-collector.mjs";
+import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { validateAuthenticatedTransferObservation } from "./build-current-transfer-topology-metrics.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -26,6 +28,10 @@ export async function collectCurrentSeoulTransferDistanceDurationSnapshot({
   requestTimeoutMs = REQUEST_TIMEOUT_MS,
   runnerTemp = env.RUNNER_TEMP,
   serviceKey = env.DATA_GO_KR_SERVICE_KEY,
+  sleepImpl,
+  retryBudget,
+  randomImpl,
+  retryOptions = {},
 } = {}) {
   const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey);
   const outputDirectory = requiredAbsolutePath(output, "output");
@@ -34,9 +40,14 @@ export async function collectCurrentSeoulTransferDistanceDurationSnapshot({
   const document = candidatesDocument ?? JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
   const endpoint = resolveTrackedEndpoint(document);
   const capturedAt = requiredDate(now);
+  const retry = {
+    sleep: sleepImpl ?? retryOptions.sleep,
+    budget: retryBudget ?? retryOptions.budget,
+    random: randomImpl ?? retryOptions.random,
+  };
   let collection;
   try {
-    collection = await collectAllPages({ endpoint, fetchImpl, rawServiceKey: serviceKey, requestTimeoutMs, serviceKey: normalizedServiceKey });
+    collection = await collectAllPages({ endpoint, fetchImpl, rawServiceKey: serviceKey, requestTimeoutMs, serviceKey: normalizedServiceKey, retry });
   } catch (error) {
     throw new Error(sanitize(error, serviceKey, normalizedServiceKey));
   }
@@ -188,7 +199,7 @@ function reconstructRows(rawSnapshot) {
   return rows.sort((left, right) => codepointCompare(REQUIRED_FIELDS.map((field) => left[field]).join("\u0000"), REQUIRED_FIELDS.map((field) => right[field]).join("\u0000")));
 }
 
-async function collectAllPages({ endpoint, fetchImpl, rawServiceKey, requestTimeoutMs, serviceKey }) {
+async function collectAllPages({ endpoint, fetchImpl, rawServiceKey, requestTimeoutMs, serviceKey, retry }) {
   if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 0 || requestTimeoutMs > REQUEST_TIMEOUT_MS) {
     throw new Error("request timeout must be a bounded integer");
   }
@@ -201,17 +212,25 @@ async function collectAllPages({ endpoint, fetchImpl, rawServiceKey, requestTime
     request.searchParams.set("page", String(page));
     request.searchParams.set("perPage", String(PER_PAGE));
     request.searchParams.set("returnType", "JSON");
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
     let response;
     let bytes;
     try {
-      response = await fetchImpl(request, { signal: controller.signal, redirect: "error" });
+      ({ response, bytes } = await withSourceCollectionRetry(async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+        try {
+          const res = await fetchImpl(request, { signal: controller.signal, redirect: "error" });
+          if (!res?.ok) return { response: res, bytes: Buffer.alloc(0) };
+          return { response: res, bytes: Buffer.from(await res.arrayBuffer()) };
+        } finally {
+          clearTimeout(timer);
+        }
+      }, { label: "Seoul transfer distance/duration ODCloud API", url: request, ...retry }));
       if (!response?.ok) throw new Error("ODCloud HTTP response is not successful");
-      bytes = Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      const cause = unwrapTransientRetryFailure(error);
+      throw new Error(`request failed: ${cause instanceof Error ? cause.message : "unknown"}`);
     }
-    catch (error) { throw new Error(`request failed: ${error instanceof Error ? error.message : "unknown"}`); }
-    finally { clearTimeout(timer); }
     let envelope;
     try {
       envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
