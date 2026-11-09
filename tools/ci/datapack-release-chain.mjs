@@ -22,10 +22,12 @@ export const REPOSITORIES = Object.freeze({
 export const PLATFORM_DEPLOY_ACTORS = Object.freeze([RELEASE_CHAIN_APP, "AquilaXk"]);
 /** data 저장소 안에서 GITHUB_TOKEN으로 dispatch한 run의 행위자. 발행 run은 이 행위자의 것만 인정한다. */
 export const DATA_DISPATCH_ACTOR = "github-actions[bot]";
-export const PROMOTION_ISSUE_REF = "AquilaXk/easysubway#2705";
+export const DEFAULT_PROMOTION_ISSUE_REF = "AquilaXk/easysubway#2705";
+export const PROMOTION_ISSUE_REF = DEFAULT_PROMOTION_ISSUE_REF;
 export const RC_RUN_NAME = "Data Pack Release (release-candidate)";
 export const PUBLISH_RUN_NAME = "Data Pack Release (production-publish)";
 export const MIN_MANIFEST_REMAINING_SECONDS = 12 * 3600;
+const ISSUE_REF_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9]\d*$/u;
 const MAX_HUB_ATTEMPTS = 3;
 const DEPLOY_WORKFLOW = "source-free-journey-k3s-deploy.yml";
 const BACKEND_WORKFLOW_PATH = ".github/workflows/release-artifacts.yml";
@@ -41,6 +43,22 @@ export class ChainError extends Error {
 
 function fail(code, detail = "") {
   throw new ChainError(code, detail);
+}
+
+export function resolvePromotionIssueRef({ issueRef, env } = {}) {
+  if (issueRef !== undefined) {
+    if (typeof issueRef !== "string" || !ISSUE_REF_PATTERN.test(issueRef)) {
+      fail("CHAIN_ARGUMENTS", "--issue-ref must match <owner/repo#number>");
+    }
+    return issueRef;
+  }
+  if (env?.PROMOTION_ISSUE_REF !== undefined) {
+    if (typeof env.PROMOTION_ISSUE_REF !== "string" || !ISSUE_REF_PATTERN.test(env.PROMOTION_ISSUE_REF)) {
+      fail("CHAIN_ENV_INVALID", "PROMOTION_ISSUE_REF");
+    }
+    return env.PROMOTION_ISSUE_REF;
+  }
+  return DEFAULT_PROMOTION_ISSUE_REF;
 }
 
 const NOT_STARTED = new Set(["queued", "waiting", "pending", "requested"]);
@@ -248,6 +266,7 @@ const dispatchedByChain = (run) => run.triggering_actor?.login === RELEASE_CHAIN
 export async function hubGatesStage(ctx, state) {
   requireState(state, "rc.runId", "rc.sha");
   const candidateRunId = requirePositive(state.rc.runId, "rc.runId");
+  const issueRef = resolvePromotionIssueRef({ issueRef: ctx.promotionIssueRef });
   const token = ctx.tokens.hub;
   for (let attempt = 1; attempt <= MAX_HUB_ATTEMPTS; attempt += 1) {
     const compatRun = await dispatchAndFind(ctx, {
@@ -272,7 +291,7 @@ export async function hubGatesStage(ctx, state) {
         candidateRunId,
         compatibilityEvidenceRunId: String(compat.id),
         compatibilityEvidenceArtifactName: compatName,
-        issueRef: PROMOTION_ISSUE_REF,
+        issueRef,
       },
       match: dispatchedByChain,
     });
@@ -537,11 +556,12 @@ async function fetchStatusOnly(url) {
   return { status: response.status };
 }
 
-export async function buildContext(env, { repositoryRoot, gh = createGh() } = {}) {
+export async function buildContext(env, { repositoryRoot, gh = createGh(), issueRef } = {}) {
   const tokens = {
     data: env.GH_TOKEN, hub: env.HUB_TOKEN, platform: env.PLATFORM_TOKEN, backend: env.BACKEND_TOKEN,
   };
   const publicBase = (name) => withoutTrailingSlashes(requiredEnv(env, name, /^https:\/\/[^\s/]+(\/[^\s?#]*)?$/u));
+  const promotionIssueRef = resolvePromotionIssueRef({ issueRef, env });
   const context = {
     gh, tokens, now: () => Date.now(), sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), pollMs: 10_000,
     timeouts: { compat: 8 * 60_000, promotion: 8 * 60_000, publish: 25 * 60_000, preview: 8 * 60_000, deploy: 12 * 60_000, discover: 120_000 },
@@ -549,6 +569,7 @@ export async function buildContext(env, { repositoryRoot, gh = createGh() } = {}
     fetchJson: fetchJsonOrThrow, fetchStatus: fetchStatusOnly,
     apiBaseUrl: env.CHAIN_API_BASE_URL ? publicBase("CHAIN_API_BASE_URL") : undefined,
     manifestUrl: env.CHAIN_DATAPACK_BASE_URL ? `${publicBase("CHAIN_DATAPACK_BASE_URL")}/catalog/current.json` : undefined,
+    promotionIssueRef,
     repositoryRoot,
   };
   context.readModeArgs = async ({ candidateRunId, promotionRunId }) => {
@@ -589,11 +610,34 @@ function requirePlanContext(context) {
   }
 }
 
-export async function runChainStage({ stage, statePath, env = process.env, repositoryRoot = process.cwd(), gh } = {}) {
+export function parseChainCliArgs(argv) {
+  const [stage, ...rest] = argv;
+  if (typeof stage !== "string" || stage === "" || rest.length === 0 || rest.length % 2 !== 0) {
+    fail("CHAIN_ARGUMENTS", "usage: datapack-release-chain.mjs <stage> --state <file> [--issue-ref <owner/repo#number>]");
+  }
+  const options = {};
+  for (let index = 0; index < rest.length; index += 2) {
+    const flag = rest[index];
+    const value = rest[index + 1];
+    if ((flag !== "--state" && flag !== "--issue-ref") || options[flag] !== undefined || typeof value !== "string" || value === "") {
+      fail("CHAIN_ARGUMENTS", "usage: datapack-release-chain.mjs <stage> --state <file> [--issue-ref <owner/repo#number>]");
+    }
+    options[flag] = value;
+  }
+  if (!options["--state"]) {
+    fail("CHAIN_ARGUMENTS", "usage: datapack-release-chain.mjs <stage> --state <file> [--issue-ref <owner/repo#number>]");
+  }
+  if (options["--issue-ref"] !== undefined) {
+    resolvePromotionIssueRef({ issueRef: options["--issue-ref"] });
+  }
+  return { stage, statePath: options["--state"], issueRef: options["--issue-ref"] };
+}
+
+export async function runChainStage({ stage, statePath, issueRef, env = process.env, repositoryRoot = process.cwd(), gh } = {}) {
   if (stage === "plan") {
     const runId = requiredEnv(env, "RC_RUN_ID", DECIMAL);
     const sha = requiredEnv(env, "RC_RUN_SHA", SHA);
-    const context = await buildContext(env, { repositoryRoot, gh });
+    const context = await buildContext(env, { repositoryRoot, gh, issueRef });
     // 체크아웃(= workflow_run·workflow_dispatch 시점의 기본 브랜치)과 원격 main이 모두 RC 커밋이어야 한다. 도구와 입력 파일이 RC와 같은 커밋에서 온다.
     if (requiredEnv(env, "GITHUB_SHA", SHA) !== sha || await mainSha(context, REPOSITORIES.data, context.tokens.data) !== sha) {
       fail("CHAIN_MAIN_MOVED", `data main is not the release candidate commit ${sha}`);
@@ -608,7 +652,7 @@ export async function runChainStage({ stage, statePath, env = process.env, repos
   if (!run) fail("CHAIN_ARGUMENTS", `unknown stage ${String(stage)}`);
   const state = JSON.parse(await readFile(statePath, "utf8"));
   try {
-    const context = await buildContext(env, { repositoryRoot, gh });
+    const context = await buildContext(env, { repositoryRoot, gh, issueRef });
     for (const key of REQUIRED_CONTEXT[stage] ?? []) {
       if (!context[key]) fail("CHAIN_ENV_INVALID", `${stage} requires ${key}`);
     }
@@ -626,10 +670,9 @@ export async function runChainStage({ stage, statePath, env = process.env, repos
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [stage, flag, statePath] = process.argv.slice(2);
   try {
-    if (flag !== "--state" || typeof statePath !== "string" || statePath === "") fail("CHAIN_ARGUMENTS", "usage: datapack-release-chain.mjs <stage> --state <file>");
-    await runChainStage({ stage, statePath });
+    const parsed = parseChainCliArgs(process.argv.slice(2));
+    await runChainStage(parsed);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;

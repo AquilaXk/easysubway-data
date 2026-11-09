@@ -327,12 +327,10 @@ test("Daegu source snapshots retain original CSV bytes", () => {
 
 test("대구 topology는 컷오버(2026-10-03T00:00Z) 이후 수집분에 P7D, 이전 수집분에 P1D freshUntil을 기록한다", () => {
   const bytes = buildIntervalCsv(1);
-  const day = 86_400_000;
-  const cutover = Date.parse("2026-10-03T00:00:00.000Z");
-  const current = parseDaeguRouteTopology(bytes, { lineNumber: 1, capturedAt: new Date(cutover).toISOString() });
-  assert.equal(current.freshUntil, new Date(cutover + 7 * day).toISOString());
-  const legacy = parseDaeguRouteTopology(bytes, { lineNumber: 1, capturedAt: new Date(cutover - 1).toISOString() });
-  assert.equal(legacy.freshUntil, new Date(cutover - 1 + day).toISOString());
+  const legacy = parseDaeguRouteTopology(bytes, { lineNumber: 1, capturedAt: "2026-10-02T23:59:59.999Z" });
+  assert.equal(legacy.freshUntil, "2026-10-03T23:59:59.999Z");
+  const current = parseDaeguRouteTopology(bytes, { lineNumber: 1, capturedAt: "2026-10-03T00:00:00.000Z" });
+  assert.equal(current.freshUntil, "2026-10-10T00:00:00.000Z");
 });
 
 test("역 구간정보 CSV의 상하행 거리(km)가 비대칭이면 fail-closed한다", () => {

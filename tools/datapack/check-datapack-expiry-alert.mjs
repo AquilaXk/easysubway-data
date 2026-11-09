@@ -1,16 +1,11 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { parseIsoDurationMs } from "../lib/iso-duration.mjs";
 
 function argValue(args, name) {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
-}
-
-function parseIsoDurationSeconds(value) {
-  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value ?? "");
-  if (!match) throw new Error("alertBeforePackExpiry must be PT duration");
-  return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
 }
 
 function parseTime(value, name) {
@@ -33,7 +28,7 @@ async function main() {
 
   const [manifestRaw, policy] = await Promise.all([readFile(manifestPath, "utf8"), readJson(policyPath)]);
   const manifest = JSON.parse(manifestRaw);
-  const thresholdSeconds = parseIsoDurationSeconds(policy.monitoring?.alertBeforePackExpiry);
+  const thresholdSeconds = parseIsoDurationMs(policy.monitoring?.alertBeforePackExpiry, "alertBeforePackExpiry") / 1_000;
   const expiresAtMillis = parseTime(manifest.expiresAt, "manifest.expiresAt");
   const secondsUntilExpiry = Math.floor((expiresAtMillis - now) / 1000);
   const shouldAlert = secondsUntilExpiry <= thresholdSeconds;

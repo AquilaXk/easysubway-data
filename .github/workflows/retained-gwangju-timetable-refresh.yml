@@ -30,6 +30,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24.19.0"
+      - name: Record source fetch attempts for the job summary
+        run: |
+          : > "${RUNNER_TEMP}/source-fetch-telemetry.jsonl"
+          echo "SOURCE_FETCH_TELEMETRY_PATH=${RUNNER_TEMP}/source-fetch-telemetry.jsonl" >> "${GITHUB_ENV}"
       - name: Read retained timetable due state
         id: decision
         env:
@@ -223,6 +227,12 @@ jobs:
           set -euo pipefail
           # #1326: 게시 step이 건너뛰어진(게시된 것이 없는) 실패 run은 자기 빈 claim을 같은 run에서 푼다. 삭제 규칙은 도구가 정한다.
           node tools/ci/release-own-claim.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${RETAINED_GWANGJU_BRANCH}" --claim-sha "${RETAINED_GWANGJU_CLAIM_SHA}" --publication-outcome "${PUBLICATION_OUTCOME}"
+      - name: Summarize source fetch attempts
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
       - name: Report refresh failure as an issue
         if: ${{ failure() }}
         env:

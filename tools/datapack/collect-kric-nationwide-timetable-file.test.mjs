@@ -435,6 +435,41 @@ test("#1099 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 
   });
 });
 
+test("응답 헤더 수신 전 연결 실패 시 source-fetch-telemetry에 KRIC 원천 ID와 호스트를 남긴다", async () => {
+  await withOutput(async ({ root, output }) => {
+    const telemetryPath = path.join(root, "source-fetch-telemetry.jsonl");
+    const previousTelemetryPath = process.env.SOURCE_FETCH_TELEMETRY_PATH;
+    process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
+    try {
+      await assert.rejects(collectKricNationwideTimetableFile({
+        outputFile: output,
+        ...retryFast(),
+        fetchImpl: async () => {
+          throw Object.assign(new TypeError("fetch failed"), {
+            cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }),
+          });
+        },
+      }), /KRIC_TIMETABLE_FILE_TRANSPORT/);
+    } finally {
+      if (previousTelemetryPath === undefined) delete process.env.SOURCE_FETCH_TELEMETRY_PATH;
+      else process.env.SOURCE_FETCH_TELEMETRY_PATH = previousTelemetryPath;
+    }
+    const records = (await readFile(telemetryPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(records.length, 3);
+    for (const [index, record] of records.entries()) {
+      assert.equal(record.sourceId, "kric-nationwide-timetable-file");
+      assert.equal(record.host, "data.kric.go.kr");
+      assert.equal(record.errorCode, "UND_ERR_CONNECT_TIMEOUT");
+      assert.equal(record.stage, "connect");
+      assert.equal(record.attempt, index + 1);
+      assert.equal(record.outcome, "error");
+    }
+  });
+});
+
 defineSourceCollectionRetryTests({
   name: "KRIC 전국 시간표 파일 수집기",
   httpError: /KRIC_TIMETABLE_FILE_HTTP/,

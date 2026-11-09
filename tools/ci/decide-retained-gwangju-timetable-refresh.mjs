@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { addCadence, deriveFreshnessExpiresAt } from "../datapack/freshness-policy.mjs";
 import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
 import { requireRetainedTimetableConfirmationPolicy } from "../datapack/prepare-retained-kric-timetable-publication.mjs";
+import { parseIsoDurationMs } from "../lib/iso-duration.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 // #929 D2 / #930 F2: 일일 재확인 주기. QA 결정 D2(a)(2026-10-04)로 관측 후 P1D가 지나면 재확인한다.
@@ -32,7 +33,10 @@ export async function readRetainedGwangjuTimetableRefreshDecision({
 // 만료 시각 자체는 바꾸지 않는다(연장 없음). 창 안에서 새로 수집해 등록해야 만료 전에 head가 이어진다.
 export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, candidate, freshnessPolicy, now = new Date() } = {}) {
   const nowMillis = requiredDate(now, "NOW");
-  const alertBeforeExpiryMillis = alertWindowMillis(freshnessPolicy?.monitoring?.alertBeforePackExpiry);
+  const alertBeforeExpiryMillis = parseIsoDurationMs(
+    freshnessPolicy?.monitoring?.alertBeforePackExpiry,
+    "RETAINED_GWANGJU_TIMETABLE_REFRESH_ALERT_BEFORE_EXPIRY",
+  );
   const policy = requireRetainedTimetableConfirmationPolicy(candidate);
   const source = exactlyOne(inventory?.sources, (entry) => entry?.id === SOURCE_ID, "INVENTORY_SOURCE");
   const lineage = validateLineage(snapshots);
@@ -68,15 +72,6 @@ function exactlyOne(items, predicate, code) {
   const matches = Array.isArray(items) ? items.filter((item) => predicate(item)) : [];
   if (matches.length !== 1) fail(code);
   return matches[0];
-}
-
-// SLA 경보 창은 시·분·초 ISO 8601 기간(PT6H 등)만 받는다. 0이거나 다른 형식이면 판정하지 않는다.
-function alertWindowMillis(value) {
-  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/u.exec(typeof value === "string" ? value : "");
-  if (!match || match.slice(1).every((part) => part === undefined)) fail("ALERT_BEFORE_EXPIRY");
-  const millis = (Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0)) * 1000;
-  if (millis < 1) fail("ALERT_BEFORE_EXPIRY");
-  return millis;
 }
 
 function requiredDate(value, code) {

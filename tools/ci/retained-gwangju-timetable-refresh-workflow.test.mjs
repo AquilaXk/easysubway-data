@@ -103,3 +103,18 @@ test("수집과 게시·등록은 서로 다른 step이고 게시 step은 수집
   before(publish.name, "Finalize retained timetable claim");
   assert.equal(names().includes("Refresh due retained Gwangju timetable"), false);
 });
+
+test("계측 파일 경로는 수집 전에 정하고 요약 step은 always()·continue-on-error로 마지막 보고 step 앞에서 돈다", () => {
+  const record = step("Record source fetch attempts for the job summary");
+  assert.match(record.run, /: > "\$\{RUNNER_TEMP\}\/source-fetch-telemetry\.jsonl"/u);
+  assert.match(record.run, /SOURCE_FETCH_TELEMETRY_PATH=\$\{RUNNER_TEMP\}\/source-fetch-telemetry\.jsonl" >> "\$\{GITHUB_ENV\}"/u);
+  before(record.name, "Read retained timetable due state");
+  const summary = step("Summarize source fetch attempts");
+  assert.equal(ifCondition(summary), "${{ always() }}");
+  assert.equal(summary.continueOnError, true);
+  assert.match(summary.run, /node tools\/ci\/summarize-source-fetch-telemetry\.mjs --input "\$\{SOURCE_FETCH_TELEMETRY_PATH:-\}" >> "\$\{GITHUB_STEP_SUMMARY\}"/u);
+  assert.equal(steps().filter(({ continueOnError }) => continueOnError).length, 1, "요약 step만 continue-on-error다");
+  before("Create retained timetable draft pull request", summary.name);
+  before(summary.name, "Report refresh failure as an issue");
+});
+

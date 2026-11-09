@@ -3,12 +3,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { planUnboundClaims } from "./claim-orphans.mjs";
+import { parseIsoDurationMs } from "../lib/iso-duration.mjs";
 
 const WORKFLOW = "seoul-current-accessibility-refresh.yml";
 const SOURCE_ID = "seoul-metro-accessibility";
 const AUTOMATION_BRANCH = /^automation\/639-seoul-accessibility-refresh-\d+$/;
 const CLAIM_REF = /^[\da-f]{40}\trefs\/heads\/(automation\/639-seoul-accessibility-refresh-\d+)$/;
-const ALERT_THRESHOLD = /^PT(?:(?<hours>\d+)H)?(?:(?<minutes>\d+)M)?(?:(?<seconds>\d+)S)?$/;
 
 function parseJson(bytes, label) {
   try {
@@ -32,22 +32,6 @@ function requireInstant(value, label) {
     throw new Error(`${label} is invalid`);
   }
   return Date.parse(value);
-}
-
-function parseAlertThreshold(value) {
-  const parts = ALERT_THRESHOLD.exec(value ?? "")?.groups;
-  if (parts == null || Object.values(parts).every((part) => part === undefined)) {
-    throw new Error("freshness alert threshold is invalid");
-  }
-  const milliseconds = (
-    Number(parts.hours ?? 0) * 3_600
-    + Number(parts.minutes ?? 0) * 60
-    + Number(parts.seconds ?? 0)
-  ) * 1_000;
-  if (milliseconds <= 0) {
-    throw new Error("freshness alert threshold is invalid");
-  }
-  return milliseconds;
 }
 
 function seoulAutomationPullRequests(value, repository) {
@@ -100,7 +84,7 @@ export async function decideCurrentSeoulAccessibilityRefresh({ inventoryPath, po
   );
   const policy = requireObject(parseJson(policyBytes, "freshness policy"), "freshness policy");
   const alertBeforePackExpiry = policy.monitoring?.alertBeforePackExpiry;
-  const threshold = parseAlertThreshold(alertBeforePackExpiry);
+  const threshold = parseIsoDurationMs(alertBeforePackExpiry, "freshness alert threshold");
   const currentTime = now instanceof Date ? now.getTime() : Number.NaN;
   if (!Number.isFinite(currentTime)) throw new Error("decision time is invalid");
   const pullRequests = seoulAutomationPullRequests(

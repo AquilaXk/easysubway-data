@@ -7,14 +7,19 @@ import test from "node:test";
 import {
   ChainError,
   DATA_DISPATCH_ACTOR,
+  DEFAULT_PROMOTION_ISSUE_REF,
+  PROMOTION_ISSUE_REF,
   RELEASE_CHAIN_APP,
   assertBackendNotOlder,
+  buildContext,
   deployStage,
   formatDeployRunName,
   hubGatesStage,
+  parseChainCliArgs,
   parseDeployRunName,
   publishStage,
   requireReleaseArtifact,
+  resolvePromotionIssueRef,
   rollbackStage,
   runChainStage,
   selectActiveRelease,
@@ -765,3 +770,43 @@ test("롤백: 성공해도 공개 manifest 번호와 서버 활성 FINAL이 어�
     detail: "공개 manifest는 롤백한 새 release 번호를 가리키고, 서버의 활성 FINAL은 직전 release다. 롤백만으로 복구가 끝나지 않았다.",
   });
 });
+
+test("승격 이슈 참조: 기본값(AquilaXk/easysubway#2705)을 유지하고 --issue-ref 또는 PROMOTION_ISSUE_REF로 재정의하며 잘못된 형식은 거부한다", async () => {
+  assert.equal(DEFAULT_PROMOTION_ISSUE_REF, "AquilaXk/easysubway#2705");
+  assert.equal(PROMOTION_ISSUE_REF, DEFAULT_PROMOTION_ISSUE_REF);
+  assert.equal(resolvePromotionIssueRef(), "AquilaXk/easysubway#2705");
+  assert.equal(resolvePromotionIssueRef({ env: { PROMOTION_ISSUE_REF: "AquilaXk/easysubway#3100" } }), "AquilaXk/easysubway#3100");
+  assert.equal(
+    resolvePromotionIssueRef({ issueRef: "AquilaXk/easysubway#3200", env: { PROMOTION_ISSUE_REF: "AquilaXk/easysubway#3100" } }),
+    "AquilaXk/easysubway#3200",
+  );
+  assert.deepEqual(parseChainCliArgs(["hub-gates", "--state", "/tmp/state.json"]), {
+    stage: "hub-gates",
+    statePath: "/tmp/state.json",
+    issueRef: undefined,
+  });
+  assert.deepEqual(parseChainCliArgs(["hub-gates", "--state", "/tmp/state.json", "--issue-ref", "AquilaXk/easysubway#3300"]), {
+    stage: "hub-gates",
+    statePath: "/tmp/state.json",
+    issueRef: "AquilaXk/easysubway#3300",
+  });
+
+  const envCtx = await buildContext({ PROMOTION_ISSUE_REF: "AquilaXk/easysubway#3400" }, { repositoryRoot: process.cwd() });
+  assert.equal(envCtx.promotionIssueRef, "AquilaXk/easysubway#3400");
+  const cliCtx = await buildContext({ PROMOTION_ISSUE_REF: "AquilaXk/easysubway#3400" }, { repositoryRoot: process.cwd(), issueRef: "AquilaXk/easysubway#3500" });
+  assert.equal(cliCtx.promotionIssueRef, "AquilaXk/easysubway#3500");
+
+  const world = new World();
+  seedHub(world);
+  installCompatArtifacts(world);
+  await hubGatesStage(world.context({ promotionIssueRef: "AquilaXk/easysubway#3600" }), initialState());
+  assert.equal(world.dispatches[1].inputs.issueRef, "AquilaXk/easysubway#3600");
+
+  for (const invalid of ["", "#2705", "AquilaXk#2705", "AquilaXk/easysubway", "AquilaXk/easysubway#0", "AquilaXk/easysubway#-1", "AquilaXk/easysubway#2705 ", "owner/repo/extra#1"]) {
+    assert.throws(() => resolvePromotionIssueRef({ issueRef: invalid }), (error) => error instanceof ChainError && error.code === "CHAIN_ARGUMENTS", invalid);
+    assert.throws(() => resolvePromotionIssueRef({ env: { PROMOTION_ISSUE_REF: invalid } }), (error) => error instanceof ChainError && error.code === "CHAIN_ENV_INVALID", invalid);
+    assert.throws(() => parseChainCliArgs(["hub-gates", "--state", "/tmp/state.json", "--issue-ref", invalid]), (error) => error instanceof ChainError && error.code === "CHAIN_ARGUMENTS", invalid);
+    await rejectsWith(hubGatesStage(world.context({ promotionIssueRef: invalid }), initialState()), "CHAIN_ARGUMENTS");
+  }
+});
+

@@ -126,7 +126,15 @@ async function downloadWithTransientRetry({ fetchImpl, profile, maximum, headerT
       if (response?.status !== 200) return { response, bytes: null };
       const declaredLength = validateResponse(response, maximum, profile.url);
       return { response, declaredLength, bytes: await readBoundedBody(response.body, maximum, bodyTimeout) };
-    }, { label: "KRIC timetable file", isTransientError: isTransientKricFailure, sleep: sleepImpl, budget: retryBudget, random: randomImpl });
+    }, {
+      label: "KRIC timetable file",
+      sourceId: profile.sourceId,
+      url: profile.url,
+      isTransientError: isTransientKricFailure,
+      sleep: sleepImpl,
+      budget: retryBudget,
+      random: randomImpl,
+    });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
   }

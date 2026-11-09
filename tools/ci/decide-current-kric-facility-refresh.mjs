@@ -5,6 +5,7 @@ import path from "node:path";
 import { parsePrefixedRefs } from "./automation-pr-state.mjs";
 import { CLAIM_OWNERS, planUnboundClaims } from "./claim-orphans.mjs";
 import { KRIC_FACILITY_REFRESH_SOURCE_IDS } from "../datapack/lib/kric-standard-facilities.mjs";
+import { parseIsoDurationMs } from "../lib/iso-duration.mjs";
 import { failureIssuesOf, sourceFailuresOf } from "./report-refresh-failure.mjs";
 
 const WORKFLOW = "kric-current-facility-refresh.yml";
@@ -37,14 +38,6 @@ function requireObject(value, label) {
 function requireInstant(value, label) {
   if (typeof value !== "string" || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) throw new Error(`${label} is invalid`);
   return Date.parse(value);
-}
-
-function parseDuration(value) {
-  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value ?? "");
-  if (!match || match.slice(1).every((part) => part === undefined)) throw new Error("freshness alert threshold is invalid");
-  const milliseconds = (Number(match[1] ?? 0) * 3_600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0)) * 1_000;
-  if (milliseconds <= 0) throw new Error("freshness alert threshold is invalid");
-  return milliseconds;
 }
 
 function automationPullRequests(value, repository) {
@@ -114,7 +107,7 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   const inventory = requireObject(parseJson(inventoryBytes, "source inventory"), "source inventory");
   const policy = requireObject(parseJson(policyBytes, "freshness policy"), "freshness policy");
   const alertBeforePackExpiry = policy.monitoring?.alertBeforePackExpiry;
-  const threshold = parseDuration(alertBeforePackExpiry);
+  const threshold = parseIsoDurationMs(alertBeforePackExpiry, "freshness alert threshold");
   const currentTime = now instanceof Date ? now.getTime() : NaN;
   if (!Number.isFinite(currentTime)) throw new Error("decision time is invalid");
   const refresh = selectRefreshSource(KRIC_FACILITY_REFRESH_SOURCE_IDS.map((sourceId) => sourceRefreshState(inventory, sourceId, currentTime, threshold)), coolingSources(issuesBytes, currentTime));
