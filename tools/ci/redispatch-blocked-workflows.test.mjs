@@ -299,10 +299,10 @@ test("우선순위가 높은 대상이 아직 차단 중이면 다음 우선순�
   assert.deepEqual(result.map(({ workflow, action }) => [workflow, action]), [[ITX, "WAIT"], [REVERIFICATION, "WAIT"], [REGISTRATION, "WAIT"], [REBINDING, "DISPATCH"]]);
 });
 
-// #1097 리뷰 F2: 재확인·재결속이 push 직전 재확인에서 새 원장 쓰기 자동화를 만나거나 main이 움직여 올리지 않고 끝나도 같은 슬롯 손실이다.
-test("superseded note로 쓰지 않고 끝난 재확인·재결속 run도 막힌 run으로 보고 차단이 풀리면 다시 dispatch한다", async () => {
-  for (const [workflow, id] of [[REVERIFICATION, 42000], [REBINDING, 44000]]) {
-    for (const note of [1, 2]) {
+// #1097 리뷰 F2, #1710: 등록·재확인·재결속이 push 직전 재확인에서 새 원장 쓰기 자동화를 만나거나 main이 움직여 올리지 않고 끝나도 같은 슬롯 손실이다.
+test("superseded note로 쓰지 않고 끝난 등록·재확인·재결속 run도 막힌 run으로 보고 차단이 풀리면 다시 dispatch한다", async () => {
+  for (const [workflow, id, notes] of [[REGISTRATION, 43000, [1]], [REVERIFICATION, 42000, [1, 2]], [REBINDING, 44000, [1, 2]]]) {
+    for (const note of notes) {
       const { state, input } = fixture({ runs: { [workflow]: [run(id, "2026-10-09T17:23:00Z")] }, jobs: { [id]: jobsWith(workflow, { blocked: true, note }) } });
       await runRedispatch(input);
       assert.deepEqual(state.dispatched, [workflow], `${workflow} note ${note}`);
@@ -321,6 +321,42 @@ test("superseded note로 쓰지 않고 끝난 재확인·재결속 run도 막힌
   const done = fixture({ runs: { [REVERIFICATION]: [run(42000, "2026-10-09T17:23:00Z")] }, jobs: { 42000: jobsWith(REVERIFICATION, { blocked: false }) } });
   await runRedispatch(done.input);
   assert.deepEqual(done.state.dispatched, []);
+});
+
+// #1710: push로 트리거되는 workflow(수도권 등록·파생 재결속)에서 정기 실행 뒤에 발생한 push 실행이 차단(waiting·superseded)으로 끝났을 때,
+// 차단이 유지되는 동안은 WAIT이고 차단이 풀리면 다시 dispatch한다.
+test("push로 도는 workflow에서 정기 실행 뒤의 push 실행이 차단으로 끝났으면 차단이 풀린 뒤 다시 dispatch한다(#1710)", async () => {
+  for (const [workflow, scheduledId, pushId] of [[REGISTRATION, 43001, 42538966745], [REBINDING, 44001, 42538966746]]) {
+    for (const note of [0, 1]) {
+      const runs = {
+        [workflow]: [
+          run(pushId, "2026-11-09T01:10:00Z", { event: "push", actor: SCHEDULER }),
+          run(scheduledId, "2026-11-09T00:05:00Z", { event: "schedule", actor: SCHEDULER }),
+        ],
+      };
+      const jobs = {
+        [scheduledId]: jobsWith(workflow, { blocked: false }),
+        [pushId]: jobsWith(workflow, { blocked: true, note }),
+      };
+      const waiting = fixture({
+        runs,
+        jobs,
+        pullRequests: [pull(1709, "automation/984-source-reverification-42538966000", "OPEN")],
+      });
+      const waitResult = await runRedispatch(waiting.input);
+      assert.deepEqual(waiting.state.dispatched, [], `${workflow} note ${note} waiting`);
+      assert.deepEqual(waitResult.find((item) => item.workflow === workflow), { workflow, action: "WAIT", blockedBy: [1709] }, `${workflow} note ${note} waiting`);
+
+      const unblocked = fixture({
+        runs,
+        jobs,
+        pullRequests: [pull(1709, "automation/984-source-reverification-42538966000", "MERGED")],
+      });
+      const dispatchResult = await runRedispatch(unblocked.input);
+      assert.deepEqual(unblocked.state.dispatched, [workflow], `${workflow} note ${note} dispatched`);
+      assert.deepEqual(dispatchResult.find((item) => item.workflow === workflow), { workflow, action: "DISPATCH", blockedRunId: pushId }, `${workflow} note ${note} dispatched`);
+    }
+  }
 });
 
 test("후보 갱신은 대상이 아니다: github.token dispatch는 정기 역할을 받지 못하고 스케줄러가 2시간마다 다시 깨운다", () => {
@@ -399,7 +435,7 @@ test("대상 표는 workflow 파일의 note step과 판정 도구가 쓰는 차�
   const root = path.resolve(import.meta.dirname, "../..");
   const decideFiles = {
     "itx-current-promotion.yml": ["decide-itx-current-promotion.mjs", "pendingLedgerWriterPullRequests"],
-    "current-capital-topology-registration.yml": ["decide-capital-topology-registration.mjs", "pendingLedgerWriterPullRequests"],
+    "current-capital-topology-registration.yml": ["decide-capital-topology-registration.mjs", "pendingLedgerWriters"],
     "source-reverification.yml": ["decide-source-reverification.mjs", "pendingLedgerWriters"],
     "source-derivative-rebinding.yml": ["decide-derivative-rebinding.mjs", "pendingLedgerWriters"],
   };

@@ -73,9 +73,12 @@ test("판정 step이 claim·게시·PR 생성보다 먼저 돌고 판정 입력�
   assert.ok(decisionStep.run.includes("state=SUPERSEDED"));
 });
 
+const WRITES_IDLE = "${{ (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') && steps.recheck.outputs.idle == 'true' }}";
+
 test("claim·게시·복구·App 토큰·PR 생성은 REGISTER 또는 RECOVER_CLAIM일 때만 돌고, 게시와 복구는 서로 배타적이다", () => {
-  for (const name of ["Claim exact main before OCI publication", "Mint App token for the registration pull request", "Commit exactly two registration outputs and open draft PR"]) {
-    assert.equal(ifCondition(step(name)), WRITES, name);
+  assert.equal(ifCondition(step("Claim exact main before OCI publication")), WRITES);
+  for (const name of ["Mint App token for the registration pull request", "Commit exactly two registration outputs and open draft PR"]) {
+    assert.equal(ifCondition(step(name)), WRITES_IDLE, name);
   }
   assert.equal(ifCondition(step("Publish and register once")), "${{ steps.decision.outputs.state == 'REGISTER' }}");
   assert.equal(ifCondition(step("Recover published registration without OCI")), "${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}");
@@ -83,23 +86,33 @@ test("claim·게시·복구·App 토큰·PR 생성은 REGISTER 또는 RECOVER_CL
   assert.doesNotMatch(yml, /inputs\.recovery_run_id != ''/u);
 });
 
-// #987 리뷰 F5: 재확인 workflow는 push 직전에 원장 쓰기 자동화를 다시 확인한다. 수도권 등록도 같아야 직렬화가 양방향이다.
-// 이 workflow는 게시 증거(receipt artifact)를 남기고 실패하면 다음 실행이 그 증거로 PR만 다시 만든다(복구). 그래서 기다림은 성공이 아니라 복구 가능한 실패로 끝낸다.
-test("push 직전에 원장을 쓰는 다른 자동화(열린 PR·claim 브랜치)가 없는지 다시 확인하고, 있으면 push하지 않고 복구 가능한 실패로 끝낸다", () => {
+// #987 리뷰 F5, #1710: 재확인·재결속 workflow처럼 push 직전에 원장 쓰기 자동화를 다시 확인하고, 다른 자동화가 시작됐으면
+// 거짓 실패 이슈를 여는 대신 이 실행이 만든 빈 claim 브랜치를 지우고 superseded note로 끝내 차단이 풀린 뒤 재dispatch되게 한다.
+test("push 직전에 원장을 쓰는 다른 자동화(열린 PR·claim 브랜치)가 없는지 다시 확인하고, 있으면 빈 claim을 정리하고 superseded note로 끝낸다", () => {
   const recheck = step("Recheck that no source-ledger automation is pending before pushing");
+  assert.equal(recheck.id, "recheck");
   assert.equal(ifCondition(recheck), WRITES);
   assert.equal(recheck.env.GH_TOKEN, "${{ github.token }}");
   // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
   assert.match(recheck.run, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
   assert.doesNotMatch(recheck.run, /gh pr list[^\n]*--state all --limit/u);
   assert.ok(recheck.run.includes('git ls-remote --heads origin "refs/heads/automation/*" > '));
-  assert.match(recheck.run, /node tools\/ci\/ledger-writers-idle\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --automation-branches "[^"]+" --except-workflow current-capital-topology-registration\.yml --github-output "[^"]+"/u);
-  assert.ok(recheck.run.includes("grep -qx 'idle=true' "));
-  assert.ok(recheck.run.includes("REGISTRATION_LEDGER_WRITER_PENDING: "));
+  assert.match(recheck.run, /node tools\/ci\/ledger-writers-idle\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --automation-branches "[^"]+" --except-workflow current-capital-topology-registration\.yml --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.doesNotMatch(recheck.run, /REGISTRATION_LEDGER_WRITER_PENDING/u);
+  const superseded = step("Note registration superseded by pending source automation");
+  assert.equal(
+    ifCondition(superseded),
+    "${{ (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') && steps.recheck.outputs.idle == 'false' }}",
+  );
+  assert.equal(superseded.env.GH_TOKEN, "${{ github.token }}");
+  assert.equal(superseded.env.BLOCKED_BY, "${{ steps.recheck.outputs.blocked_by }}");
+  assert.match(superseded.run, /git push origin --delete "\$\{branch\}"/u);
+  assert.match(superseded.run, /nothing was pushed/u);
   const names = steps().map(({ name }) => name);
   assert.ok(names.indexOf("Publish and register once") < names.indexOf(recheck.name));
   assert.ok(names.indexOf("Recover published registration without OCI") < names.indexOf(recheck.name));
-  assert.ok(names.indexOf(recheck.name) < names.indexOf("Mint App token for the registration pull request"));
+  assert.ok(names.indexOf(recheck.name) < names.indexOf(superseded.name));
+  assert.ok(names.indexOf(superseded.name) < names.indexOf("Mint App token for the registration pull request"));
   assert.ok(names.indexOf(recheck.name) < names.indexOf("Commit exactly two registration outputs and open draft PR"));
   assert.ok(names.indexOf("Mint App token for the registration pull request") !== -1);
 });
