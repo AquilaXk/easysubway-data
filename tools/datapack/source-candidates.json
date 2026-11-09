@@ -4998,7 +4998,7 @@
           "stLocCont",
           "stinCd"
         ],
-        "liveSampleNote": "2026-07-12 workflow run 29201337952 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=json, rowCount=4인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
+        "liveSampleNote": "2026-07-12 workflow run 29201337952 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=json, rowCount=4인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). chtnDst 키는 응답 스키마에 포함되나 수도권·전국 실측(2026-10-02, 299회 호출 1,042행)에서 전수 null이므로 fieldsProvided에서는 제외한다. raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
           "credentialFreeRawArchive",
           "licenseCommercialRedistributionEvidence",

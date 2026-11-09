@@ -89,4 +89,29 @@ test("KRIC live sample 8건은 admin review 후 provenance 전용 inventory sour
     ({ id }) => id === REVIEWED_KRIC_CANDIDATE_IDS[0],
   ).admissionEvidence.sourceInventorySha256;
   assert.notEqual(changedHash, admissionHashes[0], "기존 inventory 내용이 달라지면 admission hash도 달라져야 한다");
+
+  const transferCandidate = result.candidates.candidates.find(({ id }) => id === "kric-station-transfer-info");
+  const transferSource = result.inventory.sources.find(({ id }) => id === "kric-station-transfer-info");
+  const committedTransferSource = inventory.sources.find(({ id }) => id === "kric-station-transfer-info");
+  assert.deepEqual(
+    transferCandidate.evidence.liveSampleFields,
+    ["chtnDst", "chtnLn", "clsLocCont", "lnCd", "railOprIsttCd", "stLocCont", "stinCd"],
+    "원천 응답 스키마 지문 결속을 위해 liveSampleFields는 chtnDst를 유지해야 한다",
+  );
+  const expectedTransferFieldsProvided = ["chtnLn", "clsLocCont", "lnCd", "railOprIsttCd", "stLocCont", "stinCd"];
+  assert.deepEqual(
+    transferSource.fieldsProvided,
+    expectedTransferFieldsProvided,
+    "실측 전수 null 필드인 chtnDst는 inventory fieldsProvided에서 제외해야 한다",
+  );
+  assert.deepEqual(
+    committedTransferSource.fieldsProvided,
+    expectedTransferFieldsProvided,
+    "source-inventory.json의 kric-station-transfer-info.fieldsProvided가 승격 빌더 결과와 일치해야 한다",
+  );
+  assert.match(
+    transferCandidate.evidence.liveSampleNote,
+    /chtnDst.*2026-10-02.*1,042행.*null.*fieldsProvided/u,
+    "liveSampleNote에 chtnDst 전수 null 실측 및 fieldsProvided 제외 근거가 기록되어야 한다",
+  );
 });

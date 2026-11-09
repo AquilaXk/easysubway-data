@@ -4904,7 +4904,6 @@
         "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=181&service=convenientInfo&operation=stationTransferInfo&page=2"
       },
       "fieldsProvided": [
-        "chtnDst",
         "chtnLn",
         "clsLocCont",
         "lnCd",

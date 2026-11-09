@@ -33,6 +33,10 @@ const INVENTORY_DOMAIN_BY_CANDIDATE_DOMAIN = Object.freeze({
   transfer_structure: "route_graph_topology",
 });
 
+const NULL_ONLY_LIVE_SAMPLE_FIELDS_BY_CANDIDATE_ID = Object.freeze({
+  "kric-station-transfer-info": new Set(["chtnDst"]),
+});
+
 const VERIFIED_SAMPLE_SCOPE_BY_CANDIDATE_ID = Object.freeze({
   "kric-subway-route-info": {
     regionIds: ["capital"],
@@ -121,6 +125,10 @@ function buildInventorySource({ candidate, ledgerEvidence }) {
     evidenceUrl: candidate.detailUrl,
   };
   const retrievedAt = candidate.evidence.liveSampleRetrievedAt.slice(0, 10);
+  const nullOnlyFields = NULL_ONLY_LIVE_SAMPLE_FIELDS_BY_CANDIDATE_ID[candidate.id];
+  const fieldsProvided = nullOnlyFields
+    ? candidate.evidence.liveSampleFields.filter((field) => !nullOnlyFields.has(field))
+    : [...candidate.evidence.liveSampleFields];
   const baseSource = {
     id: candidate.id,
     displayName: candidate.displayName,
@@ -139,7 +147,7 @@ function buildInventorySource({ candidate, ledgerEvidence }) {
     observedDataUpdatedAt: retrievedAt,
     retrievedAt,
     license,
-    fieldsProvided: [...candidate.evidence.liveSampleFields],
+    fieldsProvided,
     capabilities: buildCapabilities(candidate),
   };
   const snapshotBasis = {
