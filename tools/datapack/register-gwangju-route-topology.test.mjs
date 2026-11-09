@@ -138,8 +138,17 @@ test("register retained Gwangju response bytes through the existing source trans
   }] }));
   const snapshotPath = path.join(root, "collected.json"), receiptPath = path.join(root, "receipt.json");
   await writeFile(snapshotPath, JSON.stringify(snapshot));
+  const telemetryPath = path.join(root, "telemetry.jsonl");
+  await writeFile(telemetryPath, "");
+  const prevTelemetry = process.env.SOURCE_FETCH_TELEMETRY_PATH;
+  process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
+  t.after(() => {
+    if (prevTelemetry === undefined) delete process.env.SOURCE_FETCH_TELEMETRY_PATH;
+    else process.env.SOURCE_FETCH_TELEMETRY_PATH = prevTelemetry;
+  });
   const options = { repositoryRoot: root, snapshotPath, receiptPath, now };
   const prepared = await prepareGwangjuTopologyRegistration(options);
+  assert.equal(await readFile(telemetryPath, "utf8"), "");
   const receipt = { sourceId, snapshotId: prepared.snapshotId, rawObjectSha256: prepared.snapshotSha256,
     rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${prepared.objectKey}`, byteSize: prepared.snapshotBytes.length,
     storedAt: now.toISOString(), rawRetentionExpiresAt: prepared.rawRetentionExpiresAt };
@@ -158,6 +167,7 @@ test("register retained Gwangju response bytes through the existing source trans
       readObject: async () => { calls.push("GET"); return { exists: true, body: storedBytes }; },
     },
   });
+  assert.equal(await readFile(telemetryPath, "utf8"), "");
   assert.deepEqual(calls, ["PUT", "GET"]);
   assert.equal(JSON.parse(await readFile(verifiedReceiptPath, "utf8")).rawObjectSha256, prepared.snapshotSha256);
   const [inventory, ledger] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS.slice(0, 2).map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));

@@ -45,9 +45,13 @@ export async function collectBusanRouteTopology({
   retryBudget,
   randomImpl,
   requestIntervalMs = 0,
+  recordTelemetry = true,
+  telemetry = true,
+  replay = false,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
+  const shouldRecordTelemetry = key !== "retained-replay" && recordTelemetry !== false && telemetry !== false && replay !== true;
   const scope = stationScopes == null ? null : validateStationScopes(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   if (typeof sleepImpl !== "function") throw new TypeError("sleepImpl must be a function");
@@ -62,7 +66,7 @@ export async function collectBusanRouteTopology({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl, sleepImpl, retryBudget, randomImpl });
+        responses[index] = await collectResponse({ key, stationCode: requestCodes[index], fetchImpl, sleepImpl, retryBudget, randomImpl, recordTelemetry: shouldRecordTelemetry });
       } catch (error) {
         aborted = true;
         failures.push(error);
@@ -121,7 +125,7 @@ export async function collectBusanRouteTopology({
   };
 }
 
-async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBudget, randomImpl }) {
+async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBudget, randomImpl, recordTelemetry }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("act", "xml");
@@ -129,7 +133,7 @@ async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBu
     if (!lineIdForStationCode(stationCode)) throw new Error("stationCode must be an admitted Busan station code");
     url.searchParams.set("scode", stationCode);
   }
-  const { response, bytes: rawBytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl, key !== "retained-replay");
+  const { response, bytes: rawBytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl, recordTelemetry);
   const rawEvidence = `rawBytes=${rawBytes.length}; rawSha256=${sha256(rawBytes)}`;
   if (!response.ok) throw new Error(`Busan route topology HTTP ${response.status}; ${rawEvidence}`);
   validateResponseContentType(response, rawEvidence);

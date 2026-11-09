@@ -100,9 +100,34 @@ test("register retained Busan topology through source transaction", async (t) =>
   await writeFile(path.join(root, "tools/datapack/source-candidates.json"), `${JSON.stringify(candidate)}\n`);
 
   const env = { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" };
+  const telemetryPath = path.join(root, "telemetry.jsonl");
+  await writeFile(telemetryPath, "");
+  const prevTelemetry = process.env.SOURCE_FETCH_TELEMETRY_PATH;
+  process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
+  t.after(() => {
+    if (prevTelemetry === undefined) delete process.env.SOURCE_FETCH_TELEMETRY_PATH;
+    else process.env.SOURCE_FETCH_TELEMETRY_PATH = prevTelemetry;
+  });
+  await collectBusanRouteTopology({
+    serviceKey: "test-key",
+    stationScopes: scope,
+    now: capturedAt,
+    replay: true,
+    fetchImpl: async (url) => {
+      const from = scope.find(({ stationCode }) => stationCode === new URL(url).searchParams.get("scode"));
+      const to = scope.find(({ stationCode }) => stationCode === from.neighborCodes[0]);
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><item>`
+        + `<startSn>${from.stationName}</startSn><startSc>${from.stationCode}</startSc>`
+        + `<endSn>${to.stationName}</endSn><endSc>${to.stationCode}</endSc>`
+        + `<dist>10</dist><time>90</time><stoppingTime>20</stoppingTime><exchange>N</exchange>`
+        + `</item></body><numOfRows>1</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount></response>`,
+      { headers: { "content-type": "application/xml" } });
+    },
+  });
   let receiptPath = path.join(root, "receipt.json");
   const options = { repositoryRoot: root, snapshotPath, stationMapPath, receiptPath, now, env };
   const prepared = await prepareBusanTopologyRegistration(options);
+  assert.equal(await readFile(telemetryPath, "utf8"), "");
   const receipt = receiptFor(prepared);
   await writeFile(receiptPath, `${JSON.stringify({ ...receipt, rawObjectSha256: "0".repeat(64) })}\n`);
   await assert.rejects(buildBusanTopologyRegistrationOutputs(options), /OCI receipt binding/);
@@ -118,6 +143,7 @@ test("register retained Busan topology through source transaction", async (t) =>
       readObject: async () => { calls.push("GET"); return { exists: true, body: storedBytes }; },
     },
   });
+  assert.equal(await readFile(telemetryPath, "utf8"), "");
   assert.deepEqual(calls, ["PUT", "GET"]);
   assert.deepEqual(storedBytes, snapshotBytes);
   const [registeredInventory, registeredLedger, registeredGovernance, registeredFreshness] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS

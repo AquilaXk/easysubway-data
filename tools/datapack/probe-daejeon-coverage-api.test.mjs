@@ -181,11 +181,30 @@ test("Daejeon timetable registration replays frozen provider rows through the so
     registrationMetadata: { governance: governance.sources[0], freshness },
   }] }));
 
+  const telemetryPath = path.join(root, "telemetry.jsonl");
+  await writeFile(telemetryPath, "");
+  const prevTelemetry = process.env.SOURCE_FETCH_TELEMETRY_PATH;
+  process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
+  context.after(() => {
+    if (prevTelemetry === undefined) delete process.env.SOURCE_FETCH_TELEMETRY_PATH;
+    else process.env.SOURCE_FETCH_TELEMETRY_PATH = prevTelemetry;
+  });
+  await probeDaejeonCoverageApi({
+    sourceId,
+    serviceKey: "test-key",
+    replay: true,
+    now: observedAt,
+    fetchImpl: async () => new Response(Buffer.from(snapshot.rawResponseBase64, "base64"), {
+      status: 200,
+      headers: { "content-type": "application/xml" },
+    }),
+  });
   const receiptPath = path.join(root, "receipt.json");
   const options = { repositoryRoot: root, snapshotPath, receiptPath, now, env: fixtureOciEnv() };
   const prepared = await prepareDaejeonTimetableRegistration(options);
   await writeFile(receiptPath, `${JSON.stringify(receiptFor(prepared, now))}\n`);
   await registerDaejeonTimetable(options);
+  assert.equal(await readFile(telemetryPath, "utf8"), "");
 
   const [registeredInventory, registeredLedger, , registeredFreshness] = await Promise.all(
     SOURCE_REGISTRATION_OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))),

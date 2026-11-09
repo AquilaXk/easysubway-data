@@ -587,12 +587,16 @@ const defaultLib = Object.freeze({
   collectKasiHolidayCalendarWindowFiles: async (input) => (await import("./fetch-kasi-public-holiday-calendar.mjs")).collectKasiHolidayCalendarWindowFiles(input),
 });
 
-export function defaultExecute(repositoryRoot, env) {
+const OFFLINE_STEP_KINDS = new Set(["register", "glue"]);
+
+export function defaultExecute(repositoryRoot, env, { kind: defaultKind } = {}) {
   const inherited = Object.fromEntries(Object.entries(env).filter(([name]) => ![KRIC_CREDENTIAL_ENV, SEOUL_CREDENTIAL_ENV].includes(name)));
-  return async (script, args, { env: extra = {} } = {}) => {
+  return async (script, args, { env: extra = {}, kind = defaultKind, stepKind } = {}) => {
+    const childEnv = { ...inherited, ...extra };
+    if (OFFLINE_STEP_KINDS.has(kind ?? stepKind)) delete childEnv.SOURCE_FETCH_TELEMETRY_PATH;
     try {
       const { stdout } = await execFileAsync(process.execPath, [path.join(repositoryRoot, "tools/datapack", script), ...args], {
-        cwd: repositoryRoot, env: { ...inherited, ...extra }, maxBuffer: 256 * 1024 * 1024,
+        cwd: repositoryRoot, env: childEnv, maxBuffer: 256 * 1024 * 1024,
       });
       return { stdout };
     } catch (error) {
@@ -632,8 +636,12 @@ async function runRecipe({ recipe, recipeSteps, ctx, policy, ledgerPath, verify 
   const { repositoryRoot, env } = ctx;
   const beforeInventory = recipe.due?.kind === "inventory-evidence" ? await ctx.readJson(INVENTORY_PATH) : null;
   for (const recipeStep of recipeSteps) {
+    const stepCtx = {
+      ...ctx,
+      execute: (script, args, options) => ctx.execute(script, args, { ...options, kind: options?.kind ?? recipeStep.kind }),
+    };
     try {
-      await recipeStep.run(ctx); // NOSONAR -- 단계는 앞 단계의 산출물(HEAD·입력 파일)에 의존해 순서대로 실행한다
+      await recipeStep.run(stepCtx); // NOSONAR -- 단계는 앞 단계의 산출물(HEAD·입력 파일)에 의존해 순서대로 실행한다
     } catch (error) {
       throw recipeError(recipe, recipeStep, error, env);
     }

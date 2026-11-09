@@ -242,6 +242,8 @@ async function replayRetainedSnapshot(snapshot, registrationNow) {
     serviceKey: "retained-replay",
     stationScopes: snapshot.scope,
     now: new Date(snapshot.capturedAt),
+    replay: true,
+    recordTelemetry: false,
     fetchImpl: async (url) => {
       const response = snapshot.rawResponses[cursor++];
       const bytes = Buffer.from(response?.bytesBase64 ?? "", "base64");

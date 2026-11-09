@@ -199,11 +199,14 @@ export function withSourceCollectionRetry(attempt, {
   url,
   resultCodeOf = () => undefined,
   recordTelemetry = true,
+  telemetry = true,
+  replay = false,
   random,
   sleep,
   budget,
   onRetry = () => {},
 } = {}) {
+  const shouldRecordTelemetry = recordTelemetry !== false && telemetry !== false && replay !== true;
   const { baseDelayMs, capDelayMs, maxUnhintedRateLimitRetries } = SOURCE_COLLECTION_RETRY_POLICY;
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > SOURCE_COLLECTION_RETRY_POLICY.maxAttempts) {
     throw new Error(`SOURCE_COLLECTION_RETRY_ARGUMENTS: maxAttempts must be an integer from 1 to ${SOURCE_COLLECTION_RETRY_POLICY.maxAttempts}`);
@@ -232,7 +235,7 @@ export function withSourceCollectionRetry(attempt, {
   const flushAttempt = (nextDelayMs) => {
     const observed = pending;
     pending = undefined;
-    if (!recordTelemetry || observed === undefined) return;
+    if (!shouldRecordTelemetry || observed === undefined) return;
     try {
       const { result, error } = observed;
       const response = error === undefined ? responseOf(result) : undefined;
@@ -329,7 +332,7 @@ export const transportFailureWithCode = (label) => (failure) => {
  * @returns {Promise<{ response: Response, bytes: Buffer }>}
  */
 export async function fetchBytesWithSourceRetry({
-  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, resultCodeOf, recordTelemetry = true, sleep, budget, random, timeoutMs = 15_000, headers = {},
+  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, resultCodeOf, recordTelemetry = true, telemetry = true, replay = false, sleep, budget, random, timeoutMs = 15_000, headers = {},
 }) {
   try {
     return await withSourceCollectionRetry(async () => {
@@ -338,7 +341,7 @@ export async function fetchBytesWithSourceRetry({
         : AbortSignal.timeout(timeoutMs);
       const response = await fetchImpl(url, { redirect: "error", signal, headers: { accept, ...headers } });
       return { response, bytes: Buffer.from(await response.arrayBuffer()) };
-    }, { label, sourceId, url, isTransientResult, resultCodeOf, recordTelemetry, sleep, budget, random });
+    }, { label, sourceId, url, isTransientResult, resultCodeOf, recordTelemetry, telemetry, replay, sleep, budget, random });
   } catch (error) {
     if (!isRetryAfterExceedsCap(error)) throw transportFailure(unwrapTransientRetryFailure(error));
     const { rawEvidence } = error;
