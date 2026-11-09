@@ -331400,5 +331400,50 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "daejeon-train-timetable",
+    "snapshotId": "daejeon-train-timetable-20261110",
+    "previousSnapshotId": "daejeon-train-timetable-20261109",
+    "observedAt": "2026-11-09T21:29:17.864Z",
+    "capturedAt": "2026-11-09T21:29:17.864Z",
+    "retrievedAt": "2026-11-09T21:29:17.864Z",
+    "sourceUpdatedAt": null,
+    "provider": "대전교통공사",
+    "rowCount": 1628,
+    "coverageCount": 460,
+    "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
+    "contentSha256": "5888ab731dbe76b9b4791c30224664a12c37a25da50c5423d4266bc3c02c44a9",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/daejeon-train-timetable/20261110/403255e6cefd51ecdde488abb7bffa9c9a748d4ed633399ca8d9c33e61364d78.json",
+    "rawObjectSha256": "403255e6cefd51ecdde488abb7bffa9c9a748d4ed633399ca8d9c33e61364d78",
+    "rawReceiptSha256": "775d61b37f17d42f60a2c8f6b017c0a3910fe1305f6a48e9aba16f9a98e1346c",
+    "byteSize": 497762,
+    "freshUntil": "2026-11-10T21:29:17.864Z",
+    "freshnessExpiresAt": "2026-12-09T21:29:17.864Z",
+    "rawRetentionExpiresAt": "2027-02-07T21:29:17.864Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "62debbf95ec4fd3ebe5a719b28a3ff5998d3dd1de7c9635350cf39a692cd7655",
+    "redactedRequestFingerprint": "ef2b24dae088944d70b0ed9c6873306ca541e78da93d892b319017a28a7c62b1",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "01b8a44e329e5a4efa9ac332c73f03e2485bfe93002479d0b9e1df1eb0d5b2aa"
+    },
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
