@@ -173,7 +173,11 @@ export function nationwideCandidateRefreshViolations({
   };
   mismatch("fan-in evaluatedAt", fanIn?.evaluatedAt, evaluatedAt, ["fan-in", "requested"]);
   mismatch("publishedAt", buildSpec?.publishedAt, fanIn?.evaluatedAt, ["build spec", "fan-in"]);
-  const selectedIds = (fanIn?.selectedSources ?? []).map(({ snapshotId }) => snapshotId);
+  const supplementalIds = (Array.isArray(sourceSnapshots) ? sourceSnapshots : [])
+    .filter((row) => row?.snapshotStatus === "LOCKED" && Array.isArray(row?.admissionRecordSha256s)
+      && row.admissionRecordSha256s.some((entry) => entry?.kind === "rawSnapshotAdmission"))
+    .map(({ snapshotId }) => snapshotId);
+  const selectedIds = [...(fanIn?.selectedSources ?? []).map(({ snapshotId }) => snapshotId), ...supplementalIds];
   const sorted = (values) => JSON.stringify([...values].sort(codepointCompare));
   if (!Array.isArray(buildSpec?.sourceSnapshotIds) || sorted(buildSpec.sourceSnapshotIds) !== sorted(selectedIds)) {
     violations.push("sourceSnapshotIds do not match fan-in heads");

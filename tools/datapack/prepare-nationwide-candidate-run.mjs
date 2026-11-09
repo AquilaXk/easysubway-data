@@ -435,7 +435,7 @@ function policyBasisAt({ policy, sourceId, record }) {
 
 // MOLIT 환승 이동 원천은 원장 행이 없다. inventory rawSnapshotAdmission이 head이고, 신선도는 정책으로 유도한다.
 // 유도한 freshUntil이 후보 시계 이전이면 만료로 실패한다(#862).
-export async function resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt, read }) {
+export async function resolveMolitTransferSnapshot({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt, read }) {
   const molitAdmission = exactInventorySource(sourceInventory, "molit-railway-transfer-movement").rawSnapshotAdmission;
   if (molitAdmission?.status !== "LOCKED" || typeof molitAdmission.metadataPath !== "string") {
     throw new Error("nationwide candidate MOLIT transfer snapshot admission is missing");
@@ -453,6 +453,24 @@ export async function resolveMolitTransferSnapshot({ sourceInventory, freshnessP
   if (sha256(molitTransferGzipBytes) !== molitAdmission.gzipSha256) {
     throw new Error("nationwide candidate MOLIT transfer raw binding mismatch");
   }
+  const ledgerRows = sourceSnapshots === undefined
+    ? await Promise.resolve(read("tools/datapack/release/source-snapshots.json")).then((bytes) => JSON.parse(bytes), () => null)
+    : sourceSnapshots;
+  if (!Array.isArray(ledgerRows)) {
+    throw new Error("nationwide candidate MOLIT transfer snapshot is missing from the ledger");
+  }
+  let head;
+  try {
+    head = terminalHead("molit-railway-transfer-movement", ledgerRows);
+  } catch {
+    throw new Error("nationwide candidate MOLIT transfer snapshot is missing from the ledger");
+  }
+  if (head.snapshotStatus !== "LOCKED" || head.snapshotId !== molitAdmission.snapshotId
+    || head.rawSha256 !== molitAdmission.rawSha256 || head.gzipSha256 !== molitAdmission.gzipSha256
+    || head.rowCount !== molitAdmission.rowCount || head.freshUntil !== molitTransferMeta.freshUntil
+    || head.freshnessExpiresAt !== molitTransferMeta.freshUntil) {
+    throw new Error("nationwide candidate MOLIT transfer snapshot does not match the ledger head");
+  }
   const evaluatedMillis = Date.parse(requiredInstant(evaluatedAt, "MOLIT transfer evaluatedAt"));
   if (Date.parse(policyBasisAt({ policy: freshnessPolicy, sourceId: "molit-railway-transfer-movement", record: molitTransferMeta })) > evaluatedMillis) {
     throw new Error("nationwide candidate MOLIT transfer snapshot is observed after the candidate clock");
@@ -466,7 +484,7 @@ export async function resolveMolitTransferSnapshot({ sourceInventory, freshnessP
   if (Date.parse(molitTransferFreshUntil) <= evaluatedMillis) {
     throw new Error("nationwide candidate MOLIT transfer snapshot is expired");
   }
-  return { admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil };
+  return { admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil, row: head };
 }
 
 // #872 S3: 공식 환승 지표 원천(서울교통공사·부산교통공사)을 방향별로 모은다. 방향마다 원천 id·snapshot·검증 시각과
@@ -1028,7 +1046,7 @@ async function loadNationwideCandidateInputs({ repositoryRoot, readRepositoryFil
   const {
     admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil,
   } = await resolveMolitTransferSnapshot({
-    sourceInventory, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
+    sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
   });
 
   const selectedSnapshotIdsForClock = new Set(fanIn.selectedSources.map(({ snapshotId }) => snapshotId));
@@ -2046,12 +2064,15 @@ function finalizeNationwidePackAndExternalStopTimes({
 
 function buildNationwideRouteEdgeInput({
   transferEdges, outOfStationEdges, rideEdges, fanIn, snapshots, finalPack,
-  candidateIdOverride, releaseSequence, pairs,
+  candidateIdOverride, releaseSequence, pairs, molitAdmission,
 }) {
   const routeEdges = [...transferEdges, ...outOfStationEdges, ...rideEdges]
     .sort((a, b) => Buffer.compare(Buffer.from(a.edgeId), Buffer.from(b.edgeId)));
 
-  const selectedSnapshotIds = new Set(fanIn.selectedSources.map((s) => s.snapshotId));
+  const selectedSnapshotIds = new Set([
+    ...fanIn.selectedSources.map((s) => s.snapshotId),
+    ...(molitAdmission?.snapshotId ? [molitAdmission.snapshotId] : []),
+  ]);
   const selectedSnapshots = snapshots.filter((s) => selectedSnapshotIds.has(s.snapshotId));
   const sourceSetSha256 = sha256(JSON.stringify(selectedSnapshots));
 
@@ -2717,7 +2738,7 @@ export async function prepareNationwideCandidate({
     routeInput, routeInputRelPath, routeInputBytes,
   } = buildNationwideRouteEdgeInput({
     transferEdges, outOfStationEdges, rideEdges, fanIn, snapshots, finalPack,
-    candidateIdOverride, releaseSequence, pairs,
+    candidateIdOverride, releaseSequence, pairs, molitAdmission,
   });
   if (writeFiles) {
     await writeFile(path.join(repositoryRoot, routeInputRelPath), routeInputBytes);

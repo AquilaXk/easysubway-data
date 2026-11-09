@@ -242,13 +242,16 @@ export async function buildNationwideCandidateSpec({
   if (!fixtureBytes.equals(await readFile(fixturePath)) || !overridesBytes.equals(await readFile(overridesPath))) {
     throw new Error("materialization input drift detected");
   }
-  const selectedIds = new Set(fanIn.selectedSources.map(({ snapshotId }) => snapshotId));
+  const supplementalIds = inventory.sources
+    .filter((source) => source.requiredForProductionPack === false && source.rawSnapshotAdmission?.status === "LOCKED")
+    .map((source) => source.rawSnapshotAdmission.snapshotId);
+  const selectedIds = new Set([...fanIn.selectedSources.map(({ snapshotId }) => snapshotId), ...supplementalIds]);
   const selected = snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const bySource = new Map(inventory.sources.map((source) => [source.id, source]));
   const sourceSnapshots = selected.map((snapshot) => {
     const source = bySource.get(snapshot.sourceId);
     if (!source) throw new Error("candidate source inventory binding is required");
-    const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === snapshot.sourceId);
+    const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === snapshot.sourceId) ?? snapshot;
     const common = {
       snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri,
       rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
@@ -350,7 +353,10 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = proc
     throw new Error("prepared station-line candidate identity mismatch");
   }
   const route = JSON.parse(routeBytes);
-  const selected = new Set(inputs.fanIn.selectedSources.map((row) => row.snapshotId));
+  const supplementalIds = inputs.inventory.sources
+    .filter((source) => source.requiredForProductionPack === false && source.rawSnapshotAdmission?.status === "LOCKED")
+    .map((source) => source.rawSnapshotAdmission.snapshotId);
+  const selected = new Set([...inputs.fanIn.selectedSources.map((row) => row.snapshotId), ...supplementalIds]);
   const sourceSetHash = sha256(JSON.stringify(inputs.sourceSnapshots.filter((row) => selected.has(row.snapshotId))));
   if (route.candidate?.candidateId !== preparation.releaseIdentity.candidateId
     || route.candidate?.sourceSetSha256 !== sourceSetHash) throw new Error("prepared route candidate identity mismatch");

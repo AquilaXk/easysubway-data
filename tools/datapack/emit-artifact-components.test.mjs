@@ -257,7 +257,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
     path.join(fixtureRoot, "tools/datapack/sources/kric-provider-code-catalog-20260228.json"),
   );
-  // 합성 fixture inventory는 고정 원천 집합만 담으므로, 운영 inventory의 MOLIT 잠금 행을 그대로 옮기고 build spec의 inventory hash를 다시 묶는다.
+  // 합성 fixture inventory는 고정 원천 집합만 담으므로, 운영 inventory·원장·spec의 MOLIT 잠금 행을 함께 옮기고 hash를 다시 묶는다.
   {
     const inventoryPath = path.join(fixtureRoot, "tools/datapack/source-inventory.json");
     const fixtureInventory = JSON.parse(await readFile(inventoryPath, "utf8"));
@@ -265,8 +265,20 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       .find(({ id }) => id === "molit-railway-transfer-movement");
     fixtureInventory.sources = [...fixtureInventory.sources.filter(({ id }) => id !== molitSource.id), molitSource];
     await writeFile(inventoryPath, `${JSON.stringify(fixtureInventory, null, 2)}\n`);
+    const snapshotsPath = path.join(fixtureRoot, "tools/datapack/release/source-snapshots.json");
+    const fixtureSnapshots = JSON.parse(await readFile(snapshotsPath, "utf8"));
+    const molitSnapshot = (await candidatePinnedJson(readPinned, "tools/datapack/release/source-snapshots.json"))
+      .find(({ sourceId }) => sourceId === "molit-railway-transfer-movement");
+    const nextSnapshots = [...fixtureSnapshots.filter(({ sourceId }) => sourceId !== molitSnapshot.sourceId), molitSnapshot];
+    await writeFile(snapshotsPath, `${JSON.stringify(nextSnapshots, null, 2)}\n`);
     const fixtureSpecPath = path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json");
     const fixtureSpec = JSON.parse(await readFile(fixtureSpecPath, "utf8"));
+    const molitSpecEntry = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8")).sourceSnapshots
+      .find(({ sourceId }) => sourceId === "molit-railway-transfer-movement");
+    fixtureSpec.sourceSnapshots = [...fixtureSpec.sourceSnapshots.filter(({ sourceId }) => sourceId !== molitSpecEntry.sourceId), molitSpecEntry];
+    fixtureSpec.sourceSnapshotIds = fixtureSpec.sourceSnapshots.map(({ snapshotId }) => snapshotId);
+    const selectedIds = new Set(fixtureSpec.sourceSnapshotIds);
+    fixtureSpec.sourceSnapshotSetHash = hash(Buffer.from(JSON.stringify(nextSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)))));
     fixtureSpec.sourceInventorySha256 = hash(Buffer.from(JSON.stringify(fixtureInventory)));
     await writeFile(fixtureSpecPath, `${JSON.stringify(fixtureSpec, null, 2)}\n`);
   }

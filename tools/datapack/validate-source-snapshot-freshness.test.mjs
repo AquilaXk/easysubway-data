@@ -1080,3 +1080,36 @@ test("buildSpec.sourceSnapshots의 freshnessExpiresAt이 snapshot보다 크면 a
   );
 });
 
+test("#945 FINAL 신선도 검사는 molit-railway-transfer-movement-20260811을 인용하고 freshUntil 이후 평가 시각을 거부한다", async () => {
+  const gateInput = await currentGateInput();
+  assert.ok(gateInput.buildSpec.sourceSnapshotIds.includes("molit-railway-transfer-movement-20260811"));
+  const result = validateSourceSnapshotFreshness(gateInput);
+  const molit = result.results.find(({ snapshotId }) => snapshotId === "molit-railway-transfer-movement-20260811");
+  assert.deepEqual(molit, {
+    snapshotId: "molit-railway-transfer-movement-20260811",
+    sourceClassId: "annual_official_file",
+    status: "FRESH",
+    freshnessExpiresAt: "2027-08-11T00:00:00.000Z",
+    reasonCodes: [],
+  });
+  const molitGov = result.governanceResults.find(({ snapshotId }) => snapshotId === "molit-railway-transfer-movement-20260811");
+  assert.equal(molitGov?.decision, "GO");
+
+  const expiredAtMolit = {
+    ...gateInput,
+    buildSpec: {
+      ...gateInput.buildSpec,
+      sourceSnapshotIds: ["molit-railway-transfer-movement-20260811"],
+      sourceSnapshots: gateInput.buildSpec.sourceSnapshots.filter(
+        ({ snapshotId }) => snapshotId === "molit-railway-transfer-movement-20260811",
+      ),
+    },
+    inventory: null,
+    governancePolicy: null,
+    evaluationAt: "2027-08-11T00:00:00.000Z",
+  };
+  const molitOnly = gateInput.snapshots.filter(({ snapshotId }) => snapshotId === "molit-railway-transfer-movement-20260811");
+  expiredAtMolit.buildSpec.sourceSnapshotSetHash = createHash("sha256").update(JSON.stringify(molitOnly)).digest("hex");
+  assert.throws(() => validateSourceSnapshotFreshness(expiredAtMolit), /SOURCE_SNAPSHOT_EXPIRED/);
+});
+

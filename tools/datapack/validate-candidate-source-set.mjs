@@ -73,15 +73,19 @@ export function readProductionSourceSet({ productionScopeBytes, sourceInventoryB
   if (!sameSet(inventoryRequiredIds, requiredSourceIdSet)) {
     throw new Error("source inventory required source set mismatch");
   }
-  return { requiredSourceIds, sourceInventory };
+  const supplementalSourceIds = inventorySources
+    .filter((source) => source.requiredForProductionPack === false && source.rawSnapshotAdmission?.status === "LOCKED")
+    .map(({ id }) => id);
+  return { requiredSourceIds, supplementalSourceIds, sourceInventory };
 }
 
 // 현재 전체 후보의 source 집합만 검증한다. 갱신 전 predecessor는 별도 전환 계약을 따른다.
 // 전체 projection·scope 승인·freshness/license·보호된 전환 검증은 호출부 책임이며,
 // 이 검사만 통과했다고 후보를 발행할 수는 없다.
 export function validateCandidateSourceSet({ productionScopeBytes, sourceInventoryBytes, candidate, ledger }) {
-  const { requiredSourceIds, sourceInventory } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
+  const { requiredSourceIds, supplementalSourceIds, sourceInventory } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
   const requiredSourceIdSet = new Set(requiredSourceIds);
+  const supplementalSourceIdSet = new Set(supplementalSourceIds);
 
   const ids = uniqueStrings(candidate?.sourceSnapshotIds, "candidate source snapshot IDs");
   const projections = candidate?.sourceSnapshots;
@@ -94,8 +98,10 @@ export function validateCandidateSourceSet({ productionScopeBytes, sourceInvento
     }
     return requiredString(projection.sourceId, "candidate source ID");
   });
-  if (new Set(candidateSourceIds).size !== candidateSourceIds.length
-    || !sameSet(new Set(candidateSourceIds), requiredSourceIdSet)) {
+  const candidateSourceIdSet = new Set(candidateSourceIds);
+  if (candidateSourceIdSet.size !== candidateSourceIds.length
+    || [...requiredSourceIdSet].some((id) => !candidateSourceIdSet.has(id))
+    || candidateSourceIds.some((id) => !requiredSourceIdSet.has(id) && !supplementalSourceIdSet.has(id))) {
     throw new Error("candidate source set mismatch");
   }
 
@@ -126,7 +132,7 @@ export function validateCandidateSourceSet({ productionScopeBytes, sourceInvento
     || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha256(sourceInventoryBytes)) {
     throw new Error("candidate source inventory raw binding mismatch");
   }
-  return { selected, requiredSourceIds, headsBySource: lineage.headsBySource };
+  return { selected, requiredSourceIds, supplementalSourceIds, headsBySource: lineage.headsBySource };
 }
 
 function requireSha256(value, label) {
@@ -221,11 +227,14 @@ export function validateNationwideCandidateSourceSet({ candidate, inputBytes }) 
   const evaluatedAt = requiredUtcInstant(inputs.fanIn.evaluatedAt, "fan-in evaluatedAt");
   if (publishedAt < evaluatedAt) throw new Error("candidate publishedAt precedes fan-in evaluation");
   const fanInBySource = new Map(inputs.fanIn.selectedSources.map((head) => [head.sourceId, head]));
-  if (sourceSet.selected.length !== fanInBySource.size) {
+  const supplementalSet = new Set(sourceSet.supplementalSourceIds);
+  if (sourceSet.selected.length !== fanInBySource.size + supplementalSet.size) {
     throw new Error("candidate source head set mismatch");
   }
+  const ledgerBySnapshotId = new Map(sourceSet.selected.map((row) => [row.snapshotId, row]));
   for (const projection of candidate.sourceSnapshots) {
-    const head = fanInBySource.get(projection.sourceId);
+    const head = fanInBySource.get(projection.sourceId)
+      ?? (supplementalSet.has(projection.sourceId) ? ledgerBySnapshotId.get(projection.snapshotId) : null);
     if (!head || projection.snapshotId !== head.snapshotId
       || projection.rawSha256 !== head.rawSha256
       || projection.freshnessExpiresAt !== head.freshnessExpiresAt) {

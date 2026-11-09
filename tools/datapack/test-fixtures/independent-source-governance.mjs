@@ -115,7 +115,9 @@ export async function createIndependentSourceGovernanceFixture({
     throw new Error("independent source governance fixture buildSpec must be an object");
   }
 
-  const sources = inventory.sources?.filter((source) => source.requiredForProductionPack === true) ?? [];
+  const sources = inventory.sources?.filter(
+    (source) => source.requiredForProductionPack === true || source.rawSnapshotAdmission?.status === "LOCKED",
+  ) ?? [];
   if (sources.length === 0) throw new Error("independent source governance fixture requires production sources");
   const governanceBySource = new Map((governancePolicy.sources ?? []).map((entry) => [entry.sourceId, entry]));
   const evaluationAt = reviewWindowEvaluationAt(sources, governanceBySource, buildSpec.publishedAt);
@@ -163,7 +165,9 @@ export async function createIndependentSourceGovernanceFixture({
       schemaVersion: 1,
       artifactKind: "official-source-snapshot",
       testOnly: true,
-      snapshotId: `test-only-${source.id}-initial-${rawSha256.slice(0, 12)}`,
+      snapshotId: source.rawSnapshotAdmission?.status === "LOCKED"
+        ? source.rawSnapshotAdmission.snapshotId
+        : `test-only-${source.id}-initial-${rawSha256.slice(0, 12)}`,
       sourceId: source.id,
       provider: source.provider,
       retrievedAt: evaluationAt,

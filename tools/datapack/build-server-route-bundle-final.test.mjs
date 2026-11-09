@@ -943,6 +943,43 @@ test("server route bundle decompressed budget records accurate component bytes a
   });
 });
 
+test("#945 번들 provenance.json#sourceSnapshotIds와 FINAL 신선도 검사는 molit-railway-transfer-movement-20260811을 인용하고 freshUntil 이후를 거부한다", async (t) => {
+  const fixture = await createFixture(t);
+  const provenance = await readJson(path.join(fixture.artifactRoot, "provenance.json"));
+  assert.ok(provenance.sourceSnapshotIds.includes("molit-railway-transfer-movement-20260811"));
+
+  const freshOutput = path.join(fixture.temp, "molit-fresh-final");
+  await build(fixture, freshOutput, FRESH_AT);
+  const freshFinal = await readJson(path.join(freshOutput, "server-route-bundle-final.json"));
+  assert.equal(freshFinal.gates.sourceFreshness.state, "PASS");
+  const freshReport = await readJson(path.join(freshOutput, "source-freshness.json"));
+  const molitEntry = freshReport.validation?.results?.find(({ snapshotId }) => snapshotId === "molit-railway-transfer-movement-20260811");
+  assert.equal(molitEntry?.status, "FRESH");
+  assert.equal(molitEntry?.sourceClassId, "annual_official_file");
+
+  const staleFixture = await createFixture(t, {
+    configureBuildSpec: async (spec, repositoryRoot) => {
+      const snapshotsPath = path.join(repositoryRoot, spec.sourceSnapshotEvidencePath);
+      const snapshots = await readJson(snapshotsPath);
+      const molitSnap = snapshots.find(({ snapshotId }) => snapshotId === "molit-railway-transfer-movement-20260811");
+      molitSnap.observedAt = "2025-08-11T00:00:00.000Z";
+      molitSnap.freshnessExpiresAt = "2026-08-11T00:00:00.000Z";
+      await writeFile(snapshotsPath, JSON.stringify(snapshots));
+      spec.sourceSnapshots.find(({ snapshotId }) => snapshotId === "molit-railway-transfer-movement-20260811").freshnessExpiresAt = "2026-08-11T00:00:00.000Z";
+      spec.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(snapshots)));
+    },
+  });
+  const staleOutput = path.join(staleFixture.temp, "molit-stale-final");
+  await build(staleFixture, staleOutput, FRESH_AT);
+  const staleFinal = await readJson(path.join(staleOutput, "server-route-bundle-final.json"));
+  assert.equal(staleFinal.result, "NO_GO");
+  assert.equal(staleFinal.gates.sourceFreshness.state, "STALE");
+  assert.ok(staleFinal.blockers.includes("sourceFreshness:STALE"));
+  const staleReport = await readJson(path.join(staleOutput, "source-freshness.json"));
+  assert.equal(staleReport.state, "STALE");
+  assert.equal(staleReport.reason, "SOURCE_SNAPSHOT_EXPIRED");
+});
+
 async function createFixture(t, options = {}) {
   const temp = await mkdtemp(path.join(os.tmpdir(), "server-route-final-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
@@ -953,7 +990,7 @@ async function createFixture(t, options = {}) {
   const specPath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
   const buildSpec = await readJson(specPath);
   if (options.configureBuildSpec) {
-    options.configureBuildSpec(buildSpec);
+    await options.configureBuildSpec(buildSpec, repositoryRoot);
     await writeFile(specPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
   }
   const artifactRoot = path.join(temp, "server-route-bundle");

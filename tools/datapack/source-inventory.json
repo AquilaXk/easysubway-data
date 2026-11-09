@@ -8070,6 +8070,9 @@
           "unsupportedNotes": "raw official snapshot만 admission했으며 station-domain materialization은 #2610 범위다."
         }
       },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "1797b779259d272d874351861772cf1d5bdb4b7f7a95a30e6ffd012fa379132a"
+      },
       "rawSnapshotAdmission": {
         "snapshotId": "molit-railway-transfer-movement-20260811",
         "metadataPath": "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json",

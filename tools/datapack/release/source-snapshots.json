@@ -330063,5 +330063,41 @@
         "contentType": "text/csv; charset=euc-kr"
       }
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "molit-railway-transfer-movement",
+    "snapshotId": "molit-railway-transfer-movement-20260811",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-10-01T04:51:27.000Z",
+    "retrievedAt": "2026-10-01T04:51:27.000Z",
+    "observedAt": "2026-08-11T00:00:00.000Z",
+    "sourceUpdatedAt": null,
+    "provider": "국토교통부",
+    "rowCount": 8094,
+    "coverageCount": 8094,
+    "rawSha256": "8f9a448e1601bc49dd370de5af0d7ab8884d930131e05f8fc9773445bded16f8",
+    "gzipSha256": "d509b22ec20e770e1e55853feae88721741a91a8d3ee85eaae27b44455ed3ef5",
+    "contentSha256": "b340bf9ec1dab82cf89b1adba65a149068f459fadf2bd6dd3fac47e6f8018eed",
+    "rawObjectUri": "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz",
+    "freshUntil": "2027-08-11T00:00:00.000Z",
+    "freshnessExpiresAt": "2027-08-11T00:00:00.000Z",
+    "rawRetentionExpiresAt": "2026-12-30T04:51:27.000Z",
+    "schemaFingerprint": "26d723c71a8ae532f247dc65efbd177d259773733d5cc2717fc63558a6c1a322",
+    "redactedRequestFingerprint": "342988acf7e1ab0320afa62ad6ba2d76da09846eb1b0a080c26f3f14cc4d20bb",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "diffSummary": null,
+    "admissionRecordSha256s": [
+      {
+        "kind": "rawSnapshotAdmission",
+        "sha256": "3b5af900a560be9b711192e901ec7dbcc362dc11b1c55bb13bef59ecc7d325a1"
+      }
+    ]
   }
 ]

@@ -15,6 +15,7 @@ export const NATIVE_ADMISSION_KINDS = Object.freeze([
   "accessibilityAdmissionEvidence",
   "capitalTopologyAdmissionEvidence",
   "retainedScheduleAdmissionEvidence",
+  "rawSnapshotAdmission",
 ]);
 
 const INPUT_PATHS = Object.freeze({
@@ -116,7 +117,7 @@ function requiredRows(targets, tally) {
 
 function admittedEvidence(source) {
   return Object.entries(source).filter(([key, value]) =>
-    (key === "admissionEvidence" || key.endsWith("AdmissionEvidence"))
+    (key === "admissionEvidence" || key === "rawSnapshotAdmission" || key.endsWith("AdmissionEvidence"))
     && value && typeof value === "object" && !Array.isArray(value));
 }
 
@@ -378,6 +379,15 @@ function validNativeRetainedScheduleAdmission(source, evidence, snapshot, source
     && evidence.rawSha256 === snapshot.rawSha256;
 }
 
+function validNativeRawSnapshotAdmission(source, evidence, snapshot) {
+  return source.requiredForProductionPack === false
+    && evidence.status === "LOCKED"
+    && evidence.snapshotId === snapshot.snapshotId
+    && evidence.rawSha256 === snapshot.rawSha256
+    && (snapshot.gzipSha256 === undefined || evidence.gzipSha256 === snapshot.gzipSha256)
+    && (snapshot.rowCount === undefined || evidence.rowCount === snapshot.rowCount);
+}
+
 export function nativeAdmissionRecord({ source, sourceId, snapshot, kind, evidence }) {
   const valid = kind === "scheduleAdmissionEvidence"
     ? validNativeScheduleAdmission(source, evidence, snapshot, sourceId)
@@ -389,7 +399,9 @@ export function nativeAdmissionRecord({ source, sourceId, snapshot, kind, eviden
           ? validNativeCapitalTopologyAdmission(source, evidence, snapshot, sourceId)
           : kind === "retainedScheduleAdmissionEvidence"
             ? validNativeRetainedScheduleAdmission(source, evidence, snapshot, sourceId)
-            : false;
+            : kind === "rawSnapshotAdmission"
+              ? validNativeRawSnapshotAdmission(source, evidence, snapshot)
+              : false;
   return valid ? { kind, sha256: sha256(Buffer.from(canonical(evidence))) } : null;
 }
 

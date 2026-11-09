@@ -67,14 +67,14 @@
       },
       "incheonTimetables": {
         "line1": {
-          "path": "tools/datapack/sources/incheon-line1-train-timetable-20261108.json",
-          "sha256": "ea416a5e1c24087e6ff52ef2fedc54f3166219a3a627d1202e6e3916f857cc4a",
-          "snapshotId": "incheon-line1-train-timetable-20261108"
+          "path": "tools/datapack/sources/incheon-line1-train-timetable-20261109.json",
+          "sha256": "42d930467f44fda6ee92da7e1b526ac9c47f00dcd089733c9f9d26c9b779d4a0",
+          "snapshotId": "incheon-line1-train-timetable-20261109"
         },
         "line2": {
-          "path": "tools/datapack/sources/incheon-line2-train-timetable-20261108.json",
-          "sha256": "6e808a2cded9f224befa139b118c9ca6948cea4d9e05bf3d2a3e928e2c8533ae",
-          "snapshotId": "incheon-line2-train-timetable-20261108"
+          "path": "tools/datapack/sources/incheon-line2-train-timetable-20261109.json",
+          "sha256": "de3dbdd6922db39d2782314964f8673a2d6cbbd053b2b2257e713496b7d39465",
+          "snapshotId": "incheon-line2-train-timetable-20261109"
         }
       }
     },
@@ -7852,27 +7852,27 @@
     ]
   },
   "releaseIdentity": {
-    "candidateId": "nationwide-candidate-20261108-seq179",
-    "publishedAt": "2026-11-08T01:35:31.384Z",
-    "releaseSequence": 179
+    "candidateId": "nationwide-candidate-20261109-seq180",
+    "publishedAt": "2026-11-09T00:05:00.000Z",
+    "releaseSequence": 180
   },
   "builderIdentity": {
-    "gitSha": "407de11b484cb540da1511631b1b2ed3f9d81f5f",
+    "gitSha": "2b3c4392e8a60e6b3a5d922dbd8b3c08040e8507",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
-    "candidateId": "nationwide-candidate-20261108-seq179",
+    "candidateId": "nationwide-candidate-20261109-seq180",
     "scopeId": "nationwide_routing_android_v1",
-    "approvalId": "release-request-nationwide-candidate-20261108-seq179",
-    "requestedBy": "datapack-scheduled-refresh",
-    "approvedBy": "datapack-release-gates"
+    "approvalId": "release-request-nationwide-candidate-20261109-seq180",
+    "requestedBy": "data-operator-lead",
+    "approvedBy": "data-release-authority"
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "c440758a4520600e73283f9328b4844aaabc4e697768f7c4c97d64de1e1653a1"
+    "sha256": "6eb1b5599f1bf49a191db4e898721fbe39a56b3242fe7e57bb43f93b745eb112"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",
-    "sha256": "c1d35fb76eb5a67382d0276645f75381d91f681e9292d7f21bcc2d8a3615a62c"
+    "sha256": "f1082b726ebeb87bc20ccc418817bc77a16026cf3f339f240d07948a89ea6c75"
   }
 }

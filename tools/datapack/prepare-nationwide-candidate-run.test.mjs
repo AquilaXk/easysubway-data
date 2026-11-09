@@ -879,19 +879,49 @@ test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 
 test("MOLIT 환승 이동 원천은 정책 신선도가 후보 시계 이전이면 만료로 실패한다(#862)", async () => {
   const readJson = async (relative) => JSON.parse((await pinnedRead(relative)).toString("utf8"));
   const sourceInventory = await readJson("tools/datapack/source-inventory.json");
+  const sourceSnapshots = await readJson("tools/datapack/release/source-snapshots.json");
   const freshnessPolicy = await readJson("release/product-gates/datapack-freshness-sla.json");
   const admission = sourceInventory.sources.find(({ id }) => id === "molit-railway-transfer-movement").rawSnapshotAdmission;
   const metadata = await readJson(admission.metadataPath);
   const read = (relative) => pinnedRead(relative);
   const before = new Date(Date.parse(metadata.freshUntil) - 60_000).toISOString();
-  const resolved = await resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: before, read });
+  const resolved = await resolveMolitTransferSnapshot({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt: before, read });
   assert.equal(resolved.metadata.snapshotId, admission.snapshotId);
-  await assert.rejects(resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: metadata.freshUntil, read }),
+  assert.equal(resolved.row.snapshotId, admission.snapshotId);
+  await assert.rejects(resolveMolitTransferSnapshot({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt: metadata.freshUntil, read }),
     /nationwide candidate MOLIT transfer snapshot is expired/);
   const future = new Date(Date.parse(metadata.observedAt) - 60_000).toISOString();
-  await assert.rejects(resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: future, read }),
+  await assert.rejects(resolveMolitTransferSnapshot({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt: future, read }),
     /nationwide candidate MOLIT transfer snapshot is observed after the candidate clock/);
 });
+
+test("#945 MOLIT 환승 이동경로 원천은 원장 LOCKED 행과 결속되고 candidate-build-spec.json sourceSnapshotIds에 포함된다", async () => {
+  const readJson = async (relative) => JSON.parse((await pinnedRead(relative)).toString("utf8"));
+  const [sourceInventory, sourceSnapshots, freshnessPolicy, buildSpec] = await Promise.all([
+    readJson("tools/datapack/source-inventory.json"),
+    readJson("tools/datapack/release/source-snapshots.json"),
+    readJson("release/product-gates/datapack-freshness-sla.json"),
+    readJson("tools/datapack/release/candidate-build-spec.json"),
+  ]);
+  assert.ok(buildSpec.sourceSnapshotIds.includes("molit-railway-transfer-movement-20260811"));
+  const specProjection = buildSpec.sourceSnapshots.find(({ sourceId }) => sourceId === "molit-railway-transfer-movement");
+  assert.equal(specProjection?.snapshotId, "molit-railway-transfer-movement-20260811");
+  assert.equal(specProjection?.admissionRecordSha256s?.[0]?.kind, "rawSnapshotAdmission");
+
+  const withoutRow = sourceSnapshots.filter(({ sourceId }) => sourceId !== "molit-railway-transfer-movement");
+  await assert.rejects(
+    resolveMolitTransferSnapshot({ sourceInventory, sourceSnapshots: withoutRow, freshnessPolicy, evaluatedAt: buildSpec.publishedAt, read: pinnedRead }),
+    /nationwide candidate MOLIT transfer snapshot is missing from the ledger/,
+  );
+
+  const mismatchedRow = structuredClone(sourceSnapshots);
+  mismatchedRow.find(({ sourceId }) => sourceId === "molit-railway-transfer-movement").rawSha256 = "0".repeat(64);
+  await assert.rejects(
+    resolveMolitTransferSnapshot({ sourceInventory, sourceSnapshots: mismatchedRow, freshnessPolicy, evaluatedAt: buildSpec.publishedAt, read: pinnedRead }),
+    /nationwide candidate MOLIT transfer snapshot does not match the ledger head/,
+  );
+});
+
 
 test("#899 수도권 공식 시간표 입력은 admission evidence가 없거나 후보 시계 뒤에 관측됐거나 만료되면 실패한다", async () => {
   const missing = await committedSelectionInputs();
