@@ -15,7 +15,7 @@ import {
   runNationwideCandidateRefreshStep,
   runNodeScript,
 } from "./refresh-nationwide-candidate.mjs";
-import { SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
+import { SCHEDULER_APP_LOGIN, SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { rebindCurrentSeoulTransferSourceAdmission } from "./rebind-current-seoul-transfer-source-admission.mjs";
 import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
@@ -127,7 +127,7 @@ function candidateRoleKind({ requestedBy, approvedBy }) {
   throw new Error(`정기 역할과 사람 역할이 섞인 후보 역할 쌍이다: ${requestedBy} / ${approvedBy}`);
 }
 
-test("#1069 후보 역할 쌍은 정기 역할 둘 또는 사람 역할 둘이어야 하고, 정기 역할이면 gateRun을 결속하고 사람 역할이면 결속하지 않는다", async () => {
+test("#1069 후보 역할 쌍은 정기 역할 둘 또는 사람 역할 둘이어야 하고, 정기 역할이면 gateRun을 결속하고 사람 역할이면 로컬 무결속 또는 workflow_dispatch gateRun을 결속한다", async () => {
   const [requestedBy, approvedBy] = [SCHEDULED_RELEASE_ROLES.requestedBy, SCHEDULED_RELEASE_ROLES.approvedBy];
   assert.equal(candidateRoleKind({ requestedBy, approvedBy }), "scheduled");
   assert.equal(candidateRoleKind({ requestedBy: "data-operator-lead", approvedBy: "data-release-authority" }), "person");
@@ -139,8 +139,15 @@ test("#1069 후보 역할 쌍은 정기 역할 둘 또는 사람 역할 둘이�
   ]) assert.throws(() => candidateRoleKind(mixed), /섞인 후보 역할 쌍/u, JSON.stringify(mixed));
   const { releaseRequest } = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
   const kind = candidateRoleKind(releaseRequest);
-  assert.equal(Object.hasOwn(releaseRequest, "gateRun"), kind === "scheduled", "gateRun은 정기 역할 후보에만 있다");
-  if (kind === "scheduled") assert.equal(releaseRequest.gateRun.workflowPath, ".github/workflows/nationwide-candidate-refresh.yml");
+  if (kind === "scheduled") {
+    assert.equal(Object.hasOwn(releaseRequest, "gateRun"), true, "정기 역할 후보는 gateRun을 반드시 결속한다");
+  } else if (Object.hasOwn(releaseRequest, "gateRun")) {
+    assert.equal(releaseRequest.gateRun.event, "workflow_dispatch", "사람 역할 후보의 gateRun은 workflow_dispatch여야 한다");
+    assert.notEqual(releaseRequest.gateRun.actor, SCHEDULER_APP_LOGIN, "사람 역할 후보의 gateRun actor는 스케줄러 App일 수 없다");
+  }
+  if (Object.hasOwn(releaseRequest, "gateRun")) {
+    assert.equal(releaseRequest.gateRun.workflowPath, ".github/workflows/nationwide-candidate-refresh.yml");
+  }
 });
 
 test("#1069 결속 검증은 request에 결속한 gateRun과 한 필드라도 다른 run 기록을 거부하고, 같으면 거부하지 않는다", async () => {
