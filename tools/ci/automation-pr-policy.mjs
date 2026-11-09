@@ -471,6 +471,13 @@ export async function recomputeAutomationGates({
     if (evidence.stage === "registration" || evidence.stage === "derivative-rebinding") {
       if (!sameJson(sources, evidence.sources)) violate("EVIDENCE_DRIFT", "증거 블록의 원천 행이 원장에서 다시 계산한 변화와 다르다");
       if (!sameJson(policy, evidence.policy)) violate("EVIDENCE_DRIFT", "증거 블록의 정책이 커밋된 원장 변화 정책과 다르다");
+    } else if (evidence.stage === "itx-promotion") {
+      const expected = evidence.sources[0];
+      if (sources.length !== 1 || sources[0].sourceId !== expected.sourceId || sources[0].snapshotId !== expected.snapshotId
+        || sources[0].rawSha256 !== expected.rawSha256 || sources[0].contentSha256 !== expected.contentSha256
+        || !(sources[0].previousSnapshotId === null || sources[0].previousSnapshotId === expected.previousSnapshotId)) {
+        violate("EVIDENCE_DRIFT", "증거 블록의 ITX 원천 행이 원장에 추가된 ITX 행과 다르다");
+      }
     } else if (evidence.stage !== "source-reverification" && sources.length > 0) {
       violate("EVIDENCE_DRIFT", `${evidence.stage} 단계는 원장 행을 바꾸지 않는데 새 행이 ${sources.length}개 있다`);
     }

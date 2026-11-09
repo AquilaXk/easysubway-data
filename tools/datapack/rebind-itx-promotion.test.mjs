@@ -135,8 +135,8 @@ async function rebindScenario(context, synthesisOptions) {
   assert.notEqual(reference.sha256, before.sha256, "승격이 새 원천으로 바뀌어야 함");
   assert.equal(reference.promotion.mode, topologyChanged ? "CURRENT_CANDIDATE_OWNER_APPROVED" : "CURRENT_CANDIDATE_GATE_PASSED");
   const promotedPaths = git(["status", "--porcelain", "-uall"], worktree).split("\n").filter(Boolean).map((line) => line.slice(3)).sort();
-  // 게이트 승격은 영수증까지 4개, 사람 승인 승격은 영수증 없이 3개다.
-  assert.equal(promotedPaths.length, topologyChanged ? 3 : 4, `승격은 원천 경로만 바꾼다: ${promotedPaths}`);
+  // 게이트 승격은 영수증·원장(source-snapshots.json)까지 5개, 사람 승인 승격은 영수증·원장 없이 3개다.
+  assert.equal(promotedPaths.length, topologyChanged ? 3 : 5, `승격은 원천·원장 경로만 바꾼다: ${promotedPaths}`);
 
   // 승격만으로는 파생 결속이 어긋나 있다(재결속이 필요한 이유).
   assert.notEqual(json(path.join(worktree, EVIDENCE)).sourceArtifact.sha256, reference.sha256);

@@ -191,6 +191,7 @@ const ITX_ID = "itx-cheongchun-source-timetable-20261010181500000";
 const ITX_PREVIOUS_ID = "itx-cheongchun-source-timetable-20261004151519524";
 const ITX_PATHS = [
   "tools/datapack/itx-cheongchun-coverage-contract.json",
+  "tools/datapack/release/source-snapshots.json",
   `tools/datapack/sources/${ITX_ID}-completeness-evidence.json`,
   `tools/datapack/sources/${ITX_ID}-promotion-gate.json`,
   `tools/datapack/sources/${ITX_ID}.json`,

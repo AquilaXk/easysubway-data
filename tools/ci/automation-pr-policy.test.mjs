@@ -534,30 +534,47 @@ const itxReceipt = (overrides = {}) => ({
   ...overrides,
 });
 
-test("게이트 재계산: ITX 승격 단계는 커밋된 coverage contract의 승격 근거를 승격 권한 검증기로 다시 검증한다", async () => {
+const ITX_HEAD_LEDGER = [
+  row(),
+  row({
+    sourceId: ITX_SOURCE.sourceId,
+    snapshotId: ITX_ID,
+    previousSnapshotId: null,
+    rawSha256: ITX_SOURCE.rawSha256,
+    contentSha256: ITX_SOURCE.contentSha256,
+    rowCount: 1200,
+    coverageCount: 300,
+    diffSummary: null,
+  }),
+];
+
+test("게이트 재계산: ITX 승격 단계는 커밋된 coverage contract의 승격 근거를 승격 권한 검증기로 다시 검증하고 원장에 추가된 ITX 행과 대조한다", async () => {
   const calls = [];
-  const input = gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: ITX_CONTRACT, receipt: itxReceipt(), verifyItx: (arguments_) => { calls.push(arguments_); return {}; } });
+  const input = gateInput("itx-promotion", { ledger: ITX_HEAD_LEDGER, contract: ITX_CONTRACT, receipt: itxReceipt(), verifyItx: (arguments_) => { calls.push(arguments_); return {}; } });
   assert.deepEqual((await recomputeAutomationGates(input)).violations, []);
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].reference, ITX_CONTRACT.sourceTimetableArtifact);
   assert.equal(calls[0].repositoryRoot, "/repo");
 });
 
-test("반증: ITX 게이트가 실패하거나 승인 모드·다른 snapshot이거나 영수증이 증거 행과 다르면 막는다", async () => {
+test("반증: ITX 게이트가 실패하거나 승인 모드·다른 snapshot이거나 영수증·원장 행이 증거 행과 다르면 막는다", async () => {
   const failing = () => { throw new Error("ITX_PROMOTION_RECEIPT_METRICS_MISMATCH"); };
-  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: ITX_CONTRACT, receipt: itxReceipt(), verifyItx: failing }))).includes("ITX_GATE"));
+  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: ITX_HEAD_LEDGER, contract: ITX_CONTRACT, receipt: itxReceipt(), verifyItx: failing }))).includes("ITX_GATE"));
   const owner = { sourceTimetableArtifact: { ...ITX_CONTRACT.sourceTimetableArtifact, promotion: { mode: "CURRENT_CANDIDATE_OWNER_APPROVED" } } };
-  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: owner, receipt: itxReceipt() }))).includes("ITX_GATE"));
+  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: ITX_HEAD_LEDGER, contract: owner, receipt: itxReceipt() }))).includes("ITX_GATE"));
   const other = { sourceTimetableArtifact: { ...ITX_CONTRACT.sourceTimetableArtifact, artifactId: ITX_PREVIOUS_ID } };
   // 다른 snapshot의 영수증이 트리에 있어도 증거의 snapshot과 다른 승격 원천이면 막는다.
   const otherReceipt = { [`tools/datapack/sources/${ITX_PREVIOUS_ID}-promotion-gate.json`]: JSON.stringify(itxReceipt()) };
-  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: other, receipt: itxReceipt(), extraTree: otherReceipt }))).includes("ITX_GATE"));
+  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: ITX_HEAD_LEDGER, contract: other, receipt: itxReceipt(), extraTree: otherReceipt }))).includes("ITX_GATE"));
   const blocked = itxReceipt({ status: "BLOCKED", blockedCheckIds: ["TRIP_COUNT"] });
-  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: ITX_CONTRACT, receipt: blocked }))).includes("ITX_GATE"));
+  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: ITX_HEAD_LEDGER, contract: ITX_CONTRACT, receipt: blocked }))).includes("ITX_GATE"));
   const forgedRow = itxReceipt({ source: { rawCaptureSha256: "0".repeat(64) } });
-  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: ITX_CONTRACT, receipt: forgedRow }))).some((code) => code === "ITX_GATE" || code === "EVIDENCE_DRIFT"));
-  // ITX 승격이 원장 행을 바꾸면 그 자체로 막는다(ITX 단계는 원장을 쓰지 않는다).
+  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: ITX_HEAD_LEDGER, contract: ITX_CONTRACT, receipt: forgedRow }))).some((code) => code === "ITX_GATE" || code === "EVIDENCE_DRIFT"));
+  // 원장에 새 ITX 행이 없거나 다른 원천 행이 추가됐거나 rawSha256이 어긋나면 막는다(#981).
+  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: ITX_CONTRACT, receipt: itxReceipt() }))).includes("EVIDENCE_DRIFT"));
   assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: HEAD_LEDGER, contract: ITX_CONTRACT, receipt: itxReceipt() }))).includes("EVIDENCE_DRIFT"));
+  const tamperedItxLedger = [row(), { ...ITX_HEAD_LEDGER[1], rawSha256: "0".repeat(64) }];
+  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: tamperedItxLedger, contract: ITX_CONTRACT, receipt: itxReceipt() }))).includes("EVIDENCE_DRIFT"));
 });
 
 // 원천 재확인 단계의 게이트: 원장 행은 원장 두 판본에서, 원장 행이 없는 KRIC projection 증거 행은 inventory 두 판본에서 다시 계산해 증거 블록과 같아야 한다.

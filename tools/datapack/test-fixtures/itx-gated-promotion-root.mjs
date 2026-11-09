@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { evaluateItxPromotionGate, itxPromotionGateReceiptBytes, parseItxPromotionGatePolicy } from "../itx-promotion-gate.mjs";
-import { itxPromotionReceiptPath } from "../lib/itx-promotion-authority.mjs";
+import { ITX_SNAPSHOT_LEDGER_RELATIVE_PATH, appendItxPromotionLedgerRow, itxPromotionReceiptPath } from "../lib/itx-promotion-authority.mjs";
 import { sha256 } from "../../lib/hash.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
@@ -49,6 +49,17 @@ export async function createGatedPromotionRoot({ policyOverride = null } = {}) {
   if (receipt.status !== "PASS") throw new Error(`fixture receipt must pass: ${receipt.blockedCheckIds.join(",")}`);
   const receiptBytes = itxPromotionGateReceiptBytes(receipt);
   await writeFile(path.join(dir, itxPromotionReceiptPath(reference.artifactId)), receiptBytes);
+  const ledgerPath = path.join(dir, ITX_SNAPSHOT_LEDGER_RELATIVE_PATH);
+  await mkdir(path.dirname(ledgerPath), { recursive: true });
+  const snapshots = appendItxPromotionLedgerRow({
+    snapshots: [],
+    candidate: source,
+    candidateSha256: reference.sha256,
+    receipt,
+    rawByteSize: Buffer.byteLength("capture-bytes"),
+    storedAt: source.observedAt,
+  });
+  await writeFile(ledgerPath, `${JSON.stringify(snapshots, null, 2)}\n`);
   reference.promotion = {
     mode: "CURRENT_CANDIDATE_GATE_PASSED",
     previousArtifactPath: reference.artifactPath,

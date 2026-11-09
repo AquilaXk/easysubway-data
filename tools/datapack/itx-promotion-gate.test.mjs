@@ -768,3 +768,61 @@ test("실행 파일은 PASS면 0, BLOCK이면 3, 오류면 1로 끝나고 차단
   assert.equal(invalid.code, 1);
   assert.match(invalid.stderr, /ITX_PROMOTION_GATE_ARGUMENTS/u);
 });
+
+test("PASS 게이트 영수증으로 만든 원장(source-snapshots.json) 행은 rawCaptureSha256·후보 sha256·OCI URI에 결속되고 불일치 입력은 거부한다 (#981)", async () => {
+  const { appendItxPromotionLedgerRow, buildItxPromotionLedgerRow, expectedItxRawObjectUri } = await import("./lib/itx-promotion-authority.mjs");
+  const input = gateInput();
+  const receipt = evaluateItxPromotionGate(input);
+  const { candidate, candidateSha256 } = input;
+  assert.equal(receipt.status, "PASS");
+  const row = buildItxPromotionLedgerRow({
+    snapshots: [],
+    candidate,
+    candidateSha256,
+    receipt,
+    rawByteSize: 512,
+  });
+  assert.equal(row.sourceId, "itx-cheongchun-source-timetable");
+  assert.equal(row.snapshotId, candidate.artifactId);
+  assert.equal(row.rawSha256, receipt.source.rawCaptureSha256);
+  assert.equal(row.rawObjectSha256, receipt.source.rawCaptureSha256);
+  assert.equal(row.contentSha256, candidateSha256);
+  assert.equal(row.rawObjectUri, expectedItxRawObjectUri(candidate.observedAt, receipt.source.rawCaptureSha256));
+  assert.equal(row.rawReceipt.snapshotRawSha256, receipt.source.rawCaptureSha256);
+  assert.equal(row.rawReceipt.snapshotFileSha256, candidateSha256);
+
+  const nextInput = gateInput(
+    { observedAt: "2026-10-11T15:15:19.524Z", freshUntil: "2026-10-19T00:00:00+09:00" },
+  );
+  nextInput.candidate.artifactId = "itx-cheongchun-source-timetable-20261011151519524";
+  nextInput.completeness = completenessFor(nextInput.candidate);
+  nextInput.completenessSha256 = nextInput.candidate.completenessEvidenceSha256;
+  nextInput.previous = candidate;
+  nextInput.previousSha256 = candidateSha256;
+  nextInput.capture = captureFor(nextInput.candidate);
+  nextInput.captureSha256 = sha256("next-capture-bytes");
+  nextInput.replay = replayFor(nextInput.candidate);
+  nextInput.candidateSha256 = sha256("next-candidate-bytes");
+  const nextReceipt = evaluateItxPromotionGate(nextInput);
+  const chain = appendItxPromotionLedgerRow({
+    snapshots: [row],
+    candidate: nextInput.candidate,
+    candidateSha256: nextInput.candidateSha256,
+    receipt: nextReceipt,
+    rawByteSize: 512,
+  });
+  assert.equal(chain.length, 2);
+  assert.equal(chain[1].previousSnapshotId, row.snapshotId);
+  assert.equal(chain[1].diffSummary.status, "CHANGED");
+
+  assert.throws(
+    () => buildItxPromotionLedgerRow({
+      snapshots: [row],
+      candidate: nextInput.candidate,
+      candidateSha256: nextInput.candidateSha256,
+      receipt: { ...nextReceipt, previous: { ...nextReceipt.previous, sha256: "0".repeat(64) } },
+      rawByteSize: 512,
+    }),
+    /ITX_PROMOTION_GATE_RAW_CAPTURE_LEDGER_MISMATCH/u,
+  );
+});

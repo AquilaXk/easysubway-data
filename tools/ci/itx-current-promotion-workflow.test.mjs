@@ -209,8 +209,10 @@ test("수집은 collector를 한 번만 부르고 게이트는 수집 결과·ca
   assert.doesNotMatch(gate.run, /\|\| true/u);
 });
 
-test("승격은 승인 코멘트 없이 게이트 경로로만 돌고, 수동 승인 경로를 쓰는 인자가 없다", () => {
-  const promote = step("Promote the gated candidate").run;
+test("승격은 승인 코멘트 없이 게이트 경로로만 돌고, 수동 승인 경로를 쓰는 인자가 없으며, raw capture OCI 발행을 위해 preauth URL을 받는다", () => {
+  const promoteStep = step("Promote the gated candidate");
+  const promote = promoteStep.run;
+  assert.equal(promoteStep.env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL, "${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}");
   assert.match(promote, /node tools\/datapack\/collect-korail-itx-cheongchun-timetable\.mjs --promote-candidate "\$\{ITX_OPERATION_ROOT\}\/itx-result\.json" --completeness-evidence "\$\{ITX_OPERATION_ROOT\}\/itx-completeness\.json"/u);
   assert.match(promote, /--auto-gate --provider-capture "\$\{ITX_OPERATION_ROOT\}\/provider-response-capture\.json" --replay-evidence "\$\{ITX_OPERATION_ROOT\}\/itx-replay\.json"/u);
   assert.doesNotMatch(code, /--approval-url|--approved-sha256|approve-itx-current/u);

@@ -19,9 +19,14 @@ import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest
 import {
   ITX_PROMOTION_MODE_GATE_PASSED,
   ITX_PROMOTION_MODE_OWNER_APPROVED,
+  ITX_SNAPSHOT_LEDGER_RELATIVE_PATH,
+  appendItxPromotionLedgerRow,
+  expectedItxRawObjectKey,
+  expectedItxRawObjectUri,
   itxPromotionReceiptPath,
   readTrackedItxSource,
 } from "./lib/itx-promotion-authority.mjs";
+import { publishSourceRawObject } from "./lib/source-raw-object-publication.mjs";
 import { evaluateItxPromotionGate, itxPromotionGateReceiptBytes, parseItxPromotionGatePolicy } from "./itx-promotion-gate.mjs";
 import { parseProviderResponseCapture } from "./provider-response-capture.mjs";
 import { sha256 } from "../lib/hash.mjs";
@@ -530,6 +535,7 @@ async function resolvePromotionBasisAndReceipt({
   completenessBytes,
   previousSource,
   previous,
+  now,
   fetchImpl,
   githubToken,
   repositoryRoot,
@@ -544,14 +550,51 @@ async function resolvePromotionBasisAndReceipt({
     const baselineSource = baselineReference === null || baselineReference.sha256 === previous?.sha256
       ? previousSource
       : JSON.parse(readTrackedItxSource({ repositoryRoot, relativePath: baselineReference.path, sha256: baselineReference.sha256 }));
-    const receipt = await evaluateGateForPromotion({
+    const { receipt, captureBytes } = await evaluateGateForPromotion({
       gate, candidate, candidateSha256, completeness, completenessBytes, previousSource, baselineSource,
       baselineSha256: baselineReference?.sha256 ?? null, repositoryRoot,
     });
     if (receipt.status !== "PASS") throw new Error(`ITX_PROMOTION_GATE_BLOCKED: ${receipt.blockedCheckIds.join(",")}`);
+    const rawObjectKey = expectedItxRawObjectKey(candidate.observedAt, receipt.source.rawCaptureSha256);
+    const rawObjectUri = expectedItxRawObjectUri(candidate.observedAt, receipt.source.rawCaptureSha256);
+    const storedAt = now.toISOString();
+    if (gate.rawStorageClient !== undefined || (typeof gate.rawStorageBaseUrl === "string" && gate.rawStorageBaseUrl.trim() !== "")) {
+      await publishSourceRawObject({
+        sourcePath: gate.capturePath,
+        sha256: receipt.source.rawCaptureSha256,
+        sizeBytes: captureBytes.length,
+        target: { objectKey: rawObjectKey },
+        baseUrl: gate.rawStorageBaseUrl,
+        client: gate.rawStorageClient,
+        label: "ITX raw capture",
+      });
+    }
+    const ledgerPath = path.join(repositoryRoot, ...ITX_SNAPSHOT_LEDGER_RELATIVE_PATH.split("/"));
+    let existingSnapshots = [];
+    try {
+      const ledgerStat = await lstat(ledgerPath);
+      if (ledgerStat.isSymbolicLink() || !ledgerStat.isFile()) {
+        throw new Error("ITX_PROMOTION_GATE_RAW_CAPTURE_LEDGER_MISMATCH");
+      }
+      existingSnapshots = JSON.parse(await readFile(ledgerPath, "utf8"));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    const nextSnapshots = appendItxPromotionLedgerRow({
+      snapshots: existingSnapshots,
+      candidate,
+      candidateSha256,
+      receipt,
+      rawByteSize: captureBytes.length,
+      storedAt,
+      rawObjectUri,
+    });
+    const ledgerBytes = Buffer.from(`${JSON.stringify(nextSnapshots, null, 2)}\n`, "utf8");
     const gateReceiptBytes = itxPromotionGateReceiptBytes(receipt);
     return {
       gateReceiptBytes,
+      ledgerBytes,
+      ledgerPath,
       promotionBasis: {
         gate: {
           policyId: receipt.policyId,
@@ -576,6 +619,8 @@ async function resolvePromotionBasisAndReceipt({
   });
   return {
     gateReceiptBytes: null,
+    ledgerBytes: null,
+    ledgerPath: null,
     promotionBasis: { approvalUrl, approvedArtifactSha256: candidateSha256 },
   };
 }
@@ -621,7 +666,7 @@ async function promoteItxSourceCandidateLocked({
     now,
     catalog.identity,
   );
-  const { gateReceiptBytes, promotionBasis } = await resolvePromotionBasisAndReceipt({
+  const { gateReceiptBytes, ledgerBytes, ledgerPath, promotionBasis } = await resolvePromotionBasisAndReceipt({
     gate,
     approvedSha256,
     approvalUrl,
@@ -632,6 +677,7 @@ async function promoteItxSourceCandidateLocked({
     completenessBytes,
     previousSource,
     previous,
+    now,
     fetchImpl,
     githubToken,
     repositoryRoot,
@@ -652,6 +698,18 @@ async function promoteItxSourceCandidateLocked({
   await writeImmutableArtifact(artifactPath, candidateBytes, "ADMITTED_SOURCE_ARTIFACT");
   await writeImmutableArtifact(completenessArtifactPath, completenessBytes, "ADMITTED_COMPLETENESS_EVIDENCE");
   if (receiptArtifactPath !== null) await writeImmutableArtifact(receiptArtifactPath, gateReceiptBytes, "ADMITTED_PROMOTION_GATE_RECEIPT");
+  if (ledgerBytes !== null && ledgerPath !== null) {
+    await mkdir(path.dirname(ledgerPath), { recursive: true });
+    const ledgerTempPath = `${ledgerPath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(ledgerTempPath, ledgerBytes, { flag: "wx", mode: 0o644 });
+      await rename(ledgerTempPath, ledgerPath);
+    } finally {
+      await unlink(ledgerTempPath).catch((error) => {
+        if (error?.code !== "ENOENT") throw error;
+      });
+    }
+  }
   contract.sourceTimetableArtifact = {
     status: "ADMITTED",
     admissionEligible: true,
@@ -701,7 +759,7 @@ async function evaluateGateForPromotion({
   const captureBytes = await readFile(requiredString(gate?.capturePath, "gate.capturePath"));
   const capture = parseProviderResponseCapture(captureBytes);
   const replay = JSON.parse(await readFile(requiredString(gate?.replayEvidencePath, "gate.replayEvidencePath"), "utf8"));
-  return evaluateItxPromotionGate({
+  const receipt = evaluateItxPromotionGate({
     policy,
     candidate,
     candidateSha256,
@@ -715,6 +773,7 @@ async function evaluateGateForPromotion({
     captureSha256: sha256(captureBytes),
     replay,
   });
+  return { receipt, captureBytes };
 }
 
 function validateTopologyInputPackIdentity(identity) {
@@ -3019,6 +3078,7 @@ async function runPromoteCandidateCli({ args, env, now, promoteImpl, rebindImpl,
   if (autoGate && (args["approval-url"] !== undefined || args["approved-sha256"] !== undefined)) {
     throw new Error("ITX_PROMOTION_AUTHORITY_AMBIGUOUS");
   }
+  const rawStorageBaseUrl = args["raw-storage-base-url"] ?? env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL;
   const promotion = await promoteImpl({
     candidatePath: requiredString(args["promote-candidate"], "--promote-candidate"),
     completenessPath: requiredString(args["completeness-evidence"], "--completeness-evidence"),
@@ -3026,6 +3086,9 @@ async function runPromoteCandidateCli({ args, env, now, promoteImpl, rebindImpl,
       gate: {
         capturePath: requiredString(args["provider-capture"], "--provider-capture"),
         replayEvidencePath: requiredString(args["replay-evidence"], "--replay-evidence"),
+        ...(typeof rawStorageBaseUrl === "string" && rawStorageBaseUrl.trim() !== ""
+          ? { rawStorageBaseUrl: rawStorageBaseUrl.trim() }
+          : {}),
       },
     } : {
       approvedSha256: args["approved-sha256"],

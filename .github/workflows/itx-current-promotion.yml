@@ -246,9 +246,11 @@ jobs:
           cp -a "${source}" apps/mobile
       - name: Promote the gated candidate
         if: ${{ steps.decision.outputs.state == 'COLLECT' }}
+        env:
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
-          # 승인 코멘트 없이 게이트를 같은 입력으로 다시 계산해 PASS일 때만 원천·완전성 증거·게이트 영수증을 쓰고 coverage contract를 갱신한다.
+          # 승인 코멘트 없이 게이트를 같은 입력으로 다시 계산해 PASS일 때만 raw capture를 OCI에 발행·원장(source-snapshots.json)에 등록하고 원천·완전성 증거·게이트 영수증을 쓰며 coverage contract를 갱신한다.
           # --rebind는 승격 직후 같은 프로세스에서 파생 재결속(topology 증거·버전 증거·alignment fixture)을 만든다. 앞 step이 stage한 고정 입력 fixture(apps/mobile)를 쓴다.
           node tools/datapack/collect-korail-itx-cheongchun-timetable.mjs --promote-candidate "${ITX_OPERATION_ROOT}/itx-result.json" --completeness-evidence "${ITX_OPERATION_ROOT}/itx-completeness.json" --source-output-dir "${GITHUB_WORKSPACE}/tools/datapack/sources" --coverage-contract "${GITHUB_WORKSPACE}/tools/datapack/itx-cheongchun-coverage-contract.json" --station-catalog-pack "${ITX_OPERATION_ROOT}/station-catalog-pack" --auto-gate --provider-capture "${ITX_OPERATION_ROOT}/provider-response-capture.json" --replay-evidence "${ITX_OPERATION_ROOT}/itx-replay.json" --rebind
       - name: Mint App token for the promotion pull request

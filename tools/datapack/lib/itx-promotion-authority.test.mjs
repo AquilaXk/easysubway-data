@@ -192,10 +192,56 @@ async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = nul
   await writeFile(path.join(sourceDir, `${ARTIFACT_ID}-completeness-evidence.json`), completenessBytes);
   await mkdir(path.join(dir, "tools/datapack"), { recursive: true });
   await writeFile(path.join(dir, "tools/datapack/itx-promotion-gate-policy.json"), JSON.stringify(POLICY, null, 2));
+  await mkdir(path.join(dir, "tools/datapack/release"), { recursive: true });
+  const rawCaptureSha256 = receipt.source.rawCaptureSha256;
+  const candidateSha256 = sha256(candidateBytes);
+  const rowCount = candidate.normalizedSnapshotSets.reduce((sum, day) => sum + day.sets.timetableTupleSet.length, 0);
+  const coverageCount = candidate.normalizedSnapshotSets.reduce((sum, day) => sum + day.sets.stationSet.length + day.sets.odSet.length, 0);
+  const ledgerRow = {
+    sourceId: "itx-cheongchun-source-timetable",
+    snapshotId: ARTIFACT_ID,
+    previousSnapshotId: null,
+    retrievedAt: candidate.observedAt,
+    sourceUpdatedAt: candidate.observedAt,
+    freshnessExpiresAt: new Date(Date.parse(candidate.freshUntil)).toISOString(),
+    fetchStatus: "SUCCESS",
+    httpStatus: 200,
+    rawObjectUri: `oci://easysubway-source-raw/source-raw/itx-cheongchun-source-timetable/${candidate.observedAt.slice(0, 10).replaceAll("-", "")}/${rawCaptureSha256}.json`,
+    rawSha256: rawCaptureSha256,
+    rawObjectSha256: rawCaptureSha256,
+    contentSha256: candidateSha256,
+    rowCount,
+    coverageCount,
+    schemaFingerprint: sha256("itx-cheongchun-source-timetable-snapshot:v1"),
+    schemaStatus: "PASS",
+    licenseStatus: "PASS",
+    redistributionAllowed: true,
+    credentialRedacted: true,
+    redactedRequestFingerprint: receipt.source.captureContentSha256,
+    diffSummary: null,
+    rawReceipt: {
+      receiptVersion: 1,
+      sourceId: "itx-cheongchun-source-timetable",
+      snapshotId: ARTIFACT_ID,
+      capturedAt: candidate.observedAt,
+      storedAt: candidate.observedAt,
+      rawObjectUri: `oci://easysubway-source-raw/source-raw/itx-cheongchun-source-timetable/${candidate.observedAt.slice(0, 10).replaceAll("-", "")}/${rawCaptureSha256}.json`,
+      rawObjectSha256: rawCaptureSha256,
+      snapshotRawSha256: rawCaptureSha256,
+      snapshotFileSha256: candidateSha256,
+      byteSize: 256,
+      contentType: "application/json",
+      storageMode: "OBJECT_STORAGE_PREAUTH",
+      immutableWriteVerified: true,
+      redactedRequestUrl: "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2",
+    },
+    snapshotStatus: "LOCKED",
+  };
+  await writeFile(path.join(dir, "tools/datapack/release/source-snapshots.json"), `${JSON.stringify([ledgerRow], null, 2)}\n`);
   const reference = gateReference({
     completenessEvidencePath: `tools/datapack/sources/${ARTIFACT_ID}-completeness-evidence.json`,
     completenessEvidenceSha256: sha256(completenessBytes),
-    sha256: sha256(candidateBytes),
+    sha256: candidateSha256,
     artifactPath: `tools/datapack/sources/${ARTIFACT_ID}.json`,
     freshUntil: candidate.freshUntil,
   });
@@ -204,7 +250,7 @@ async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = nul
   reference.promotion.gate.receiptSha256 = sha256(receiptBytes);
   reference.promotion.baselineArtifactSha256 = sha256(baselineBytes);
   reference.promotion.baselineArtifactPath = `tools/datapack/sources/${baselineShiftSeconds === null ? PREVIOUS_ID : BASELINE_ID}.json`;
-  return { dir, reference, receipt, sourceDir, candidate, previous };
+  return { dir, reference, receipt, sourceDir, candidate, previous, ledgerRow };
 }
 
 test("커밋된 게이트 영수증은 두 원천 파일에서 지표를 다시 계산해 PASS를 확인한다", async () => {
@@ -380,6 +426,43 @@ test("raw capture에 의존하는 check는 영수증에 PASS로 한 번씩 있�
     try {
       await rebindReceipt(fixture, mutate);
       assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_RAW_CHECK_INVALID/u, name);
+    } finally {
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("게이트 승격 영수증의 raw capture는 원장(source-snapshots.json) 항목과 결속되어야 하며 누락·해시 불일치 시 거부한다 (#981)", async () => {
+  const missing = await committedPromotion();
+  try {
+    await writeFile(path.join(missing.dir, "tools/datapack/release/source-snapshots.json"), "[]\n");
+    assert.throws(
+      () => verifyItxGatePromotion({ reference: missing.reference, repositoryRoot: missing.dir }),
+      /ITX_PROMOTION_GATE_RAW_CAPTURE_LEDGER_MISSING/u,
+    );
+  } finally {
+    await rm(missing.dir, { recursive: true, force: true });
+  }
+
+  for (const [name, mutate] of Object.entries({
+    "rawSha256 mismatch": (row) => { row.rawSha256 = "0".repeat(64); },
+    "rawObjectSha256 mismatch": (row) => { row.rawObjectSha256 = "0".repeat(64); },
+    "contentSha256 mismatch": (row) => { row.contentSha256 = "0".repeat(64); },
+    "rawObjectUri mismatch": (row) => { row.rawObjectUri = `oci://easysubway-source-raw/source-raw/itx-cheongchun-source-timetable/20261004/${"0".repeat(64)}.json`; },
+    "rawReceipt snapshotRawSha256 mismatch": (row) => { row.rawReceipt.snapshotRawSha256 = "0".repeat(64); },
+    "rawReceipt snapshotFileSha256 mismatch": (row) => { row.rawReceipt.snapshotFileSha256 = "0".repeat(64); },
+    "snapshotStatus not LOCKED": (row) => { row.snapshotStatus = "QUARANTINED"; },
+  })) {
+    const fixture = await committedPromotion();
+    try {
+      const tampered = structuredClone(fixture.ledgerRow);
+      mutate(tampered);
+      await writeFile(path.join(fixture.dir, "tools/datapack/release/source-snapshots.json"), `${JSON.stringify([tampered], null, 2)}\n`);
+      assert.throws(
+        () => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }),
+        /ITX_PROMOTION_GATE_RAW_CAPTURE_LEDGER_MISMATCH/u,
+        name,
+      );
     } finally {
       await rm(fixture.dir, { recursive: true, force: true });
     }

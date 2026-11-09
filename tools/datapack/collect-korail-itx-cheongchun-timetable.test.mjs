@@ -1958,12 +1958,77 @@ test("ITX 게이트 승격은 승인 코멘트 없이 통과한 후보만 승격
     assert.equal(reference.freshUntil, fixture.candidate.freshUntil);
     assert.equal(JSON.parse(await readFile(fixture.contractPath, "utf8")).freshness.nextReviewAt, fixture.candidate.freshUntil);
     assert.deepEqual(await readFile(promoted.artifactPath), Buffer.from(sourceBytes(fixture.candidate)));
+    const ledger = JSON.parse(await readFile(path.join(fixture.dir, "tools/datapack/release/source-snapshots.json"), "utf8"));
+    assert.equal(ledger.length, 1);
+    assert.equal(ledger[0].sourceId, "itx-cheongchun-source-timetable");
+    assert.equal(ledger[0].snapshotId, fixture.candidate.artifactId);
+    assert.equal(ledger[0].rawSha256, receipt.source.rawCaptureSha256);
+    assert.equal(ledger[0].rawObjectSha256, receipt.source.rawCaptureSha256);
+    assert.equal(ledger[0].contentSha256, promoted.candidateSha256);
     // CI가 쓰는 재검증이 이 승격 결과를 그대로 인정한다.
     const verified = await verifyItxGatePromotion({ reference, repositoryRoot: fixture.dir });
     assert.equal(verified.status, "PASS");
     assert.equal(hasCurrentItxPromotionIdentity(reference), true);
   } finally {
     await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX 게이트 승격은 rawStorageClient가 주어지면 raw capture를 OCI에 발행(PUT + GET 검증)하고 실패 시 파일 쓰기를 중단한다 (#981)", async () => {
+  const fixture = await prepareGatedPromotion();
+  try {
+    const captureBytes = await readFile(fixture.gate.capturePath);
+    const captureSha = createHash("sha256").update(captureBytes).digest("hex");
+    const puts = [];
+    const gets = [];
+    const rawStorageClient = {
+      async putObjectIfAbsent(objectKey, body) {
+        puts.push({ objectKey, body: Buffer.from(body) });
+        return true;
+      },
+      async readObject(objectKey) {
+        gets.push(objectKey);
+        return { exists: true, body: captureBytes };
+      },
+    };
+    const promoted = await promoteItxSourceCandidate({
+      ...fixture.options,
+      gate: { ...fixture.gate, rawStorageClient },
+    });
+    assert.equal(puts.length, 1);
+    assert.equal(gets.length, 1);
+    assert.equal(puts[0].objectKey, `source-raw/itx-cheongchun-source-timetable/20260715/${captureSha}.json`);
+    assert.deepEqual(puts[0].body, captureBytes);
+    const verified = await verifyItxGatePromotion({
+      reference: promoted.sourceTimetableArtifact,
+      repositoryRoot: fixture.dir,
+    });
+    assert.equal(verified.status, "PASS");
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+
+  const failingFixture = await prepareGatedPromotion();
+  try {
+    const contractBefore = await readFile(failingFixture.contractPath);
+    const sourcesBefore = await readdir(failingFixture.sourceDir);
+    const corruptedClient = {
+      async putObjectIfAbsent() { return true; },
+      async readObject() {
+        return { exists: true, body: Buffer.from("corrupted-bytes", "utf8") };
+      },
+    };
+    await assert.rejects(
+      promoteItxSourceCandidate({
+        ...failingFixture.options,
+        gate: { ...failingFixture.gate, rawStorageClient: corruptedClient },
+      }),
+      /ITX raw capture OCI publication failed/u,
+    );
+    assert.deepEqual(await readFile(failingFixture.contractPath), contractBefore);
+    assert.deepEqual(await readdir(failingFixture.sourceDir), sourcesBefore);
+  } finally {
+    await rm(failingFixture.dir, { recursive: true, force: true });
   }
 });
 
