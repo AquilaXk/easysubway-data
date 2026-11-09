@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "15000c2745449400330f3ae54daa52a8e125e534",
+  "builderGitSha": "7d0f401649c26edfe360fb0abd98f935eca8faa8",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -12,7 +12,7 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "4b3f239008cbd541bcaa88ebf3818988739406a5a7ce54796f7bbd96a6702f62",
+      "value": "fa12a7497c3aa1bbbc2a1d7763eae4b1cdd796c741cee867a715ec56153a7167",
       "exporterKind": "facility-evidence",
       "rowCount": 1549,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "1eee79dc7bf6834db15abc3dc8b0d0faf65a9cf28e59861efa4eab310e89d40a"
+    "value": "8a7c6f66b0f51eb039894b37980cb356a440df0cb8959fa87fcbd2ff648807a5"
   },
   "sourceInventorySha256": {
-    "value": "32ca5a2aecffd04aa3acb7f7eeb2b28fb26914dae740d13e514ec817489228be"
+    "value": "f55ad90f2c69a366641c5fb7632809678d223f5a686fb53c8fe7a2f772fe5837"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "0d62f034cca8e38a281b09c9e45cd96b034825379b690054e4534fff57df4c49"
+    "sha256": "4f001d22e56266241c15f8c363800e18412b0f562b26d09564ff660c3de5648c"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261109-seq180"
+      "value": "nationwide-candidate-20261109-seq181"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261109-seq180"
+      "value": "release-request-nationwide-candidate-20261109-seq181"
     }
   },
   "perSourceEvidence": [
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "fa929fbbb8c993dd639b4d2d647f1cc98a98f196c9cf8d02f44e233b6790c4fa"
+      "perSourceSnapshotSetHash": "60b707e60761be174053d538edf41980a3558ba40409d2c0d2fb43328ca38cdc"
     },
     {
       "sourceId": "incheon-transit-accessibility",
@@ -102,32 +102,6 @@
         }
       ],
       "perSourceSnapshotSetHash": "7f93dcd286632de64bf63244457903b16bbbcb0272d7d3403e405831d64235f4"
-    },
-    {
-      "sourceId": "kric-nationwide-timetable-file",
-      "snapshotId": "kric-nationwide-timetable-file-a38f5929e447d96e7ed4b605cc7e61f47d5742ffaf3b9c6e3398b5d58648aa20",
-      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "admissionRecordSha256s": [
-        {
-          "kind": "retainedScheduleAdmissionEvidence",
-          "sha256": "277b769e70116e981b20decc6bff8d544f7c2378c5ab0e030eae492a2405b6a6"
-        }
-      ],
-      "perSourceSnapshotSetHash": "4c0e512aeaee9880d63c7f0a696ee4081c55b6cb2f4c0e0c984fd82fe67fefff"
-    },
-    {
-      "sourceId": "kric-station-convenience-standard",
-      "snapshotId": "kric-station-convenience-standard-20261108T090235705Z",
-      "rawSha256": "7a0918dee40b56f5a685d1c160c214353a8c77f37ae1457da36464a5bfbadb31",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "perSourceSnapshotSetHash": "1f6b6f7d16da1b88a8e1c3707fe4915e7430df71fd36ddd9ef20f69e34b35a0d"
-    },
-    {
-      "sourceId": "seoul-metro-accessibility",
-      "snapshotId": "seoul-metro-accessibility-20261108T092036946Z",
-      "rawSha256": "bfb5bba68675f685ec5549e5a12d7f99e2764d3fce44817c0cfc78bc5de377ad",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "perSourceSnapshotSetHash": "2825375cfc489670a2de0cef4dc26a8d31f76c7b2acea93e5f5cc0ad07f59b33"
     },
     {
       "sourceId": "kric-subway-timetable-station-lines",
@@ -355,6 +329,32 @@
         }
       ],
       "perSourceSnapshotSetHash": "7af4f1ff33ffaa551a83c2ee620ea3d0c499135919e8532b12bdc912b8e0f660"
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-20261109T131042877Z",
+      "rawSha256": "07dcb5b61eff7d555038ab0abe69f92d1d2aaa7b0b9a0448b5da6814bc5e4fcb",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "635fcfbbd42951fe24c8957aafb1587ef3065aab7974f5f25bdb59b60fa30479"
+    },
+    {
+      "sourceId": "kric-station-convenience-standard",
+      "snapshotId": "kric-station-convenience-standard-20261109T131042779Z",
+      "rawSha256": "6c8b0f120b995555d4eafd4c22f46ba2084989355fbd68d97762fa33e6033c65",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "perSourceSnapshotSetHash": "ecfc7d4e13b97740778bd77776c7a2c5e2f69db116ae551562bb8acf6ae193c9"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "snapshotId": "kric-nationwide-timetable-file-0ff081f9178fc3acf871ce48c83ca7f16be114aae8c386342d405fd7f56f994b",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "admissionRecordSha256s": [
+        {
+          "kind": "retainedScheduleAdmissionEvidence",
+          "sha256": "34e33c88888b9c9a49fe4cdb3e3194ebc220546dea07a8fb99b6d1bbb1a49af1"
+        }
+      ],
+      "perSourceSnapshotSetHash": "b46a859d87d12b736d9be4ce6eee17002afdc486bb84d9349420857b607f9e0b"
     }
   ],
   "officialOdFareEvidence": {
