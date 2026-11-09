@@ -455,16 +455,16 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.deepEqual(pack.serviceCalendarDates.map(exceptionKey).sort(), expectedExceptions.map(exceptionKey).sort());
   assert.strictEqual(pack.serviceCalendarDates.length, expectedExceptions.length);
 
-  // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
-  // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
+  // Station car door hints expanded nationwide. #854·#856: 계약 밖 KRIC 행(문 번호 범위 밖 2행)은
+  // 격리 증거로 옮겨지고 팩에 남은 행(433행)과 격리 행(2행)의 합은 격리 전 435행과 같다.
   const carDoorQuarantine = JSON.parse(await readFile(
     path.join(root, "tools/datapack/release/nationwide-car-door-hint-quarantine.json"),
     "utf8",
   ));
-  assert.strictEqual(carDoorQuarantine.summary.quarantinedCount, 386);
-  assert.strictEqual(pack.stationCarDoorHints.length, 49);
+  assert.strictEqual(carDoorQuarantine.summary.quarantinedCount, 2);
+  assert.strictEqual(pack.stationCarDoorHints.length, 433);
   assert.strictEqual(pack.stationCarDoorHints.length + carDoorQuarantine.summary.quarantinedCount, 435);
-  assert.strictEqual(pack.minimumTableRows.station_car_door_hints, 49);
+  assert.strictEqual(pack.minimumTableRows.station_car_door_hints, 433);
 
   // Platform info fully populated on all station lines
   const emptyPlatformLines = pack.stationLines.filter((sl) => !sl.platformInfo || sl.platformInfo.trim() === "");

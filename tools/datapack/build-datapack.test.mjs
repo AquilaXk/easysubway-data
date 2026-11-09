@@ -2885,6 +2885,34 @@ test("데이터팩 생성기·검증기는 유효한 station_car_door_hints를 �
   });
 });
 
+test("데이터팩 생성기·검증기는 WHEELCHAIR_LIFT와 빈 direction의 station_car_door_hints를 적재하고 통과시킨다", async () => {
+  await withCarDoorHintFixture(
+    {
+      id: "car-door-hint-sadang-seoul-4-wheelchair-lift",
+      direction: "",
+      targetFacilityType: "WHEELCHAIR_LIFT",
+      carNumber: 4,
+      doorNumber: 1,
+    },
+    async ({ outputDir, buildAndValidate }) => {
+      await buildAndValidate();
+
+      const packBytes = await readFile(path.join(outputDir, "catalog", "capital-v1.sqlite.gz"));
+      const sqlitePath = path.join(outputDir, "capital-v1.sqlite");
+      await writeFile(sqlitePath, gunzipSync(packBytes));
+      await withSqlite(sqlitePath, (readback) => {
+        const row = readback
+          .prepare("SELECT direction, car_number, door_number, target_facility_type FROM station_car_door_hints")
+          .get();
+        assert.equal(row.direction, "");
+        assert.equal(row.car_number, 4);
+        assert.equal(row.door_number, 1);
+        assert.equal(row.target_facility_type, "WHEELCHAIR_LIFT");
+      });
+    },
+  );
+});
+
 test("데이터팩 생성기는 car_number 0을 CHECK 위반으로 거부한다", async () => {
   await withCarDoorHintFixture({ carNumber: 0 }, async ({ build }) => {
     await assert.rejects(build(), /CHECK constraint failed|car_number/);

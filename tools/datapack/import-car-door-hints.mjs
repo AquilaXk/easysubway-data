@@ -40,6 +40,7 @@ const FACILITY_KEYWORDS = [
   { keyword: "승강기", type: "ELEVATOR" },
   { keyword: "에스컬레이터", type: "ESCALATOR" },
   { keyword: "환승", type: "TRANSFER" },
+  { keyword: "휠체어리프트", type: "WHEELCHAIR_LIFT" },
 ];
 
 const CAR_MIN = 1;

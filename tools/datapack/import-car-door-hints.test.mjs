@@ -96,6 +96,11 @@ test("facility 매핑 성공: 환승 → TRANSFER", () => {
   assert.equal(result.stationCarDoorHints[0].targetFacilityType, "TRANSFER");
 });
 
+test("facility 매핑 성공: 휠체어리프트 → WHEELCHAIR_LIFT", () => {
+  const result = buildCarDoorHints({ roster, rows: [carDoorRow({ plfmCmgFac: "휠체어리프트", facPstnNm: "" })] });
+  assert.equal(result.stationCarDoorHints[0].targetFacilityType, "WHEELCHAIR_LIFT");
+});
+
 test("facility 매핑 실패 → quarantine", () => {
   const result = buildCarDoorHints({ roster, rows: [carDoorRow({ plfmCmgFac: "미상시설", facPstnNm: "미상" })] });
   assert.equal(result.stationCarDoorHints.length, 0);
