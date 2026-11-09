@@ -1602,6 +1602,137 @@ test("#876 #878 전국 후보는 겹치는 방향에 실측 시간·서울 거�
   assert.ok(packSource.fields.includes("station_pathway_edges") && packSource.fields.includes("transfer_rules"));
 });
 
+test("#881 applyMeasuredTransferTimePrecedence는 유도 방향 목록에 역·노선명, 최소·최대 시간, 프로필별 조합 기준을 남기고 계약을 검증한다", () => {
+  const { officialByDirection, measuredMetric } = precedenceFixture();
+  const customMeasured = {
+    sourceId: MEASURED_TRANSFER_SOURCE_ID,
+    sourceSnapshotId: "measured-snapshot",
+    lastVerifiedAt: "2026-10-01T16:33:24.036Z",
+    metrics: [
+      {
+        ...measuredMetric("line-1", "line-3", 3, "station-b"),
+        stationNameKo: "금정",
+        fromLineNameKo: "1호선",
+        toLineNameKo: "4호선",
+        minDurationSeconds: 3,
+        maxDurationSeconds: 114,
+        medianDurationSeconds: 56,
+        durationSpreadSeconds: 111,
+        fastTransferHints: [{ sourceRowNumber: "922" }],
+        slowTransferHints: [{ sourceRowNumber: "923" }],
+      },
+      {
+        ...measuredMetric("line-1", "line-4", 0, "station-c"),
+        stationNameKo: "중랑",
+        fromLineNameKo: "경의중앙",
+        toLineNameKo: "경춘",
+        minDurationSeconds: 0,
+        maxDurationSeconds: 60,
+        medianDurationSeconds: 0,
+        durationSpreadSeconds: 60,
+        fastTransferHints: [{ sourceRowNumber: "714" }, { sourceRowNumber: "716" }],
+        slowTransferHints: [{ sourceRowNumber: "713" }],
+      },
+    ],
+  };
+  const { derivedDistanceDirections, unavailableDirections } = applyMeasuredTransferTimePrecedence({
+    officialByDirection,
+    measured: customMeasured,
+  });
+  assert.equal(derivedDistanceDirections.length, 1);
+  const [geumjeong] = derivedDistanceDirections;
+  assert.equal(geumjeong.directionKey, "station-b:line-1->line-3");
+  assert.equal(geumjeong.stationNameKo, "금정");
+  assert.equal(geumjeong.fromLineNameKo, "1호선");
+  assert.equal(geumjeong.toLineNameKo, "4호선");
+  assert.equal(geumjeong.measuredDurationSeconds, 3);
+  assert.equal(geumjeong.minDurationSeconds, 3);
+  assert.equal(geumjeong.maxDurationSeconds, 114);
+  assert.equal(geumjeong.medianDurationSeconds, 56);
+  assert.equal(geumjeong.durationSpreadSeconds, 111);
+  assert.equal(geumjeong.distanceMeters, 4);
+  assert.equal(geumjeong.minDerivedDistanceMeters, 4);
+  assert.equal(geumjeong.maxDerivedDistanceMeters, 137);
+  assert.equal(geumjeong.profileCombinations.fastWalk.selectionRule, "MIN_MEASURED_COMBINATION");
+  assert.equal(geumjeong.profileCombinations.fastWalk.durationSeconds, 3);
+  assert.equal(geumjeong.profileCombinations.fastWalk.derivedDistanceMeters, 4);
+  assert.equal(geumjeong.profileCombinations.slowWalk.selectionRule, "MAX_MEASURED_COMBINATION");
+  assert.equal(geumjeong.profileCombinations.slowWalk.durationSeconds, 114);
+  assert.equal(geumjeong.profileCombinations.slowWalk.derivedDistanceMeters, 137);
+  assert.equal(geumjeong.profileCombinations.accessibility.durationSeconds, 114);
+  assert.equal(geumjeong.profileCombinations.accessibility.derivedDistanceMeters, 137);
+
+  assert.equal(unavailableDirections.length, 1);
+  const [jungnang] = unavailableDirections;
+  assert.equal(jungnang.directionKey, "station-c:line-1->line-4");
+  assert.equal(jungnang.reason, "ZERO_MEASURED_DURATION");
+  assert.equal(jungnang.profileCombinations.fastWalk.status, "UNAVAILABLE");
+  assert.equal(jungnang.profileCombinations.fastWalk.reason, "ZERO_MEASURED_DURATION");
+  assert.equal(jungnang.profileCombinations.fastWalk.derivedDistanceMeters, null);
+  assert.equal(jungnang.profileCombinations.slowWalk.status, "AVAILABLE");
+  assert.equal(jungnang.profileCombinations.slowWalk.durationSeconds, 60);
+  assert.equal(jungnang.profileCombinations.slowWalk.derivedDistanceMeters, 72);
+
+  // maxDurationSeconds < minDurationSeconds 등 범위 계약이 깨지면 실패해야 한다.
+  assert.throws(
+    () => applyMeasuredTransferTimePrecedence({
+      officialByDirection,
+      measured: {
+        ...customMeasured,
+        metrics: [{ ...customMeasured.metrics[0], minDurationSeconds: 100, maxDurationSeconds: 50 }],
+      },
+    }),
+    /measured transfer metric contract mismatch/,
+  );
+});
+
+test("#881 전국 후보 preparation과 준비 결과는 유도 환승 거리 93방향(편차 16방향 포함)과 0초 사용 불가 1방향의 프로필별 조합 기준을 영속화한다", async () => {
+  const { result } = await preparedTransferEvidence();
+  const committedPreparation = JSON.parse((await pinnedRead("tools/datapack/release/nationwide-candidate-preparation.json")).toString("utf8"));
+  for (const derivedList of [
+    result.derivedDistanceDirections,
+    result.preparation.materialization.derivedDistanceDirections,
+    committedPreparation.materialization.derivedDistanceDirections,
+  ]) {
+    assert.ok(Array.isArray(derivedList), "derivedDistanceDirections가 배열로 영속화되어야 한다");
+    assert.equal(derivedList.length, 93, "시간만 있는 양수 실측 93방향이 모두 영속화되어야 한다");
+    const highSpread = derivedList.filter(({ minDurationSeconds, maxDurationSeconds, durationSpreadSeconds }) =>
+      maxDurationSeconds >= minDurationSeconds * 2 && durationSpreadSeconds > 60);
+    assert.equal(highSpread.length, 16, "최댓값이 최솟값의 2배 이상이고 차이가 60초를 넘는 16방향이 모두 드러나야 한다");
+    const geumjeong = derivedList.find(({ directionKey }) => directionKey === "station-5565cfc07e93:line-472a81add377->seoul-4");
+    assert.ok(geumjeong);
+    assert.deepEqual(
+      [geumjeong.stationNameKo, geumjeong.fromLineNameKo, geumjeong.toLineNameKo, geumjeong.minDurationSeconds, geumjeong.maxDurationSeconds, geumjeong.minDerivedDistanceMeters, geumjeong.maxDerivedDistanceMeters],
+      ["금정", "1호선", "4호선", 3, 114, 4, 137],
+    );
+    assert.equal(geumjeong.profileCombinations.fastWalk.durationSeconds, 3);
+    assert.equal(geumjeong.profileCombinations.fastWalk.derivedDistanceMeters, 4);
+    assert.equal(geumjeong.profileCombinations.slowWalk.durationSeconds, 114);
+    assert.equal(geumjeong.profileCombinations.slowWalk.derivedDistanceMeters, 137);
+    const jeongwang = derivedList.find(({ directionKey }) => directionKey === "station-021157f2f07e:line-558d0bd8312d->seoul-4");
+    assert.ok(jeongwang);
+    assert.deepEqual(
+      [jeongwang.stationNameKo, jeongwang.fromLineNameKo, jeongwang.toLineNameKo, jeongwang.minDurationSeconds, jeongwang.maxDurationSeconds, jeongwang.minDerivedDistanceMeters, jeongwang.maxDerivedDistanceMeters],
+      ["정왕", "수인분당", "4호선", 30, 132, 36, 158],
+    );
+  }
+  for (const unavailableList of [
+    result.unavailableMeasuredTransferDirections,
+    result.preparation.materialization.unavailableMeasuredTransferDirections,
+    committedPreparation.materialization.unavailableMeasuredTransferDirections,
+  ]) {
+    assert.ok(Array.isArray(unavailableList));
+    assert.equal(unavailableList.length, 1);
+    assert.equal(unavailableList[0].directionKey, "station-edf782c1647a:line-6e39be0cb6e2->line-54a7b980b7c3");
+    assert.equal(unavailableList[0].reason, "ZERO_MEASURED_DURATION");
+    assert.equal(unavailableList[0].profileCombinations.fastWalk.status, "UNAVAILABLE");
+    assert.equal(unavailableList[0].profileCombinations.slowWalk.status, "AVAILABLE");
+    assert.equal(unavailableList[0].profileCombinations.slowWalk.durationSeconds, 60);
+    assert.equal(unavailableList[0].profileCombinations.slowWalk.derivedDistanceMeters, 72);
+  }
+});
+
+
 // #876(#866 메인 결정 D1 선행): 역내 환승 간선의 양끝 TRANSFER 칸은 그 간선을 뒷받침하는 공식 환승 원천(서울 거리·서울 실측 시간·부산)의
 // 레코드로 닫는다. 증거 필드(원천 id·snapshot·원문 hash·레코드 hash·신선도·라이선스)는 서울 거리 원천과 같은 기준으로 그 원천의 원장에서 온다.
 // MOLIT 환승 이동 원천은 새로 닫는 근거로 쓰지 않는다(#872). 근거가 없는 칸은 UNKNOWN으로 남는다.

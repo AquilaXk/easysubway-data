@@ -778,3 +778,62 @@ export async function loadCurrentMolitMembershipMappings({
   ]) assertMembershipAdmission(inventory, lineId, mappings);
   return { daejeon, gwangju, daeguLine1, daeguLine2, daeguLine3 };
 }
+
+/**
+ * Normalizes inherited capital pilot accessibility coverage and supplies
+ * bidirectional RIDE edges on Seoul Line 4 (Sadang <-> Sangnoksu) so regional
+ * materializer fixtures satisfy production station-line endpoint invariants.
+ */
+export function makeInheritedAccessibilityCoverageExplicitlyUnavailable(fixture) {
+  const pack = fixture.packs[0];
+  for (const edge of pack.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType))) {
+    edge.stairAccessState = "STEP_FREE";
+    edge.accessibilityStatus = "NO_OFFICIAL_FEED";
+    edge.verificationStatus = "VERIFIED";
+  }
+  for (const evidence of pack.stationFacilityEvidence.filter(
+    ({ facilityType }) => facilityType === "ACCESSIBILITY_STATUS_PROBE",
+  )) {
+    evidence.evidenceKind = "NOT_EXISTS";
+    evidence.installationStatus = "NOT_COVERED";
+    evidence.operationalStatus = "NOT_COVERED";
+    evidence.statusMeaning = "FEED_ABSENCE_RECORD";
+    evidence.strictRouteEligible = false;
+    evidence.strictRouteEligibleReason = "NO_OFFICIAL_STATUS_FEED";
+  }
+  const timetableRoute = pack.transitRoutes.find(({ id }) => id === "route-seoul-4-main") ?? pack.transitRoutes[0];
+  const baseRideEdge = {
+    edgeType: "RIDE",
+    servicePattern: "EXPRESS",
+    serviceClass: "SUBWAY",
+    durationSeconds: 2_430,
+    distanceMeters: 27_000,
+    includesStairs: false,
+    stairAccessState: "UNKNOWN",
+    accessibilityStatus: "UNKNOWN",
+    reliabilityScore: 100,
+    provenanceKind: "OFFICIAL_SOURCE",
+    derivationKind: "GENERATED",
+    verificationStatus: "VERIFIED",
+    lastVerifiedAt: timetableRoute.updatedAt,
+    sourceId: timetableRoute.sourceId,
+    sourceSnapshotId: timetableRoute.sourceSnapshotId,
+    providerRecordHash: timetableRoute.providerRecordHash,
+    evidenceHash: timetableRoute.evidenceHash,
+  };
+  pack.networkEdges.push(
+    {
+      ...baseRideEdge,
+      id: "edge-ride-sadang-sangnoksu-seoul-4",
+      fromNodeId: "station-sadang:seoul-4",
+      toNodeId: "station-sangnoksu:seoul-4",
+    },
+    {
+      ...baseRideEdge,
+      id: "edge-ride-sangnoksu-sadang-seoul-4",
+      fromNodeId: "station-sangnoksu:seoul-4",
+      toNodeId: "station-sadang:seoul-4",
+    },
+  );
+  pack.minimumTableRows.network_edges = pack.networkEdges.length;
+}

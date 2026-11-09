@@ -36,6 +36,7 @@ import {
   SEOUL_MEASURED_TRANSFER_METRICS_PATH,
   buildSeoulMeasuredTransferMetrics,
   canonicalSeoulMeasuredTransferMetricsJson,
+  deriveMeasuredTransferProfileCombinations,
   readSeoulMeasuredTransferMetricsInputs,
 } from "./build-seoul-measured-transfer-metrics.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
@@ -629,19 +630,63 @@ export function applyMeasuredTransferTimePrecedence({ officialByDirection, measu
       || !/^[a-f0-9]{64}$/u.test(metric.sourceRecordSha256 ?? "")) {
       throw new Error("nationwide candidate measured transfer metric contract mismatch");
     }
+    const minDurationSeconds = metric.minDurationSeconds ?? metric.measuredDurationSeconds;
+    const maxDurationSeconds = metric.maxDurationSeconds ?? metric.measuredDurationSeconds;
+    const medianDurationSeconds = metric.medianDurationSeconds ?? metric.measuredDurationSeconds;
+    const durationSpreadSeconds = metric.durationSpreadSeconds ?? (maxDurationSeconds - minDurationSeconds);
+    if (!Number.isSafeInteger(minDurationSeconds) || minDurationSeconds !== metric.measuredDurationSeconds
+      || !Number.isSafeInteger(maxDurationSeconds) || maxDurationSeconds < minDurationSeconds
+      || !Number.isSafeInteger(medianDurationSeconds) || medianDurationSeconds < minDurationSeconds || medianDurationSeconds > maxDurationSeconds
+      || !Number.isSafeInteger(durationSpreadSeconds) || durationSpreadSeconds !== maxDurationSeconds - minDurationSeconds) {
+      throw new Error("nationwide candidate measured transfer metric contract mismatch");
+    }
+    const fallbackHints = metric.fastTransferHints ?? [{ sourceRowNumber: "1" }];
+    const profileCombinations = metric.profileCombinations ?? deriveMeasuredTransferProfileCombinations({
+      minDurationSeconds,
+      maxDurationSeconds,
+      fastTransferHints: fallbackHints,
+      slowTransferHints: metric.slowTransferHints ?? fallbackHints,
+    });
     const key = `${metric.stationId}:${metric.fromLineId}->${metric.toLineId}`;
     if (seen.has(key)) throw new Error(`nationwide candidate measured transfer direction is duplicated: ${key}`);
     seen.add(key);
     const distance = officialByDirection.get(key);
     if (!distance) {
-      const direction = { stationId: metric.stationId, fromLineId: metric.fromLineId, toLineId: metric.toLineId,
-        measuredDurationSeconds: metric.measuredDurationSeconds, sourceRecordSha256: metric.sourceRecordSha256 };
+      const direction = {
+        directionKey: key,
+        stationId: metric.stationId,
+        ...(typeof metric.stationNameKo === "string" ? { stationNameKo: metric.stationNameKo } : {}),
+        fromLineId: metric.fromLineId,
+        ...(typeof metric.fromLineNameKo === "string" ? { fromLineNameKo: metric.fromLineNameKo } : {}),
+        toLineId: metric.toLineId,
+        ...(typeof metric.toLineNameKo === "string" ? { toLineNameKo: metric.toLineNameKo } : {}),
+        measuredDurationSeconds: metric.measuredDurationSeconds,
+        minDurationSeconds,
+        maxDurationSeconds,
+        medianDurationSeconds,
+        durationSpreadSeconds,
+        profileCombinations,
+        sourceRecordSha256: metric.sourceRecordSha256,
+      };
       const distanceMeters = standardPaceDistanceMeters(metric.measuredDurationSeconds);
       if (distanceMeters === 0) {
         unavailableDirections.push({ ...direction, reason: "ZERO_MEASURED_DURATION" });
         continue;
       }
-      derivedDistanceDirections.push({ ...direction, distanceMeters });
+      const derivedRecordSha256 = sha256(canonicalJson({
+        derivationPaceMetersPerSecond: STANDARD_PACE_METERS_PER_SECOND,
+        distanceDerivation: STANDARD_PACE_DISTANCE_DERIVATION,
+        durationSourceRecordSha256: metric.sourceRecordSha256,
+      }));
+      derivedDistanceDirections.push({
+        ...direction,
+        distanceMeters,
+        minDerivedDistanceMeters: standardPaceDistanceMeters(minDurationSeconds),
+        maxDerivedDistanceMeters: standardPaceDistanceMeters(maxDurationSeconds),
+        distanceDerivation: STANDARD_PACE_DISTANCE_DERIVATION,
+        derivationPaceMetersPerSecond: STANDARD_PACE_METERS_PER_SECOND,
+        derivedRecordSha256,
+      });
       byDirection.set(key, {
         metric: {
           stationId: metric.stationId,
@@ -649,11 +694,7 @@ export function applyMeasuredTransferTimePrecedence({ officialByDirection, measu
           toLineId: metric.toLineId,
           distanceMeters,
           metricProvenance: "OFFICIAL_SOURCE",
-          sourceRecordSha256: sha256(canonicalJson({
-            derivationPaceMetersPerSecond: STANDARD_PACE_METERS_PER_SECOND,
-            distanceDerivation: STANDARD_PACE_DISTANCE_DERIVATION,
-            durationSourceRecordSha256: metric.sourceRecordSha256,
-          })),
+          sourceRecordSha256: derivedRecordSha256,
         },
         sourceId: measured.sourceId,
         sourceSnapshotId: measured.sourceSnapshotId,
@@ -662,6 +703,7 @@ export function applyMeasuredTransferTimePrecedence({ officialByDirection, measu
         durationSourceRecordSha256: metric.sourceRecordSha256,
         distanceDerivation: STANDARD_PACE_DISTANCE_DERIVATION,
         derivationPaceMetersPerSecond: STANDARD_PACE_METERS_PER_SECOND,
+        profileCombinations,
       });
       continue;
     }
@@ -1253,7 +1295,11 @@ async function prepareNationwideTransfersAndEdges({
   const kricEscalator = await resolveKricEscalatorSnapshot({
     sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt, read,
   });
-  const { byDirection: officialTransferMetricMap } = applyMeasuredTransferTimePrecedence({
+  const {
+    byDirection: officialTransferMetricMap,
+    derivedDistanceDirections,
+    unavailableDirections: unavailableMeasuredTransferDirections,
+  } = applyMeasuredTransferTimePrecedence({
     officialByDirection: distanceTransferMetricMap,
     measured: {
       sourceId: MEASURED_TRANSFER_SOURCE_ID,
@@ -1318,6 +1364,8 @@ async function prepareNationwideTransfersAndEdges({
     pairs,
     stationToLines,
     measuredTransfer,
+    derivedDistanceDirections,
+    unavailableMeasuredTransferDirections,
     kricEscalator,
     stationPathwayNodes,
     stationPathwayEdges,
@@ -2459,6 +2507,7 @@ async function buildNationwideCandidatePreparation({
   scopeId, nationwidePackRelPath, candidateId, releaseSequence,
   requestedBy, approvedBy, routeInputRelPath, routeInputBytes,
   stationLineInputRelPath, stationLineInputBytes,
+  derivedDistanceDirections, unavailableMeasuredTransferDirections,
 }) {
   const gitSha = resolveGitHeadSha(repositoryRoot);
   const {
@@ -2533,6 +2582,8 @@ async function buildNationwideCandidatePreparation({
       },
       itxTopologyEvidencePath,
       itxTopologyEvidenceSha256: sha256(itxTopologyEvidenceBytes),
+      derivedDistanceDirections,
+      unavailableMeasuredTransferDirections,
     },
     releaseIdentity: {
       candidateId,
@@ -2589,7 +2640,8 @@ export async function prepareNationwideCandidate({
   } = inputs;
 
   const {
-    pairs, stationToLines, measuredTransfer, kricEscalator, stationPathwayNodes,
+    pairs, stationToLines, measuredTransfer, derivedDistanceDirections,
+    unavailableMeasuredTransferDirections, kricEscalator, stationPathwayNodes,
     stationPathwayEdges, transferEdges, transferRules, officialEndpointRecords,
     officialEndpointSources, outOfStationTransferCandidates, outOfStationTransferLinks,
     excludedOutOfStationTransferLinks, rides, rideEdges,
@@ -2676,6 +2728,7 @@ export async function prepareNationwideCandidate({
     scopeId, nationwidePackRelPath, candidateId, releaseSequence,
     requestedBy, approvedBy, routeInputRelPath, routeInputBytes,
     stationLineInputRelPath, stationLineInputBytes,
+    derivedDistanceDirections, unavailableMeasuredTransferDirections,
   });
   if (writeFiles) {
     await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
@@ -2691,6 +2744,8 @@ export async function prepareNationwideCandidate({
     finalPack,
     routeInput,
     stationLineInput,
+    derivedDistanceDirections,
+    unavailableMeasuredTransferDirections,
     excludedOutOfStationTransferLinks,
     preparation,
     preparationRelPath,

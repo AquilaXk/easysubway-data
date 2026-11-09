@@ -21,6 +21,16 @@ import { sha256 } from "../lib/hash.mjs";
 // - 매핑할 수 없는 행은 행 번호·값·사유로 고정한다(PINNED_EXCLUDED_SOURCE_ROWS). 값이 바뀌거나 매핑되기 시작하면 NO_GO다.
 export const SEOUL_MEASURED_TRANSFER_METRICS_PATH = "tools/datapack/release/current-seoul-measured-transfer-metrics.json";
 export const STATION_CODE_CATALOG_PATH = "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json";
+export const STANDARD_PACE_DISTANCE_DERIVATION = "STANDARD_PACE_FROM_MEASURED_TIME";
+export const STANDARD_PACE_METERS_PER_SECOND = 1.2;
+export const MEASURED_TRANSFER_PROFILES = Object.freeze(["fastWalk", "standard", "slowWalk", "stepFree", "accessibility"]);
+export const MEASURED_TRANSFER_PROFILE_SELECTION_RULES = Object.freeze({
+  fastWalk: "MIN_MEASURED_COMBINATION",
+  standard: "MIN_MEASURED_COMBINATION",
+  slowWalk: "MAX_MEASURED_COMBINATION",
+  stepFree: "MAX_MEASURED_COMBINATION",
+  accessibility: "MAX_MEASURED_COMBINATION",
+});
 const CANONICAL_PACK_PATH = "tools/datapack/release/capital-production-canonical-pack.json";
 const SOURCE_INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const MEASUREMENT = Object.freeze({
@@ -70,6 +80,69 @@ export const PINNED_EXCLUDED_SOURCE_ROWS = new Map([
   ["1000", { reason: "STATION_NOT_IN_CANONICAL_PACK", row: ["석남", "3213", "인천2", "서부여성회관 방면", "1", "1", "3762", "산곡 방면", "2", "4", "05:26"] }],
 ]);
 
+export function standardPaceDistanceMeters(seconds) {
+  return Math.round(seconds * STANDARD_PACE_METERS_PER_SECOND);
+}
+
+export function deriveMeasuredTransferProfileCombinations({
+  minDurationSeconds,
+  maxDurationSeconds,
+  fastTransferHints = [],
+  slowTransferHints = [],
+} = {}) {
+  const combinations = {};
+  for (const profile of MEASURED_TRANSFER_PROFILES) {
+    const selectionRule = MEASURED_TRANSFER_PROFILE_SELECTION_RULES[profile];
+    const isMinCombination = selectionRule === "MIN_MEASURED_COMBINATION";
+    const durationSeconds = isMinCombination ? minDurationSeconds : maxDurationSeconds;
+    const hints = isMinCombination ? fastTransferHints : slowTransferHints;
+    const sourceRowNumbers = Array.isArray(hints)
+      ? hints.map(({ sourceRowNumber }) => sourceRowNumber).filter((rowNumber) => typeof rowNumber === "string" && rowNumber.length > 0)
+      : [];
+    if (!Number.isInteger(durationSeconds) || durationSeconds < 0 || sourceRowNumbers.length === 0) {
+      combinations[profile] = {
+        status: "UNAVAILABLE",
+        reason: "NO_VALID_COMBINATION",
+        selectionRule,
+        durationSeconds: null,
+        derivedDistanceMeters: null,
+        sourceRowNumbers: [],
+      };
+    } else if (durationSeconds === 0) {
+      combinations[profile] = {
+        status: "UNAVAILABLE",
+        reason: "ZERO_MEASURED_DURATION",
+        selectionRule,
+        durationSeconds: 0,
+        derivedDistanceMeters: null,
+        sourceRowNumbers,
+      };
+    } else {
+      combinations[profile] = {
+        status: "AVAILABLE",
+        selectionRule,
+        durationSeconds,
+        derivedDistanceMeters: standardPaceDistanceMeters(durationSeconds),
+        distanceDerivation: STANDARD_PACE_DISTANCE_DERIVATION,
+        derivationPaceMetersPerSecond: STANDARD_PACE_METERS_PER_SECOND,
+        sourceRowNumbers,
+      };
+    }
+  }
+  return combinations;
+}
+
+export function selectMeasuredTransferProfileCombination(profileCombinations, profile) {
+  if (!Object.hasOwn(MEASURED_TRANSFER_PROFILE_SELECTION_RULES, profile)) {
+    throw new Error(`NO_GO unknown measured transfer profile: ${profile}`);
+  }
+  const combination = profileCombinations?.[profile];
+  if (!combination || typeof combination !== "object") {
+    throw new Error(`NO_GO missing measured transfer profile combination: ${profile}`);
+  }
+  return combination;
+}
+
 export function readStationCodeCatalogRows(catalogBytes) {
   const artifact = parseJson(catalogBytes, "station code catalog");
   const snapshot = artifact?.snapshot;
@@ -93,6 +166,7 @@ export function deriveSeoulMeasuredTransferMetrics({ rows, catalogRows, pack, pi
   }
   const catalog = new Map(catalogRows.map((row) => [row.STATION_CD, row]));
   const lineNames = new Map(pack.lines.map(({ id, nameKo }) => [id, nameKo]));
+  const stationNames = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
   const stationLines = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
   const lineIdFor = (lineNum) => {
     const entry = CATALOG_LINES.get(lineNum);
@@ -100,6 +174,7 @@ export function deriveSeoulMeasuredTransferMetrics({ rows, catalogRows, pack, pi
     if (lineNames.get(entry[0]) !== entry[1]) throw new Error(`NO_GO Seoul measured transfer line identity mismatch: ${lineNum}`);
     return entry[0];
   };
+  const shortLineNameKo = (lineId) => String(lineNames.get(lineId) ?? "").replace(/^수도권 /u, "");
   const catalogRow = (code) => {
     const row = catalog.get(code);
     if (!row) throw new Error(`NO_GO Seoul measured transfer station code is absent from catalog: ${code}`);
@@ -150,6 +225,7 @@ export function deriveSeoulMeasuredTransferMetrics({ rows, catalogRows, pack, pi
     if (!seenPins.has(rowNumber)) throw new Error(`NO_GO pinned Seoul measured transfer exclusion is absent: ${rowNumber}`);
   }
   const metrics = [];
+  const derivedDistanceDirections = [];
   const unavailableDirections = [];
   for (const { stationId, fromLineId, toLineId, rows: directionRows } of [...directions.values()].sort(compareDirection)) {
     const measured = directionRows.filter(({ duration }) => duration !== "").map((row) => ({ row, seconds: durationSeconds(row.duration) }));
@@ -158,29 +234,70 @@ export function deriveSeoulMeasuredTransferMetrics({ rows, catalogRows, pack, pi
       unavailableDirections.push({ stationId, fromLineId, toLineId, sourceRowNumbers });
       continue;
     }
-    const minimum = Math.min(...measured.map(({ seconds }) => seconds));
+    const sortedSeconds = measured.map(({ seconds }) => seconds).sort((left, right) => left - right);
+    const minimum = sortedSeconds[0];
+    const maximum = sortedSeconds[sortedSeconds.length - 1];
+    const medianDurationSeconds = medianOfSortedSeconds(sortedSeconds);
+    const durationSpreadSeconds = maximum - minimum;
+    const fastTransferHints = measured.filter(({ seconds }) => seconds === minimum).map(({ row }) => transferHint(row));
+    const slowTransferHints = measured.filter(({ seconds }) => seconds === maximum).map(({ row }) => transferHint(row));
+    const profileCombinations = deriveMeasuredTransferProfileCombinations({
+      minDurationSeconds: minimum,
+      maxDurationSeconds: maximum,
+      fastTransferHints,
+      slowTransferHints,
+    });
+    const stationNameKo = stationNames.get(stationId) ?? "";
+    const fromLineNameKo = shortLineNameKo(fromLineId);
+    const toLineNameKo = shortLineNameKo(toLineId);
+    const sourceRecordSha256 = sha256(canonicalJson({ sourceId: SOURCE_ID, rows: directionRows.map(sourceRow) }));
     metrics.push({
       stationId,
+      stationNameKo,
       fromLineId,
+      fromLineNameKo,
       toLineId,
+      toLineNameKo,
       measuredDurationSeconds: minimum,
+      minDurationSeconds: minimum,
+      maxDurationSeconds: maximum,
+      medianDurationSeconds,
+      durationSpreadSeconds,
       distanceMeters: null,
       metricProvenance: "OFFICIAL_SOURCE",
       measurement: "MEASURED",
-      fastTransferHints: measured.filter(({ seconds }) => seconds === minimum).map(({ row }) => ({
-        sourceRowNumber: row.sourceRowNumber,
-        alightingDirection: row.alightingDirection,
-        alightingCar: row.alightingCar,
-        alightingDoor: row.alightingDoor,
-        boardingDirection: row.boardingDirection,
-        boardingCar: row.boardingCar,
-        boardingDoor: row.boardingDoor,
-      })),
+      fastTransferHints,
+      slowTransferHints,
+      profileCombinations,
       sourceRowNumbers,
-      sourceRecordSha256: sha256(canonicalJson({ sourceId: SOURCE_ID, rows: directionRows.map(sourceRow) })),
+      sourceRecordSha256,
     });
+    if (minimum > 0) {
+      derivedDistanceDirections.push({
+        directionKey: `${stationId}:${fromLineId}->${toLineId}`,
+        stationId,
+        stationNameKo,
+        fromLineId,
+        fromLineNameKo,
+        toLineId,
+        toLineNameKo,
+        measuredDurationSeconds: minimum,
+        minDurationSeconds: minimum,
+        maxDurationSeconds: maximum,
+        medianDurationSeconds,
+        durationSpreadSeconds,
+        distanceMeters: standardPaceDistanceMeters(minimum),
+        minDerivedDistanceMeters: standardPaceDistanceMeters(minimum),
+        maxDerivedDistanceMeters: standardPaceDistanceMeters(maximum),
+        distanceDerivation: STANDARD_PACE_DISTANCE_DERIVATION,
+        derivationPaceMetersPerSecond: STANDARD_PACE_METERS_PER_SECOND,
+        profileCombinations,
+        sourceRowNumbers,
+        sourceRecordSha256,
+      });
+    }
   }
-  return { metrics, unavailableDirections, excludedSourceRows, unavailableSourceRows };
+  return { metrics, derivedDistanceDirections, unavailableDirections, excludedSourceRows, unavailableSourceRows };
 }
 
 export async function readSeoulMeasuredTransferMetricsInputs({ repositoryRoot, snapshotId, read: readOverride } = {}) {
@@ -226,6 +343,7 @@ export function buildSeoulMeasuredTransferMetrics({ snapshotBytes, sourceInvento
     },
     measurement: { ...MEASUREMENT },
     metrics: derived.metrics,
+    derivedDistanceDirections: derived.derivedDistanceDirections,
     unavailableDirections: derived.unavailableDirections,
     excludedSourceRows: derived.excludedSourceRows,
     unavailableSourceRows: derived.unavailableSourceRows,
@@ -249,6 +367,25 @@ function inventorySource(inventory) {
 
 function sourceRow(row) {
   return { sourceRowNumber: row.sourceRowNumber, ...Object.fromEntries(ROW_VALUE_FIELDS.map((field) => [field, row[field]])) };
+}
+
+function transferHint(row) {
+  return {
+    sourceRowNumber: row.sourceRowNumber,
+    alightingDirection: row.alightingDirection,
+    alightingCar: row.alightingCar,
+    alightingDoor: row.alightingDoor,
+    boardingDirection: row.boardingDirection,
+    boardingCar: row.boardingCar,
+    boardingDoor: row.boardingDoor,
+  };
+}
+
+function medianOfSortedSeconds(sortedSeconds) {
+  const middle = Math.floor(sortedSeconds.length / 2);
+  return sortedSeconds.length % 2 === 1
+    ? sortedSeconds[middle]
+    : Math.round((sortedSeconds[middle - 1] + sortedSeconds[middle]) / 2);
 }
 
 function durationSeconds(value) {

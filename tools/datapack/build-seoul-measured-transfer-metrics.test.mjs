@@ -6,14 +6,19 @@ import { fileURLToPath } from "node:url";
 
 import { parseSeoulMetroTransferCsv } from "./collect-seoul-metro-transfer-car-door-duration.mjs";
 import {
+  MEASURED_TRANSFER_PROFILES,
+  MEASURED_TRANSFER_PROFILE_SELECTION_RULES,
   PINNED_EXCLUDED_SOURCE_ROWS,
   SEOUL_MEASURED_TRANSFER_METRICS_PATH,
   buildSeoulMeasuredTransferMetrics,
   canonicalSeoulMeasuredTransferMetricsJson,
+  deriveMeasuredTransferProfileCombinations,
   readSeoulMeasuredTransferMetricsInputs,
   STATION_CODE_CATALOG_PATH,
   deriveSeoulMeasuredTransferMetrics,
   readStationCodeCatalogRows,
+  selectMeasuredTransferProfileCombination,
+  standardPaceDistanceMeters,
 } from "./build-seoul-measured-transfer-metrics.mjs";
 import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
@@ -155,4 +160,121 @@ test("커밋된 실측 환승 지표는 inventory admission snapshot으로 다�
   [[JUNGNANG, GYEONGUI, GYEONGCHUN, ["714", "716"]]]);
   // 서울역 1호선→공항철도: 서울교통공사 거리÷1.2 원천과 달리 실측 15:56(행 5·6)이다.
   assert.equal(metricFor(artifact, SEOUL_STATION, LINE_1, "line-e9e9a5b520a4").measuredDurationSeconds, 956);
+  // #881: 263방향 중 0초 방향(중랑 경의중앙→경춘)을 뺀 262방향이 사람이 읽을 수 있는 유도 방향 목록에 영속화된다.
+  assert.equal(artifact.derivedDistanceDirections.length, 262);
+  assert.equal(artifact.derivedDistanceDirections.some(({ stationId, fromLineId, toLineId }) =>
+    stationId === JUNGNANG && fromLineId === GYEONGUI && toLineId === GYEONGCHUN), false);
+  const geumjeong = artifact.derivedDistanceDirections.find(({ directionKey }) =>
+    directionKey === "station-5565cfc07e93:line-472a81add377->seoul-4");
+  assert.ok(geumjeong, "금정 1↔4 편차 방향이 유도 목록에 있어야 한다");
+  assert.deepEqual(
+    [geumjeong.stationNameKo, geumjeong.fromLineNameKo, geumjeong.toLineNameKo, geumjeong.minDurationSeconds, geumjeong.maxDurationSeconds, geumjeong.minDerivedDistanceMeters, geumjeong.maxDerivedDistanceMeters],
+    ["금정", "1호선", "4호선", 3, 114, 4, 137],
+  );
+  assert.equal(geumjeong.profileCombinations.fastWalk.durationSeconds, 3);
+  assert.equal(geumjeong.profileCombinations.fastWalk.derivedDistanceMeters, 4);
+  assert.equal(geumjeong.profileCombinations.slowWalk.durationSeconds, 114);
+  assert.equal(geumjeong.profileCombinations.slowWalk.derivedDistanceMeters, 137);
 });
+
+test("#881 방향별 실측 칸·문 조합에서 최솟값·최댓값·중앙값과 프로필별 기준 시간/유도 거리를 함께 산출한다", async () => {
+  const result = await derive();
+  const seoul = metricFor(result, SEOUL_STATION, LINE_1, LINE_4);
+  assert.equal(seoul.stationNameKo, "서울역");
+  assert.equal(seoul.fromLineNameKo, "1호선");
+  assert.equal(seoul.toLineNameKo, "4호선");
+  assert.equal(seoul.minDurationSeconds, 214);
+  assert.equal(seoul.maxDurationSeconds, 220);
+  assert.equal(seoul.medianDurationSeconds, 217);
+  assert.equal(seoul.durationSpreadSeconds, 6);
+  assert.deepEqual(seoul.slowTransferHints, [
+    { sourceRowNumber: "2", alightingDirection: "남영 방면", alightingCar: "1", alightingDoor: "2", boardingDirection: "회현 방면", boardingCar: "10", boardingDoor: "4" },
+    { sourceRowNumber: "4", alightingDirection: "시청 방면", alightingCar: "10", alightingDoor: "4", boardingDirection: "회현 방면", boardingCar: "10", boardingDoor: "4" },
+  ]);
+  assert.deepEqual(MEASURED_TRANSFER_PROFILES, ["fastWalk", "standard", "slowWalk", "stepFree", "accessibility"]);
+  assert.deepEqual(MEASURED_TRANSFER_PROFILE_SELECTION_RULES, {
+    fastWalk: "MIN_MEASURED_COMBINATION",
+    standard: "MIN_MEASURED_COMBINATION",
+    slowWalk: "MAX_MEASURED_COMBINATION",
+    stepFree: "MAX_MEASURED_COMBINATION",
+    accessibility: "MAX_MEASURED_COMBINATION",
+  });
+  for (const profile of ["fastWalk", "standard"]) {
+    assert.deepEqual(seoul.profileCombinations[profile], {
+      status: "AVAILABLE",
+      selectionRule: "MIN_MEASURED_COMBINATION",
+      durationSeconds: 214,
+      derivedDistanceMeters: standardPaceDistanceMeters(214),
+      distanceDerivation: "STANDARD_PACE_FROM_MEASURED_TIME",
+      derivationPaceMetersPerSecond: 1.2,
+      sourceRowNumbers: ["1", "3"],
+    });
+  }
+  for (const profile of ["slowWalk", "stepFree", "accessibility"]) {
+    assert.deepEqual(seoul.profileCombinations[profile], {
+      status: "AVAILABLE",
+      selectionRule: "MAX_MEASURED_COMBINATION",
+      durationSeconds: 220,
+      derivedDistanceMeters: standardPaceDistanceMeters(220),
+      distanceDerivation: "STANDARD_PACE_FROM_MEASURED_TIME",
+      derivationPaceMetersPerSecond: 1.2,
+      sourceRowNumbers: ["2", "4"],
+    });
+  }
+  assert.equal(result.derivedDistanceDirections.length, 2, "0초 방향(중랑)을 제외한 2개 방향이 유도 목록에 남는다");
+  assert.deepEqual(result.derivedDistanceDirections.map(({ directionKey }) => directionKey), [
+    `${CHONGSHIN}:${LINE_7}->${LINE_4}`,
+    `${SEOUL_STATION}:${LINE_1}->${LINE_4}`,
+  ]);
+});
+
+test("#881 특정 프로필에서 유효한 조합이 없거나 0초면 다른 프로필 값으로 대체(fallback)하지 않고 명시적으로 드러낸다", async () => {
+  const result = await derive();
+  const jungnang = metricFor(result, JUNGNANG, GYEONGUI, GYEONGCHUN);
+  assert.equal(jungnang.minDurationSeconds, 0);
+  assert.equal(jungnang.maxDurationSeconds, 60);
+  assert.equal(jungnang.medianDurationSeconds, 0);
+  assert.equal(jungnang.durationSpreadSeconds, 60);
+  // 중랑 경의중앙→경춘: 최솟값 조합(714·716)은 00:00(0초)이고 최댓값 조합(713)은 01:00(60초)이다.
+  // 빠른 걸음·일반 프로필은 최솟값 조합이 0초이므로 최댓값 조합(60초)으로 조용히 대체하지 않고 UNAVAILABLE(ZERO_MEASURED_DURATION)로 드러낸다.
+  for (const profile of ["fastWalk", "standard"]) {
+    assert.deepEqual(jungnang.profileCombinations[profile], {
+      status: "UNAVAILABLE",
+      reason: "ZERO_MEASURED_DURATION",
+      selectionRule: "MIN_MEASURED_COMBINATION",
+      durationSeconds: 0,
+      derivedDistanceMeters: null,
+      sourceRowNumbers: ["714", "716"],
+    });
+  }
+  for (const profile of ["slowWalk", "stepFree", "accessibility"]) {
+    assert.deepEqual(jungnang.profileCombinations[profile], {
+      status: "AVAILABLE",
+      selectionRule: "MAX_MEASURED_COMBINATION",
+      durationSeconds: 60,
+      derivedDistanceMeters: 72,
+      distanceDerivation: "STANDARD_PACE_FROM_MEASURED_TIME",
+      derivationPaceMetersPerSecond: 1.2,
+      sourceRowNumbers: ["713"],
+    });
+  }
+  // 유효한 칸·문 조합이 아예 없을 때도 다른 프로필 값으로 fallback하지 않고 NO_VALID_COMBINATION으로 드러낸다.
+  const emptyProfiles = deriveMeasuredTransferProfileCombinations({ minDurationSeconds: null, maxDurationSeconds: null, fastTransferHints: [], slowTransferHints: [] });
+  for (const profile of MEASURED_TRANSFER_PROFILES) {
+    assert.equal(emptyProfiles[profile].status, "UNAVAILABLE");
+    assert.equal(emptyProfiles[profile].reason, "NO_VALID_COMBINATION");
+    assert.equal(emptyProfiles[profile].durationSeconds, null);
+    assert.equal(emptyProfiles[profile].derivedDistanceMeters, null);
+    assert.deepEqual(emptyProfiles[profile].sourceRowNumbers, []);
+  }
+  assert.throws(() => selectMeasuredTransferProfileCombination(seoulProfileStub(), "unknownProfile"), /NO_GO unknown measured transfer profile: unknownProfile/u);
+});
+
+function seoulProfileStub() {
+  return deriveMeasuredTransferProfileCombinations({
+    minDurationSeconds: 214,
+    maxDurationSeconds: 220,
+    fastTransferHints: [{ sourceRowNumber: "1" }],
+    slowTransferHints: [{ sourceRowNumber: "2" }],
+  });
+}
