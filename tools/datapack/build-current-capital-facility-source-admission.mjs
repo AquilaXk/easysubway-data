@@ -1,5 +1,10 @@
 import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import {
+  KRIC_REGIONAL_WHEELCHAIR_LIFT_CUTOVER_CAPTURED_AT,
+  KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES,
+  isKricRegionalWheelchairLiftQuery,
+} from "./lib/kric-standard-facilities.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -32,7 +37,11 @@ export function buildCurrentCapitalFacilitySourceAdmission(input) {
   const plan = parse(planBytes, "capital FACILITY plan");
   const pack = parse(canonicalPackBytes, "capital canonical pack");
   const snapshot = validateKricAccessibilitySnapshotIdentity(parse(snapshotBytes, "KRIC snapshot"));
-  const mappings = validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planBytes, pack, canonicalPackBytes });
+  const allMappings = validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planBytes, pack, canonicalPackBytes });
+  const mappings = snapshot.capturedAt <= KRIC_REGIONAL_WHEELCHAIR_LIFT_CUTOVER_CAPTURED_AT
+    && !(snapshot.queries ?? []).some(isKricRegionalWheelchairLiftQuery)
+    ? allMappings.filter(({ regionId, operatorId }) => regionId === "capital" && operatorId === "seoul-metro")
+    : allMappings;
   const sourceContext = validateSourceContext({
     candidateBuildSpec: input?.candidateBuildSpec,
     productionScopeBytes: input?.productionScopeBytes,
@@ -117,12 +126,14 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
     || capital?.id !== "capital" || capital?.version !== "1") {
     throw new Error("capital canonical pack identity mismatch");
   }
-  const capitalLineIds = new Set((capital.lines ?? [])
-    .filter(({ operatorId }) => operatorId === "seoul-metro")
+  const expectedLineIds = new Set((capital.lines ?? [])
+    .filter(({ id, operatorId }) =>
+      operatorId === "seoul-metro"
+      || KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.get(id)?.operatorId === operatorId)
     .map(({ id }) => id));
   const canonicalMembership = new Set();
   for (const { stationId, lineId } of capital.stationLines ?? []) {
-    if (!capitalLineIds.has(lineId)) continue;
+    if (!expectedLineIds.has(lineId)) continue;
     const key = `${stationId}\0${lineId}`;
     if (canonicalMembership.has(key)) throw new Error("capital FACILITY canonical membership duplicate");
     canonicalMembership.add(key);
@@ -131,7 +142,11 @@ export function validateCurrentCapitalFacilityPlanAndCanonicalPack({ plan, planB
   if (!Array.isArray(mappings)) throw new Error("capital FACILITY mapping coverage mismatch");
   const seen = new Set();
   for (const mapping of mappings) {
-    if (mapping?.regionId !== "capital" || mapping.operatorId !== "seoul-metro"
+    const regionalScope = KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.get(mapping?.lineId);
+    const validRegionOperator = regionalScope !== undefined
+      ? mapping?.regionId === regionalScope.regionId && mapping.operatorId === regionalScope.operatorId
+      : mapping?.regionId === "capital" && mapping.operatorId === "seoul-metro";
+    if (!validRegionOperator
       || !canonicalMembership.has(`${mapping.stationId}\0${mapping.lineId}`)
       || seen.has(`${mapping.stationId}\0${mapping.lineId}`)) {
       throw new Error("capital FACILITY plan/canonical membership mismatch");

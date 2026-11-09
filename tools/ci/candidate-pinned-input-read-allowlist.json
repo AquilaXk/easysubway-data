@@ -540,6 +540,15 @@
       "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
     },
     {
+      "testFile": "tools/datapack/prepare-nationwide-candidate-run.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
       "testFile": "tools/datapack/prepare-retained-gwangju-contract.test.mjs",
       "paths": [
         "tools/datapack/release/source-snapshots.json",
@@ -599,6 +608,16 @@
         "tools/datapack/source-inventory.json"
       ],
       "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/register-incheon-datapack-sources.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
     },
     {
       "testFile": "tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs",

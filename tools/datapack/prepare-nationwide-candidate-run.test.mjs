@@ -2775,3 +2775,200 @@ test("#3036 첫 등록 전 에스컬레이터 항목은 전국 후보 팩을 바
   assert.deepEqual(after.stationFacilityEvidence, before.stationFacilityEvidence);
   assert.deepEqual(after.sourceInventory, before.sourceInventory);
 });
+
+async function buildRegionalWheelchairLiftKricFixture() {
+  const { snapshot, pack, stationId } = await pinnedCapitalKricInputs();
+  const rosterSnapshot = JSON.parse(await readFile(path.join(root, "tools/datapack/sources/kric-nationwide-route-rosters-20261001T050420765Z.json"), "utf8"));
+  const allRosterStations = rosterSnapshot.rosters.flatMap((r) => r.stations);
+  const djRows = allRosterStations.filter((r) => r.railOprIsttCd === "DJ" && r.lnCd === "1");
+  const gjRows = allRosterStations.filter((r) => r.railOprIsttCd === "GJ" && r.lnCd === "1");
+  const stationByNormName = (lineId) => {
+    const lineStationIds = new Set(pack.stationLines.filter((sl) => sl.lineId === lineId).map((sl) => sl.stationId));
+    return new Map(
+      pack.stations
+        .filter((s) => lineStationIds.has(s.id))
+        .map((s) => [s.nameKo.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim(), s.id]),
+    );
+  };
+  const djStationByName = stationByNormName("line-7051a9c2525c");
+  const gjStationByName = stationByNormName("line-e57a361e8892");
+  const regionalRoster = [
+    ...djRows.map((row) => {
+      const sid = djStationByName.get(row.stinNm.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim());
+      return {
+        stationId: sid,
+        lineId: "line-7051a9c2525c",
+        railOprIsttCd: "DJ",
+        lnCd: "1",
+        stinCd: row.stinCd,
+        canonicalMappings: [{ artifactId: "bundled-capital", stationId: sid, lineId: "line-7051a9c2525c" }],
+      };
+    }),
+    ...gjRows.map((row) => {
+      const sid = gjStationByName.get(row.stinNm.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim());
+      return {
+        stationId: sid,
+        lineId: "line-e57a361e8892",
+        railOprIsttCd: "GJ",
+        lnCd: "1",
+        stinCd: row.stinCd,
+        canonicalMappings: [{ artifactId: "bundled-capital", stationId: sid, lineId: "line-e57a361e8892" }],
+      };
+    }),
+  ];
+  const jungangnoId = stationId("중앙로");
+  const yangdongId = stationId("양동시장");
+  const { snapshot: regionalCollected } = await collectKricStandardAccessibilityObservation({
+    sourceId: KRIC_STANDARD,
+    roster: regionalRoster,
+    serviceKey: "fixture-only-key",
+    now: new Date("2026-11-10T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      const railOprIsttCd = url.searchParams.get("railOprIsttCd");
+      const lnCd = url.searchParams.get("lnCd");
+      const stinCd = url.searchParams.get("stinCd");
+      const target = regionalRoster.find((item) => item.railOprIsttCd === railOprIsttCd && item.lnCd === lnCd && item.stinCd === stinCd);
+      const cnvRow = (gubun, dtlLoc, stinFlor = "1") => ({
+        dtlLoc, grndDvCd: "2", gubun, imgPath: "", mlFmlDvCd: "", stinFlor, trfcWeakDvCd: "1",
+      });
+      const baseRows = [
+        cnvRow("EV", "대합실-승강장", "1"),
+        cnvRow("ES", "1번 출구", "1"),
+      ];
+      const hasWheelchairLift = (railOprIsttCd === "DJ" && stinCd === "0005") || target?.stationId === yangdongId;
+      const liftRows = hasWheelchairLift
+        ? [
+          cnvRow("WCLF", "대합실 1번 출구 방향", "1"),
+          cnvRow("WCLF", "승강장 방향", "2"),
+        ]
+        : [];
+      return { ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: [...baseRows, ...liftRows] }) };
+    },
+  });
+  const regionalEvidence = [];
+  for (const { stationId: sid, lineId } of regionalRoster) {
+    const sourceId = lineId === "line-7051a9c2525c" ? "daejeon-transportation-accessibility" : "gwangju-transportation-accessibility";
+    for (const facilityType of ["ELEVATOR", "ESCALATOR"]) {
+      regionalEvidence.push({
+        stationId: sid,
+        lineId,
+        facilityType,
+        evidenceKind: "EXISTS",
+        sourceId,
+        sourceSnapshotId: `${sourceId}-locked`,
+        providerRecordHash: sha256(`${sid}:${lineId}:${facilityType}`),
+        evidenceHash: sha256(`${sourceId}:rows`),
+        provenanceKind: "OFFICIAL_SOURCE",
+        installationStatus: "INSTALLED",
+        operationalStatus: "UNKNOWN",
+        statusMeaning: "STATIC_LOCATION",
+        confidence: 80,
+        verifiedAt: "2026-11-09T00:00:00.000Z",
+        retrievedAt: "2026-11-09T00:00:00.000Z",
+        strictRouteEligible: false,
+        strictRouteEligibleReason: "OPERATION_STATUS_UNKNOWN",
+      });
+    }
+  }
+  const expandedSnapshot = {
+    ...snapshot,
+    capturedAt: "2026-11-10T00:00:00.000Z",
+    observedAt: "2026-11-10T00:00:00.000Z",
+    queries: [
+      ...snapshot.queries,
+      ...regionalCollected.queries.map((q) => ({ providerResultCode: "00", ...q })),
+    ],
+  };
+  const packWithRegionalCsv = {
+    ...pack,
+    stationFacilityEvidence: [...pack.stationFacilityEvidence, ...regionalEvidence],
+  };
+  return { snapshot: expandedSnapshot, pack: packWithRegionalCsv, jungangnoId, yangdongId, regionalRoster };
+}
+
+test("대전(DJ/1, 22역)·광주(GJ/1, 20역) KRIC 역사편의시설 조회는 중앙로·양동시장을 WHEELCHAIR_LIFT EXISTS로, 나머지 40개 역을 NOT_EXISTS로 만들고 지역 CSV의 ELEVATOR·ESCALATOR와 충돌하지 않는다", async () => {
+  const { snapshot, pack, jungangnoId, yangdongId } = await buildRegionalWheelchairLiftKricFixture();
+  const result = withCapitalKricFacilities({ pack, snapshot });
+
+  const regionalLineIds = new Set(["line-7051a9c2525c", "line-e57a361e8892"]);
+  const regionalKricFacilities = result.facilities.filter((f) => isKricStandard(f) && regionalLineIds.has(f.lineId));
+  const regionalKricEvidence = result.stationFacilityEvidence.filter((e) => isKricStandard(e) && regionalLineIds.has(e.lineId));
+
+  assert.equal(regionalKricFacilities.length, 4, "중앙로 2건 + 양동시장 2건 = 총 4건의 휠체어리프트 시설 행만 생성된다");
+  assert.deepEqual(new Set(regionalKricFacilities.map((f) => f.type)), new Set(["WHEELCHAIR_LIFT"]));
+  assert.deepEqual(
+    new Set(regionalKricFacilities.map((f) => `${f.stationId}:${f.lineId}:${f.installationStatus}`)),
+    new Set([`${jungangnoId}:line-7051a9c2525c:INSTALLED`, `${yangdongId}:line-e57a361e8892:INSTALLED`]),
+  );
+
+  assert.equal(regionalKricEvidence.length, 42, "대전 22역 + 광주 20역 = 42개 WHEELCHAIR_LIFT 증거만 생성된다");
+  assert.deepEqual(new Set(regionalKricEvidence.map((e) => e.facilityType)), new Set(["WHEELCHAIR_LIFT"]));
+
+  const existsStations = regionalKricEvidence.filter((e) => e.evidenceKind === "EXISTS");
+  const notExistsStations = regionalKricEvidence.filter((e) => e.evidenceKind === "NOT_EXISTS");
+  assert.equal(existsStations.length, 2);
+  assert.deepEqual(
+    new Set(existsStations.map((e) => `${e.stationId}:${e.lineId}:${e.statusMeaning}:${e.installationStatus}`)),
+    new Set([
+      `${jungangnoId}:line-7051a9c2525c:STATIC_LOCATION:INSTALLED`,
+      `${yangdongId}:line-e57a361e8892:STATIC_LOCATION:INSTALLED`,
+    ]),
+  );
+  assert.equal(notExistsStations.length, 40);
+  assert.deepEqual(
+    new Set(notExistsStations.map((e) => `${e.statusMeaning}:${e.installationStatus}`)),
+    new Set(["EXHAUSTIVE_LIST_ABSENCE:NOT_INSTALLED"]),
+  );
+
+  const regionalCsvEvidence = result.stationFacilityEvidence.filter((e) => regionalLineIds.has(e.lineId) && !isKricStandard(e));
+  assert.equal(regionalCsvEvidence.length, 84, "지역 CSV의 ELEVATOR·ESCALATOR 증거 84건(42역 × 2유형)은 그대로 유지된다");
+});
+
+test("반증: 대전·광주 KRIC 조회에 역 누락·비정상 결과 코드·코드 불일치가 있으면 Fail-Closed로 거부한다", async () => {
+  const { snapshot, pack } = await buildRegionalWheelchairLiftKricFixture();
+
+  // 1. 대전 1개 역 누락
+  const missingOneDj = {
+    ...snapshot,
+    queries: snapshot.queries.filter((q) => !(q.lineId === "line-7051a9c2525c" && q.stinCd === "0005")),
+  };
+  assert.throws(
+    () => withCapitalKricFacilities({ pack, snapshot: missingOneDj }),
+    /KRIC regional wheelchair-lift coverage incomplete/,
+  );
+
+  // 2. 광주 1개 역이 결과 03 (UNVERIFIED_EVIDENCE_BLOCKED)
+  const blockedOneGj = {
+    ...snapshot,
+    queries: snapshot.queries.map((q) => (q.lineId === "line-e57a361e8892" && q.stinCd === "100"
+      ? { ...q, providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", rows: [] }
+      : q)),
+  };
+  assert.throws(
+    () => withCapitalKricFacilities({ pack, snapshot: blockedOneGj }),
+    /KRIC regional wheelchair-lift/,
+  );
+
+  // 3. 대전 노선 역에 잘못된 railOprIsttCd 코드
+  const wrongCodeDj = {
+    ...snapshot,
+    queries: snapshot.queries.map((q) => (q.lineId === "line-7051a9c2525c" && q.stinCd === "0001"
+      ? { ...q, railOprIsttCd: "S1" }
+      : q)),
+  };
+  assert.throws(
+    () => withCapitalKricFacilities({ pack, snapshot: wrongCodeDj }),
+    /KRIC regional wheelchair-lift/,
+  );
+
+  // 4. 컷오버 이후 시각인데 대전·광주 쿼리가 통째로 누락된 경우
+  const missingAllRegionalAfterCutover = {
+    ...snapshot,
+    capturedAt: "2026-11-10T00:00:00.000Z",
+    queries: snapshot.queries.filter((q) => q.lineId !== "line-7051a9c2525c" && q.lineId !== "line-e57a361e8892"),
+  };
+  assert.throws(
+    () => withCapitalKricFacilities({ pack, snapshot: missingAllRegionalAfterCutover }),
+    /KRIC regional wheelchair-lift coverage incomplete/,
+  );
+});

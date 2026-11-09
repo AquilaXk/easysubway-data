@@ -1417,3 +1417,255 @@ test("release gate admits gap recording in candidate preparation state (NO_GO + 
     assert.match(launchError?.message ?? "", /in-scope coverage gaps remain: \d+ missing requirements/);
   });
 });
+
+test("대전 1호선·광주 1호선은 지역 CSV(엘리베이터·에스컬레이터)와 KRIC 역사편의시설(휠체어리프트) 조합으로 requirements와 releaseScopeRequirements 양쪽에서 wheelchair_lift가 covered 된다", async () => {
+  await withCoverageWorkspace(async ({ releaseScopePath, writeCandidate, runCandidateReport, readReport }) => {
+    const [targets, realInventory] = await Promise.all([readNationwideTargets(), readSourceInventory()]);
+    const kricSource = realInventory.sources.find((s) => s.id === "kric-station-convenience-standard");
+    const daejeonCsvSource = realInventory.sources.find((s) => s.id === "daejeon-transportation-accessibility");
+    const gwangjuCsvSource = realInventory.sources.find((s) => s.id === "gwangju-transportation-accessibility");
+
+    assert.deepEqual(kricSource.coverageScope.regionIds, ["capital", "daejeon", "gwangju"]);
+    assert.deepEqual(
+      kricSource.coverageScope.operatorIds,
+      ["seoul-metro", "korail", "daejeon-transportation", "gwangju-metropolitan-rapid-transit"],
+    );
+
+    const { packFieldProvenance } = await import("./build-datapack.mjs");
+    assert.equal(typeof packFieldProvenance, "function");
+
+    const pack = {
+      id: "nationwide",
+      version: "1",
+      lines: [
+        { id: "line-7051a9c2525c", operatorId: "daejeon-transportation" },
+        { id: "line-e57a361e8892", operatorId: "gwangju-metropolitan-rapid-transit" },
+        { id: "shinbundang", operatorId: "operator-28e01fb8509d" },
+      ],
+      stations: [
+        { id: "station-102781067ad4", nameKo: "중앙로" },
+        { id: "station-039660e39dc7", nameKo: "판암" },
+        { id: "station-e5787c873af4", nameKo: "양동시장" },
+        { id: "station-a72bc79f7731", nameKo: "녹동" },
+        { id: "station-3178d4e46cab", nameKo: "신사" },
+      ],
+      stationLines: [
+        { stationId: "station-102781067ad4", lineId: "line-7051a9c2525c" },
+        { stationId: "station-039660e39dc7", lineId: "line-7051a9c2525c" },
+        { stationId: "station-e5787c873af4", lineId: "line-e57a361e8892" },
+        { stationId: "station-a72bc79f7731", lineId: "line-e57a361e8892" },
+        { stationId: "station-3178d4e46cab", lineId: "shinbundang" },
+      ],
+      sourceInventory: [kricSource, daejeonCsvSource, gwangjuCsvSource].map((source) => ({
+        id: source.id,
+        fields: [...(source.fieldsProvided ?? [])],
+        coverageScope: structuredClone(source.coverageScope),
+      })),
+      facilities: [
+        {
+          id: "facility-daejeon-101-elevator",
+          stationId: "station-102781067ad4",
+          lineId: "line-7051a9c2525c",
+          type: "ELEVATOR",
+          status: "UNKNOWN",
+          floorFrom: "",
+          floorTo: "",
+          description: "대전 엘리베이터",
+          sourceId: "daejeon-transportation-accessibility",
+          sourceSnapshotId: "daejeon-snap",
+          providerRecordHash: "1".repeat(64),
+          evidenceHash: "2".repeat(64),
+          derivationKind: "OFFICIAL",
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+          lastVerifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+        {
+          id: "facility-daejeon-101-escalator",
+          stationId: "station-102781067ad4",
+          lineId: "line-7051a9c2525c",
+          type: "ESCALATOR",
+          status: "UNKNOWN",
+          floorFrom: "",
+          floorTo: "",
+          description: "대전 에스컬레이터",
+          sourceId: "daejeon-transportation-accessibility",
+          sourceSnapshotId: "daejeon-snap",
+          providerRecordHash: "1".repeat(64),
+          evidenceHash: "2".repeat(64),
+          derivationKind: "OFFICIAL",
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+          lastVerifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+        {
+          id: "facility-station-102781067ad4-wheelchair-lift-kric-1",
+          stationId: "station-102781067ad4",
+          lineId: "line-7051a9c2525c",
+          type: "WHEELCHAIR_LIFT",
+          status: "UNKNOWN",
+          floorFrom: "B1",
+          floorTo: "1F",
+          description: "중앙로 휠체어리프트",
+          sourceId: "kric-station-convenience-standard",
+          sourceSnapshotId: "kric-snap",
+          providerRecordHash: "3".repeat(64),
+          evidenceHash: "4".repeat(64),
+          derivationKind: "OFFICIAL",
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+          lastVerifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+        {
+          id: "facility-gwangju-107-elevator",
+          stationId: "station-e5787c873af4",
+          lineId: "line-e57a361e8892",
+          type: "ELEVATOR",
+          status: "UNKNOWN",
+          floorFrom: "",
+          floorTo: "",
+          description: "광주 엘리베이터",
+          sourceId: "gwangju-transportation-accessibility",
+          sourceSnapshotId: "gwangju-snap",
+          providerRecordHash: "5".repeat(64),
+          evidenceHash: "6".repeat(64),
+          derivationKind: "OFFICIAL",
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+          lastVerifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+        {
+          id: "facility-gwangju-107-escalator",
+          stationId: "station-e5787c873af4",
+          lineId: "line-e57a361e8892",
+          type: "ESCALATOR",
+          status: "UNKNOWN",
+          floorFrom: "",
+          floorTo: "",
+          description: "광주 에스컬레이터",
+          sourceId: "gwangju-transportation-accessibility",
+          sourceSnapshotId: "gwangju-snap",
+          providerRecordHash: "5".repeat(64),
+          evidenceHash: "6".repeat(64),
+          derivationKind: "OFFICIAL",
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+          lastVerifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+        {
+          id: "facility-station-e5787c873af4-wheelchair-lift-kric-1",
+          stationId: "station-e5787c873af4",
+          lineId: "line-e57a361e8892",
+          type: "WHEELCHAIR_LIFT",
+          status: "UNKNOWN",
+          floorFrom: "B1",
+          floorTo: "1F",
+          description: "양동시장 휠체어리프트",
+          sourceId: "kric-station-convenience-standard",
+          sourceSnapshotId: "kric-snap",
+          providerRecordHash: "7".repeat(64),
+          evidenceHash: "8".repeat(64),
+          derivationKind: "OFFICIAL",
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+          lastVerifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+      ],
+      stationFacilityEvidence: [
+        {
+          stationId: "station-039660e39dc7",
+          lineId: "line-7051a9c2525c",
+          facilityType: "WHEELCHAIR_LIFT",
+          evidenceKind: "NOT_EXISTS",
+          sourceId: "kric-station-convenience-standard",
+          sourceSnapshotId: "kric-snap",
+          providerRecordHash: "9".repeat(64),
+          evidenceHash: "a".repeat(64),
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+        {
+          stationId: "station-a72bc79f7731",
+          lineId: "line-e57a361e8892",
+          facilityType: "WHEELCHAIR_LIFT",
+          evidenceKind: "NOT_EXISTS",
+          sourceId: "kric-station-convenience-standard",
+          sourceSnapshotId: "kric-snap",
+          providerRecordHash: "b".repeat(64),
+          evidenceHash: "c".repeat(64),
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+        {
+          stationId: "station-3178d4e46cab",
+          lineId: "shinbundang",
+          facilityType: "WHEELCHAIR_LIFT",
+          evidenceKind: "NOT_EXISTS",
+          sourceId: "kric-station-convenience-standard",
+          sourceSnapshotId: "kric-snap",
+          providerRecordHash: "d".repeat(64),
+          evidenceHash: "e".repeat(64),
+          verifiedAt: "2026-11-09T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const emittedPackProvenance = packFieldProvenance(pack, { artifactKind: "production", sqliteSha256: "b".repeat(64) });
+    const baseInventory = completeCoverageInventory(targets);
+    const filteredSources = baseInventory.sources.filter(
+      (s) => !(
+        s.coverageScope.sourceDomains?.includes("accessibility_facilities")
+        && (s.coverageScope.lineIds?.includes("line-7051a9c2525c") || s.coverageScope.lineIds?.includes("line-e57a361e8892"))
+      ),
+    );
+    const testInventory = {
+      ...baseInventory,
+      sources: [...filteredSources, kricSource, daejeonCsvSource, gwangjuCsvSource],
+    };
+    const baseProvenance = completeCoverageProvenance(
+      { ...baseInventory, sources: filteredSources },
+    );
+    const testProvenance = {
+      ...baseProvenance,
+      packs: [
+        {
+          ...baseProvenance.packs[0],
+          records: [...baseProvenance.packs[0].records, ...emittedPackProvenance.records],
+        },
+      ],
+    };
+
+    await writeCandidate(testInventory, testProvenance);
+    await writeJson(releaseScopePath, {
+      decision: { currentLaunchDecision: "GO" },
+      verifiedAccessibilityScope: {
+        id: "dj_gj_accessibility_scope",
+        regionIds: ["daejeon", "gwangju"],
+        includedOperatorIds: ["daejeon-transportation", "gwangju-metropolitan-rapid-transit"],
+        includedLineIds: ["line-7051a9c2525c", "line-e57a361e8892"],
+      },
+    });
+    await runCandidateReport({
+      withReleaseScope: true,
+      releaseTargets: NATIONWIDE_TARGETS_PATH,
+    });
+    const report = await readReport();
+
+    for (const [regionId, operatorId, lineId, csvSourceId] of [
+      ["daejeon", "daejeon-transportation", "line-7051a9c2525c", "daejeon-transportation-accessibility"],
+      ["gwangju", "gwangju-metropolitan-rapid-transit", "line-e57a361e8892", "gwangju-transportation-accessibility"],
+    ]) {
+      const req = findRequirement(report, {
+        regionId,
+        operatorId,
+        lineId,
+        sourceDomain: "accessibility_facilities",
+      });
+      const releaseReq = report.releaseScopeRequirements.find(
+        (r) => r.regionId === regionId && r.operatorId === operatorId && r.lineId === lineId && r.sourceDomain === "accessibility_facilities",
+      );
+      for (const targetReq of [req, releaseReq]) {
+        assert.equal(targetReq.status, "SUPPORTED", `${regionId} status`);
+        assert.deepEqual(targetReq.missingFields, [], `${regionId} missingFields`);
+        const liftField = targetReq.fieldCoverage.find((f) => f.field === "wheelchair_lift");
+        assert.equal(liftField.status, "covered", `${regionId} wheelchair_lift covered`);
+        assert.deepEqual(liftField.sourceIds, ["kric-station-convenience-standard"], `${regionId} wheelchair_lift sourceIds`);
+        const evField = targetReq.fieldCoverage.find((f) => f.field === "elevator");
+        assert.equal(evField.status, "covered", `${regionId} elevator covered`);
+        assert.ok(evField.sourceIds.includes(csvSourceId), `${regionId} elevator sourceIds`);
+      }
+    }
+  });
+});

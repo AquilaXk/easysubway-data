@@ -58,9 +58,38 @@ const KRIC_FACILITY_PROFILES = new Map([
   })],
 ]);
 
-function kricFacilityProfile(snapshot) {
+// 대전 1호선(DJ/1)·광주 1호선(GJ/1)은 엘리베이터·에스컬레이터를 지역 접근성 CSV 원천이 다루므로,
+// KRIC 역사편의시설 원천에서는 휠체어리프트(WCLF → WHEELCHAIR_LIFT)만 시설·증거로 다룬다.
+export const KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES = new Map([
+  ["line-7051a9c2525c", Object.freeze({ regionId: "daejeon", operatorId: "daejeon-transportation", railOprIsttCd: "DJ", lnCd: "1" })],
+  ["line-e57a361e8892", Object.freeze({ regionId: "gwangju", operatorId: "gwangju-metropolitan-rapid-transit", railOprIsttCd: "GJ", lnCd: "1" })],
+]);
+export const KRIC_REGIONAL_WHEELCHAIR_LIFT_CUTOVER_CAPTURED_AT = "2026-11-09T13:10:42.779Z";
+
+export function isKricRegionalWheelchairLiftQuery(query) {
+  return KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.has(query?.lineId)
+    || query?.railOprIsttCd === "DJ"
+    || query?.railOprIsttCd === "GJ";
+}
+
+const KRIC_REGIONAL_WHEELCHAIR_LIFT_PROFILE = Object.freeze({
+  idTag: "kric-standard",
+  reportedTypes: Object.freeze(["WHEELCHAIR_LIFT"]),
+  absenceCoveredTypes: Object.freeze(["WHEELCHAIR_LIFT"]),
+  rowType: (row) => (row.gubun === "WCLF" ? "WHEELCHAIR_LIFT" : undefined),
+  providerCode: (row) => row.gubun,
+  floorFrom: (row) => kricFloorLabel(row),
+  validateRow: (row) => {
+    if (!KRIC_FACILITY_CODES.has(row.gubun)) throw new Error(`unknown KRIC facility code: ${row.gubun}`);
+  },
+});
+
+function kricFacilityProfile(snapshot, query) {
   const profile = KRIC_FACILITY_PROFILES.get(snapshot?.sourceId);
   if (!profile) throw new Error(`unknown KRIC facility source: ${snapshot?.sourceId ?? "<missing>"}`);
+  if (snapshot?.sourceId === KRIC_STANDARD_SOURCE_ID && isKricRegionalWheelchairLiftQuery(query)) {
+    return KRIC_REGIONAL_WHEELCHAIR_LIFT_PROFILE;
+  }
   return profile;
 }
 
@@ -92,9 +121,13 @@ export function validateKricStandardProviderRows(queries) {
 
 // 그 snapshot 원천이 이 유형을 말하는 행. 규칙이 없는 원천이거나 원천이 이 유형의 증거를 내지 않으면 null이다.
 // coverage report 결속이 쓰며, null인 증거는 결속하지 않는다.
-export function kricRowsOfType(snapshot, rows, facilityType) {
-  const profile = KRIC_FACILITY_PROFILES.get(snapshot?.sourceId);
-  if (!profile?.reportedTypes.includes(facilityType)) return null;
+export function kricRowsOfType(snapshot, rows, facilityType, query) {
+  const baseProfile = KRIC_FACILITY_PROFILES.get(snapshot?.sourceId);
+  if (!baseProfile) return null;
+  const profile = snapshot?.sourceId === KRIC_STANDARD_SOURCE_ID && isKricRegionalWheelchairLiftQuery(query)
+    ? KRIC_REGIONAL_WHEELCHAIR_LIFT_PROFILE
+    : baseProfile;
+  if (!profile.reportedTypes.includes(facilityType)) return null;
   return rows.filter((row) => profile.rowType(row) === facilityType);
 }
 
@@ -102,18 +135,23 @@ export function kricRowsOfType(snapshot, rows, facilityType) {
 // 그래서 부재는 역 단위로 판단한다. 팩에 있는 그 역의 역-노선이 모두 결과 00으로 조회됐고 어느 조회에도 없는 유형만 부재다.
 // 다른 노선 조회에 있으면 LISTED_ON_OTHER_LINE_QUERY, 조회되지 않은(결과 03 포함) 역-노선이 남으면 STATION_LINE_NOT_QUERIED다.
 export function kricStationContexts(snapshot, queries, stationLines) {
-  const { rowType, absenceCoveredTypes } = kricFacilityProfile(snapshot);
+  const defaultProfile = kricFacilityProfile(snapshot);
   const contexts = new Map();
-  const contextOf = (stationId) => {
+  const contextOf = (stationId, absenceCoveredTypes = defaultProfile.absenceCoveredTypes) => {
     if (!contexts.has(stationId)) contexts.set(stationId, { absenceCoveredTypes, listedTypes: new Set(), unqueriedLineIds: new Set() });
     return contexts.get(stationId);
   };
-  for (const { stationId, lineId } of stationLines) contextOf(stationId).unqueriedLineIds.add(lineId);
+  for (const { stationId, lineId } of stationLines) {
+    const profile = kricFacilityProfile(snapshot, { lineId });
+    contextOf(stationId, profile.absenceCoveredTypes).unqueriedLineIds.add(lineId);
+  }
   for (const query of queries.filter((candidate) => kricQueryResultCode(candidate, snapshot) === KRIC_PRESENT_RESULT_CODE)) {
-    const context = contextOf(query.stationId);
+    const profile = kricFacilityProfile(snapshot, query);
+    const context = contextOf(query.stationId, profile.absenceCoveredTypes);
+    context.absenceCoveredTypes = profile.absenceCoveredTypes;
     context.unqueriedLineIds.delete(query.lineId);
     for (const row of query.rows) {
-      const type = rowType(row);
+      const type = profile.rowType(row);
       if (type) context.listedTypes.add(type);
     }
   }
@@ -143,7 +181,7 @@ function supportedQueryRows(profile, query) {
 }
 
 export function kricQueryFacilities({ snapshot, query, stationName, stationContexts }) {
-  const profile = kricFacilityProfile(snapshot);
+  const profile = kricFacilityProfile(snapshot, query);
   const resultCode = kricQueryResultCode(query, snapshot);
   if (resultCode !== KRIC_PRESENT_RESULT_CODE) throw new Error(`KRIC provider result is not ${KRIC_PRESENT_RESULT_CODE}: ${resultCode ?? "<missing>"}`);
   const counts = new Map();

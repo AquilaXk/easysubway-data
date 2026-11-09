@@ -6,9 +6,18 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
-import { KRIC_ESCALATOR_SOURCE_ID, kricQueryFacilities, kricStationContexts } from "./lib/kric-standard-facilities.mjs";
+import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
+import {
+  KRIC_ESCALATOR_SOURCE_ID,
+  KRIC_REGIONAL_WHEELCHAIR_LIFT_CUTOVER_CAPTURED_AT,
+  KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES,
+  KRIC_STANDARD_SOURCE_ID,
+  isKricRegionalWheelchairLiftQuery,
+  kricQueryFacilities,
+  kricQueryResultCode,
+  kricStationContexts,
+} from "./lib/kric-standard-facilities.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
@@ -924,11 +933,58 @@ function supersedeFacilityEvidence(rows, claimed, sourceId) {
   });
 }
 
+// 대전 1호선(DJ/1, 22역)·광주 1호선(GJ/1, 20역)의 KRIC 휠체어리프트 조회가 포함된 경우(또는 컷오버 이후 스냅샷인 경우),
+// 노선-역 코드 정합성, 결과 코드 00(전수 조회 완료), 정본 역-노선 누락 여부를 Fail-Closed로 검증한다.
+function assertKricRegionalWheelchairLiftQueryCoverage(pack, snapshot) {
+  const regionalQueries = (snapshot?.queries ?? []).filter(isKricRegionalWheelchairLiftQuery);
+  const requiresRegionalCoverage = regionalQueries.length > 0
+    || (snapshot?.sourceId === KRIC_STANDARD_SOURCE_ID
+      && typeof snapshot?.capturedAt === "string"
+      && snapshot.capturedAt > KRIC_REGIONAL_WHEELCHAIR_LIFT_CUTOVER_CAPTURED_AT);
+  if (!requiresRegionalCoverage) return;
+
+  const expectedStationLineKeys = new Set();
+  for (const { stationId, lineId } of pack.stationLines ?? []) {
+    if (KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.has(lineId)) {
+      expectedStationLineKeys.add(`${stationId}\0${lineId}`);
+    }
+  }
+  const seenKeys = new Set();
+  for (const query of regionalQueries) {
+    const scope = KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.get(query.lineId);
+    if (!scope || query.railOprIsttCd !== scope.railOprIsttCd || query.lnCd !== scope.lnCd) {
+      throw new Error(
+        `KRIC regional wheelchair-lift query scope mismatch: ${query.railOprIsttCd}/${query.lnCd}/${query.stinCd} ${query.stationId}:${query.lineId}`,
+      );
+    }
+    const resultCode = kricQueryResultCode(query, snapshot);
+    if (query.status === "UNVERIFIED_EVIDENCE_BLOCKED" || resultCode !== "00") {
+      throw new Error(
+        `KRIC regional wheelchair-lift query result is not 00: ${query.railOprIsttCd}/${query.lnCd}/${query.stinCd} (${resultCode ?? query.status ?? "<missing>"})`,
+      );
+    }
+    const key = `${query.stationId}\0${query.lineId}`;
+    if (seenKeys.has(key)) {
+      throw new Error(`KRIC regional wheelchair-lift query duplicated: ${query.stationId}:${query.lineId}`);
+    }
+    seenKeys.add(key);
+  }
+  if (snapshot?.sourceId === KRIC_STANDARD_SOURCE_ID && expectedStationLineKeys.size > 0) {
+    const missing = [...expectedStationLineKeys].filter((key) => !seenKeys.has(key));
+    if (missing.length > 0) {
+      throw new Error(
+        `KRIC regional wheelchair-lift coverage incomplete: missing ${missing.length} station-lines (${missing.slice(0, 5).map((k) => k.replace("\0", ":")).join(", ")})`,
+      );
+    }
+  }
+}
+
 // #3036: 수도권 KRIC 시설 snapshot(편의시설 표준, 에스컬레이터)의 결과 00 조회를 모두 팩 시설·증거로 싣는다.
 // 기반 팩의 같은 원천 행(pilot 2역, 이전 snapshot)은 같은 결정적 id 규칙으로 다시 만들어지므로 이 snapshot의 행으로 바꾼다.
 // 결과 00 조회의 (역, 노선, 유형)마다 EXISTS·NOT_EXISTS·UNKNOWN 증거 하나를 싣는다(QA 승인 2026-10-23).
 // 결과 03 조회(UNVERIFIED_EVIDENCE_BLOCKED)는 시설도 부재도 만들지 않는다. 팩 역-노선에 없는 조회는 실패한다.
 export function withCapitalKricFacilities({ pack, snapshot }) {
+  assertKricRegionalWheelchairLiftQueryCoverage(pack, snapshot);
   const stationNames = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
   const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
   const queries = snapshot.queries.filter(({ status }) => status !== "UNVERIFIED_EVIDENCE_BLOCKED");
@@ -1887,7 +1943,9 @@ function expandNationwideCarDoorHints({ finalPack, kricConvenience }) {
   }
 
   for (const q of kricConvenience.queries ?? []) {
+    const regionalWheelchairLiftOnly = isKricRegionalWheelchairLiftQuery(q);
     for (const row of q.rows ?? []) {
+      if (regionalWheelchairLiftOnly && row.gubun !== "WCLF") continue;
       const loc = row.dtlLoc || "";
       if (!loc) continue;
 
@@ -2028,6 +2086,11 @@ function finalizeNationwidePackAndExternalStopTimes({
       if (!source) throw new Error(`Source not found in inventory: ${item.id}`);
       finalPack.sourceInventory.push(buildPackSourceEntry(source, item.updatedAt));
     }
+  }
+  const kricStandardInventorySource = sourceInventory.sources.find((s) => s.id === KRIC_STANDARD_SOURCE_ID);
+  const kricStandardPackSource = finalPack.sourceInventory.find((s) => s.id === KRIC_STANDARD_SOURCE_ID);
+  if (kricStandardInventorySource?.coverageScope && kricStandardPackSource) {
+    kricStandardPackSource.coverageScope = structuredClone(kricStandardInventorySource.coverageScope);
   }
 
   for (const transferSourceId of ["busan-transportation-route-topology", MEASURED_TRANSFER_SOURCE_ID]) {
@@ -2474,7 +2537,11 @@ function buildNationwideStationLineInput({
   const daeguMap = new Map(daeguAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
   const daejeonMap = new Map(daejeonAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
   const gwangjuMap = new Map(gwangjuAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
-  const kricMap = new Map((kricConvenience.queries ?? []).map((q) => [`${q.stationId}\0${q.lineId}`, q]));
+  const kricMap = new Map(
+    (kricConvenience.queries ?? [])
+      .filter((q) => !isKricRegionalWheelchairLiftQuery(q))
+      .map((q) => [`${q.stationId}\0${q.lineId}`, q]),
+  );
 
   // 제외된 역 밖 환승 후보의 끝점도 환승역으로 본다. 근거가 없으므로 TRANSFER 칸은 환승 없음이 아니라 사용 불가로 남는다(#872).
   const outOfStationTransferStationIds = new Set(

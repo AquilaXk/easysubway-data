@@ -266,3 +266,53 @@ test("FACILITY·EXIT·시간표 계획 도구는 roster 경로를 고정하지 �
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("FACILITY 수집 계약은 수도권 213개 역-노선에 더해 대전 1호선(DJ/1, 22역)·광주 1호선(GJ/1, 20역)을 포함한다", async () => {
+  const input = await readInput();
+  const plan = buildCurrentCapitalFacilityCollectionPlan(input);
+
+  const capitalMappings = plan.stationLineProviderMappings.filter(
+    ({ regionId, operatorId }) => regionId === "capital" && operatorId === "seoul-metro",
+  );
+  const daejeonMappings = plan.stationLineProviderMappings.filter(
+    ({ regionId, operatorId, lineId }) =>
+      regionId === "daejeon" && operatorId === "daejeon-transportation" && lineId === "line-7051a9c2525c",
+  );
+  const gwangjuMappings = plan.stationLineProviderMappings.filter(
+    ({ regionId, operatorId, lineId }) =>
+      regionId === "gwangju" && operatorId === "gwangju-metropolitan-rapid-transit" && lineId === "line-e57a361e8892",
+  );
+
+  assert.equal(capitalMappings.length, 213);
+  assert.equal(daejeonMappings.length, 22);
+  assert.equal(gwangjuMappings.length, 20);
+  assert.equal(plan.counts.stationLineCount, 255);
+  assert.equal(plan.counts.providerTupleCount, 255);
+  assert.ok(daejeonMappings.every(({ providerOperatorId, providerLineId }) => providerOperatorId === "DJ" && providerLineId === "1"));
+  assert.ok(gwangjuMappings.every(({ providerOperatorId, providerLineId }) => providerOperatorId === "GJ" && providerLineId === "1"));
+  assert.deepEqual(
+    daejeonMappings.find(({ providerStationId }) => providerStationId === "0005"),
+    {
+      lineId: "line-7051a9c2525c",
+      operatorId: "daejeon-transportation",
+      providerLineId: "1",
+      providerOperatorId: "DJ",
+      providerStationId: "0005",
+      regionId: "daejeon",
+      stationId: "station-102781067ad4",
+    },
+  );
+  assert.deepEqual(
+    gwangjuMappings.find(({ stationId }) => stationId === "station-e5787c873af4"),
+    {
+      lineId: "line-e57a361e8892",
+      operatorId: "gwangju-metropolitan-rapid-transit",
+      providerLineId: "1",
+      providerOperatorId: "GJ",
+      providerStationId: "107",
+      regionId: "gwangju",
+      stationId: "station-e5787c873af4",
+    },
+  );
+});
+

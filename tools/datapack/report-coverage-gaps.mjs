@@ -773,7 +773,7 @@ function coveredField(
       source.regionIds.includes(regionId) &&
       source.operatorIds.includes(operatorId) &&
       matchesInventoryLineOperatorScope(source, { regionId, operatorId, lineId }) &&
-      (lineId === "" || source.lineIds.includes(lineId) || (!strictLineScope && source.lineIds.length === 0)) &&
+      (lineId === "" || source.lineIds.includes(lineId) || ((Boolean(provenanceIndex) || !strictLineScope) && source.lineIds.length === 0)) &&
       source.sourceDomains.includes(sourceDomain),
   );
   let sourceIds = [];
@@ -1128,9 +1128,13 @@ function provenanceFieldIndex(provenance, candidateManifest, sources) {
         && !admittedGeneratedRouteMap) {
         continue;
       }
+      const sourceHasExplicitLines = (sourcesById.get(record.sourceId)?.lineIds.length ?? 0) > 0;
+      const indexedLineIds = record.entityType === "source-field" && !sourceHasExplicitLines
+        ? [""]
+        : normalizedRecord.coverageScope.lineIds;
       for (const regionId of normalizedRecord.coverageScope.regionIds) {
         for (const operatorId of normalizedRecord.coverageScope.operatorIds) {
-          for (const lineId of normalizedRecord.coverageScope.lineIds) {
+          for (const lineId of indexedLineIds) {
             for (const sourceDomain of normalizedRecord.coverageScope.sourceDomains) {
               officialFieldScopes.add(
                 coverageKey(record.sourceId, regionId, operatorId, lineId, sourceDomain, record.field),

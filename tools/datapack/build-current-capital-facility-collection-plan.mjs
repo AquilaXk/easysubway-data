@@ -8,6 +8,7 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { KRIC_STATION_TUPLE_MAPPINGS } from "./collect-kric-accessibility-snapshots.mjs";
 import { providerLineScopesFor, validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
+import { KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES } from "./lib/kric-standard-facilities.mjs";
 
 const INPUT_KEYS = [
   "canonicalPackBytes",
@@ -70,18 +71,19 @@ export function buildCurrentCapitalFacilityCollectionPlan(input) {
   const stationById = uniqueMap(pack.stations, "id", "canonical station");
   const linesById = uniqueMap(pack.lines, "id", "canonical line");
 
-  const selectedLines = pack.lines.filter(({ operatorId }) => operatorId === coverage.operatorId);
+  const selectedLineScopeById = selectFacilityLineScopes(pack.lines, coverage);
+  const selectedLines = pack.lines.filter(({ id }) => selectedLineScopeById.has(id));
   if (selectedLines.length === 0 || selectedLines.some((line) => line.serviceLifecycle !== undefined && line.serviceLifecycle !== "ACTIVE")) {
     throw new Error("capital FACILITY line scope is inactive or empty");
   }
   const selectedLineIds = new Set(selectedLines.map(({ id }) => id));
-  assertActiveTargetPartition(coverageTargets, selectedLineIds, pack.lines);
-  const targets = selectTargets(pack.stationLines, selectedLineIds, stationById, linesById, coverage);
+  assertActiveTargetPartition(coverageTargets, selectedLineScopeById, pack.lines);
+  const targets = selectTargets(pack.stationLines, selectedLineScopeById, stationById, linesById);
   const rosterByRequest = uniqueMap(rosters.rosters, ({ mreaWideCd, lnCd }) => `${mreaWideCd}\0${lnCd}`, "KRIC route roster");
   assertTargetProviderScopeIdentity({ coverageTargets, catalog, linesById, routeProviderScopes: rosters.providerScopes, selectedLineIds });
-  const scopeByLine = selectProviderScopes(rosters.providerScopes, selectedLines, coverage);
+  const scopeByLine = selectProviderScopes(rosters.providerScopes, selectedLines, selectedLineScopeById);
   const catalogTuples = new Set(catalog.providerLines.map(({ railOprIsttCd, lnCd }) => `${railOprIsttCd}\0${lnCd}`));
-  const providerTuplesByLine = providerScopeTuplesByLine(rosters.providerScopes, selectedLineIds, coverage);
+  const providerTuplesByLine = providerScopeTuplesByLine(rosters.providerScopes, selectedLineScopeById);
   const mappings = bindProviderTuples({ targets, scopeByLine, providerTuplesByLine, rosterByRequest, catalogTuples });
 
   const counts = derivedMappingCounts(mappings);
@@ -230,6 +232,34 @@ function sameFile(left, right) {
 function sameIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino; }
 function within(root, target) { return target === root || target.startsWith(`${root}${path.sep}`); }
 
+function isSupportedFacilityMappingScope(mapping) {
+  const regionalScope = KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.get(mapping?.lineId);
+  if (regionalScope) {
+    return mapping?.regionId === regionalScope.regionId && mapping?.operatorId === regionalScope.operatorId;
+  }
+  return mapping?.regionId === "capital" && mapping?.operatorId === "seoul-metro";
+}
+
+function selectFacilityLineScopes(lines, coverage) {
+  const result = new Map();
+  let hasCapital = false;
+  for (const line of lines) {
+    if (line.operatorId === coverage.operatorId) {
+      result.set(line.id, { regionId: coverage.regionId, operatorId: coverage.operatorId });
+      hasCapital = true;
+      continue;
+    }
+    const regionalScope = KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.get(line.id);
+    if (regionalScope && line.operatorId === regionalScope.operatorId) {
+      result.set(line.id, { regionId: regionalScope.regionId, operatorId: regionalScope.operatorId });
+    }
+  }
+  if (!hasCapital || [...KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.keys()].some((lineId) => !result.has(lineId))) {
+    throw new Error("capital FACILITY line scope is inactive or empty");
+  }
+  return result;
+}
+
 function validatePlanPayload(value) {
   assertKeys(value.coverage, ["operatorId", "regionId", "sourceDomain", "sourceIds"], "capital FACILITY coverage");
   if (value.coverage.regionId !== "capital" || value.coverage.operatorId !== "seoul-metro"
@@ -249,7 +279,7 @@ function validatePlanPayload(value) {
   let previous;
   for (const mapping of value.stationLineProviderMappings) {
     assertKeys(mapping, ["lineId", "operatorId", "providerLineId", "providerOperatorId", "providerStationId", "regionId", "stationId"], "capital FACILITY mapping");
-    if (mapping.regionId !== "capital" || mapping.operatorId !== "seoul-metro") throw new Error("capital FACILITY mapping scope mismatch");
+    if (!isSupportedFacilityMappingScope(mapping)) throw new Error("capital FACILITY mapping scope mismatch");
     for (const field of Object.keys(mapping)) requiredString(mapping[field], `capital FACILITY mapping ${field}`);
     const stationLineKey = `${mapping.stationId}\0${mapping.lineId}`;
     const providerTuple = providerTupleKey(mapping);
@@ -334,7 +364,7 @@ function assertTargetProviderScopeIdentity({ coverageTargets, catalog, linesById
   if (canonicalJson(expected) !== canonicalJson(actual)) throw new Error("KRIC target provider scope identity mismatch");
 }
 
-function assertActiveTargetPartition(targets, targetLineIds, lines) {
+function assertActiveTargetPartition(targets, selectedLineScopeById, lines) {
   const activeByLine = new Map();
   for (const scope of targets.activeLineScopes) {
     const values = activeByLine.get(scope.lineId) ?? [];
@@ -343,9 +373,9 @@ function assertActiveTargetPartition(targets, targetLineIds, lines) {
   }
   const inactiveLineIds = new Set(targets.inactiveLineExclusions.map(({ lineId }) => lineId));
   const linesById = uniqueMap(lines, "id", "canonical line");
-  for (const lineId of targetLineIds) {
+  for (const [lineId, lineScope] of selectedLineScopeById) {
     const line = linesById.get(lineId);
-    const candidates = (activeByLine.get(lineId) ?? []).filter(({ regionId }) => regionId === "capital");
+    const candidates = (activeByLine.get(lineId) ?? []).filter(({ regionId }) => regionId === lineScope.regionId);
     const ownerMatches = candidates.filter(({ operatorId }) => operatorId === line.operatorId);
     const selected = ownerMatches.length === 1 ? ownerMatches : candidates.length === 1 ? candidates : [];
     if (inactiveLineIds.has(lineId) || selected.length !== 1) {
@@ -401,30 +431,32 @@ function validateRouteRosters(value, targetVersion) {
   return value;
 }
 
-function selectTargets(rows, selectedLineIds, stationById, linesById, coverage) {
+function selectTargets(rows, selectedLineScopeById, stationById, linesById) {
   const seen = new Set();
   const targets = [];
   for (const row of rows) {
     const stationId = requiredString(row?.stationId, "canonical station-line station");
     const lineId = requiredString(row?.lineId, "canonical station-line line");
-    if (!selectedLineIds.has(lineId)) continue;
+    const lineScope = selectedLineScopeById.get(lineId);
+    if (!lineScope) continue;
     const station = stationById.get(stationId);
     const line = linesById.get(lineId);
-    if (!station || !line || line.operatorId !== coverage.operatorId) throw new Error("canonical station-line identity mismatch");
+    if (!station || !line || line.operatorId !== lineScope.operatorId) throw new Error("canonical station-line identity mismatch");
     const key = `${stationId}\0${lineId}`;
     if (seen.has(key)) throw new Error(`duplicate canonical station-line: ${stationId}/${lineId}`);
     seen.add(key);
-    targets.push(canonicalObject({ stationId, lineId, regionId: coverage.regionId, operatorId: coverage.operatorId, stationName: requiredString(station.nameKo, "canonical station name") }));
+    targets.push(canonicalObject({ stationId, lineId, regionId: lineScope.regionId, operatorId: lineScope.operatorId, stationName: requiredString(station.nameKo, "canonical station name") }));
   }
   if (targets.length === 0) throw new Error("capital FACILITY target membership is empty");
   return targets.sort(compareTarget);
 }
 
-function selectProviderScopes(scopes, selectedLines, coverage) {
+function selectProviderScopes(scopes, selectedLines, selectedLineScopeById) {
   const selected = new Map();
   for (const line of selectedLines) {
-    const candidates = scopes.filter((scope) => scope?.lineId === line.id && scope?.regionId === coverage.regionId);
-    const operatorMatches = candidates.filter((scope) => scope.operatorId === coverage.operatorId);
+    const lineScope = selectedLineScopeById.get(line.id);
+    const candidates = scopes.filter((scope) => scope?.lineId === line.id && scope?.regionId === lineScope.regionId);
+    const operatorMatches = candidates.filter((scope) => scope.operatorId === lineScope.operatorId);
     const eligible = operatorMatches.length === 1 ? operatorMatches : candidates.length === 1 ? candidates : [];
     if (eligible.length !== 1) throw new Error(`KRIC provider scope is ambiguous: ${line.id}`);
     const scope = eligible[0];
@@ -434,17 +466,18 @@ function selectProviderScopes(scopes, selectedLines, coverage) {
   return selected;
 }
 
-function providerScopeTuplesByLine(scopes, selectedLineIds, coverage) {
+function providerScopeTuplesByLine(scopes, selectedLineScopeById) {
   const result = new Map();
   for (const scope of scopes) {
-    if (!selectedLineIds.has(scope?.lineId)) continue;
-    if (scope.regionId !== coverage.regionId) throw new Error(`KRIC provider scope region mismatch: ${scope.lineId}`);
+    const lineScope = selectedLineScopeById.get(scope?.lineId);
+    if (!lineScope) continue;
+    if (scope.regionId !== lineScope.regionId) throw new Error(`KRIC provider scope region mismatch: ${scope.lineId}`);
     const tuple = `${requiredString(scope.railOprIsttCd, "KRIC provider scope operator")}\0${requiredString(scope.lnCd, "KRIC provider scope line")}`;
     const values = result.get(scope.lineId) ?? new Set();
     values.add(tuple);
     result.set(scope.lineId, values);
   }
-  if (result.size !== selectedLineIds.size || [...selectedLineIds].some((lineId) => !result.has(lineId))) {
+  if (result.size !== selectedLineScopeById.size || [...selectedLineScopeById.keys()].some((lineId) => !result.has(lineId))) {
     throw new Error("KRIC provider scope coverage mismatch");
   }
   return result;

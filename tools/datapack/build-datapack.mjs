@@ -3737,7 +3737,7 @@ function emitAccessibilityAndRealtimeProvenance(
   }
 }
 
-function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
+export function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
   const ctx = buildPackFieldProvenanceContext(pack, artifactKind);
   emitCoreAndTopologyProvenance(pack, ctx);
   emitTransitScheduleProvenance(pack, ctx);
@@ -3796,7 +3796,12 @@ function recordCoverageScopes(sourceScope, operatorIds, lineIds, coverageOperato
     return [null];
   }
   const scopedOperatorIds = sourceScope.operatorIds.filter((operatorId) => operatorIds.includes(operatorId));
-  const scopedLineIds = sourceScope.lineIds.filter((lineId) => lineIds.includes(lineId)).sort();
+  const scopedLineIds = (sourceScope.lineIds.length > 0
+    ? sourceScope.lineIds.filter((lineId) => lineIds.includes(lineId))
+    : lineIds.filter((lineId) =>
+        [...(coverageOperatorIdsByLine.get(lineId) ?? [])].some((operatorId) =>
+          sourceScope.operatorIds.includes(operatorId),
+        ))).sort();
   if (sourceScope.lineIds.length > 0 && lineIds.length > 0 && scopedLineIds.length === 0) {
     throw new Error("source coverageScope lineIds do not include record lineIds");
   }

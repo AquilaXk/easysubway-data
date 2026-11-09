@@ -4350,11 +4350,15 @@
       "coverage": "역사·차량 편의시설과 교통약자 편의정보",
       "coverageScope": {
         "regionIds": [
-          "capital"
+          "capital",
+          "daejeon",
+          "gwangju"
         ],
         "operatorIds": [
           "seoul-metro",
-          "korail"
+          "korail",
+          "daejeon-transportation",
+          "gwangju-metropolitan-rapid-transit"
         ],
         "sourceDomains": [
           "accessibility_facilities"

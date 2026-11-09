@@ -1819,3 +1819,122 @@ test("#3036 결과 03 역-노선에 에스컬레이터 원천 증거를 쓰면 �
   assert.equal(report.decision, "NO_GO");
   assert.deepEqual(report.violations.provenance, [escalatorClaimId(forged)]);
 });
+
+test("대전(DJ/1, 22역)·광주(GJ/1, 20역) KRIC WHEELCHAIR_LIFT 존재(중앙로·양동시장)·부재(나머지 40역) 증거는 snapshot에 결속되어 GO이고, ELEVATOR·ESCALATOR 주장이나 변조는 NO_GO다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const rosterSnapshot = JSON.parse(await readFile(path.join(import.meta.dirname, "sources/kric-nationwide-route-rosters-20261001T050420765Z.json"), "utf8"));
+  const allRosterStations = rosterSnapshot.rosters.flatMap((r) => r.stations);
+  const djRows = allRosterStations.filter((r) => r.railOprIsttCd === "DJ" && r.lnCd === "1");
+  const gjRows = allRosterStations.filter((r) => r.railOprIsttCd === "GJ" && r.lnCd === "1");
+  const stationByNormName = (lineId) => {
+    const lineStationIds = new Set(inputs.pack.stationLines.filter((sl) => sl.lineId === lineId).map((sl) => sl.stationId));
+    return new Map(
+      inputs.pack.stations
+        .filter((s) => lineStationIds.has(s.id))
+        .map((s) => [s.nameKo.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim(), s.id]),
+    );
+  };
+  const djStationByName = stationByNormName("line-7051a9c2525c");
+  const gjStationByName = stationByNormName("line-e57a361e8892");
+  const regionalRoster = [
+    ...djRows.map((row) => {
+      const sid = djStationByName.get(row.stinNm.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim());
+      return {
+        stationId: sid,
+        lineId: "line-7051a9c2525c",
+        railOprIsttCd: "DJ",
+        lnCd: "1",
+        stinCd: row.stinCd,
+        canonicalMappings: [{ artifactId: "bundled-capital", stationId: sid, lineId: "line-7051a9c2525c" }],
+      };
+    }),
+    ...gjRows.map((row) => {
+      const sid = gjStationByName.get(row.stinNm.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim());
+      return {
+        stationId: sid,
+        lineId: "line-e57a361e8892",
+        railOprIsttCd: "GJ",
+        lnCd: "1",
+        stinCd: row.stinCd,
+        canonicalMappings: [{ artifactId: "bundled-capital", stationId: sid, lineId: "line-e57a361e8892" }],
+      };
+    }),
+  ];
+  const yangdongId = inputs.pack.stations.find((s) => s.nameKo === "양동시장").id;
+  const { snapshot: regionalCollected } = await collectKricStandardAccessibilityObservation({
+    sourceId: KRIC_STANDARD,
+    roster: regionalRoster,
+    serviceKey: "fixture-only-key",
+    now: new Date("2026-11-10T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      const railOprIsttCd = url.searchParams.get("railOprIsttCd");
+      const lnCd = url.searchParams.get("lnCd");
+      const stinCd = url.searchParams.get("stinCd");
+      const target = regionalRoster.find((item) => item.railOprIsttCd === railOprIsttCd && item.lnCd === lnCd && item.stinCd === stinCd);
+      const cnvRow = (gubun, dtlLoc, stinFlor = "1") => ({
+        dtlLoc, grndDvCd: "2", gubun, imgPath: "", mlFmlDvCd: "", stinFlor, trfcWeakDvCd: "1",
+      });
+      const baseRows = [
+        cnvRow("EV", "대합실-승강장", "1"),
+        cnvRow("ES", "1번 출구", "1"),
+      ];
+      const hasWheelchairLift = (railOprIsttCd === "DJ" && stinCd === "0005") || target?.stationId === yangdongId;
+      const liftRows = hasWheelchairLift
+        ? [
+          cnvRow("WCLF", "대합실 1번 출구 방향", "1"),
+          cnvRow("WCLF", "승강장 방향", "2"),
+        ]
+        : [];
+      return { ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: [...baseRows, ...liftRows] }) };
+    },
+  });
+  const expandedSnapshot = {
+    ...inputs.snapshot,
+    queries: [
+      ...inputs.snapshot.queries,
+      ...regionalCollected.queries.map((q) => ({ providerResultCode: "00", ...q })),
+    ],
+  };
+  const { stationFacilityEvidence } = withCapitalKricFacilities({ pack: inputs.pack, snapshot: expandedSnapshot });
+  const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
+  const regionalKricEvidence = kricEvidence.filter(({ lineId }) => lineId === "line-7051a9c2525c" || lineId === "line-e57a361e8892");
+
+  assert.equal(regionalKricEvidence.length, 42);
+  assert.equal(regionalKricEvidence.filter(({ evidenceKind }) => evidenceKind === "EXISTS").length, 2);
+  assert.equal(regionalKricEvidence.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 40);
+
+  const report = await kricCoverageReport({ ...inputs, snapshots: [expandedSnapshot] }, kricEvidence);
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+
+  // 반증 1: 대전/광주 KRIC 쿼리에서 다루지 않는 ELEVATOR를 주장하면 NO_GO
+  const djQuery = regionalCollected.queries.find((q) => q.railOprIsttCd === "DJ" && q.stinCd === "0005");
+  const forgedElevator = {
+    stationId: djQuery.stationId,
+    lineId: djQuery.lineId,
+    facilityType: "ELEVATOR",
+    evidenceKind: "EXISTS",
+    statusMeaning: "STATIC_LOCATION",
+    sourceId: KRIC_STANDARD,
+    sourceSnapshotId: expandedSnapshot.snapshotId,
+    providerRecordHash: hash(JSON.stringify(djQuery.rows[0])),
+    evidenceHash: expandedSnapshot.rawSha256,
+  };
+  const forgedReport = await kricCoverageReport({ ...inputs, snapshots: [expandedSnapshot] }, [...kricEvidence, forgedElevator]);
+  assert.equal(forgedReport.decision, "NO_GO");
+  assert.deepEqual(forgedReport.violations.provenance, [
+    `manifest-nationwide:${djQuery.stationId}|${djQuery.lineId}|ELEVATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+  ]);
+
+  // 반증 2: 중앙로 WHEELCHAIR_LIFT EXISTS를 NOT_EXISTS로 변조하면 NO_GO
+  const tamperedExists = kricEvidence.map((row) => (
+    row.stationId === djQuery.stationId && row.lineId === djQuery.lineId && row.facilityType === "WHEELCHAIR_LIFT"
+      ? { ...row, evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE" }
+      : row
+  ));
+  const tamperedReport = await kricCoverageReport({ ...inputs, snapshots: [expandedSnapshot] }, tamperedExists);
+  assert.equal(tamperedReport.decision, "NO_GO");
+  assert.deepEqual(tamperedReport.violations.provenance, [
+    `manifest-nationwide:${djQuery.stationId}|${djQuery.lineId}|WHEELCHAIR_LIFT|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+  ]);
+});

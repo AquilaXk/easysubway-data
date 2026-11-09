@@ -1119,7 +1119,7 @@ function kricClaimMatchesSnapshot(snapshot, claim, stationLines) {
   return (snapshot.queries ?? []).filter((query) => query.stationId === claim.stationId
     && (!claim.lineId || query.lineId === claim.lineId)).some((query) => {
     const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
-    const rows = kricRowsOfType(snapshot, query.rows ?? [], claim.facilityType);
+    const rows = kricRowsOfType(snapshot, query.rows ?? [], claim.facilityType, query);
     if (rows === null) return false;
     if (rows.length > 0) return claim.evidenceKind === "EXISTS" && rows.some((row) => {
       const providerRecordHash = digest(JSON.stringify(row));
