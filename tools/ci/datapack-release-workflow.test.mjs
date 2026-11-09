@@ -1,11 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { gzipSync } from "node:zlib";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { sha256 } from "../lib/hash.mjs";
+import {
+  MODE_ARGS_KEYS,
+  assertExecutableProductionDecision,
+  assertReleaseBuildSpecContent,
+  extractMapCatalogSourceSqlite,
+  parseModeArgs,
+  prepareNoChangeReleaseIdentity,
+  readScheduledReleaseRequestId,
+  validateReleaseBuildSpecAndRequest,
+  verifyMapCatalogPublicationHandoff,
+  verifyRemoteValidationSummary,
+  writeObservabilityMetadata,
+  writePublishedReleaseOutputs,
+  writeReleaseDecisionSummary,
+} from "./datapack-release-steps.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const yml = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
+const stepsSource = readFileSync(path.join(root, "tools/ci/datapack-release-steps.mjs"), "utf8");
 
 test("release workflow는 owned deterministic-release subset만 실행한다", () => {
   const step = yml.match(
@@ -69,11 +88,16 @@ test("observability metadata는 active pack만 식별하고 첫 pack으로 대�
     /- name: Data Pack Release \/ Write observability metadata[\s\S]*?\n\s+- name:/,
   )?.[0];
   assert.ok(metadata, "observability metadata 스텝을 찾지 못함");
-  assert.match(metadata, /const activePack = manifest\.activePack;/);
-  assert.match(metadata, /packVersion = "unselected";/);
-  assert.match(metadata, /if \(activePack\?\.id && activePack\?\.version\) \{/);
-  assert.doesNotMatch(metadata, /fallbackPack/);
-  assert.doesNotMatch(metadata, /manifest\.packs\?\.\[0\]/);
+  assert.match(metadata, /node tools\/ci\/datapack-release-steps\.mjs write-observability-metadata/);
+  const observabilityFn = stepsSource.match(
+    /export function writeObservabilityMetadata\([\s\S]*?\n\}\n/,
+  )?.[0];
+  assert.ok(observabilityFn, "writeObservabilityMetadata 함수를 찾지 못함");
+  assert.match(observabilityFn, /const activePack = manifest\.activePack;/);
+  assert.match(observabilityFn, /packVersion = "unselected";/);
+  assert.match(observabilityFn, /if \(activePack\?\.id && activePack\?\.version\) \{/);
+  assert.doesNotMatch(observabilityFn, /fallbackPack/);
+  assert.doesNotMatch(observabilityFn, /manifest\.packs\?\.\[0\]/);
 });
 
 test("candidate-create는 전용 OCI credential과 descriptor-last writer만 사용한다", () => {
@@ -161,9 +185,10 @@ test("candidate-create는 생성 입력만 받고 release·provider credential �
   assert.match(mode, /allow_gaps\}" != "false"/);
   assert.match(mode, /repo-relative non-fixture build spec/);
   assert.match(mode, /assert_release_build_spec_content\(\) \{/);
-  assert.match(mode, /buildSpec\.fixturePath/);
-  assert.match(mode, /\(fixture\|debug\|demo\|sample\)\/i/);
-  assert.match(mode, /fixtures/);
+  assert.match(mode, /node tools\/ci\/datapack-release-steps\.mjs assert-release-build-spec-content "\$1"/);
+  assert.match(stepsSource, /buildSpec\.fixturePath/);
+  assert.match(stepsSource, /\(fixture\|debug\|demo\|sample\)\/i/);
+  assert.match(stepsSource, /fixtures/);
   const buildSpecContentGuards = mode.match(/assert_release_build_spec_content "\$\{build_spec\}"/g) ?? [];
   assert.equal(buildSpecContentGuards.length, 2, "candidate-create와 release mode는 같은 build spec content gate를 사용해야 한다");
   assert.ok(
@@ -262,10 +287,11 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   assert.doesNotMatch(stagerText, /--output "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-bundle"/);
   assert.ok(stager < step("Data Pack Release / Publish OCI candidate descriptor"));
   const evidenceBundle = yml.slice(step("Data Pack Release / Write release evidence bundle"), step("Data Pack Release / Validate release evidence bundle"));
-  assert.match(evidenceBundle, /candidateServerRouteEvidence/);
-  assert.match(evidenceBundle, /releaseMode,/);
-  assert.match(evidenceBundle, /server-route-bundle-evidence\/route-accessibility-eligibility\.json/);
-  assert.match(evidenceBundle, /server-route-bundle-evidence\/server-route-bundle-final\.json/);
+  assert.match(evidenceBundle, /node tools\/ci\/datapack-release-steps\.mjs write-release-evidence-bundle/);
+  assert.match(stepsSource, /candidateServerRouteEvidence/);
+  assert.match(stepsSource, /releaseMode,/);
+  assert.match(stepsSource, /server-route-bundle-evidence\/route-accessibility-eligibility\.json/);
+  assert.match(stepsSource, /server-route-bundle-evidence\/server-route-bundle-final\.json/);
   const evidenceValidation = yml.slice(step("Data Pack Release / Validate release evidence bundle"), step("Data Pack Release / Build candidate promotion metadata"));
   assert.match(evidenceValidation, /--candidate-server-route-root "\$\{EASYSUBWAY_DATAPACK_STAGE\}"/);
   const metadataText = yml.slice(metadata, step("Data Pack Release / Upload candidate promotion artifact"));
@@ -341,6 +367,9 @@ test("map-catalog production publication은 current main·검증된 server-route
     const next = job.indexOf("\n      - name:", start + 1);
     return { start, text: job.slice(start, next === -1 ? undefined : next) };
   };
+  const mapCatalogStepsSource = stepsSource.slice(
+    stepsSource.indexOf("export async function validateMapCatalogInputs"),
+  );
 
   assert.match(yml, /options: \[exploratory, candidate-create, release-candidate, production-publish, rollback, rollout-update, map-catalog-publish\]/);
   assert.match(yml, /data-pack-release:[\s\S]*?if: \$\{\{ github\.event\.inputs\.mode != 'map-catalog-publish' \}\}/);
@@ -352,48 +381,52 @@ test("map-catalog production publication은 current main·검증된 server-route
   assert.match(job, /AquilaXk\/easysubway-data/);
   assert.match(job, /refs\/heads\/main/);
   assert.match(job, /fetch-depth: 0/);
-  assert.match(job, /allowGaps/);
-  assert.match(job, /buildSpecPath/);
-  assert.match(job, /serverRouteDescriptorSha256/);
-  assert.match(job, /tracked non-symlink regular file/);
-  assert.match(job, /execFileSync\("git", \["ls-files", "--error-unmatch", "--", value\]/);
-  assert.match(job, /execFileSync\("git", \["show", `\$\{process\.env\.GITHUB_SHA\}:\$\{value\}`\]\)/);
-  assert.match(job, /bytes must equal GITHUB_SHA:path/);
+  assert.match(mapCatalogStepsSource, /allowGaps/);
+  assert.match(mapCatalogStepsSource, /buildSpecPath/);
+  assert.match(mapCatalogStepsSource, /serverRouteDescriptorSha256/);
+  assert.match(mapCatalogStepsSource, /tracked non-symlink regular file/);
+  assert.match(mapCatalogStepsSource, /execFileSync\("git", \["ls-files", "--error-unmatch", "--", value\]/);
+  assert.match(mapCatalogStepsSource, /execFileSync\("git", \["show", `\$\{process\.env\.GITHUB_SHA\}:\$\{value\}`\]\)/);
+  assert.match(mapCatalogStepsSource, /bytes must equal GITHUB_SHA:path/);
   assert.match(job, /OCI_SERVER_ROUTE_PUBLIC_BASE_URL.*vars\.OCI_SERVER_ROUTE_PUBLIC_BASE_URL/);
-  assert.match(job, /objectstorage\\\.\[a-z0-9\]/);
-  assert.match(job, /server-route-bundle-publication-descriptors\/v2\/\$\{args\.serverRouteDescriptorSha256\}\.json/);
-  assert.match(job, /readCredentialFreeObject/);
-  assert.match(job, /await readCredentialFreeObject\(serverRouteDescriptorUrl, 1_048_576\)/);
-  assert.match(job, /statusCode !== 200/);
-  assert.match(job, /server route descriptor SHA mismatch/);
-  assert.match(job, /unsafe for GITHUB_ENV/);
+  assert.match(mapCatalogStepsSource, /objectstorage\\\.\[a-z0-9\]/);
+  assert.match(mapCatalogStepsSource, /server-route-bundle-publication-descriptors\/v2\/\$\{args\.serverRouteDescriptorSha256\}\.json/);
+  assert.match(stepsSource, /readCredentialFreeObject/);
+  assert.match(mapCatalogStepsSource, /await readCredentialFreeObject\(serverRouteDescriptorUrl, 1_048_576\)/);
+  assert.match(mapCatalogStepsSource, /statusCode !== 200/);
+  assert.match(mapCatalogStepsSource, /server route descriptor SHA mismatch/);
+  assert.match(mapCatalogStepsSource, /unsafe for GITHUB_ENV/);
   assert.doesNotMatch(job, /for path in "\$\{MAP_CATALOG_BUILD_SPEC_PATH\}"/);
+  assert.doesNotMatch(mapCatalogStepsSource, /for path in "\$\{MAP_CATALOG_BUILD_SPEC_PATH\}"/);
   assert.doesNotMatch(job, /serverRouteDescriptorPath/);
+  assert.doesNotMatch(mapCatalogStepsSource, /serverRouteDescriptorPath/);
   assert.doesNotMatch(job, /AWS_|_READER|PAR_|dotenv|upload-artifact|download-artifact|retry|fallback/i);
-  assert.match(job, /validateServerRouteBundlePublicationDescriptor/);
-  assert.match(job, /descriptor\.release\.result !== "GO"/);
-  assert.match(job, /descriptor\.producer\.repository !== process\.env\.GITHUB_REPOSITORY/);
-  assert.doesNotMatch(job, /descriptor\.producer\.gitSha !== process\.env\.GITHUB_SHA/);
-  assert.match(job, /descriptor\.producer\.gitSha === process\.env\.GITHUB_SHA/);
-  assert.match(job, /execFileSync\("git", \["merge-base", "--is-ancestor", descriptor\.producer\.gitSha, process\.env\.GITHUB_SHA\]/);
-  assert.match(job, /buildSpec\.releaseSequence !== descriptor\.manifest\.releaseSequence/);
-  assert.match(job, /buildSpec\.sourceSnapshotSetHash !== descriptor\.sourceSnapshotSetHash/);
-  assert.match(job, /descriptor\.manifest\.stationSetSha256/);
-  assert.match(job, /descriptor\.manifest\.releaseSequence/);
-  assert.match(job, /descriptor\.manifest\.activeFrom/);
-  assert.match(job, /descriptor\.manifest\.freshUntil/);
-  assert.match(job, /descriptor\.manifest\.bundleId/);
-  assert.match(job, /descriptor\.manifest\.keyId/);
+  assert.doesNotMatch(mapCatalogStepsSource, /AWS_|_READER|PAR_|dotenv|upload-artifact|download-artifact|retry|fallback/i);
+  assert.match(stepsSource, /validateServerRouteBundlePublicationDescriptor/);
+  assert.match(mapCatalogStepsSource, /descriptor\.release\.result !== "GO"/);
+  assert.match(mapCatalogStepsSource, /descriptor\.producer\.repository !== process\.env\.GITHUB_REPOSITORY/);
+  assert.doesNotMatch(mapCatalogStepsSource, /descriptor\.producer\.gitSha !== process\.env\.GITHUB_SHA/);
+  assert.match(mapCatalogStepsSource, /descriptor\.producer\.gitSha === process\.env\.GITHUB_SHA/);
+  assert.match(mapCatalogStepsSource, /execFileSync\("git", \["merge-base", "--is-ancestor", descriptor\.producer\.gitSha, process\.env\.GITHUB_SHA\]/);
+  assert.match(mapCatalogStepsSource, /buildSpec\.releaseSequence !== descriptor\.manifest\.releaseSequence/);
+  assert.match(mapCatalogStepsSource, /buildSpec\.sourceSnapshotSetHash !== descriptor\.sourceSnapshotSetHash/);
+  assert.match(mapCatalogStepsSource, /descriptor\.manifest\.stationSetSha256/);
+  assert.match(mapCatalogStepsSource, /descriptor\.manifest\.releaseSequence/);
+  assert.match(mapCatalogStepsSource, /descriptor\.manifest\.activeFrom/);
+  assert.match(mapCatalogStepsSource, /descriptor\.manifest\.freshUntil/);
+  assert.match(mapCatalogStepsSource, /descriptor\.manifest\.bundleId/);
+  assert.match(mapCatalogStepsSource, /descriptor\.manifest\.keyId/);
   // #866 PR-B(D3): map-catalog도 전국 후보 입력·nationwide@1·RC stage와 같은 식별자를 쓴다.
-  assert.match(job, /active\.id !== "nationwide" \|\| active\.version !== "1"\) throw new Error\("current build must select nationwide@1"\)/);
+  assert.match(mapCatalogStepsSource, /active\.id !== "nationwide" \|\| active\.version !== "1"\) throw new Error\("current build must select nationwide@1"\)/);
   assert.match(job, /--map-pack-id "nationwide-map-1"/);
   assert.match(job, /--catalog-pack-id "nationwide-catalog-1"/);
   assert.doesNotMatch(job, /capital@1|capital-map-1|capital-catalog-1/);
+  assert.doesNotMatch(mapCatalogStepsSource, /capital@1|capital-map-1|capital-catalog-1/);
   assert.match(job, /build-datapack\.mjs/);
-  assert.match(job, /gunzipSync/);
+  assert.match(stepsSource, /gunzipSync/);
   assert.match(job, /emit-artifact-components\.mjs/);
-  assert.match(job, /buildMapCatalogSignedCurrentPublication/);
-  assert.match(job, /mapCatalog\.stationSetSha256 !== serverRoute\.stationSetSha256/);
+  assert.match(stepsSource, /buildMapCatalogSignedCurrentPublication/);
+  assert.match(mapCatalogStepsSource, /mapCatalog\.stationSetSha256 !== serverRoute\.stationSetSha256/);
 
   const buildText = step("Map catalog publication / Build signed current publication").text;
   const binding = buildText.indexOf("node tools/datapack/nationwide-candidate-input-binding.mjs");
@@ -401,6 +434,8 @@ test("map-catalog production publication은 current main·검증된 server-route
   assert.ok(binding !== -1 && binding < emit, "map-catalog은 emit 전에 preparation sha 결속을 확인한다");
   assert.match(buildText, /nationwide-candidate-input-binding\.mjs \\\n\s+--build-spec "\$\{MAP_CATALOG_BUILD_SPEC_PATH\}" \\\n\s+--candidate-preparation tools\/datapack\/release\/nationwide-candidate-preparation\.json \\\n\s+--station-line-input tools\/datapack\/release\/nationwide-station-line-input\.json \\\n\s+--route-edge-input tools\/datapack\/release\/nationwide-route-edge-input\.json/);
   assert.match(buildText, /--station-line-input tools\/datapack\/release\/nationwide-station-line-input\.json \\\n\s+--route-edge-input tools\/datapack\/release\/nationwide-route-edge-input\.json\n/);
+  assert.match(buildText, /node tools\/ci\/datapack-release-steps\.mjs extract-map-catalog-source-sqlite "\$\{datapack_root\}" "\$\{source_sqlite\}"/);
+  assert.match(buildText, /node tools\/ci\/datapack-release-steps\.mjs build-map-catalog-signed-publication "\$\{artifact_root\}" "\$\{RUNNER_TEMP\}\/map-catalog-signed-current-publication\.json"/);
 
   const preflight = step("Map catalog publication / Validate immutable inputs");
   const build = step("Map catalog publication / Build signed current publication");
@@ -408,15 +443,17 @@ test("map-catalog production publication은 current main·검증된 server-route
   const publish = step("Map catalog publication / Publish immutable OCI objects");
   const handoff = step("Map catalog publication / Write safe handoff");
   assert.ok(preflight.start < build.start && build.start < currentMain.start && currentMain.start < publish.start && publish.start < handoff.start);
-  assert.ok(preflight.text.includes("const serverRoutePublicBasePattern = /^https:\\/\\/objectstorage\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.oraclecloud\\.com\\/n\\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\\/b\\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\\/o$/;"));
-  assert.match(preflight.text, /!serverRoutePublicBasePattern\.test\(serverRoutePublicBaseUrl\) \|\| new URL\(serverRoutePublicBaseUrl\)\.toString\(\) !== serverRoutePublicBaseUrl/);
-  assert.match(preflight.text, /descriptor\.descriptorSha256 !== args\.serverRouteDescriptorSha256/);
+  assert.match(preflight.text, /node tools\/ci\/datapack-release-steps\.mjs validate-map-catalog-inputs/);
+  assert.ok(mapCatalogStepsSource.includes("const serverRoutePublicBasePattern = /^https:\\/\\/objectstorage\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.oraclecloud\\.com\\/n\\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\\/b\\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\\/o$/;"));
+  assert.match(mapCatalogStepsSource, /!serverRoutePublicBasePattern\.test\(serverRoutePublicBaseUrl\) \|\| new URL\(serverRoutePublicBaseUrl\)\.toString\(\) !== serverRoutePublicBaseUrl/);
+  assert.match(mapCatalogStepsSource, /descriptor\.descriptorSha256 !== args\.serverRouteDescriptorSha256/);
   assert.match(currentMain.text, /gh api repos\/AquilaXk\/easysubway-data\/git\/ref\/heads\/main/);
   assert.match(currentMain.text, /GITHUB_SHA/);
   assert.match(publish.text, /OCI_MAP_CATALOG_PUBLISHER_ACCESS_KEY/);
   assert.match(publish.text, /OCI_MAP_CATALOG_PUBLISHER_SECRET_KEY/);
   for (const name of ["OCI_MAP_CATALOG_NAMESPACE", "OCI_MAP_CATALOG_BUCKET", "OCI_MAP_CATALOG_REGION", "OCI_MAP_CATALOG_COMPAT_ENDPOINT", "OCI_MAP_CATALOG_OBJECT_PREFIX"]) assert.match(publish.text, new RegExp(name));
   assert.match(publish.text, /publish-map-catalog-signed-current-publication\.mjs/);
+  assert.match(publish.text, /node tools\/ci\/datapack-release-steps\.mjs verify-map-catalog-handoff "\$\{handoff\}"/);
   assert.doesNotMatch(publish.text, /AWS_|READER|CANDIDATE|PAR|dotenv|upload-artifact|download-artifact|retry|fallback/i);
   assert.match(handoff.text, /DESCRIPTOR_SHA/);
   assert.match(handoff.text, /DESCRIPTOR_LOCATOR/);
@@ -432,16 +469,17 @@ test("modeArgs 파싱 스텝이 개별 인자를 output으로 펼친다", () => 
   assert.ok(parseStep, "Parse modeArgs 스텝을 찾지 못함");
   assert.match(parseStep, /id:\s*args/);
   assert.match(parseStep, /modeArgs/);
-  assert.match(parseStep, /buildSpecPath/);
-  assert.match(parseStep, /releaseRequestId/);
-  assert.match(parseStep, /sourceGovernanceEvaluationAt/);
+  assert.match(parseStep, /node tools\/ci\/datapack-release-steps\.mjs parse-mode-args/);
+  assert.match(stepsSource, /buildSpecPath/);
+  assert.match(stepsSource, /releaseRequestId/);
+  assert.match(stepsSource, /sourceGovernanceEvaluationAt/);
 });
 
 test("modeArgs 파싱 스텝은 비-JSON·개행 주입을 방어한다", () => {
   // JSON.parse 실패·비객체 입력 → 명확한 실패(try/catch + object 검증)
-  assert.match(yml, /modeArgs must be a JSON object/);
+  assert.match(stepsSource, /modeArgs must be a JSON object/);
   // GITHUB_OUTPUT 개행 주입 차단 — 값에 개행이 있으면 거부
-  assert.match(yml, /must not contain newlines/);
+  assert.match(stepsSource, /must not contain newlines/);
 });
 
 test("production-publish는 파일 전용 release request 입력과 !cancelled() 콜백 스텝을 가진다", () => {
@@ -675,8 +713,9 @@ test("production callback은 bounded sender 증적을 항상 보존하고 실패
     /- name: Data Pack Release \/ Publish staged data packs to object storage[\s\S]*?\n\s+- name:/,
   )?.[0];
   assert.ok(productionPublishStep, "production publish 스텝을 찾지 못함");
-  assert.match(productionPublishStep, /validatorStatus=\$\{bundle\.validatorStatus\}/);
-  assert.match(productionPublishStep, /routeRegressionStatus=\$\{bundle\.strictRouteRegressionStatus\}/);
+  assert.match(productionPublishStep, /node tools\/ci\/datapack-release-steps\.mjs write-published-release-outputs/);
+  assert.match(stepsSource, /validatorStatus=\$\{bundle\.validatorStatus\}/);
+  assert.match(stepsSource, /routeRegressionStatus=\$\{bundle\.strictRouteRegressionStatus\}/);
 
   const callbackStep = yml.match(
     /- name: Data Pack Release \/ Send release callback[\s\S]*?\n\s+- name:/,
@@ -749,9 +788,10 @@ test("NO_CHANGE_VALID 재실행은 current manifest binding과 callback을 복�
   )?.[0];
   assert.ok(noChangeIdentity, "no-change release identity 스텝을 찾지 못함");
   assert.match(noChangeIdentity, /steps\.release-decision\.outputs\.outcome == 'NO_CHANGE_VALID'/);
-  assert.match(noChangeIdentity, /EASYSUBWAY_DATAPACK_CURRENT_MANIFEST/);
-  assert.match(noChangeIdentity, /manifestSha256/);
-  assert.match(noChangeIdentity, /releaseSequence/);
+  assert.match(noChangeIdentity, /node tools\/ci\/datapack-release-steps\.mjs prepare-no-change-release-identity/);
+  assert.match(stepsSource, /EASYSUBWAY_DATAPACK_CURRENT_MANIFEST/);
+  assert.match(stepsSource, /manifestSha256/);
+  assert.match(stepsSource, /releaseSequence/);
 
   const remoteValidation = yml.match(
     /- name: Data Pack Release \/ Validate published remote artifact[\s\S]*?\n\s+- name:/,
@@ -815,20 +855,23 @@ test("release evidence는 canonical launch denominator report identity와 decisi
     /- name: Data Pack Release \/ Write release evidence bundle[\s\S]*?\n\s+- name:/,
   )?.[0];
   assert.ok(evidenceStep, "release evidence bundle 스텝을 찾지 못함");
-  assert.match(evidenceStep, /EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT/);
-  assert.match(evidenceStep, /buildLaunchCandidateBinding/);
+  assert.match(evidenceStep, /node tools\/ci\/datapack-release-steps\.mjs write-release-evidence-bundle/);
+  assert.match(stepsSource, /EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT/);
+  assert.match(stepsSource, /buildLaunchCandidateBinding/);
   assert.doesNotMatch(evidenceStep, /launchTemplate|launchDenominatorTemplatePath|android-v1-launch-denominator-20260715/);
-  assert.match(evidenceStep, /buildLaunchDenominatorReport/);
-  assert.match(evidenceStep, /launchDenominatorReportRaw/);
-  assert.match(evidenceStep, /verifiedAccessibilityScopeSha256:\s*launchReport\.scopes\.verifiedAccessibilityScope\.sha256/);
-  assert.match(evidenceStep, /launchScopeSha256:\s*launchReport\.scopes\.routingLaunchScope\.sha256/);
-  assert.match(evidenceStep, /nationwideRoadmapScopeSha256:\s*launchReport\.scopes\.nationwideRoadmapScope\.sha256/);
-  assert.match(evidenceStep, /nationwideTargetsSha256:\s*hashFile\("tools\/datapack\/nationwide-coverage-targets\.json"\)/);
-  assert.match(evidenceStep, /identityLinkageMatrixSha256:\s*launchReport\.identityLinkage\.matrixSha256/);
-  assert.match(evidenceStep, /launchDenominatorDecision:\s*launchReport\.decision/);
-  assert.match(evidenceStep, /launchDenominatorReportSha256:\s*hashBytes\(launchDenominatorReportRaw\)/);
-  assert.match(evidenceStep, /releaseSequence:\s*manifest\.releaseSequence/);
+  assert.doesNotMatch(stepsSource, /launchTemplate|launchDenominatorTemplatePath|android-v1-launch-denominator-20260715/);
+  assert.match(stepsSource, /buildLaunchDenominatorReport/);
+  assert.match(stepsSource, /launchDenominatorReportRaw/);
+  assert.match(stepsSource, /verifiedAccessibilityScopeSha256:\s*launchReport\.scopes\.verifiedAccessibilityScope\.sha256/);
+  assert.match(stepsSource, /launchScopeSha256:\s*launchReport\.scopes\.routingLaunchScope\.sha256/);
+  assert.match(stepsSource, /nationwideRoadmapScopeSha256:\s*launchReport\.scopes\.nationwideRoadmapScope\.sha256/);
+  assert.match(stepsSource, /nationwideTargetsSha256:\s*hashFile\("tools\/datapack\/nationwide-coverage-targets\.json"\)/);
+  assert.match(stepsSource, /identityLinkageMatrixSha256:\s*launchReport\.identityLinkage\.matrixSha256/);
+  assert.match(stepsSource, /launchDenominatorDecision:\s*launchReport\.decision/);
+  assert.match(stepsSource, /launchDenominatorReportSha256:\s*sha256\(launchDenominatorReportRaw\)/);
+  assert.match(stepsSource, /releaseSequence:\s*manifest\.releaseSequence/);
   assert.doesNotMatch(evidenceStep, /scopeId:\s*"capital_pilot_android_v1"/);
+  assert.doesNotMatch(stepsSource, /scopeId:\s*"capital_pilot_android_v1"/);
   assert.match(yml, /--scope "\$\{EASYSUBWAY_DATAPACK_SCOPE_POLICY\}"/);
   const normalValidationStep = yml.match(
     /- name: Data Pack Release \/ Validate release evidence bundle[\s\S]*?\n\s+- name:/,
@@ -853,8 +896,8 @@ test("release evidence는 canonical launch denominator report identity와 decisi
 test("워크플로는 rollout-update 모드·publish-rollout 스텝을 가지고 빌드 스텝을 pointer-only로 게이트한다", () => {
   assert.match(yml, /rollout-update/);
   assert.match(yml, /publish-rollout\.mjs/);
-  assert.match(yml, /rolloutPercentage/);
-  assert.match(yml, /rolloutTargetSequence/);
+  assert.match(tagsAndOutputs(), /rolloutPercentage/);
+  assert.match(tagsAndOutputs(), /rolloutTargetSequence/);
   assert.match(yml, /is-pointer-only/);            // 빌드 스텝 게이팅 output
   assert.doesNotMatch(yml, /mode != 'rollback'/);  // 구 게이트가 pointer-only로 통합됨
   const rolloutStep = yml.match(
@@ -866,18 +909,26 @@ test("워크플로는 rollout-update 모드·publish-rollout 스텝을 가지고
   assert.match(rolloutStep, /ROLLOUT_PERCENTAGE\s*>\s*10\b/);
 });
 
+function tagsAndOutputs() {
+  return `${yml}\n${stepsSource}`;
+}
+
 test("rollback 모드는 trusted approval·원격 catalog inventory와 sanitized report를 강제한다", () => {
   const parseStep = yml.match(/- name: Data Pack Release \/ Parse modeArgs[\s\S]*?\n\s+- name:/)?.[0];
   assert.ok(parseStep, "Parse modeArgs 스텝을 찾지 못함");
+  assert.match(parseStep, /node tools\/ci\/datapack-release-steps\.mjs parse-mode-args/);
   for (const field of [
     "rollbackFailedSequence",
     "rollbackPublishedAt",
     "rollbackExpiresAt",
   ]) {
-    assert.match(parseStep, new RegExp(field));
+    assert.equal(MODE_ARGS_KEYS.includes(field), true, field);
+    assert.match(stepsSource, new RegExp(field));
   }
   for (const untrustedField of ["rollbackCatalogSequences", "rollbackApprovedByRole", "rollbackApprovedAt", "rollbackReasonCode"]) {
+    assert.equal(MODE_ARGS_KEYS.includes(untrustedField), false, untrustedField);
     assert.doesNotMatch(parseStep, new RegExp(untrustedField));
+    assert.doesNotMatch(stepsSource, new RegExp(untrustedField));
   }
   const approvalStep = yml.match(/- name: Data Pack Release \/ Fetch rollback approval[\s\S]*?\n\s+- name:/)?.[0];
   assert.ok(approvalStep, "trusted rollback approval 조회 스텝을 찾지 못함");
@@ -905,10 +956,11 @@ test("production publish는 canonical decision의 write 허용 뒤에만 실행�
   const publishStep = yml.match(/- name: Data Pack Release \/ Publish staged data packs to object storage[\s\S]*?\n\s+- name:/)?.[0];
   assert.ok(publishStep, "production publish 스텝을 찾지 못함");
   assert.match(publishStep, /steps\.release-decision\.outputs\.productionWriteAllowed == 'true'/);
-  assert.match(yml, /production decision did not authorize executable run/);
-  assert.match(yml, /production decision did not authorize executable run: \$\{decision\.outcome\} reasonCodes=\$\{decision\.reasonCodes\.join\(","\) \|\| "NONE"\}/);
-  assert.match(yml, /decision\.outcome === "NO_CHANGE_VALID"/);
-  assert.match(yml, /decision\.outcome === "PUBLISH_REQUIRED" && decision\.productionWriteAllowed === true/);
+  assert.match(yml, /node tools\/ci\/datapack-release-steps\.mjs assert-executable-production-decision "\$\{EASYSUBWAY_DATAPACK_RELEASE_DECISION\}"/);
+  assert.match(stepsSource, /production decision did not authorize executable run/);
+  assert.match(stepsSource, /production decision did not authorize executable run: \$\{decision\.outcome\} reasonCodes=\$\{decision\.reasonCodes\.join\(","\) \|\| "NONE"\}/);
+  assert.match(stepsSource, /decision\.outcome === "NO_CHANGE_VALID"/);
+  assert.match(stepsSource, /decision\.outcome === "PUBLISH_REQUIRED" && decision\.productionWriteAllowed === true/);
 });
 
 test("scheduled publish는 명시적 opt-in과 승인된 입력 경로 없이는 exploratory로 남는다", () => {
@@ -922,21 +974,21 @@ test("scheduled publish는 명시적 opt-in과 승인된 입력 경로 없이는
   assert.match(yml, /release_request_path="\$\{SCHEDULED_RELEASE_REQUEST_PATH:-\}"/);
   // 승인 식별자는 그 파일의 approvalId에서 파생한다(별도 ID 입력 없음).
   assert.match(yml, /scheduled release request not found: \$\{release_request_path\}"? >&2/);
-  assert.match(yml, /release_request_id="\$\(RELEASE_REQUEST_FILE="\$\{release_request_path\}" node -e/);
-  assert.match(yml, /scheduled release request approvalId is required/);
+  assert.match(yml, /release_request_id="\$\(node tools\/ci\/datapack-release-steps\.mjs read-scheduled-release-request-id "\$\{release_request_path\}"\)"/);
+  assert.match(stepsSource, /scheduled release request approvalId is required/);
   // 파생값은 GITHUB_ENV·GITHUB_OUTPUT으로 흘러가므로 개행 주입을 막는 단일 토큰 형식 검사가 필수다.
   // (같은 파일 "Parse modeArgs"의 `must not contain newlines` 가드와 같은 수준)
-  assert.match(yml, /!\/\^\[A-Za-z0-9\._-\]\+\\?\$\/\.test\(request\.approvalId\)/);
-  assert.match(yml, /scheduled release request approvalId must be a single \[A-Za-z0-9\._-\] token/);
+  assert.match(stepsSource, /!\/\^\[A-Za-z0-9\._-\]\+\\?\$\/\.test\(request\.approvalId\)/);
+  assert.match(stepsSource, /scheduled release request approvalId must be a single \[A-Za-z0-9\._-\] token/);
   // 비-JSON 파일은 raw SyntaxError 스택·파일 내용 대신 한 줄 진단으로 종료한다.
-  assert.match(yml, /scheduled release request is not valid JSON: ' \+ file/);
-  assert.match(yml, /try \{\s*\n\s*request = JSON\.parse\(fs\.readFileSync\(file, 'utf8'\)\);\s*\n\s*\} catch \{/);
+  assert.match(stepsSource, /scheduled release request is not valid JSON: ` \+ file|scheduled release request is not valid JSON: \$\{file\}/);
+  assert.match(stepsSource, /try \{\s*\n\s*request = JSON\.parse\(fs\.readFileSync\(file, "utf8"\)\);\s*\n\s*\} catch \{/);
   assert.match(yml, /SCHEDULED_ANDROID_EVIDENCE_PATH/);
   assert.match(yml, /SCHEDULED_STRICT_ROUTE_REGRESSION_PATH/);
   // 변수군이 없으면 기존과 동일하게 fail-closed로 남는다(활성화는 별도 오너 결정).
   assert.match(yml, /-z "\$\{release_request_path\}"[\s\S]*?scheduled production publish requires configured approval evidence/);
   assert.doesNotMatch(yml, /SCHEDULED_SOURCE_GOVERNANCE_EVALUATION_AT/);
-  assert.match(yml, /scheduled production publish requires a fresh protection evidence pipeline/);
+  assert.match(stepsSource, /scheduled production publish requires a fresh protection evidence pipeline/);
   assert.match(yml, /steps\.release-mode\.outputs\.release_request_id/);
 });
 
@@ -959,10 +1011,11 @@ test("release build는 source snapshot freshness를 build 전에 fail closed로 
   );
   assert.match(freshnessStep, /--purge-evaluation-at "\$\{EASYSUBWAY_SOURCE_GOVERNANCE_EVALUATION_AT\}"/);
   assert.doesNotMatch(freshnessStep, /--evaluation-at/);
-  assert.match(yml, /sourceGovernanceEvaluationAt is required with sourceRawPurgeReportPath/);
-  assert.match(yml, /sourceRawPurgeAttestationPublicKey/);
-  assert.match(yml, /sourceRawPurgeJournal/);
-  assert.match(yml, /sourceRawPurgeLedger/);
+  assert.match(yml, /node tools\/ci\/datapack-release-steps\.mjs validate-release-build-spec-and-request/);
+  assert.match(stepsSource, /sourceGovernanceEvaluationAt is required with sourceRawPurgeReportPath/);
+  assert.match(stepsSource, /sourceRawPurgeAttestationPublicKey/);
+  assert.match(stepsSource, /sourceRawPurgeJournal/);
+  assert.match(stepsSource, /sourceRawPurgeLedger/);
   const inventoryStep = yml.match(
     /- name: Data Pack Release \/ Validate source inventory[\s\S]*?\n\s+- name:/,
   )?.[0];
@@ -1003,9 +1056,9 @@ test("publish run은 remote artifact validation 뒤 최종 decision과 callback�
   assert.match(remoteValidation, /EXPECTED_MANIFEST_SHA256/);
   assert.match(remoteValidation, /for attempt in 1 2 3 4/);
   assert.match(remoteValidation, /sleep 20/);
-  assert.match(remoteValidation, /remote validation manifestSha256 mismatch/);
+  assert.match(remoteValidation, /node tools\/ci\/datapack-release-steps\.mjs verify-remote-validation-summary "\$\{EASYSUBWAY_DATAPACK_REMOTE_VALIDATION\}\/remote-datapack-validation-summary\.json"/);
   assert.match(yml, /steps\.production-publish\.outputs\.manifestSha256/);
-  assert.match(yml, /remote validation manifestSha256 mismatch/);
+  assert.match(stepsSource, /remote validation manifestSha256 mismatch/);
   const finalDecision = yml.match(
     /- name: Data Pack Release \/ Finalize production decision[\s\S]*?\n\s+- name:/,
   )?.[0];
@@ -1017,7 +1070,8 @@ test("publish run은 remote artifact validation 뒤 최종 decision과 callback�
   assert.match(finalDecision, /--release-evidence-bundle "\$\{EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE\}"/);
   assert.match(finalDecision, /--launch-denominator-report "\$\{EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT\}"/);
   assert.match(finalDecision, /\[\[ "\$\{publish_attempted\}" == "true" \]\]/);
-  assert.match(yml, /GITHUB_STEP_SUMMARY/);
+  assert.match(yml, /node tools\/ci\/datapack-release-steps\.mjs write-release-decision-summary "\$\{decision\}"/);
+  assert.match(stepsSource, /GITHUB_STEP_SUMMARY/);
 });
 
 test("expiry alert는 publish 없이 같은 decision engine을 소비한다", () => {
@@ -1216,4 +1270,271 @@ test("required PR CI는 release와 같은 인자로 고정 Hub 계약 기준 sou
   assert.ok(job?.includes("- name: Validate source inventory against pinned Hub contracts"),
     "검증 스텝은 required 집계가 요구하는 contracts_mobile_v19 job 안에 있어야 함");
   assert.match(ciYml, /needs: \[contracts_mobile_v19,/);
+});
+
+test("datapack-release-steps.mjs 단위 테스트: parseModeArgs·buildSpec·scheduled request·decision·outputs·observability·map-catalog 헬퍼가 입출력 및 실패 경계를 지킨다", () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "datapack-release-steps-"));
+  try {
+    const githubOutput = path.join(tempDir, "github-output.txt");
+    writeFileSync(githubOutput, "", "utf8");
+    parseModeArgs({
+      modeArgsInput: JSON.stringify({
+        buildSpecPath: "tools/datapack/release/candidate-build-spec.json",
+        allowGaps: "false",
+        candidateRunId: "12345",
+      }),
+      githubOutputPath: githubOutput,
+    });
+    const parsedLines = readFileSync(githubOutput, "utf8");
+    assert.match(parsedLines, /^buildSpecPath=tools\/datapack\/release\/candidate-build-spec\.json$/m);
+    assert.match(parsedLines, /^allowGaps=false$/m);
+    assert.match(parsedLines, /^candidateRunId=12345$/m);
+    assert.match(parsedLines, /^releaseRequestId=$/m);
+
+    assert.throws(
+      () => parseModeArgs({ modeArgsInput: "{invalid", githubOutputPath: githubOutput }),
+      /modeArgs must be a JSON object:/,
+    );
+    assert.throws(
+      () => parseModeArgs({ modeArgsInput: "[]", githubOutputPath: githubOutput }),
+      /modeArgs must be a JSON object$/,
+    );
+    assert.throws(
+      () =>
+        parseModeArgs({
+          modeArgsInput: JSON.stringify({ buildSpecPath: "a\nb" }),
+          githubOutputPath: githubOutput,
+        }),
+      /modeArgs\.buildSpecPath must not contain newlines/,
+    );
+
+    const validBuildSpecPath = path.join(tempDir, "valid-build-spec.json");
+    const hashA = "a".repeat(64);
+    const validBuildSpec = {
+      artifactKind: "datapack-candidate-build-spec",
+      sourceSnapshotIds: ["snap-1"],
+      sourceSnapshotSetHash: hashA,
+      approvedAliasLedgerHash: hashA,
+      facilityEvidenceLedgerHash: hashA,
+      routeEvidenceLedgerHash: hashA,
+      approvedOverrideSetHash: hashA,
+      sourceInventorySha256: hashA,
+    };
+    writeFileSync(validBuildSpecPath, JSON.stringify(validBuildSpec), "utf8");
+    assertReleaseBuildSpecContent(validBuildSpecPath);
+
+    const fixtureBuildSpecPath = path.join(tempDir, "fixture-build-spec.json");
+    writeFileSync(
+      fixtureBuildSpecPath,
+      JSON.stringify({ ...validBuildSpec, fixturePath: "tools/datapack/fixtures/sample.json" }),
+      "utf8",
+    );
+    assert.throws(
+      () => assertReleaseBuildSpecContent(fixtureBuildSpecPath),
+      /release mode cannot use fixture input/,
+    );
+
+    const invalidJsonPath = path.join(tempDir, "invalid.json");
+    writeFileSync(invalidJsonPath, "{broken", "utf8");
+    assert.throws(
+      () => assertReleaseBuildSpecContent(invalidJsonPath),
+      /release build spec is not valid JSON:/,
+    );
+
+    const requestPath = path.join(tempDir, "release-request.json");
+    writeFileSync(
+      requestPath,
+      JSON.stringify({
+        artifactKind: "datapack-release-request",
+        approvalId: "approval-2026.11_01",
+        requestedBy: "operator-a",
+        approvedBy: "operator-b",
+        targetChannel: "production",
+        buildSpecSha256: sha256(readFileSync(validBuildSpecPath)),
+        sourceSnapshotSetHash: hashA,
+        approvedLedgerHash: hashA,
+      }),
+      "utf8",
+    );
+    assert.equal(readScheduledReleaseRequestId(requestPath), "approval-2026.11_01");
+    assert.throws(
+      () => readScheduledReleaseRequestId(invalidJsonPath),
+      /scheduled release request is not valid JSON:/,
+    );
+    const badApprovalPath = path.join(tempDir, "bad-approval.json");
+    writeFileSync(badApprovalPath, JSON.stringify({ approvalId: "bad\ninjection" }), "utf8");
+    assert.throws(
+      () => readScheduledReleaseRequestId(badApprovalPath),
+      /scheduled release request approvalId must be a single \[A-Za-z0-9\._-\] token/,
+    );
+
+    validateReleaseBuildSpecAndRequest({
+      buildSpecPath: validBuildSpecPath,
+      releaseRequestId: "approval-2026.11_01",
+      releaseRequestPath: requestPath,
+      targetChannel: "production",
+      mode: "production-publish",
+      sourceGovernanceEvaluationAt: "",
+      eventName: "workflow_dispatch",
+    });
+    assert.throws(
+      () =>
+        validateReleaseBuildSpecAndRequest({
+          buildSpecPath: validBuildSpecPath,
+          releaseRequestId: "wrong-id",
+          releaseRequestPath: requestPath,
+          targetChannel: "production",
+          mode: "production-publish",
+          sourceGovernanceEvaluationAt: "",
+          eventName: "workflow_dispatch",
+        }),
+      /releaseRequestId must match approvalId/,
+    );
+
+    const decisionPath = path.join(tempDir, "decision.json");
+    writeFileSync(
+      decisionPath,
+      JSON.stringify({
+        outcome: "PUBLISH_REQUIRED",
+        productionWriteAllowed: true,
+        sourceSnapshotSetHash: hashA,
+        reasonCodes: [],
+      }),
+      "utf8",
+    );
+    assertExecutableProductionDecision(decisionPath);
+
+    const summaryPath = path.join(tempDir, "step-summary.md");
+    writeFileSync(summaryPath, "", "utf8");
+    writeReleaseDecisionSummary(decisionPath, summaryPath);
+    const summaryText = readFileSync(summaryPath, "utf8");
+    assert.match(summaryText, /## Data pack release decision/);
+    assert.match(summaryText, /- outcome: `PUBLISH_REQUIRED`/);
+    assert.match(summaryText, /- reasons: `NONE`/);
+
+    writeFileSync(
+      decisionPath,
+      JSON.stringify({
+        outcome: "BLOCKED",
+        productionWriteAllowed: false,
+        sourceSnapshotSetHash: hashA,
+        reasonCodes: ["STALE_SNAPSHOT"],
+      }),
+      "utf8",
+    );
+    assert.throws(
+      () => assertExecutableProductionDecision(decisionPath),
+      /production decision did not authorize executable run: BLOCKED reasonCodes=STALE_SNAPSHOT/,
+    );
+
+    const stageDir = path.join(tempDir, "stage");
+    mkdirSync(path.join(stageDir, "catalog"), { recursive: true });
+    const currentManifestPath = path.join(stageDir, "catalog", "current.json");
+    const currentManifestBytes = Buffer.from(
+      JSON.stringify({
+        releaseSequence: 12,
+        activePack: { id: "nationwide", version: "1" },
+        packs: [{ id: "nationwide", version: "1", sourceInventory: [{ updatedAt: "2026-11-01T00:00:00Z" }] }],
+      }),
+    );
+    writeFileSync(currentManifestPath, currentManifestBytes);
+    const bundlePath = path.join(tempDir, "bundle.json");
+    const bundleBytes = Buffer.from(
+      JSON.stringify({
+        manifestSha256: sha256(currentManifestBytes),
+        sqliteSha256: "b".repeat(64),
+        gzipSha256: "c".repeat(64),
+        validatorStatus: "PASS",
+        strictRouteRegressionStatus: "PASS",
+      }),
+    );
+    writeFileSync(bundlePath, bundleBytes);
+
+    const publishOut = path.join(tempDir, "publish-out.txt");
+    writeFileSync(publishOut, "", "utf8");
+    writePublishedReleaseOutputs({
+      stageDir,
+      evidenceBundlePath: bundlePath,
+      githubOutputPath: publishOut,
+    });
+    assert.match(readFileSync(publishOut, "utf8"), /^releaseSequence=12$/m);
+    assert.match(readFileSync(publishOut, "utf8"), /^validatorStatus=PASS$/m);
+
+    const noChangeOut = path.join(tempDir, "no-change-out.txt");
+    writeFileSync(noChangeOut, "", "utf8");
+    prepareNoChangeReleaseIdentity({
+      currentManifestPath,
+      evidenceBundlePath: bundlePath,
+      githubOutputPath: noChangeOut,
+    });
+    assert.match(readFileSync(noChangeOut, "utf8"), /^releaseSequence=12$/m);
+    assert.match(readFileSync(noChangeOut, "utf8"), new RegExp(`^manifestSha256=${sha256(currentManifestBytes)}$`, "m"));
+
+    const remoteSummaryPath = path.join(tempDir, "remote-summary.json");
+    writeFileSync(remoteSummaryPath, JSON.stringify({ manifestSha256: hashA }), "utf8");
+    verifyRemoteValidationSummary(remoteSummaryPath, hashA);
+    assert.throws(
+      () => verifyRemoteValidationSummary(remoteSummaryPath, "d".repeat(64)),
+      /remote validation manifestSha256 mismatch/,
+    );
+
+    writeObservabilityMetadata({
+      stageDir,
+      githubSha: "1".repeat(40),
+      githubRef: "refs/heads/main",
+      remotePublishEnabled: "true",
+      remotePublishReady: "true",
+      remotePublishResult: "success",
+    });
+    const observability = readFileSync(path.join(stageDir, "datapack-observability.txt"), "utf8");
+    assert.match(observability, /^pack_version=nationwide@1$/m);
+    assert.match(observability, /^source_updated_at=2026-11-01T00:00:00Z$/m);
+    assert.match(observability, /^publish_result=success$/m);
+
+    const handoffPath = path.join(tempDir, "handoff.txt");
+    writeFileSync(
+      handoffPath,
+      [
+        `DESCRIPTOR_SHA ${"a".repeat(64)}`,
+        "DESCRIPTOR_LOCATOR oci://ns/bucket/desc.json",
+        `RECEIPT_SHA ${"b".repeat(64)}`,
+        "RECEIPT_LOCATOR oci://ns/bucket/receipt.json",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    verifyMapCatalogPublicationHandoff(handoffPath);
+    writeFileSync(handoffPath, "DESCRIPTOR_SHA invalid\n", "utf8");
+    assert.throws(
+      () => verifyMapCatalogPublicationHandoff(handoffPath),
+      /publication handoff must contain exactly four lines/,
+    );
+
+    const datapackRoot = path.join(tempDir, "datapack-root");
+    mkdirSync(path.join(datapackRoot, "catalog"), { recursive: true });
+    const sqliteBytes = Buffer.from("sqlite-binary-payload");
+    const gzipBytes = gzipSync(sqliteBytes);
+    writeFileSync(path.join(datapackRoot, "catalog", "nationwide-v1.sqlite.gz"), gzipBytes);
+    writeFileSync(
+      path.join(datapackRoot, "current.json"),
+      JSON.stringify({
+        activePack: { id: "nationwide", version: "1" },
+        packs: [
+          {
+            id: "nationwide",
+            version: "1",
+            url: "https://example.invalid/catalog/nationwide-v1.sqlite.gz",
+            sha256: sha256(gzipBytes),
+            sqliteSha256: sha256(sqliteBytes),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const extractedSqlitePath = path.join(tempDir, "extracted.sqlite");
+    extractMapCatalogSourceSqlite(datapackRoot, extractedSqlitePath);
+    assert.deepEqual(readFileSync(extractedSqlitePath), sqliteBytes);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
