@@ -57,17 +57,34 @@ test("이 workflow의 열린 PR이 있으면 OPEN_PR이다", () => {
   assert.deepEqual(decide({ pullRequests: [pr("OPEN", 1)], claims: [claim(1)] }), { state: "OPEN_PR", snapshotId: SNAPSHOT, branch: `${REGISTRATION_CLAIM_PREFIX}1` });
 });
 
-test("원장을 쓰는 다른 자동화 PR이 열려 있으면 BLOCKED_BY_PENDING_PR로 기다린다(이상이 아니다)", () => {
+test("원장을 쓰는 다른 자동화 PR이나 claim 브랜치가 있으면 BLOCKED_BY_PENDING_PR로 기다린다(이상이 아니다)", () => {
   const other = (prefix, number) => pr("OPEN", 9, { number, headRefName: `${prefix}9` });
+  const reverificationClaim = "automation/984-source-reverification-42538966000";
   assert.deepEqual(decide({ pullRequests: [other("automation/639-seoul-accessibility-refresh-", 971)] }), {
     state: "BLOCKED_BY_PENDING_PR", snapshotId: SNAPSHOT, blockedBy: [971],
   });
-  assert.deepEqual(decide({ pullRequests: [other("automation/636-current-topology-refresh-", 965), other("automation/504-retained-gwangju-timetable-refresh-", 972)] }).blockedBy, [965, 972]);
-  // 후보 PR은 원장을 쓰지 않는다. 사람 PR·다른 저장소 PR도 직렬화 대상이 아니다.
-  assert.equal(decide({ pullRequests: [other("automation/927-nationwide-candidate-refresh-", 973), pr("OPEN", 9, { number: 974, headRefName: "feat/x" })] }).state, "REGISTER");
+  assert.deepEqual(decide({ automationBranches: [reverificationClaim] }), {
+    state: "BLOCKED_BY_PENDING_PR", snapshotId: SNAPSHOT, blockedBy: [reverificationClaim],
+  });
+  assert.deepEqual(
+    decide({
+      pullRequests: [other("automation/636-current-topology-refresh-", 965), other("automation/504-retained-gwangju-timetable-refresh-", 972)],
+      automationBranches: [reverificationClaim, `${REGISTRATION_CLAIM_PREFIX}123`],
+    }).blockedBy,
+    [965, 972, reverificationClaim],
+  );
+  // 후보 PR·브랜치는 원장을 쓰지 않는다. 사람 PR·다른 저장소 PR도 직렬화 대상이 아니다.
+  assert.equal(decide({
+    pullRequests: [other("automation/927-nationwide-candidate-refresh-", 973), pr("OPEN", 9, { number: 974, headRefName: "feat/x" })],
+    automationBranches: ["automation/927-nationwide-candidate-refresh-9"],
+  }).state, "REGISTER");
   assert.equal(decide({ pullRequests: [{ ...other("automation/639-seoul-accessibility-refresh-", 975), isCrossRepository: true }] }).state, "REGISTER");
-  // 닫히거나 병합된 다른 PR은 기다릴 이유가 아니다.
-  assert.equal(decide({ pullRequests: [{ ...other("automation/639-seoul-accessibility-refresh-", 976), state: "MERGED" }] }).state, "REGISTER");
+  // 병합된 다른 PR과 그 남은 브랜치는 기다릴 이유가 아니다.
+  assert.equal(decide({
+    pullRequests: [{ ...other("automation/639-seoul-accessibility-refresh-", 976), state: "MERGED" }],
+    automationBranches: ["automation/639-seoul-accessibility-refresh-9"],
+  }).state, "REGISTER");
+  assert.throws(() => decide({ automationBranches: null }), /REGISTRATION_INPUT_INVALID/u);
 });
 
 test("PR 없는 claim은 같은 main에서 실패·취소된 producer run이 게시 증거(receipt artifact)를 남긴 경우에만 RECOVER_CLAIM이다", () => {

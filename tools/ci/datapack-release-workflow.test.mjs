@@ -385,8 +385,8 @@ test("map-catalog production publication은 current main·검증된 server-route
   assert.match(mapCatalogStepsSource, /buildSpecPath/);
   assert.match(mapCatalogStepsSource, /serverRouteDescriptorSha256/);
   assert.match(mapCatalogStepsSource, /tracked non-symlink regular file/);
-  assert.match(mapCatalogStepsSource, /execFileSync\("git", \["ls-files", "--error-unmatch", "--", value\]/);
-  assert.match(mapCatalogStepsSource, /execFileSync\("git", \["show", `\$\{process\.env\.GITHUB_SHA\}:\$\{value\}`\]\)/);
+  assert.match(mapCatalogStepsSource, /execFileSync\(GIT_EXECUTABLE, \["ls-files", "--error-unmatch", "--", value\]/);
+  assert.match(mapCatalogStepsSource, /execFileSync\(GIT_EXECUTABLE, \["show", `\$\{process\.env\.GITHUB_SHA\}:\$\{value\}`\]\)/);
   assert.match(mapCatalogStepsSource, /bytes must equal GITHUB_SHA:path/);
   assert.match(job, /OCI_SERVER_ROUTE_PUBLIC_BASE_URL.*vars\.OCI_SERVER_ROUTE_PUBLIC_BASE_URL/);
   assert.match(mapCatalogStepsSource, /objectstorage\\\.\[a-z0-9\]/);
@@ -407,7 +407,7 @@ test("map-catalog production publication은 current main·검증된 server-route
   assert.match(mapCatalogStepsSource, /descriptor\.producer\.repository !== process\.env\.GITHUB_REPOSITORY/);
   assert.doesNotMatch(mapCatalogStepsSource, /descriptor\.producer\.gitSha !== process\.env\.GITHUB_SHA/);
   assert.match(mapCatalogStepsSource, /descriptor\.producer\.gitSha === process\.env\.GITHUB_SHA/);
-  assert.match(mapCatalogStepsSource, /execFileSync\("git", \["merge-base", "--is-ancestor", descriptor\.producer\.gitSha, process\.env\.GITHUB_SHA\]/);
+  assert.match(mapCatalogStepsSource, /execFileSync\(\s*GIT_EXECUTABLE,\s*\["merge-base", "--is-ancestor", descriptor\.producer\.gitSha, process\.env\.GITHUB_SHA\]/);
   assert.match(mapCatalogStepsSource, /buildSpec\.releaseSequence !== descriptor\.manifest\.releaseSequence/);
   assert.match(mapCatalogStepsSource, /buildSpec\.sourceSnapshotSetHash !== descriptor\.sourceSnapshotSetHash/);
   assert.match(mapCatalogStepsSource, /descriptor\.manifest\.stationSetSha256/);
@@ -417,7 +417,7 @@ test("map-catalog production publication은 current main·검증된 server-route
   assert.match(mapCatalogStepsSource, /descriptor\.manifest\.bundleId/);
   assert.match(mapCatalogStepsSource, /descriptor\.manifest\.keyId/);
   // #866 PR-B(D3): map-catalog도 전국 후보 입력·nationwide@1·RC stage와 같은 식별자를 쓴다.
-  assert.match(mapCatalogStepsSource, /active\.id !== "nationwide" \|\| active\.version !== "1"\) throw new Error\("current build must select nationwide@1"\)/);
+  assert.match(mapCatalogStepsSource, /active\?\.id !== "nationwide" \|\| active\.version !== "1"\) throw new Error\("current build must select nationwide@1"\)/);
   assert.match(job, /--map-pack-id "nationwide-map-1"/);
   assert.match(job, /--catalog-pack-id "nationwide-catalog-1"/);
   assert.doesNotMatch(job, /capital@1|capital-map-1|capital-catalog-1/);

@@ -79,7 +79,8 @@ jobs:
           decision_root="${RUNNER_TEMP}/capital-topology-registration-decision/${GITHUB_RUN_ID}"
           mkdir -p "${decision_root}"
           git ls-remote --heads origin "refs/heads/automation/456-capital-topology-registration-*" > "${decision_root}/claims.txt"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/claims.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/automation-branches.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
           # #987 리뷰 F1: 끝난 run 이력은 쌓여 상한을 넘는다. 끝나지 않은 상태별로만 조회하고, 복구에 필요한 claim의 producer run은 아래에서 run id로 직접 받는다.
           mkdir -p "${decision_root}/runs"
           for status in in_progress queued waiting pending requested; do
@@ -107,7 +108,7 @@ jobs:
             mv "${decision_root}/artifacts.next.json" "${decision_root}/artifacts.json"
           done < "${decision_root}/claims.txt"
           jq -s 'add | unique_by(.databaseId)' "${decision_root}"/runs/*.json > "${decision_root}/runs.json"
-          node tools/ci/decide-capital-topology-registration.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --prs "${decision_root}/prs.json" --claims "${decision_root}/claims.txt" --runs "${decision_root}/runs.json" --artifacts "${decision_root}/artifacts.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --pr-limit 1000 --run-limit 200 --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/decide-capital-topology-registration.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --prs "${decision_root}/prs.json" --claims "${decision_root}/claims.txt" --automation-branches "${decision_root}/automation-branches.txt" --runs "${decision_root}/runs.json" --artifacts "${decision_root}/artifacts.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --pr-limit 1000 --run-limit 200 --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
@@ -226,23 +227,36 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
           node tools/datapack/run-current-capital-route-topology-registration.mjs recover-published --repository-root "${GITHUB_WORKSPACE}" --source-operation-root "${REGISTRATION_SOURCE_OPERATION_ROOT}" --target-operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}" --expected-publication-operation-id "${RECOVERY_RUN_ID}"
       - name: Recheck that no source-ledger automation is pending before pushing
+        id: recheck
         if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # #987 리뷰 F5: 게시·등록은 길다. 그 사이 원장을 쓰는 다른 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 push하지 않는다(재확인 workflow와 같은 양방향 직렬화).
-          # 이 workflow는 게시 증거(receipt artifact)를 남기고 실패하면 다음 실행이 그 증거로 PR만 다시 만든다. 기다림도 그 복구 경로로 끝낸다.
+          # #987 리뷰 F5, #1710: 게시·등록은 길다. 그 사이 원장을 쓰는 다른 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 push하지 않고
+          # 다음 실행(차단 해소 후 재dispatch·정기 실행)에 맡긴다.
           recheck_root="${RUNNER_TEMP}/current-capital-topology-registration/recheck-${GITHUB_RUN_ID}"
           mkdir -p "${recheck_root}"
           node tools/ci/reclaim-stale-claims.mjs --repository "${GITHUB_REPOSITORY}"
           git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${recheck_root}/automation-branches.txt" --pr-limit 1000 --output "${recheck_root}/prs.json"
-          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --except-workflow current-capital-topology-registration.yml --github-output "${recheck_root}/idle.txt"
-          grep -qx 'idle=true' "${recheck_root}/idle.txt" || { echo "REGISTRATION_LEDGER_WRITER_PENDING: source-ledger automation started while the registration was running; nothing was pushed. The retained publication receipt lets the next run recreate the pull request." >&2; exit 1; }
+          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --except-workflow current-capital-topology-registration.yml --github-output "${GITHUB_OUTPUT}"
+      - name: Note registration superseded by pending source automation
+        if: ${{ (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') && steps.recheck.outputs.idle == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BLOCKED_BY: ${{ steps.recheck.outputs.blocked_by }}
+        run: |
+          set -euo pipefail
+          branch="automation/456-capital-topology-registration-${GITHUB_RUN_ID}"
+          if [[ "${REGISTRATION_BRANCH:-}" == "${branch}" ]] && git ls-remote --exit-code --heads origin "refs/heads/${branch}" > /dev/null; then
+            gh auth setup-git
+            git push origin --delete "${branch}"
+          fi
+          echo "::notice title=Capital topology registration::source-ledger automation (${BLOCKED_BY}) started while the registration was running; nothing was pushed and the next run decides again."
       - name: Mint App token for the registration pull request
         id: app-token-pr
-        if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        if: ${{ (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') && steps.recheck.outputs.idle == 'true' }}
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
@@ -251,7 +265,7 @@ jobs:
           repositories: easysubway-data
           permission-pull-requests: write
       - name: Commit exactly two registration outputs and open draft PR
-        if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        if: ${{ (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') && steps.recheck.outputs.idle == 'true' }}
         env:
           APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           GH_TOKEN: ${{ github.token }}

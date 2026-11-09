@@ -18,14 +18,14 @@
 // 이상은 REGISTRATION_* 코드로 실패해 실패 이슈로 드러난다. 이전 데이터로 대체하거나 성공으로 덮지 않는다.
 //
 // 사용: node tools/ci/decide-capital-topology-registration.mjs --inventory <file> --ledger <file> --prs <collect-automation-prs.mjs 출력>
-//   --claims <git ls-remote 출력> --runs <gh run list JSON> --artifacts <run id별 artifact 이름 JSON> --repository <owner/repo> --current-main-sha <sha>
-//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> [--github-output <path>]
+//   --claims <git ls-remote 출력> --automation-branches <git ls-remote "automation/*" 출력> --runs <gh run list JSON> --artifacts <run id별 artifact 이름 JSON>
+//   --repository <owner/repo> --current-main-sha <sha> --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { requiredUtcInstant } from "../datapack/lib/utc-instant.mjs";
 import { isCapitalRouteTopologySnapshotId } from "../datapack/lib/capital-route-topology-snapshot-id.mjs";
-import { activeRuns, ownPullRequestsByBranch, parsePrefixedRefs, pendingLedgerWriterPullRequests, validRepository } from "./automation-pr-state.mjs";
+import { activeRuns, ownPullRequestsByBranch, parseAutomationBranches, parsePrefixedRefs, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 export const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
@@ -97,8 +97,8 @@ function classifyUnboundClaim(branch, { runs, artifacts, currentMainSha }) {
   return hasReceipt && found.headSha === currentMainSha ? { kind: "RECOVER", runId } : { kind: "ABANDONED" };
 }
 
-export function decideCapitalTopologyRegistration({ inventory, ledger, pullRequests, claims, runs, repository, currentMainSha, now, limits, artifacts } = {}) {
-  if (!Array.isArray(ledger) || !Array.isArray(pullRequests) || !Array.isArray(claims) || !Array.isArray(runs)
+export function decideCapitalTopologyRegistration({ inventory, ledger, pullRequests, claims, automationBranches = [], runs, repository, currentMainSha, now, limits, artifacts } = {}) {
+  if (!Array.isArray(ledger) || !Array.isArray(pullRequests) || !Array.isArray(claims) || !Array.isArray(automationBranches) || !Array.isArray(runs)
     || !artifacts || typeof artifacts !== "object" || Array.isArray(artifacts)
     || !validRepository(repository) || !SHA.test(currentMainSha ?? "")
     || !(now instanceof Date) || Number.isNaN(now.getTime())
@@ -142,14 +142,16 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
       ? { state: "RECOVER_CLAIM", snapshotId, branch, recoveryRunId: claim.runId, cleanupClaims }
       : { state: "REGISTER", snapshotId, cleanupClaims: [...cleanupClaims, branch] };
   }
-  const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, REGISTRATION_WORKFLOW);
+  const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow: REGISTRATION_WORKFLOW });
+  const blockedBy = [...pending.pullRequests, ...pending.branches];
   return blockedBy.length > 0 ? { state: "BLOCKED_BY_PENDING_PR", snapshotId, blockedBy } : result;
 }
 
 function parseArgs(argv) {
   const keys = new Map([
-    ["--inventory", "inventory"], ["--ledger", "ledger"], ["--prs", "prs"], ["--claims", "claims"], ["--runs", "runs"], ["--artifacts", "artifacts"],
-    ["--repository", "repository"], ["--current-main-sha", "currentMainSha"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--github-output", "githubOutput"],
+    ["--inventory", "inventory"], ["--ledger", "ledger"], ["--prs", "prs"], ["--claims", "claims"], ["--automation-branches", "automationBranches"],
+    ["--runs", "runs"], ["--artifacts", "artifacts"], ["--repository", "repository"], ["--current-main-sha", "currentMainSha"],
+    ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -157,7 +159,7 @@ function parseArgs(argv) {
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("REGISTRATION_INPUT_INVALID", `argument ${String(argv[index])}`);
     values[key] = argv[index + 1];
   }
-  for (const key of ["inventory", "ledger", "prs", "claims", "runs", "artifacts", "repository", "currentMainSha", "prLimit", "runLimit"]) {
+  for (const key of ["inventory", "ledger", "prs", "claims", "automationBranches", "runs", "artifacts", "repository", "currentMainSha", "prLimit", "runLimit"]) {
     if (!Object.hasOwn(values, key)) fail("REGISTRATION_INPUT_INVALID", `missing --${key}`);
   }
   return values;
@@ -168,7 +170,9 @@ export async function main(argv, { now = new Date(), log = console.log } = {}) {
   const readJson = async (file) => JSON.parse(await readFile(file, "utf8"));
   const result = decideCapitalTopologyRegistration({
     inventory: await readJson(values.inventory), ledger: await readJson(values.ledger), pullRequests: await readJson(values.prs),
-    claims: parseRegistrationClaims(await readFile(values.claims, "utf8")), runs: await readJson(values.runs), artifacts: await readJson(values.artifacts),
+    claims: parseRegistrationClaims(await readFile(values.claims, "utf8")),
+    automationBranches: parseAutomationBranches(await readFile(values.automationBranches, "utf8")),
+    runs: await readJson(values.runs), artifacts: await readJson(values.artifacts),
     repository: values.repository, currentMainSha: values.currentMainSha, now,
     limits: { pullRequests: Number(values.prLimit), runs: Number(values.runLimit) },
   });

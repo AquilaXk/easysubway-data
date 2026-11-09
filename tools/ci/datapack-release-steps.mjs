@@ -22,6 +22,7 @@ import { sha256 } from "../lib/hash.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { isObject } from "../lib/is-object.mjs";
 
+const GIT_EXECUTABLE = "/usr/bin/git";
 const hashFile = (file) => sha256(fs.readFileSync(file));
 
 export const MODE_ARGS_KEYS = Object.freeze([
@@ -99,6 +100,77 @@ export function readScheduledReleaseRequestId(file = process.env.RELEASE_REQUEST
   return request.approvalId;
 }
 
+function requireSha256(value, label) {
+  if (!/^[a-f0-9]{64}$/.test(String(value ?? ""))) {
+    throw new Error(`${label} must be sha256`);
+  }
+}
+
+function validateBuildSpecRawPurgeEvidence(buildSpec, sourceGovernanceEvaluationAt, eventName) {
+  if (!buildSpec.sourceRawPurgeReportPath) {
+    return;
+  }
+  if (eventName === "schedule") {
+    throw new Error("scheduled production publish requires a fresh protection evidence pipeline");
+  }
+  if (
+    !sourceGovernanceEvaluationAt ||
+    !Number.isFinite(Date.parse(sourceGovernanceEvaluationAt))
+  ) {
+    throw new Error("sourceGovernanceEvaluationAt is required with sourceRawPurgeReportPath");
+  }
+  for (const [pathField, hashField] of [
+    ["sourceRawPurgeReportPath", "sourceRawPurgeReportSha256"],
+    ["sourceRawPurgeJournalPath", "sourceRawPurgeJournalSha256"],
+    ["sourceRawPurgeLedgerPath", "sourceRawPurgeLedgerSha256"],
+    ["sourceRawPurgeAttestationPublicKeyPath", "sourceRawPurgeAttestationPublicKeySha256"],
+  ]) {
+    if (!buildSpec[pathField] || typeof buildSpec[pathField] !== "string") {
+      throw new Error(`buildSpec.${pathField} is required with sourceRawPurgeReportPath`);
+    }
+    requireSha256(buildSpec[hashField], `buildSpec.${hashField}`);
+  }
+}
+
+function validateReleaseRequestAgainstBuildSpec({
+  releaseRequestPath,
+  releaseRequestId,
+  targetChannel,
+  mode,
+  buildSpecPath,
+  buildSpec,
+}) {
+  const request = JSON.parse(fs.readFileSync(releaseRequestPath, "utf8"));
+  if (request.artifactKind !== "datapack-release-request") {
+    throw new Error("release request artifactKind must be datapack-release-request");
+  }
+  if (request.approvalId !== releaseRequestId) {
+    throw new Error("releaseRequestId must match approvalId");
+  }
+  if (
+    !request.requestedBy ||
+    !request.approvedBy ||
+    request.requestedBy === request.approvedBy
+  ) {
+    throw new Error("release request approver must differ from requester");
+  }
+  if (request.targetChannel !== targetChannel) {
+    throw new Error("release request targetChannel mismatch");
+  }
+  if (request.buildSpecSha256 !== hashFile(buildSpecPath)) {
+    throw new Error("release request buildSpecSha256 mismatch");
+  }
+  if (request.sourceSnapshotSetHash !== buildSpec.sourceSnapshotSetHash) {
+    throw new Error("release request sourceSnapshotSetHash mismatch");
+  }
+  if (request.approvedLedgerHash !== buildSpec.approvedAliasLedgerHash) {
+    throw new Error("release request approvedLedgerHash mismatch");
+  }
+  if (mode === "production-publish" && targetChannel !== "production") {
+    throw new Error("production-publish requires targetChannel=production");
+  }
+}
+
 export function validateReleaseBuildSpecAndRequest({
   buildSpecPath,
   releaseRequestId,
@@ -108,11 +180,6 @@ export function validateReleaseBuildSpecAndRequest({
   sourceGovernanceEvaluationAt,
   eventName = process.env.GITHUB_EVENT_NAME,
 }) {
-  const requireHash = (value, label) => {
-    if (!/^[a-f0-9]{64}$/.test(String(value ?? ""))) {
-      throw new Error(`${label} must be sha256`);
-    }
-  };
   const buildSpec = JSON.parse(fs.readFileSync(buildSpecPath, "utf8"));
   if (buildSpec.artifactKind !== "datapack-candidate-build-spec") {
     throw new Error("buildSpec.artifactKind must be datapack-candidate-build-spec");
@@ -128,61 +195,26 @@ export function validateReleaseBuildSpecAndRequest({
     "approvedOverrideSetHash",
     "sourceInventorySha256",
   ]) {
-    requireHash(buildSpec[field], `buildSpec.${field}`);
+    requireSha256(buildSpec[field], `buildSpec.${field}`);
   }
-  if (buildSpec.sourceRawPurgeReportPath) {
-    if (eventName === "schedule") {
-      throw new Error("scheduled production publish requires a fresh protection evidence pipeline");
-    }
-    if (
-      !sourceGovernanceEvaluationAt ||
-      !Number.isFinite(Date.parse(sourceGovernanceEvaluationAt))
-    ) {
-      throw new Error("sourceGovernanceEvaluationAt is required with sourceRawPurgeReportPath");
-    }
-    for (const [pathField, hashField] of [
-      ["sourceRawPurgeReportPath", "sourceRawPurgeReportSha256"],
-      ["sourceRawPurgeJournalPath", "sourceRawPurgeJournalSha256"],
-      ["sourceRawPurgeLedgerPath", "sourceRawPurgeLedgerSha256"],
-      ["sourceRawPurgeAttestationPublicKeyPath", "sourceRawPurgeAttestationPublicKeySha256"],
-    ]) {
-      if (!buildSpec[pathField] || typeof buildSpec[pathField] !== "string") {
-        throw new Error(`buildSpec.${pathField} is required with sourceRawPurgeReportPath`);
-      }
-      requireHash(buildSpec[hashField], `buildSpec.${hashField}`);
-    }
-  }
+  validateBuildSpecRawPurgeEvidence(buildSpec, sourceGovernanceEvaluationAt, eventName);
   if (releaseRequestPath) {
-    const request = JSON.parse(fs.readFileSync(releaseRequestPath, "utf8"));
-    if (request.artifactKind !== "datapack-release-request") {
-      throw new Error("release request artifactKind must be datapack-release-request");
-    }
-    if (request.approvalId !== releaseRequestId) {
-      throw new Error("releaseRequestId must match approvalId");
-    }
-    if (
-      !request.requestedBy ||
-      !request.approvedBy ||
-      request.requestedBy === request.approvedBy
-    ) {
-      throw new Error("release request approver must differ from requester");
-    }
-    if (request.targetChannel !== targetChannel) {
-      throw new Error("release request targetChannel mismatch");
-    }
-    if (request.buildSpecSha256 !== hashFile(buildSpecPath)) {
-      throw new Error("release request buildSpecSha256 mismatch");
-    }
-    if (request.sourceSnapshotSetHash !== buildSpec.sourceSnapshotSetHash) {
-      throw new Error("release request sourceSnapshotSetHash mismatch");
-    }
-    if (request.approvedLedgerHash !== buildSpec.approvedAliasLedgerHash) {
-      throw new Error("release request approvedLedgerHash mismatch");
-    }
-    if (mode === "production-publish" && targetChannel !== "production") {
-      throw new Error("production-publish requires targetChannel=production");
-    }
+    validateReleaseRequestAgainstBuildSpec({
+      releaseRequestPath,
+      releaseRequestId,
+      targetChannel,
+      mode,
+      buildSpecPath,
+      buildSpec,
+    });
   }
+}
+
+function resolveGateStatus(passed, releaseLike) {
+  if (passed) {
+    return "PASS";
+  }
+  return releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
 }
 
 export function writeReleaseEvidenceBundle() {
@@ -229,7 +261,7 @@ export function writeReleaseEvidenceBundle() {
   const launchDenominatorReportRaw = Buffer.from(`${JSON.stringify(launchReport, null, 2)}\n`);
   fs.writeFileSync(process.env.EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT, launchDenominatorReportRaw);
   const externalStatus = (file) =>
-    file && fs.existsSync(file) ? "PASS" : releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
+    resolveGateStatus(Boolean(file && fs.existsSync(file)), releaseLike);
   const releaseHash = (field) => {
     const value = releaseLike ? buildSpec[field] : pack[field] ?? zeroHash;
     const normalized = String(value ?? "").trim().toLowerCase();
@@ -250,12 +282,10 @@ export function writeReleaseEvidenceBundle() {
     "unreachableDirectedPairCount",
   ].reduce((sum, field) => sum + Number(topologyReport.summary?.[field] ?? 0), 0);
   // topology 위반은 releaseLike에서 즉시 실패하고, exploratory에서는 외부 차단으로 기록한다.
-  const routeGraphTopologyStatus =
-    routeGraphTopologyViolationCount === 0
-      ? "PASS"
-      : releaseLike
-        ? "FAIL"
-        : "BLOCKED_EXTERNAL";
+  const routeGraphTopologyStatus = resolveGateStatus(
+    routeGraphTopologyViolationCount === 0,
+    releaseLike,
+  );
   const headwayEvidenceCount =
     Number(headwayReport.summary?.observedHeadwayGroupCount ?? 0) +
     Number(headwayReport.summary?.declaredFrequencyCount ?? 0);
@@ -454,7 +484,7 @@ export function writeObservabilityMetadata({
       .flatMap((pack) => pack.sourceInventory ?? [])
       .map((source) => source.updatedAt ?? source.observedDataUpdatedAt)
       .filter(Boolean)
-      .sort();
+      .sort((a, b) => a.localeCompare(b));
     sourceUpdatedAt = updatedAtValues.at(-1) ?? "unknown";
   }
   const isMainBranch = githubRef === "refs/heads/main";
@@ -495,9 +525,23 @@ export function writeReleaseDecisionSummary(
 }
 
 export async function validateMapCatalogInputs() {
+  const args = parseAndValidateMapCatalogModeArgs(process.env.MODE_ARGS_INPUT ?? "");
+  const serverRoutePublicBaseUrl = validateServerRoutePublicBaseUrl(
+    process.env.OCI_SERVER_ROUTE_PUBLIC_BASE_URL,
+  );
+  assertTrackedMainRegularFile("buildSpecPath", args.buildSpecPath);
+  const serverRouteDescriptorUrl = `${serverRoutePublicBaseUrl}/server-route-bundle-publication-descriptors/v2/${args.serverRouteDescriptorSha256}.json`;
+  const response = await readCredentialFreeObject(serverRouteDescriptorUrl, 1_048_576);
+  const descriptor = parseAndValidateServerRouteDescriptor(response, args);
+  const buildSpec = validateMapCatalogBuildSpec(args.buildSpecPath, descriptor);
+  assertMapCatalogSigningCapability();
+  writeMapCatalogEnvAndOutputs(args.buildSpecPath, descriptor, buildSpec);
+}
+
+function parseAndValidateMapCatalogModeArgs(modeArgsInput) {
   let args;
   try {
-    args = JSON.parse(process.env.MODE_ARGS_INPUT ?? "");
+    args = JSON.parse(modeArgsInput);
   } catch {
     throw new Error("modeArgs must be JSON");
   }
@@ -505,7 +549,7 @@ export async function validateMapCatalogInputs() {
     throw new Error("modeArgs must be an object");
   }
   const allowed = ["allowGaps", "buildSpecPath", "serverRouteDescriptorSha256"];
-  if (canonicalJson(Object.keys(args).sort()) !== canonicalJson(allowed)) {
+  if (canonicalJson(Object.keys(args).sort((a, b) => a.localeCompare(b))) !== canonicalJson(allowed)) {
     throw new Error("map-catalog-publish modeArgs keys mismatch");
   }
   if (args.allowGaps !== "false") {
@@ -520,33 +564,43 @@ export async function validateMapCatalogInputs() {
   ) {
     throw new Error("serverRouteDescriptorSha256 must be lowercase SHA-256");
   }
-  const serverRoutePublicBaseUrl = process.env.OCI_SERVER_ROUTE_PUBLIC_BASE_URL;
+  return args;
+}
+
+function validateServerRoutePublicBaseUrl(serverRoutePublicBaseUrl) {
   const serverRoutePublicBasePattern = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/n\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\/b\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\/o$/;
   if (typeof serverRoutePublicBaseUrl !== "string" || !serverRoutePublicBasePattern.test(serverRoutePublicBaseUrl) || new URL(serverRoutePublicBaseUrl).toString() !== serverRoutePublicBaseUrl) {
     throw new Error("OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be a canonical Oracle OCI public object base");
   }
-  for (const [label, value] of [["buildSpecPath", args.buildSpecPath]]) {
-    if (
-      typeof value !== "string" ||
-      !value ||
-      path.isAbsolute(value) ||
-      value.split("/").some((part) => !part || part === "." || part === "..")
-    ) {
-      throw new Error(`${label} must be a repo-relative path`);
-    }
-    const stat = fs.lstatSync(value);
-    if (!stat.isFile() || stat.isSymbolicLink()) {
-      throw new Error(`${label} must be a tracked non-symlink regular file`);
-    }
-    execFileSync("git", ["ls-files", "--error-unmatch", "--", value], { stdio: "ignore" });
-    const currentMainBytes = execFileSync("git", ["show", `${process.env.GITHUB_SHA}:${value}`]);
-    if (!fs.readFileSync(value).equals(currentMainBytes)) {
-      throw new Error(`${label} bytes must equal GITHUB_SHA:path`);
-    }
+  return serverRoutePublicBaseUrl;
+}
+
+function isUnsafeRepoRelativePath(value) {
+  return (
+    typeof value !== "string" ||
+    !value ||
+    path.isAbsolute(value) ||
+    value.split("/").some((part) => !part || part === "." || part === "..")
+  );
+}
+
+function assertTrackedMainRegularFile(label, value) {
+  if (isUnsafeRepoRelativePath(value)) {
+    throw new Error(`${label} must be a repo-relative path`);
   }
-  const serverRouteDescriptorUrl = `${serverRoutePublicBaseUrl}/server-route-bundle-publication-descriptors/v2/${args.serverRouteDescriptorSha256}.json`;
-  const response = await readCredentialFreeObject(serverRouteDescriptorUrl, 1_048_576);
-  if (!response || response.statusCode !== 200 || !Buffer.isBuffer(response.body)) {
+  const stat = fs.lstatSync(value);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error(`${label} must be a tracked non-symlink regular file`);
+  }
+  execFileSync(GIT_EXECUTABLE, ["ls-files", "--error-unmatch", "--", value], { stdio: "ignore" });
+  const currentMainBytes = execFileSync(GIT_EXECUTABLE, ["show", `${process.env.GITHUB_SHA}:${value}`]);
+  if (!fs.readFileSync(value).equals(currentMainBytes)) {
+    throw new Error(`${label} bytes must equal GITHUB_SHA:path`);
+  }
+}
+
+function parseAndValidateServerRouteDescriptor(response, args) {
+  if (response?.statusCode !== 200 || !Buffer.isBuffer(response.body)) {
     throw new Error("server route descriptor OCI GET failed");
   }
   const bytes = response.body;
@@ -572,15 +626,19 @@ export async function validateMapCatalogInputs() {
   if (descriptor.producer.gitSha === process.env.GITHUB_SHA) {
     throw new Error("server route descriptor producer SHA must precede current main");
   }
-  execFileSync("git", ["merge-base", "--is-ancestor", descriptor.producer.gitSha, process.env.GITHUB_SHA], {
+  execFileSync(GIT_EXECUTABLE, ["merge-base", "--is-ancestor", descriptor.producer.gitSha, process.env.GITHUB_SHA], {
     stdio: "ignore",
   });
   if (Date.parse(descriptor.manifest.freshUntil) <= Date.now()) {
     throw new Error("server route descriptor manifest is stale");
   }
-  const buildSpec = JSON.parse(fs.readFileSync(args.buildSpecPath));
+  return descriptor;
+}
+
+function validateMapCatalogBuildSpec(buildSpecPath, descriptor) {
+  const buildSpec = JSON.parse(fs.readFileSync(buildSpecPath));
   if (typeof buildSpec.publishedAt !== "string" || !Number.isFinite(Date.parse(buildSpec.publishedAt))) {
-    throw new Error("build spec publishedAt is invalid");
+    throw new TypeError("build spec publishedAt is invalid");
   }
   if (buildSpec.releaseSequence !== descriptor.manifest.releaseSequence) {
     throw new Error("build spec releaseSequence must equal server route descriptor manifest");
@@ -588,14 +646,21 @@ export async function validateMapCatalogInputs() {
   if (buildSpec.sourceSnapshotSetHash !== descriptor.sourceSnapshotSetHash) {
     throw new Error("build spec sourceSnapshotSetHash must equal server route descriptor");
   }
+  return buildSpec;
+}
+
+function assertMapCatalogSigningCapability() {
   const probe = "map-catalog-publication-signing-capability-v1";
   if (!verifyRsaSha256Signature(signingPublicKey(), probe, rsaSha256Signature(signingPrivateKey(), probe))) {
     throw new Error("signing capability mismatch");
   }
+}
+
+function writeMapCatalogEnvAndOutputs(buildSpecPath, descriptor, buildSpec) {
   const output = process.env.GITHUB_OUTPUT;
   const environment = process.env.GITHUB_ENV;
   const values = {
-    MAP_CATALOG_BUILD_SPEC_PATH: args.buildSpecPath,
+    MAP_CATALOG_BUILD_SPEC_PATH: buildSpecPath,
     MAP_CATALOG_RELEASE_SEQUENCE: String(descriptor.manifest.releaseSequence),
     MAP_CATALOG_SIGNED_FINAL_DESCRIPTOR_SHA256: descriptor.descriptorSha256,
     MAP_CATALOG_STATION_SET_SHA256: descriptor.manifest.stationSetSha256,
@@ -625,7 +690,7 @@ export function extractMapCatalogSourceSqlite(
 ) {
   const manifest = JSON.parse(fs.readFileSync(`${datapackRoot}/current.json`, "utf8"));
   const active = selectEffectiveDataPack(manifest);
-  if (!active || active.id !== "nationwide" || active.version !== "1") throw new Error("current build must select nationwide@1");
+  if (active?.id !== "nationwide" || active.version !== "1") throw new Error("current build must select nationwide@1");
   const gzip = fs.readFileSync(`${datapackRoot}/${stagedPackPath(active)}`);
   if (active.sha256 !== sha256(gzip)) {
     throw new Error("current active pack SHA mismatch");
