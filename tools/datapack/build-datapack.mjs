@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
-import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
+import { requiredCredentialFreeObjectUri, requiredObjectKey } from "./source-snapshot-policy.mjs";
 import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 import { assertNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { NATIVE_ADMISSION_KINDS } from "./build-current-five-region-source-fan-in.mjs";
@@ -3342,6 +3342,16 @@ function validateOfficialOdFareEvidence(evidence, fixture, admissions, admission
   return evidence;
 }
 
+function requiredSourceSnapshotRawObjectUri(snapshot, label) {
+  const isRawSnapshotAdmission = Array.isArray(snapshot.admissionRecordSha256s)
+    && snapshot.admissionRecordSha256s.length > 0
+    && snapshot.admissionRecordSha256s.every((record) => record?.kind === "rawSnapshotAdmission");
+  if (isRawSnapshotAdmission && typeof snapshot.rawObjectUri === "string" && snapshot.rawObjectUri.startsWith("tools/datapack/sources/")) {
+    return requiredObjectKey(snapshot.rawObjectUri, label);
+  }
+  return requiredCredentialFreeObjectUri(snapshot.rawObjectUri, label);
+}
+
 function requiredSourceSnapshots(value, label, now = candidateBuildNow()) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(`${label} must be a non-empty array`);
@@ -3357,7 +3367,7 @@ function requiredSourceSnapshots(value, label, now = candidateBuildNow()) {
     const normalized = {
       snapshotId: requiredString(snapshot.snapshotId, `${prefix}.snapshotId`),
       sourceId: requiredString(snapshot.sourceId, `${prefix}.sourceId`),
-      rawObjectUri: requiredCredentialFreeObjectUri(snapshot.rawObjectUri, `${prefix}.rawObjectUri`),
+      rawObjectUri: requiredSourceSnapshotRawObjectUri(snapshot, `${prefix}.rawObjectUri`),
       rawSha256: sha256HexString(snapshot.rawSha256, `${prefix}.rawSha256`),
       redactedRequestFingerprint: sha256HexString(
         snapshot.redactedRequestFingerprint,

@@ -709,7 +709,7 @@ test("게이트 재계산: 읽을 수 없는 입력은 예외 없이 위반으�
 // ---------------------------------------------------------------------------
 // 라벨러의 판정 흐름(API 읽기만 쓴다)
 // ---------------------------------------------------------------------------
-function fakeApi(input, { pulls, labels = [], comments = [], artifacts = [{ id: 55, name: "automation-pr-evidence", expired: false }] } = {}) {
+function fakeApi(input, { pulls, labels = [], comments = [], artifacts = [{ id: 55, name: "automation-pr-evidence", expired: false }], rules } = {}) {
   const calls = [];
   const api = async (path) => {
     calls.push(path);
@@ -719,7 +719,7 @@ function fakeApi(input, { pulls, labels = [], comments = [], artifacts = [{ id: 
     if (path.startsWith(`repos/${REPOSITORY}/pulls/77/files`)) return input.files;
     if (path.startsWith(`repos/${REPOSITORY}/compare/main...${HEAD}`)) return input.compare;
     if (path.startsWith(`repos/${REPOSITORY}/commits/${HEAD}/check-runs`)) return { total_count: input.checkRuns.length, check_runs: input.checkRuns };
-    if (path === `repos/${REPOSITORY}/rules/branches/main`) return [{ type: "required_status_checks", parameters: { required_status_checks: input.requiredContexts } }];
+    if (path === `repos/${REPOSITORY}/rules/branches/main`) return rules ?? [{ type: "required_status_checks", parameters: { required_status_checks: input.requiredContexts } }];
     if (path.startsWith(`repos/${REPOSITORY}/issues/77/comments`)) return comments;
     if (path === `repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=automation-pr-evidence`) return { total_count: artifacts.length, artifacts };
     if (path === `repos/${REPOSITORY}/actions/artifacts/55/zip#evidence-digest.json`) return input.ciEvidence;
@@ -743,6 +743,31 @@ test("라벨러 판정: 적격이면 ELIGIBLE과 PR 번호·head·단계·이미
   // 같은 head의 기록이라도 신뢰 App이 쓴 것만 센다.
   const forged = fakeApi(input, { comments: [attestationFor(input, { user: HUMAN })] });
   assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: forged.api })).attested, false);
+});
+
+test("라벨러 판정: 브랜치 ruleset에 required_status_checks 규칙이 없어도 기본 필수 체크(Data contracts)로 대조한다", async () => {
+  const soloRules = [{ type: "deletion" }, { type: "non_fast_forward" }];
+  const input = scenario("registration");
+  const decision = await decideAutomationPullRequest({
+    repository: REPOSITORY,
+    headSha: HEAD,
+    runConclusion: "success",
+    runId: RUN_ID,
+    api: fakeApi(input, { rules: soloRules }).api,
+  });
+  assert.equal(decision.state, "ELIGIBLE");
+
+  const failedCheck = { ...input, checkRuns: [run("Data contracts", "failure", { id: 10 }), run(AUTOMATION_PR_GATES_CONTEXT, "success", { id: 11 })] };
+  await assert.rejects(
+    decideAutomationPullRequest({
+      repository: REPOSITORY,
+      headSha: HEAD,
+      runConclusion: "success",
+      runId: RUN_ID,
+      api: fakeApi(failedCheck, { rules: soloRules }).api,
+    }),
+    /AUTOMATION_PR_CI: required context Data contracts가 성공이 아니다\(failure\)/u,
+  );
 });
 
 test("라벨러 판정: 위반이면 예외로 끝나고 코드가 메시지에 남는다. 쓰기 호출은 없다", async () => {

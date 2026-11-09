@@ -603,12 +603,17 @@ export async function readPages(api, endpoint, { limit, pick = (body) => body, o
   return items;
 }
 
+export const DEFAULT_REQUIRED_CONTEXTS = Object.freeze([
+  Object.freeze({ context: "Data contracts", integration_id: null }),
+]);
+
 function requiredContextsOf(rules) {
   if (!Array.isArray(rules)) throw inputError("ruleset 응답이 배열이 아니다");
-  return rules
+  const contexts = rules
     .filter((rule) => rule?.type === "required_status_checks")
     .flatMap((rule) => rule.parameters?.required_status_checks ?? [])
     .map((item) => ({ context: item?.context, integration_id: item?.integration_id ?? null }));
+  return contexts.length > 0 ? contexts : DEFAULT_REQUIRED_CONTEXTS;
 }
 
 export const EVIDENCE_ARTIFACT_NAME = "automation-pr-evidence";

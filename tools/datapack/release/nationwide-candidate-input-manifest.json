@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
   "candidateId": "nationwide-candidate-20261109-seq180",
-  "candidateBuildSpecSha256": "82906bd90c14470e27b55e7321ad1ed93591a46f1ba2672606570b0dc2e3caef",
-  "preparationSha256": "d6eb00e8b9c386325b01bb569a39a2ff85bdce25d681618a4e852b8f8f6b2edd",
-  "fanInSha256": "ad6f0135b0c68668049c0e44b04fe79e40171b8e0c97cb4bc252bc73ca22cb3d",
+  "candidateBuildSpecSha256": "d2f10fb36f3e9b5f58ae5229f989df757e2105df3d51cc4467973bb4e81dad3e",
+  "preparationSha256": "36fee7b07dba01111b043e589f50dd40f57f23a5d4d19adafdb93847d94c3b15",
+  "fanInSha256": "e8c05b7f0d2b7b98485d1d32650046856b70d7633be55ffe43bfc981e9676b81",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -43,8 +43,8 @@
       "byteSize": 27516845
     },
     {
-      "path": "tools/datapack/release/capital-topology-reverification-20261108.json",
-      "sha256": "79c0cecce9cd185ccdc47c281955d17cdd9c646c4fa8a79ebb6f3c7f21755800",
+      "path": "tools/datapack/release/capital-topology-reverification-20261109.json",
+      "sha256": "b4701966bbac3d8cd340983e2679dcce88fbcd6ba81a2972a6fc7db4baf4ac1c",
       "byteSize": 6809
     },
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "ad6f0135b0c68668049c0e44b04fe79e40171b8e0c97cb4bc252bc73ca22cb3d",
+      "sha256": "e8c05b7f0d2b7b98485d1d32650046856b70d7633be55ffe43bfc981e9676b81",
       "byteSize": 36443
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "8f1dd0608bde8398b4b8da5e9a954c0937d727ad2c24dabf35f422a81f6699c5",
-      "byteSize": 11123335
+      "sha256": "f0797af02769c230016d9ef8dc55521ccace5d6daa0dbfe325b29e3f188298fb",
+      "byteSize": 11127157
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "47c4b4b51496c40b3075f5a0f17c84b499a74a20477cbca4ef390be08b0d5325",
+      "sha256": "202994d3c98bf310e07f6dbed9b9d3a68ebb5eda72d9e8b9042eed49a4acd97c",
       "byteSize": 417467
     },
     {
@@ -113,8 +113,8 @@
       "byteSize": 278264
     },
     {
-      "path": "tools/datapack/sources/capital-route-topology-20261108.json",
-      "sha256": "3af6e00b1b4015780778dd057a1c25ccc5a496c9bb080b13a09c6335431ae170",
+      "path": "tools/datapack/sources/capital-route-topology-20261109.json",
+      "sha256": "dd97257f710b60af76a77cb5b4a3de1db2c9d1e8ff5d793024652353d87d6dc2",
       "byteSize": 260470
     },
     {

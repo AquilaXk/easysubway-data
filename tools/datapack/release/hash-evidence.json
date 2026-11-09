@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "98a6102ca7aa975e0c00225900e9dce6885aa995",
+  "builderGitSha": "15000c2745449400330f3ae54daa52a8e125e534",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "d36fbf6efb0a66c27b715e4a36b91c4e7a32a873a1f09a322ba599eb3e5373f9"
+    "value": "1eee79dc7bf6834db15abc3dc8b0d0faf65a9cf28e59861efa4eab310e89d40a"
   },
   "sourceInventorySha256": {
-    "value": "1be3c2e386ab8f01945f3fc09602f5a231ea9fc9f0d0cc13a96b222c5c98a3d6"
+    "value": "32ca5a2aecffd04aa3acb7f7eeb2b28fb26914dae740d13e514ec817489228be"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "46a7dfa12b171cd1bca01beb1f824e72e6c5dbd969981c90bce6fa2db5234890"
+    "sha256": "0d62f034cca8e38a281b09c9e45cd96b034825379b690054e4534fff57df4c49"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -102,18 +102,6 @@
         }
       ],
       "perSourceSnapshotSetHash": "7f93dcd286632de64bf63244457903b16bbbcb0272d7d3403e405831d64235f4"
-    },
-    {
-      "sourceId": "capital-route-topology",
-      "snapshotId": "capital-route-topology-20261108",
-      "rawSha256": "3af6e00b1b4015780778dd057a1c25ccc5a496c9bb080b13a09c6335431ae170",
-      "admissionRecordSha256s": [
-        {
-          "kind": "capitalTopologyAdmissionEvidence",
-          "sha256": "75ecdc7b9b498e0a621a73679c328e9d65b51cb48b97b9b7c0c02a5f5fc6da9e"
-        }
-      ],
-      "perSourceSnapshotSetHash": "970b6c2312376ee8f18550bfab3e1ae7431ecba42768b21bf49366c0154723f1"
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
@@ -355,6 +343,18 @@
         }
       ],
       "perSourceSnapshotSetHash": "ba8d3d3e7452664256dcd306f1cb23c614df34a9089c1c05f773b9a34752a477"
+    },
+    {
+      "sourceId": "capital-route-topology",
+      "snapshotId": "capital-route-topology-20261109",
+      "rawSha256": "dd97257f710b60af76a77cb5b4a3de1db2c9d1e8ff5d793024652353d87d6dc2",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "e441935caea4485f7508b0767f79b97cac3a3d34f8947a7a6773dc0b60a988f0"
+        }
+      ],
+      "perSourceSnapshotSetHash": "7af4f1ff33ffaa551a83c2ee620ea3d0c499135919e8532b12bdc912b8e0f660"
     }
   ],
   "officialOdFareEvidence": {

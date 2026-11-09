@@ -717,17 +717,21 @@ export function currentCandidateReleaseSnapshots({
   snapshots, canonical, candidate, productionScopeBytes, sourceInventoryBytes,
   headsBySource = validateLineage(snapshots).headsBySource,
 }) {
-  const { requiredSourceIds, sourceInventory } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
+  const { requiredSourceIds, supplementalSourceIds, sourceInventory } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
   const candidateSourceIds = candidate?.sourceSnapshots?.map((projection) => projection?.sourceId);
+  const candidateSourceIdSet = Array.isArray(candidateSourceIds) ? new Set(candidateSourceIds) : new Set();
+  const allowedSourceIdSet = new Set([...requiredSourceIds, ...(supplementalSourceIds ?? [])]);
   if (!Array.isArray(candidateSourceIds) || !Array.isArray(candidate.sourceSnapshotIds)
-    || candidateSourceIds.length !== requiredSourceIds.length
+    || candidateSourceIds.length < requiredSourceIds.length
+    || candidateSourceIds.length > allowedSourceIdSet.size
     || candidate.sourceSnapshotIds.length !== candidateSourceIds.length
-    || new Set(candidateSourceIds).size !== candidateSourceIds.length
+    || candidateSourceIdSet.size !== candidateSourceIds.length
     || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
     || candidate.sourceSnapshots.some((projection, index) => projection.snapshotId !== candidate.sourceSnapshotIds[index])
-    || requiredSourceIds.some((sourceId) => !candidateSourceIds.includes(sourceId))
+    || requiredSourceIds.some((sourceId) => !candidateSourceIdSet.has(sourceId))
+    || candidateSourceIds.some((sourceId) => !allowedSourceIdSet.has(sourceId))
     // 원천 순서는 후보 생성기가 정한다. 전국 후보에서 TRANSFER는 마지막 원천이 아니므로 포함 여부만 본다.
-    || !candidateSourceIds.includes(TRANSFER_SOURCE_ID)) {
+    || !candidateSourceIdSet.has(TRANSFER_SOURCE_ID)) {
     throw new Error("current candidate source set does not match production scope");
   }
   const capital = canonical.packs?.find(({ id }) => id === "capital");

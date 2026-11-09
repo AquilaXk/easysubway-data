@@ -298,6 +298,7 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const GUIDE_INPUT_FILES = [
   "tools/datapack/source-inventory.json",
   "tools/datapack/source-candidates.json",
+  "tools/datapack/release/source-snapshots.json",
   "release/product-gates/datapack-freshness-sla.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
   "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz",

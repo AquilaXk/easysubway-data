@@ -107,8 +107,23 @@ jobs:
           for stale_branch in "${stale_branches[@]}"; do
             [[ "${stale_branch}" =~ ^automation/969-derivative-rebinding-[1-9][0-9]*$ ]] || { echo "stale rebinding branch name is invalid" >&2; exit 1; }
             [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${stale_branch}" --json number --jq 'length')" == "0" ]] || { echo "stale rebinding branch has an open pull request" >&2; exit 1; }
-            git push origin --delete "${stale_branch}"
-            echo "::notice title=Derivative rebinding::removed stale rebinding branch ${stale_branch}"
+            ls_status=0
+            git ls-remote --exit-code --heads origin "refs/heads/${stale_branch}" >/dev/null || ls_status=$?
+            if [[ "${ls_status}" == "2" ]]; then
+              echo "::notice title=Derivative rebinding::stale rebinding branch ${stale_branch} was already removed"
+              continue
+            elif [[ "${ls_status}" != "0" ]]; then
+              exit "${ls_status}"
+            fi
+            delete_err="${RUNNER_TEMP}/delete-stale-rebinding-${GITHUB_RUN_ID}.err"
+            if git push origin --delete "${stale_branch}" 2> "${delete_err}"; then
+              echo "::notice title=Derivative rebinding::removed stale rebinding branch ${stale_branch}"
+            elif grep -q "remote ref does not exist" "${delete_err}"; then
+              echo "::notice title=Derivative rebinding::stale rebinding branch ${stale_branch} was already removed"
+            else
+              cat "${delete_err}" >&2
+              exit 1
+            fi
           done
       - name: Rebind derivative artifacts from the current ledger heads
         id: rebind

@@ -104,12 +104,14 @@ test("원장 쓰기 PR 때문에 기다리는 실행은 이유를 notice로 남�
 });
 
 // #975 리뷰 F7·이슈 #973: 이전 실행이 남긴 재결속 브랜치(PR 없음·닫힌 PR)는 판정이 알려 주고 이번 실행이 지운다.
-test("판정이 알린 남은 재결속 브랜치는 controller 전에 지운다", () => {
+test("판정이 알린 남은 재결속 브랜치는 controller 전에 지우고 동시 삭제 경합은 무시한다", () => {
   const cleanup = step("Remove stale rebinding branches named by the decision");
   assert.equal(ifCondition(cleanup), "${{ steps.decision.outputs.cleanup_branches != '' }}");
   assert.equal(cleanup.env.CLEANUP_BRANCHES, "${{ steps.decision.outputs.cleanup_branches }}");
   assert.match(cleanup.run, /\^automation\/969-derivative-rebinding-\[1-9\]\[0-9\]\*\$/u);
+  assert.ok(cleanup.run.includes('git ls-remote --exit-code --heads origin "refs/heads/${stale_branch}"'));
   assert.ok(cleanup.run.includes('git push origin --delete "${stale_branch}"'));
+  assert.ok(cleanup.run.includes('grep -q "remote ref does not exist"'));
   const names = steps().map(({ name }) => name);
   assert.ok(names.indexOf("Decide whether derivative rebinding may run") < names.indexOf(cleanup.name));
   assert.ok(names.indexOf(cleanup.name) < names.indexOf("Rebind derivative artifacts from the current ledger heads"));
