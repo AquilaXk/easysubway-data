@@ -81,8 +81,8 @@ function metricsStep({ id, script, relative, message }) {
 export const DERIVATIVE_STEPS = Object.freeze([
   {
     id: "retained-gwangju-projection",
-    message: "[Data] 광주 보관 시간표 projection을 현재 원장 head로 다시 만들기",
-    isAllowedPath: (relative) => relative === INVENTORY_PATH || /^tools\/datapack\/sources\/kric-nationwide-timetable-file-gwangju-[0-9a-f]{64}\.json$/u.test(relative),
+    message: "[Data] 광주·대전 보관 시간표 projection을 현재 원장 head로 다시 만들기",
+    isAllowedPath: (relative) => relative === INVENTORY_PATH || /^tools\/datapack\/sources\/kric-nationwide-timetable-file-(?:gwangju|daejeon)-[0-9a-f]{64}\.json$/u.test(relative),
     async run({ repositoryRoot, operationRoot, env, execute, ociClient }) {
       const [inventory, ledger] = await Promise.all([INVENTORY_PATH, LEDGER_PATH].map(async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8"))));
       const source = inventory.sources.find(({ id }) => id === RETAINED_SOURCE_ID);
@@ -91,7 +91,9 @@ export const DERIVATIVE_STEPS = Object.freeze([
       if (!row) fail("retained Gwangju ledger head is missing for the admitted evidence");
       // 이미 현재 head에 결속된 projection이면 231MB 관측을 다시 받지 않는다.
       if (source.retainedGwangjuProjectionEvidence?.retainedSnapshotId === row.snapshotId
-        && source.retainedGwangjuProjectionEvidence.observationRawObjectSha256 === row.rawObjectSha256) return;
+        && source.retainedGwangjuProjectionEvidence.observationRawObjectSha256 === row.rawObjectSha256
+        && source.retainedDaejeonProjectionEvidence?.retainedSnapshotId === row.snapshotId
+        && source.retainedDaejeonProjectionEvidence.observationRawObjectSha256 === row.rawObjectSha256) return;
       const client = ociClient ?? preauthenticatedObjectStorageClient(requireCurrentCapitalLiveChainOciParBaseUrl(env), { includeErrorBody: false });
       const observation = await restoreRetainedGwangjuObservation({ row, client, operationRoot });
       await execute("project-retained-gwangju-timetable.mjs", ["--observation", observation]);

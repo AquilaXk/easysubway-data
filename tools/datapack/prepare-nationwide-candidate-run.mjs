@@ -69,8 +69,11 @@ import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
 import { buildRetainedGwangjuScheduleTables } from "./materialize-gwangju-timetable.mjs";
 import { duplicateDepartureGroups } from "./lib/timetable-duplicate-departures.mjs";
 import {
+  RETAINED_DAEJEON_PROJECTION_EVIDENCE_KEY,
   RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY,
   RETAINED_GWANGJU_PROJECTION_SOURCE_ID,
+  buildRetainedDaejeonScheduleTables,
+  validateRetainedDaejeonProjection,
   validateRetainedGwangjuProjection,
 } from "./lib/kric-retained-gwangju-projection.mjs";
 import { sha256 } from "../lib/hash.mjs";
@@ -86,7 +89,6 @@ const EXTERNAL_TIMETABLE_SOURCE_IDS = Object.freeze([
   "daegu-line1-train-timetable",
   "daegu-line2-train-timetable",
   "daegu-line3-train-timetable",
-  "daejeon-train-timetable",
 ]);
 // #903: 코레일 6개 노선·역별 API 5개 노선의 노선별 적재 요약과 격리 행.
 export const OFFICIAL_LINE_TIMETABLE_REPORT_PATH = "tools/datapack/release/nationwide-official-line-timetable-report.json";
@@ -184,7 +186,6 @@ const LEDGER_SELECTED_INPUT_SOURCE_IDS = Object.freeze({
   daeguTimetable1: "daegu-line1-train-timetable",
   daeguTimetable2: "daegu-line2-train-timetable",
   daeguTimetable3: "daegu-line3-train-timetable",
-  daejeonTimetable: "daejeon-train-timetable",
 });
 const ADMISSION_EVIDENCE_INPUTS = Object.freeze({
   incheonTopology: ["incheon-transit-station-info", "topologyAdmissionEvidence"],
@@ -379,6 +380,18 @@ async function resolveRetainedGwangjuTimetableSnapshot({
   selected.gwangjuTimetable = {
     sourceId, snapshotId: evidence.snapshotId, path: evidence.snapshotPath, freshnessExpiresAt, bytes: Buffer.from(bytes),
     retainedSnapshotId: head.snapshotId, contract, retainedEvidence,
+  };
+  const daejeonEvidence = source[RETAINED_DAEJEON_PROJECTION_EVIDENCE_KEY];
+  if (typeof daejeonEvidence?.snapshotPath !== "string" || daejeonEvidence.snapshotPath !== `tools/datapack/sources/${daejeonEvidence.snapshotId}.json`) {
+    throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId} ${RETAINED_DAEJEON_PROJECTION_EVIDENCE_KEY}`);
+  }
+  const daejeonBytes = await readSourceBytes(daejeonEvidence.snapshotPath);
+  let daejeonSnapshot;
+  try { daejeonSnapshot = JSON.parse(daejeonBytes); } catch { throw new Error(`nationwide candidate input is invalid JSON for ${sourceId} retained Daejeon`); }
+  validateRetainedDaejeonProjection({ snapshot: daejeonSnapshot, evidence: daejeonEvidence, retainedEvidence, retainedHead: head });
+  selected.daejeonTimetable = {
+    sourceId, snapshotId: daejeonEvidence.snapshotId, path: daejeonEvidence.snapshotPath, freshnessExpiresAt,
+    bytes: Buffer.from(daejeonBytes), retainedSnapshotId: head.snapshotId, retainedEvidence,
   };
 }
 
@@ -1074,6 +1087,7 @@ async function loadNationwideCandidateInputs({ repositoryRoot, readRepositoryFil
   }
   const seoulTransferCapturedAt = requiredInstant(transferMetrics.sourceIdentity.capturedAt, "Seoul transfer capturedAt");
   const busanTransfer = await resolveBusanTransferMetrics({ fanIn, sourceInventory, read });
+  const daejeonTimetable = inputSnapshots.daejeonTimetable;
   const gwangjuTimetable = inputSnapshots.gwangjuTimetable;
 
   return {
@@ -1108,7 +1122,8 @@ async function loadNationwideCandidateInputs({ repositoryRoot, readRepositoryFil
     daeguTimetable1: inputSnapshotJson("daeguTimetable1"),
     daeguTimetable2: inputSnapshotJson("daeguTimetable2"),
     daeguTimetable3: inputSnapshotJson("daeguTimetable3"),
-    daejeonTimetable: inputSnapshotJson("daejeonTimetable"),
+    daejeonTimetable,
+    daejeonRetainedRecords: JSON.parse(daejeonTimetable.bytes).records,
     // #913: 광주 1호선 시간표는 KRIC 보관본 projection(원장 head 결속)이다. 원천 만료가 지난 cyberstation snapshot은 쓰지 않는다.
     gwangjuTimetable,
     gwangjuRetainedRecords: JSON.parse(gwangjuTimetable.bytes).records,
@@ -1695,7 +1710,7 @@ function buildPackSourceEntry(source, updatedAt) {
 async function integrateRegionalAndRetainedGwangjuTimetables({
   finalPack, sourceInventory, fanIn, read, busanTimetable, busanAccessibility,
   daeguTimetable1, daeguTimetable2, daeguTimetable3, daeguAccessibility,
-  daejeonTimetable, daejeonAccessibility, gwangjuAccessibility,
+  daejeonTimetable, daejeonRetainedRecords, daejeonAccessibility, gwangjuAccessibility,
   gwangjuTimetable, gwangjuRetainedRecords,
 }) {
   const regionalSchedule = integrateRegionalTimetables({
@@ -1708,7 +1723,7 @@ async function integrateRegionalAndRetainedGwangjuTimetables({
     daeguTimetable2,
     daeguTimetable3,
     daeguAccessibility,
-    daejeonTimetable,
+    daejeonTimetable: null,
     daejeonAccessibility,
     gwangjuTimetable: null,
     gwangjuAccessibility,
@@ -1719,6 +1734,15 @@ async function integrateRegionalAndRetainedGwangjuTimetables({
   finalPack.transitStopTimes = regionalSchedule.transitStopTimes;
   finalPack.serviceCalendars = regionalSchedule.serviceCalendars;
   finalPack.serviceCalendarDates = regionalSchedule.serviceCalendarDates;
+
+  const daejeonSchedule = buildRetainedDaejeonScheduleTables({
+    records: daejeonRetainedRecords,
+    retainedEvidence: daejeonTimetable.retainedEvidence,
+    finalPack,
+  });
+  for (const table of ["transitTrips", "transitStopTimes"]) {
+    finalPack[table] = [...finalPack[table], ...daejeonSchedule[table]];
+  }
 
   // #913: 광주 1호선 route·trip·stop_time·달력은 KRIC 보관본 계약(원장 head)과 projection 행으로 만든다.
   const gwangjuTopologyEvidence = exactInventorySource(sourceInventory, "gwangju-transportation-route-topology").topologyAdmissionEvidence;
@@ -1746,14 +1770,19 @@ async function integrateRegionalAndRetainedGwangjuTimetables({
     const routes = [...new Set(holidayCalendarRows.map(({ routeId }) => routeId))];
     throw new Error(`nationwide candidate public-holiday calendar violations: ${holidayCalendarRows.length} rows on ${routes.length} routes (${routes.slice(0, 5).join(", ")})`);
   }
-  // 광주 보관본은 수도권·코레일과 같은 원천(kric-nationwide-timetable-file)이다: 팩 원천 항목 하나에 광주 노선 범위를 합친다.
-  const gwangjuTopologySource = exactInventorySource(sourceInventory, "gwangju-transportation-route-topology");
+  // 광주·대전 보관본은 수도권·코레일과 같은 원천(kric-nationwide-timetable-file)이다: 팩 원천 항목 하나에 노선 범위를 합친다.
   const kricPackSources = finalPack.sourceInventory.filter(({ id }) => id === RETAINED_GWANGJU_PROJECTION_SOURCE_ID);
   if (kricPackSources.length !== 1) throw new Error("nationwide candidate KRIC timetable pack source is missing or ambiguous");
-  for (const field of ["regionIds", "operatorIds", "lineIds"]) {
-    if (!Array.isArray(gwangjuTopologySource.coverageScope?.[field])) throw new Error(`nationwide candidate Gwangju coverage ${field} is missing`);
-    kricPackSources[0].coverageScope[field] = [...new Set([...kricPackSources[0].coverageScope[field],
-      ...gwangjuTopologySource.coverageScope[field]])].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  for (const [label, topologySourceId] of [
+    ["Gwangju", "gwangju-transportation-route-topology"],
+    ["Daejeon", "daejeon-station-distance-fare"],
+  ]) {
+    const topologySource = exactInventorySource(sourceInventory, topologySourceId);
+    for (const field of ["regionIds", "operatorIds", "lineIds"]) {
+      if (!Array.isArray(topologySource.coverageScope?.[field])) throw new Error(`nationwide candidate ${label} coverage ${field} is missing`);
+      kricPackSources[0].coverageScope[field] = [...new Set([...kricPackSources[0].coverageScope[field],
+        ...topologySource.coverageScope[field]])].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    }
   }
 
   // #920: 모든 시간표 원천을 합친 뒤 같은 달력에서 (노선, 역, 출발 시각, 다음 역, 종착역)이 같은 trip이 있으면 후보를 만들지 않는다.
@@ -1763,10 +1792,15 @@ async function integrateRegionalAndRetainedGwangjuTimetables({
     throw new Error(`nationwide candidate has duplicate trip departures: ${duplicateDepartures.length} groups (${tripIds.slice(0, 6).join(", ")})`);
   }
 
-  // #855: 대전·광주 원천은 역별 시각 하나만 준다. 원천 정차 2개 이상으로 열차를 만들 수 없는
-  // 원천 시각은 팩에 싣지 않고 사유·식별자·개수를 격리 증거로 남긴다.
+  // #855: 대전·광주 원천은 KRIC 열차별 운행정보 보관본을 쓰며, 시각 역전 행·승객 정차 2개 미만 묶음 등은 격리 증거로 남긴다.
   const timetableQuarantine = [
     ...regionalSchedule.regionalTimetableQuarantine,
+    ...daejeonSchedule.nonRoutableGroups.map(({ identity, records, reason }) => ({
+      sourceId: RETAINED_GWANGJU_PROJECTION_SOURCE_ID, sourceSnapshotId: daejeonTimetable.retainedSnapshotId,
+      trainNumber: identity.trainNumber, weekdayType: identity.weekdayType,
+      originStationName: identity.originStationName, destinationStationName: identity.destinationStationName,
+      sourceRowNumbers: records.map(({ sourceRowNumber }) => sourceRowNumber), reason,
+    })),
     // #913: 보관본 열차 묶음 중 승객 정차가 2개 미만인 묶음(차량기지 출입 등)은 trip으로 만들지 않고 여기 남긴다.
     ...gwangjuSchedule.nonRoutableGroups.map(({ identity, records, reason }) => ({
       sourceId: RETAINED_GWANGJU_PROJECTION_SOURCE_ID, sourceSnapshotId: gwangjuTimetable.retainedSnapshotId,
@@ -1796,7 +1830,6 @@ async function integrateRegionalAndRetainedGwangjuTimetables({
       ],
     },
     sources: [
-      { sourceId: "daejeon-train-timetable", rawSha256: daejeonTimetable.rawSha256 },
       { sourceId: RETAINED_GWANGJU_PROJECTION_SOURCE_ID, sourceSnapshotId: gwangjuTimetable.retainedSnapshotId,
         rawSha256: gwangjuTimetable.retainedEvidence.rawSha256 },
     ].map((source) => {
@@ -1942,10 +1975,10 @@ function expandNationwideCarDoorHints({ finalPack, kricConvenience }) {
 function finalizeNationwidePackAndExternalStopTimes({
   materializedFixture, finalPack, sourceInventory, freshnessPolicy,
   busanAccessibility, busanTimetable, daeguAccessibility, daeguTimetable1, daeguTimetable2, daeguTimetable3,
-  daejeonAccessibility, daejeonTimetable, gwangjuAccessibility, molitTransferMeta,
+  daejeonAccessibility, gwangjuAccessibility, molitTransferMeta,
   busanTransfer, measuredTransfer, kricEscalator, stationPathwayNodes, stationPathwayEdges,
   transferRules, outOfStationTransferLinks, rides, outOfStationEdges, platformInfoMap,
-  basePackBytes, fanIn, overridesBytes, gwangjuTimetable,
+  basePackBytes, fanIn, overridesBytes,
 }) {
   const regionalSourcesToAdd = [
     {
@@ -1960,7 +1993,6 @@ function finalizeNationwidePackAndExternalStopTimes({
     { id: "daegu-line2-train-timetable", updatedAt: policyBasisAt({ policy: freshnessPolicy, sourceId: "daegu-line2-train-timetable", record: daeguTimetable2 }) },
     { id: "daegu-line3-train-timetable", updatedAt: policyBasisAt({ policy: freshnessPolicy, sourceId: "daegu-line3-train-timetable", record: daeguTimetable3 }) },
     { id: "daejeon-transportation-accessibility", updatedAt: daejeonAccessibility.capturedAt },
-    { id: "daejeon-train-timetable", updatedAt: policyBasisAt({ policy: freshnessPolicy, sourceId: "daejeon-train-timetable", record: daejeonTimetable }) },
     { id: "gwangju-transportation-accessibility", updatedAt: gwangjuAccessibility.capturedAt },
     { id: "molit-railway-transfer-movement", updatedAt: molitTransferMeta.capturedAt },
     // #872 S3: 부산 공식 환승 경로 행이 이 원천을 가리킨다(production pathway 계약: source_id는 팩 sourceInventory에 있어야 한다).
@@ -2669,7 +2701,7 @@ export async function prepareNationwideCandidate({
     molitRows, seoulTransferHead, seoulTransferCapturedAt, inputSnapshots,
     incheonTopology, incheonLine1, incheonLine2, busanAccessibility, daeguAccessibility,
     daejeonAccessibility, gwangjuAccessibility, transferMetrics, busanTransfer, kricConvenience,
-    busanTimetable, daeguTimetable1, daeguTimetable2, daeguTimetable3, daejeonTimetable,
+    busanTimetable, daeguTimetable1, daeguTimetable2, daeguTimetable3, daejeonTimetable, daejeonRetainedRecords,
     gwangjuTimetable, gwangjuRetainedRecords, capitalTimetable, korailTimetable,
     daegyeongTimetable, stationLinesTimetable,
   } = inputs;
@@ -2704,7 +2736,7 @@ export async function prepareNationwideCandidate({
   const regionalTimetableQuarantine = await integrateRegionalAndRetainedGwangjuTimetables({
     finalPack, sourceInventory, fanIn, read, busanTimetable, busanAccessibility,
     daeguTimetable1, daeguTimetable2, daeguTimetable3, daeguAccessibility,
-    daejeonTimetable, daejeonAccessibility, gwangjuAccessibility,
+    daejeonTimetable, daejeonRetainedRecords, daejeonAccessibility, gwangjuAccessibility,
     gwangjuTimetable, gwangjuRetainedRecords,
   });
   if (writeFiles) {
@@ -2723,10 +2755,10 @@ export async function prepareNationwideCandidate({
   } = finalizeNationwidePackAndExternalStopTimes({
     materializedFixture, finalPack, sourceInventory, freshnessPolicy,
     busanAccessibility, busanTimetable, daeguAccessibility, daeguTimetable1, daeguTimetable2, daeguTimetable3,
-    daejeonAccessibility, daejeonTimetable, gwangjuAccessibility, molitTransferMeta,
+    daejeonAccessibility, gwangjuAccessibility, molitTransferMeta,
     busanTransfer, measuredTransfer, kricEscalator, stationPathwayNodes, stationPathwayEdges,
     transferRules, outOfStationTransferLinks, rides, outOfStationEdges, platformInfoMap,
-    basePackBytes, fanIn, overridesBytes, gwangjuTimetable,
+    basePackBytes, fanIn, overridesBytes,
   });
   if (writeFiles) {
     await writeFile(path.join(repositoryRoot, OFFICIAL_STOP_TIMES_PATH), officialStopTimes.bytes);

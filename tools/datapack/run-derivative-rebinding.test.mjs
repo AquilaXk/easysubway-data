@@ -109,6 +109,7 @@ test("단계 목록은 의존 순서(광주 보관 projection → 부산 지표 
   assert.equal(allowed("seoul-measured-transfer-metrics", "tools/datapack/release/current-seoul-measured-transfer-metrics.json"), true);
   assert.equal(allowed("retained-gwangju-projection", "tools/datapack/source-inventory.json"), true);
   assert.equal(allowed("retained-gwangju-projection", `tools/datapack/sources/kric-nationwide-timetable-file-gwangju-${"a".repeat(64)}.json`), true);
+  assert.equal(allowed("retained-gwangju-projection", `tools/datapack/sources/kric-nationwide-timetable-file-daejeon-${"a".repeat(64)}.json`), true);
   assert.equal(allowed("retained-gwangju-projection", "tools/datapack/release/source-snapshots.json"), false);
   for (const relative of ["tools/datapack/release/current-transfer-topology-metrics.json", "tools/datapack/release/current-capital-transfer-topology-applicability.json",
     "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json"]) {

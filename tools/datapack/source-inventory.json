@@ -7496,7 +7496,7 @@
         "productionUseAllowed": true,
         "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
         "snapshotPath": "tools/datapack/sources/seoul-metro-transfer-distance-duration-20260815T094038817Z.json",
-        "snapshotFileSha256": "b4632e7dcf4d92db61dac621b3be8116749be1c9aa7efc8cece8876783b91c65",
+        "snapshotFileSha256": "2dc6be918514964631b11dd981f42963dbf1fa3ec335c3f766e11c819ce76a2b",
         "capturedAt": "2026-08-15T09:40:38.817Z",
         "observedAt": "2026-08-15T09:40:38.817Z",
         "freshUntil": "2027-08-15T09:40:38.817Z",
@@ -7505,9 +7505,9 @@
         "contentSha256": "77725b1fdfa25173c5f009daf5b221a0e674cf667fb88110a6d8790081e87cf8",
         "schemaFingerprint": "18cb8d6e4775fcb5d02ca80e03255dbb4021dabfbe95edd054e32923f767117e",
         "metricsPath": "tools/datapack/release/current-transfer-topology-metrics.json",
-        "metricsArtifactSha256": "44560eaa0402d523196a98a2afb25a18d141812f42154e391e17374edb84032d",
+        "metricsArtifactSha256": "4bf2bd71ba458081dd171cf092cbb6870168d20cbaea855a31ccaa04e335070b",
         "applicabilityPath": "tools/datapack/release/current-capital-transfer-topology-applicability.json",
-        "applicabilityArtifactSha256": "ef7429430ba49e8950a4e2c6754e76c18c70d11b54d17ee350d56127a17e38c6",
+        "applicabilityArtifactSha256": "3430c9000632c658e23b97d8943faa014026cd96ea5e4dbce3e322152c04f620",
         "rowCount": 145,
         "physicalPairCount": 102,
         "directedMetricCount": 204,
@@ -8776,6 +8776,16 @@
         "routeNumber": "S2901",
         "recordCount": 15881,
         "recordsSha256": "cb0c1f50c7da47bb580cc0a8136e2adaf03f00a1390d5e1cf077b79532968956"
+      },
+      "retainedDaejeonProjectionEvidence": {
+        "snapshotId": "kric-nationwide-timetable-file-daejeon-963cafedbeed77305a8488fca3020d9661d238910e20829753ab974044e77c0a",
+        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-daejeon-963cafedbeed77305a8488fca3020d9661d238910e20829753ab974044e77c0a.json",
+        "contentSha256": "963cafedbeed77305a8488fca3020d9661d238910e20829753ab974044e77c0a",
+        "retainedSnapshotId": "kric-nationwide-timetable-file-a38f5929e447d96e7ed4b605cc7e61f47d5742ffaf3b9c6e3398b5d58648aa20",
+        "observationRawObjectSha256": "2b235c8e0710c7af09fc7136b1a0b1859e6b3301e88e45ea3a33fec3ef8449de",
+        "routeNumber": "S3001",
+        "recordCount": 460,
+        "recordsSha256": "98ec6e60d89bfc7a607e4cd349b267d470bcf8933c627905e6188ea2ccbc009e"
       }
     },
     {

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "2b3c4392e8a60e6b3a5d922dbd8b3c08040e8507",
+  "builderGitSha": "98a6102ca7aa975e0c00225900e9dce6885aa995",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "c181cb24aff423e089292d2c8c89999d0e71237fc91edcf38609d8d4b80dde15"
+    "value": "d36fbf6efb0a66c27b715e4a36b91c4e7a32a873a1f09a322ba599eb3e5373f9"
   },
   "sourceInventorySha256": {
-    "value": "de6d491a3d3be094c20aae15e1c41d9fc35a255369bb0c7ce3b43017ccdca691"
+    "value": "1be3c2e386ab8f01945f3fc09602f5a231ea9fc9f0d0cc13a96b222c5c98a3d6"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "a89f50f23954a57abd44bbe41770f1112f94e52da2bc51687860ed1222231228"
+    "sha256": "46a7dfa12b171cd1bca01beb1f824e72e6c5dbd969981c90bce6fa2db5234890"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "523e64d9e1252f7e710afbcaa523fa1c65c9ab2b3aaae4336c2add134e141bbe"
+      "perSourceSnapshotSetHash": "fa929fbbb8c993dd639b4d2d647f1cc98a98f196c9cf8d02f44e233b6790c4fa"
     },
     {
       "sourceId": "incheon-transit-accessibility",

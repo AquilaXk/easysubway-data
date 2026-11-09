@@ -143,8 +143,13 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
   return OUTPUTS.map((relative, index) => ({ relative, prestateBytes: [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes][index], bytes: values[index], inputs }));
 }
 
-// #913: 같은 원천의 다른 등록기 evidence(수도권·코레일 projection, 광주 projection)는 보관본 갱신이 지우지 않는다.
-const FOREIGN_EVIDENCE_KEYS = Object.freeze(["capitalScheduleAdmissionEvidence", "korailScheduleAdmissionEvidence", "retainedGwangjuProjectionEvidence"]);
+// #913: 같은 원천의 다른 등록기 evidence(수도권·코레일 projection, 광주·대전 projection)는 보관본 갱신이 지우지 않는다.
+const FOREIGN_EVIDENCE_KEYS = Object.freeze([
+  "capitalScheduleAdmissionEvidence",
+  "korailScheduleAdmissionEvidence",
+  "retainedGwangjuProjectionEvidence",
+  "retainedDaejeonProjectionEvidence",
+]);
 function withForeignEvidence(previous, next) {
   const kept = Object.fromEntries(FOREIGN_EVIDENCE_KEYS.filter((key) => previous[key] !== undefined).map((key) => [key, structuredClone(previous[key])]));
   return { ...next, ...kept };

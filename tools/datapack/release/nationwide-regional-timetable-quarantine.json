@@ -11,27 +11,34 @@
   },
   "sources": [
     {
-      "sourceId": "daejeon-train-timetable",
-      "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
-      "admittedStopTimeCount": 9574,
-      "quarantinedCount": 0
-    },
-    {
       "sourceId": "kric-nationwide-timetable-file",
       "sourceSnapshotId": "kric-nationwide-timetable-file-a38f5929e447d96e7ed4b605cc7e61f47d5742ffaf3b9c6e3398b5d58648aa20",
       "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "admittedStopTimeCount": 12429,
-      "quarantinedCount": 323
+      "admittedStopTimeCount": 22441,
+      "quarantinedCount": 324
     }
   ],
   "summary": {
-    "quarantinedCount": 323,
+    "quarantinedCount": 324,
     "byReason": {
+      "TIME_NOT_MONOTONIC": 1,
       "PASSENGER_STOP_COUNT_LT_2": 161,
       "SERVICE_NOT_ACTIVE_IN_WINDOW": 162
     }
   },
   "rows": [
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-a38f5929e447d96e7ed4b605cc7e61f47d5742ffaf3b9c6e3398b5d58648aa20",
+      "trainNumber": "1211",
+      "weekdayType": "휴일",
+      "originStationName": "판암",
+      "destinationStationName": "반석",
+      "sourceRowNumbers": [
+        105931
+      ],
+      "reason": "TIME_NOT_MONOTONIC"
+    },
     {
       "sourceId": "kric-nationwide-timetable-file",
       "sourceSnapshotId": "kric-nationwide-timetable-file-a38f5929e447d96e7ed4b605cc7e61f47d5742ffaf3b9c6e3398b5d58648aa20",

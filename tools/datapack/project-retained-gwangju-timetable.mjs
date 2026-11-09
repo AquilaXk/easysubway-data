@@ -5,15 +5,19 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  RETAINED_DAEJEON_PROJECTION_EVIDENCE_KEY,
   RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY,
   RETAINED_GWANGJU_PROJECTION_SOURCE_ID,
+  projectRetainedDaejeonRecords,
   projectRetainedGwangjuRecords,
+  retainedDaejeonProjectionEvidence,
   retainedGwangjuProjectionEvidence,
+  validateRetainedDaejeonProjection,
   validateRetainedGwangjuProjection,
 } from "./lib/kric-retained-gwangju-projection.mjs";
 import { restoreAdmittedGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
 
-// #913: 광주 보관본(KRIC 전체_도시철도운행정보) 등록 뒤 계약 노선 행 projection을 커밋한다.
+// #913: 광주·대전 보관본(KRIC 전체_도시철도운행정보) 등록 뒤 계약 노선 행 projection을 커밋한다.
 // 관측 바이트는 원장 head의 rawObjectSha256과 관측 식별자(restoreAdmittedGwangjuTimetable)로 확인한다.
 // 사용: node tools/datapack/project-retained-gwangju-timetable.mjs --observation <절대경로 observation.json>
 //   (run-retained-gwangju-timetable-refresh 운영 디렉터리의 observation.json, 또는 같은 원본 xlsx와 원장 receipt로 다시 만든 관측)
@@ -22,6 +26,16 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 const jsonBytes = (value) => `${JSON.stringify(value, null, 2)}\n`;
+
+async function writeProjectionSnapshot(repositoryRoot, snapshot, evidence, label) {
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const target = path.join(repositoryRoot, evidence.snapshotPath);
+  const existing = await readFile(target).catch((error) => (error?.code === "ENOENT" ? null : Promise.reject(error)));
+  if (existing && !existing.equals(snapshotBytes)) {
+    throw new Error(`retained ${label} projection snapshot path holds different bytes`);
+  }
+  if (!existing) await writeFile(target, snapshotBytes, { flag: "wx" });
+}
 
 export async function projectRetainedGwangjuTimetable({ repositoryRoot = ROOT, observationPath }) {
   if (typeof observationPath !== "string" || !path.isAbsolute(observationPath)) throw new Error("--observation must be absolute");
@@ -34,19 +48,28 @@ export async function projectRetainedGwangjuTimetable({ repositoryRoot = ROOT, o
   const sources = inventory.sources.filter(({ id }) => id === RETAINED_GWANGJU_PROJECTION_SOURCE_ID);
   if (sources.length !== 1) throw new Error("retained Gwangju projection source is missing or ambiguous");
   const retainedEvidence = sources[0].retainedScheduleAdmissionEvidence;
-  const snapshot = projectRetainedGwangjuRecords({
-    retained, retainedEvidence, observationRawObjectSha256: createHash("sha256").update(observationBytes).digest("hex"),
-  });
-  const evidence = retainedGwangjuProjectionEvidence(snapshot);
+  const observationRawObjectSha256 = createHash("sha256").update(observationBytes).digest("hex");
   const retainedHead = ledger.find(({ sourceId, snapshotId }) => sourceId === RETAINED_GWANGJU_PROJECTION_SOURCE_ID
     && snapshotId === retainedEvidence.snapshotId);
+
+  const snapshot = projectRetainedGwangjuRecords({
+    retained, retainedEvidence, observationRawObjectSha256,
+  });
+  const evidence = retainedGwangjuProjectionEvidence(snapshot);
   validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence, retainedHead });
-  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
-  const target = path.join(repositoryRoot, evidence.snapshotPath);
-  const existing = await readFile(target).catch((error) => (error?.code === "ENOENT" ? null : Promise.reject(error)));
-  if (existing && !existing.equals(snapshotBytes)) throw new Error("retained Gwangju projection snapshot path holds different bytes");
-  if (!existing) await writeFile(target, snapshotBytes, { flag: "wx" });
+  await writeProjectionSnapshot(repositoryRoot, snapshot, evidence, "Gwangju");
+
+  const daejeonSnapshot = projectRetainedDaejeonRecords({
+    observation: retained.observation, retainedEvidence, observationRawObjectSha256,
+  });
+  const daejeonEvidence = retainedDaejeonProjectionEvidence(daejeonSnapshot);
+  validateRetainedDaejeonProjection({
+    snapshot: daejeonSnapshot, evidence: daejeonEvidence, retainedEvidence, retainedHead,
+  });
+  await writeProjectionSnapshot(repositoryRoot, daejeonSnapshot, daejeonEvidence, "Daejeon");
+
   sources[0][RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY] = evidence;
+  sources[0][RETAINED_DAEJEON_PROJECTION_EVIDENCE_KEY] = daejeonEvidence;
   await writeFile(path.join(repositoryRoot, INVENTORY_PATH), jsonBytes(inventory));
   return evidence;
 }

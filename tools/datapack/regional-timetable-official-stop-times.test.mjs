@@ -306,7 +306,7 @@ test("실제 대전·광주 공식 원천으로 통합한 모든 정차 시각�
   for (const context of checked) assertUnusedSourceQuarantined({ ...context, quarantine });
 });
 
-test("커밋된 전국 정본 팩의 대전 정차 시각은 원천 값이고 격리 증거 파일과 맞는다", async () => {
+test("커밋된 전국 정본 팩의 부산·대구·대전·광주 시간표는 외부 sidecar에 실리고 격리 증거 파일과 맞는다", async () => {
   const rawPack = activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json"));
   // #908: 부산·대구·대전·광주 시간표는 모두 외부 sidecar에 실리고 커밋된 팩에는 inline 행이 없어야 한다.
   for (const sourceId of [
@@ -314,23 +314,14 @@ test("커밋된 전국 정본 팩의 대전 정차 시각은 원천 값이고 �
     "daegu-line1-train-timetable",
     "daegu-line2-train-timetable",
     "daegu-line3-train-timetable",
-    "daejeon-train-timetable",
     "kric-nationwide-timetable-file",
   ]) {
     assert.equal(rawPack.transitTrips.filter((trip) => trip.sourceId === sourceId).length, 0, `${sourceId} inline trip count`);
     assert.equal(rawPack.transitStopTimes.filter((row) => row.sourceId === sourceId).length, 0, `${sourceId} inline stopTime count`);
     assert.ok(rawPack.externalTransitStopTimes.sections.some((section) => section.sourceId === sourceId), `${sourceId} sidecar section`);
   }
+  assert.equal(rawPack.externalTransitStopTimes.sections.some((section) => section.sourceId === "daejeon-train-timetable"), false);
   const pack = readExpandedNationwidePack();
-  // #913: 광주는 cyberstation이 아니라 KRIC 보관본에서 만든다(아래 별도 테스트).
-  const regions = [
-    [DAEJEON, daejeonSourceTimes(readJson(DAEJEON.timetablePath))],
-  ];
-  const checked = regions.map(([region, sourceTimes]) => ({
-    region,
-    sourceTimes,
-    ...assertStopTimesFromSource({ region, sourceTimes, trips: pack.transitTrips, stopTimes: pack.transitStopTimes, pack }),
-  }));
 
   const { REGIONAL_TIMETABLE_QUARANTINE_PATH } = await import("./prepare-nationwide-candidate-run.mjs");
   assert.equal(typeof REGIONAL_TIMETABLE_QUARANTINE_PATH, "string", "REGIONAL_TIMETABLE_QUARANTINE_PATH export");
@@ -338,15 +329,16 @@ test("커밋된 전국 정본 팩의 대전 정차 시각은 원천 값이고 �
   assert.equal(evidence.artifactKind, "datapack-regional-timetable-quarantine");
   assert.equal(evidence.issue, "https://github.com/AquilaXk/easysubway-data/issues/855");
   assert.equal(evidence.summary.quarantinedCount, evidence.rows.length);
-  for (const context of checked) {
-    const { region, sourceTimes, regionStops } = context;
-    const source = evidence.sources.find(({ sourceId }) => sourceId === region.sourceId);
-    assert.ok(source, `${region.sourceId} 원천 기록이 있어야 한다`);
-    assert.equal(source.rawSha256, readJson(region.timetablePath).rawSha256);
-    assert.equal(source.admittedStopTimeCount, regionStops.length);
-    assert.equal(source.admittedStopTimeCount + source.quarantinedCount, totalSourceDepartures(sourceTimes));
-    assertUnusedSourceQuarantined({ ...context, quarantine: evidence.rows });
-  }
+  assert.equal(evidence.sources.some(({ sourceId }) => sourceId === "daejeon-train-timetable"), false);
+  const retainedSource = evidence.sources.find(({ sourceId }) => sourceId === "kric-nationwide-timetable-file");
+  assert.ok(retainedSource, "kric-nationwide-timetable-file 원천 기록이 있어야 한다");
+  const retainedTripIds = new Set(
+    pack.transitTrips
+      .filter(({ sourceId, sourceSnapshotId }) => sourceId === "kric-nationwide-timetable-file" && sourceSnapshotId === retainedSource.sourceSnapshotId)
+      .map(({ id }) => id),
+  );
+  const retainedStops = pack.transitStopTimes.filter(({ tripId }) => retainedTripIds.has(tripId));
+  assert.equal(retainedSource.admittedStopTimeCount, retainedStops.length);
 });
 
 // #913·#1005: 광주 정차 시각의 원천은 KRIC 보관본 projection이다. 정기 갱신 PR은 원장 행 추가와 inventory head 교체만 하고, 정본 팩과
@@ -539,3 +531,77 @@ test("광주 팩 결속 계약은 실제 결속 불일치를 계속 거부한다
     index === target ? { ...stop, arrivalSeconds: stop.arrivalSeconds + 1 } : stop)) } };
   assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(shifted), /보관본 원천 행 값/u);
 });
+
+function assertDaejeonStopTimesBoundToRetainedSource({ pack, inventory, ledger, readProjection }) {
+  const source = inventory.sources.find(({ id }) => id === RETAINED_SOURCE_ID);
+  const headSnapshotId = source.retainedScheduleAdmissionEvidence.snapshotId;
+  const projection = readProjection(source.retainedDaejeonProjectionEvidence.snapshotPath);
+  const trips = new Map(
+    pack.transitTrips
+      .filter(({ routeId }) => routeId === "route-daejeon-line-1")
+      .map((trip) => [trip.id, trip]),
+  );
+  assert.equal(trips.size, 459);
+  const stops = pack.transitStopTimes.filter(({ tripId }) => trips.has(tripId));
+  assert.equal(stops.length, 10_012);
+
+  const packSnapshotIds = new Set([...trips.values()].map(({ sourceSnapshotId }) => sourceSnapshotId));
+  assert.equal(packSnapshotIds.size, 1, `대전 trip은 보관 스냅샷 하나에 결속돼야 한다: ${[...packSnapshotIds].join(", ")}`);
+  const [packSnapshotId] = packSnapshotIds;
+  assertLagIsContentEquivalent({
+    ledger, sourceId: RETAINED_SOURCE_ID, snapshotId: packSnapshotId, headSnapshotId, contentKeyOf: retainedContentKey, label: "대전 팩",
+  });
+  assertLagIsContentEquivalent({
+    ledger, sourceId: RETAINED_SOURCE_ID, snapshotId: projection.retainedSnapshotId, headSnapshotId, contentKeyOf: retainedContentKey, label: "대전 projection",
+  });
+  assert.equal(projection.observationRecordsSha256, source.retainedScheduleAdmissionEvidence.recordsSha256);
+
+  const weekdayTypeByServiceId = new Map([
+    ["daejeon-weekday-2026", "평일"],
+    ["daejeon-holiday-2026", "휴일"],
+  ]);
+  const onDaejeonLine = new Set(pack.stationLines.filter(({ lineId }) => lineId === DAEJEON.lineId).map(({ stationId }) => stationId));
+  const labelByStationId = new Map(
+    pack.stations
+      .filter(({ id }) => onDaejeonLine.has(id))
+      .map(({ id, nameKo }) => [id, String(nameKo).replace(/\(.*?\)/gu, "").trim().replace(/역$/u, "")]),
+  );
+
+  const official = new Set();
+  for (const record of projection.records) {
+    const names = record.stationName.split("+").map((token) => token.slice(4).trim());
+    const clocks = record.departureTime.value.split("+").map((token) => token.slice(4).trim());
+    let prevSeconds = -1;
+    for (let i = 0; i < names.length; i += 1) {
+      const [h, m] = clocks[i].split(":").map(Number);
+      let sec = h * 3600 + m * 60;
+      if (sec < 12 * 3600 && prevSeconds >= 12 * 3600) sec += 24 * 3600;
+      prevSeconds = sec;
+      official.add(`${record.trainNumber}|${record.weekdayType}|${i + 1}|${names[i]}|${sec}`);
+    }
+  }
+
+  const lastStopByTripId = new Map();
+  for (const stop of stops) {
+    const trip = trips.get(stop.tripId);
+    const weekdayType = weekdayTypeByServiceId.get(trip.serviceId);
+    const label = labelByStationId.get(stop.stationId);
+    assert.equal(stop.arrivalSeconds, stop.departureSeconds);
+    assert.ok(
+      official.has(`${trip.trainNo}|${weekdayType}|${stop.stopSequence}|${label}|${stop.departureSeconds}`),
+      `대전 정차 ${trip.trainNo} ${weekdayType} #${stop.stopSequence} ${label} ${stop.departureSeconds}초는 KRIC 보관본 원천 행 값이어야 한다`,
+    );
+    const prevLast = lastStopByTripId.get(stop.tripId);
+    if (!prevLast || stop.stopSequence > prevLast.stopSequence) {
+      lastStopByTripId.set(stop.tripId, { stopSequence: stop.stopSequence, label });
+    }
+  }
+  for (const [tripId, trip] of trips) {
+    assert.equal(lastStopByTripId.get(tripId)?.label, trip.tripHeadsign, `${tripId} 종착역(${trip.tripHeadsign}) 정차가 있어야 한다`);
+  }
+}
+
+test("커밋된 전국 정본 팩의 대전 정차 시각은 KRIC 보관본 projection 행의 시발~종착 공식 시각이다", () => {
+  assertDaejeonStopTimesBoundToRetainedSource(gwangjuBindingInputs());
+});
+
