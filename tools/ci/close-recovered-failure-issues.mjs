@@ -45,7 +45,6 @@ export const RECOVERY_PROOF = Object.freeze({
 const PER_PR_REASON = "PR 하나마다 실행되는 판정이라 다른 PR의 성공 run이 실패한 PR의 회복을 증명하지 못한다. 해당 PR을 정리한 사람이 닫는다.";
 /** 자동으로 닫지 않는 workflow와 그 사유. 보고 대상 workflow는 RECOVERY_PROOF나 여기 중 하나에 반드시 있어야 한다. */
 export const MANUAL_CLOSE_WORKFLOWS = Object.freeze({
-  "automation-pr-automerge.yml": PER_PR_REASON,
   "automation-pr-ci-rerun.yml": PER_PR_REASON,
 });
 

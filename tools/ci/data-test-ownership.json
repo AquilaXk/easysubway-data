@@ -466,7 +466,6 @@
     }
   },
   "tests": [
-    {"path":"tools/ci/automerge-queue.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7877},
     {"path":"tools/ci/capital-live-chain-removal.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/ci/current-capital-topology-refresh-workflow.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":4},
     {"path":"tools/ci/datapack-release-cross-repo-chain-workflow.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":60},
@@ -739,8 +738,6 @@
     {"path":"tools/ci/automation-pr-evidence.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/automation-pr-policy.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":120},
     {"path":"tools/ci/automation-pr-policy-reason.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":1500},
-    {"path":"tools/ci/automation-pr-automerge-workflow.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":60},
-    {"path":"tools/ci/automerge-queue-automation.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":3000},
     {"path":"tools/ci/automation-pr-recreate.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/collect-automation-prs.test.mjs","semanticOwner":"data993","classes":["required-pr"],"durationMs":300},
     {"path":"tools/ci/automation-pr-list-bounded.test.mjs","semanticOwner":"data993","classes":["required-pr"],"durationMs":40},

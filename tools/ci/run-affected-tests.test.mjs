@@ -21,9 +21,9 @@ test('parseArgs parses valid flags correctly', () => {
 });
 
 test('findAffectedTests directly includes modified test files', () => {
-  const changed = ['tools/ci/automerge-queue.test.mjs'];
+  const changed = ['tools/ci/data-test-discovery.test.mjs'];
   const affected = findAffectedTests(changed);
-  assert.ok(affected.includes('tools/ci/automerge-queue.test.mjs'));
+  assert.ok(affected.includes('tools/ci/data-test-discovery.test.mjs'));
 });
 
 test('findAffectedTests matches direct .mjs source file to .test.mjs', () => {

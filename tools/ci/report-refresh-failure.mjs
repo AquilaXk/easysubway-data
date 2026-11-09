@@ -17,7 +17,6 @@ import { guardFailureReasonPath, isValidReasonLine } from "./failure-reason.mjs"
 import { REVERIFICATION_BLOCKING_CODES } from "./source-reverification-paths.mjs";
 
 export const REFRESH_WORKFLOWS = Object.freeze({
-  "automation-pr-automerge.yml": "자동화 PR 자동 병합 정책(데이터 전용 PR)",
   "automation-pr-ci-rerun.yml": "자동화 PR의 CI 첫 시도 실패 job 한 번 재실행",
   "automation-blocked-redispatch.yml": "차단 PR 때문에 잃은 정기 슬롯 자동 재dispatch",
   "automation-pr-behind-recreate.yml": "뒤처진 자동화 PR 재생성(데이터 전용 PR)",

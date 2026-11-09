@@ -11,7 +11,6 @@ const FILE = "automation-pr-ci-rerun.yml";
 const root = path.resolve(import.meta.dirname, "../..");
 const { yml, workflow, job, steps, step } = loadWorkflow(root, FILE);
 const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
-const automerge = loadWorkflow(root, "automation-pr-automerge.yml");
 
 test("트리거는 CI 완료(workflow_run) 하나다. PR·push·schedule·dispatch로 PR 코드를 실행하지 않는다", () => {
   assert.deepEqual(workflow.on, {
@@ -97,15 +96,4 @@ test("run 스크립트에는 표현식을 직접 넣지 않고 action은 SHA로 
   for (const item of job.steps.filter(({ uses }) => uses !== null)) {
     assert.match(item.uses, /@[a-f0-9]{40}$/u);
   }
-});
-
-test("자동 병합 라벨러는 같은 변수가 켜졌을 때만 첫 시도 실패를 건너뛴다(재실행될 일시 오류가 실패 이슈를 남기지 않게). 두 번째 시도 실패는 건너뛰지 않는다", () => {
-  assert.equal(
-    automerge.job.if,
-    "${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' && github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository && !(vars.DATAPACK_AUTOMATION_CI_RERUN == 'true' && github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1) }}",
-  );
-  // 건너뛰는 조건이 재실행 workflow의 대상 조건(결론 failure, 첫 시도, 같은 변수)과 같은 세 항목이다.
-  const skipped = /!\((vars\.DATAPACK_AUTOMATION_CI_RERUN == 'true' && github\.event\.workflow_run\.conclusion == 'failure' && github\.event\.workflow_run\.run_attempt == 1)\)/u.exec(automerge.job.if)?.[1];
-  assert.ok(skipped, "automerge skip condition");
-  for (const part of skipped.split(" && ")) assert.ok(job.if.includes(part), `rerun workflow condition contains: ${part}`);
 });
