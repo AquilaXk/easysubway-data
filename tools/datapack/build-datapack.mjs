@@ -3798,10 +3798,12 @@ function recordCoverageScopes(sourceScope, operatorIds, lineIds, coverageOperato
   const scopedOperatorIds = sourceScope.operatorIds.filter((operatorId) => operatorIds.includes(operatorId));
   const scopedLineIds = (sourceScope.lineIds.length > 0
     ? sourceScope.lineIds.filter((lineId) => lineIds.includes(lineId))
-    : lineIds.filter((lineId) =>
-        [...(coverageOperatorIdsByLine.get(lineId) ?? [])].some((operatorId) =>
-          sourceScope.operatorIds.includes(operatorId),
-        ))).sort();
+    : sourceScope.sourceDomains.includes("accessibility_facilities")
+      ? lineIds.filter((lineId) =>
+          [...(coverageOperatorIdsByLine.get(lineId) ?? [])].some((operatorId) =>
+            sourceScope.operatorIds.includes(operatorId),
+          ))
+      : []).sort();
   if (sourceScope.lineIds.length > 0 && lineIds.length > 0 && scopedLineIds.length === 0) {
     throw new Error("source coverageScope lineIds do not include record lineIds");
   }

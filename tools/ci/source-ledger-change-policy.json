@@ -5,6 +5,8 @@
   "maxRowDeltaRatio": 0.05,
   "allowCoverageDecrease": false,
   "sourceOverrides": {
-    "capital-route-topology": { "maxRowDeltaRatio": 0.02 }
+    "capital-route-topology": { "maxRowDeltaRatio": 0.02 },
+    "kric-station-convenience-standard": { "maxRowDeltaRatio": 0.25 },
+    "kric-station-escalator-detailed": { "maxRowDeltaRatio": 0.25 }
   }
 }

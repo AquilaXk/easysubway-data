@@ -321,12 +321,24 @@ function expectedSourceRowsAfterTopologyRefresh({ previousPack, outputPack, inve
     const outputEvidence = evidenceRowsOf(outputPack, row.id);
     const previousIds = evidenceSnapshotIds(evidenceRowsOf(previousPack, row.id));
     const outputIds = evidenceSnapshotIds(outputEvidence);
-    if (outputEvidence.length === 0 || (outputIds.size === previousIds.size && [...outputIds].every((id) => previousIds.has(id)))) return row;
+    const inventoryCoverageScope = inventory.sources.find(({ id }) => id === row.id)?.coverageScope;
+    const withCurrentScope = outputEvidence.length > 0 && inventoryCoverageScope
+      ? {
+        ...row,
+        coverageScope: {
+          regionIds: [...inventoryCoverageScope.regionIds],
+          operatorIds: [...inventoryCoverageScope.operatorIds],
+          ...(inventoryCoverageScope.lineIds === undefined ? {} : { lineIds: [...inventoryCoverageScope.lineIds] }),
+          sourceDomains: [...inventoryCoverageScope.sourceDomains],
+        },
+      }
+      : row;
+    if (outputEvidence.length === 0 || (outputIds.size === previousIds.size && [...outputIds].every((id) => previousIds.has(id)))) return withCurrentScope;
     const date = evidenceObservedDate(outputEvidence);
     const observed = inventory.sources.find(({ id }) => id === row.id)?.observedDataUpdatedAt;
     assert.ok(typeof observed === "string" && date <= observed, `${row.id}: 증거 관측일 ${date}은 inventory 관측일 ${observed}을 넘을 수 없다`);
     assert.ok(`${date}T00:00:00.000Z` >= row.updatedAt, `${row.id}: 새 증거의 관측일 ${date}은 이전 updatedAt ${row.updatedAt}보다 앞설 수 없다`);
-    return { ...row, updatedAt: `${date}T00:00:00.000Z` };
+    return { ...withCurrentScope, updatedAt: `${date}T00:00:00.000Z` };
   });
 }
 
