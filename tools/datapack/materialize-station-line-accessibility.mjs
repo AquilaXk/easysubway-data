@@ -1,7 +1,7 @@
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
-const DOMAINS = ["FACILITY", "TRANSFER"];
+const DOMAINS = new Set(["FACILITY", "TRANSFER"]);
 const STATES = [
   "VERIFIED_PRESENT",
   "VERIFIED_ABSENT",
@@ -172,9 +172,10 @@ export function canonicalStationLineAccessibilityPayloadJson(result) {
 
 function validateEvidence(row, candidate, observedAt) {
   const terminal = row?.evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED";
-  const keys = terminal
-    ? row?.domain === "FACILITY" ? TERMINAL_FACILITY_EVIDENCE_KEYS : TERMINAL_COMMON_KEYS
-    : EVIDENCE_KEYS;
+  let keys = EVIDENCE_KEYS;
+  if (terminal) {
+    keys = row?.domain === "FACILITY" ? TERMINAL_FACILITY_EVIDENCE_KEYS : TERMINAL_COMMON_KEYS;
+  }
   assertKeys(row, keys, "evidence row keys");
   assertEvidenceIdentity(row, candidate);
   assertEvidenceTextFields(row);
@@ -210,7 +211,7 @@ function assertEvidenceTextFields(row) {
 }
 
 function assertEvidenceState(row) {
-  if (!DOMAINS.includes(row.domain)) throw new Error("unsupported evidence domain");
+  if (!DOMAINS.has(row.domain)) throw new Error("unsupported evidence domain");
   if ((!STATES.includes(row.state) && row.state !== "UNVERIFIED_EVIDENCE_BLOCKED") || row.state === "MISSING" || row.state === "STALE") {
     throw new Error("unsupported admitted evidence state");
   }
