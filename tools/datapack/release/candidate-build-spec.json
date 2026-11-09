@@ -7,7 +7,7 @@
   "builderGitSha": "407de11b484cb540da1511631b1b2ed3f9d81f5f",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "065bc8339a7d1c7e20dac54ea769a3aa7a1bcd418bf55ba800b1a0fe939e5d5f",
+  "fixtureSha256": "76a77623d3a1866feaef7fe14df83985574c7e8a216fcfb6dcb493f0ed8aef36",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",

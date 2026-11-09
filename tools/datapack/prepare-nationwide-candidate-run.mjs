@@ -78,7 +78,15 @@ import { sha256 } from "../lib/hash.mjs";
 export { CAPITAL_TIMETABLE_REPORT_PATH, OFFICIAL_STOP_TIMES_PATH };
 // 팩 JSON 밖 결정적 gzip 파일로 싣는 공식 원천 시간표. trip이 원천 공통 provenance와 행 hash를 가진 원천만 둔다.
 const EXTERNAL_TIMETABLE_SOURCE_IDS = Object.freeze([
-  CAPITAL_TIMETABLE_SOURCE_ID, "incheon-line1-train-timetable", "incheon-line2-train-timetable", STATION_LINES_TIMETABLE_SOURCE_ID,
+  CAPITAL_TIMETABLE_SOURCE_ID,
+  "incheon-line1-train-timetable",
+  "incheon-line2-train-timetable",
+  STATION_LINES_TIMETABLE_SOURCE_ID,
+  "busan-transportation-timetable",
+  "daegu-line1-train-timetable",
+  "daegu-line2-train-timetable",
+  "daegu-line3-train-timetable",
+  "daejeon-train-timetable",
 ]);
 // #903: 코레일 6개 노선·역별 API 5개 노선의 노선별 적재 요약과 격리 행.
 export const OFFICIAL_LINE_TIMETABLE_REPORT_PATH = "tools/datapack/release/nationwide-official-line-timetable-report.json";
@@ -1040,6 +1048,7 @@ async function loadNationwideCandidateInputs({ repositoryRoot, readRepositoryFil
     readSourceBytes: read,
   });
   const inputJson = (key) => JSON.parse(inputSnapshots[key].bytes);
+  const inputSnapshotJson = (key) => ({ ...inputJson(key), snapshotId: inputSnapshots[key].snapshotId });
   const transferMetrics = JSON.parse(transferMetricsBytes);
   if (transferMetrics.sourceIdentity?.sourceId !== seoulTransferHead.sourceId
     || transferMetrics.sourceIdentity?.rawSha256 !== seoulTransferHead.rawSha256) {
@@ -1077,11 +1086,11 @@ async function loadNationwideCandidateInputs({ repositoryRoot, readRepositoryFil
     transferMetrics,
     busanTransfer,
     kricConvenience: inputJson("kricConvenience"),
-    busanTimetable: inputJson("busanTimetable"),
-    daeguTimetable1: inputJson("daeguTimetable1"),
-    daeguTimetable2: inputJson("daeguTimetable2"),
-    daeguTimetable3: inputJson("daeguTimetable3"),
-    daejeonTimetable: inputJson("daejeonTimetable"),
+    busanTimetable: inputSnapshotJson("busanTimetable"),
+    daeguTimetable1: inputSnapshotJson("daeguTimetable1"),
+    daeguTimetable2: inputSnapshotJson("daeguTimetable2"),
+    daeguTimetable3: inputSnapshotJson("daeguTimetable3"),
+    daejeonTimetable: inputSnapshotJson("daejeonTimetable"),
     // #913: 광주 1호선 시간표는 KRIC 보관본 projection(원장 head 결속)이다. 원천 만료가 지난 cyberstation snapshot은 쓰지 않는다.
     gwangjuTimetable,
     gwangjuRetainedRecords: JSON.parse(gwangjuTimetable.bytes).records,
@@ -1772,12 +1781,19 @@ async function integrateRegionalAndRetainedGwangjuTimetables({
       { sourceId: "daejeon-train-timetable", rawSha256: daejeonTimetable.rawSha256 },
       { sourceId: RETAINED_GWANGJU_PROJECTION_SOURCE_ID, sourceSnapshotId: gwangjuTimetable.retainedSnapshotId,
         rawSha256: gwangjuTimetable.retainedEvidence.rawSha256 },
-    ].map((source) => ({
-      ...source,
-      admittedStopTimeCount: finalPack.transitStopTimes.filter(({ sourceId, sourceSnapshotId }) => sourceId === source.sourceId
-        && (source.sourceSnapshotId === undefined || sourceSnapshotId === source.sourceSnapshotId)).length,
-      quarantinedCount: timetableQuarantine.filter(({ sourceId }) => sourceId === source.sourceId).length,
-    })),
+    ].map((source) => {
+      const sourceTripIds = new Set(
+        finalPack.transitTrips
+          .filter(({ sourceId, sourceSnapshotId }) => sourceId === source.sourceId
+            && (source.sourceSnapshotId === undefined || sourceSnapshotId === source.sourceSnapshotId))
+          .map(({ id }) => id),
+      );
+      return {
+        ...source,
+        admittedStopTimeCount: finalPack.transitStopTimes.filter(({ tripId }) => sourceTripIds.has(tripId)).length,
+        quarantinedCount: timetableQuarantine.filter(({ sourceId }) => sourceId === source.sourceId).length,
+      };
+    }),
     summary: {
       quarantinedCount: timetableQuarantine.length,
       byReason: timetableQuarantineByReason,
@@ -2008,14 +2024,12 @@ function finalizeNationwidePackAndExternalStopTimes({
   });
 
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
-  // #899: 공식 원천(수도권 KRIC·인천 1·2호선) trip·stop_times는 결정적 gzip 파일로 분리하고 팩에는 sha·건수만 결속한다.
+  // #899·#908: 공식 원천(수도권·인천·부산·대구·대전·광주 보관본) trip·stop_times는 결정적 gzip 파일로 분리하고 팩에는 sha·건수만 결속한다.
   // 반환하는 finalPack은 펼친 상태 그대로다(읽는 쪽은 expandExternalStopTimes로 같은 표를 얻는다).
   const officialStopTimes = buildExternalStopTimesArtifact({
     trips: finalPack.transitTrips,
     stopTimes: finalPack.transitStopTimes,
     sourceIds: EXTERNAL_TIMETABLE_SOURCE_IDS,
-    // #913: 광주 보관본 trip은 열차 번호를 가진 다른 trip 형태라 외부 파일로 떼지 않고 팩에 둔다.
-    inlineSourceSnapshotIds: [gwangjuTimetable.retainedSnapshotId],
   });
   const writtenFixture = {
     ...materializedFixture,

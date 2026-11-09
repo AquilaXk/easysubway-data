@@ -112,6 +112,54 @@ function routeHolidayViolations(routeId, routeCalendars, exceptions, date) {
   return violations;
 }
 
+const SHA256_HEX = /^[a-f0-9]{64}$/u;
+
+function validIsoInstant(value) {
+  const millis = Date.parse(value);
+  return typeof value === "string" && Number.isFinite(millis) && new Date(millis).toISOString() === value;
+}
+
+function invalidRegionalProvenance(sourceId, detail) {
+  throw new Error(`REGIONAL_TIMETABLE_PROVENANCE_INVALID: ${sourceId} ${detail}`);
+}
+
+function regionalTimetableProvenance(timetable, expectedSourceId, rowsField) {
+  if (!timetable || typeof timetable !== "object" || Array.isArray(timetable)) {
+    invalidRegionalProvenance(expectedSourceId, "timetable");
+  }
+  if (timetable.sourceId !== undefined && timetable.sourceId !== expectedSourceId) {
+    invalidRegionalProvenance(expectedSourceId, "sourceId");
+  }
+  const sourceSnapshotId = timetable.snapshotId ?? timetable.sourceSnapshotId;
+  if (typeof sourceSnapshotId !== "string" || sourceSnapshotId.trim() === "") {
+    invalidRegionalProvenance(expectedSourceId, "snapshotId");
+  }
+  const rows = timetable[rowsField];
+  if (!Array.isArray(rows) || rows.length === 0) {
+    invalidRegionalProvenance(expectedSourceId, rowsField);
+  }
+  const expectedCollectionHash = rowsField === "trips" ? timetable.tripsSha256 : timetable.rowsSha256;
+  if (expectedCollectionHash !== undefined && expectedCollectionHash !== sha256(JSON.stringify(rows))) {
+    invalidRegionalProvenance(expectedSourceId, `${rowsField}Sha256`);
+  }
+  const evidenceHash = timetable.evidenceHash ?? expectedCollectionHash ?? timetable.contentSha256 ?? timetable.rawSha256;
+  if (!SHA256_HEX.test(evidenceHash ?? "")) {
+    invalidRegionalProvenance(expectedSourceId, "evidenceHash");
+  }
+  const updatedAt = timetable.updatedAt ?? timetable.capturedAt ?? timetable.observedAt;
+  if (!validIsoInstant(updatedAt)) {
+    invalidRegionalProvenance(expectedSourceId, "updatedAt");
+  }
+  return {
+    sourceId: expectedSourceId,
+    sourceSnapshotId,
+    evidenceHash,
+    provenanceKind: "OFFICIAL_SOURCE",
+    derivationKind: "OFFICIAL",
+    updatedAt,
+  };
+}
+
 export function integrateRegionalTimetables({
   finalPack,
   holidayDates,
@@ -247,7 +295,8 @@ export function integrateRegionalTimetables({
     busanResolvers[lineNum] = makeStationResolver(lineId, busanAccessibility?.rows);
   }
 
-  if (busanTimetable?.rows) {
+  if (busanTimetable != null) {
+    const busanProvenance = regionalTimetableProvenance(busanTimetable, "busan-transportation-timetable", "rows");
     const groups = new Map();
     for (const r of busanTimetable.rows) {
       const key = `${r.line}:${r.day}:${r.trainno}:${r.updown}:${r.endcode}`;
@@ -269,42 +318,45 @@ export function integrateRegionalTimetables({
       const tripId = `trip-busan-l${lineNum}-d${day}-t${trainno}-${updown}-${endcode}`;
 
       // Sort rows by departure seconds
-      const sortedRows = rows.map((r) => ({
-        ...r,
-        seconds: parseInt(r.hour, 10) * 3600 + parseInt(r.time, 10) * 60,
-      })).sort((a, b) => a.seconds - b.seconds);
+      const sortedEntries = rows.map((row) => ({
+        row,
+        seconds: parseInt(row.hour, 10) * 3600 + parseInt(row.time, 10) * 60,
+      })).sort((a, b) => a.seconds - b.seconds || codepointCompare(String(a.row.scode ?? ""), String(b.row.scode ?? "")));
 
-      const tripStopTimes = [];
+      const rawStops = [];
+      const admittedSourceRows = [];
       let seq = 1;
-      for (const r of sortedRows) {
+      for (const { row: r, seconds } of sortedEntries) {
         const stationId = resolver.resolveByIdOrCode(r.scode, r.sname);
         if (!stationId) continue;
 
-        tripStopTimes.push({
+        admittedSourceRows.push(r);
+        rawStops.push({
           tripId,
           stationId,
           lineId,
           stopSequence: seq++,
-          arrivalSeconds: r.seconds,
-          departureSeconds: r.seconds,
+          arrivalSeconds: seconds,
+          departureSeconds: seconds,
           pickupType: 0,
           dropOffType: 0,
           stopHeadsign: r.endcode,
-          sourceId: "busan-transportation-timetable",
         });
       }
 
-      if (tripStopTimes.length >= 2) {
+      if (rawStops.length >= 2) {
+        const rowProvenance = { ...busanProvenance, providerRecordHash: sha256(JSON.stringify(admittedSourceRows)) };
         trips.push({
           id: tripId,
           routeId: `route-busan-line-${lineNum}`,
           serviceId,
-          tripHeadsign: sortedRows[sortedRows.length - 1]?.sname ?? "",
+          tripHeadsign: sortedEntries[sortedEntries.length - 1]?.row.sname ?? "",
           directionId: updown === "0" ? 0 : 1,
           lineId,
-          sourceId: "busan-transportation-timetable",
+          ...rowProvenance,
         });
-        stopTimes.push(...tripStopTimes);
+        // #899·#908: stop_time 행은 tripId FK로 소속 trip provenance를 이어받는다(TRIP_INHERITED).
+        stopTimes.push(...rawStops);
       }
     }
   }
@@ -313,9 +365,9 @@ export function integrateRegionalTimetables({
   // 2. Daegu Transportation Corporation (Lines 1, 2, 3)
   // =========================================================================
   const daeguConfigs = [
-    { num: 1, lineId: "line-5b8d9b05e7e6", color: "#d93f3d", timetable: daeguTimetable1 },
-    { num: 2, lineId: "line-e2938a4cc492", color: "#00aa80", timetable: daeguTimetable2 },
-    { num: 3, lineId: "line-0ffaa95b1b5d", color: "#f5c400", timetable: daeguTimetable3 },
+    { num: 1, lineId: "line-5b8d9b05e7e6", color: "#d93f3d", sourceId: "daegu-line1-train-timetable", timetable: daeguTimetable1 },
+    { num: 2, lineId: "line-e2938a4cc492", color: "#00aa80", sourceId: "daegu-line2-train-timetable", timetable: daeguTimetable2 },
+    { num: 3, lineId: "line-0ffaa95b1b5d", color: "#f5c400", sourceId: "daegu-line3-train-timetable", timetable: daeguTimetable3 },
   ];
 
   for (const cfg of daeguConfigs) {
@@ -336,6 +388,8 @@ export function integrateRegionalTimetables({
       { serviceId: `daegu-line${cfg.num}-holiday-2026`, monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true, startDate: "20260101", endDate: "20261231", holiday: true }
     );
 
+    if (cfg.timetable == null) continue;
+    const daeguProvenance = regionalTimetableProvenance(cfg.timetable, cfg.sourceId, "trips");
     const resolver = makeStationResolver(cfg.lineId, daeguAccessibility?.rows);
     const dayCodeToService = {
       WEEK: `daegu-line${cfg.num}-weekday-2026`,
@@ -343,8 +397,9 @@ export function integrateRegionalTimetables({
       HOLI: `daegu-line${cfg.num}-holiday-2026`,
     };
 
-    for (const trip of cfg.timetable?.trips ?? []) {
+    for (const trip of cfg.timetable.trips) {
       const serviceId = dayCodeToService[trip.dayCode] ?? `daegu-line${cfg.num}-weekday-2026`;
+      const rowProvenance = { ...daeguProvenance, providerRecordHash: sha256(JSON.stringify(trip)) };
       const tripStopTimes = [];
       let seq = 1;
 
@@ -361,7 +416,6 @@ export function integrateRegionalTimetables({
           departureSeconds: stop.d,
           pickupType: 0,
           dropOffType: 0,
-          sourceId: cfg.timetable.sourceId ?? "daegu-train-timetable",
         });
       }
 
@@ -373,7 +427,7 @@ export function integrateRegionalTimetables({
           tripHeadsign: "",
           directionId: trip.direction === "dn" ? 1 : 0,
           lineId: cfg.lineId,
-          sourceId: cfg.timetable.sourceId ?? "daegu-train-timetable",
+          ...rowProvenance,
         });
         stopTimes.push(...tripStopTimes);
       }
@@ -401,7 +455,8 @@ export function integrateRegionalTimetables({
   );
 
   const daejeonResolver = makeStationResolver(daejeonLineId, daejeonAccessibility?.rows);
-  if (daejeonTimetable?.rows) {
+  if (daejeonTimetable != null) {
+    const daejeonProvenance = regionalTimetableProvenance(daejeonTimetable, "daejeon-train-timetable", "rows");
     const daejeonDirs = [
       {
         drctType: "1",
@@ -471,13 +526,20 @@ export function integrateRegionalTimetables({
 
             // 원천은 역별 시각 하나만 준다(종착역 행 없음). 정차 시각 하나는 도착 = 출발 = 원천 값이고,
             // 원천에 없는 종착역 도착은 만들지 않는다(#855).
-            const tripStopTimes = [];
+            const rawStops = [];
+            const admittedSourceStops = [];
             let seq = 1;
             for (const stopEntry of tripStops) {
               const stationId = daejeonResolver.resolveByIdOrCode(stopEntry.stn, null);
               if (!stationId) continue;
 
-              tripStopTimes.push({
+              admittedSourceStops.push({
+                dayType,
+                drctType: dirCfg.drctType,
+                stNum: stopEntry.stn,
+                departureSeconds: stopEntry.time,
+              });
+              rawStops.push({
                 tripId,
                 stationId,
                 lineId: daejeonLineId,
@@ -486,11 +548,11 @@ export function integrateRegionalTimetables({
                 departureSeconds: stopEntry.time,
                 pickupType: 0,
                 dropOffType: 0,
-                sourceId: "daejeon-train-timetable",
               });
             }
 
-            if (tripStopTimes.length >= 2) {
+            if (rawStops.length >= 2) {
+              const rowProvenance = { ...daejeonProvenance, providerRecordHash: sha256(JSON.stringify(admittedSourceStops)) };
               trips.push({
                 id: tripId,
                 routeId: "route-daejeon-line-1",
@@ -498,9 +560,9 @@ export function integrateRegionalTimetables({
                 tripHeadsign: dirCfg.tripHeadsign,
                 directionId: dirCfg.directionId,
                 lineId: daejeonLineId,
-                sourceId: "daejeon-train-timetable",
+                ...rowProvenance,
               });
-              stopTimes.push(...tripStopTimes);
+              stopTimes.push(...rawStops);
             } else {
               for (const stopEntry of tripStops) {
                 regionalTimetableQuarantine.push({
@@ -526,24 +588,25 @@ export function integrateRegionalTimetables({
   // =========================================================================
   const gwangjuLineId = "line-e57a361e8892";
   // #913: 전국 후보는 광주 시간표를 KRIC 보관본으로 만든다(gwangjuTimetable 없음). 그때는 route·달력도 만들지 않는다.
-  if (gwangjuTimetable) routes.push({
-    id: "route-gwangju-line-1",
-    agencyId: "gwangju-metropolitan-rapid-transit",
-    routeShortName: "광주 1호선",
-    routeLongName: "광주 도시철도 1호선",
-    routeType: 1,
-    routeColor: "#009088",
-    routeTextColor: "#ffffff",
-    lineId: gwangjuLineId,
-  });
+  if (gwangjuTimetable != null) {
+    const gwangjuProvenance = regionalTimetableProvenance(gwangjuTimetable, "gwangju-transportation-cyberstation-timetable", "rows");
+    routes.push({
+      id: "route-gwangju-line-1",
+      agencyId: "gwangju-metropolitan-rapid-transit",
+      routeShortName: "광주 1호선",
+      routeLongName: "광주 도시철도 1호선",
+      routeType: 1,
+      routeColor: "#009088",
+      routeTextColor: "#ffffff",
+      lineId: gwangjuLineId,
+    });
 
-  if (gwangjuTimetable) addCalendars(
-    { serviceId: "gwangju-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231", holiday: false },
-    { serviceId: "gwangju-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231", holiday: true }
-  );
+    addCalendars(
+      { serviceId: "gwangju-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231", holiday: false },
+      { serviceId: "gwangju-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231", holiday: true }
+    );
 
-  const gwangjuResolver = makeStationResolver(gwangjuLineId, gwangjuAccessibility?.rows);
-  if (gwangjuTimetable?.rows) {
+    const gwangjuResolver = makeStationResolver(gwangjuLineId, gwangjuAccessibility?.rows);
     const gwangjuDayMap = {
       WEEK: "gwangju-weekday-2026",
       DAYOFF: "gwangju-holiday-2026",
@@ -614,13 +677,20 @@ export function integrateRegionalTimetables({
 
             // 원천은 역별 시각 하나만 준다(종착역 행 없음). 정차 시각 하나는 도착 = 출발 = 원천 값이고,
             // 원천에 없는 종착역 도착은 만들지 않는다(#855).
-            const tripStopTimes = [];
+            const rawStops = [];
+            const admittedSourceStops = [];
             let seq = 1;
             for (const stopEntry of tripStops) {
               const stationId = gwangjuResolver.resolveByIdOrCode(stopEntry.stn, null);
               if (!stationId) continue;
 
-              tripStopTimes.push({
+              admittedSourceStops.push({
+                dayCode,
+                direction: dirCfg.direction,
+                stationCode: stopEntry.stn,
+                departureSeconds: stopEntry.time,
+              });
+              rawStops.push({
                 tripId,
                 stationId,
                 lineId: gwangjuLineId,
@@ -629,11 +699,11 @@ export function integrateRegionalTimetables({
                 departureSeconds: stopEntry.time,
                 pickupType: 0,
                 dropOffType: 0,
-                sourceId: "gwangju-transportation-cyberstation-timetable",
               });
             }
 
-            if (tripStopTimes.length >= 2) {
+            if (rawStops.length >= 2) {
+              const rowProvenance = { ...gwangjuProvenance, providerRecordHash: sha256(JSON.stringify(admittedSourceStops)) };
               trips.push({
                 id: tripId,
                 routeId: "route-gwangju-line-1",
@@ -641,9 +711,9 @@ export function integrateRegionalTimetables({
                 tripHeadsign: dirCfg.tripHeadsign,
                 directionId: dirCfg.directionId,
                 lineId: gwangjuLineId,
-                sourceId: "gwangju-transportation-cyberstation-timetable",
+                ...rowProvenance,
               });
-              stopTimes.push(...tripStopTimes);
+              stopTimes.push(...rawStops);
             } else {
               for (const stopEntry of tripStops) {
                 regionalTimetableQuarantine.push({

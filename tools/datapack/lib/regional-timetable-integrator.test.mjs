@@ -7,11 +7,15 @@ import { fileURLToPath } from "node:url";
 import { holidayCalendarViolations, holidayExceptionRows, integrateRegionalTimetables, retainedKasiHolidayDates } from "./regional-timetable-integrator.mjs";
 import { HOLIDAYS_2026 } from "../materialize-incheon-timetable.mjs";
 import { checkNoSyntheticScheduleLoops } from "../../ci/guard-datapack-anti-cheat.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
 test("integrateRegionalTimetables integrates all 4 regional authorities with authentic schedules", async () => {
-  const readJson = async (rel) => JSON.parse(await readFile(path.join(root, rel), "utf8"));
+  const readJson = async (rel) => ({
+    snapshotId: path.basename(rel, ".json"),
+    ...JSON.parse(await readFile(path.join(root, rel), "utf8")),
+  });
 
   const [
     baseFixture,
@@ -148,6 +152,59 @@ test("integrateRegionalTimetables integrates all 4 regional authorities with aut
       }
     }
   }
+
+  // 6. #908: Every regional trip and stopTime must bind sourceSnapshotId, providerRecordHash, evidenceHash, and updatedAt
+  const expectedProvenanceBySource = new Map([
+    ["busan-transportation-timetable", {
+      sourceSnapshotId: busanTimetable.snapshotId,
+      evidenceHash: busanTimetable.rowsSha256,
+      updatedAt: busanTimetable.capturedAt,
+    }],
+    ["daegu-line1-train-timetable", {
+      sourceSnapshotId: daeguTimetable1.snapshotId,
+      evidenceHash: daeguTimetable1.tripsSha256,
+      updatedAt: daeguTimetable1.capturedAt,
+    }],
+    ["daegu-line2-train-timetable", {
+      sourceSnapshotId: daeguTimetable2.snapshotId,
+      evidenceHash: daeguTimetable2.tripsSha256,
+      updatedAt: daeguTimetable2.capturedAt,
+    }],
+    ["daegu-line3-train-timetable", {
+      sourceSnapshotId: daeguTimetable3.snapshotId,
+      evidenceHash: daeguTimetable3.tripsSha256,
+      updatedAt: daeguTimetable3.capturedAt,
+    }],
+    ["daejeon-train-timetable", {
+      sourceSnapshotId: daejeonTimetable.snapshotId,
+      evidenceHash: daejeonTimetable.rowsSha256,
+      updatedAt: daejeonTimetable.observedAt,
+    }],
+    ["gwangju-transportation-cyberstation-timetable", {
+      sourceSnapshotId: gwangjuTimetable.snapshotId,
+      evidenceHash: gwangjuTimetable.rowsSha256,
+      updatedAt: gwangjuTimetable.capturedAt,
+    }],
+  ]);
+  for (const trip of regionalTrips) {
+    const expected = expectedProvenanceBySource.get(trip.sourceId);
+    assert.ok(expected, `Unexpected regional trip sourceId: ${trip.sourceId}`);
+    assert.equal(trip.sourceSnapshotId, expected.sourceSnapshotId, `${trip.id} sourceSnapshotId`);
+    assert.equal(trip.evidenceHash, expected.evidenceHash, `${trip.id} evidenceHash`);
+    assert.equal(trip.provenanceKind, "OFFICIAL_SOURCE", `${trip.id} provenanceKind`);
+    assert.equal(trip.derivationKind, "OFFICIAL", `${trip.id} derivationKind`);
+    assert.equal(trip.updatedAt, expected.updatedAt, `${trip.id} updatedAt`);
+    assert.match(trip.providerRecordHash ?? "", /^[a-f0-9]{64}$/u, `${trip.id} providerRecordHash`);
+    for (const stop of tripStopMap.get(trip.id) ?? []) {
+      assert.equal(stop.tripId, trip.id);
+      assert.equal(stop.sourceId, undefined);
+      assert.equal(stop.sourceSnapshotId, undefined);
+      assert.equal(stop.providerRecordHash, undefined);
+      assert.equal(stop.evidenceHash, undefined);
+    }
+  }
+  assert.equal(new Set(regionalTrips.map(({ providerRecordHash }) => providerRecordHash)).size, regionalTrips.length);
+  assert.equal(daeguTrips[0].providerRecordHash, sha256(JSON.stringify(daeguTimetable1.trips[0])));
 });
 
 // #919: 공휴일은 KASI 특일 정보 기준(HOLIDAYS_2026, fetch-kasi 테스트가 원문과 같음을 고정한다).
@@ -258,4 +315,37 @@ test("#922 공휴일 불변식은 창 밖 달력을 운행 중으로 보지 않�
 
 test("#922 보관된 KASI 2026 원문에서 도출한 공휴일 집합은 22일이고 전국 후보 목록과 같다", () => {
   assert.deepEqual(retainedKasiHolidayDates(), [...HOLIDAYS_2026]);
+});
+
+test("#908 지역 시간표 입력에 snapshotId·evidenceHash·수집 시각이 없거나 행 해시가 어긋나면 통합이 실패한다", () => {
+  const finalPack = { stations: [], stationLines: [], serviceCalendars: [], serviceCalendarDates: [] };
+  const sampleRows = [
+    { line: "1", day: "1", trainno: "1001", updown: "0", endcode: "102", scode: "101", sname: "신평", hour: "05", time: "00" },
+    { line: "1", day: "1", trainno: "1001", updown: "0", endcode: "102", scode: "102", sname: "하단", hour: "05", time: "02" },
+  ];
+  const validBusan = {
+    sourceId: "busan-transportation-timetable",
+    snapshotId: "busan-transportation-timetable-20260909",
+    capturedAt: "2026-09-08T23:45:39.470Z",
+    rowsSha256: sha256(JSON.stringify(sampleRows)),
+    rows: sampleRows,
+  };
+  assert.throws(() => integrateRegionalTimetables({
+    finalPack, holidayDates: HOLIDAYS_2026, busanTimetable: { ...validBusan, snapshotId: "" },
+  }), /REGIONAL_TIMETABLE_PROVENANCE_INVALID/u);
+  assert.throws(() => integrateRegionalTimetables({
+    finalPack, holidayDates: HOLIDAYS_2026, busanTimetable: { ...validBusan, rowsSha256: "0".repeat(64) },
+  }), /REGIONAL_TIMETABLE_PROVENANCE_INVALID/u);
+  assert.throws(() => integrateRegionalTimetables({
+    finalPack, holidayDates: HOLIDAYS_2026, busanTimetable: { ...validBusan, rowsSha256: undefined },
+  }), /REGIONAL_TIMETABLE_PROVENANCE_INVALID/u);
+  assert.throws(() => integrateRegionalTimetables({
+    finalPack, holidayDates: HOLIDAYS_2026, busanTimetable: { ...validBusan, capturedAt: "not-a-date" },
+  }), /REGIONAL_TIMETABLE_PROVENANCE_INVALID/u);
+  assert.throws(() => integrateRegionalTimetables({
+    finalPack, holidayDates: HOLIDAYS_2026, daeguTimetable1: { sourceId: "daegu-line1-train-timetable", trips: [] },
+  }), /REGIONAL_TIMETABLE_PROVENANCE_INVALID/u);
+  assert.throws(() => integrateRegionalTimetables({
+    finalPack, holidayDates: HOLIDAYS_2026, daejeonTimetable: { sourceId: "daejeon-train-timetable", rows: [{ dayType: "0", drctType: "1", stNum: "101", tmZone: "5", tmList: "30" }] },
+  }), /REGIONAL_TIMETABLE_PROVENANCE_INVALID/u);
 });
