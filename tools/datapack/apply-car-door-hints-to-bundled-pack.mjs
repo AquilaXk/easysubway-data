@@ -106,7 +106,7 @@ function ensureSchema(database) {
       verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
       last_verified_at INTEGER NOT NULL DEFAULT 0,
       evidence_hash TEXT NOT NULL DEFAULT '',
-      CHECK (target_facility_type IN ('STAIR', 'ELEVATOR', 'ESCALATOR', 'TRANSFER')),
+      CHECK (target_facility_type IN ('STAIR', 'ELEVATOR', 'ESCALATOR', 'TRANSFER', 'WHEELCHAIR_LIFT')),
       FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id)
     );
   `);

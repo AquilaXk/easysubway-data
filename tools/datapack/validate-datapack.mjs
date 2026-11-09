@@ -668,7 +668,13 @@ function validateStationPathways(database, pack) {
 // 빠른하차 칸/문 힌트(station_car_door_hints)의 애플리케이션 레벨 방어 검증.
 // station_car_door_hints는 데이터 적재가 후속 PR로 예정되어 있어 아직 required table로
 // 편입하지 않는다 — 테이블이 없으면(적재 전 pack) 스킵한다.
-const CAR_DOOR_HINT_FACILITY_TYPES = new Set(["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER"]);
+const CAR_DOOR_HINT_FACILITY_TYPES = new Set([
+  "STAIR",
+  "ELEVATOR",
+  "ESCALATOR",
+  "TRANSFER",
+  "WHEELCHAIR_LIFT",
+]);
 // 노선별 열차 편성 길이(칸수) 자료가 리포에 존재하지 않으므로(2026-07 저장소 전반 실측:
 // consist length/편성 길이 테이블 없음) car_number는 전역 상한
 // 1~10, door_number는 1~4를 사용한다. 이 상한은 스키마 CHECK 제약이 1차 방어선이며, 여기서는

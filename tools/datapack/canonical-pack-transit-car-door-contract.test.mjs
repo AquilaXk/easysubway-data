@@ -26,7 +26,7 @@ async function carDoorContract() {
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const canonicalPackPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
-const CONTRACT_FACILITY_TYPES = new Set(["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER"]);
+const CONTRACT_FACILITY_TYPES = new Set(["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER", "WHEELCHAIR_LIFT"]);
 const CONTRACT_DIRECTIONS = new Set(["", "UP", "DOWN", "INNER", "OUTER"]);
 
 function readJson(relativePath) {
@@ -119,15 +119,16 @@ test("칸·문 안내 계약 검사는 대상 시설·칸·문·방향 위반 �
   assert.deepEqual(carDoorHintContractViolations(valid), []);
   assert.deepEqual(carDoorHintContractViolations({ ...valid, direction: "" }), []);
   assert.deepEqual(carDoorHintContractViolations({ ...valid, direction: "INNER" }), []);
+  assert.deepEqual(carDoorHintContractViolations({ ...valid, targetFacilityType: "WHEELCHAIR_LIFT" }), []);
   assert.deepEqual(
-    carDoorHintContractViolations({ ...valid, targetFacilityType: "WHEELCHAIR_LIFT" }),
+    carDoorHintContractViolations({ ...valid, targetFacilityType: "UNKNOWN_FACILITY" }),
     ["TARGET_FACILITY_TYPE_OUTSIDE_CONTRACT"],
   );
   assert.deepEqual(carDoorHintContractViolations({ ...valid, doorNumber: 5 }), ["DOOR_NUMBER_OUTSIDE_CONTRACT"]);
   assert.deepEqual(carDoorHintContractViolations({ ...valid, carNumber: 11 }), ["CAR_NUMBER_OUTSIDE_CONTRACT"]);
   assert.deepEqual(carDoorHintContractViolations({ ...valid, direction: "BOTH" }), ["DIRECTION_OUTSIDE_CONTRACT"]);
   assert.deepEqual(
-    carDoorHintContractViolations({ targetFacilityType: "WHEELCHAIR_LIFT", carNumber: 4, doorNumber: 6, direction: "BOTH" }),
+    carDoorHintContractViolations({ targetFacilityType: "UNKNOWN_FACILITY", carNumber: 4, doorNumber: 6, direction: "BOTH" }),
     ["TARGET_FACILITY_TYPE_OUTSIDE_CONTRACT", "DOOR_NUMBER_OUTSIDE_CONTRACT", "DIRECTION_OUTSIDE_CONTRACT"],
   );
 });
@@ -146,23 +147,31 @@ test("커밋된 전국 정본 팩의 칸·문 안내는 모두 계약 안이고,
   const evidence = readJson(CAR_DOOR_HINT_QUARANTINE_PATH);
   assert.equal(evidence.artifactKind, "datapack-car-door-hint-quarantine");
   assert.equal(evidence.sourceId, "kric-station-convenience-standard");
-  assert.ok(evidence.rows.length > 0, "격리 행이 있어야 한다");
-  assert.equal(evidence.summary.quarantinedCount, evidence.rows.length);
+  assert.equal(evidence.rows.length, 2, "문 번호 범위 밖(doorNumber=6) 2행만 격리되어야 한다");
+  assert.equal(evidence.summary.quarantinedCount, 2);
+  assert.equal(evidence.summary.admittedCount, 402);
   assert.equal(
     evidence.summary.generatedCount,
     evidence.summary.admittedCount + evidence.summary.quarantinedCount,
   );
+  const kricHints = pack.stationCarDoorHints.filter(({ sourceId }) => sourceId === evidence.sourceId);
+  assert.equal(kricHints.length, evidence.summary.admittedCount);
   assert.equal(
-    pack.stationCarDoorHints.filter(({ sourceId }) => sourceId === evidence.sourceId).length,
-    evidence.summary.admittedCount,
+    kricHints.filter(({ targetFacilityType }) => targetFacilityType === "WHEELCHAIR_LIFT").length,
+    8,
+  );
+  assert.ok(
+    kricHints.some(({ direction }) => direction === ""),
+    "방향 미상(direction='') 행이 정본 팩에 포함되어야 한다",
   );
 
   const packIds = new Set(pack.stationCarDoorHints.map(({ id }) => id));
   const byReason = {};
   for (const row of evidence.rows) {
     assert.equal(packIds.has(row.id), false, `격리 행 ${row.id}이 팩에 남으면 안 된다`);
+    assert.ok(row.doorNumber > 4, `${row.id} 문 번호 범위 밖이어야 한다`);
+    assert.deepEqual(row.reasons, ["DOOR_NUMBER_OUTSIDE_CONTRACT"]);
     assert.deepEqual(row.reasons, carDoorHintContractViolations(row), `${row.id} 사유`);
-    assert.ok(row.reasons.length > 0, `${row.id} 격리 사유가 있어야 한다`);
     assert.equal(typeof row.dtlLoc, "string");
     for (const reason of row.reasons) byReason[reason] = (byReason[reason] ?? 0) + 1;
   }

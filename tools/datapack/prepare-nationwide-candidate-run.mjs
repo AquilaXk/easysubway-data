@@ -101,7 +101,7 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 // 계약 밖 KRIC 행은 팩에 싣지 않고 사유와 함께 격리 증거 파일에 남긴다(#854, QA 결정 2026-10-01).
 export const CAR_DOOR_HINT_QUARANTINE_PATH = "tools/datapack/release/nationwide-car-door-hint-quarantine.json";
 export const REGIONAL_TIMETABLE_QUARANTINE_PATH = "tools/datapack/release/nationwide-regional-timetable-quarantine.json";
-const CAR_DOOR_HINT_FACILITY_TYPES = ["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER"];
+const CAR_DOOR_HINT_FACILITY_TYPES = ["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER", "WHEELCHAIR_LIFT"];
 const CAR_DOOR_HINT_DIRECTIONS = ["", "UP", "DOWN", "INNER", "OUTER"];
 
 export function carDoorHintContractViolations(hint) {
@@ -1829,7 +1829,7 @@ function expandNationwideCarDoorHints({ finalPack, kricConvenience }) {
           const door = parseInt(m[2], 10);
           if (car < 1 || car > 10 || door < 1 || door > 10) continue;
           const prefix = part.slice(0, m.index);
-          let direction = "BOTH";
+          let direction = "";
           if (prefix.includes("상선") || prefix.includes("상행")) direction = "UP";
           else if (prefix.includes("하선") || prefix.includes("하행")) direction = "DOWN";
           else if (prefix.includes("내선")) direction = "INNER";

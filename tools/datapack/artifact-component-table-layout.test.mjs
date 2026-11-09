@@ -132,7 +132,7 @@ test("route service evidence tables는 server timetable component의 exact refer
   assert.deepEqual(contract.serverRouteBundle.sourceSchema, {
     path: "tools/datapack/schema/catalog-schema.sql",
     sqliteUserVersion: 19,
-    sha256: "23fbd81f2b6438f88ac56522d173f927f1d3ebf359ca71abae271f5b37326569",
+    sha256: "3f6b97458301f5fb04ca0d215810bdbb209aa29b0315f0e6df56e9b88695e4d5",
   });
   const sourceSchemaBytes = readFileSync(contract.serverRouteBundle.sourceSchema.path);
   assert.equal(createHash("sha256").update(sourceSchemaBytes).digest("hex"), contract.serverRouteBundle.sourceSchema.sha256);
