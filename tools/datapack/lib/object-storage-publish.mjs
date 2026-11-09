@@ -8,8 +8,8 @@ import { DatabaseSync } from "node:sqlite";
 import { gunzipSync } from "node:zlib";
 import { sha256 } from "../../lib/hash.mjs";
 import {
+  findMatchingPackSigningPublicKey,
   requiredString,
-  signingPublicKey,
   verifyRsaSha256Signature,
 } from "./manifest-validation.mjs";
 
@@ -81,8 +81,8 @@ export async function validateReferencedPacksForRescue(baseUrl, manifest) {
       if (sha256(response.body) !== pack.sha256) {
         throw new Error(`${pack.id}@${pack.version} sha256 mismatch`);
       }
-      validatePackSignature(pack);
-      validateRouteRegressionSignature(pack);
+      const matchedPublicKey = validatePackSignature(pack);
+      validateRouteRegressionSignature(pack, matchedPublicKey);
 
       let sqliteBytes;
       try {
@@ -107,13 +107,18 @@ function validatePackSignature(pack) {
   const payload = pack.artifactKind === "production"
     ? `${fixturePayload}:${new URL(pack.url).toString()}`
     : fixturePayload;
-  const valid = pack.artifactKind === "production"
-    ? verifyRsaSha256Signature(signingPublicKey(), payload, pack.signature.value)
-    : pack.signature.value === sha256(Buffer.from(payload));
-  if (!valid) throw new Error(`${pack.id}@${pack.version} pack signature mismatch`);
+  if (pack.artifactKind === "production") {
+    const matchedPublicKey = findMatchingPackSigningPublicKey(payload, pack.signature.value);
+    if (!matchedPublicKey) throw new Error(`${pack.id}@${pack.version} pack signature mismatch`);
+    return matchedPublicKey;
+  }
+  if (pack.signature.value !== sha256(Buffer.from(payload))) {
+    throw new Error(`${pack.id}@${pack.version} pack signature mismatch`);
+  }
+  return null;
 }
 
-function validateRouteRegressionSignature(pack) {
+function validateRouteRegressionSignature(pack, matchedPublicKey = null) {
   const routes = pack.representativeRouteRegressions.map((route) => ({
     id: requiredString(route.id, "representativeRouteRegressions.id"),
     pattern: requiredString(route.pattern, "representativeRouteRegressions.pattern"),
@@ -127,7 +132,9 @@ function validateRouteRegressionSignature(pack) {
     ? `${basePayload}:${new URL(pack.url).toString()}`
     : basePayload;
   const valid = pack.artifactKind === "production"
-    ? verifyRsaSha256Signature(signingPublicKey(), payload, pack.representativeRouteRegressionSignature.value)
+    ? (matchedPublicKey
+      ? verifyRsaSha256Signature(matchedPublicKey, payload, pack.representativeRouteRegressionSignature.value)
+      : Boolean(findMatchingPackSigningPublicKey(payload, pack.representativeRouteRegressionSignature.value)))
     : pack.representativeRouteRegressionSignature.value === sha256(Buffer.from(payload));
   if (!valid) throw new Error(`${pack.id}@${pack.version} representative route regression signature mismatch`);
 }

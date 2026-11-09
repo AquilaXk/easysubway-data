@@ -384,6 +384,90 @@ test("candidate server route evidence는 stage·inventory·component digest를 �
   bundle.candidateServerRouteEvidence.final.sha256 = hash(invalidFinalBytes);
   await writeBound();
   await assert.rejects(command(), /candidate signed route signature mismatch/);
+
+  // next 서명 공개키 설정 시 회전된 keyId로 서명된 route bundle은 수용하고, 교차 키 서명 및 미등록 keyId는 거부한다
+  const { privateKey: nextPrivateKey, publicKey: nextPublicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const nextPrivateKeyPem = nextPrivateKey.export({ type: "pkcs8", format: "pem" });
+  const nextPublicKeyPem = nextPublicKey.export({ type: "spki", format: "pem" });
+  const signWithNext = (value) => createSign("RSA-SHA256").update(value).sign(nextPrivateKeyPem).toString("base64url");
+
+  const rebindRouteBundle = async (customKeyId, customSigner) => {
+    const rotatedSigningInput = {
+      ...signingInput,
+      keyId: customKeyId,
+    };
+    const rotatedSigningInputBytes = Buffer.from(canonicalJson(rotatedSigningInput));
+    const rotatedManifestBytes = Buffer.from(canonicalJson({
+      ...rotatedSigningInput,
+      signature: {
+        algorithm: "rsa-sha256-server-route-bundle-v1",
+        value: customSigner(rotatedSigningInputBytes),
+      },
+    }));
+    const rotatedCandidate = {
+      ...candidate,
+      keyId: customKeyId,
+      signingInputSha256: hash(rotatedSigningInputBytes),
+      signedManifestRawSha256: hash(rotatedManifestBytes),
+    };
+    const rotatedEligibilityPayload = { ...eligibilityPayload, candidate: rotatedCandidate };
+    const rotatedEligibilityBytes = Buffer.from(canonicalJson({
+      ...rotatedEligibilityPayload,
+      eligibilitySha256: hash(Buffer.from(canonicalJson(rotatedEligibilityPayload))),
+    }));
+    const rotatedGates = structuredClone(final.gates);
+    rotatedGates.routeAccessibilityEligibility.evidenceSha256 = hash(rotatedEligibilityBytes);
+    const rotatedFinalBytes = Buffer.from(canonicalJson(buildServerRouteBundleFinal({
+      candidate: rotatedCandidate,
+      gates: rotatedGates,
+    })));
+    await Promise.all([
+      writeFile(path.join(routeRoot, "manifest.signing-input.json"), rotatedSigningInputBytes),
+      writeFile(path.join(routeRoot, "manifest.json"), rotatedManifestBytes),
+      writeFile(path.join(candidateRoot, eligibilityPath), rotatedEligibilityBytes),
+      writeFile(path.join(candidateRoot, finalPath), rotatedFinalBytes),
+    ]);
+    for (const [relative, bytes] of [
+      ["server-route-bundle/manifest.signing-input.json", rotatedSigningInputBytes],
+      ["server-route-bundle/manifest.json", rotatedManifestBytes],
+      [eligibilityPath, rotatedEligibilityBytes],
+      [finalPath, rotatedFinalBytes],
+    ]) {
+      const entry = inventory.entries.find((item) => item.path === relative);
+      entry.sizeBytes = bytes.length;
+      entry.sha256 = hash(bytes);
+    }
+    bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(rotatedEligibilityBytes);
+    bundle.candidateServerRouteEvidence.final.sha256 = hash(rotatedFinalBytes);
+    await writeBound();
+  };
+
+  const rotationCommand = () => execFileAsync(process.execPath, [
+    "tools/datapack/validate-release-evidence-bundle.mjs",
+    "--candidate-server-route-only",
+    "--bundle", bundlePath,
+    "--candidate-server-route-root", candidateRoot,
+    "--candidate-artifact-inventory", inventoryPath,
+    "--candidate-component-manifest", componentPath,
+  ], {
+    cwd: root,
+    env: {
+      ...process.env,
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+      EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKeyPem,
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: nextPublicKeyPem,
+    },
+  });
+
+  await rebindRouteBundle("production-v2", signWithNext);
+  await rotationCommand();
+
+  await rebindRouteBundle("production-v2", sign);
+  await assert.rejects(rotationCommand(), /candidate signed route signature mismatch/);
+
+  await rebindRouteBundle("unknown-v9", signWithNext);
+  await assert.rejects(rotationCommand(), /candidate signed route signature mismatch/);
 });
 
 test("release evidence bundle validator는 publish gate status와 deferred headway 예외를 검증한다", async () => {

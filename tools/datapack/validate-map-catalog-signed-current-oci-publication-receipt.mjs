@@ -1,8 +1,7 @@
-
 import {
   canonicalJson,
   signingKeyId,
-  signingPublicKey,
+  signingPublicKeyForKeyId,
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
@@ -19,25 +18,30 @@ export function canonicalMapCatalogSignedCurrentOciPublicationReceiptJson(value,
   return canonicalJson(validateMapCatalogSignedCurrentOciPublicationReceipt(value, options));
 }
 
-export function validateMapCatalogSignedCurrentOciPublicationReceipt(value, { descriptor, publicKey = signingPublicKey(), now = Date.now() } = {}) {
+export function validateMapCatalogSignedCurrentOciPublicationReceipt(value, { descriptor, publicKey, now = Date.now() } = {}) {
   const content = validateMapCatalogSignedCurrentPublication(descriptor, { publicKey, now });
   exactKeys(value, ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "target", "contentDescriptor", "objects", "operation", "receiptSha256", "keyId", "signature"], "receipt");
   if (value.schemaVersion !== 1 || value.artifactKind !== "map-catalog-signed-current-oci-publication-receipt") throw new Error("receipt identity mismatch");
-  identity(value, content, now);
+  const resolvedPublicKey = identity(value, content, publicKey, now);
   target(value.target);
   contentDescriptor(value.contentDescriptor, content, value.target);
   objects(value.objects, content, value.target);
   operation(value.operation, content, now);
   selfDigest(value);
-  signature(value, publicKey);
+  signature(value, resolvedPublicKey);
   return structuredClone(value);
 }
 
-function identity(receipt, descriptor, now) {
+function identity(receipt, descriptor, publicKey, now) {
   for (const key of ["producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil"]) {
     if (receipt[key] !== descriptor[key]) throw new Error("receipt descriptor identity mismatch");
   }
-  if (!validGitSha(receipt.producerGitSha) || !Number.isSafeInteger(receipt.releaseSequence) || receipt.releaseSequence < 1 || !validSha(receipt.signedFinalDescriptorSha256) || !validSha(receipt.stationSetSha256) || !Number.isFinite(now) || rfc3339(receipt.freshUntil) <= now || receipt.keyId !== signingKeyId()) throw new Error("receipt identity mismatch");
+  const resolvedPublicKey = publicKey !== undefined ? publicKey : signingPublicKeyForKeyId(receipt.keyId);
+  const validKeyId = publicKey !== undefined
+    ? receipt.keyId === signingKeyId()
+    : Boolean(resolvedPublicKey) && receipt.keyId === descriptor.keyId;
+  if (!validGitSha(receipt.producerGitSha) || !Number.isSafeInteger(receipt.releaseSequence) || receipt.releaseSequence < 1 || !validSha(receipt.signedFinalDescriptorSha256) || !validSha(receipt.stationSetSha256) || !Number.isFinite(now) || rfc3339(receipt.freshUntil) <= now || !validKeyId) throw new Error("receipt identity mismatch");
+  return resolvedPublicKey;
 }
 
 function target(value) {

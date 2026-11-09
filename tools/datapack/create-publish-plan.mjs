@@ -3,8 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   canonicalJson,
-  signingKeyId,
-  signingPublicKey,
+  signingPublicKeyForKeyId,
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
@@ -156,6 +155,7 @@ async function releaseRequestBindingSteps(args, root, manifest, manifestBytes) {
 }
 
 function validateReleaseRequestBinding(binding, manifest, manifestBytes) {
+  const publicKey = signingPublicKeyForKeyId(binding?.keyId);
   if (binding?.schemaVersion !== 1
     || binding.artifactKind !== "datapack-release-request-binding"
     || typeof binding.releaseRequestId !== "string"
@@ -165,7 +165,8 @@ function validateReleaseRequestBinding(binding, manifest, manifestBytes) {
     || binding.manifestSha256 !== sha256(manifestBytes)
     || typeof binding.keyId !== "string"
     || binding.keyId.length === 0
-    || binding.keyId !== signingKeyId()
+    || binding.keyId !== manifest.keyId
+    || !publicKey
     || !["PUBLISHED_AND_VERIFIED", "NO_CHANGE_VALID"].includes(binding.releaseOutcome)
     || binding.signature?.algorithm !== "rsa-sha256-release-request-v1"
     || typeof binding.signature?.value !== "string"
@@ -173,7 +174,7 @@ function validateReleaseRequestBinding(binding, manifest, manifestBytes) {
     throw new Error("release request binding keyId or manifest identity does not match configured signer");
   }
   if (!verifyRsaSha256Signature(
-    signingPublicKey(),
+    publicKey,
     canonicalJson(withoutSignature(binding)),
     binding.signature.value,
   )) {

@@ -9,7 +9,7 @@ import {
   validateManifest,
   canonicalJson,
   verifyRsaSha256Signature,
-  signingPublicKey,
+  findMatchingPackSigningPublicKey,
   stagedPackPath,
   requiredString,
   requiredSha256,
@@ -165,7 +165,7 @@ async function validatePack(
   ) {
     throw new Error(`${pack.id}@${pack.version} signature mismatch`);
   }
-  const routeRegressionSignature = representativeRouteRegressionSignature(pack);
+  const routeRegressionSignature = representativeRouteRegressionSignature(pack, signature.matchedPublicKey);
   if (
     pack.representativeRouteRegressionSignature.algorithm !== routeRegressionSignature.algorithm ||
     pack.representativeRouteRegressionSignature.value !== routeRegressionSignature.value
@@ -2511,17 +2511,23 @@ function packSignature(pack, manifestVersion) {
       algorithm: manifestVersion === 2 ? "rsa-sha256-pack-manifest-v2" : "rsa-sha256-pack-manifest-v1",
       value: pack.signature.value,
     };
-    if (!verifyRsaSha256Signature(signingPublicKey(), canonical, pack.signature.value)) {
+    const matchedPublicKey = findMatchingPackSigningPublicKey(canonical, pack.signature.value);
+    if (!matchedPublicKey) {
       return {
         algorithm: signature.algorithm,
         value: "",
+        matchedPublicKey: null,
       };
     }
-    return signature;
+    return {
+      ...signature,
+      matchedPublicKey,
+    };
   }
   return {
     algorithm: manifestVersion === 2 ? "sha256-pack-manifest-v2" : "sha256-pack-manifest-v1",
     value: sha256(Buffer.from(fixtureSignaturePayload(pack))),
+    matchedPublicKey: null,
   };
 }
 
@@ -2533,13 +2539,17 @@ function productionSignaturePayload(pack) {
   return `${fixtureSignaturePayload(pack)}:${canonicalProductionPackUrl(pack.url)}`;
 }
 
-function representativeRouteRegressionSignature(pack) {
+function representativeRouteRegressionSignature(pack, matchedPublicKey = null) {
   if (pack.artifactKind === "production") {
     const signature = {
       algorithm: "rsa-sha256-route-regression-v1",
       value: pack.representativeRouteRegressionSignature.value,
     };
-    if (!verifyRsaSha256Signature(signingPublicKey(), representativeRouteRegressionSignaturePayload(pack), pack.representativeRouteRegressionSignature.value)) {
+    const payload = representativeRouteRegressionSignaturePayload(pack);
+    const verified = matchedPublicKey
+      ? verifyRsaSha256Signature(matchedPublicKey, payload, pack.representativeRouteRegressionSignature.value)
+      : Boolean(findMatchingPackSigningPublicKey(payload, pack.representativeRouteRegressionSignature.value));
+    if (!verified) {
       return {
         algorithm: signature.algorithm,
         value: "",

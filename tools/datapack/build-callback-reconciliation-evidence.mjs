@@ -5,8 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   canonicalJson,
-  signingKeyId,
-  signingPublicKey,
+  signingPublicKeyForKeyId,
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
@@ -214,20 +213,21 @@ export function prepareCallbackReconciliationIdentity({
 
 function validatePublishedReleaseRequestBinding(binding, expectedIdentity) {
   const signatureValue = binding?.signature?.value;
+  const publicKey = signingPublicKeyForKeyId(binding?.keyId);
   if (binding?.schemaVersion !== 1
     || binding.artifactKind !== "datapack-release-request-binding"
     || binding.releaseRequestId !== expectedIdentity.releaseRequestId
     || binding.releaseSequence !== expectedIdentity.releaseSequence
     || binding.manifestSha256 !== expectedIdentity.manifestSha256
     || binding.channel !== "production"
-    || binding.keyId !== signingKeyId()
+    || !publicKey
     || !["PUBLISHED_AND_VERIFIED", "NO_CHANGE_VALID"].includes(binding.releaseOutcome)
     || binding.signature?.algorithm !== "rsa-sha256-release-request-v1"
     || typeof signatureValue !== "string" || !/^[A-Za-z0-9_-]+$/.test(signatureValue)) {
     throw new Error("published release request binding mismatch");
   }
   if (!verifyRsaSha256Signature(
-    signingPublicKey(),
+    publicKey,
     canonicalJson(withoutSignature(binding)),
     signatureValue,
   )) {

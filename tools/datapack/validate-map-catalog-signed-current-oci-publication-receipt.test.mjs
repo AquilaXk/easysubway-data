@@ -75,11 +75,11 @@ test("receipt는 descriptor의 정확한 7개 inventory, closed OCI keys, full G
   assert.equal(Object.hasOwn(schema.properties, "stationCatalogPack"), false);
 });
 
-export function signedDescriptor(privatePem) {
+export function signedDescriptor(privatePem, customKeyId = "map-catalog-current-v1") {
   const stationSetSha256 = "c".repeat(64);
   const mapPack = pack("map-pack", stationSetSha256, ["manifest.json", "payload/interchange-layout.json", "payload/line-styles.json", "payload/metropolitan.svg", "payload/stations-layout.json"]);
   const stationCatalogPack = pack("station-catalog-pack", stationSetSha256, ["manifest.json", "payload/catalog.sqlite"]);
-  return sign({ schemaVersion: 1, artifactKind: "map-catalog-signed-current-publication", producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), stationSetSha256, freshUntil: "2099-01-01T00:00:00.000Z", mapPack, stationCatalogPack }, "descriptorSha256", privatePem);
+  return sign({ schemaVersion: 1, artifactKind: "map-catalog-signed-current-publication", producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), stationSetSha256, freshUntil: "2099-01-01T00:00:00.000Z", mapPack, stationCatalogPack }, "descriptorSha256", privatePem, customKeyId);
 }
 
 export function receiptInput(descriptor) {
@@ -94,4 +94,78 @@ export function receiptInput(descriptor) {
 }
 
 function pack(kind, stationSetSha256, paths) { const payload = paths.filter((item) => item !== "manifest.json").map((item, index) => ({ path: item, sizeBytes: index + 1, sha256: `${index}`.repeat(64) })); const manifest = { manifestVersion: 1, artifactKind: kind, [kind === "map-pack" ? "mapPackId" : "catalogPackId"]: "current", stationSetSha256, payloadSha256: sha256(Buffer.from(canonicalJson(payload))) }; const bytes = Buffer.from(canonicalJson(manifest)); return { manifest, objects: [{ path: "manifest.json", sizeBytes: bytes.length, sha256: sha256(bytes) }, ...payload] }; }
-function sign(value, digestField, privatePem) { const unsigned = { ...structuredClone(value), keyId: "map-catalog-current-v1" }; const bound = { ...unsigned, [digestField]: sha256(Buffer.from(canonicalJson(unsigned))) }; return { ...bound, signature: { algorithm: "rsa-sha256-map-catalog-signed-current-v1", value: rsaSha256Signature(privatePem, canonicalJson(bound)) } }; }
+function sign(value, digestField, privatePem, customKeyId = "map-catalog-current-v1") { const unsigned = { ...structuredClone(value), keyId: customKeyId }; const bound = { ...unsigned, [digestField]: sha256(Buffer.from(canonicalJson(unsigned))) }; return { ...bound, signature: { algorithm: "rsa-sha256-map-catalog-signed-current-v1", value: rsaSha256Signature(privatePem, canonicalJson(bound)) } }; }
+
+test("validateMapCatalogSignedCurrentOciPublicationReceipt는 next 서명 공개키 설정 시 회전된 keyId를 수용하고 keyId 불일치를 거부한다", async (t) => {
+  const nextPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const nextPrivateKey = nextPair.privateKey.export({ type: "pkcs8", format: "pem" });
+  const nextPublicKey = nextPair.publicKey.export({ type: "spki", format: "pem" });
+  const parent = await mkdtemp(path.join(os.tmpdir(), "map-catalog-oci-validator-next-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+
+  const prevKeyId = process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID;
+  const prevPrimaryPem = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+  const prevNextKeyId = process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID;
+  const prevNextPem = process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM;
+
+  const rotatedDescriptor = signedDescriptor(nextPrivateKey, "map-catalog-current-v2");
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID = "map-catalog-current-v2";
+  const rotatedReceipt = await buildMapCatalogSignedCurrentOciPublicationReceipt({
+    descriptor: rotatedDescriptor,
+    output: path.join(parent, "receipt.json"),
+    ...receiptInput(rotatedDescriptor),
+    privateKey: nextPrivateKey,
+    publicKey: nextPublicKey,
+    now: Date.parse("2098-01-01T00:00:00.000Z"),
+  });
+
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID = "map-catalog-current-v1";
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = publicKey;
+  process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID = "map-catalog-current-v2";
+  process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM = nextPublicKey;
+  try {
+    assert.deepEqual(
+      validateMapCatalogSignedCurrentOciPublicationReceipt(rotatedReceipt, {
+        descriptor: rotatedDescriptor,
+        now: Date.parse("2098-01-01T00:00:00.000Z"),
+      }),
+      rotatedReceipt,
+    );
+
+    const mismatchedReceipt = sign(
+      {
+        schemaVersion: rotatedReceipt.schemaVersion,
+        artifactKind: rotatedReceipt.artifactKind,
+        producerGitSha: rotatedReceipt.producerGitSha,
+        releaseSequence: rotatedReceipt.releaseSequence,
+        signedFinalDescriptorSha256: rotatedReceipt.signedFinalDescriptorSha256,
+        stationSetSha256: rotatedReceipt.stationSetSha256,
+        freshUntil: rotatedReceipt.freshUntil,
+        target: rotatedReceipt.target,
+        contentDescriptor: rotatedReceipt.contentDescriptor,
+        objects: rotatedReceipt.objects,
+        operation: rotatedReceipt.operation,
+      },
+      "receiptSha256",
+      privateKey,
+      "map-catalog-current-v1",
+    );
+    assert.throws(
+      () => validateMapCatalogSignedCurrentOciPublicationReceipt(mismatchedReceipt, {
+        descriptor: rotatedDescriptor,
+        now: Date.parse("2098-01-01T00:00:00.000Z"),
+      }),
+      /receipt identity mismatch/,
+    );
+  } finally {
+    if (prevKeyId === undefined) delete process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID;
+    else process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID = prevKeyId;
+    if (prevPrimaryPem === undefined) delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+    else process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = prevPrimaryPem;
+    if (prevNextKeyId === undefined) delete process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID;
+    else process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID = prevNextKeyId;
+    if (prevNextPem === undefined) delete process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM;
+    else process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM = prevNextPem;
+  }
+});
+

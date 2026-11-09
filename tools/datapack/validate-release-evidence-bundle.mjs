@@ -14,7 +14,7 @@ import {
 } from "./launch-candidate-binding.mjs";
 import {
   canonicalJson,
-  signingPublicKey,
+  signingPublicKeyForKeyId,
   validateArtifactComponentManifest,
   validateManifest,
   verifyRsaSha256Signature,
@@ -460,7 +460,8 @@ async function validateCandidateSignedRouteBundle(root, candidate) {
     canonicalRouteJson(path.join(routeRoot, "compatibility.json"), "route compatibility"),
   ]);
   validateArtifactComponentManifest(manifest.value, candidate.stationSetSha256);
-  if (!verifyRsaSha256Signature(signingPublicKey(), signingInput.bytes, manifest.value.signature.value)) {
+  const publicKey = signingPublicKeyForKeyId(manifest.value.keyId);
+  if (!publicKey || !verifyRsaSha256Signature(publicKey, signingInput.bytes, manifest.value.signature.value)) {
     throw new Error("candidate signed route signature mismatch");
   }
   if (candidate.signedManifestRawSha256 !== hashBytes(manifest.bytes)

@@ -158,4 +158,73 @@ test("최종 검증 뒤 binding-only plan이 request identity를 immutable 게�
     "--root", root,
     "--dry-run",
   ]);
+
+  const { privateKey: nextPrivateKey, publicKey: nextPublicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const rotatedManifest = {
+    ...manifest,
+    keyId: "rotated-v2",
+  };
+  const rotatedManifestBytes = Buffer.from(`${JSON.stringify(rotatedManifest)}\n`);
+  const rotatedBinding = buildReleaseRequestBinding(
+    rotatedManifestBytes,
+    "request-2057",
+    nextPrivateKey.export({ type: "pkcs8", format: "pem" }),
+    "rotated-v2",
+  );
+  await writeFile(manifestPath, rotatedManifestBytes);
+  await writeFile(bindingPath, `${JSON.stringify(rotatedBinding)}\n`);
+
+  const rotationEnv = {
+    ...process.env,
+    EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey.export({ type: "spki", format: "pem" }),
+    EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "rotated-v2",
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: nextPublicKey.export({ type: "spki", format: "pem" }),
+  };
+
+  await execFileAsync(process.execPath, [
+    "tools/datapack/create-publish-plan.mjs",
+    "--manifest", manifestPath,
+    "--root", root,
+    "--output", planPath,
+    "--release-request-binding", bindingPath,
+    "--only", "release-request-binding",
+  ], { env: rotationEnv });
+
+  // manifest.keyId(production-v1)와 binding.keyId(rotated-v2)가 다르면 둘 다 신뢰 키여도 거부해야 한다
+  await writeFile(manifestPath, manifestBytes);
+  const mismatchedManifestBinding = buildReleaseRequestBinding(
+    manifestBytes,
+    "request-2057",
+    nextPrivateKey.export({ type: "pkcs8", format: "pem" }),
+    "rotated-v2",
+  );
+  await writeFile(bindingPath, `${JSON.stringify(mismatchedManifestBinding)}\n`);
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/create-publish-plan.mjs",
+    "--manifest", manifestPath,
+    "--root", root,
+    "--output", planPath,
+    "--release-request-binding", bindingPath,
+    "--only", "release-request-binding",
+  ], { env: rotationEnv }), /keyId/i);
+
+  // rotated-v2 keyId를 주장하면서 primary 개인키로 서명한 경우 거부해야 한다
+  await writeFile(manifestPath, rotatedManifestBytes);
+  const wrongKeySignedBinding = buildReleaseRequestBinding(
+    rotatedManifestBytes,
+    "request-2057",
+    privateKey.export({ type: "pkcs8", format: "pem" }),
+    "rotated-v2",
+  );
+  await writeFile(bindingPath, `${JSON.stringify(wrongKeySignedBinding)}\n`);
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/create-publish-plan.mjs",
+    "--manifest", manifestPath,
+    "--root", root,
+    "--output", planPath,
+    "--release-request-binding", bindingPath,
+    "--only", "release-request-binding",
+  ], { env: rotationEnv }), /signature is invalid/i);
 });
+

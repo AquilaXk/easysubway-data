@@ -16,26 +16,99 @@ export function verifyRsaSha256Signature(publicKey, value, signature) {
   return createVerify("RSA-SHA256").update(value).verify(publicKey, Buffer.from(signature, "base64url"));
 }
 
-export function signingPublicKey() {
-  const key = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM?.trim();
-  if (key) return key;
-  const n = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N?.trim();
-  const e = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E?.trim();
-  if (n && e) {
-    try {
-      return createPublicKey({ key: { kty: "RSA", n, e }, format: "jwk" })
-        .export({ type: "spki", format: "pem" });
-    } catch {
-      throw new Error("production data pack RSA public key parameters are invalid");
+function normalizeRsaPublicKeyPem(pem, errorMessage) {
+  try {
+    const keyObject = createPublicKey(pem);
+    if (keyObject.asymmetricKeyType !== "rsa") {
+      throw new Error(errorMessage);
     }
+    return keyObject.export({ type: "spki", format: "pem" });
+  } catch {
+    throw new Error(errorMessage);
+  }
+}
+
+function normalizeRsaPublicKeyJwk(n, e, errorMessage) {
+  try {
+    const keyObject = createPublicKey({ key: { kty: "RSA", n, e }, format: "jwk" });
+    if (keyObject.asymmetricKeyType !== "rsa") {
+      throw new Error(errorMessage);
+    }
+    return keyObject.export({ type: "spki", format: "pem" });
+  } catch {
+    throw new Error(errorMessage);
+  }
+}
+
+export function signingPublicKey(env = process.env) {
+  const key = env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM?.trim();
+  if (key) {
+    return normalizeRsaPublicKeyPem(key, "production data pack RSA public key PEM is invalid");
+  }
+  const n = env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N?.trim();
+  const e = env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E?.trim();
+  if (n && e) {
+    return normalizeRsaPublicKeyJwk(n, e, "production data pack RSA public key parameters are invalid");
   }
   throw new Error(
     "EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM or RSA N/E is required for production data pack validation",
   );
 }
 
-export function signingKeyId() {
-  return process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1";
+export function signingKeyId(env = process.env) {
+  return env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1";
+}
+
+export function trustedSigningPublicKeys(env = process.env) {
+  const primaryKeyId = signingKeyId(env);
+  const primaryPublicKey = signingPublicKey(env);
+  const keys = new Map([[primaryKeyId, primaryPublicKey]]);
+
+  const nextKeyId = env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID?.trim() ?? "";
+  const nextPem = env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM?.trim() ?? "";
+  const nextN = env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_N?.trim() ?? "";
+  const nextE = env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_E?.trim() ?? "";
+
+  if (!nextKeyId && !nextPem && !nextN && !nextE) {
+    return keys;
+  }
+
+  const hasNextPem = nextPem.length > 0;
+  const hasNextJwk = nextN.length > 0 && nextE.length > 0;
+  const hasPartialNextJwk = (nextN.length > 0) !== (nextE.length > 0);
+  if (
+    !nextKeyId ||
+    nextKeyId === primaryKeyId ||
+    hasPartialNextJwk ||
+    hasNextPem === hasNextJwk
+  ) {
+    throw new Error("next signing public key configuration is invalid");
+  }
+
+  const nextPublicKey = hasNextPem
+    ? normalizeRsaPublicKeyPem(nextPem, "next signing public key configuration is invalid")
+    : normalizeRsaPublicKeyJwk(nextN, nextE, "next signing public key configuration is invalid");
+  keys.set(nextKeyId, nextPublicKey);
+  return keys;
+}
+
+export function signingPublicKeyForKeyId(keyId, env = process.env) {
+  if (typeof keyId !== "string" || keyId.trim() === "") {
+    return null;
+  }
+  return trustedSigningPublicKeys(env).get(keyId) ?? null;
+}
+
+export function findMatchingPackSigningPublicKey(payload, signatureValue, env = process.env) {
+  if (typeof signatureValue !== "string" || signatureValue.length === 0) {
+    return null;
+  }
+  for (const publicKey of trustedSigningPublicKeys(env).values()) {
+    if (verifyRsaSha256Signature(publicKey, payload, signatureValue)) {
+      return publicKey;
+    }
+  }
+  return null;
 }
 
 export function requiredString(value, label) {
@@ -732,12 +805,13 @@ export function validateManifestSignature(manifest) {
   const canonical = canonicalJson(withoutSignature(manifest));
   const hasProductionPack = manifest.packs.some((pack) => pack.artifactKind === "production");
   if (hasProductionPack) {
-    if (manifest.keyId !== signingKeyId()) {
+    const publicKey = signingPublicKeyForKeyId(manifest.keyId);
+    if (!publicKey) {
       throw new Error("manifest.keyId is unknown");
     }
     if (
       manifest.signature.algorithm !== "rsa-sha256-manifest-v2" ||
-      !verifyRsaSha256Signature(signingPublicKey(), canonical, manifest.signature.value)
+      !verifyRsaSha256Signature(publicKey, canonical, manifest.signature.value)
     ) {
       throw new Error("manifest signature mismatch");
     }

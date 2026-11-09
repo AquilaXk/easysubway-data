@@ -1,8 +1,7 @@
-
 import {
   canonicalJson,
   signingKeyId,
-  signingPublicKey,
+  signingPublicKeyForKeyId,
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
@@ -20,20 +19,23 @@ export function canonicalMapCatalogSignedCurrentPublicationJson(value) {
   return canonicalJson(validateMapCatalogSignedCurrentPublication(value));
 }
 
-export function validateMapCatalogSignedCurrentPublication(value, { publicKey = signingPublicKey(), now = Date.now() } = {}) {
+export function validateMapCatalogSignedCurrentPublication(value, { publicKey, now = Date.now() } = {}) {
   exactKeys(value, ["schemaVersion", "artifactKind", "producerGitSha", "releaseSequence", "signedFinalDescriptorSha256", "stationSetSha256", "freshUntil", "mapPack", "stationCatalogPack", "descriptorSha256", "keyId", "signature"], "descriptor");
   if (value.schemaVersion !== 1 || value.artifactKind !== "map-catalog-signed-current-publication") throw new Error("descriptor identity mismatch");
-  validateIdentity(value, "descriptor", now);
+  const resolvedPublicKey = validateIdentity(value, publicKey, "descriptor", now);
   validatePack(value.mapPack, "map-pack", MAP_PATHS, value.stationSetSha256);
   validatePack(value.stationCatalogPack, "station-catalog-pack", CATALOG_PATHS, value.stationSetSha256);
   selfDigest(value, "descriptorSha256", "descriptor");
-  signature(value, publicKey, "descriptor");
+  signature(value, resolvedPublicKey, "descriptor");
   return structuredClone(value);
 }
 
-function validateIdentity(value, label, now) {
+function validateIdentity(value, publicKey, label, now) {
   const freshUntil = rfc3339(value.freshUntil);
-  if (!validGitSha(value.producerGitSha) || !Number.isSafeInteger(value.releaseSequence) || value.releaseSequence < 1 || !validSha(value.signedFinalDescriptorSha256) || !validSha(value.stationSetSha256) || !Number.isFinite(now) || !Number.isFinite(freshUntil) || freshUntil <= now || value.keyId !== signingKeyId()) throw new Error(`${label} identity mismatch`);
+  const resolvedPublicKey = publicKey !== undefined ? publicKey : signingPublicKeyForKeyId(value.keyId);
+  const validKeyId = publicKey !== undefined ? value.keyId === signingKeyId() : Boolean(resolvedPublicKey);
+  if (!validGitSha(value.producerGitSha) || !Number.isSafeInteger(value.releaseSequence) || value.releaseSequence < 1 || !validSha(value.signedFinalDescriptorSha256) || !validSha(value.stationSetSha256) || !Number.isFinite(now) || !Number.isFinite(freshUntil) || freshUntil <= now || !validKeyId) throw new Error(`${label} identity mismatch`);
+  return resolvedPublicKey;
 }
 
 function validatePack(pack, artifactKind, expectedPaths, stationSetSha256) {

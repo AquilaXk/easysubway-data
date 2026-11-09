@@ -7112,3 +7112,255 @@ test("build-admin-review-record 산출물은 run-source-admission-pipeline을 �
   assert.equal(summary.overrideHash, JSON.parse(await readFile(ledgerFiles.override, "utf8")).ledgerHash);
   assert.equal(summary.licenseEvidenceHash, JSON.parse(await readFile(ledgerFiles.license, "utf8")).ledgerHash);
 });
+
+test("서명 키 로테이션은 primary·next 공개키를 검증하고 부분 설정·중복 keyId·교차 키 서명을 fail-closed 거부한다", async (context) => {
+  const {
+    trustedSigningPublicKeys,
+    signingPublicKeyForKeyId,
+    findMatchingPackSigningPublicKey,
+  } = await import("./lib/manifest-validation.mjs");
+  const { validateReferencedPacksForRescue } = await import("./lib/object-storage-publish.mjs");
+
+  const nextPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const nextPrivateKeyPem = nextPair.privateKey.export({ type: "pkcs8", format: "pem" });
+  const nextPublicKeyPem = nextPair.publicKey.export({ type: "spki", format: "pem" });
+  const nextJwk = nextPair.publicKey.export({ format: "jwk" });
+  const ecPair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const ecPublicKeyPem = ecPair.publicKey.export({ type: "spki", format: "pem" });
+
+  // 1) primary만 설정된 경우
+  const singleMap = trustedSigningPublicKeys({
+    EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+    EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+  });
+  assert.equal(singleMap.size, 1);
+  assert.equal(
+    signingPublicKeyForKeyId("production-v1", {
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+      EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+    }),
+    singleMap.get("production-v1"),
+  );
+  assert.equal(
+    signingPublicKeyForKeyId("production-v2", {
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+      EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+    }),
+    null,
+  );
+
+  // 2) primary + next (PEM 및 JWK N/E 모두 지원)
+  const dualEnv = {
+    EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+    EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: nextPublicKeyPem,
+  };
+  const dualMap = trustedSigningPublicKeys(dualEnv);
+  assert.equal(dualMap.size, 2);
+  assert.equal(signingPublicKeyForKeyId("production-v2", dualEnv), dualMap.get("production-v2"));
+
+  const dualJwkEnv = {
+    EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+    EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_N: nextJwk.n,
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_E: nextJwk.e,
+  };
+  assert.equal(signingPublicKeyForKeyId("production-v2", dualJwkEnv), dualMap.get("production-v2"));
+
+  // 3) 부분 설정·충돌·중복 keyId·비RSA 공개키는 모두 fail-closed
+  for (const invalidNextEnv of [
+    { EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2" },
+    { EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: nextPublicKeyPem },
+    {
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_N: nextJwk.n,
+    },
+    {
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_E: nextJwk.e,
+    },
+    {
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: nextPublicKeyPem,
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_N: nextJwk.n,
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_E: nextJwk.e,
+    },
+    {
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v1",
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: nextPublicKeyPem,
+    },
+    {
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: ecPublicKeyPem,
+    },
+    {
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: "not-a-pem",
+    },
+  ]) {
+    assert.throws(
+      () => trustedSigningPublicKeys({
+        EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+        EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+        ...invalidNextEnv,
+      }),
+      /next signing public key configuration is invalid/,
+    );
+  }
+
+  // 4) findMatchingPackSigningPublicKey 동작 확인
+  const signWithKey = (value, privateKeyPem) => createSign("RSA-SHA256").update(value).sign(privateKeyPem).toString("base64url");
+  const payload = "capital:1:sha:sqlite:10:https://cdn.example.com/catalog/capital-v1.sqlite.gz";
+  const nextSig = signWithKey(payload, nextPrivateKeyPem);
+  assert.equal(findMatchingPackSigningPublicKey(payload, nextSig, dualEnv), dualMap.get("production-v2"));
+  assert.equal(findMatchingPackSigningPublicKey(payload, "invalid-sig", dualEnv), null);
+
+  // 5) production datapack 빌드 후 next 키로 회전된 manifest 및 pack 검증, 교차 키 서명 거부 확인
+  const workDir = await mkdtemp(path.join(tmpdir(), "easysubway-key-rotation-pack-"));
+  context.after(() => rm(workDir, { recursive: true, force: true }));
+  const importedFixture = await importTestOnlyAccessibilityFixture(workDir, productionSourceIngestInput());
+  makeProductionSourceFixtureStrictCoverageValid(importedFixture);
+  importedFixture.packs[0].artifactKind = "production";
+  importedFixture.packs[0].url = "https://cdn.example.com/catalog/capital-v1.sqlite.gz";
+  const strictFixturePath = path.join(workDir, "strict-production-fixture.json");
+  await writeFile(strictFixturePath, `${JSON.stringify(importedFixture, null, 2)}\n`);
+
+  const packOutputDir = path.join(workDir, "pack");
+  const rotatedBuildEnv = {
+    ...productionEnv,
+    EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
+    EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v2",
+    EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: nextPrivateKeyPem,
+    EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: nextPublicKeyPem,
+  };
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      strictFixturePath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: rotatedBuildEnv },
+  );
+
+  const manifestPath = path.join(packOutputDir, "current.json");
+  const rotatedManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  rotatedManifest.manifestVersion = 2;
+  rotatedManifest.channel = "production";
+  rotatedManifest.releaseSequence = 7;
+  rotatedManifest.publishedAt = "2026-06-25T00:00:00.000Z";
+  rotatedManifest.expiresAt = "2026-06-26T00:00:00.000Z";
+  rotatedManifest.keyId = "production-v2";
+  delete rotatedManifest.activePack;
+  const pack = rotatedManifest.packs[0];
+  pack.artifactKind = "production";
+  pack.url = "https://cdn.example.com/catalog/capital-v1.sqlite.gz";
+  const routes = pack.representativeRouteRegressions.map((route) => ({
+    id: route.id,
+    pattern: route.pattern,
+    fromNodeId: route.fromNodeId,
+    toNodeId: route.toNodeId,
+    requiredEdgeIds: route.requiredEdgeIds,
+  }));
+  const packPayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${new URL(pack.url).toString()}`;
+  const routePayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${JSON.stringify(routes)}:${new URL(pack.url).toString()}`;
+  pack.signature = {
+    algorithm: "rsa-sha256-pack-manifest-v2",
+    value: signWithKey(packPayload, nextPrivateKeyPem),
+  };
+  pack.representativeRouteRegressionSignature = {
+    algorithm: "rsa-sha256-route-regression-v1",
+    value: signWithKey(routePayload, nextPrivateKeyPem),
+  };
+  rotatedManifest.signature = {
+    algorithm: "rsa-sha256-manifest-v2",
+    value: signWithKey(canonicalJson(withoutSignature(rotatedManifest)), nextPrivateKeyPem),
+  };
+  await writeFile(manifestPath, `${JSON.stringify(rotatedManifest, null, 2)}\n`);
+
+  const validatorDualEnv = {
+    ...productionEnv,
+    EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+    EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+    EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: nextPublicKeyPem,
+  };
+
+  // validate-datapack.mjs가 primary + next 설정에서 next 키로 서명된 manifest와 pack을 수용한다
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      manifestPath,
+      "--root",
+      packOutputDir,
+    ],
+    { cwd: root, env: validatorDualEnv },
+  );
+
+  // pack.signature는 next 키로, representativeRouteRegressionSignature는 primary 키로 교차 서명된 경우 거부해야 한다
+  const crossSignedManifest = structuredClone(rotatedManifest);
+  crossSignedManifest.packs[0].representativeRouteRegressionSignature.value = signWithKey(routePayload, testPrivateKeyPem);
+  crossSignedManifest.signature.value = signWithKey(
+    canonicalJson(withoutSignature(crossSignedManifest)),
+    nextPrivateKeyPem,
+  );
+  const crossManifestPath = path.join(packOutputDir, "cross-signed.json");
+  await writeFile(crossManifestPath, `${JSON.stringify(crossSignedManifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        crossManifestPath,
+        "--root",
+        packOutputDir,
+      ],
+      { cwd: root, env: validatorDualEnv },
+    ),
+    /representativeRouteRegressionSignature mismatch/,
+  );
+
+  // object-storage-publish.mjs의 validateReferencedPacksForRescue에서도 동일하게 next 키를 수용하고 교차 키 서명을 거부한다
+  const server = await startObjectStorageServer({ requireAuthorization: false, basePath: "" });
+  context.after(() => server.close());
+  const packBytes = await readFile(path.join(packOutputDir, "catalog", "capital-v1.sqlite.gz"));
+  server.objects.set("catalog/capital-v1.sqlite.gz", {
+    body: packBytes,
+    sha256: sha256(packBytes),
+    sizeBytes: packBytes.length,
+  });
+
+  const prevKeyId = process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID;
+  const prevPrimaryPem = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+  const prevNextKeyId = process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID;
+  const prevNextPem = process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM;
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID = "production-v1";
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = testPublicKeyPem;
+  process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID = "production-v2";
+  process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM = nextPublicKeyPem;
+  try {
+    await validateReferencedPacksForRescue(new URL(server.origin), rotatedManifest);
+    await assert.rejects(
+      validateReferencedPacksForRescue(new URL(server.origin), crossSignedManifest),
+      /representative route regression signature mismatch/,
+    );
+  } finally {
+    if (prevKeyId === undefined) delete process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID;
+    else process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID = prevKeyId;
+    if (prevPrimaryPem === undefined) delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+    else process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = prevPrimaryPem;
+    if (prevNextKeyId === undefined) delete process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID;
+    else process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID = prevNextKeyId;
+    if (prevNextPem === undefined) delete process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM;
+    else process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM = prevNextPem;
+  }
+});
+

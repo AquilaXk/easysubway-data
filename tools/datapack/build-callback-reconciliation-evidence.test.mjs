@@ -329,3 +329,84 @@ test("#2056 final manifest의 callback gate source issue가 다르면 거부한�
     evaluatedAt: "2026-07-16T12:00:00.000Z",
   }), /source issue/);
 });
+
+test("prepareCallbackReconciliationIdentity는 next 서명 키로 서명된 releaseRequestBinding을 수용하고 교차 키 위조를 거부한다", () => {
+  const { privateKey: nextPrivateKey, publicKey: nextPublicKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+  });
+  const rcManifest = {
+    schemaVersion: 1,
+    phase: "FINAL",
+    gitSha: "b".repeat(40),
+    datapackGates: [{ id: "callback_reconciliation", sourceIssue: 2057, rcIdentity: {
+      gitSha: "b".repeat(40), dataPackManifestSha256: manifestSha256, releaseSequence,
+    } }],
+  };
+  const unsignedNext = {
+    schemaVersion: 1,
+    artifactKind: "datapack-release-request-binding",
+    releaseRequestId,
+    releaseSequence,
+    channel: "production",
+    manifestSha256,
+    keyId: "production-v2",
+    releaseOutcome: "PUBLISHED_AND_VERIFIED",
+  };
+  const nextSignedBinding = {
+    ...unsignedNext,
+    signature: {
+      algorithm: "rsa-sha256-release-request-v1",
+      value: createSign("RSA-SHA256")
+        .update(canonicalJson(withoutSignature(unsignedNext)))
+        .sign(nextPrivateKey)
+        .toString("base64url"),
+    },
+  };
+  const crossKeySignedBinding = {
+    ...unsignedNext,
+    signature: {
+      algorithm: "rsa-sha256-release-request-v1",
+      value: createSign("RSA-SHA256")
+        .update(canonicalJson(withoutSignature(unsignedNext)))
+        .sign(bindingPrivateKey)
+        .toString("base64url"),
+    },
+  };
+
+  const previousNextKeyId = process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID;
+  const previousNextPem = process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM;
+  process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID = "production-v2";
+  process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM = nextPublicKey.export({
+    type: "spki",
+    format: "pem",
+  });
+  try {
+    const prepared = withBindingPublicKey(() => prepareCallbackReconciliationIdentity({
+      rcManifest,
+      releaseRequestId,
+      releaseRequestBinding: nextSignedBinding,
+      expectedGitSha: "b".repeat(40),
+    }));
+    assert.deepEqual(prepared, { releaseRequestId, releaseSequence, manifestSha256 });
+
+    assert.throws(() => withBindingPublicKey(() => prepareCallbackReconciliationIdentity({
+      rcManifest,
+      releaseRequestId,
+      releaseRequestBinding: crossKeySignedBinding,
+      expectedGitSha: "b".repeat(40),
+    })), /signature is invalid/);
+
+    assert.throws(() => withBindingPublicKey(() => prepareCallbackReconciliationIdentity({
+      rcManifest,
+      releaseRequestId,
+      releaseRequestBinding: releaseRequestBinding({ keyId: "unknown-v3" }),
+      expectedGitSha: "b".repeat(40),
+    })), /published release request binding mismatch/);
+  } finally {
+    if (previousNextKeyId === undefined) delete process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID;
+    else process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID = previousNextKeyId;
+    if (previousNextPem === undefined) delete process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM;
+    else process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM = previousNextPem;
+  }
+});
+

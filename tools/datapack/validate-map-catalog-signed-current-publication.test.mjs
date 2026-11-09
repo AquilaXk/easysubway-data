@@ -52,5 +52,40 @@ function signedDescriptor() {
   return sign({ schemaVersion: 1, artifactKind: "map-catalog-signed-current-publication", ...identity, mapPack, stationCatalogPack }, "descriptorSha256");
 }
 function pack(kind, stationSetSha256, paths) { const payload = paths.filter((path) => path !== "manifest.json").map((path, index) => ({ path, sizeBytes: index + 1, sha256: `${index}`.repeat(64) })); const manifest = { manifestVersion: 1, artifactKind: kind, [kind === "map-pack" ? "mapPackId" : "catalogPackId"]: "current", stationSetSha256, payloadSha256: sha256(Buffer.from(canonicalJson(payload))) }; const manifestBytes = Buffer.from(canonicalJson(manifest)); return { manifest, objects: [{ path: "manifest.json", sizeBytes: manifestBytes.length, sha256: sha256(manifestBytes) }, ...payload] }; }
-function sign(value, digestField) { const unsigned = { ...structuredClone(value), keyId: "map-catalog-current-v1" }; const digest = sha256(Buffer.from(canonicalJson(unsigned))); const bound = { ...unsigned, [digestField]: digest }; return { ...bound, signature: { algorithm: "rsa-sha256-map-catalog-signed-current-v1", value: rsaSha256Signature(privateKey, canonicalJson(bound)) } }; }
+function sign(value, digestField, customKeyId = "map-catalog-current-v1", customPrivateKey = privateKey) { const unsigned = { ...structuredClone(value), keyId: customKeyId }; const digest = sha256(Buffer.from(canonicalJson(unsigned))); const bound = { ...unsigned, [digestField]: digest }; return { ...bound, signature: { algorithm: "rsa-sha256-map-catalog-signed-current-v1", value: rsaSha256Signature(customPrivateKey, canonicalJson(bound)) } }; }
 function resealManifestDrift(descriptor) { const changed = structuredClone(descriptor); changed.mapPack.manifest.mapPackId = "rebound"; return sign({ schemaVersion: changed.schemaVersion, artifactKind: changed.artifactKind, producerGitSha: changed.producerGitSha, releaseSequence: changed.releaseSequence, signedFinalDescriptorSha256: changed.signedFinalDescriptorSha256, stationSetSha256: changed.stationSetSha256, freshUntil: changed.freshUntil, mapPack: changed.mapPack, stationCatalogPack: changed.stationCatalogPack }, "descriptorSha256"); }
+
+test("validateMapCatalogSignedCurrentPublication은 next 서명 공개키 설정 시 회전된 keyId를 수용하고 교차 키·미등록 keyId를 거부한다", () => {
+  const nextPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const nextPrivateKey = nextPair.privateKey.export({ type: "pkcs8", format: "pem" });
+  const nextPublicKey = nextPair.publicKey.export({ type: "spki", format: "pem" });
+  const stationSetSha256 = "c".repeat(64);
+  const mapPack = pack("map-pack", stationSetSha256, ["manifest.json", "payload/interchange-layout.json", "payload/line-styles.json", "payload/metropolitan.svg", "payload/stations-layout.json"]);
+  const stationCatalogPack = pack("station-catalog-pack", stationSetSha256, ["manifest.json", "payload/catalog.sqlite"]);
+  const base = { schemaVersion: 1, artifactKind: "map-catalog-signed-current-publication", producerGitSha: "a".repeat(40), releaseSequence: 7, signedFinalDescriptorSha256: "b".repeat(64), stationSetSha256, freshUntil: "2099-01-01T00:00:00.000Z", mapPack, stationCatalogPack };
+
+  const prevPrimaryPem = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+  const prevNextKeyId = process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID;
+  const prevNextPem = process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM;
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = publicKey;
+  process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID = "map-catalog-current-v2";
+  process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM = nextPublicKey;
+  try {
+    const rotatedDescriptor = sign(base, "descriptorSha256", "map-catalog-current-v2", nextPrivateKey);
+    assert.deepEqual(validateMapCatalogSignedCurrentPublication(rotatedDescriptor), rotatedDescriptor);
+
+    const crossSignedDescriptor = sign(base, "descriptorSha256", "map-catalog-current-v2", privateKey);
+    assert.throws(() => validateMapCatalogSignedCurrentPublication(crossSignedDescriptor), /descriptor signature mismatch/);
+
+    const unknownKeyDescriptor = sign(base, "descriptorSha256", "map-catalog-unknown-v9", nextPrivateKey);
+    assert.throws(() => validateMapCatalogSignedCurrentPublication(unknownKeyDescriptor), /descriptor identity mismatch/);
+  } finally {
+    if (prevPrimaryPem === undefined) delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+    else process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = prevPrimaryPem;
+    if (prevNextKeyId === undefined) delete process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID;
+    else process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID = prevNextKeyId;
+    if (prevNextPem === undefined) delete process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM;
+    else process.env.EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM = prevNextPem;
+  }
+});
+
