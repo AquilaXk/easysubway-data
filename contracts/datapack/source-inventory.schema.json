@@ -261,12 +261,48 @@
           "transferAdmissionEvidence": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["artifactKind", "approvalIssue", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "snapshotId", "snapshotPath", "snapshotFileSha256", "capturedAt", "observedAt", "freshUntil", "sourceEffectiveDate", "rawSha256", "contentSha256", "schemaFingerprint", "metricsPath", "metricsArtifactSha256", "applicabilityPath", "applicabilityArtifactSha256", "rowCount", "physicalPairCount", "directedMetricCount", "officialMetricCount", "derivedReciprocalMetricCount", "stationLineCount", "applicableStationLineCount", "notApplicableStationLineCount", "durationRole", "licenseEvidenceHash"],
+            "required": ["artifactKind", "approvalIssue", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "snapshotId", "snapshotPath", "snapshotFileSha256", "capturedAt", "observedAt", "freshUntil", "sourceEffectiveDate", "rawSha256", "contentSha256", "schemaFingerprint", "rowCount", "durationRole", "licenseEvidenceHash"],
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["metricsPath", "metricsArtifactSha256", "applicabilityPath", "applicabilityArtifactSha256", "physicalPairCount", "directedMetricCount", "officialMetricCount", "derivedReciprocalMetricCount", "stationLineCount", "applicableStationLineCount", "notApplicableStationLineCount"],
+                "properties": {
+                  "approvalIssue": { "const": 350 },
+                  "snapshotPath": { "type": "string", "pattern": "^tools/datapack/sources/seoul-metro-transfer-distance-duration-[0-9TZ]+\\.json$" },
+                  "sourceEffectiveDate": { "const": "2025-12-31" },
+                  "rowCount": { "const": 145 },
+                  "durationRole": { "const": "REFERENCE_ONLY" }
+                }
+              },
+              {
+                "type": "object",
+                "allOf": [
+                  { "not": { "type": "object", "required": ["metricsPath"] } },
+                  { "not": { "type": "object", "required": ["metricsArtifactSha256"] } },
+                  { "not": { "type": "object", "required": ["applicabilityPath"] } },
+                  { "not": { "type": "object", "required": ["applicabilityArtifactSha256"] } },
+                  { "not": { "type": "object", "required": ["physicalPairCount"] } },
+                  { "not": { "type": "object", "required": ["directedMetricCount"] } },
+                  { "not": { "type": "object", "required": ["officialMetricCount"] } },
+                  { "not": { "type": "object", "required": ["derivedReciprocalMetricCount"] } },
+                  { "not": { "type": "object", "required": ["stationLineCount"] } },
+                  { "not": { "type": "object", "required": ["applicableStationLineCount"] } },
+                  { "not": { "type": "object", "required": ["notApplicableStationLineCount"] } }
+                ],
+                "properties": {
+                  "approvalIssue": { "const": 876 },
+                  "snapshotPath": { "type": "string", "pattern": "^tools/datapack/sources/seoul-metro-transfer-car-door-duration-[0-9a-f]{64}\\.json$" },
+                  "sourceEffectiveDate": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+                  "rowCount": { "type": "integer", "minimum": 1 },
+                  "durationRole": { "const": "OFFICIAL_MEASURED_DURATION" }
+                }
+              }
+            ],
             "properties": {
-              "artifactKind": { "const": "transfer-source-admission-evidence" }, "approvalIssue": { "const": 350 }, "decision": { "const": "APPROVED" }, "approvedBy": { "const": "AquilaXk" }, "approvedAt": { "type": "string", "format": "date-time" }, "productionUseAllowed": { "const": true },
-              "snapshotId": { "type": "string" }, "snapshotPath": { "type": "string", "pattern": "^tools/datapack/sources/seoul-metro-transfer-distance-duration-[0-9TZ]+\\.json$" }, "snapshotFileSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "capturedAt": { "type": "string", "format": "date-time" }, "observedAt": { "type": "string", "format": "date-time" }, "freshUntil": { "type": "string", "format": "date-time" }, "sourceEffectiveDate": { "const": "2025-12-31" },
+              "artifactKind": { "const": "transfer-source-admission-evidence" }, "approvalIssue": { "type": "integer", "enum": [350, 876] }, "decision": { "const": "APPROVED" }, "approvedBy": { "const": "AquilaXk" }, "approvedAt": { "type": "string", "format": "date-time" }, "productionUseAllowed": { "const": true },
+              "snapshotId": { "type": "string" }, "snapshotPath": { "type": "string", "pattern": "^tools/datapack/sources/seoul-metro-transfer-(?:distance-duration-[0-9TZ]+|car-door-duration-[0-9a-f]{64})\\.json$" }, "snapshotFileSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "capturedAt": { "type": "string", "format": "date-time" }, "observedAt": { "type": "string", "format": "date-time" }, "freshUntil": { "type": "string", "format": "date-time" }, "sourceEffectiveDate": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
               "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "schemaFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "metricsPath": { "const": "tools/datapack/release/current-transfer-topology-metrics.json" }, "metricsArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "applicabilityPath": { "const": "tools/datapack/release/current-capital-transfer-topology-applicability.json" }, "applicabilityArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-              "rowCount": { "const": 145 }, "physicalPairCount": { "type": "integer", "minimum": 1 }, "directedMetricCount": { "type": "integer", "minimum": 2 }, "officialMetricCount": { "type": "integer", "minimum": 1 }, "derivedReciprocalMetricCount": { "type": "integer", "minimum": 0 }, "stationLineCount": { "type": "integer", "minimum": 1 }, "applicableStationLineCount": { "type": "integer", "minimum": 1 }, "notApplicableStationLineCount": { "type": "integer", "minimum": 0 }, "durationRole": { "const": "REFERENCE_ONLY" }, "licenseEvidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              "rowCount": { "type": "integer", "minimum": 1 }, "physicalPairCount": { "type": "integer", "minimum": 1 }, "directedMetricCount": { "type": "integer", "minimum": 2 }, "officialMetricCount": { "type": "integer", "minimum": 1 }, "derivedReciprocalMetricCount": { "type": "integer", "minimum": 0 }, "stationLineCount": { "type": "integer", "minimum": 1 }, "applicableStationLineCount": { "type": "integer", "minimum": 1 }, "notApplicableStationLineCount": { "type": "integer", "minimum": 0 }, "durationRole": { "type": "string", "enum": ["REFERENCE_ONLY", "OFFICIAL_MEASURED_DURATION"] }, "licenseEvidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             }
           },
           "membershipAdmissionEvidence": {
@@ -837,6 +873,29 @@
               }
             },
             "else": { "properties": { "capabilities": { "not": { "required": ["transfer"] } } } }
+          },
+          {
+            "if": {
+              "type": "object",
+              "required": ["id", "productionUseAllowed"],
+              "properties": {
+                "id": { "const": "seoul-metro-transfer-car-door-duration" },
+                "productionUseAllowed": { "const": true }
+              }
+            },
+            "then": {
+              "type": "object",
+              "required": ["transferAdmissionEvidence"],
+              "properties": {
+                "transferAdmissionEvidence": {
+                  "type": "object",
+                  "properties": {
+                    "approvalIssue": { "const": 876 },
+                    "durationRole": { "const": "OFFICIAL_MEASURED_DURATION" }
+                  }
+                }
+              }
+            }
           }
         ]
       }

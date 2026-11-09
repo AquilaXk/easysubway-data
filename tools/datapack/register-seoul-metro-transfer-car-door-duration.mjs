@@ -77,6 +77,7 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
   });
   if (prepared.ledger.some((row) => row?.snapshotId === prepared.snapshotId)) throw new Error(`${LABEL} snapshot already registered`);
   const { source, snapshot, approval } = prepared;
+  const licenseEvidenceHash = sha(canonicalJson(source.license));
   const admissionEvidence = {
     artifactKind: "official-file-source-admission",
     issue: 876,
@@ -89,14 +90,36 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
     rawSha256: snapshot.rawSha256,
     schemaFingerprint: snapshot.schemaFingerprint,
     rawObjectUri: receipt.rawObjectUri,
-    licenseEvidenceHash: sha(canonicalJson(source.license)),
+    licenseEvidenceHash,
     productionUseNoteKo: approval.noteKo,
+  };
+  const transferAdmissionEvidence = {
+    artifactKind: "transfer-source-admission-evidence",
+    approvalIssue: 876,
+    decision: approval.decision,
+    approvedBy: approval.approvedBy,
+    approvedAt: approval.approvedAt,
+    productionUseAllowed: true,
+    snapshotId: prepared.snapshotId,
+    snapshotPath: prepared.snapshotRelative,
+    snapshotFileSha256: prepared.snapshotSha256,
+    capturedAt: snapshot.capturedAt,
+    observedAt: snapshot.observedAt,
+    freshUntil: prepared.freshUntil,
+    sourceEffectiveDate: snapshot.sourceEffectiveDate,
+    rawSha256: snapshot.rawSha256,
+    contentSha256: snapshot.contentSha256,
+    schemaFingerprint: snapshot.schemaFingerprint,
+    rowCount: snapshot.rowCount,
+    durationRole: "OFFICIAL_MEASURED_DURATION",
+    licenseEvidenceHash,
   };
   const registeredSource = {
     ...source,
     observedDataUpdatedAt: snapshot.sourceEffectiveDate,
     retrievedAt: snapshot.capturedAt.slice(0, 10),
     admissionEvidence,
+    transferAdmissionEvidence,
   };
   const registeredInventory = { ...prepared.inventory, sources: prepared.inventory.sources.map((row) => row.id === SOURCE_ID ? registeredSource : row) };
   validateSourceGovernancePolicy({ policy: prepared.governance, inventory: registeredInventory, freshnessPolicy: prepared.freshness });
