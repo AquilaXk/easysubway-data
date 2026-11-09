@@ -335,6 +335,8 @@ async function replayRetainedSnapshot(snapshot) {
     sourceId: SOURCE_ID,
     serviceKey: "retained-replay",
     now: new Date(snapshot.observedAt),
+    replay: true,
+    recordTelemetry: false,
     fetchImpl: async () => new Response(bytes, { headers: { "content-type": "application/xml" } }),
   });
   if (!isDeepStrictEqual(snapshot, replay)) {

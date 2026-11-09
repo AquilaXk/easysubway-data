@@ -75,7 +75,11 @@ export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snaps
     throw new Error("Gwangju topology collected raw responses are required");
   }
   let cursor = 0;
-  const replay = await collectGwangjuRouteTopology({ stationScope: snapshot.scope, now: new Date(snapshot.capturedAt),
+  const replay = await collectGwangjuRouteTopology({
+    stationScope: snapshot.scope,
+    now: new Date(snapshot.capturedAt),
+    replay: true,
+    recordTelemetry: false,
     fetchImpl: async (url) => {
       const response = snapshot.rawResponses[cursor++];
       const bytes = Buffer.from(response?.bytesBase64 ?? "", "base64");

@@ -38,9 +38,13 @@ export async function collectBusanTimetable({
   sleepImpl = sleep,
   randomImpl,
   requestIntervalMs = 0,
+  recordTelemetry = true,
+  telemetry = true,
+  replay = false,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
+  const shouldRecordTelemetry = key !== "retained-replay" && recordTelemetry !== false && telemetry !== false && replay !== true;
   const scope = normalizeBusanTimetableScope(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   const fetchImpl = withRequestInterval(providerFetch, { intervalMs: requestIntervalMs, sleep: sleepImpl });
@@ -53,7 +57,7 @@ export async function collectBusanTimetable({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl, randomImpl });
+        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl, randomImpl, recordTelemetry: shouldRecordTelemetry });
       } catch (error) {
         failure = error;
       }
@@ -106,7 +110,7 @@ export async function collectBusanTimetable({
   };
 }
 
-async function collectResponse({ station, day, key, fetchImpl, sleepImpl, randomImpl }) {
+async function collectResponse({ station, day, key, fetchImpl, sleepImpl, randomImpl, recordTelemetry }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("act", "xml");
@@ -114,7 +118,7 @@ async function collectResponse({ station, day, key, fetchImpl, sleepImpl, random
   url.searchParams.set("day", day);
   url.searchParams.set("pageNo", "1");
   url.searchParams.set("numOfRows", "999");
-  const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl, key !== "retained-replay");
+  const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl, recordTelemetry);
   const rawSha256 = sha256(bytes);
   if (!response.ok) throw new Error(`Busan timetable HTTP ${response.status}; rawBytes=${bytes.length}; rawSha256=${rawSha256}`);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";

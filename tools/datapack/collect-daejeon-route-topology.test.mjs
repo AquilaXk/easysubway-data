@@ -238,53 +238,69 @@ test("Daejeon topology registration replays retained sources and refreshes curre
     EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL:
       "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/",
   };
-  const receiptPath = path.join(authority.root, "daejeon-receipt.json");
-  const options = { repositoryRoot: authority.root, snapshotPath, receiptPath, now, env };
-  const prepared = await prepareDaejeonTopologyRegistration(options);
-  await writeFile(receiptPath, `${JSON.stringify(receiptFor(prepared, now))}\n`);
-  await registerDaejeonTopology(options);
+  const telemetryPath = path.join(authority.root, "telemetry.jsonl");
+  await writeFile(telemetryPath, "");
+  const prevTelemetry = process.env.SOURCE_FETCH_TELEMETRY_PATH;
+  process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
+  try {
+    await collectDaejeonRouteTopology({
+      serviceKey: "test-key",
+      replay: true,
+      now: new Date(now.valueOf() - 60_000),
+      fetchImpl: async () => new Response(responseBytes, { headers: { "content-type": "application/xml" } }),
+    });
+    const receiptPath = path.join(authority.root, "daejeon-receipt.json");
+    const options = { repositoryRoot: authority.root, snapshotPath, receiptPath, now, env };
+    const prepared = await prepareDaejeonTopologyRegistration(options);
+    await writeFile(receiptPath, `${JSON.stringify(receiptFor(prepared, now))}\n`);
+    await registerDaejeonTopology(options);
+    assert.equal(await readFile(telemetryPath, "utf8"), "");
 
-  const [registeredInventory, registeredLedger] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS.slice(0, 2)
-    .map(async (relative) => JSON.parse(await readFile(path.join(authority.root, relative), "utf8"))));
-  const registeredTopology = registeredInventory.sources.find(({ id }) => id === sourceId);
-  const registeredMembership = registeredInventory.sources.find(({ id }) => id === membershipSourceId);
-  assert.equal(registeredTopology.requiredForProductionPack, true);
-  assert.equal(registeredTopology.topologyAdmissionEvidence.snapshotId, prepared.snapshotId);
-  assert.equal(registeredTopology.topologyAdmissionEvidence.rawSha256, snapshot.rawSha256);
-  assert.deepEqual(registeredTopology.membershipAdmissionEvidence, registeredMembership.membershipAdmissionEvidence);
-  assert.equal(registeredTopology.membershipAdmissionEvidence.verifiedAt, authority.current.retrievedAt);
-  assert.equal(registeredTopology.membershipAdmissionEvidence.membershipSourceRawSha256, authority.current.rawSha256);
-  assert.equal(registeredTopology.membershipAdmissionEvidence.stationCodeSnapshotId, prepared.snapshotId);
-  const registeredMap = registeredInventory.sources.find(({ id }) => id === mapSource.id);
-  const registeredAccessibility = registeredInventory.sources.find(({ id }) => id === accessibilitySource.id);
-  const registeredTimetable = registeredInventory.sources.find(({ id }) => id === timetableSource.id);
-  assert.equal(registeredMap.routeMapAdmissionEvidence.topologySnapshotId, prepared.snapshotId);
-  assert.equal(registeredMap.routeMapAdmissionEvidence.rawSha256, dependentFixtures.mapSnapshot.rawSha256);
-  assert.equal(registeredMap.routeMapAdmissionEvidence.capturedAt, dependentFixtures.mapSnapshot.capturedAt);
-  assert.equal(registeredMap.routeMapAdmissionEvidence.freshUntil, dependentFixtures.mapSnapshot.freshUntil);
-  assert.match(registeredMap.routeMapAdmissionEvidence.snapshotId, /^daejeon-transportation-route-map-positions-/);
-  assert.deepEqual(
-    await readFile(path.join(authority.root, registeredMap.routeMapAdmissionEvidence.snapshotPath)),
-    prepared.dependentSnapshots.find(({ sourceId: id }) => id === mapSource.id).bytes,
-  );
-  assert.equal(registeredAccessibility.accessibilityAdmissionEvidence.topologySnapshotId, prepared.snapshotId);
-  assert.equal(registeredAccessibility.accessibilityAdmissionEvidence.rawSha256, dependentFixtures.accessibilitySnapshot.rawSha256);
-  assert.equal(registeredAccessibility.accessibilityAdmissionEvidence.capturedAt, dependentFixtures.accessibilitySnapshot.capturedAt);
-  assert.equal(registeredAccessibility.accessibilityAdmissionEvidence.freshUntil, dependentFixtures.accessibilitySnapshot.freshUntil);
-  assert.match(registeredAccessibility.accessibilityAdmissionEvidence.snapshotId, /^daejeon-transportation-accessibility-/);
-  assert.deepEqual(
-    await readFile(path.join(authority.root, registeredAccessibility.accessibilityAdmissionEvidence.snapshotPath)),
-    prepared.dependentSnapshots.find(({ sourceId: id }) => id === accessibilitySource.id).bytes,
-  );
-  assert.equal(registeredTimetable.scheduleAdmissionEvidence.snapshotId, dependentFixtures.timetableSnapshot.snapshotId);
-  assert.equal(registeredTimetable.scheduleAdmissionEvidence.capturedAt, dependentFixtures.timetableSnapshot.capturedAt);
-  assert.equal(registeredTimetable.scheduleAdmissionEvidence.freshUntil, dependentFixtures.timetableSnapshot.freshUntil);
-  assert.equal(registeredTimetable.scheduleAdmissionEvidence.rawSha256, dependentFixtures.timetableSnapshot.rawSha256);
-  assert.equal(registeredTimetable.scheduleAdmissionEvidence.rowsSha256, dependentFixtures.timetableSnapshot.rowsSha256);
-  assert.equal(registeredTimetable.scheduleAdmissionEvidence.topologySnapshotId, prepared.snapshotId);
-  assert.equal(registeredLedger.at(-1).snapshotId, prepared.snapshotId);
-  assert.equal(registeredLedger.at(-1).coverageCount, snapshot.stationNumbers.length);
-  assert.deepEqual(await readFile(path.join(authority.root, prepared.snapshotRelative)), snapshotBytes);
+    const [registeredInventory, registeredLedger] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS.slice(0, 2)
+      .map(async (relative) => JSON.parse(await readFile(path.join(authority.root, relative), "utf8"))));
+    const registeredTopology = registeredInventory.sources.find(({ id }) => id === sourceId);
+    const registeredMembership = registeredInventory.sources.find(({ id }) => id === membershipSourceId);
+    assert.equal(registeredTopology.requiredForProductionPack, true);
+    assert.equal(registeredTopology.topologyAdmissionEvidence.snapshotId, prepared.snapshotId);
+    assert.equal(registeredTopology.topologyAdmissionEvidence.rawSha256, snapshot.rawSha256);
+    assert.deepEqual(registeredTopology.membershipAdmissionEvidence, registeredMembership.membershipAdmissionEvidence);
+    assert.equal(registeredTopology.membershipAdmissionEvidence.verifiedAt, authority.current.retrievedAt);
+    assert.equal(registeredTopology.membershipAdmissionEvidence.membershipSourceRawSha256, authority.current.rawSha256);
+    assert.equal(registeredTopology.membershipAdmissionEvidence.stationCodeSnapshotId, prepared.snapshotId);
+    const registeredMap = registeredInventory.sources.find(({ id }) => id === mapSource.id);
+    const registeredAccessibility = registeredInventory.sources.find(({ id }) => id === accessibilitySource.id);
+    const registeredTimetable = registeredInventory.sources.find(({ id }) => id === timetableSource.id);
+    assert.equal(registeredMap.routeMapAdmissionEvidence.topologySnapshotId, prepared.snapshotId);
+    assert.equal(registeredMap.routeMapAdmissionEvidence.rawSha256, dependentFixtures.mapSnapshot.rawSha256);
+    assert.equal(registeredMap.routeMapAdmissionEvidence.capturedAt, dependentFixtures.mapSnapshot.capturedAt);
+    assert.equal(registeredMap.routeMapAdmissionEvidence.freshUntil, dependentFixtures.mapSnapshot.freshUntil);
+    assert.match(registeredMap.routeMapAdmissionEvidence.snapshotId, /^daejeon-transportation-route-map-positions-/);
+    assert.deepEqual(
+      await readFile(path.join(authority.root, registeredMap.routeMapAdmissionEvidence.snapshotPath)),
+      prepared.dependentSnapshots.find(({ sourceId: id }) => id === mapSource.id).bytes,
+    );
+    assert.equal(registeredAccessibility.accessibilityAdmissionEvidence.topologySnapshotId, prepared.snapshotId);
+    assert.equal(registeredAccessibility.accessibilityAdmissionEvidence.rawSha256, dependentFixtures.accessibilitySnapshot.rawSha256);
+    assert.equal(registeredAccessibility.accessibilityAdmissionEvidence.capturedAt, dependentFixtures.accessibilitySnapshot.capturedAt);
+    assert.equal(registeredAccessibility.accessibilityAdmissionEvidence.freshUntil, dependentFixtures.accessibilitySnapshot.freshUntil);
+    assert.match(registeredAccessibility.accessibilityAdmissionEvidence.snapshotId, /^daejeon-transportation-accessibility-/);
+    assert.deepEqual(
+      await readFile(path.join(authority.root, registeredAccessibility.accessibilityAdmissionEvidence.snapshotPath)),
+      prepared.dependentSnapshots.find(({ sourceId: id }) => id === accessibilitySource.id).bytes,
+    );
+    assert.equal(registeredTimetable.scheduleAdmissionEvidence.snapshotId, dependentFixtures.timetableSnapshot.snapshotId);
+    assert.equal(registeredTimetable.scheduleAdmissionEvidence.capturedAt, dependentFixtures.timetableSnapshot.capturedAt);
+    assert.equal(registeredTimetable.scheduleAdmissionEvidence.freshUntil, dependentFixtures.timetableSnapshot.freshUntil);
+    assert.equal(registeredTimetable.scheduleAdmissionEvidence.rawSha256, dependentFixtures.timetableSnapshot.rawSha256);
+    assert.equal(registeredTimetable.scheduleAdmissionEvidence.rowsSha256, dependentFixtures.timetableSnapshot.rowsSha256);
+    assert.equal(registeredTimetable.scheduleAdmissionEvidence.topologySnapshotId, prepared.snapshotId);
+    assert.equal(registeredLedger.at(-1).snapshotId, prepared.snapshotId);
+    assert.equal(registeredLedger.at(-1).coverageCount, snapshot.stationNumbers.length);
+    assert.deepEqual(await readFile(path.join(authority.root, prepared.snapshotRelative)), snapshotBytes);
+  } finally {
+    if (prevTelemetry === undefined) delete process.env.SOURCE_FETCH_TELEMETRY_PATH;
+    else process.env.SOURCE_FETCH_TELEMETRY_PATH = prevTelemetry;
+  }
 });
 
 function governanceFor(source, now) {

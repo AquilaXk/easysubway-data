@@ -404,6 +404,8 @@ async function replayRetainedSnapshot(snapshot) {
   const replay = await collectDaejeonRouteTopology({
     serviceKey: "retained-replay",
     now: new Date(snapshot.observedAt),
+    replay: true,
+    recordTelemetry: false,
     fetchImpl: async (url) => {
       const response = snapshot.rawResponses[cursor++];
       const bytes = Buffer.from(response?.bytesBase64 ?? "", "base64");

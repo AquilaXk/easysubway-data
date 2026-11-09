@@ -308,6 +308,8 @@ async function replayRetainedSnapshot(snapshot, scope) {
     serviceKey: "retained-replay",
     stationScopes: scope,
     now: new Date(snapshot.capturedAt),
+    replay: true,
+    recordTelemetry: false,
     fetchImpl: async (url) => {
       const response = snapshot.rawResponses[cursor++];
       const bytes = Buffer.from(response?.bytesBase64 ?? "", "base64");

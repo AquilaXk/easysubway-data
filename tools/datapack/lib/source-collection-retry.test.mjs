@@ -606,7 +606,7 @@ test("validateCandidateJourneyGoldenDiffReport와 runCandidateJourneyGoldenDiff�
   }
 });
 
-test("withSourceCollectionRetry와 fetchBytesWithSourceRetry는 recordTelemetry=false일 때 계측 파일에 시도 줄을 기록하지 않는다 (#1699)", async (t) => {
+test("withSourceCollectionRetry와 fetchBytesWithSourceRetry는 recordTelemetry=false, replay=true, telemetry=false일 때 계측 파일에 시도 줄을 기록하지 않는다 (#1699, #1704)", async (t) => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "retry-no-telemetry-"));
   const telemetryPath = path.join(tempDir, "telemetry.jsonl");
   const prevTelemetry = process.env.SOURCE_FETCH_TELEMETRY_PATH;
@@ -618,15 +618,23 @@ test("withSourceCollectionRetry와 fetchBytesWithSourceRetry는 recordTelemetry=
   await writeFile(telemetryPath, "");
   process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
 
-  const { bytes } = await fetchBytesWithSourceRetry({
-    url: "https://example.test/replay",
-    fetchImpl: async () => new Response("replayed", { status: 200 }),
-    accept: "application/xml",
-    label: "Retained replay",
-    sourceId: "retained-replay-test",
-    recordTelemetry: false,
-    transportFailure: (err) => err,
-  });
-  assert.equal(bytes.toString("utf8"), "replayed");
+  for (const options of [{ recordTelemetry: false }, { replay: true }, { telemetry: false }]) {
+    const { bytes } = await fetchBytesWithSourceRetry({
+      url: "https://example.test/replay",
+      fetchImpl: async () => new Response("replayed", { status: 200 }),
+      accept: "application/xml",
+      label: "Retained replay",
+      sourceId: "retained-replay-test",
+      ...options,
+      transportFailure: (err) => err,
+    });
+    assert.equal(bytes.toString("utf8"), "replayed");
+    await withSourceCollectionRetry(async () => ({ response: new Response("ok", { status: 200 }) }), {
+      label: "Retained replay",
+      sourceId: "retained-replay-test",
+      url: "https://example.test/replay",
+      ...options,
+    });
+  }
   assert.equal(await readFile(telemetryPath, "utf8"), "");
 });

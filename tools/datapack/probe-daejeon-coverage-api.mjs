@@ -33,6 +33,9 @@ export async function probeDaejeonCoverageApi({
   sleepImpl,
   retryBudget,
   randomImpl,
+  recordTelemetry = true,
+  telemetry = true,
+  replay = false,
   now = new Date(),
 } = {}) {
   const operation = DAEJEON_COVERAGE_OPERATIONS[sourceId];
@@ -48,7 +51,7 @@ export async function probeDaejeonCoverageApi({
     sleepImpl,
     retryBudget,
     randomImpl,
-    recordTelemetry: key !== "retained-replay",
+    recordTelemetry: key !== "retained-replay" && recordTelemetry !== false && telemetry !== false && replay !== true,
   });
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
   const raw = responseBytes.toString("utf8");

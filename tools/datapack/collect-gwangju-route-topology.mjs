@@ -15,10 +15,14 @@ export async function collectGwangjuRouteTopology({
   sleepImpl = sleep,
   retryBudget,
   randomImpl,
+  recordTelemetry = true,
+  telemetry = true,
+  replay = false,
   now = new Date(),
   stationScope,
   onRawResponse = undefined,
 } = {}) {
+  const shouldRecordTelemetry = recordTelemetry !== false && telemetry !== false && replay !== true;
   if (onRawResponse !== undefined && typeof onRawResponse !== "function") {
     throw new Error("Gwangju route topology raw response callback mismatch");
   }
@@ -32,7 +36,7 @@ export async function collectGwangjuRouteTopology({
   for (const { providerStationId: stationId } of scopeInput) {
     const url = new URL(GWANGJU_ROUTE_TOPOLOGY_ENDPOINT);
     url.searchParams.set("station_id", String(stationId));
-    const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl);
+    const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl, shouldRecordTelemetry);
     if (!response.ok) throw new Error(`Gwangju route topology HTTP ${response.status}`);
     responses.push(sha256(bytes));
     // OCI 등록 시 재호출하지 않고 수집 당시 원문과 파생 topology를 함께 결속한다.
@@ -181,7 +185,7 @@ function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolv
 
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs, #1099, #1334).
 // 한도를 다 쓰면 마지막 응답(HTTP 오류)이나 전송 오류를 기존 오류로 드러낸다.
-function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
+function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl, recordTelemetry = true) {
   return fetchBytesWithSourceRetry({
     url,
     fetchImpl,
@@ -191,6 +195,7 @@ function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget, randomImpl) {
       const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";
       return new Error(`Gwangju route topology transport failure; code=${safeToken(String(code))}`);
     },
+    recordTelemetry,
     sleep: sleepImpl,
     budget: retryBudget,
     random: randomImpl,

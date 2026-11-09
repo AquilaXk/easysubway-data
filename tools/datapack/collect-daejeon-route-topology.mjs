@@ -19,6 +19,9 @@ export async function collectDaejeonRouteTopology({
   sleepImpl,
   retryBudget,
   randomImpl,
+  recordTelemetry = true,
+  telemetry = true,
+  replay = false,
   now = new Date(),
 } = {}) {
   normalizeDataGoKrServiceKey(serviceKey);
@@ -37,6 +40,9 @@ export async function collectDaejeonRouteTopology({
         sleepImpl,
         retryBudget,
         randomImpl,
+        recordTelemetry,
+        telemetry,
+        replay,
         now,
       });
       if (evidence.rowCount !== 1 || evidence.rows.length !== 1) {

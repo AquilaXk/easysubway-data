@@ -162,6 +162,46 @@ test("기본 실행기는 계측 파일 경로를 자식 collector에 넘겨 시
   assert.deepEqual(countTelemetryRequests(await readFile(telemetryFile)), { "child-source": 1 });
 });
 
+// #1704: register·glue 단계는 이미 수집된 스냅샷을 로컬에서 재생·결속할 뿐 실제 원천 네트워크를 호출하지 않는다.
+// SOURCE_FETCH_TELEMETRY_PATH를 자식 프로세스에 그대로 넘기면 오프라인 등록 재생까지 하루 호출 예산에 중복 집계된다.
+test("기본 실행기와 runSourceReverification은 register·glue 단계 자식 프로세스 환경에서 SOURCE_FETCH_TELEMETRY_PATH를 제외한다 (#1704)", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const operationRoot = path.join(root, "..", `op-telemetry-${path.basename(root)}`); t.after(() => rm(operationRoot, { recursive: true, force: true }));
+  await mkdir(operationRoot, { recursive: true });
+  await mkdir(path.join(root, "tools/datapack"), { recursive: true });
+  const telemetryModule = JSON.stringify(new URL("./lib/source-fetch-telemetry.mjs", import.meta.url).href);
+  await writeFile(
+    path.join(root, "tools/datapack/emit-step.mjs"),
+    `import { writeFile } from "node:fs/promises";\nimport { emitAttemptRecord } from ${telemetryModule};\nconst [sourceId, snapshotOut] = process.argv.slice(2);\nemitAttemptRecord({ sourceId, host: "example.test", attempt: 1, outcome: "success" });\nif (snapshotOut) await writeFile(snapshotOut, "{}\\n");\n`,
+  );
+  git(root, "add", "tools/datapack/emit-step.mjs");
+  git(root, "commit", "-q", "-m", "helper");
+  const telemetryFile = path.join(operationRoot, "telemetry.jsonl");
+  await writeFile(telemetryFile, "");
+  const env = { PATH: process.env.PATH, SOURCE_FETCH_TELEMETRY_PATH: telemetryFile };
+  const execute = defaultExecute(root, env);
+  await execute("emit-step.mjs", ["direct-register"], { kind: "register" });
+  await execute("emit-step.mjs", ["direct-glue"], { kind: "glue" });
+  assert.equal(await readFile(telemetryFile, "utf8"), "");
+
+  const steps = {
+    first: [
+      { id: "collect-step", kind: "collect", run: async (ctx) => { await ctx.execute("emit-step.mjs", ["collect-source"]); } },
+      { id: "glue-step", kind: "glue", run: async (ctx) => { await ctx.execute("emit-step.mjs", ["glue-source"]); } },
+      { id: "register-step", kind: "register", run: async (ctx) => { await ctx.execute("emit-step.mjs", ["register-source", path.join(ctx.repositoryRoot, "tools/datapack/sources/first.json")]); } },
+    ],
+  };
+  await runSourceReverification(options(root, {
+    operationRoot,
+    recipeIds: ["first"],
+    recipes: [meta("first")],
+    steps,
+    env,
+    execute,
+  }));
+  assert.deepEqual(countTelemetryRequests(await readFile(telemetryFile)), { "collect-source": 1 });
+});
+
 // #1122: 공급처 기대 관측이 바뀐 것은 전송 실패가 아니라 사람이 기대값을 고쳐야 풀리는 이상이다. 별도 코드로 드러나 판정이 같은 원인의 재수집을 건너뛴다.
 test("기대 관측 변경은 단계 종류와 상관없이 SOURCE_EXPECTATION_CHANGED로 분류하고, 다른 수집 실패는 SOURCE_FETCH_FAILED로 남는다 (#1122)", () => {
   const changed = "EXPECTED_OBSERVATION_CHANGED: line-8604048b6430 weekdayTrips 401";
