@@ -2131,6 +2131,9 @@
         "rolloverTripCount": 25,
         "contentSha256": "27a2afeef9f8f8c2224bf6f1f54e28b0c6dd4e10e2bab802a5e7f6a2dc41f50f",
         "destinationLabelNormalizedCount": 35
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "19484370942531dada75fdfe9a4b41b777004176375f62f9f8a7d01a84def56e"
       }
     },
     {
@@ -2225,6 +2228,9 @@
         "rolloverTripCount": 23,
         "contentSha256": "077fbc0d5186e19063e6082c2345417c1051d1d5fbc8d426f37f50a9b2e47ba0",
         "destinationLabelNormalizedCount": 0
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "b9ef1c0ac489049fcffd15dbde14ec73be44059c978bd7cc5b78e72c9769f1c7"
       }
     },
     {
@@ -2520,6 +2526,9 @@
             "officialNoticeUrl": "https://www.incheon.go.kr/IC010307/view?curPage=14&gosigbn=N&sno=66730"
           }
         ]
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "50b9250bd849cdb70a78d6101442107e3ba59a769645e74081c661d0a59c398e"
       }
     },
     {

@@ -341,9 +341,14 @@ test("추적 중인 정책은 KRIC 접근성 퇴역 원천 5건을 원문과 함
   const bytes = await readFile(path.join(root, "tools/datapack/source-governance-policy.json"));
   const policy = JSON.parse(bytes);
   const ids = RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS;
-  assert.deepEqual(policy.registrationLineage.addedSourceIds, ["molit-railway-transfer-movement"]);
-  assert.deepEqual(policy.registrationLineage.predecessorLineage.addedSourceIds, ["kric-station-escalator-detailed"]);
-  const lineage = policy.registrationLineage.predecessorLineage.predecessorLineage;
+  assert.deepEqual(policy.registrationLineage.addedSourceIds, [
+    "incheon-transit-station-info",
+    "incheon-line1-train-timetable",
+    "incheon-line2-train-timetable",
+  ]);
+  assert.deepEqual(policy.registrationLineage.predecessorLineage.addedSourceIds, ["molit-railway-transfer-movement"]);
+  assert.deepEqual(policy.registrationLineage.predecessorLineage.predecessorLineage.addedSourceIds, ["kric-station-escalator-detailed"]);
+  const lineage = policy.registrationLineage.predecessorLineage.predecessorLineage.predecessorLineage;
   assert.deepEqual(lineage.retiredSourceIds, ids);
   assert.deepEqual(lineage.retiredSources.map(({ source }) => source.sourceId), ids);
   assert.deepEqual(policy.sources.filter(({ sourceId }) => ids.includes(sourceId)), []);

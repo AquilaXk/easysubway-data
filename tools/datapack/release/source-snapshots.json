@@ -330902,5 +330902,131 @@
       "redactedRequestUrl": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2"
     },
     "snapshotStatus": "LOCKED"
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "incheon-transit-station-info",
+    "snapshotId": "incheon-transit-station-info-20261109",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-11-09T00:02:27.477Z",
+    "retrievedAt": "2026-11-09T00:02:27.477Z",
+    "observedAt": "2026-06-30T00:00:00.000Z",
+    "sourceUpdatedAt": "2026-06-30T00:00:00.000Z",
+    "provider": "인천교통공사",
+    "rowCount": 116,
+    "coverageCount": 60,
+    "rawSha256": "4fd138ac74d3e937b18762f0eb9b0013b5fc910380474dd0ef023affc2868d54",
+    "contentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-transit-station-info/20261109/8c730c525dba5fdc88632206c761c1d03c8f3f45e00d9d6a972704d0a02acbde.json",
+    "rawObjectSha256": "8c730c525dba5fdc88632206c761c1d03c8f3f45e00d9d6a972704d0a02acbde",
+    "byteSize": 65917,
+    "freshUntil": "2026-11-16T00:02:27.477Z",
+    "freshnessExpiresAt": "2026-11-16T00:02:27.477Z",
+    "rawRetentionExpiresAt": "2027-02-07T00:02:27.477Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "ddddd925ddb03d04024257de9208445e4fda3ef5cabca98a855de44ed1a34176",
+    "redactedRequestFingerprint": "92ffb4ac3a509e033b2e1a488647a2dc5e172694322e2c6ff07e67bc43f8ed54",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "diffSummary": null,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "50b9250bd849cdb70a78d6101442107e3ba59a769645e74081c661d0a59c398e"
+    },
+    "admissionRecordSha256s": [
+      {
+        "kind": "topologyAdmissionEvidence",
+        "sha256": "8a50d5bc03822044ea3e42b712e76f59fd5e868d38a69f3397169b09add6ffd3"
+      }
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "incheon-line1-train-timetable",
+    "snapshotId": "incheon-line1-train-timetable-20261109",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-11-09T00:02:38.244Z",
+    "retrievedAt": "2026-11-09T00:02:38.244Z",
+    "observedAt": "2025-04-12T00:00:00.000Z",
+    "sourceUpdatedAt": "2025-04-12T00:00:00.000Z",
+    "provider": "인천교통공사",
+    "rowCount": 574,
+    "coverageCount": 18392,
+    "rawSha256": "93cea8efe1937c525cbe95c655f69171baed9fc2643e72daef6de4a5a25b9234",
+    "contentSha256": "27a2afeef9f8f8c2224bf6f1f54e28b0c6dd4e10e2bab802a5e7f6a2dc41f50f",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-line1-train-timetable/20261109/42d930467f44fda6ee92da7e1b526ac9c47f00dcd089733c9f9d26c9b779d4a0.json",
+    "rawObjectSha256": "42d930467f44fda6ee92da7e1b526ac9c47f00dcd089733c9f9d26c9b779d4a0",
+    "byteSize": 748699,
+    "freshUntil": "2026-11-10T00:02:38.244Z",
+    "freshnessExpiresAt": "2026-12-09T00:02:38.244Z",
+    "rawRetentionExpiresAt": "2027-02-07T00:02:38.244Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "cd25f73524258c4517d55b155792f2da53b83be1fb6af341d4fe4f5b6b79537e",
+    "redactedRequestFingerprint": "fc197bdc8b8b641341aedbacaa459a7be0db5fbfb5616646f2db3fa28bf5b076",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "diffSummary": null,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "19484370942531dada75fdfe9a4b41b777004176375f62f9f8a7d01a84def56e"
+    },
+    "admissionRecordSha256s": [
+      {
+        "kind": "scheduleAdmissionEvidence",
+        "sha256": "d86326bf3f054fe1d497cb16e94b90e83d1c5095b286eb75f8fe99d8ecc881fe"
+      }
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "incheon-line2-train-timetable",
+    "snapshotId": "incheon-line2-train-timetable-20261109",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-11-09T00:02:38.244Z",
+    "retrievedAt": "2026-11-09T00:02:38.244Z",
+    "observedAt": "2025-06-30T00:00:00.000Z",
+    "sourceUpdatedAt": "2025-06-30T00:00:00.000Z",
+    "provider": "인천교통공사",
+    "rowCount": 840,
+    "coverageCount": 22506,
+    "rawSha256": "d30e28247de4620b81ef855e5f09bbfb516b0dafc1de165983c0164e75431b79",
+    "contentSha256": "077fbc0d5186e19063e6082c2345417c1051d1d5fbc8d426f37f50a9b2e47ba0",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-line2-train-timetable/20261109/de3dbdd6922db39d2782314964f8673a2d6cbbd053b2b2257e713496b7d39465.json",
+    "rawObjectSha256": "de3dbdd6922db39d2782314964f8673a2d6cbbd053b2b2257e713496b7d39465",
+    "byteSize": 926710,
+    "freshUntil": "2026-11-10T00:02:38.244Z",
+    "freshnessExpiresAt": "2026-12-09T00:02:38.244Z",
+    "rawRetentionExpiresAt": "2027-02-07T00:02:38.244Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "cd25f73524258c4517d55b155792f2da53b83be1fb6af341d4fe4f5b6b79537e",
+    "redactedRequestFingerprint": "b40f760b1445af079c1b9f782cde2d3574ef21b2db6225035a10477fd3e6849e",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "diffSummary": null,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "b9ef1c0ac489049fcffd15dbde14ec73be44059c978bd7cc5b78e72c9769f1c7"
+    },
+    "admissionRecordSha256s": [
+      {
+        "kind": "scheduleAdmissionEvidence",
+        "sha256": "acf9f1c01d54eaf7a7564d360e44322026b3f975b127f0dbb3eb83ea09f7c737"
+      }
+    ]
   }
 ]

@@ -293,6 +293,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1298",
       "title": "[Fix] ITX 수집 실패일에 같은 날 재수집이 막혀 데이터팩이 만료되는 문제"
     },
+    "data868": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/868",
+      "title": "[Chore] 인천 원천 3개를 원장·거버넌스에 정식 등록"
+    },
     "data870": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/870",
       "title": "[Refactor] 데이터 파이프라인 운영 방식 전환: 자동 갱신·개발/발행 게이트 분리·생성 산출물 축소"
@@ -770,6 +774,7 @@
     {"path":"tools/ci/current-capital-topology-registration-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1794},
     {"path":"tools/datapack/register-gwangju-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":85},
+    {"path":"tools/datapack/register-incheon-datapack-sources.test.mjs","semanticOwner":"data868","classes":["required-pr"],"durationMs":500},
     {"path":"tools/datapack/register-regional-accessibility.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":71},
     {"path":"tools/datapack/register-busan-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":71},
     {"path":"tools/datapack/materialize-incheon-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":28186},

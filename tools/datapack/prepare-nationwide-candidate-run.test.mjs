@@ -888,6 +888,82 @@ test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 
   await assert.rejects(resolveNationwideCandidateInputSnapshots(future), /nationwide candidate input is observed after the candidate clock for incheon-line1-train-timetable/);
 });
 
+test("인천 3개 원천 입력은 원장 LOCKED terminal head·약관 해시·내용 해시와 결속되고 어긋나면 실패한다", async () => {
+  const worktreeSelectionInputs = async () => {
+    const readWorktree = (relative) => readFile(path.join(root, relative));
+    const [sourceInventory, sourceSnapshots, fanIn, freshnessPolicy] = await Promise.all([
+      readWorktree("tools/datapack/source-inventory.json").then(JSON.parse),
+      readWorktree("tools/datapack/release/source-snapshots.json").then(JSON.parse),
+      pinnedRead("tools/datapack/release/current-five-region-source-fan-in.json").then(JSON.parse),
+      readWorktree("release/product-gates/datapack-freshness-sla.json").then(JSON.parse),
+    ]);
+    return {
+      sourceInventory,
+      sourceSnapshots,
+      fanIn,
+      freshnessPolicy,
+      readSourceBytes: (relative) => (
+        relative.startsWith("tools/datapack/sources/incheon-") ? readWorktree(relative) : pinnedRead(relative)
+      ),
+    };
+  };
+
+  const base = await worktreeSelectionInputs();
+  const selected = await resolveNationwideCandidateInputSnapshots(base);
+  for (const [key, sourceId] of [
+    ["incheonTopology", "incheon-transit-station-info"],
+    ["incheonLine1", "incheon-line1-train-timetable"],
+    ["incheonLine2", "incheon-line2-train-timetable"],
+  ]) {
+    const headId = validateLineage(base.sourceSnapshots).headsBySource[sourceId];
+    assert.ok(headId, `${sourceId} ledger head must exist`);
+    assert.equal(selected[key].snapshotId, headId, `${key} must match ledger head`);
+
+    // 1. 원장 행 누락 시 거부
+    const missingRow = await worktreeSelectionInputs();
+    missingRow.sourceSnapshots = missingRow.sourceSnapshots.filter((row) => row.sourceId !== sourceId);
+    await assert.rejects(
+      resolveNationwideCandidateInputSnapshots(missingRow),
+      new RegExp(`terminal snapshot head missing for ${sourceId}`),
+    );
+
+    // 2. 원장 head 분기(ambiguous) 시 거부
+    const forkedRow = await worktreeSelectionInputs();
+    const currentHead = forkedRow.sourceSnapshots.find((row) => row.snapshotId === headId);
+    forkedRow.sourceSnapshots.push({ ...currentHead, snapshotId: `${headId}-fork`, previousSnapshotId: null });
+    await assert.rejects(
+      resolveNationwideCandidateInputSnapshots(forkedRow),
+      new RegExp(`terminal snapshot head mismatch for ${sourceId}`),
+    );
+
+    // 3. 원장 행 상태가 LOCKED가 아니면 거부
+    const unlockedRow = await worktreeSelectionInputs();
+    unlockedRow.sourceSnapshots.find((row) => row.snapshotId === headId).snapshotStatus = "QUARANTINED";
+    await assert.rejects(
+      resolveNationwideCandidateInputSnapshots(unlockedRow),
+      new RegExp(`nationwide candidate input admission evidence does not match ledger head for ${sourceId}`),
+    );
+
+    // 4. 원장 contentSha256 불일치 시 거부
+    const mismatchedContent = await worktreeSelectionInputs();
+    mismatchedContent.sourceSnapshots.find((row) => row.snapshotId === headId).contentSha256 = "0".repeat(64);
+    await assert.rejects(
+      resolveNationwideCandidateInputSnapshots(mismatchedContent),
+      new RegExp(`nationwide candidate input admission evidence does not match ledger head for ${sourceId}`),
+    );
+
+    // 5. inventory licenseEvidenceHash 불일치 시 거부
+    const tamperedLicense = await worktreeSelectionInputs();
+    tamperedLicense.sourceInventory.sources.find(({ id }) => id === sourceId).admissionEvidence = {
+      licenseEvidenceHash: "f".repeat(64),
+    };
+    await assert.rejects(
+      resolveNationwideCandidateInputSnapshots(tamperedLicense),
+      new RegExp(`nationwide candidate input license evidence does not match inventory license for ${sourceId}`),
+    );
+  }
+});
+
 // #862: MOLIT 환승 이동 원천은 정책으로 유도한 freshUntil이 후보 시계 이전이면 만료로 실패한다.
 test("MOLIT 환승 이동 원천은 정책 신선도가 후보 시계 이전이면 만료로 실패한다(#862)", async () => {
   const readJson = async (relative) => JSON.parse((await pinnedRead(relative)).toString("utf8"));

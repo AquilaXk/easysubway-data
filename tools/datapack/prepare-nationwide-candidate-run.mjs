@@ -258,13 +258,15 @@ async function resolveLedgerSelectedInputSnapshots({
 }
 
 async function resolveAdmissionEvidenceInputSnapshots({
-  selected, sourceInventory, fanIn, freshnessPolicy, evaluatedAt, readSourceBytes,
+  selected, sourceInventory, sourceSnapshots, fanIn, freshnessPolicy, evaluatedAt, readSourceBytes,
 }) {
-  // 인천 3개는 원장 행·fan-in 선택이 없다(원장·거버넌스 등록은 QA 라이선스 검토가 필요한 후속 이슈).
-  // #862 결정 B: inventory admission evidence의 수집 시각에 정책 클래스(시간표 incheon_timetable_observation,
-  // station-info route_graph_topology)를 적용해 신선도를 유도하고 후보 시계와 비교한다.
+  // 인천 3개 원천은 원장 LOCKED terminal head·inventory admission evidence·정책 신선도·약관 해시를 함께 대조한다.
+  // 원천 등록 전 고정 입력 매니페스트(pinnedRead) 재현 시에만 등록 전 상태를 허용하고, 등록된 inventory나 원장 행이 있으면
+  // terminalHead·snapshotStatus·rawSha256·contentSha256·freshnessExpiresAt·licenseEvidenceHash 불일치를 모두 거부한다.
+  const registeredSourceIds = new Set(sourceSnapshots.map((row) => row?.sourceId).filter(Boolean));
   for (const [key, [sourceId, evidenceKey]] of Object.entries(ADMISSION_EVIDENCE_INPUTS)) {
-    const evidence = exactInventorySource(sourceInventory, sourceId)[evidenceKey];
+    const source = exactInventorySource(sourceInventory, sourceId);
+    const evidence = source[evidenceKey];
     const snapshotId = evidence?.snapshotId;
     if (typeof snapshotId !== "string" || snapshotId.length === 0) {
       throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId}`);
@@ -274,16 +276,33 @@ async function resolveAdmissionEvidenceInputSnapshots({
     if (Date.parse(capturedAt) > evaluatedAt) {
       throw new Error(`nationwide candidate input is observed after the candidate clock for ${sourceId}`);
     }
-    // admission evidence에는 원장의 retrievedAt이 없다. capturedAt이 수집(조회) 시각이므로 두 basisField에 같은 값을 쓴다.
     const freshnessExpiresAt = policyFreshUntil({
       policy: freshnessPolicy, sourceId, record: { capturedAt, retrievedAt: capturedAt }, evaluationAt: fanIn.evaluatedAt,
     });
     if (Date.parse(freshnessExpiresAt) <= evaluatedAt) {
       throw new Error(`nationwide candidate input is expired for ${sourceId}`);
     }
+    let head = null;
+    if (source.admissionEvidence !== undefined || registeredSourceIds.has(sourceId)) {
+      head = terminalHead(sourceId, sourceSnapshots);
+      const expectedTermsHash = sha256(canonicalJson(source.license));
+      if (source.admissionEvidence?.licenseEvidenceHash !== expectedTermsHash
+        || head.admissionEvidence?.licenseEvidenceHash !== expectedTermsHash) {
+        throw new Error(`nationwide candidate input license evidence does not match inventory license for ${sourceId}`);
+      }
+      if (head.snapshotStatus !== "LOCKED" || head.snapshotId !== snapshotId
+        || head.rawSha256 !== rawSha256 || head.contentSha256 !== evidence.contentSha256
+        || head.freshnessExpiresAt !== freshnessExpiresAt
+        || head.capturedAt !== capturedAt || head.retrievedAt !== capturedAt) {
+        throw new Error(`nationwide candidate input admission evidence does not match ledger head for ${sourceId}`);
+      }
+    }
+    const bytes = await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: head, readSourceBytes });
+    if (head !== null && JSON.parse(bytes).contentSha256 !== head.contentSha256) {
+      throw new Error(`nationwide candidate input content binding mismatch for ${sourceId}`);
+    }
     selected[key] = {
-      sourceId, snapshotId, path: snapshotPath, freshnessExpiresAt,
-      bytes: await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: null, readSourceBytes }),
+      sourceId, snapshotId, path: snapshotPath, freshnessExpiresAt, bytes,
     };
   }
 }
