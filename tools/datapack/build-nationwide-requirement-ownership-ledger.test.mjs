@@ -2,9 +2,20 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 
-import { buildNationwideRequirementOwnershipLedger, resolveNationwideRequirementOwner } from "./build-nationwide-requirement-ownership-ledger.mjs";
+import {
+  buildNationwideRequirementOwnershipLedger,
+  normalizeNationwideOwnershipRules,
+  resolveNationwideRequirementOwner,
+  SEOUL_METRO_DEMAND_REFERENCE_LINE_IDS,
+  validateDemandReferenceOwnershipContract,
+} from "./build-nationwide-requirement-ownership-ledger.mjs";
 import { buildCurrentFiveRegionSourceFanIn, canonicalCurrentFiveRegionSourceFanInJson } from "./build-current-five-region-source-fan-in.mjs";
-import { fixtureBytes, fixtureLedgerInput, independentFiveRegionFixture } from "./test-fixtures/five-region-source-input.mjs";
+import {
+  fiveRegionDemandReferenceFixture,
+  fixtureBytes,
+  fixtureLedgerInput,
+  independentFiveRegionFixture,
+} from "./test-fixtures/five-region-source-input.mjs";
 
 test("owner work selection preserves overrides without candidate or GO inputs", () => {
   const rules = [
@@ -121,3 +132,107 @@ test("#1289 reconstructs a fan-in that carries a forward admission without a gov
   });
   assert.equal(ledger.provenance.inputs.fanIn.fanInSha256, fanIn.fanInSha256);
 });
+
+test("#453 normalizes redundant same-issue ownership rules while preserving conflict-breaking overrides", () => {
+  const rules = [
+    { issue: 506, regionId: "busan", sourceDomain: "route_map_positions" },
+    { issue: 506, regionId: "busan", operatorId: "korail", sourceDomain: "route_map_positions" },
+    { issue: 453, operatorId: "seoul-metro", sourceDomain: "demand_reference" },
+    { issue: 458, operatorId: "korail", sourceDomain: "route_map_positions" },
+    { issue: 453, sourceDomain: "demand_reference" },
+    { issue: 458, sourceDomain: "route_map_positions" },
+  ];
+  const normalized = normalizeNationwideOwnershipRules(rules);
+  const demandRules = normalized.filter((rule) => rule.sourceDomain === "demand_reference");
+  assert.deepEqual(demandRules, [{ issue: 453, sourceDomain: "demand_reference" }]);
+
+  // busan+korail override must be preserved because issue 506 (regionId=busan) and issue 458 (operatorId=korail) conflict at specificity 2
+  assert.equal(
+    resolveNationwideRequirementOwner(normalized, {
+      regionId: "busan",
+      operatorId: "korail",
+      lineId: "busan-line-5",
+      sourceDomain: "route_map_positions",
+    }).issue,
+    506,
+  );
+  assert.equal(
+    resolveNationwideRequirementOwner(normalized, {
+      regionId: "capital",
+      operatorId: "seoul-metro",
+      lineId: "seoul-2",
+      sourceDomain: "demand_reference",
+    }).issue,
+    453,
+  );
+});
+
+test("#453 validates five-region 45-PK demand_reference ownership, seoul-metro 8-PK admission, and 37-PK contract gap", () => {
+  const input = fiveRegionDemandReferenceFixture();
+  const ledger = buildNationwideRequirementOwnershipLedger(input);
+  const contract = validateDemandReferenceOwnershipContract({
+    ledger,
+    targets: input.targets,
+    inventory: input.inventory,
+    ownership: input.ownership,
+  });
+
+  assert.equal(contract.issue, 453);
+  assert.equal(contract.sourceDomain, "demand_reference");
+  assert.equal(contract.releaseTier, "ENHANCEMENT");
+  assert.equal(contract.blocking, false);
+  assert.equal(contract.totalPkCount, 45);
+  assert.deepEqual(contract.regionCounts, {
+    busan: 6,
+    capital: 33,
+    daegu: 4,
+    daejeon: 1,
+    gwangju: 1,
+  });
+  assert.equal(contract.admittedSourceId, "seoul-subway-hourly-boarding");
+  assert.equal(contract.admittedPkCount, 8);
+  assert.deepEqual(
+    contract.admittedPks,
+    SEOUL_METRO_DEMAND_REFERENCE_LINE_IDS.map((lineId) => `capital:seoul-metro:${lineId}:demand_reference`),
+  );
+  assert.equal(contract.missingContractGapCount, 37);
+  assert.deepEqual(contract.canonicalRule, { issue: 453, sourceDomain: "demand_reference" });
+});
+
+test("#453 fails closed on demand_reference ownership, blocking flag, admitted PK, or contract gap drift", () => {
+  const input = fiveRegionDemandReferenceFixture();
+  const baseLedger = buildNationwideRequirementOwnershipLedger(input);
+
+  const blockingDrifted = structuredClone(baseLedger);
+  blockingDrifted.summary.enhancement.blocking = true;
+  assert.throws(
+    () => validateDemandReferenceOwnershipContract({ ledger: blockingDrifted, targets: input.targets, inventory: input.inventory, ownership: input.ownership }),
+    /enhancement\.blocking must be false/,
+  );
+
+  const ownerDrifted = structuredClone(baseLedger);
+  const firstDemandRow = ownerDrifted.rows.find((row) => row.sourceDomain === "demand_reference");
+  firstDemandRow.childOwner = { issue: 999, issueUrl: "https://github.com/AquilaXk/easysubway-data/issues/999" };
+  assert.throws(
+    () => validateDemandReferenceOwnershipContract({ ledger: ownerDrifted, targets: input.targets, inventory: input.inventory, ownership: input.ownership }),
+    /demand_reference owner drift/,
+  );
+
+  const seoulMetroDrifted = structuredClone(baseLedger);
+  const seoul2Row = seoulMetroDrifted.rows.find((row) => row.pk === "capital:seoul-metro:seoul-2:demand_reference");
+  seoul2Row.disposition.status = "MISSING";
+  seoul2Row.disposition.admittedSourceIds = [];
+  assert.throws(
+    () => validateDemandReferenceOwnershipContract({ ledger: seoulMetroDrifted, targets: input.targets, inventory: input.inventory, ownership: input.ownership }),
+    /expected INVENTORY_ADMITTED for capital:seoul-metro:seoul-2:demand_reference/,
+  );
+
+  const gapDrifted = structuredClone(baseLedger);
+  const busanRow = gapDrifted.rows.find((row) => row.regionId === "busan" && row.sourceDomain === "demand_reference");
+  busanRow.officialSourceFamily.reason = "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED";
+  assert.throws(
+    () => validateDemandReferenceOwnershipContract({ ledger: gapDrifted, targets: input.targets, inventory: input.inventory, ownership: input.ownership }),
+    /expected CONTRACT_GAP for MISSING demand_reference PK/,
+  );
+});
+

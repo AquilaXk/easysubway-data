@@ -77,6 +77,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/54",
       "title": "[CI][Data][P0] 3회 재빌드 parity evidence promotion consumer"
     },
+    "data87": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/87",
+      "title": "[Feat][Data][P1] 의미 이상(semantic anomaly)·분포 drift·release-diff 발행 게이트"
+    },
     "data96": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/96",
       "title": "[Feat][Data][P0] ITX current 3-service-day 수집·원자 admission handoff"
@@ -658,6 +662,7 @@
     {"path":"tools/datapack/decide-datapack-release.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":137},
     {"path":"tools/datapack/emit-artifact-components.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":29961},
     {"path":"tools/datapack/emit-station-catalog-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":836},
+    {"path":"tools/datapack/evaluate-artifact-semantic-drift.test.mjs","semanticOwner":"data87","classes":["required-pr"],"durationMs":40},
     {"path":"tools/datapack/evaluate-current-molit-transfer-freshness.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":25},
     {"path":"tools/datapack/evaluate-route-accessibility-edges.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":276},
     {"path":"tools/datapack/export-bundled-pack-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":10},

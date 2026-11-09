@@ -23,24 +23,203 @@ const INPUT_PATHS = {
 };
 const AXES = ["licenseLineage", "freshnessLineage", "admissionLineage", "artifactLineage", "runtimeLineage"];
 const ISSUE_URL = "https://github.com/AquilaXk/easysubway-data/issues/";
+const RULE_KEYS = Object.freeze(["regionId", "operatorId", "lineId", "sourceDomain"]);
+export const DEMAND_REFERENCE_DOMAIN = "demand_reference";
+export const DEMAND_REFERENCE_OWNER_ISSUE = 453;
+export const DEMAND_REFERENCE_SOURCE_ID = "seoul-subway-hourly-boarding";
+export const FIVE_REGION_IDS = Object.freeze(["busan", "capital", "daegu", "daejeon", "gwangju"]);
+export const SEOUL_METRO_DEMAND_REFERENCE_LINE_IDS = Object.freeze([
+  "line-15b3b8a93259",
+  "line-2b2d9eaa53d0",
+  "line-3f41718e0833",
+  "line-41a8c75ec9d8",
+  "line-472a81add377",
+  "line-80fc4d5350d4",
+  "seoul-2",
+  "seoul-4",
+]);
+const EXPECTED_FIVE_REGION_LINE_COUNTS = Object.freeze({
+  busan: 6,
+  capital: 33,
+  daegu: 4,
+  daejeon: 1,
+  gwangju: 1,
+});
+const DEMAND_REFERENCE_REQUIRED_FIELDS = Object.freeze([
+  "hourly_boarding_count",
+  "hourly_alighting_count",
+]);
 
 const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 const pk = (row) => [row.regionId, row.operatorId, row.lineId, row.sourceDomain].join(":");
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const owner = (issue) => ({ issue, issueUrl: `${ISSUE_URL}${issue}` });
-const matches = (rule, row) => ["regionId", "operatorId", "lineId", "sourceDomain"]
+const matches = (rule, row) => RULE_KEYS
   .every((key) => rule[key] === undefined || rule[key] === row[key]);
-const specificity = (rule) => ["regionId", "operatorId", "lineId", "sourceDomain"]
+const specificity = (rule) => RULE_KEYS
   .filter((key) => rule[key] !== undefined).length;
+const subsumesRule = (parent, child) => RULE_KEYS
+  .every((key) => parent[key] === undefined || parent[key] === child[key]);
+const compatibleRules = (left, right) => RULE_KEYS
+  .every((key) => left[key] === undefined || right[key] === undefined || left[key] === right[key]);
+
+export function normalizeNationwideOwnershipRules(rules) {
+  if (!Array.isArray(rules) || rules.length === 0) {
+    throw new Error("owner rules are required");
+  }
+  return rules.filter((rule) => {
+    const ruleSpecificity = specificity(rule);
+    const hasNonConflictedGeneralParent = rules.some((parent) =>
+      parent !== rule
+      && parent.issue === rule.issue
+      && subsumesRule(parent, rule)
+      && specificity(parent) < ruleSpecificity
+      && !rules.some((other) =>
+        other.issue !== rule.issue
+        && compatibleRules(other, rule)
+        && specificity(other) >= specificity(parent)));
+    return !hasNonConflictedGeneralParent;
+  });
+}
 
 export function resolveNationwideRequirementOwner(rules, row) {
-  const candidates = rules.filter((rule) => matches(rule, row));
+  const normalizedRules = normalizeNationwideOwnershipRules(rules);
+  const candidates = normalizedRules.filter((rule) => matches(rule, row));
   const maximum = Math.max(...candidates.map(specificity));
   const effective = candidates.filter((rule) => specificity(rule) === maximum);
   if (effective.length !== 1 || !Number.isInteger(effective[0]?.issue) || effective[0].issue < 1) {
     throw new Error(`unowned or ambiguous PK ${pk(row)}`);
   }
   return owner(effective[0].issue);
+}
+
+export function validateDemandReferenceOwnershipContract(ledgerOrInput, options = {}) {
+  const input = Array.isArray(ledgerOrInput?.rows)
+    ? { ledger: ledgerOrInput, ...options }
+    : (ledgerOrInput ?? {});
+  const { ledger, targets, inventory, ownership } = input;
+  if (!ledger || !Array.isArray(ledger.rows)) {
+    throw new Error("valid ownership ledger is required");
+  }
+  if (ledger.summary?.enhancement?.blocking !== false) {
+    throw new Error("enhancement.blocking must be false");
+  }
+  let canonicalRule = { issue: DEMAND_REFERENCE_OWNER_ISSUE, sourceDomain: DEMAND_REFERENCE_DOMAIN };
+  if (ownership?.ownerRules !== undefined) {
+    const normalizedRules = normalizeNationwideOwnershipRules(ownership.ownerRules);
+    const demandRules = normalizedRules.filter((rule) => rule.sourceDomain === DEMAND_REFERENCE_DOMAIN);
+    if (
+      demandRules.length !== 1
+      || demandRules[0].issue !== DEMAND_REFERENCE_OWNER_ISSUE
+      || demandRules[0].regionId !== undefined
+      || demandRules[0].operatorId !== undefined
+      || demandRules[0].lineId !== undefined
+    ) {
+      throw new Error("demand_reference ownership rule must normalize to single issue 453 rule");
+    }
+    [canonicalRule] = demandRules;
+  }
+
+  if (inventory?.sources !== undefined) {
+    const demandSource = inventory.sources.find((source) => source.id === DEMAND_REFERENCE_SOURCE_ID);
+    const scope = demandSource?.coverageScope;
+    const fields = demandSource?.fieldsProvided ?? [];
+    if (
+      !demandSource
+      || !scope?.regionIds?.includes("capital")
+      || !scope?.operatorIds?.includes("seoul-metro")
+      || !scope?.sourceDomains?.includes(DEMAND_REFERENCE_DOMAIN)
+      || !DEMAND_REFERENCE_REQUIRED_FIELDS.every((field) => fields.includes(field))
+    ) {
+      throw new Error("seoul-subway-hourly-boarding demand_reference inventory contract mismatch");
+    }
+  }
+
+  const demandRows = ledger.rows
+    .filter((row) => row.sourceDomain === DEMAND_REFERENCE_DOMAIN)
+    .sort((left, right) => compare(left.pk, right.pk));
+  if (demandRows.length !== 45) {
+    throw new Error(`expected 45 demand_reference PKs across 5 regions, got ${demandRows.length}`);
+  }
+  if (Array.isArray(targets?.activeLineScopes)) {
+    const expectedTargetPks = targets.activeLineScopes
+      .map((scope) => `${scope.regionId}:${scope.operatorId}:${scope.lineId}:${DEMAND_REFERENCE_DOMAIN}`)
+      .sort(compare);
+    const actualPks = demandRows.map((row) => row.pk);
+    if (JSON.stringify(actualPks) !== JSON.stringify(expectedTargetPks)) {
+      throw new Error("demand_reference PK set does not match activeLineScopes");
+    }
+  }
+
+  const regionCounts = Object.fromEntries(FIVE_REGION_IDS.map((regionId) => [regionId, 0]));
+  const expectedAdmittedPks = new Set(
+    SEOUL_METRO_DEMAND_REFERENCE_LINE_IDS.map((lineId) => `capital:seoul-metro:${lineId}:${DEMAND_REFERENCE_DOMAIN}`),
+  );
+  const admittedPks = [];
+  const missingPks = [];
+  const expectedIssueUrl = `${ISSUE_URL}${DEMAND_REFERENCE_OWNER_ISSUE}`;
+
+  for (const row of demandRows) {
+    if (!Object.hasOwn(regionCounts, row.regionId)) {
+      throw new Error(`unexpected regionId ${row.regionId} in ${row.pk}`);
+    }
+    regionCounts[row.regionId] += 1;
+    if (row.releaseTier !== "ENHANCEMENT") {
+      throw new Error(`demand_reference releaseTier drift for ${row.pk}`);
+    }
+    if (row.childOwner?.issue !== DEMAND_REFERENCE_OWNER_ISSUE || row.childOwner?.issueUrl !== expectedIssueUrl) {
+      throw new Error(`demand_reference owner drift for ${row.pk}`);
+    }
+    if (expectedAdmittedPks.has(row.pk)) {
+      if (
+        row.disposition?.status !== "INVENTORY_ADMITTED"
+        || JSON.stringify(row.disposition?.admittedSourceIds) !== JSON.stringify([DEMAND_REFERENCE_SOURCE_ID])
+      ) {
+        throw new Error(`expected INVENTORY_ADMITTED for ${row.pk}`);
+      }
+      admittedPks.push(row.pk);
+    } else {
+      if (
+        row.disposition?.status !== "MISSING"
+        || !Array.isArray(row.disposition?.admittedSourceIds)
+        || row.disposition.admittedSourceIds.length !== 0
+      ) {
+        throw new Error(`expected MISSING disposition for ${row.pk}`);
+      }
+      if (
+        row.officialSourceFamily?.state !== "PENDING"
+        || row.officialSourceFamily?.reason !== "CONTRACT_GAP"
+        || row.officialSourceFamily?.owner?.issue !== DEMAND_REFERENCE_OWNER_ISSUE
+        || row.lineage?.licenseLineage?.reason !== "CONTRACT_GAP"
+        || row.lineage?.freshnessLineage?.reason !== "CONTRACT_GAP"
+        || row.lineage?.artifactLineage?.reason !== "CONTRACT_GAP"
+      ) {
+        throw new Error(`expected CONTRACT_GAP for MISSING demand_reference PK ${row.pk}`);
+      }
+      missingPks.push(row.pk);
+    }
+  }
+
+  for (const regionId of FIVE_REGION_IDS) {
+    if (regionCounts[regionId] !== EXPECTED_FIVE_REGION_LINE_COUNTS[regionId]) {
+      throw new Error(`demand_reference region count drift for ${regionId}`);
+    }
+  }
+
+  return {
+    issue: DEMAND_REFERENCE_OWNER_ISSUE,
+    sourceDomain: DEMAND_REFERENCE_DOMAIN,
+    releaseTier: "ENHANCEMENT",
+    blocking: false,
+    totalPkCount: demandRows.length,
+    regionCounts,
+    admittedSourceId: DEMAND_REFERENCE_SOURCE_ID,
+    admittedPkCount: admittedPks.length,
+    admittedPks,
+    missingContractGapCount: missingPks.length,
+    missingPks,
+    canonicalRule,
+  };
 }
 
 function strictSourceCovers(source, row) {
@@ -151,7 +330,7 @@ function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) 
 export function buildNationwideRequirementOwnershipLedger(inputs) {
   const { targets, tally, inventory, ownership, inputBytes = {} } = inputs;
   if (targets.targetVersion !== tally.targetVersion || targets.targetVersion !== ownership.targetVersion) throw new Error("targetVersion drift");
-  if (!Array.isArray(ownership.ownerRules) || ownership.ownerRules.length === 0) throw new Error("owner rules are required");
+  const normalizedOwnerRules = normalizeNationwideOwnershipRules(ownership.ownerRules);
   const current = currentFanIn(inputs);
   const targetPks = new Set(targets.activeLineScopes.flatMap((scope) => targets.requiredSourceDomains
     .map((domain) => `${scope.regionId}:${scope.operatorId}:${scope.lineId}:${domain.id}`)));
@@ -160,7 +339,7 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
     const key = pk(tallyRow);
     if (!targetPks.has(key) || seen.has(key)) throw new Error(`tally PK drift ${key}`);
     seen.add(key);
-    const childOwner = resolveNationwideRequirementOwner(ownership.ownerRules, tallyRow);
+    const childOwner = resolveNationwideRequirementOwner(normalizedOwnerRules, tallyRow);
     const admittedSourceIds = [...(tallyRow.admittedSourceIds ?? [])].sort(compare);
     const admittedSources = [];
     // 일부 필드의 출처도 검증하되, 요구사항 전체의 MISSING 판정은 유지한다.
