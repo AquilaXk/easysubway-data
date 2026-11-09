@@ -73,6 +73,14 @@ test("원문 snapshot을 한 번 발행하고 inventory admission·원장 행·g
   assert.equal(source.admissionEvidence.approvedBy, "AquilaXk");
   assert.equal(source.admissionEvidence.issue, 876);
   assert.equal(source.admissionEvidence.rawObjectUri, `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`);
+  assert.equal(source.transferAdmissionEvidence.artifactKind, "transfer-source-admission-evidence");
+  assert.equal(source.transferAdmissionEvidence.approvalIssue, 876);
+  assert.equal(source.transferAdmissionEvidence.snapshotId, snapshotId);
+  assert.equal(source.transferAdmissionEvidence.snapshotPath, `tools/datapack/sources/${snapshotId}.json`);
+  assert.equal(source.transferAdmissionEvidence.snapshotFileSha256, sha(snapshotBytes));
+  assert.equal(source.transferAdmissionEvidence.durationRole, "OFFICIAL_MEASURED_DURATION");
+  assert.equal(source.transferAdmissionEvidence.freshUntil, "2027-10-02T02:00:00.000Z");
+  assert.equal(source.transferAdmissionEvidence.licenseEvidenceHash, source.admissionEvidence.licenseEvidenceHash);
   assert.equal(source.observedDataUpdatedAt, "2026-09-02");
 
   const ledger = await read("tools/datapack/release/source-snapshots.json");

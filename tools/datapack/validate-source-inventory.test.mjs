@@ -565,3 +565,49 @@ test("candidate productionUseAdmission이 승인된 admitted source는 inventory
     },
   );
 });
+
+test("#888 productionUseAllowed가 true인 원천은 도메인별 admission evidence를 필수로 포함해야 한다", async () => {
+  await runValidateInventory([]);
+
+  const inventory = await readWorktreeInventory();
+  const carDoorSource = inventory.sources.find(({ id }) => id === "seoul-metro-transfer-car-door-duration");
+  assert.ok(carDoorSource);
+  assert.equal(carDoorSource.productionUseAllowed, true);
+  assert.equal(carDoorSource.transferAdmissionEvidence?.artifactKind, "transfer-source-admission-evidence");
+  assert.equal(carDoorSource.transferAdmissionEvidence?.approvalIssue, 876);
+  assert.equal(carDoorSource.transferAdmissionEvidence?.durationRole, "OFFICIAL_MEASURED_DURATION");
+  assert.equal(carDoorSource.transferAdmissionEvidence?.snapshotId, carDoorSource.admissionEvidence?.snapshotId);
+
+  for (const [sourceId, deletedField, expectedError] of [
+    [
+      "seoul-metro-transfer-car-door-duration",
+      "transferAdmissionEvidence",
+      /seoul-metro-transfer-car-door-duration\.productionUseAllowed: true는 production admission evidence가 필요하다/,
+    ],
+    [
+      "busan-transportation-timetable",
+      "scheduleAdmissionEvidence",
+      /busan-transportation-timetable\.scheduleAdmissionEvidence: schedule_timetable production 승인은 scheduleAdmissionEvidence가 필요하다/,
+    ],
+    [
+      "seoul-metro-route-map-positions",
+      "routeMapAdmissionEvidence",
+      /seoul-metro-route-map-positions\.routeMapAdmissionEvidence: route_map_positions production 승인은 routeMapAdmissionEvidence가 필요하다/,
+    ],
+    [
+      "seoul-metro-accessibility",
+      "accessibilityAdmissionEvidence",
+      /seoul-metro-accessibility\.accessibilityAdmissionEvidence: accessibility_facilities production 승인은 admission evidence가 필요하다/,
+    ],
+  ]) {
+    await withMutatedInventory(
+      `${sourceId}-missing-${deletedField}`,
+      (doc) => {
+        delete doc.sources.find(({ id }) => id === sourceId)[deletedField];
+      },
+      async (validate) => {
+        await assert.rejects(validate(), expectedError);
+      },
+    );
+  }
+});

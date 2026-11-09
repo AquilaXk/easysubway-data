@@ -188,7 +188,11 @@ function validateSource(source, label) {
   if (source.registrationEvidence != null) {
     validateRegistrationEvidence(source.registrationEvidence, id);
   }
-  if (id === "seoul-metro-transfer-distance-duration" && source.requiredForProductionPack === true) {
+  validateDomainAdmissionEvidence(source, id);
+  if (
+    (id === "seoul-metro-transfer-distance-duration" && source.requiredForProductionPack === true)
+    || source.transferAdmissionEvidence != null
+  ) {
     validateTransferAdmissionEvidence(source);
   }
 
@@ -199,6 +203,87 @@ function validateSource(source, label) {
     assertString(field, `${id}.fieldsProvided[]`);
   }
   validateOfficialOdFareReferences(source, id);
+}
+
+export function validateDomainAdmissionEvidence(source, sourceId = source?.id ?? "source") {
+  const sourceDomains = new Set(Array.isArray(source.coverageScope?.sourceDomains)
+    ? source.coverageScope.sourceDomains : []);
+  const requiresTopology = sourceDomains.has("route_graph_topology");
+  const requiresSchedule = sourceDomains.has("schedule_timetable");
+  const requiresMembership = sourceDomains.has("station_line_membership");
+  const requiresRouteMap = sourceDomains.has("route_map_positions");
+  const requiresAccessibility = sourceDomains.has("accessibility_facilities");
+  const legacyAccessibilityEvidence = source.accessibilityAdmissionEvidence != null;
+  const registeredAccessibilityEvidence = source.registrationEvidence != null;
+  const hasQuotaProductionAdmission = source.requiredForProductionPack === false
+    && source.admissionEvidence?.artifactKind === "source-admission-pipeline-evidence-summary"
+    && source.admissionEvidence?.quotaEvidence?.productionUseAllowed === true
+    && source.admissionEvidence?.quotaEvidence?.unlockStatus === "unlocked";
+
+  if (source.productionUseAllowed === true && requiresTopology
+    && source.topologyAdmissionEvidence == null && source.capitalTopologyAdmissionEvidence == null) {
+    throw new Error(`${sourceId}.topologyAdmissionEvidence: route_graph_topology production 승인은 topologyAdmissionEvidence가 필요하다`);
+  }
+  if (source.productionUseAllowed === true && requiresSchedule
+    && source.scheduleAdmissionEvidence == null && source.retainedScheduleAdmissionEvidence == null) {
+    throw new Error(`${sourceId}.scheduleAdmissionEvidence: schedule_timetable production 승인은 scheduleAdmissionEvidence가 필요하다`);
+  }
+  if (source.productionUseAllowed === true && requiresMembership
+    && source.membershipAdmissionEvidence == null && source.membershipCoverageEvidence == null) {
+    throw new Error(`${sourceId}.membershipAdmissionEvidence: station_line_membership production 승인은 membershipAdmissionEvidence가 필요하다`);
+  }
+  if (source.productionUseAllowed === true && requiresRouteMap && source.routeMapAdmissionEvidence == null) {
+    throw new Error(`${sourceId}.routeMapAdmissionEvidence: route_map_positions production 승인은 routeMapAdmissionEvidence가 필요하다`);
+  }
+  if (source.productionUseAllowed === true && requiresAccessibility
+    && !legacyAccessibilityEvidence && !registeredAccessibilityEvidence && !hasQuotaProductionAdmission) {
+    throw new Error(`${sourceId}.accessibilityAdmissionEvidence: accessibility_facilities production 승인은 admission evidence가 필요하다`);
+  }
+  if (source.productionUseAllowed === true && !requiresTopology && !requiresSchedule && !requiresMembership
+    && !requiresRouteMap && !requiresAccessibility
+    && source.topologyAdmissionEvidence == null && source.scheduleAdmissionEvidence == null
+    && source.membershipAdmissionEvidence == null && source.routeMapAdmissionEvidence == null
+    && !legacyAccessibilityEvidence && !registeredAccessibilityEvidence
+    && source.capitalTopologyAdmissionEvidence == null
+    && source.retainedScheduleAdmissionEvidence == null
+    && source.membershipCoverageEvidence == null
+    && source.transferAdmissionEvidence == null
+    && !hasQuotaProductionAdmission) {
+    throw new Error(`${sourceId}.productionUseAllowed: true는 production admission evidence가 필요하다`);
+  }
+  if (source.topologyAdmissionEvidence != null && !requiresTopology) {
+    throw new Error(`${sourceId}.topologyAdmissionEvidence: route_graph_topology source domain이 필요하다`);
+  }
+  if (source.scheduleAdmissionEvidence != null && !requiresSchedule) {
+    throw new Error(`${sourceId}.scheduleAdmissionEvidence: schedule_timetable source domain이 필요하다`);
+  }
+  if (source.membershipAdmissionEvidence != null && !requiresMembership) {
+    throw new Error(`${sourceId}.membershipAdmissionEvidence: station_line_membership source domain이 필요하다`);
+  }
+  if (source.routeMapAdmissionEvidence != null && !requiresRouteMap) {
+    throw new Error(`${sourceId}.routeMapAdmissionEvidence: route_map_positions source domain이 필요하다`);
+  }
+  if (source.accessibilityAdmissionEvidence != null && !requiresAccessibility) {
+    throw new Error(`${sourceId}.accessibilityAdmissionEvidence: accessibility_facilities source domain이 필요하다`);
+  }
+  if (registeredAccessibilityEvidence && !requiresAccessibility) {
+    throw new Error(`${sourceId}.registrationEvidence: accessibility_facilities source domain이 필요하다`);
+  }
+  if (source.transferAdmissionEvidence != null && !sourceDomains.has("transfer_walk_duration")) {
+    throw new Error(`${sourceId}.transferAdmissionEvidence: transfer_walk_duration source domain이 필요하다`);
+  }
+  for (const field of [
+    "topologyAdmissionEvidence",
+    "scheduleAdmissionEvidence",
+    "membershipAdmissionEvidence",
+    "routeMapAdmissionEvidence",
+    "accessibilityAdmissionEvidence",
+    "registrationEvidence",
+  ]) {
+    if (source[field] != null && source.productionUseAllowed !== true) {
+      throw new Error(`${sourceId}.${field}: productionUseAllowed true가 필요하다`);
+    }
+  }
 }
 
 function validateRegistrationEvidence(evidence, sourceId) {
@@ -223,6 +308,10 @@ function validateRegistrationEvidence(evidence, sourceId) {
 }
 
 export function validateTransferAdmissionEvidence(source) {
+  if (source?.id === "seoul-metro-transfer-car-door-duration") {
+    validateMeasuredTransferAdmissionEvidence(source);
+    return;
+  }
   const evidence = source.transferAdmissionEvidence;
   const exact = ["artifactKind", "approvalIssue", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "snapshotId", "snapshotPath", "snapshotFileSha256", "capturedAt", "observedAt", "freshUntil", "sourceEffectiveDate", "rawSha256", "contentSha256", "schemaFingerprint", "metricsPath", "metricsArtifactSha256", "applicabilityPath", "applicabilityArtifactSha256", "rowCount", "physicalPairCount", "directedMetricCount", "officialMetricCount", "derivedReciprocalMetricCount", "stationLineCount", "applicableStationLineCount", "notApplicableStationLineCount", "durationRole", "licenseEvidenceHash"];
   if (!evidence || Object.keys(evidence).length !== exact.length || exact.some((key) => !(key in evidence))
@@ -238,6 +327,33 @@ export function validateTransferAdmissionEvidence(source) {
   const approvedAt = canonicalUtcInstant(evidence.approvedAt, "transfer.approvedAt");
   const freshUntil = canonicalUtcInstant(evidence.freshUntil, "transfer.freshUntil");
   if (capturedAt !== observedAt || observedAt > approvedAt || approvedAt >= freshUntil) throw new Error("transfer admission evidence time ordering mismatch");
+}
+
+function validateMeasuredTransferAdmissionEvidence(source) {
+  const evidence = source.transferAdmissionEvidence;
+  const admission = source.admissionEvidence;
+  const exact = ["artifactKind", "approvalIssue", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "snapshotId", "snapshotPath", "snapshotFileSha256", "capturedAt", "observedAt", "freshUntil", "sourceEffectiveDate", "rawSha256", "contentSha256", "schemaFingerprint", "rowCount", "durationRole", "licenseEvidenceHash"];
+  if (!evidence || Object.keys(evidence).length !== exact.length || exact.some((key) => !(key in evidence))
+    || evidence.artifactKind !== "transfer-source-admission-evidence" || evidence.approvalIssue !== 876
+    || evidence.decision !== "APPROVED" || evidence.approvedBy !== "AquilaXk" || evidence.productionUseAllowed !== true
+    || evidence.observedAt !== evidence.capturedAt || !Number.isSafeInteger(evidence.rowCount) || evidence.rowCount < 1
+    || evidence.durationRole !== "OFFICIAL_MEASURED_DURATION"
+    || evidence.snapshotId !== admission?.snapshotId || evidence.rawSha256 !== admission?.rawSha256
+    || evidence.schemaFingerprint !== admission?.schemaFingerprint || evidence.licenseEvidenceHash !== admission?.licenseEvidenceHash
+    || evidence.approvedBy !== admission?.approvedBy || evidence.approvedAt !== admission?.approvedAt
+    || evidence.decision !== admission?.decision || evidence.approvalIssue !== admission?.issue) {
+    throw new Error("transfer admission evidence contract mismatch");
+  }
+  assertDate(evidence.sourceEffectiveDate, "transfer.sourceEffectiveDate");
+  for (const key of ["snapshotFileSha256", "rawSha256", "contentSha256", "schemaFingerprint", "licenseEvidenceHash"]) assertSha256(evidence[key], `transfer.${key}`);
+  if (evidence.snapshotId !== `${source.id}-${evidence.snapshotFileSha256}` || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) {
+    throw new Error("transfer admission evidence snapshot identity mismatch");
+  }
+  const capturedAt = canonicalUtcInstant(evidence.capturedAt, "transfer.capturedAt");
+  const observedAt = canonicalUtcInstant(evidence.observedAt, "transfer.observedAt");
+  const approvedAt = canonicalUtcInstant(evidence.approvedAt, "transfer.approvedAt");
+  const freshUntil = canonicalUtcInstant(evidence.freshUntil, "transfer.freshUntil");
+  if (capturedAt !== observedAt || approvedAt > observedAt || observedAt >= freshUntil) throw new Error("transfer admission evidence time ordering mismatch");
 }
 
 // #872 S2: 범위 확대 근거는 #872 D2(QA 승인 2026-10-01)·D4다. 개수는 고정 상수가 아니라 서로의 관계로 검사하고,
@@ -261,13 +377,29 @@ function canonicalUtcInstant(value, label) {
 }
 
 export async function validateProductionTransferArtifacts(inventory, { repositoryRoot = process.cwd() } = {}) {
-  const source = inventory?.sources?.find(({ id }) => id === "seoul-metro-transfer-distance-duration");
-  if (!source || source.requiredForProductionPack !== true) return;
-  const evidence = source.transferAdmissionEvidence;
   const stableJson = async (relative, label) => {
     const entry = await readStableRegularFile(path.resolve(repositoryRoot, relative), label);
     try { return { bytes: entry.bytes, value: JSON.parse(entry.bytes) }; } catch { throw new Error(`${label} is invalid JSON`); }
   };
+  const measuredSource = inventory?.sources?.find(({ id }) => id === "seoul-metro-transfer-car-door-duration");
+  if (measuredSource && measuredSource.productionUseAllowed === true && measuredSource.transferAdmissionEvidence != null) {
+    const measuredEvidence = measuredSource.transferAdmissionEvidence;
+    const measuredSnapshot = await stableJson(measuredEvidence.snapshotPath, "measured transfer snapshot artifact");
+    if (sha256(measuredSnapshot.bytes) !== measuredEvidence.snapshotFileSha256
+      || measuredSnapshot.value.sourceId !== measuredSource.id
+      || measuredSnapshot.value.capturedAt !== measuredEvidence.capturedAt
+      || measuredSnapshot.value.observedAt !== measuredEvidence.observedAt
+      || measuredSnapshot.value.sourceEffectiveDate !== measuredEvidence.sourceEffectiveDate
+      || measuredSnapshot.value.rawSha256 !== measuredEvidence.rawSha256
+      || measuredSnapshot.value.contentSha256 !== measuredEvidence.contentSha256
+      || measuredSnapshot.value.schemaFingerprint !== measuredEvidence.schemaFingerprint
+      || measuredSnapshot.value.rowCount !== measuredEvidence.rowCount) {
+      throw new Error("measured transfer snapshot artifact identity mismatch");
+    }
+  }
+  const source = inventory?.sources?.find(({ id }) => id === "seoul-metro-transfer-distance-duration");
+  if (!source || source.requiredForProductionPack !== true) return;
+  const evidence = source.transferAdmissionEvidence;
   const [snapshot, metrics, applicability] = await Promise.all([
     stableJson(evidence.snapshotPath, "transfer snapshot artifact"),
     stableJson("tools/datapack/release/current-transfer-topology-metrics.json", "transfer metrics artifact"),
