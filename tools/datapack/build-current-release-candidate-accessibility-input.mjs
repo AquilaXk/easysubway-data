@@ -54,7 +54,7 @@ const TRANSFER_EDGE_TYPES = new Set(["IN_STATION_TRANSFER", "OUT_OF_STATION_TRAN
 const ACCESS_EDGE_TYPES = new Set(["ENTRY", "EXIT"]);
 const ROUTE_EDGE_TYPES = new Set(["RIDE", ...TRANSFER_EDGE_TYPES]);
 const AUTHORITY_EDGE_TYPES = TRANSFER_EDGE_TYPES;
-const MATERIALIZATION_DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
+const MATERIALIZATION_DOMAINS = ["FACILITY", "TRANSFER"];
 
 export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   validateInputBytes(input);
@@ -266,7 +266,7 @@ function validateAuthorityPayload(payload) {
     for (const cell of edge.requiredCells) {
       exact(cell, ["stationId", "lineId", "domain", "state", "rowSha256"], "authority cell");
       const key = `${cell.stationId}:${cell.lineId}:${cell.domain}`;
-      if (cells.has(key) || !["FACILITY", "EXIT", "TRANSFER"].includes(cell.domain)
+      if (cells.has(key) || !["FACILITY", "TRANSFER"].includes(cell.domain)
         || !CLOSED_STATES.has(cell.state) || !/^[a-f0-9]{64}$/u.test(cell.rowSha256)) {
         throw new Error("authority required cell mismatch");
       }
@@ -291,18 +291,17 @@ function validateAuthorityEdgeCountKeys(edgeCounts) {
   if (!authorityEdgeTypeSet(counts)) throw new Error("authority edge counts shape mismatch");
 }
 
-// 환승 1종 이상이 있어야 하고, 모르는 간선 종류는 받지 않는다. ENTRY/EXIT가 있으면 명시적으로 실패한다(#873).
+// 환승 1종 이상이 있어야 하고, 모르는 간선 종류는 받지 않는다. ENTRY/EXIT가 있으면 명시적으로 실패한다(#873, #866).
 function authorityEdgeTypeSet(counts) {
   const keys = Object.keys(counts);
   if (keys.some((key) => ACCESS_EDGE_TYPES.has(key))) {
-    throw new Error("nationwide authority must not contain ENTRY/EXIT edges");
+    throw new Error("release-candidate authority must not contain ENTRY/EXIT edges");
   }
   return keys.some((key) => TRANSFER_EDGE_TYPES.has(key))
     && keys.every((key) => AUTHORITY_EDGE_TYPES.has(key));
 }
 
-// 전국 후보 판정 함수다. #866 PR-C로 authority·route 검증은 후보 id와 무관하게 ENTRY/EXIT를 거부하므로 이 모듈은
-// 쓰지 않는다. validate-datapack의 청구 역-노선 존재성 legacy 판정(--legacy-fixture-production)만 쓰며, 그 정리는 PR-D(#866)에서 한다.
+// 전국 후보 판정 함수다. validate-datapack의 전국 출시 범위 시간표 0건 차단 게이트(#900, #1262)에서 사용한다.
 export function isNationwideCandidateId(candidateId) {
   return typeof candidateId === "string" && candidateId.startsWith("nationwide-candidate");
 }
@@ -462,7 +461,7 @@ function validateRoute(route, stationLineInput, routeStationIndex) {
   const routeEdges = validateRouteEdgeShapes(route.routeEdges);
   const counts = Object.keys(edgeTypeCounts(routeEdges));
   if (counts.some((type) => ACCESS_EDGE_TYPES.has(type))) {
-    throw new Error("nationwide route-edge input must not contain ENTRY/EXIT edges");
+    throw new Error("route-edge input must not contain ENTRY/EXIT edges");
   }
   if (!counts.includes("RIDE")
     || !counts.some((type) => TRANSFER_EDGE_TYPES.has(type))

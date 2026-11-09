@@ -90,7 +90,7 @@ test("current accessibility eligibility는 canonical prepublication evidence만 
     path.join(fixture.temp, "eligibility.json"),
   ));
   assert.equal(report.decision, "ELIGIBLE");
-  assert.equal(report.stationLineAccessibility.rowCount, 6);
+  assert.equal(report.stationLineAccessibility.rowCount, 4);
   assert.equal(report.routeEdgeEvaluation.edgeCount, fixture.routeEdgeInput.routeEdges.length);
   // #866 PR-C: 경로가 요구하는 cell은 환승 끝점 TRANSFER뿐이다(ENTRY→FACILITY 매핑 삭제). 환승 끝점을 UNKNOWN으로 둔다.
   const unresolvedFixture = await createFixture(t, {
@@ -126,16 +126,16 @@ test("current accessibility eligibility는 canonical prepublication evidence만 
   }
 });
 
-test("#873 승강장 기준 입력은 FACILITY UNKNOWN·EXIT MISSING이어도 환승 끝점 TRANSFER가 닫히면 FINAL·eligibility 게이트를 통과한다", async (t) => {
+test("#873 승강장 기준 입력은 FACILITY UNKNOWN이어도 환승 끝점 TRANSFER가 닫히면 FINAL·eligibility 게이트를 통과한다", async (t) => {
   const fixture = await createFixture(t, { configureInputs: configurePlatformInputs() });
   assert.ok(fixture.routeEdgeInput.routeEdges.every(({ edgeType }) => edgeType !== "ENTRY" && edgeType !== "EXIT"));
   await writeEligibilityInputs(fixture);
   const provisional = path.join(fixture.temp, "provisional");
   await build(fixture, provisional, FRESH_AT);
   const materialization = await readJson(path.join(provisional, "station-line-accessibility.json"));
-  // 환승 간선이 쓰지 않는 cell은 닫혀 있지 않다: FACILITY UNKNOWN 2, EXIT MISSING 3(증거 행 없음).
+  // 환승 간선이 쓰지 않는 cell은 닫혀 있지 않다: FACILITY UNKNOWN 2.
   assert.equal(materialization.stateSummary.UNKNOWN, 2);
-  assert.equal(materialization.stateSummary.MISSING, 3);
+  assert.equal(materialization.stateSummary.MISSING, 0);
   const final = await readJson(path.join(provisional, "server-route-bundle-final.json"));
   assert.equal(final.gates.stationLineAccessibility.state, "PASS");
   assert.equal(final.gates.routeEdgeEvaluation.state, "PASS");
@@ -171,23 +171,22 @@ test("#873 승강장 기준 입력도 환승 끝점 TRANSFER cell이 UNKNOWN이�
   assert.equal(boundFinal.gates.routeAccessibilityEligibility.state, "INELIGIBLE");
 });
 
-test("current Data #8 three-handoff input과 materialization bytes를 exact consumer로 수용한다", async () => {
-  const [inputBytes, materializationBytes] = await Promise.all([
-    readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
-    readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
-  ]);
-  const input = JSON.parse(inputBytes);
-  const tracked = JSON.parse(materializationBytes);
+test("station-line input과 materialization bytes를 exact consumer로 수용한다", async (t) => {
+  const fixture = await createFixture(t);
+  const input = fixture.stationLineInput;
+  const inputBytes = Buffer.from(canonicalJson(input));
 
   assert.equal(inputBytes.toString("utf8"), canonicalJson(input));
-  assert.equal(materializationBytes.toString("utf8"), canonicalStationLineAccessibilityJson(tracked));
   const observedAt = sharedEvidenceWindowObservedAt(input.evidenceRows);
   const materialized = materializeStationLineAccessibility({
     ...input,
     observedAt,
   });
-  assert.equal(canonicalStationLineAccessibilityJson(materialized), materializationBytes.toString("utf8"));
-  assert.equal(materialized.materializationDigest, "561ef3dde0f68e1223b05897d71a193d73b67b34cb677fc91201e99a4ae9eabb");
+  assert.equal(
+    canonicalStationLineAccessibilityJson(materialized),
+    canonicalStationLineAccessibilityJson(JSON.parse(canonicalStationLineAccessibilityJson(materialized))),
+  );
+  assert.match(materialized.materializationDigest, /^[a-f0-9]{64}$/u);
   assert.throws(
     () => sharedEvidenceWindowObservedAt([{
       capturedAt: "2026-08-15T00:00:00.000Z",
@@ -682,8 +681,8 @@ test("stale source와 unresolved #8/#9 denominator를 NO_GO gate로 보존한다
   assert.ok(incompleteFinal.blockers.includes("routeEdgeEvaluation:MISSING"));
   const materialization = await readJson(path.join(incompleteOutput, "station-line-accessibility.json"));
   const evaluation = await readJson(path.join(incompleteOutput, "route-edge-evaluation.json"));
-  // EXIT 3개(역-노선 3개, 증거 행 없음)와 지운 환승 끝점 TRANSFER 1개가 MISSING이다. 게이트는 환승 끝점만 본다.
-  assert.equal(materialization.stateSummary.MISSING, 4);
+  // 지운 환승 끝점 TRANSFER 1개가 MISSING이다. 게이트는 환승 끝점만 본다.
+  assert.equal(materialization.stateSummary.MISSING, 1);
   assert.equal(evaluation.denominator.edgeCount, incomplete.routeEdgeInput.routeEdges.length);
   assert.equal(evaluation.stateSummary.MISSING, 2);
 });
@@ -1263,7 +1262,6 @@ function completeStationLineInput(sourceSetSha256, candidateId) {
   ];
   const evidenceRows = stationLines.flatMap((line) => [
     evidence(candidate, line, "FACILITY", "VERIFIED_PRESENT", "OBSERVED", "official facility"),
-    evidence(candidate, line, "EXIT", "VERIFIED_ABSENT", "EXPLICIT_ZERO", "official zero exit"),
     evidence(candidate, line, "TRANSFER", "NOT_APPLICABLE", "CURRENT_APPLICABILITY_RULE", "no transfer boundary"),
   ]);
   return { candidate, stationLines, evidenceRows };

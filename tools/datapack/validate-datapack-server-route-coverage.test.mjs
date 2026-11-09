@@ -115,8 +115,8 @@ test("authority edge/cell/candidate/provenance drift는 canonical hash를 다시
     ["edge denominator", (value) => { value.edges.pop(); }, /denominator|coverage/i],
     ["환승 끝점 UNKNOWN", (value) => { value.edges[transferIndex(value)].requiredCells[0].state = "UNKNOWN"; }, /cell|state/i],
     ["환승 cell 누락", (value) => { value.edges[transferIndex(value)].requiredCells.pop(); }, /required cell denominator/i],
-    ["전국 ENTRY 간선 추가", (value) => { addAuthorityEdge(value, edge("ENTRY", 0)); }, /nationwide authority must not contain ENTRY\/EXIT edges/],
-    ["전국 EXIT 간선 추가", (value) => { addAuthorityEdge(value, edge("EXIT", 0)); }, /nationwide authority must not contain ENTRY\/EXIT edges/],
+    ["전국 ENTRY 간선 추가", (value) => { addAuthorityEdge(value, edge("ENTRY", 0)); }, /release-candidate authority must not contain ENTRY\/EXIT edges/],
+    ["전국 EXIT 간선 추가", (value) => { addAuthorityEdge(value, edge("EXIT", 0)); }, /release-candidate authority must not contain ENTRY\/EXIT edges/],
     ["cell endpoint", (value) => { value.edges[transferIndex(value)].requiredCells[0].lineId = "seoul-4"; }, /cell endpoint/i],
     ["route hash", (value) => { value.edges[0].routeEdgeSha256 = "0".repeat(64); }, /route edge hash/i],
     ["candidate", (value) => { value.candidate.sourceSetSha256 = "0".repeat(64); }, /candidate|binding/i],
@@ -154,8 +154,7 @@ test("#873 coverage는 환승 필수 쌍만 요구하고, 환승 coverage가 빠
   assert.equal(isAuthorizedServerRouteCoverageGap({ ...args, edgeRows: withoutTransferEdges }), false);
 });
 
-// #866 PR-C: 예전에는 수도권 후보 id authority가 ENTRY·EXIT를 증거 cell 없이 열거할 수 있었다(둘 다 있거나 둘 다 없음).
-// 이제 후보 id와 무관하게 ENTRY/EXIT가 하나라도 있으면 파싱에서 명시적으로 실패한다.
+// #866 PR-C/PR-D: 후보 id와 무관하게 ENTRY/EXIT가 하나라도 있으면 파싱에서 범위 중립 문구로 명시적으로 실패한다.
 test("#866 PR-C authority는 후보 id와 무관하게 ENTRY/EXIT 간선을 거부한다", () => {
   for (const id of ["capital", "nationwide"]) {
     const shape = { id, transfers: 2, outOfStation: 0 };
@@ -165,13 +164,12 @@ test("#866 PR-C authority는 후보 id와 무관하게 ENTRY/EXIT 간선을 거�
       for (const edgeType of edgeTypes) addAuthorityEdge(report, edge(edgeType, 0));
       reseal(report);
       assert.throws(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(report))),
-        /nationwide authority must not contain ENTRY\/EXIT edges/, `${id} ${edgeTypes.join("+")}`);
+        /release-candidate authority must not contain ENTRY\/EXIT edges/, `${id} ${edgeTypes.join("+")}`);
     }
   }
 });
 
-// #873 리뷰 F1: ENTRY coverage가 함께 확인하던 청구 역-노선 존재성을 승강장 기준으로 옮긴다.
-// 전국 팩은 RIDE·환승 간선 끝점만 인정하고, legacy(비전국) 팩만 ENTRY/EXIT 끝점도 인정한다(PR-D(#866)에서 제거).
+// #873 리뷰 F1 / #866 PR-D: 청구 역-노선 존재성은 모든 팩에서 승강장 기준(RIDE·환승 간선 끝점)만 인정한다.
 function presenceRows() {
   const pack = { id: "nationwide", version: "1" };
   const stationLineRows = [
@@ -186,64 +184,43 @@ function presenceRows() {
   return { pack, stationLineRows, edgeRows };
 }
 
-test("#873 F1 전국 팩은 청구 역-노선이 RIDE·환승 간선 끝점이면 통과하고 아니면 실패한다", () => {
+test("#873 F1 청구 역-노선은 RIDE·환승 간선 끝점이면 통과하고 아니면 실패한다", () => {
   const { pack, stationLineRows, edgeRows } = presenceRows();
-  assert.doesNotThrow(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows, nationwide: true }));
+  assert.doesNotThrow(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows }));
   // RIDE를 빼면 station-b:line-1은 어떤 간선 끝점도 아니다.
   assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({
-    pack, stationLineRows, edgeRows: edgeRows.filter(({ edge_type: type }) => type !== "RIDE"), nationwide: true,
+    pack, stationLineRows, edgeRows: edgeRows.filter(({ edge_type: type }) => type !== "RIDE"),
   }), /claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
   // ITX 급행 노드(:EXPRESS)는 ITX RIDE일 때만 그 승강장 노드로 인정한다.
   const itxOnly = [{ edge_type: "RIDE", from_node_id: "station-a:line-1:EXPRESS", to_node_id: "station-b:line-1:EXPRESS", service_class: "ITX_CHEONGCHUN", service_pattern: "EXPRESS" }, edgeRows[1]];
-  assert.doesNotThrow(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: itxOnly, nationwide: true }));
+  assert.doesNotThrow(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: itxOnly }));
   const fakeItx = [{ ...itxOnly[0], service_class: "SUBWAY", service_pattern: "LOCAL" }, edgeRows[1]];
-  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: fakeItx, nationwide: true }),
+  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: fakeItx }),
     /claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
 });
 
-test("#873 F1 전국 팩에서 ENTRY/EXIT로만 존재하는 청구 역-노선은 실패하고, legacy 팩만 인정한다", () => {
+test("#873 F1 / #866 PR-D ENTRY/EXIT로만 존재하는 청구 역-노선은 팩 id와 무관하게 실패한다", () => {
   const { pack, stationLineRows, edgeRows } = presenceRows();
   const accessOnly = [
     edgeRows[1],
     { edge_type: "ENTRY", from_node_id: "station-b", to_node_id: "station-b:line-1", service_class: "SUBWAY", service_pattern: "" },
     { edge_type: "EXIT", from_node_id: "station-b:line-1", to_node_id: "station-b", service_class: "SUBWAY", service_pattern: "" },
   ];
-  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: accessOnly, nationwide: true }),
-    /claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
-  assert.doesNotThrow(() => assertClaimedStationLinesHaveRouteEndpoints({
-    pack: { id: "capital", version: "1" }, stationLineRows, edgeRows: accessOnly, nationwide: false,
-  }));
-  // legacy 팩도 어떤 간선 끝점도 아니면 실패한다.
+  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: accessOnly }),
+    /nationwide@1 claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
   assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({
-    pack: { id: "capital", version: "1" }, stationLineRows, edgeRows: [edgeRows[1]], nationwide: false,
+    pack: { id: "capital", version: "1" }, stationLineRows, edgeRows: accessOnly,
   }), /capital@1 claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
-  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows }), /nationwide flag is required/);
 });
 
-// #873 리뷰 후속(메인 결정 (a)): provenance가 빠졌다고 legacy(약한 경로)로 내려가지 않는다.
-// legacy 판정은 provenance 후보 id가 legacy이거나, fixture 빌드 legacy 팩에 --legacy-fixture-production을 명시한 경우뿐이다.
-test("#873 --require-production은 provenance 또는 명시 legacy 플래그 없이 실패한다", () => {
-  const legacyProvenance = { candidateId: "capital-pilot-candidate-20260816" };
+test("#873 / #866 PR-D resolveRoutePresenceScope는 전국 후보 provenance 여부만 판별한다", () => {
+  const nonNationwideProvenance = { candidateId: "capital-pilot-candidate-20260816" };
   const nationwideProvenance = { candidateId: "nationwide-candidate-20261001-seq123" };
-  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: nationwideProvenance, legacyFixtureProduction: false, nationwideArtifact: true }), { nationwide: true });
-  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: legacyProvenance, legacyFixtureProduction: false, nationwideArtifact: false }), { nationwide: false });
-  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: null, legacyFixtureProduction: true, nationwideArtifact: false }), { nationwide: false });
-  // 플래그 없음 + provenance 없음 + --require-production
-  assert.throws(() => resolveRoutePresenceScope({ requireProduction: true, provenance: null, legacyFixtureProduction: false, nationwideArtifact: false }),
-    /--require-production requires server route coverage provenance/);
-  // 플래그 + provenance
-  assert.throws(() => resolveRoutePresenceScope({ requireProduction: true, provenance: legacyProvenance, legacyFixtureProduction: true, nationwideArtifact: false }),
-    /--legacy-fixture-production cannot be combined with server route coverage provenance/);
-  // 플래그 + 전국 후보 팩
-  assert.throws(() => resolveRoutePresenceScope({ requireProduction: true, provenance: null, legacyFixtureProduction: true, nationwideArtifact: true }),
-    /--legacy-fixture-production cannot validate a nationwide candidate artifact/);
-  // --require-production이 아니면 출시 게이트 판정이 없다.
-  assert.equal(resolveRoutePresenceScope({ requireProduction: false, provenance: null, legacyFixtureProduction: false, nationwideArtifact: false }), null);
-  // 인자 조합: 플래그는 --require-production이 필요하고 evidence·provenance와 함께 쓸 수 없다.
-  assert.equal(parseArgs(["--manifest", "m.json", "--root", "out", "--require-production", "--legacy-fixture-production"])["legacy-fixture-production"], true);
-  assert.throws(() => parseArgs(["--manifest", "m.json", "--root", "out", "--legacy-fixture-production"]), /--legacy-fixture-production requires --require-production/);
-  assert.throws(() => parseArgs(["--manifest", "m.json", "--root", "out", "--require-production", "--legacy-fixture-production",
-    "--server-route-coverage-evidence", "a.json", "--server-route-coverage-provenance", "p.json"]), /--legacy-fixture-production cannot be combined with server route coverage provenance/);
+  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: nationwideProvenance }), { nationwide: true });
+  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: nonNationwideProvenance }), { nationwide: false });
+  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: null }), { nationwide: false });
+  assert.equal(resolveRoutePresenceScope({ requireProduction: false, provenance: nationwideProvenance }), null);
+  assert.equal(resolveRoutePresenceScope({ requireProduction: false, provenance: null }), null);
 });
 
 test("server route coverage evidence는 provenance와 --require-production이 함께여야 하고 한 번만 소비된다", () => {
@@ -500,8 +477,6 @@ test("#1262 현재 후보 build spec·release request의 후보 id는 전국 후
   assert.deepEqual(resolveRoutePresenceScope({
     requireProduction: true,
     provenance: { candidateId: buildSpec.candidateId },
-    legacyFixtureProduction: false,
-    nationwideArtifact: false,
   }), { nationwide: true });
 });
 

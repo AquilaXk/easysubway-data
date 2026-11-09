@@ -3273,7 +3273,6 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
         "--root",
         packOutputDir,
         "--require-production",
-        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-D(#866)에서 제거
       ],
       { cwd: root, env: productionEnv },
     ),

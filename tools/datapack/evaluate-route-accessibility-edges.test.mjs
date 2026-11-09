@@ -89,7 +89,6 @@ function materialization(lines = stationLines()) {
     stationLines: lines.map(({ lineSequence: _lineSequence, ...line }) => line),
     evidenceRows: [
       evidence(),
-      evidence({ domain: "EXIT", state: "VERIFIED_ABSENT", evidenceKind: "EXPLICIT_ZERO", evidenceReason: "official zero exit" }),
       evidence({ domain: "TRANSFER", state: "NOT_APPLICABLE", evidenceKind: "CURRENT_APPLICABILITY_RULE", evidenceReason: "no interchange at this line" }),
       evidence({ stationId: "station-a", lineId: "line-2", operatorId: "operator-2", domain: "FACILITY", state: "VERIFIED_ABSENT", evidenceKind: "EXPLICIT_ZERO", evidenceReason: "official zero facility" }),
       evidence({ stationId: "station-a", lineId: "line-2", operatorId: "operator-2", domain: "TRANSFER", state: "NOT_APPLICABLE", evidenceKind: "CURRENT_APPLICABILITY_RULE", evidenceReason: "no interchange at this line" }),
@@ -167,29 +166,11 @@ function terminalScenario(overrides = {}) {
   const base = { ...candidate, stationId, lineId, operatorId, sourceId: "kric-station-convenience-standard", sourceSnapshotId: "terminal-snapshot", evidenceRawSha256: HASH, capturedAt: "2026-08-09T00:00:00.000Z", freshUntil: "2026-08-11T00:00:00.000Z", provenanceId: "official-provider", licenseId: "public-data-license" };
   const terminal = { ...base, domain: "FACILITY", state: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.", providerRecordHash: null, terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerResultCode: "03", providerResponseSha256: "c".repeat(64), ...overrides };
   const normal = (domain) => ({ ...base, domain, state: "VERIFIED_PRESENT", evidenceKind: "OBSERVED", evidenceReason: "official evidence", providerRecordHash: "b".repeat(64) });
-  const rows = [normal("EXIT"), terminal, normal("TRANSFER")].sort((a, b) => `${a.stationId}\0${a.lineId}\0${a.operatorId}\0${a.domain}`.localeCompare(`${b.stationId}\0${b.lineId}\0${b.operatorId}\0${b.domain}`));
-  const summary = { VERIFIED_PRESENT: 2, VERIFIED_ABSENT: 0, NOT_APPLICABLE: 0, UNKNOWN: 0, MISSING: 0, STALE: terminal.state === "STALE" ? 1 : 0, ...(terminal.state === "UNVERIFIED_EVIDENCE_BLOCKED" ? { UNVERIFIED_EVIDENCE_BLOCKED: 1 } : {}) };
-  if (terminal.state === "STALE") summary.VERIFIED_PRESENT = 2;
+  const rows = [terminal, normal("TRANSFER")].sort((a, b) => `${a.stationId}\0${a.lineId}\0${a.operatorId}\0${a.domain}`.localeCompare(`${b.stationId}\0${b.lineId}\0${b.operatorId}\0${b.domain}`));
+  const summary = { VERIFIED_PRESENT: 1, VERIFIED_ABSENT: 0, NOT_APPLICABLE: 0, UNKNOWN: 0, MISSING: 0, STALE: terminal.state === "STALE" ? 1 : 0, ...(terminal.state === "UNVERIFIED_EVIDENCE_BLOCKED" ? { UNVERIFIED_EVIDENCE_BLOCKED: 1 } : {}) };
   const materialization = rebindMaterialization({ candidate, rows, stateSummary: summary, materializationDigest: "0".repeat(64) });
   // #866 PR-C: FACILITY를 요구하는 간선은 역-노선 양끝 WALKWAY다(ENTRY 매핑 삭제).
   const raw = { edgeId: "walkway-terminal", edgeType: "WALKWAY", fromNodeId: `${stationId}:${lineId}`, toNodeId: `${stationId}:${lineId}`, durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" };
-  const route = { ...raw, edgeSha256: routeEdgeSha256(raw) };
-  const value = { candidate: { ...evaluationCandidate(), stationSetSha256 }, evaluationAt: NOW, stationLines: [{ stationId, lineId, operatorId, lineSequence: 1 }], routeEdges: [route], materialization };
-  return { value, policy: policyForEdges([route]) };
-}
-
-function exitTerminalScenario() {
-  const stationId = "station-exit"; const lineId = "line-exit"; const operatorId = "operator-exit";
-  const stationSetSha256 = createHash("sha256").update(JSON.stringify([stationId])).digest("hex");
-  const candidate = { candidateId: "candidate-capital-1", stationSetSha256, sourceSetSha256: "2".repeat(64), mappingContractVersion: "station-line-v1", materializerVersion: "1" };
-  const base = { ...candidate, stationId, lineId, operatorId, evidenceRawSha256: HASH, capturedAt: "2026-08-09T00:00:00.000Z", freshUntil: "2026-08-11T00:00:00.000Z", provenanceId: "official-provider", licenseId: "public-data-license" };
-  const responseSha256 = "9".repeat(64);
-  const terminalHash = createHash("sha256").update(JSON.stringify({ domain: "EXIT", lineId, operatorId, providerResponseSha256: responseSha256, sourceSnapshotId: "kric-exit-path-20260816", stationId, terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED" })).digest("hex");
-  const terminal = { ...base, domain: "EXIT", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: "kric-station-movement-standard", sourceSnapshotId: "kric-exit-path-20260816", providerRecordHash: null, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "출구 이동경로가 검증되지 않아 경로를 차단했습니다.", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE", confidence: 0, providerResponseSha256: responseSha256, evidenceHash: terminalHash };
-  const normal = (domain) => ({ ...base, domain, state: "VERIFIED_PRESENT", sourceId: "official-accessibility", sourceSnapshotId: "official-accessibility-20260809", providerRecordHash: "b".repeat(64), evidenceKind: "OBSERVED", evidenceReason: "official evidence" });
-  const materialization = materializeStationLineAccessibility({ candidate, observedAt: NOW, stationLines: [{ stationId, lineId, operatorId }], evidenceRows: [normal("FACILITY"), terminal, normal("TRANSFER")] });
-  // #866 PR-C: EXIT domain을 요구하는 간선은 없다. FACILITY를 요구하는 WALKWAY 하나로 materialization 계약만 검사한다.
-  const raw = { edgeId: "walkway-exit-station", edgeType: "WALKWAY", fromNodeId: `${stationId}:${lineId}`, toNodeId: `${stationId}:${lineId}`, durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" };
   const route = { ...raw, edgeSha256: routeEdgeSha256(raw) };
   const value = { candidate: { ...evaluationCandidate(), stationSetSha256 }, evaluationAt: NOW, stationLines: [{ stationId, lineId, operatorId, lineSequence: 1 }], routeEdges: [route], materialization };
   return { value, policy: policyForEdges([route]) };
@@ -236,7 +217,7 @@ test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 �
   assert.equal(first.results.find(({ edgeId }) => edgeId === "ride-a-b").materializationCells.length, 0);
 });
 
-// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. ENTRY/EXIT 간선이 없으면 FACILITY·EXIT cell은
+// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. ENTRY/EXIT 간선이 없으면 FACILITY cell은
 // 어떤 간선도 요구하지 않는다. materialization 분모·station set은 route stationLines 전체와 정확히 같아야 한다(리뷰 F3).
 function platformRouteEdges() {
   return [
@@ -245,10 +226,10 @@ function platformRouteEdges() {
   ];
 }
 
-test("승강장 기준 입력은 FACILITY UNKNOWN·STALE과 EXIT MISSING이 있어도 환승 끝점 TRANSFER만 닫히면 eligible이다", () => {
+test("승강장 기준 입력은 FACILITY UNKNOWN·STALE과 TRANSFER MISSING이 있어도 환승 끝점 TRANSFER만 닫히면 eligible이다", () => {
   const routeEdges = platformRouteEdges();
   const value = input({ routeEdges });
-  // 환승이 쓰지 않는 cell은 닫혀 있지 않다(FACILITY UNKNOWN·STALE, EXIT MISSING).
+  // 환승이 쓰지 않는 cell은 닫혀 있지 않다(FACILITY UNKNOWN·STALE, station-c TRANSFER MISSING).
   assert.ok(value.materialization.stateSummary.UNKNOWN > 0);
   assert.ok(value.materialization.stateSummary.MISSING > 0);
   assert.ok(value.materialization.stateSummary.STALE > 0);
@@ -326,7 +307,7 @@ test("exact terminal FACILITY cell은 availability claim 없이 dependent edge�
   assert.equal(edgeResult.reason, "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.");
   assert.equal(edgeResult.materializationCells[0].providerRecordHash, null);
   assert.equal(edgeResult.materializationCells[0].providerResponseSha256, "c".repeat(64));
-  for (const [field, value] of [["domain", "EXIT"], ["stationId", "wrong-station"], ["sourceId", "wrong-source"]]) {
+  for (const [field, value] of [["domain", "TRANSFER"], ["stationId", "wrong-station"], ["sourceId", "wrong-source"]]) {
     const { value: invalid, policy } = terminalScenario({ [field]: value });
     if (field === "stationId") {
       invalid.stationLines[0].stationId = value;
@@ -338,28 +319,7 @@ test("exact terminal FACILITY cell은 availability claim 없이 dependent edge�
       invalid.materialization.rows = invalid.materialization.rows.map((row) => ({ ...row, stationId: value, stationSetSha256 }));
       invalid.materialization = rebindMaterialization(invalid.materialization);
     }
-    assert.throws(() => evaluateRouteAccessibilityEdges(invalid, policy), /terminal materialization contract mismatch/);
-  }
-});
-
-// #866 PR-C·#873: 어떤 경로 간선도 EXIT domain을 요구하지 않는다(ENTRY/EXIT 매핑 삭제). provider no-data EXIT terminal cell은
-// 경로를 막지 않지만 materialization 계약(domain·source·결과 코드)은 계속 fail closed로 검사한다.
-test("provider no-data EXIT terminal cell은 경로 간선을 막지 않지만 terminal 계약은 계속 검사한다", () => {
-  const { value, policy: fixturePolicy } = exitTerminalScenario();
-  const result = evaluateRouteAccessibilityEdges(value, fixturePolicy);
-
-  const edgeResult = result.results.find(({ edgeId }) => edgeId === "walkway-exit-station");
-  assert.equal(edgeResult.state, "PASS");
-  assert.deepEqual(edgeResult.materializationCells.map(({ domain }) => domain), ["FACILITY"]);
-  assert.equal(result.eligible, true);
-
-  for (const [field, changed] of [["domain", "TRANSFER"], ["sourceId", "wrong-source"], ["providerResultCode", "00"]]) {
-    const { value: invalid, policy } = exitTerminalScenario();
-    const row = invalid.materialization.rows.find(({ evidenceKind }) => evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED");
-    row[field] = changed;
-    invalid.materialization.rows.sort((left, right) => `${left.stationId}\0${left.lineId}\0${left.operatorId}\0${left.domain}`.localeCompare(`${right.stationId}\0${right.lineId}\0${right.operatorId}\0${right.domain}`));
-    invalid.materialization = rebindMaterialization(invalid.materialization);
-    assert.throws(() => evaluateRouteAccessibilityEdges(invalid, policy), /terminal materialization contract mismatch/);
+    assert.throws(() => evaluateRouteAccessibilityEdges(invalid, policy), /terminal materialization contract mismatch|materialization denominator mismatch/);
   }
 });
 

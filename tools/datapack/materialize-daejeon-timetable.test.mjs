@@ -69,6 +69,41 @@ function makeInheritedAccessibilityCoverageExplicitlyUnavailable(fixture) {
     evidence.strictRouteEligible = false;
     evidence.strictRouteEligibleReason = "NO_OFFICIAL_STATUS_FEED";
   }
+  const timetableRoute = pack.transitRoutes.find(({ id }) => id === "route-seoul-4-main") ?? pack.transitRoutes[0];
+  const baseRideEdge = {
+    edgeType: "RIDE",
+    servicePattern: "EXPRESS",
+    serviceClass: "SUBWAY",
+    durationSeconds: 2_430,
+    distanceMeters: 27_000,
+    includesStairs: false,
+    stairAccessState: "UNKNOWN",
+    accessibilityStatus: "UNKNOWN",
+    reliabilityScore: 100,
+    provenanceKind: "OFFICIAL_SOURCE",
+    derivationKind: "GENERATED",
+    verificationStatus: "VERIFIED",
+    lastVerifiedAt: timetableRoute.updatedAt,
+    sourceId: timetableRoute.sourceId,
+    sourceSnapshotId: timetableRoute.sourceSnapshotId,
+    providerRecordHash: timetableRoute.providerRecordHash,
+    evidenceHash: timetableRoute.evidenceHash,
+  };
+  pack.networkEdges.push(
+    {
+      ...baseRideEdge,
+      id: "edge-ride-sadang-sangnoksu-seoul-4",
+      fromNodeId: "station-sadang:seoul-4",
+      toNodeId: "station-sangnoksu:seoul-4",
+    },
+    {
+      ...baseRideEdge,
+      id: "edge-ride-sangnoksu-sadang-seoul-4",
+      fromNodeId: "station-sangnoksu:seoul-4",
+      toNodeId: "station-sadang:seoul-4",
+    },
+  );
+  pack.minimumTableRows.network_edges = pack.networkEdges.length;
 }
 
 test("대전 공식 1628행과 topology를 460 trip·10034 stop_time으로 결정적으로 materialize한다", async () => {
@@ -112,7 +147,7 @@ test("대전 공식 1628행과 topology를 460 trip·10034 stop_time으로 결�
 
   const consistency = checkTimetableRideConsistency({
     reconstruction: { transitStopTimes: stopTimes },
-    rideEdges: pack.networkEdges,
+    rideEdges: pack.networkEdges.filter(({ sourceId }) => sourceId === "daejeon-station-distance-fare"),
   });
   assert.deepEqual(consistency.summary, {
     rideEdgeCount: 42,
@@ -222,7 +257,6 @@ test("production SQLite·field provenance가 대전 schedule requirement와 런�
   const manifest = await readJsonAbsolute(manifestPath);
   await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs", "--manifest", manifestPath, "--root", packOutput, "--require-production",
-    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-D(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
