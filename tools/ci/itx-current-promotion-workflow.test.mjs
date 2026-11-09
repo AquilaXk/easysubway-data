@@ -67,9 +67,9 @@ test("정기 실행은 저장소 변수가 true일 때만 돌고 사람 dispatch
   assert.doesNotMatch(yml, /gh variable|gh api[^\n]*variables/u);
 });
 
-test("job은 공급자 secret이 있는 itx-current-collection 환경에서 돌고 이름이 예산 가드의 등록과 같다", () => {
+test("job은 공급자·OCI secret이 있는 datapack-release-check 환경에서 돌고 이름이 예산 가드의 등록과 같다", () => {
   assert.equal(job.name, "ITX current promotion");
-  assert.equal(job.environment, "itx-current-collection");
+  assert.equal(job.environment, "datapack-release-check");
   const concurrencyGroup = workflow.concurrency.group;
   assert.deepEqual(workflow.concurrency, {
     group: "itx-current-promotion-main-${{ inputs.replay_run_id && format('replay-{0}', inputs.replay_run_id) || 'schedule' }}",
