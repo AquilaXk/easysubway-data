@@ -109,7 +109,7 @@ test("sha·결속을 다시 맞춘 파일이라도 고아 stop_time·stop_time �
   const artifact = build();
   // 섹션 trip에 없는 tripId의 stop_time 한 행(결속 요약은 그 행만큼 늘린다)
   const orphan = reseal(artifact, (content) => {
-    officialSection(content).stopTimes.push(["ghost", 1, "s-a", "line-x", 21_660, 21_690, 0, 0, null]);
+    officialSection(content).stopTimes.push(["ghost", 1, "s-a", "line-x", 21_660, 21_690, 0, 0, null, null, null]);
   }, (binding) => {
     const section = binding.sections.find(({ sourceId }) => sourceId === "official-source");
     section.stopTimeCount += 1;
@@ -120,7 +120,7 @@ test("sha·결속을 다시 맞춘 파일이라도 고아 stop_time·stop_time �
   assert.throws(() => expandResealed(orphan), /ORPHAN_STOP_TIME: ghost/u);
   // stop_time이 하나도 없는 trip 한 행(결속 trip 수만 늘린다)
   const emptyTrip = reseal(artifact, (content) => {
-    officialSection(content).trips.push(["t-9", "route-x", "svc", "끝", "", "LOCAL", "SUBWAY", 0, "t-9-hash"]);
+    officialSection(content).trips.push(["t-9", "route-x", "svc", "끝", "", null, null, "LOCAL", "SUBWAY", 0, "t-9-hash"]);
   }, (binding) => {
     binding.sections.find(({ sourceId }) => sourceId === "official-source").tripCount += 1;
     binding.tripCount += 1;
@@ -156,11 +156,10 @@ test("정차 시각 출처(timeSource)는 있는 행만 그대로 실려 펼칠 
   assert.throws(() => build({ stopTimes: STOPS.map((row) => ({ ...row, timeSource: "" })) }), /STOP_TIME_SHAPE/u);
 });
 
-test("대상 원천이어도 명시한 snapshot의 trip·stop_time은 팩에 남긴다(#913 광주 보관본: 열차 번호 등 다른 trip 형태)", () => {
+test("대상 원천이어도 명시한 snapshot의 trip·stop_time은 팩에 남긴다(#913 inlineSourceSnapshotIds)", () => {
   const keptHeader = { ...HEADER, sourceSnapshotId: "official-source-retained" };
   const kept = { ...trip("k-1", keptHeader), trainNo: "1001" };
   const keptStops = [{ ...stop("k-1", 1, "s-a"), ...keptHeader, providerRecordHash: "k-1-1" }, { ...stop("k-1", 2, "s-b"), ...keptHeader, providerRecordHash: "k-1-2" }];
-  assert.throws(() => build({ trips: [...TRIPS, kept], stopTimes: [...STOPS, ...keptStops] }), /EXTERNAL_STOP_TIMES_TRIP_SHAPE: k-1/u);
   const artifact = build({ trips: [...TRIPS, kept], stopTimes: [...STOPS, ...keptStops], inlineSourceSnapshotIds: ["official-source-retained"] });
   assert.deepEqual(artifact.inlineTrips.map(({ id }) => id).sort(), ["inline-1", "k-1"]);
   assert.deepEqual(artifact.inlineStopTimes.filter(({ tripId }) => tripId === "k-1").length, 2);
@@ -170,4 +169,113 @@ test("대상 원천이어도 명시한 snapshot의 trip·stop_time은 팩에 남
   // 남긴 snapshot에 속하지 않은 대상 원천 stop_time은 여전히 고아로 실패한다.
   assert.throws(() => build({ trips: [...TRIPS, kept], stopTimes: [...STOPS, ...keptStops, { ...stop("missing", 1, "s-a"), ...HEADER }], inlineSourceSnapshotIds: ["official-source-retained"] }),
     /ORPHAN_STOP_TIME/u);
+});
+
+test("#908 지역 시간표(숫자 directionId·trip lineId·정차 stopHeadsign)와 광주 보관본(trainNo·정차별 sourceRowSha256)을 손실 없이 분리·복원한다", () => {
+  const busanHeader = {
+    sourceId: "busan-transportation-timetable",
+    sourceSnapshotId: "busan-transportation-timetable-20261108",
+    evidenceHash: "c".repeat(64),
+    provenanceKind: "OFFICIAL_SOURCE",
+    derivationKind: "OFFICIAL",
+    updatedAt: "2026-11-07T16:45:36.427Z",
+  };
+  const busanTrip = {
+    id: "trip-busan-l1-d1-t1001-0-134",
+    routeId: "route-busan-line-1",
+    serviceId: "busan-weekday-2026",
+    tripHeadsign: "노포",
+    directionId: 0,
+    lineId: "line-ab1a041f6266",
+    ...busanHeader,
+    providerRecordHash: "d".repeat(64),
+  };
+  const busanStops = [
+    {
+      tripId: busanTrip.id,
+      stationId: "s-busan-1",
+      lineId: "line-ab1a041f6266",
+      stopSequence: 1,
+      arrivalSeconds: 18_000,
+      departureSeconds: 18_000,
+      pickupType: 0,
+      dropOffType: 0,
+      stopHeadsign: "134",
+      ...busanHeader,
+      providerRecordHash: busanTrip.providerRecordHash,
+    },
+    {
+      tripId: busanTrip.id,
+      stationId: "s-busan-2",
+      lineId: "line-ab1a041f6266",
+      stopSequence: 2,
+      arrivalSeconds: 18_120,
+      departureSeconds: 18_120,
+      pickupType: 0,
+      dropOffType: 0,
+      stopHeadsign: "134",
+      ...busanHeader,
+      providerRecordHash: busanTrip.providerRecordHash,
+    },
+  ];
+  const gwangjuHeader = {
+    sourceId: "kric-nationwide-timetable-file",
+    sourceSnapshotId: "kric-nationwide-timetable-file-retained",
+    evidenceHash: "e".repeat(64),
+    provenanceKind: "OFFICIAL_SOURCE",
+    derivationKind: "OFFICIAL",
+    updatedAt: "2026-11-05T11:37:41.588Z",
+  };
+  const gwangjuTrip = {
+    id: "trip-gwangju-1",
+    routeId: "route-S2901-up",
+    serviceId: "service-S2901-평일",
+    tripHeadsign: "녹동",
+    directionId: "up",
+    trainNo: "1001",
+    servicePattern: "LOCAL",
+    serviceClass: "SUBWAY",
+    serviceDayStartSeconds: 10_800,
+    ...gwangjuHeader,
+    providerRecordHash: "f".repeat(64),
+  };
+  const gwangjuStops = [
+    {
+      tripId: gwangjuTrip.id,
+      stopSequence: 1,
+      stationId: "s-gj-1",
+      lineId: "line-e57a361e8892",
+      arrivalSeconds: 19_800,
+      departureSeconds: 19_800,
+      pickupType: 0,
+      dropOffType: 1,
+      ...gwangjuHeader,
+      providerRecordHash: "1".repeat(64),
+    },
+    {
+      tripId: gwangjuTrip.id,
+      stopSequence: 2,
+      stationId: "s-gj-2",
+      lineId: "line-e57a361e8892",
+      arrivalSeconds: 19_980,
+      departureSeconds: 19_980,
+      pickupType: 1,
+      dropOffType: 0,
+      ...gwangjuHeader,
+      providerRecordHash: "2".repeat(64),
+    },
+  ];
+  const allTrips = [...TRIPS, busanTrip, gwangjuTrip];
+  const allStops = [...STOPS, ...busanStops, ...gwangjuStops];
+  const artifact = buildExternalStopTimesArtifact({
+    trips: allTrips,
+    stopTimes: allStops,
+    sourceIds: [...SOURCES, "busan-transportation-timetable", "kric-nationwide-timetable-file"],
+  });
+  assert.deepEqual(artifact.inlineTrips, [inlineTrip]);
+  assert.deepEqual(artifact.inlineStopTimes, [inlineStop]);
+  const { fixture, readBytes } = written(artifact);
+  const expanded = expandExternalStopTimes(fixture, { readBytes }).packs[0];
+  assert.deepEqual(byId(expanded.transitTrips, ({ id }) => id), byId(allTrips, ({ id }) => id));
+  assert.deepEqual(byId(expanded.transitStopTimes, stopKey), byId(allStops, stopKey));
 });

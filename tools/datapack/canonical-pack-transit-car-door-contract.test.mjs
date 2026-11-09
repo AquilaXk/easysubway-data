@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
 import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 
@@ -40,6 +42,12 @@ function activePackOf(fixture) {
 
 test("지역 시간표 통합은 정차 시각을 stationId·lineId·arrivalSeconds·departureSeconds로 쓴다", () => {
   const lineId = "line-5b8d9b05e7e6";
+  const trips = [{
+    id: "trip-daegu-1-up-week-1",
+    dayCode: "WEEK",
+    direction: "up",
+    stops: [{ c: "101", a: 100, d: 110 }, { c: "102", a: 200, d: 210 }],
+  }];
   const integrated = integrateRegionalTimetables({
     finalPack: {
       stations: [
@@ -60,12 +68,10 @@ test("지역 시간표 통합은 정차 시각을 stationId·lineId·arrivalSeco
     },
     daeguTimetable1: {
       sourceId: "daegu-line1-train-timetable",
-      trips: [{
-        id: "trip-daegu-1-up-week-1",
-        dayCode: "WEEK",
-        direction: "up",
-        stops: [{ c: "101", a: 100, d: 110 }, { c: "102", a: 200, d: 210 }],
-      }],
+      snapshotId: "daegu-line1-train-timetable-20260909",
+      tripsSha256: createHash("sha256").update(JSON.stringify(trips)).digest("hex"),
+      capturedAt: "2026-09-09T09:15:32.393Z",
+      trips,
     },
   });
 
@@ -87,7 +93,7 @@ test("지역 시간표 통합은 정차 시각을 stationId·lineId·arrivalSeco
 });
 
 test("커밋된 전국 정본 팩의 모든 transitStopTimes가 build-datapack 계약 필드와 trip 노선을 갖는다", () => {
-  const pack = activePackOf(readJson(canonicalPackPath));
+  const pack = activePackOf(expandExternalStopTimes(readJson(canonicalPackPath), { repositoryRoot: root }));
   const tripLineIds = new Map(pack.transitTrips.map((trip) => [trip.id, trip.lineId]));
   const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
   const offenders = [];

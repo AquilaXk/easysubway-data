@@ -106,9 +106,9 @@ test("#899 4호선 2정차 pilot은 공식 전 노선 시간표로 교체되고 
   assert.ok(seoul4Stations.size > 2, "4호선 정차역이 pilot 2역을 넘어야 한다");
 });
 
-// 크기 상한: 팩 JSON 70MB(2026-10-03 실측 약 58MB + #903 공식 원천 route·inline 증가 여유), 외부 파일 50MB(실측 약 6MB).
+// 크기 상한: 팩 JSON 20MB(#908 지역·광주 보관본 시간표 sidecar 이동 뒤 실측 약 8.7MB), 외부 파일 50MB(실측 약 8.1MB).
 // GitHub 파일 한도는 100MB다. 상한을 넘으면 원천을 외부 파일로 더 옮겨야 한다.
-const PACK_JSON_MAX_BYTES = 70 * 1024 * 1024;
+const PACK_JSON_MAX_BYTES = 20 * 1024 * 1024;
 const EXTERNAL_FILE_MAX_BYTES = 50 * 1024 * 1024;
 
 test("#899 커밋된 전국 팩·외부 시간표 파일은 크기 상한 안이고, 펼치면 수도권 공식 trip·정차가 보고서와 같다", async () => {
@@ -117,7 +117,7 @@ test("#899 커밋된 전국 팩·외부 시간표 파일은 크기 상한 안이
   const binding = committed.packs[0][EXTERNAL_STOP_TIMES_KEY];
   assert.ok((await stat(path.join(root, binding.path))).size < EXTERNAL_FILE_MAX_BYTES, "external timetable file size");
   const report = JSON.parse(await readFile(path.join(root, CAPITAL_REPORT), "utf8"));
-  // #903: 같은 원천(kric-nationwide-timetable-file)에 코레일 projection 섹션이 함께 있다. 수도권 snapshot 섹션만 고른다.
+  // #903·#908: 같은 원천(kric-nationwide-timetable-file)에 코레일·광주 보관본 projection 섹션이 함께 있다. 수도권 snapshot 섹션만 고른다.
   const capital = binding.sections.filter(({ sourceId, sourceSnapshotId }) => sourceId === report.source.sourceId && sourceSnapshotId === report.source.snapshotId);
   assert.deepEqual(capital.map(({ sourceSnapshotId, stopTimeProvenance, tripCount, stopTimeCount }) => ({ sourceSnapshotId, stopTimeProvenance, tripCount, stopTimeCount })),
     [{ sourceSnapshotId: report.source.snapshotId, stopTimeProvenance: "TRIP_INHERITED", tripCount: report.summary.admittedTripCount, stopTimeCount: report.summary.admittedStopTimeCount }]);
@@ -125,7 +125,6 @@ test("#899 커밋된 전국 팩·외부 시간표 파일은 크기 상한 안이
     assert.deepEqual(capital[0].byLine[line.lineId], { tripCount: line.admittedTripCount, stopTimeCount: line.admittedStopTimeCount }, line.lineId);
     assert.deepEqual(Object.keys(line.singleProviderTimeStopCount).sort(), ["intermediate", "origin", "terminal"], line.lineId);
   }
-  // #913: 같은 원천의 광주 보관본 trip은 다른 trip 형태라 팩에 남는다. 수도권 projection snapshot의 trip만 외부 파일에 있다.
   assert.equal(committed.packs[0].transitTrips.some(({ sourceId, sourceSnapshotId }) => sourceId === report.source.sourceId
     && sourceSnapshotId === report.source.snapshotId), false, "capital trips live in the external file");
   const pack = expandExternalStopTimes(committed, { repositoryRoot: root }).packs[0];

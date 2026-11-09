@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
 import { assertLagIsContentEquivalent } from "./test-fixtures/ledger-lag-equivalence.mjs";
 import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
@@ -18,6 +20,9 @@ import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const readJson = (rel) => JSON.parse(readFileSync(path.join(root, rel), "utf8"));
+const readExpandedNationwidePack = () => activePackOf(
+  expandExternalStopTimes(readJson("tools/datapack/release/nationwide-production-canonical-pack.json"), { repositoryRoot: root }),
+);
 
 const QUARANTINE_REASON = "FEWER_THAN_TWO_SOURCE_STOPS";
 
@@ -111,7 +116,7 @@ function sourceViolations({ trips, stopTimes, sourceTimes, codeByStationId, regi
 }
 
 function loadRegion(region) {
-  const timetable = readJson(region.timetablePath);
+  const timetable = { snapshotId: path.basename(region.timetablePath, ".json"), ...readJson(region.timetablePath) };
   const accessibility = readJson(region.accessibilityPath);
   return { timetable, accessibility };
 }
@@ -159,17 +164,22 @@ test("대전: 원천 출발 시각 하나만 있는 역은 도착 = 출발 = 원
   const daejeonAccessibility = {
     rows: DAEJEON_SYNTHETIC_STATIONS.map(([code, name]) => ({ lineId: DAEJEON.lineId, stationCode: code, stationName: name })),
   };
+  const daejeonRows = [
+    { dayType: "0", drctType: "1", stNum: "101", tmZone: "5", tmList: "30" },
+    { dayType: "0", drctType: "1", stNum: "102", tmZone: "5", tmList: "32" },
+    { dayType: "0", drctType: "1", stNum: "103", tmZone: "5", tmList: "34" },
+    // 뒤 역과 이어지지 않는 단독 출발: 열차를 만들 수 없으니 격리한다.
+    { dayType: "0", drctType: "1", stNum: "110", tmZone: "10", tmList: "00" },
+  ];
   const daejeonTimetable = {
-    rows: [
-      { dayType: "0", drctType: "1", stNum: "101", tmZone: "5", tmList: "30" },
-      { dayType: "0", drctType: "1", stNum: "102", tmZone: "5", tmList: "32" },
-      { dayType: "0", drctType: "1", stNum: "103", tmZone: "5", tmList: "34" },
-      // 뒤 역과 이어지지 않는 단독 출발: 열차를 만들 수 없으니 격리한다.
-      { dayType: "0", drctType: "1", stNum: "110", tmZone: "10", tmList: "00" },
-    ],
+    snapshotId: "daejeon-train-timetable-20260909",
+    rowsSha256: createHash("sha256").update(JSON.stringify(daejeonRows)).digest("hex"),
+    observedAt: "2026-09-09T09:16:07.690Z",
+    rows: daejeonRows,
   };
   const integrated = integrateRegionalTimetables({ finalPack, holidayDates: HOLIDAYS_2026, daejeonTimetable, daejeonAccessibility });
-  const stops = integrated.transitStopTimes.filter(({ sourceId }) => sourceId === DAEJEON.sourceId);
+  const daejeonTripIds = new Set(integrated.transitTrips.filter(({ sourceId }) => sourceId === DAEJEON.sourceId).map(({ id }) => id));
+  const stops = integrated.transitStopTimes.filter(({ tripId }) => daejeonTripIds.has(tripId));
   const stationId = (code) => `st-${DAEJEON.lineId}-${DAEJEON_SYNTHETIC_STATIONS.findIndex(([c]) => c === code)}`;
 
   assert.deepEqual(
@@ -205,15 +215,20 @@ test("광주: 원천 시각 하나만 있는 역은 도착 = 출발 = 원천 값
     rows: GWANGJU_SYNTHETIC_STATIONS.map(([code, name]) => ({ lineId: GWANGJU.lineId, stationCode: code, stationName: name })),
   };
   const row = (stationCode, time) => ({ dayCode: "WEEK", direction: "st", stationCode, time });
+  const gwangjuRows = [
+    row("119", "0530"), row("118", "0533"), row("117", "0535"),
+    // 녹동 단독 출발(평동 방향): 뒤 역과 이어지지 않는다.
+    { dayCode: "WEEK", direction: "pd", stationCode: "100", time: "0614" },
+  ];
   const gwangjuTimetable = {
-    rows: [
-      row("119", "0530"), row("118", "0533"), row("117", "0535"),
-      // 녹동 단독 출발(평동 방향): 뒤 역과 이어지지 않는다.
-      { dayCode: "WEEK", direction: "pd", stationCode: "100", time: "0614" },
-    ],
+    snapshotId: "gwangju-transportation-cyberstation-timetable-20260720",
+    rowsSha256: createHash("sha256").update(JSON.stringify(gwangjuRows)).digest("hex"),
+    capturedAt: "2026-07-20T12:12:41.584Z",
+    rows: gwangjuRows,
   };
   const integrated = integrateRegionalTimetables({ finalPack, holidayDates: HOLIDAYS_2026, gwangjuTimetable, gwangjuAccessibility });
-  const stops = integrated.transitStopTimes.filter(({ sourceId }) => sourceId === GWANGJU.sourceId);
+  const gwangjuTripIds = new Set(integrated.transitTrips.filter(({ sourceId }) => sourceId === GWANGJU.sourceId).map(({ id }) => id));
+  const stops = integrated.transitStopTimes.filter(({ tripId }) => gwangjuTripIds.has(tripId));
   const stationId = (code) => `st-${GWANGJU.lineId}-${GWANGJU_SYNTHETIC_STATIONS.findIndex(([c]) => c === code)}`;
 
   assert.deepEqual(
@@ -243,8 +258,9 @@ test("광주: 원천 시각 하나만 있는 역은 도착 = 출발 = 원천 값
 function regionContext({ region, trips, stopTimes, pack }) {
   const accessibility = readJson(region.accessibilityPath);
   const codeByStationId = new Map([...stationIdByCode(pack, accessibility, region.lineId)].map(([code, id]) => [id, code]));
-  const regionStops = stopTimes.filter(({ sourceId }) => sourceId === region.sourceId);
   const regionTrips = trips.filter(({ sourceId }) => sourceId === region.sourceId);
+  const regionTripIds = new Set(regionTrips.map(({ id }) => id));
+  const regionStops = stopTimes.filter(({ tripId }) => regionTripIds.has(tripId));
   assert.ok(regionTrips.length > 0, `${region.sourceId} 열차가 있어야 한다`);
   return { codeByStationId, regionStops, regionTrips };
 }
@@ -291,7 +307,21 @@ test("실제 대전·광주 공식 원천으로 통합한 모든 정차 시각�
 });
 
 test("커밋된 전국 정본 팩의 대전 정차 시각은 원천 값이고 격리 증거 파일과 맞는다", async () => {
-  const pack = activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json"));
+  const rawPack = activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json"));
+  // #908: 부산·대구·대전·광주 시간표는 모두 외부 sidecar에 실리고 커밋된 팩에는 inline 행이 없어야 한다.
+  for (const sourceId of [
+    "busan-transportation-timetable",
+    "daegu-line1-train-timetable",
+    "daegu-line2-train-timetable",
+    "daegu-line3-train-timetable",
+    "daejeon-train-timetable",
+    "kric-nationwide-timetable-file",
+  ]) {
+    assert.equal(rawPack.transitTrips.filter((trip) => trip.sourceId === sourceId).length, 0, `${sourceId} inline trip count`);
+    assert.equal(rawPack.transitStopTimes.filter((row) => row.sourceId === sourceId).length, 0, `${sourceId} inline stopTime count`);
+    assert.ok(rawPack.externalTransitStopTimes.sections.some((section) => section.sourceId === sourceId), `${sourceId} sidecar section`);
+  }
+  const pack = readExpandedNationwidePack();
   // #913: 광주는 cyberstation이 아니라 KRIC 보관본에서 만든다(아래 별도 테스트).
   const regions = [
     [DAEJEON, daejeonSourceTimes(readJson(DAEJEON.timetablePath))],
@@ -400,7 +430,7 @@ function assertGwangjuStopTimesBoundToRetainedSource({ pack, inventory, ledger, 
 }
 
 const gwangjuBindingInputs = () => ({
-  pack: activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json")),
+  pack: readExpandedNationwidePack(),
   inventory: readJson("tools/datapack/source-inventory.json"),
   ledger: readJson("tools/datapack/release/source-snapshots.json"),
   readProjection: readJson,
