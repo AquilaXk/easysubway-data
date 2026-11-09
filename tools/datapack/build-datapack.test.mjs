@@ -2867,32 +2867,20 @@ const withCarDoorHintFixture = (hintOverrides, fn) =>
     fn,
   );
 
-test("데이터팩 생성기·검증기는 유효한 station_car_door_hints를 적재하고 통과시킨다", async () => {
-  await withCarDoorHintFixture({}, async ({ outputDir, buildAndValidate }) => {
-    await buildAndValidate();
-
-    const packBytes = await readFile(path.join(outputDir, "catalog", "capital-v1.sqlite.gz"));
-    const sqlitePath = path.join(outputDir, "capital-v1.sqlite");
-    await writeFile(sqlitePath, gunzipSync(packBytes));
-    await withSqlite(sqlitePath, (readback) => {
-      const row = readback
-        .prepare("SELECT car_number, door_number, target_facility_type FROM station_car_door_hints")
-        .get();
-      assert.equal(row.car_number, 3);
-      assert.equal(row.door_number, 2);
-      assert.equal(row.target_facility_type, "STAIR");
-    });
-  });
-});
-
-test("데이터팩 생성기·검증기는 WHEELCHAIR_LIFT와 빈 direction의 station_car_door_hints를 적재하고 통과시킨다", async () => {
-  await withCarDoorHintFixture(
-    {
-      id: "car-door-hint-sadang-seoul-4-wheelchair-lift",
-      direction: "",
-      targetFacilityType: "WHEELCHAIR_LIFT",
-      carNumber: 4,
-      doorNumber: 1,
+test("데이터팩 생성기·검증기는 유효한 station_car_door_hints(WHEELCHAIR_LIFT·빈 direction 포함)를 적재하고 통과시킨다", async () => {
+  await withMutatedCatalogFixture(
+    (fixture) => {
+      fixture.packs[0].stationCarDoorHints = [
+        baseCarDoorHint(),
+        baseCarDoorHint({
+          id: "car-door-hint-sadang-seoul-4-wheelchair-lift",
+          direction: "",
+          targetFacilityType: "WHEELCHAIR_LIFT",
+          carNumber: 4,
+          doorNumber: 1,
+        }),
+      ];
+      fixture.packs[0].minimumTableRows.station_car_door_hints = 2;
     },
     async ({ outputDir, buildAndValidate }) => {
       await buildAndValidate();
@@ -2901,13 +2889,13 @@ test("데이터팩 생성기·검증기는 WHEELCHAIR_LIFT와 빈 direction의 s
       const sqlitePath = path.join(outputDir, "capital-v1.sqlite");
       await writeFile(sqlitePath, gunzipSync(packBytes));
       await withSqlite(sqlitePath, (readback) => {
-        const row = readback
-          .prepare("SELECT direction, car_number, door_number, target_facility_type FROM station_car_door_hints")
-          .get();
-        assert.equal(row.direction, "");
-        assert.equal(row.car_number, 4);
-        assert.equal(row.door_number, 1);
-        assert.equal(row.target_facility_type, "WHEELCHAIR_LIFT");
+        const rows = readback
+          .prepare("SELECT direction, car_number, door_number, target_facility_type FROM station_car_door_hints ORDER BY id")
+          .all();
+        assert.deepEqual(rows.map((row) => ({ ...row })), [
+          { direction: "UP", car_number: 3, door_number: 2, target_facility_type: "STAIR" },
+          { direction: "", car_number: 4, door_number: 1, target_facility_type: "WHEELCHAIR_LIFT" },
+        ]);
       });
     },
   );

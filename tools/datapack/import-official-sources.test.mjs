@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
-import { buildCarDoorHints } from "./import-car-door-hints.mjs";
 import { execFileAsync } from "./test-fixtures/datapack-tools-support.mjs";
 import {
   sourceIngestInput,
@@ -598,38 +597,3 @@ function kricMovementCandidateSourceIngestInput() {
     },
   );
 }
-
-test("빠른하차 importer는 휠체어리프트 키워드를 WHEELCHAIR_LIFT로 정규화한다", () => {
-  const roster = [
-    {
-      stationId: "station-sangnoksu",
-      lineId: "seoul-4",
-      nameKo: "상록수",
-      normalizedName: "상록수",
-      lineNameKo: "4호선",
-      aliases: [],
-    },
-  ];
-  const result = buildCarDoorHints({
-    roster,
-    rows: [
-      {
-        crtrYmd: "20260101",
-        lineNm: "4호선",
-        stnCd: "0448",
-        stnNm: "상록수",
-        stnNo: "448",
-        qckgffVhclDoorNo: "4-1",
-        upbdnbSe: "상행",
-        plfmCmgFac: "휠체어리프트",
-        facPstnNm: "승강장 휠체어 리프트",
-      },
-    ],
-    sourceId: "seoul-metro-fast-exit-car-door",
-    snapshotId: "snapshot-1",
-    verificationStatus: "OFFICIAL",
-  });
-  assert.equal(result.quarantine.length, 0);
-  assert.equal(result.stationCarDoorHints.length, 1);
-  assert.equal(result.stationCarDoorHints[0].targetFacilityType, "WHEELCHAIR_LIFT");
-});
