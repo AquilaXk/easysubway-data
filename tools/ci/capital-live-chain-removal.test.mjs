@@ -48,6 +48,10 @@ const DELETED_MODULES = [
   "tools/datapack/test-fixtures/current-live-chain-artifacts",
   "tools/datapack/test-fixtures/current-capital-station-line-input",
   "tools/datapack/test-fixtures/current-exit-v2-receipt",
+  // 2026-08-14 pilot v1 EXIT·접근성 산출기 (#866 PR-D)
+  "tools/datapack/build-exit-path-admission",
+  "tools/datapack/build-current-station-line-accessibility",
+  "tools/datapack/build-current-route-edge-input",
 ];
 const DELETED_TESTS = [
   "tools/datapack/refresh-current-capital-accessibility-full-nationwide-pack-recompute.test.mjs",
@@ -63,17 +67,22 @@ const DELETED_ARTIFACTS = [
   "tools/datapack/release/current-exit-admission-v2",
   "tools/datapack/release/current-kric-exit-plan-inputs.json",
   "tools/datapack/release/current-capital-itx-topology-delta-proof.json",
+  "tools/datapack/release/current-exit-admission",
+  "tools/datapack/release/current-station-line-accessibility",
+  "tools/datapack/release/current-route-edge-evaluation",
+  "tools/datapack/release/current-transfer-admission",
 ];
 const DELETED_WORKFLOWS = [".github/workflows/kric-exit-full-capital-refresh.yml"];
 
 // 참조 검사 토큰: 모듈 basename, 산출물 경로 꼬리, workflow 이름, CI job id, live chain 우회 모드 플래그.
-// validate-datapack의 legacy fixture 플래그는 대전 지역 팩 테스트가 의존하므로 PR-D(#866)에서 정리한다(메인 결정).
 const TOKENS = [...new Set([
   ...DELETED_MODULES.map((module) => (module.includes("/test-fixtures/")
     ? `test-fixtures/${path.basename(module)}`
     : path.basename(module))),
   ...DELETED_TESTS.map((file) => path.basename(file, ".test.mjs")),
-  ...DELETED_ARTIFACTS.map((artifact) => path.basename(artifact)),
+  ...DELETED_ARTIFACTS.map((artifact) => (artifact.endsWith("/current-transfer-admission")
+    ? "release/current-transfer-admission"
+    : path.basename(artifact))),
   "kric-exit-full-capital-refresh",
   "contracts_live_chain",
   "capital live-chain OCI",

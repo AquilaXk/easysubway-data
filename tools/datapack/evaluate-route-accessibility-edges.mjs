@@ -22,9 +22,8 @@ const TERMINAL_MATERIALIZATION_ROW_KEYS = [...MATERIALIZATION_ROW_KEYS, "termina
 const MATERIALIZATION_STATES = [
   "VERIFIED_PRESENT", "VERIFIED_ABSENT", "NOT_APPLICABLE", "UNKNOWN", "MISSING", "STALE",
 ];
-// station-line materialization 계약의 domain이다. EXIT domain은 전국 입력에서 증거 행이 없어 MISSING으로 남지만
-// 어떤 경로 간선도 요구하지 않는다(#873). materializer의 EXIT domain은 2026-08-14 pilot v1 산출물과 함께 PR-D(#866)에서 정리한다.
-const DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
+// #873·#866 PR-D: station-line materialization 계약의 domain이다(FACILITY·TRANSFER).
+const DOMAINS = ["FACILITY", "TRANSFER"];
 const RESULT_STATES = ["PASS", "BLOCKED", "NOT_APPLICABLE", "UNKNOWN", "MISSING", "STALE", "NOT_EVALUATED"];
 // #873·#866 PR-C: 경로는 승강장에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT는 정책 매핑에 없고 route 입력에
 // 있으면 명시적으로 실패한다(수도권 live chain 평가 재현용 매핑을 live chain과 함께 지웠다).
@@ -37,7 +36,6 @@ const LINEAGE_FIELDS = [
   "provenanceId", "licenseId", "evidenceKind", "evidenceReason",
 ];
 const TERMINAL_FACILITY_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
-const TERMINAL_EXIT_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
 
 export function evaluateRouteAccessibilityEdges(input, policy) {
   const validatedPolicy = validateRouteEdgeEvaluationPolicy(policy);
@@ -316,13 +314,9 @@ function validateMaterializationRow(row, materializationCandidate, stationLineIn
       && row.stationId === "station-b35616704ce3" && row.lineId === "seoul-2"
       && row.operatorId === "seoul-metro" && row.sourceId === "kric-station-convenience-standard"
       && row.evidenceReason === TERMINAL_FACILITY_REASON;
-    const exitContract = row.domain === "EXIT"
-      && row.terminalPolicy === "PROVIDER_NO_DATA_RESULT_03_BLOCKED"
-      && row.sourceId === "kric-station-movement-standard"
-      && row.evidenceReason === TERMINAL_EXIT_REASON;
     if (row.providerRecordHash !== null || row.providerResultCode !== "03"
       || !/^[a-f0-9]{64}$/.test(row.providerResponseSha256)
-      || (!facilityContract && !exitContract)) {
+      || !facilityContract) {
       throw new Error("terminal materialization contract mismatch");
     }
   } else {
@@ -422,9 +416,7 @@ function evaluateEdge(context) {
     PASS: "all required materialization cells are terminal",
   };
   if (state === "BLOCKED" && cells.some(({ effectiveState }) => effectiveState === "UNVERIFIED_EVIDENCE_BLOCKED")) {
-    const terminalCell = cells.find(({ effectiveState }) => effectiveState === "UNVERIFIED_EVIDENCE_BLOCKED");
-    return resultFor(context, mapping.domains, cells, state,
-      terminalCell.domain === "EXIT" ? TERMINAL_EXIT_REASON : TERMINAL_FACILITY_REASON);
+    return resultFor(context, mapping.domains, cells, state, TERMINAL_FACILITY_REASON);
   }
   return resultFor(context, mapping.domains, cells, state, reasons[state]);
 }

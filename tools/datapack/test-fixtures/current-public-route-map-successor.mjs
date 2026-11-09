@@ -516,7 +516,6 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "release/product-gates/production-datapack-scope.json",
   "tools/datapack/official-od-fare-admission.json",
   "tools/datapack/nationwide-coverage-targets.json",
-  "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
   "tools/datapack/release/current-transfer-topology-metrics.json",
   "tools/datapack/release/current-capital-transfer-topology-applicability.json",
   "release/product-gates/route-edge-evaluation-policy.json",

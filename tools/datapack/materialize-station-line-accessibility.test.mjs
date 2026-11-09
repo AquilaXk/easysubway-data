@@ -58,10 +58,9 @@ function input(rows = [evidence()]) {
   return { candidate: candidate(), stationLines: stationLines(), evidenceRows: rows, observedAt: NOW };
 }
 
-test("canonical stationLine×FACILITY|EXIT|TRANSFER를 완전 materialize하고 입력을 변경하지 않는다", () => {
+test("canonical stationLine×FACILITY|TRANSFER를 완전 materialize하고 입력을 변경하지 않는다", () => {
   const value = input([
     evidence(),
-    evidence({ domain: "EXIT", sourceId: "municipal-exit", sourceSnapshotId: "municipal-exit-20260808", state: "VERIFIED_ABSENT", evidenceKind: "EXPLICIT_ZERO", evidenceReason: "official zero exits" }),
     evidence({ domain: "TRANSFER", sourceId: "rail-transfer", sourceSnapshotId: "rail-transfer-20260808", state: "NOT_APPLICABLE", evidenceKind: "CURRENT_APPLICABILITY_RULE", evidenceReason: "current line has no transfer boundary" }),
   ]);
   const before = structuredClone(value);
@@ -70,7 +69,7 @@ test("canonical stationLine×FACILITY|EXIT|TRANSFER를 완전 materialize하고 
 
   assert.deepEqual(value, before);
   assert.deepEqual(result.candidate, candidate());
-  assert.deepEqual(result.rows.slice(0, 3).map((row) => ({
+  assert.deepEqual(result.rows.slice(0, 2).map((row) => ({
     domain: row.domain,
     stationSetSha256: row.stationSetSha256,
     sourceSetSha256: row.sourceSetSha256,
@@ -79,24 +78,21 @@ test("canonical stationLine×FACILITY|EXIT|TRANSFER를 완전 materialize하고 
     provenanceId: row.provenanceId,
     licenseId: row.licenseId,
   })), [
-    { domain: "EXIT", stationSetSha256: "e".repeat(64), sourceSetSha256: "f".repeat(64), sourceId: "municipal-exit", sourceSnapshotId: "municipal-exit-20260808", provenanceId: "official-operator", licenseId: "public-data-license" },
     { domain: "FACILITY", stationSetSha256: "e".repeat(64), sourceSetSha256: "f".repeat(64), sourceId: "official-operator-accessibility", sourceSnapshotId: "official-operator-accessibility-20260808", provenanceId: "official-operator", licenseId: "public-data-license" },
     { domain: "TRANSFER", stationSetSha256: "e".repeat(64), sourceSetSha256: "f".repeat(64), sourceId: "rail-transfer", sourceSnapshotId: "rail-transfer-20260808", provenanceId: "official-operator", licenseId: "public-data-license" },
   ]);
   assert.deepEqual(result.rows.map(({ stationId, lineId, domain, state }) => ({ stationId, lineId, domain, state })), [
-    { stationId: "station-a", lineId: "line-1", domain: "EXIT", state: "VERIFIED_ABSENT" },
     { stationId: "station-a", lineId: "line-1", domain: "FACILITY", state: "VERIFIED_PRESENT" },
     { stationId: "station-a", lineId: "line-1", domain: "TRANSFER", state: "NOT_APPLICABLE" },
-    { stationId: "station-b", lineId: "line-2", domain: "EXIT", state: "MISSING" },
     { stationId: "station-b", lineId: "line-2", domain: "FACILITY", state: "MISSING" },
     { stationId: "station-b", lineId: "line-2", domain: "TRANSFER", state: "MISSING" },
   ]);
   assert.deepEqual(result.stateSummary, {
     VERIFIED_PRESENT: 1,
-    VERIFIED_ABSENT: 1,
+    VERIFIED_ABSENT: 0,
     NOT_APPLICABLE: 1,
     UNKNOWN: 0,
-    MISSING: 3,
+    MISSING: 2,
     STALE: 0,
   });
   assert.match(result.materializationDigest, /^[a-f0-9]{64}$/);
@@ -105,16 +101,14 @@ test("canonical stationLine×FACILITY|EXIT|TRANSFER를 완전 materialize하고 
 test("admitted row 없음, 만료와 blank/default/provider no-data/unsupported를 파생 상태로 만든다", () => {
   const result = materializeStationLineAccessibility(input([
     evidence({ freshUntil: NOW }),
-    evidence({ domain: "EXIT", state: "UNKNOWN", evidenceKind: "BLANK", evidenceReason: "blank value" }),
     evidence({ domain: "TRANSFER", state: "UNKNOWN", evidenceKind: "PROVIDER_NO_DATA", evidenceReason: "provider reports no data" }),
     evidence({ stationId: "station-b", lineId: "line-2", domain: "FACILITY", state: "UNKNOWN", evidenceKind: "DEFAULT", evidenceReason: "default value" }),
   ]));
 
   assert.equal(result.rows.find((row) => row.stationId === "station-a" && row.domain === "FACILITY").state, "STALE");
-  assert.equal(result.rows.find((row) => row.stationId === "station-a" && row.domain === "EXIT").state, "UNKNOWN");
   assert.equal(result.rows.find((row) => row.stationId === "station-a" && row.domain === "TRANSFER").state, "UNKNOWN");
   assert.equal(result.rows.find((row) => row.stationId === "station-b" && row.domain === "FACILITY").state, "UNKNOWN");
-  assert.equal(result.rows.find((row) => row.stationId === "station-b" && row.domain === "EXIT").state, "MISSING");
+  assert.equal(result.rows.find((row) => row.stationId === "station-b" && row.domain === "TRANSFER").state, "MISSING");
 });
 
 test("duplicate, conflict, unmapped, candidate/station/mapping identity mismatch는 fail closed한다", () => {
@@ -133,7 +127,7 @@ test("duplicate, conflict, unmapped, candidate/station/mapping identity mismatch
   }), /station line identity mismatch/);
 });
 
-test("근거 없는 VERIFIED_ABSENT와 NOT_APPLICABLE 및 닫히지 않은 schema를 거부한다", () => {
+test("근거 없는 VERIFIED_ABSENT와 NOT_APPLICABLE 및 닫히지 않은 schema와 EXIT domain을 거부한다", () => {
   assert.throws(() => materializeStationLineAccessibility(input([
     evidence({ state: "VERIFIED_ABSENT", evidenceKind: "OBSERVED" }),
   ])), /VERIFIED_ABSENT evidence kind/);
@@ -143,6 +137,9 @@ test("근거 없는 VERIFIED_ABSENT와 NOT_APPLICABLE 및 닫히지 않은 schem
   assert.throws(() => materializeStationLineAccessibility(input([
     evidence({ unexpected: true }),
   ])), /evidence row keys mismatch/);
+  assert.throws(() => materializeStationLineAccessibility(input([
+    evidence({ domain: "EXIT" }),
+  ])), /unsupported evidence domain/);
 });
 
 test("exact provider result 03의 EV/ES/WCLF carrier를 하나의 FACILITY terminal cell로 정규화한다", () => {
@@ -189,64 +186,6 @@ function terminalEvidenceHash(facilityType, line) {
   return createHash("sha256").update(JSON.stringify({ facilityType, lineId: line.lineId, operatorId: line.operatorId, providerResponseSha256: "c".repeat(64), sourceSnapshotId: "official-operator-accessibility-20260808", stationId: line.stationId, terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03" })).digest("hex");
 }
 
-test("provider no-data EXIT evidence를 부재가 아닌 terminal blocked cell로 정규화한다", () => {
-  const row = exitTerminalEvidence();
-  const result = materializeStationLineAccessibility(input([row]));
-
-  const cell = result.rows.find(({ stationId, lineId, domain }) => stationId === "station-a" && lineId === "line-1" && domain === "EXIT");
-  assert.equal(cell.state, "UNVERIFIED_EVIDENCE_BLOCKED");
-  assert.equal(cell.terminalPolicy, "PROVIDER_NO_DATA_RESULT_03_BLOCKED");
-  assert.equal(cell.providerResultCode, "03");
-  assert.equal(cell.providerResponseSha256, "9".repeat(64));
-  assert.equal(result.stateSummary.UNVERIFIED_EVIDENCE_BLOCKED, 1);
-
-  for (const overrides of [
-    { domain: "TRANSFER" },
-    { sourceId: "wrong-source" },
-    { providerResultCode: "00" },
-    { terminalPolicy: "wrong-policy" },
-  ]) {
-    assert.throws(() => materializeStationLineAccessibility(input([exitTerminalEvidence(overrides)])), /terminal evidence contract mismatch/);
-  }
-  assert.throws(() => materializeStationLineAccessibility(input([exitTerminalEvidence({ evidenceHash: "0".repeat(64) })])), /terminal evidence hash mismatch/);
-});
-
-function exitTerminalEvidence(overrides = {}) {
-  const row = evidence({
-    domain: "EXIT",
-    sourceId: "kric-station-movement-standard",
-    sourceSnapshotId: "kric-exit-path-20260816",
-    state: "UNVERIFIED_EVIDENCE_BLOCKED",
-    evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED",
-    evidenceReason: "출구 이동경로가 검증되지 않아 경로를 차단했습니다.",
-    terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED",
-    providerResultCode: "03",
-    strictRouteEligible: false,
-    strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
-    statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE",
-    confidence: 0,
-    providerRecordHash: null,
-    providerResponseSha256: "9".repeat(64),
-  });
-  const changed = { ...row, ...overrides };
-  const hashInput = {
-    sourceSnapshotId: changed.sourceSnapshotId,
-    stationId: changed.stationId,
-    lineId: changed.lineId,
-    operatorId: changed.operatorId,
-    domain: changed.domain,
-    terminalPolicy: changed.terminalPolicy,
-    providerResponseSha256: changed.providerResponseSha256,
-  };
-  return { ...changed, evidenceHash: overrides.evidenceHash ?? createHash("sha256").update(canonical(hashInput)).digest("hex") };
-}
-
-function canonical(value) {
-  if (Array.isArray(value)) return JSON.stringify(value.map((item) => JSON.parse(canonical(item))));
-  if (!value || typeof value !== "object") return JSON.stringify(value);
-  return JSON.stringify(Object.fromEntries(Object.keys(value).sort().map((key) => [key, JSON.parse(canonical(value[key]))])));
-}
-
 test("evidence 시간은 canonical UTC와 capturedAt <= observedAt < freshUntil 순서를 fail closed로 강제한다", () => {
   assert.doesNotThrow(() => materializeStationLineAccessibility(input([
     evidence({ capturedAt: NOW, freshUntil: "2026-08-09T00:00:00.001Z" }),
@@ -286,7 +225,7 @@ test("동일 epoch의 fractional-second 표기는 canonical payload와 digest를
 test("canonical ordering과 digest는 입력 순서와 반복에 무관하게 byte-identical이다", () => {
   const rows = [
     evidence({ stationId: "station-b", lineId: "line-2", domain: "TRANSFER", state: "UNKNOWN", evidenceKind: "UNSUPPORTED", evidenceReason: "unsupported source" }),
-    evidence({ stationId: "station-a", lineId: "line-1", domain: "EXIT", state: "UNKNOWN", evidenceKind: "NULL", evidenceReason: "null record" }),
+    evidence({ stationId: "station-a", lineId: "line-1", domain: "FACILITY", state: "UNKNOWN", evidenceKind: "NULL", evidenceReason: "null record" }),
   ];
   const first = materializeStationLineAccessibility(input(rows));
   const second = materializeStationLineAccessibility(input([...rows].reverse()));

@@ -1,8 +1,7 @@
-
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
-const DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
+const DOMAINS = ["FACILITY", "TRANSFER"];
 const STATES = [
   "VERIFIED_PRESENT",
   "VERIFIED_ABSENT",
@@ -24,12 +23,9 @@ const TERMINAL_COMMON_KEYS = [
   "confidence", "providerResponseSha256", "evidenceHash",
 ];
 const TERMINAL_FACILITY_EVIDENCE_KEYS = [...TERMINAL_COMMON_KEYS, "facilityType", "installationStatus", "operationalStatus"];
-const TERMINAL_EXIT_EVIDENCE_KEYS = TERMINAL_COMMON_KEYS;
 const TERMINAL_FACILITY_TYPES = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
 const TERMINAL_FACILITY_REASON = "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.";
-const TERMINAL_EXIT_REASON = "출구 이동경로가 검증되지 않아 경로를 차단했습니다.";
 const TERMINAL_FACILITY_SOURCE_ID = "kric-station-convenience-standard";
-const TERMINAL_EXIT_SOURCE_ID = "kric-station-movement-standard";
 const STATION_LINE_KEYS = ["stationId", "lineId", "operatorId"];
 
 export function materializeStationLineAccessibility(input) {
@@ -177,7 +173,7 @@ export function canonicalStationLineAccessibilityPayloadJson(result) {
 function validateEvidence(row, candidate, observedAt) {
   const terminal = row?.evidenceKind === "UNVERIFIED_EVIDENCE_BLOCKED";
   const keys = terminal
-    ? row?.domain === "FACILITY" ? TERMINAL_FACILITY_EVIDENCE_KEYS : TERMINAL_EXIT_EVIDENCE_KEYS
+    ? row?.domain === "FACILITY" ? TERMINAL_FACILITY_EVIDENCE_KEYS : TERMINAL_COMMON_KEYS
     : EVIDENCE_KEYS;
   assertKeys(row, keys, "evidence row keys");
   assertEvidenceIdentity(row, candidate);
@@ -232,36 +228,20 @@ function assertEvidenceState(row) {
   if (!validKinds[row.state].includes(row.evidenceKind)) throw new Error(`${row.state} evidence kind is not allowed`);
   if (row.state === "UNVERIFIED_EVIDENCE_BLOCKED") {
     if (row.providerResultCode !== "03" || row.strictRouteEligible !== false
-      || row.strictRouteEligibleReason !== "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED" || row.confidence !== 0) {
+      || row.strictRouteEligibleReason !== "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED" || row.confidence !== 0
+      || row.domain !== "FACILITY"
+      || row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
+      || row.sourceId !== TERMINAL_FACILITY_SOURCE_ID
+      || row.installationStatus !== "UNKNOWN" || row.operationalStatus !== "UNKNOWN"
+      || row.statusMeaning !== "PROVIDER_RESULT_UNVERIFIED"
+      || !TERMINAL_FACILITY_TYPES.includes(row.facilityType) || row.evidenceReason !== TERMINAL_FACILITY_REASON) {
       throw new Error("terminal evidence contract mismatch");
     }
-    let hashInput;
-    if (row.domain === "FACILITY") {
-      if (row.terminalPolicy !== "EXACT_TUPLE_PROVIDER_RESULT_03"
-        || row.sourceId !== TERMINAL_FACILITY_SOURCE_ID
-        || row.installationStatus !== "UNKNOWN" || row.operationalStatus !== "UNKNOWN"
-        || row.statusMeaning !== "PROVIDER_RESULT_UNVERIFIED"
-        || !TERMINAL_FACILITY_TYPES.includes(row.facilityType) || row.evidenceReason !== TERMINAL_FACILITY_REASON) {
-        throw new Error("terminal evidence contract mismatch");
-      }
-      hashInput = {
-        sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,
-        operatorId: row.operatorId, facilityType: row.facilityType, terminalPolicy: row.terminalPolicy,
-        providerResponseSha256: row.providerResponseSha256,
-      };
-    } else if (row.domain === "EXIT") {
-      if (row.sourceId !== TERMINAL_EXIT_SOURCE_ID || row.terminalPolicy !== "PROVIDER_NO_DATA_RESULT_03_BLOCKED"
-        || row.statusMeaning !== "PROVIDER_NO_DATA_NOT_ABSENCE" || row.evidenceReason !== TERMINAL_EXIT_REASON) {
-        throw new Error("terminal evidence contract mismatch");
-      }
-      hashInput = {
-        sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,
-        operatorId: row.operatorId, domain: row.domain, terminalPolicy: row.terminalPolicy,
-        providerResponseSha256: row.providerResponseSha256,
-      };
-    } else {
-      throw new Error("terminal evidence contract mismatch");
-    }
+    const hashInput = {
+      sourceSnapshotId: row.sourceSnapshotId, stationId: row.stationId, lineId: row.lineId,
+      operatorId: row.operatorId, facilityType: row.facilityType, terminalPolicy: row.terminalPolicy,
+      providerResponseSha256: row.providerResponseSha256,
+    };
     if (row.evidenceHash !== sha256(canonicalJson(hashInput))) throw new Error("terminal evidence hash mismatch");
   }
 }

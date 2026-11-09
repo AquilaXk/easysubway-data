@@ -1057,7 +1057,7 @@ test("데이터팩 생성기는 일반 fixture 입력으로 production channel�
       validate({
         root: validationOutput,
         manifestPath: path.join(validationOutput, "current.json"),
-        extraArgs: ["--require-production", "--legacy-fixture-production"],
+        extraArgs: ["--require-production"],
       }),
       /production artifactKind/,
     );
@@ -1095,7 +1095,7 @@ test("데이터팩 검증기는 원격 publish 전 fixture pack을 거부한다"
   await withBuildWorkspace(async ({ build, validate }) => {
     await build({ fixture: CATALOG_FIXTURE_PATH });
     await assert.rejects(
-      validate({ extraArgs: ["--require-production", "--legacy-fixture-production"] }),
+      validate({ extraArgs: ["--require-production"] }),
       /capital@1 remote publish requires production artifactKind/,
     );
   });

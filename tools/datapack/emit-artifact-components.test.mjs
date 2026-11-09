@@ -905,7 +905,7 @@ function completeStationLineInput(sourceSetSha256, candidateId) {
     { stationId: "s2", lineId: "l1", operatorId: "o1" },
     { stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro" },
   ];
-  const evidenceRows = stationLines.filter(({ stationId }) => stationId !== "station-b35616704ce3").flatMap((line) => ["FACILITY", "EXIT", "TRANSFER"].map((domain) => ({
+  const evidenceRows = stationLines.filter(({ stationId }) => stationId !== "station-b35616704ce3").flatMap((line) => ["FACILITY", "TRANSFER"].map((domain) => ({
     ...candidate,
     ...line,
     domain,
@@ -924,8 +924,7 @@ function completeStationLineInput(sourceSetSha256, candidateId) {
     evidenceReason: domain === "TRANSFER" ? "no transfer boundary" : "official current evidence",
   })));
   const terminal = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"].map((facilityType) => ({ ...candidate, stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", domain: "FACILITY", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: "kric-station-convenience-standard", sourceSnapshotId: "fixture-terminal-snapshot", evidenceRawSha256: "a".repeat(64), providerRecordHash: null, capturedAt, freshUntil, provenanceId: "fixture-provenance", licenseId: "fixture-license", mappingContractVersion: candidate.mappingContractVersion, materializerVersion: candidate.materializerVersion, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.", facilityType, terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", installationStatus: "UNKNOWN", operationalStatus: "UNKNOWN", statusMeaning: "PROVIDER_RESULT_UNVERIFIED", confidence: 0, providerResponseSha256: "c".repeat(64), evidenceHash: hash(Buffer.from(canonicalJson({ sourceSnapshotId: "fixture-terminal-snapshot", stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", facilityType, terminalPolicy: "EXACT_TUPLE_PROVIDER_RESULT_03", providerResponseSha256: "c".repeat(64) }))) }));
-  const exitTerminal = { ...candidate, stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", domain: "EXIT", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: "kric-station-movement-standard", sourceSnapshotId: "fixture-exit-snapshot", evidenceRawSha256: "d".repeat(64), providerRecordHash: null, capturedAt, freshUntil, provenanceId: "fixture-provenance", licenseId: "fixture-license", mappingContractVersion: candidate.mappingContractVersion, materializerVersion: candidate.materializerVersion, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "출구 이동경로가 검증되지 않아 경로를 차단했습니다.", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE", confidence: 0, providerResponseSha256: "9".repeat(64), evidenceHash: hash(Buffer.from(canonicalJson({ sourceSnapshotId: "fixture-exit-snapshot", stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro", domain: "EXIT", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResponseSha256: "9".repeat(64) }))) };
-  return { candidate, stationLines, evidenceRows: [...evidenceRows, ...terminal, exitTerminal] };
+  return { candidate, stationLines, evidenceRows: [...evidenceRows, ...terminal] };
 }
 function resealTerminalEvidence(row) {
   if (row.state !== "UNVERIFIED_EVIDENCE_BLOCKED") return row;

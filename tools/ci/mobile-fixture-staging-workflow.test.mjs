@@ -146,12 +146,11 @@ test("CI는 TRANSFER topology admission과 current source revalidation contract�
   ]);
 });
 
-test("CI는 EXIT path admission contract를 owned required runner에서 실행한다", () => {
+test("CI는 EXIT path collection contract를 owned required runner에서 실행한다", () => {
   assertRequiredOwned([
     "tools/datapack/plan-kric-exit-path-collection.test.mjs",
     "tools/datapack/build-current-kric-exit-collection-plan.test.mjs",
     "tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs",
-    "tools/datapack/build-exit-path-admission.test.mjs",
   ]);
 });
 
