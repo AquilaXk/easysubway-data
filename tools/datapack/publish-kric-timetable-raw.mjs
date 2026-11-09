@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
-import { validateKricLine4PilotCollectionArtifact } from "./apply-kric-line4-pilot-schedule.mjs";
+import { validateKricLine4PilotCollectionArtifact } from "./collect-kric-line4-timetables.mjs";
 import {
   requireOciParBaseUrl,
   requiredText,

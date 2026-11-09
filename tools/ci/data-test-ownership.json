@@ -515,7 +515,6 @@
     {"path":"tools/datapack/export-publish-env.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":44},
     {"path":"tools/datapack/apply-capital-route-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":881},
     {"path":"tools/datapack/apply-itx-topology-to-bundled-pack.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":7109},
-    {"path":"tools/datapack/apply-kric-line4-pilot-schedule.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":1},
     {"path":"tools/datapack/apply-timetable-refresh.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":1234},
     {"path":"tools/datapack/artifact-component-manifest.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":8},
     {"path":"tools/datapack/artifact-component-table-layout.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":15},

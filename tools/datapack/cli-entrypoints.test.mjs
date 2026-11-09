@@ -26,7 +26,7 @@ const GENERIC_INVALID_ARGUMENTS = /^invalid arguments$/m;
  * build-server-timetable-snapshot은 알 수 없는 --flag를 받아 repo 기본 경로로 진행하므로 위치 인자로 거부시킨다.
  */
 const CLI_ENTRYPOINTS = [
-  { script: "activate-current-source-set", args: REJECTED_FLAG, stderr: /unknown activation argument: --bogus-arg/ },
+  { script: "activate-current-source-set", args: REJECTED_FLAG, stderr: /activate-current-source-set requires --topology-source-admission or --approved-itx-bootstrap/ },
   { script: "build-current-strict-route-regression-report", args: REJECTED_FLAG, stderr: /strict route report argument is invalid/ },
   { script: "build-server-timetable-snapshot", args: REJECTED_POSITIONAL, stderr: /invalid argument: bogus/ },
   { script: "collect-facility-gap-source-evidence", args: REJECTED_FLAG, stderr: /usage: collect-facility-gap-source-evidence\.mjs/ },
@@ -57,7 +57,6 @@ const CLI_ENTRYPOINTS = [
 
 /** 이미 그 스크립트의 .mjs를 child process로 실행하는 테스트가 있어 표에서 뺀 CLI. 값은 그 실행 테스트 파일이다. */
 const ENTRYPOINTS_COVERED_ELSEWHERE = {
-  "apply-kric-line4-pilot-schedule": "datapack-tools.test.mjs",
   "build-backend-timetable-seed": "build-backend-timetable-seed.test.mjs",
   "build-nationwide-coverage-tally": "build-nationwide-coverage-tally.test.mjs",
   "import-official-sources": "import-official-sources.test.mjs",

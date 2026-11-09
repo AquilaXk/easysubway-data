@@ -32,7 +32,7 @@ function artifact() {
     failedRequestCount: 0,
     expectedNoDataRequestCount: 51,
     lineId: "seoul-4",
-    // #862: QA 승인(2026-10-01) 4호선 시각표 개정 기준(apply-kric-line4-pilot-schedule 고정 건수)과 맞춘다.
+    // #862: QA 승인(2026-10-01) 4호선 시각표 개정 기준(collect-kric-line4-timetables 고정 건수)과 맞춘다.
     intermediateRowCount: 32677,
     excludedOutsidePilotGroupCount: 415,
     excludedOutsidePilotGroups: Array.from({ length: 415 }, (_, index) => ({ index })),

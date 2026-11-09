@@ -20,15 +20,15 @@ import {
   admittedIncheonAccessibilityEvidence,
   validateProductionIncheonAccessibilityFixture,
 } from "./materialize-incheon-accessibility.mjs";
+import * as activateCurrentSourceSetModule from "./activate-current-source-set.mjs";
 import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidations,
   bindApprovedItxCurrentSourceSpec,
-  buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
+  buildCurrentCandidateSpec,
   buildCurrentTopologyRefreshPrimaryOutputs, buildCurrentTopologySourceAdmissionOutputs, commitCurrentSourceActivation,
   CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS, parseCurrentTopologySourceAdmissionArgs,
-  collectLayoutTopologySnapshotBytes, collectPositionSnapshotBytes, parseCurrentSourceActivationArgs,
+  collectLayoutTopologySnapshotBytes, collectPositionSnapshotBytes,
   deriveApprovedItxTopologyEvidencePath,
   parseApprovedItxBootstrapArgs, requireCleanBuilder,
-  CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   readBuilderBaselineBytes,
   readOptionalCurrentItxAdmissionBytes,
   resolveCurrentTopologyRefreshSpec,
@@ -37,7 +37,6 @@ import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidatio
   validateFreshCandidateSelectedItxEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
-import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
 import {
   normalizeStationName,
   projectCapitalTopologyOwnership,
@@ -103,21 +102,6 @@ function currentCapitalTopologyAdmission(sourceInventory) {
 
 async function currentCapitalTopology(sourceInventory) {
   const admission = currentCapitalTopologyAdmission(sourceInventory);
-  const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
-  const bytes = await readFile(path.join(root, relativePath));
-  const topology = JSON.parse(bytes);
-  assert.equal(topology.contentSha256, admission.topologyContentSha256);
-  return { admission, relativePath, bytes, topology };
-}
-
-// 고정 이력 handoff의 [collectedAt, freshnessExpiresAt) 창 안에서 관측된 원장 capital topology 행을 고른다.
-async function handoffWindowCapitalTopology(handoff) {
-  const ledger = await readJson("tools/datapack/release/source-snapshots.json");
-  const rows = ledger.filter(({ sourceId, capturedAt }) => sourceId === "capital-route-topology"
-    && Date.parse(capturedAt) >= Date.parse(handoff.collectedAt)
-    && Date.parse(capturedAt) < Date.parse(handoff.freshnessExpiresAt));
-  assert.equal(rows.length, 1);
-  const admission = { topologySnapshotId: rows[0].snapshotId, topologyContentSha256: rows[0].contentSha256 };
   const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
   const bytes = await readFile(path.join(root, relativePath));
   const topology = JSON.parse(bytes);
@@ -860,32 +844,35 @@ function staticChangeAdmission(previous, canonicalPackBytes,
   return { evidence, snapshot };
 }
 
-test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한다", () => {
-  assert.deepEqual(parseCurrentSourceActivationArgs([
-    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260811.json",
-    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260811.json",
-    "--incheon-accessibility", "tools/datapack/sources/incheon-transit-accessibility-20260811.json",
-    "--seoul-revalidation-snapshot", "tools/datapack/sources/current-static-revalidation-20260811/seoulmetro-station-line-info-snapshot.json",
-    "--seoul-revalidation-evidence", "tools/datapack/sources/current-static-revalidation-20260811/seoulmetro-station-line-info-revalidation-evidence.json",
-    "--builder-git-sha", "a".repeat(40),
-    "--build-now", "2026-08-11T00:00:00.000Z",
-  ]), {
-    check: false,
-    capital_topology: "tools/datapack/sources/capital-route-topology-20260811.json",
-    incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260811.json",
-    incheon_accessibility: "tools/datapack/sources/incheon-transit-accessibility-20260811.json",
-    seoul_revalidation_snapshot: "tools/datapack/sources/current-static-revalidation-20260811/seoulmetro-station-line-info-snapshot.json",
-    seoul_revalidation_evidence: "tools/datapack/sources/current-static-revalidation-20260811/seoulmetro-station-line-info-revalidation-evidence.json",
-    builder_git_sha: "a".repeat(40),
-    build_now: "2026-08-11T00:00:00.000Z",
-  });
-  assert.throws(() => parseCurrentSourceActivationArgs([
-    "--hub-repository", "/tmp/hub",
-    "--builder-git-sha", "a".repeat(40),
-    "--build-now", "2026-08-11T00:00:00.000Z",
-  ]), /unknown activation argument/);
-  // #862 결정 C: 후보를 다시 쓰던 --topology-only CLI 모드는 없앴다. topology 갱신은 --topology-source-admission만 쓴다.
-  assert.throws(() => parseCurrentSourceActivationArgs(["--topology-only"]), /unknown activation argument: --topology-only/);
+test("activation CLI는 --topology-source-admission 또는 --approved-itx-bootstrap만 수용하고 legacy pilot 인자를 거부한다", async () => {
+  for (const removedExport of [
+    "buildCurrentSourcePrimaryOutputs",
+    "parseCurrentSourceActivationArgs",
+    "CURRENT_PRODUCTION_SOURCE_IDS",
+    "CURRENT_SOURCE_INVENTORY_IDS",
+  ]) {
+    assert.equal(Object.hasOwn(activateCurrentSourceSetModule, removedExport), false, removedExport);
+  }
+  const rejectedArgvList = [
+    [],
+    [
+      "--capital-topology", "tools/datapack/sources/capital-route-topology-20260811.json",
+      "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260811.json",
+      "--incheon-accessibility", "tools/datapack/sources/incheon-transit-accessibility-20260811.json",
+      "--seoul-revalidation-snapshot", "tools/datapack/sources/current-static-revalidation-20260811/seoulmetro-station-line-info-snapshot.json",
+      "--seoul-revalidation-evidence", "tools/datapack/sources/current-static-revalidation-20260811/seoulmetro-station-line-info-revalidation-evidence.json",
+      "--builder-git-sha", "a".repeat(40),
+      "--build-now", "2026-08-11T00:00:00.000Z",
+    ],
+    ["--topology-only"],
+    ["--topology-source-admission", "--approved-itx-bootstrap"],
+  ];
+  for (const argv of rejectedArgvList) {
+    await assert.rejects(
+      execFileAsync(process.execPath, ["tools/datapack/activate-current-source-set.mjs", ...argv], { cwd: root }),
+      (error) => /activate-current-source-set requires --topology-source-admission or --approved-itx-bootstrap/u.test(error?.stderr ?? ""),
+    );
+  }
 });
 
 test("topology refresh skips the optional ITX admission file read", async () => {
@@ -2530,231 +2517,6 @@ test("current capital topology는 canonical fixture의 admitted capital directio
   }
 });
 
-test("primary source set은 current KRIC·7-source·two-topology identity를 한 번에 활성화한다", async () => {
-  const rawArtifactBytes = Buffer.from('{"artifact":"current"}\n');
-  const [baseSpec, currentInventory] = await Promise.all([
-    readJson("tools/datapack/release/candidate-build-spec.json"),
-    readJson("tools/datapack/source-inventory.json"),
-  ]);
-  const previousSnapshot = {
-    schemaVersion: 1, artifactKind: "official-source-snapshot",
-    snapshotId: "kric-subway-timetable-line4-pilot-20260709", sourceId: "kric-subway-timetable",
-    provider: "국가철도공단", retrievedAt: "2026-07-09T00:00:00Z",
-    sourceUpdatedAt: "2026-07-09T00:00:00Z", serviceEffectiveAt: "2026-07-09T00:00:00Z",
-    serviceEffectiveUntil: "2026-12-31T00:00:00Z", rowCount: 473,
-    coverageCount: 1, rawSha256: "7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc",
-    rawObjectUri: `oci://easysubway-datapacks/source-raw/kric-subway-timetable/20260709/${"7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc"}.json`, redactedRequestFingerprint: "4ab1e2d84e511733f7f2c95023d853089d6f31e9a39cfe617037edc58112b1aa",
-    schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff", snapshotStatus: "LOCKED",
-    schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS",
-    redistributionAllowed: true, credentialRedacted: true, previousSnapshotId: null,
-    diffSummary: null, freshnessExpiresAt: "2026-08-08T00:00:00.000Z",
-    rawRetentionExpiresAt: "2026-10-07T00:00:00.000Z",
-  };
-  const sourceIds = ["molit-urban-rail-full-route", "seoulmetro-station-line-info",
-    "seoul-metro-route-map-positions", "kric-subway-timetable", "seoul-metro-accessibility",
-    "kric-station-convenience-standard", "seoul-metro-official-od-fares"];
-  const inventory = structuredClone(currentInventory);
-  const previousTimetable = inventory.sources.find(({ id }) => id === "kric-subway-timetable");
-  previousTimetable.observedDataUpdatedAt = "2026-07-09";
-  previousTimetable.retrievedAt = "2026-07-09";
-  previousTimetable.admissionEvidence = {
-    ...previousTimetable.admissionEvidence,
-    snapshotId: previousSnapshot.snapshotId,
-    rawSha256: previousSnapshot.rawSha256,
-  };
-  const officialOdFareQuotes = [{ sourceId: "seoul-metro-official-od-fares", direction: "UP" },
-    { sourceId: "seoul-metro-official-od-fares", direction: "DOWN" }];
-  const handoff = {
-    hubCommit: "9251acdcc563975e8757d61f03e398d10c935d8b", rawSizeBytes: rawArtifactBytes.length,
-    rawSha256: sha256(rawArtifactBytes), rawObjectUri: `oci://easysubway-datapacks/source-raw/kric-subway-timetable/20260809/${sha256(rawArtifactBytes)}.json`,
-    snapshotId: "kric-subway-timetable-line4-pilot-20260809", previousSnapshotId: previousSnapshot.snapshotId,
-    collectedAt: "2026-08-09T12:04:20.479Z", serviceEffectiveUntil: "2026-12-31T00:00:00Z",
-    rowCount: 466, coverageCount: 1, freshnessExpiresAt: "2026-09-08T12:04:20.479Z",
-    rawRetentionExpiresAt: "2026-11-07T12:04:20.479Z", redactedRequestFingerprint: "bb6302775c0afecf0b5e6d3c7e4bf89cdec4a2cfef01fbb80d2ea5ace234f0f7",
-    schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff", governancePolicyVersion: "2026-07-15",
-    governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70",
-  };
-  // #862: 이 활성화는 고정 이력 handoff(KRIC 4호선 20260809, 30일 창)에 묶여 있다. 현재 원장 head가 그 창을
-  // 지나면(2026-10-01 재등록) 시나리오가 성립하지 않으므로, 창 안에서 관측된 원장 이력 topology로 같은 검사를 한다.
-  const [{ topology: baselineTopology, bytes: baselineTopologyBytes },
-    { admission: currentCapitalAdmission, relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology }] = await Promise.all([
-    historicalCandidateCapitalTopology(baseSpec),
-    handoffWindowCapitalTopology(handoff),
-  ]);
-  const currentIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${currentCapitalAdmission.topologySnapshotId.slice(-8)}.json`;
-  // 창 안의 topology로 수도권 topology admission을 공식 재결속 함수로 맞춘다(main 당시 inventory 상태와 같은 결속).
-  const windowInventory = withCurrentCapitalTopologyAdmissions({
-    inventory,
-    topology: currentTopology,
-    topologySnapshotId: currentCapitalAdmission.topologySnapshotId,
-    reviewedAt: currentTopology.capturedAt,
-    snapshotBytesByPath: await collectPositionSnapshotBytes(currentInventory),
-    topologySnapshotBytes: currentTopologyBytes,
-    layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(currentInventory),
-  });
-  const currentIncheonTopologyBytes = await readFile(path.join(root, currentIncheonTopologyPath));
-  const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
-  const currentIncheonAccessibilitySource = currentInventory.sources
-    .find(({ id }) => id === "incheon-transit-accessibility");
-  const currentIncheonAccessibilityPath = `tools/datapack/sources/${currentIncheonAccessibilitySource
-    .registrationEvidence.snapshotId}.json`;
-  const currentIncheonAccessibilityBytes = await readFile(path.join(root, currentIncheonAccessibilityPath));
-  const currentIncheonAccessibility = JSON.parse(currentIncheonAccessibilityBytes);
-  const capitalSnapshotDate = currentTopology.capturedAt.slice(0, 10).replaceAll("-", "");
-  const incheonSnapshotDate = currentIncheonTopology.capturedAt.slice(0, 10).replaceAll("-", "");
-  assert.equal(currentCapitalAdmission.topologySnapshotId.slice(-8), capitalSnapshotDate);
-  assert.equal(path.basename(currentIncheonTopologyPath, ".json").slice(-8), incheonSnapshotDate);
-  const activationMillis = Math.max(
-    Date.parse(currentTopology.capturedAt),
-    Date.parse(currentIncheonTopology.capturedAt),
-  ) + 1_000;
-  const activationFreshUntil = Math.min(
-    Date.parse(currentTopology.freshUntil),
-    Date.parse(currentIncheonTopology.freshUntil),
-  );
-  assert.ok(activationMillis < activationFreshUntil);
-  const buildNow = new Date(activationMillis).toISOString();
-  const publicRouteMapSuccessor = {
-    sourceId: "seoul-metro-route-map-positions",
-    snapshotId: "seoul-metro-route-map-positions-current-20260810",
-    rawSha256: sha256("current-public-route-map-raw"),
-    normalizedObservationSha256: sha256("current-public-route-map-observation"),
-    routeMapLayoutEvidence: { layoutArtifactSha256: sha256("current-public-route-map-layout") },
-    routeMapLayoutArtifact: {
-      capturedAt: "2026-08-10T20:21:15.000Z",
-      datasetUrl: "https://www.data.go.kr/data/15099316/fileData.do",
-      rawPositions: [
-        { lineId: "seoul-4", stationCode: "433", stationName: "사당" },
-        { lineId: "seoul-4", stationCode: "448", stationName: "상록수" },
-      ],
-      layoutPositions: [
-        { lineId: "seoul-4", stationCode: "433", canvasX: 10, canvasY: 20, labelDx: 0, labelDy: 0, labelPolygon: [] },
-        { lineId: "seoul-4", stationCode: "448", canvasX: 30, canvasY: 40, labelDx: 0, labelDy: 0, labelPolygon: [] },
-      ],
-    },
-  };
-  let omitCapitalAdmission = false;
-  const build = (sourceSnapshots) => buildCurrentSourcePrimaryOutputs({
-    handoff,
-    rawArtifact: { collectedAt: handoff.collectedAt },
-    rawArtifactBytes,
-    sourceSnapshots,
-    sourceInventory: windowInventory,
-    productionInput: {
-      sourceIds: sourceIds.slice(0, 6),
-      stationMappings: [
-        { sourceId: "seoulmetro-station-line-info", sourceStationCode: "433", lineId: "seoul-4", stationId: "station-sadang", stationLineId: "station-sadang:seoul-4" },
-        { sourceId: "seoulmetro-station-line-info", sourceStationCode: "448", lineId: "seoul-4", stationId: "station-sangnoksu", stationLineId: "station-sangnoksu:seoul-4" },
-      ],
-      routeMapPositions: [{ sourceId: "seoulmetro-cyberstation-route-map" }],
-    },
-    officialOdFareQuotes,
-    baseSpec,
-    baselineTopology,
-    baselineTopologyBytes,
-    currentTopology,
-    currentTopologyBytes,
-    currentTopologyPath,
-    currentIncheonTopology,
-    currentIncheonTopologyBytes,
-    currentIncheonTopologyPath,
-    currentIncheonAccessibility,
-    currentIncheonAccessibilityBytes,
-    currentIncheonAccessibilityPath,
-    buildNow,
-    snapshotBytesByPath: new Map(),
-    verifySuccessorHeadsImpl() { return { positions: publicRouteMapSuccessor }; },
-    applyScheduleImpl(input) {
-      return {
-        ...input,
-        scheduleProvenance: {
-          sourceId: "kric-subway-timetable",
-          sourceSnapshotId: handoff.snapshotId,
-          providerRecordHash: handoff.rawSha256,
-          evidenceHash: "e".repeat(64),
-          retrievedAt: handoff.collectedAt,
-        },
-        transitRoutes: [{}],
-        transitTrips: [{}],
-        transitStopTimes: [{}],
-      };
-    },
-    rebindTopologyAdmissionsImpl({ inventory: value, topologySnapshotId }) {
-      assert.equal(topologySnapshotId, currentCapitalAdmission.topologySnapshotId);
-      if (omitCapitalAdmission) {
-        const sources = structuredClone(value.sources);
-        const index = sources.findIndex((source) =>
-          source.routeMapAdmissionEvidence?.currentTopologyAdmission != null);
-        sources.splice(index, 1);
-        return { ...value, sources, topologyAdmissionsRebound: true };
-      }
-      return { ...value, topologyAdmissionsRebound: true };
-    },
-    requireCurrentIncheonTopologyAdmissionImpl({
-      sourceInventory: value, snapshotPath, accessibilitySnapshot,
-      accessibilitySnapshotBytes, accessibilitySnapshotPath,
-    }) {
-      assert.equal(snapshotPath, currentIncheonTopologyPath);
-      assert.strictEqual(accessibilitySnapshot, currentIncheonAccessibility);
-      assert.strictEqual(accessibilitySnapshotBytes, currentIncheonAccessibilityBytes);
-      assert.equal(accessibilitySnapshotPath, currentIncheonAccessibilityPath);
-      return value;
-    },
-    buildTopologyReverificationImpl(baseline, current) {
-      assert.equal(baseline.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
-      assert.equal(current.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
-      return { artifactKind: "capital-topology-reverification-evidence" };
-    },
-  });
-  const result = build([previousSnapshot]);
-
-  assert.equal(result.sourceSnapshots.at(-1).snapshotId, handoff.snapshotId);
-  assert.deepEqual(result.sourceSnapshots.at(-1).diffSummary, {
-    status: "CHANGED",
-    rawHashChanged: true,
-    schemaHashChanged: false,
-    requestHashChanged: true,
-    sourceUpdatedAtChanged: true,
-    rowDelta: -7,
-    coverageDelta: 0,
-  });
-  const currentTimetable = result.sourceInventory.sources.find(({ id }) => id === "kric-subway-timetable");
-  assert.equal(currentTimetable.admissionEvidence.snapshotId, handoff.snapshotId);
-  assert.equal(currentTimetable.admissionEvidence.rawSha256, handoff.rawSha256);
-  const convenience = result.sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
-  assert.equal(convenience.requiredForProductionPack, true);
-  assert.equal(convenience.productionUseAllowed, true);
-  assert.equal(result.sourceInventory.topologyAdmissionsRebound, true);
-  assert.equal(result.sourceInventory.incheonAdmissionsRebound, undefined);
-  assert.equal(CURRENT_SOURCE_INVENTORY_IDS.includes("seoul-metro-route-map-positions"), true);
-  assert.equal(CURRENT_PRODUCTION_SOURCE_IDS.includes("seoul-metro-route-map-positions"), false);
-  assert.deepEqual(result.productionInput.sourceIds, [...CURRENT_PRODUCTION_SOURCE_IDS]);
-  assert.deepEqual(result.productionInput.routeMapPositions, []);
-  assert.equal(
-    result.productionInput.coverageEvidence.some(({ sourceIds: ids }) =>
-      ids.includes("seoulmetro-cyberstation-route-map")),
-    false,
-  );
-  assert.equal(result.productionInput.coverageEvidence.some(({ sourceDomain }) =>
-    sourceDomain === "route_map_positions"), false);
-  assert.deepEqual(result.productionInput.officialOdFareQuotes, officialOdFareQuotes);
-  assert.deepEqual(result.productionInput.routeServiceArtifactEvidence, []);
-  assert.deepEqual(result.productionInput.movementPathCandidates, []);
-  assert.equal(result.productionInput.scheduleProvenance.sourceSnapshotId, handoff.snapshotId);
-  assert.equal(result.topologyReverification.artifactKind, "capital-topology-reverification-evidence");
-
-  const repeated = build(result.sourceSnapshots);
-  assert.deepEqual(repeated.sourceSnapshots, result.sourceSnapshots);
-
-  omitCapitalAdmission = true;
-  assert.throws(() => build(result.sourceSnapshots), /current capital topology admissions are not exactly rebound/);
-  omitCapitalAdmission = false;
-
-  const drifted = structuredClone(result.sourceSnapshots);
-  drifted.at(-1).rawSha256 = "f".repeat(64);
-  assert.throws(() => build(drifted), /current KRIC source snapshot identity mismatch/);
-});
-
 test("pre-materialization current input은 route-map partial claim 없이 exact OD fare 2건만 importer에 전달한다", async (context) => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "current-source-import-"));
   context.after(() => rm(workspace, { recursive: true, force: true }));
@@ -2770,7 +2532,14 @@ test("pre-materialization current input은 route-map partial claim 없이 exact 
   convenienceSource.productionUseAllowed = true;
 
   const fareSourceId = "seoul-metro-official-od-fares";
-  input.sourceIds = [...CURRENT_PRODUCTION_SOURCE_IDS];
+  input.sourceIds = [
+    "molit-urban-rail-full-route",
+    "seoulmetro-station-line-info",
+    "kric-subway-timetable",
+    "seoul-metro-accessibility",
+    "kric-station-convenience-standard",
+    "seoul-metro-official-od-fares",
+  ];
   assert.equal(input.sourceIds.includes("seoul-metro-route-map-positions"), false);
   input.coverageEvidence = [
     ...input.coverageEvidence.filter(({ sourceDomain }) =>

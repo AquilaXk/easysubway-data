@@ -12,10 +12,8 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import { verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
-  overlayReviewedSourcesOnCanonicalRoster,
   retainPreAuthorityRideEdges,
   syncCanonicalAccessibilityEvidence,
-  syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import {
   admittedTopologySource,
@@ -25,9 +23,6 @@ import {
   validateAdmittedSourceDocuments,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
-import { assertNoRetiredTransitReferences, projectRetiredTransitLines } from "./project-retired-transit-lines.mjs";
-import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
-import { applySchedule } from "./apply-kric-line4-pilot-schedule.mjs";
 import {
   CAPITAL_MAP_LINE_IDS,
   buildCapitalTopologyReverificationEvidence,
@@ -69,11 +64,6 @@ import {
   assertCurrentSeoulPositionProjectionCompleteness,
 } from "./lib/static-network-successor-completeness.mjs";
 import {
-  CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
-  materializeSeoulRouteMapPositions,
-  verifyCurrentCapitalPublicRouteMapDocument,
-} from "./materialize-seoul-route-map-positions.mjs";
-import {
   requiresCurrentCapitalTopologyAdmission,
   withCurrentCapitalTopologyAdmissions,
 } from "./rebind-capital-route-map-admissions.mjs";
@@ -105,37 +95,6 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const MAX_BUFFER = 64 * 1024 * 1024;
 
-export const CURRENT_SOURCE_INVENTORY_IDS = Object.freeze([
-  "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-  "seoul-metro-route-map-positions", "kric-subway-timetable",
-  "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares",
-]);
-export const CURRENT_PRODUCTION_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route", "seoulmetro-station-line-info",
-  "kric-subway-timetable", "seoul-metro-accessibility",
-  "kric-station-convenience-standard", "seoul-metro-official-od-fares",
-]);
-
-const CURRENT_SOURCE_HANDOFF = Object.freeze({
-  hubCommit: "9251acdcc563975e8757d61f03e398d10c935d8b",
-  rawSizeBytes: 12_657_973,
-  rawSha256: "d8ee1a9351ade3465a955ffabeade294eaccf65449fc1fc1998240fdba87e064",
-  rawObjectUri: "oci://easysubway-datapacks/source-raw/kric-subway-timetable/20260809/d8ee1a9351ade3465a955ffabeade294eaccf65449fc1fc1998240fdba87e064.json",
-  snapshotId: "kric-subway-timetable-line4-pilot-20260809",
-  previousSnapshotId: "kric-subway-timetable-line4-pilot-20260709",
-  collectedAt: "2026-08-09T12:04:20.479Z",
-  serviceEffectiveUntil: "2026-12-31T00:00:00Z",
-  rowCount: 466,
-  coverageCount: 1,
-  freshnessExpiresAt: "2026-09-08T12:04:20.479Z",
-  rawRetentionExpiresAt: "2026-11-07T12:04:20.479Z",
-  redactedRequestFingerprint: "bb6302775c0afecf0b5e6d3c7e4bf89cdec4a2cfef01fbb80d2ea5ace234f0f7",
-  schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
-  governancePolicyVersion: "2026-07-15",
-  governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70",
-});
-
 export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
   "tools/datapack/release/source-snapshots.json", "tools/datapack/source-inventory.json", "tools/datapack/inputs/capital-pilot-production-source-input.json",
   "tools/datapack/release/capital-production-reviewed-pack.json", "tools/datapack/release/capital-production-canonical-pack.json",
@@ -156,10 +115,6 @@ export const CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS = Object.freeze([
   "tools/datapack/release/capital-production-canonical-pack.json",
 ]);
 const allowedOutputPaths = new Set(CURRENT_SOURCE_ACTIVATION_OUTPUTS);
-const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
-  "tools/datapack/reports/nationwide-coverage-tally.json",
-  "tools/datapack/release/strict-route-regression-report.json",
-]);
 
 function isAllowedActivationOutput(relativePath) {
   return allowedOutputPaths.has(relativePath)
@@ -343,122 +298,6 @@ export function verifyCurrentStaticNetworkSuccessorHeads({ sourceSnapshots, sour
   if (!hasPositionsV2 && !hasMolitV2) throw new Error("V2_MISSING");
   if (hasPositionsV2 !== hasMolitV2) throw new Error("V2_MIXED");
   return verifyCurrentPublicStaticNetworkV2Heads({ sourceSnapshots, sourceInventory, now });
-}
-
-function validateHandoff(handoff, rawArtifact, rawArtifactBytes) {
-  if (!handoff || typeof handoff !== "object" || Array.isArray(handoff)
-    || !/^[0-9a-f]{40}$/u.test(handoff.hubCommit ?? "")
-    || !Number.isSafeInteger(handoff.rawSizeBytes) || handoff.rawSizeBytes <= 0
-    || !SHA256.test(handoff.rawSha256 ?? "")
-    || !SHA256.test(handoff.schemaFingerprint ?? "")
-    || !SHA256.test(handoff.redactedRequestFingerprint ?? "")
-    || !SHA256.test(handoff.governancePolicySha256 ?? "")
-    || typeof handoff.rawObjectUri !== "string"
-    || handoff.rawObjectUri !== `oci://easysubway-datapacks/source-raw/kric-subway-timetable/20260809/${handoff.rawSha256}.json`
-    || !/^kric-subway-timetable-line4-pilot-[0-9]{8}$/u.test(handoff.snapshotId ?? "")
-    || typeof handoff.previousSnapshotId !== "string"
-    || !Number.isSafeInteger(handoff.rowCount) || handoff.rowCount <= 0
-    || !Number.isSafeInteger(handoff.coverageCount) || handoff.coverageCount <= 0
-    || typeof handoff.governancePolicyVersion !== "string") {
-    throw new Error("current source handoff identity is invalid");
-  }
-  for (const [label, value] of [
-    ["collectedAt", handoff.collectedAt],
-    ["serviceEffectiveUntil", handoff.serviceEffectiveUntil],
-    ["freshnessExpiresAt", handoff.freshnessExpiresAt],
-    ["rawRetentionExpiresAt", handoff.rawRetentionExpiresAt],
-  ]) {
-    try {
-      requiredUtcInstant(value, `current source handoff ${label}`);
-    } catch {
-      throw new Error(`current source handoff ${label} is invalid`);
-    }
-  }
-  if (!Buffer.isBuffer(rawArtifactBytes)
-    || rawArtifactBytes.length !== handoff.rawSizeBytes
-    || sha256(rawArtifactBytes) !== handoff.rawSha256) {
-    throw new Error("current source raw artifact byte identity mismatch");
-  }
-  if (rawArtifact?.collectedAt !== handoff.collectedAt) {
-    throw new Error("current source raw artifact collection identity mismatch");
-  }
-}
-
-function currentKricSnapshot(previous, handoff) {
-  const snapshot = {
-    schemaVersion: 1,
-    artifactKind: "official-source-snapshot",
-    snapshotId: handoff.snapshotId,
-    sourceId: "kric-subway-timetable",
-    provider: "국가철도공단",
-    retrievedAt: handoff.collectedAt,
-    sourceUpdatedAt: handoff.collectedAt,
-    serviceEffectiveAt: handoff.collectedAt,
-    serviceEffectiveUntil: handoff.serviceEffectiveUntil,
-    rowCount: handoff.rowCount,
-    coverageCount: handoff.coverageCount,
-    rawSha256: handoff.rawSha256,
-    rawObjectUri: handoff.rawObjectUri,
-    redactedRequestFingerprint: handoff.redactedRequestFingerprint,
-    schemaFingerprint: handoff.schemaFingerprint,
-    snapshotStatus: "LOCKED",
-    schemaStatus: "PASS",
-    licenseStatus: "PASS",
-    fetchStatus: "SUCCESS",
-    redistributionAllowed: true,
-    credentialRedacted: true,
-    previousSnapshotId: previous.snapshotId,
-    diffSummary: null,
-    freshnessExpiresAt: handoff.freshnessExpiresAt,
-    rawRetentionExpiresAt: handoff.rawRetentionExpiresAt,
-    governancePolicyVersion: handoff.governancePolicyVersion,
-    governancePolicySha256: handoff.governancePolicySha256,
-  };
-  snapshot.diffSummary = buildSnapshotDiff(previous, snapshot);
-  return snapshot;
-}
-
-function activateInventory(sourceInventory, handoff) {
-  if (sourceInventory?.schemaVersion !== 1
-    || sourceInventory.artifactKind !== "production-source-inventory"
-    || !Array.isArray(sourceInventory.sources)) {
-    throw new Error("current source inventory identity is invalid");
-  }
-  const next = structuredClone(sourceInventory);
-  for (const sourceId of CURRENT_SOURCE_INVENTORY_IDS) {
-    requireOne(next.sources, ({ id }) => id === sourceId, `current source inventory ${sourceId}`);
-  }
-  const timetable = requireOne(
-    next.sources,
-    ({ id }) => id === "kric-subway-timetable",
-    "current timetable source",
-  );
-  if (!timetable.admissionEvidence || typeof timetable.admissionEvidence !== "object") {
-    throw new Error("current timetable source admission evidence is missing");
-  }
-  timetable.observedDataUpdatedAt = handoff.collectedAt.slice(0, 10);
-  timetable.retrievedAt = handoff.collectedAt.slice(0, 10);
-  timetable.admissionEvidence.snapshotId = handoff.snapshotId;
-  timetable.admissionEvidence.rawSha256 = handoff.rawSha256;
-  timetable.admissionEvidence.schemaFingerprint = handoff.schemaFingerprint;
-
-  const routeMapPositions = requireOne(
-    next.sources,
-    ({ id }) => id === "seoul-metro-route-map-positions",
-    "current public route-map source",
-  );
-  const convenience = requireOne(
-    next.sources,
-    ({ id }) => id === "kric-station-convenience-standard",
-    "current convenience source",
-  );
-  convenience.requiredForProductionPack = true;
-  convenience.productionUseAllowed = true;
-  if (convenience.admissionEvidence && typeof convenience.admissionEvidence === "object") {
-    convenience.admissionEvidence.productionUseNoteKo =
-      "fresh exhaustive snapshot과 reviewed accessibility evidence에 결속된 static facility rows만 production use를 허용한다.";
-  }
-  return next;
 }
 
 function exactObjectKeys(value, expected) {
@@ -1645,220 +1484,6 @@ function replaceIncheonCanonicalSlice(canonical, projected, {
   return next;
 }
 
-function withCurrentCapitalPublicRouteMapCoverage(document) {
-  const pack = document?.packs?.find(({ id }) => id === "capital");
-  if (!pack?.metadata || typeof pack.metadata.productionCoverageEvidence !== "string") {
-    throw new Error("current public route map coverage metadata is invalid");
-  }
-  let coverageEvidence;
-  try { coverageEvidence = JSON.parse(pack.metadata.productionCoverageEvidence); } catch {
-    throw new Error("current public route map coverage metadata is invalid");
-  }
-  if (!Array.isArray(coverageEvidence)
-    || coverageEvidence.some(({ sourceIds }) => !Array.isArray(sourceIds))
-    || coverageEvidence.some(({ sourceDomain, sourceIds }) =>
-      sourceDomain !== "route_map_positions" && sourceIds.includes("seoulmetro-cyberstation-route-map"))) {
-    throw new Error("current public route map coverage metadata is invalid");
-  }
-  pack.metadata.productionCoverageEvidence = JSON.stringify([
-    ...coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "route_map_positions"),
-    CURRENT_SEOUL_PUBLIC_ROUTE_MAP_COVERAGE,
-  ]);
-  return document;
-}
-
-function activateProductionInput({ productionInput, officialOdFareQuotes, handoff, rawArtifact, rawArtifactBytes, applyScheduleImpl }) {
-  if (!productionInput || typeof productionInput !== "object" || Array.isArray(productionInput)) {
-    throw new Error("current production input identity is invalid");
-  }
-  if (!Array.isArray(officialOdFareQuotes)
-    || officialOdFareQuotes.length !== 2
-    || officialOdFareQuotes.some(({ sourceId }) => sourceId !== "seoul-metro-official-od-fares")) {
-    throw new Error("current official OD fare input must contain the exact two Seoul quotes");
-  }
-  const scheduled = applyScheduleImpl(structuredClone(productionInput), rawArtifact, rawArtifactBytes);
-  if (scheduled?.scheduleProvenance?.sourceId !== "kric-subway-timetable"
-    || scheduled.scheduleProvenance.sourceSnapshotId !== handoff.snapshotId
-    || scheduled.scheduleProvenance.providerRecordHash !== handoff.rawSha256
-    || scheduled.scheduleProvenance.retrievedAt !== handoff.collectedAt
-    || !Array.isArray(scheduled.transitRoutes) || scheduled.transitRoutes.length === 0
-    || !Array.isArray(scheduled.transitTrips) || scheduled.transitTrips.length === 0
-    || !Array.isArray(scheduled.transitStopTimes) || scheduled.transitStopTimes.length === 0) {
-    throw new Error("current timetable materialization identity is invalid");
-  }
-  const fareCoverage = {
-    regionId: "capital",
-    operatorId: "seoul-metro",
-    sourceDomain: "official_od_fares",
-    sourceIds: ["seoul-metro-official-od-fares"],
-    evidence: "승인된 서울교통공사 양방향 OD fare snapshot",
-  };
-  const coverageEvidence = (scheduled.coverageEvidence ?? [])
-    .filter(({ sourceDomain }) => !["official_od_fares", "route_map_positions"].includes(sourceDomain));
-  return {
-    ...scheduled,
-    sourceIds: [...CURRENT_PRODUCTION_SOURCE_IDS],
-    coverageEvidence: [...coverageEvidence, fareCoverage],
-    routeMapPositions: [],
-    officialOdFareQuotes: structuredClone(officialOdFareQuotes),
-    routeServiceArtifactEvidence: [],
-    movementPathCandidates: [],
-  };
-}
-
-function activateCurrentStaticAndKricSnapshots({
-  handoff,
-  sourceSnapshots,
-  sourceInventory,
-  staticRevalidations,
-  staticRevalidationDate,
-  canonicalPackBytes,
-  buildNow,
-}) {
-  const changeAdmission = staticRevalidations?.find(
-    ({ evidence }) => evidence?.artifactKind === "current-static-source-change-admission-evidence",
-  );
-  const canonicalMembershipSha256 = changeAdmission == null || canonicalPackBytes == null
-    ? null
-    : verifyCurrentSeoulCanonicalMembership(canonicalPackBytes, changeAdmission.snapshot);
-  const staticSources = staticRevalidations == null
-    ? { sourceSnapshots: structuredClone(sourceSnapshots), sourceInventory: structuredClone(sourceInventory) }
-    : activateStaticSourceRevalidations({
-      sourceSnapshots,
-      sourceInventory,
-      revalidations: staticRevalidations,
-      governancePolicyBinding: {
-        governancePolicyVersion: handoff.governancePolicyVersion,
-        governancePolicySha256: handoff.governancePolicySha256,
-      },
-      canonicalPackSha256: canonicalPackBytes == null ? null : sha256(canonicalPackBytes),
-      canonicalMembershipSha256,
-      buildNow,
-      observationDate: staticRevalidationDate,
-    });
-  const previous = requireOne(
-    staticSources.sourceSnapshots,
-    ({ snapshotId }) => snapshotId === handoff.previousSnapshotId,
-    "previous KRIC source snapshot",
-  );
-  const expectedCurrentKric = currentKricSnapshot(previous, handoff);
-  const existingCurrentKric = staticSources.sourceSnapshots.filter(
-    ({ snapshotId }) => snapshotId === handoff.snapshotId,
-  );
-  if (existingCurrentKric.length > 1
-    || existingCurrentKric.length === 1
-      && JSON.stringify(existingCurrentKric[0]) !== JSON.stringify(expectedCurrentKric)) {
-    throw new Error("current KRIC source snapshot identity mismatch");
-  }
-  const nextSnapshots = existingCurrentKric.length === 1
-    ? [...staticSources.sourceSnapshots]
-    : [...staticSources.sourceSnapshots, expectedCurrentKric];
-  validateLineage(nextSnapshots);
-  return { staticSources, nextSnapshots };
-}
-
-export function buildCurrentSourcePrimaryOutputs({
-  handoff = CURRENT_SOURCE_HANDOFF,
-  rawArtifact,
-  rawArtifactBytes,
-  sourceSnapshots,
-  sourceInventory,
-  staticRevalidations,
-  staticRevalidationDate,
-  canonicalPackBytes = null,
-  productionInput,
-  officialOdFareQuotes,
-  baseSpec,
-  baselineTopology,
-  baselineTopologyBytes,
-  currentTopology,
-  currentTopologyBytes,
-  currentTopologyPath,
-  currentIncheonTopology,
-  currentIncheonTopologyBytes,
-  currentIncheonTopologyPath,
-  currentIncheonAccessibility,
-  currentIncheonAccessibilityBytes,
-  currentIncheonAccessibilityPath,
-  buildNow,
-  snapshotBytesByPath,
-  layoutTopologySnapshotBytesById,
-  verifySuccessorHeadsImpl = verifyCurrentStaticNetworkSuccessorHeads,
-  applyScheduleImpl = applySchedule,
-  rebindTopologyAdmissionsImpl = withCurrentCapitalTopologyAdmissions,
-  requireCurrentIncheonTopologyAdmissionImpl = requireCurrentIncheonTopologyAdmission,
-  buildTopologyReverificationImpl = buildCapitalTopologyReverificationEvidence,
-}) {
-  validateHandoff(handoff, rawArtifact, rawArtifactBytes);
-  if (!Array.isArray(sourceSnapshots)) throw new Error("current source snapshots are required");
-  verifySuccessorHeadsImpl({ sourceSnapshots, sourceInventory });
-  const { staticSources, nextSnapshots } = activateCurrentStaticAndKricSnapshots({
-    handoff,
-    sourceSnapshots,
-    sourceInventory,
-    staticRevalidations,
-    staticRevalidationDate,
-    canonicalPackBytes,
-    buildNow,
-  });
-  const fullCapital = loadCapitalRouteTopologySnapshot(currentTopology);
-  const capitalSnapshotId = exactCurrentTopologySnapshotIdentity({
-    snapshot: fullCapital,
-    snapshotBytes: currentTopologyBytes,
-    snapshotPath: currentTopologyPath,
-    prefix: "capital-route-topology",
-  });
-  const capital = requireCurrentSourceSeparatedCapitalTopology(fullCapital);
-  validateCurrentCapitalTopologyOwnership(capital);
-  validateSourceSeparatedCurrentTopology({
-    capitalTopology: capital,
-    incheonSnapshot: currentIncheonTopology,
-  });
-  const activationNow = new Date(requiredUtcInstant(validateBuildNow(buildNow, handoff), "buildNow"));
-  if (Date.parse(capital.capturedAt) > activationNow.getTime()
-    || Date.parse(capital.freshUntil) <= activationNow.getTime()) {
-    throw new Error("current capital topology snapshot is not active at buildNow");
-  }
-
-  const inventory = activateInventory(staticSources.sourceInventory, handoff);
-  const capitalInventory = rebindTopologyAdmissionsImpl({
-    inventory,
-    topology: capital,
-    topologySnapshotId: capitalSnapshotId,
-    reviewedAt: capital.capturedAt,
-    snapshotBytesByPath,
-    topologySnapshotBytes: currentTopologyBytes,
-    layoutTopologySnapshotBytesById,
-  });
-  requireCurrentIncheonTopologyAdmissionImpl({
-    sourceInventory: capitalInventory,
-    snapshot: currentIncheonTopology,
-    snapshotBytes: currentIncheonTopologyBytes,
-    snapshotPath: currentIncheonTopologyPath,
-    accessibilitySnapshot: currentIncheonAccessibility,
-    accessibilitySnapshotBytes: currentIncheonAccessibilityBytes,
-    accessibilitySnapshotPath: currentIncheonAccessibilityPath,
-    now: activationNow,
-  });
-  const reboundInventory = capitalInventory;
-  assertExactCurrentCapitalTopologyAdmissions(reboundInventory, capital, capitalSnapshotId);
-  const nextInput = activateProductionInput({
-    productionInput,
-    officialOdFareQuotes,
-    handoff,
-    rawArtifact,
-    rawArtifactBytes,
-    applyScheduleImpl,
-  });
-  return {
-    sourceSnapshots: nextSnapshots,
-    sourceInventory: reboundInventory,
-    productionInput: nextInput,
-    topologyReverification: buildTopologyReverificationImpl(
-      historicalCapitalTopologyOwnershipBaseline({ baseSpec, baselineTopology, baselineTopologyBytes }), capital),
-  };
-}
-
 function admitCapitalAndIncheonTopologyInventory({
   sourceInventory,
   currentTopology,
@@ -2579,15 +2204,6 @@ async function runNode(script, args, options = {}) {
   );
 }
 
-function sourceRawObjectKey(handoff) {
-  const parsed = new URL(handoff.rawObjectUri);
-  if (parsed.protocol !== "oci:" || parsed.hostname !== "easysubway-datapacks"
-    || parsed.username || parsed.password || parsed.search || parsed.hash) {
-    throw new Error("current source raw object URI is invalid");
-  }
-  return parsed.pathname.slice(1);
-}
-
 function contained(repositoryRoot, relativePath) {
   if (typeof relativePath !== "string" || path.isAbsolute(relativePath)) {
     throw new Error("activation output path must be repository-relative");
@@ -2866,34 +2482,6 @@ export async function collectLayoutTopologySnapshotBytes(sourceInventory, reposi
   return bytesBySnapshotId;
 }
 
-async function fetchCurrentRawArtifact(temporaryRoot, handoff) {
-  const destinationPath = "input/kric-subway-timetable-20260809.json";
-  await mkdir(path.join(temporaryRoot, "input"), { recursive: true });
-  const planPath = await writeTempFile(
-    temporaryRoot,
-    "fetch-source-raw-plan.json",
-    jsonBytes({
-      schemaVersion: 1,
-      steps: [{
-        type: "fetch-source-raw-object",
-        objectKey: sourceRawObjectKey(handoff),
-        destinationPath,
-        sha256: handoff.rawSha256,
-        sizeBytes: handoff.rawSizeBytes,
-      }],
-    }),
-  );
-  await runNode("tools/datapack/publish-object-storage.mjs", [
-    "--plan", planPath,
-    "--root", temporaryRoot,
-  ]);
-  const bytes = await readRegularBytes(temporaryRoot, destinationPath, "current KRIC raw artifact");
-  if (bytes.length !== handoff.rawSizeBytes || sha256(bytes) !== handoff.rawSha256) {
-    throw new Error("downloaded current KRIC raw artifact identity mismatch");
-  }
-  return { bytes, value: parseJson(bytes, "current KRIC raw artifact") };
-}
-
 function requiredItxTopologyEvidencePath(spec) {
   const relativePath = spec?.itxTopologyEvidencePath;
   if (!/^tools\/datapack\/itx-cheongchun-topology-evidence(?:-[0-9]{17})?\.json$/u
@@ -3095,15 +2683,6 @@ export async function validatePreparedCandidate({
     EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
     EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
   }, repositoryRoot: builderRoot });
-}
-
-function validateBuildNow(buildNow, handoff) {
-  const millis = requiredUtcInstant(buildNow, "--build-now");
-  if (millis < Date.parse(handoff.collectedAt)
-    || millis >= Date.parse(handoff.freshnessExpiresAt)) {
-    throw new Error("--build-now must be inside the current source admission window");
-  }
-  return buildNow;
 }
 
 export async function requireCleanBuilder(builderGitSha, {
@@ -3636,376 +3215,6 @@ async function generateCurrentCapitalTopologySourceAdmission({
   };
 }
 
-function validateCurrentSourceActivationPaths({
-  capitalTopologyPath,
-  incheonTopologyPath,
-  incheonAccessibilityPath,
-  seoulRevalidationSnapshotPath,
-  seoulRevalidationEvidencePath,
-}) {
-  const capitalPathMatch = CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN
-    .exec(capitalTopologyPath ?? "");
-  if (capitalPathMatch == null
-    || !/^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u
-      .test(incheonTopologyPath ?? "")
-    || !/^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z\.json$/u
-      .test(incheonAccessibilityPath ?? "")) {
-    throw new Error("current topology inputs must be tracked source snapshot paths");
-  }
-  const revalidationPaths = [
-    [seoulRevalidationSnapshotPath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/seoulmetro-station-line-info-snapshot\.json$/u],
-    [seoulRevalidationEvidencePath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/seoulmetro-station-line-info-revalidation-evidence\.json$/u],
-  ];
-  if (revalidationPaths.some(([value, pattern]) => !pattern.test(value ?? ""))) {
-    throw new Error("current static revalidation inputs must be tracked source evidence paths");
-  }
-  const revalidationDirectories = new Set(revalidationPaths.map(([value]) => path.dirname(value)));
-  if (revalidationDirectories.size !== 1) {
-    throw new Error("current static revalidation inputs must share one observation directory");
-  }
-  const revalidationDateMatch = /current-static-revalidation-([0-9]{8})$/u
-    .exec([...revalidationDirectories][0]);
-  if (revalidationDateMatch == null) {
-    throw new Error("current static revalidation observation directory is invalid");
-  }
-  return {
-    capitalSnapshotId: capitalPathMatch[1],
-    revalidationDate: revalidationDateMatch[1],
-  };
-}
-
-async function materializeCurrentSourceActivationPacks({
-  temporaryRoot,
-  primaryBytes,
-  topologyReverificationPath,
-  productionScopePolicyBytes,
-  primary,
-  positionSnapshotBytes,
-  capitalTopology,
-  capitalTopologyBytes,
-  capitalTopologyPath,
-  buildNow,
-  canonicalBytes,
-}) {
-  await Promise.all([
-    writeTempFile(temporaryRoot, topologyReverificationPath, primaryBytes.reverification),
-    writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[0], primaryBytes.snapshots),
-    writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[1], primaryBytes.inventory),
-    writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[2], primaryBytes.input),
-  ]);
-
-  const reviewedPath = contained(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[3]);
-  await runNode("tools/datapack/import-official-sources.mjs", [
-    "--inventory", contained(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[1]),
-    "--input", contained(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[2]),
-    "--output", reviewedPath,
-  ]);
-  const productionScopePolicy = parseJson(productionScopePolicyBytes, "production scope policy");
-  const publicRouteMapSuccessor = requireOne(
-    primary.sourceSnapshots,
-    ({ sourceId }) => sourceId === "seoul-metro-route-map-positions",
-    "current public route map successor",
-  );
-  const publicRouteMapSource = requireOne(
-    primary.sourceInventory.sources,
-    ({ id }) => id === "seoul-metro-route-map-positions",
-    "current public route map source",
-  );
-  const layoutAdmission = publicRouteMapSource.routeMapAdmissionEvidence?.currentLayoutAdmission;
-  const layoutTopologyPath = `tools/datapack/sources/${layoutAdmission?.topologySnapshotId}.json`;
-  const layoutTopologyBytes = positionSnapshotBytes.get(layoutTopologyPath);
-  if (!Buffer.isBuffer(layoutTopologyBytes)
-    || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotId !== layoutAdmission?.topologySnapshotId
-    || publicRouteMapSuccessor.routeMapLayoutArtifact?.topologySnapshotSha256 !== layoutAdmission?.topologySnapshotSha256
-    || layoutAdmission.topologySnapshotSha256 !== sha(layoutTopologyBytes)) {
-    throw new Error("current public route map layout topology identity is invalid");
-  }
-  const capitalTopologySnapshotId = exactCurrentTopologySnapshotIdentity({
-    snapshot: capitalTopology,
-    snapshotBytes: capitalTopologyBytes,
-    snapshotPath: capitalTopologyPath,
-    prefix: "capital-route-topology",
-  });
-  const capitalAdmissions = admittedCapitalLineEvidence(
-    primary.sourceInventory,
-    capitalTopology,
-    capitalTopologySnapshotId,
-    capitalTopology.capturedAt,
-    new Date(buildNow),
-  );
-  const reviewedBase = projectRetiredTransitLines(
-    parseJson(await readFile(reviewedPath), "current reviewed pack"),
-    productionScopePolicy.inactiveLineExclusions,
-  );
-  const reviewed = retainPreAuthorityRideEdges(reviewedBase, "reviewed pack");
-  const reviewedBytes = jsonBytes(reviewed);
-  await writeFile(reviewedPath, reviewedBytes);
-  const reviewedCapital = reviewed.packs?.find(({ id }) => id === "capital");
-  if (!reviewedCapital) throw new Error("current reviewed capital pack is missing");
-  const canonicalFixture = parseJson(canonicalBytes, "canonical pack");
-  const canonical = syncCanonicalFixture(
-    canonicalFixture,
-    overlayReviewedSourcesOnCanonicalRoster(canonicalFixture, reviewedCapital),
-  );
-  retainPreAuthorityRideEdges(canonical, "canonical pack");
-  projectCapitalTopologyIntoCanonicalFixture(
-    canonical,
-    capitalTopology,
-    capitalTopologySnapshotId,
-    capitalAdmissions,
-  );
-  const canonicalWithPublicRouteMap = withCurrentCapitalPublicRouteMapCoverage(materializeSeoulRouteMapPositions({
-    baseFixture: canonical,
-    snapshot: publicRouteMapSuccessor.routeMapLayoutArtifact,
-    snapshotSha256: publicRouteMapSuccessor.normalizedObservationSha256,
-    topologySnapshotBytes: layoutTopologyBytes,
-    inventory: primary.sourceInventory,
-    now: new Date(buildNow),
-    rewritePackIdentity: false,
-    successorProviderRecordHashes: publicRouteMapSuccessor.providerRecordHashes,
-    requireSuccessorProviderRecordHashes: true,
-  }));
-  verifyCurrentCapitalPublicRouteMapDocument(
-    canonicalWithPublicRouteMap,
-    publicRouteMapSuccessor,
-    "current canonical pack",
-  );
-  const nextCanonicalBytes = jsonBytes(canonicalWithPublicRouteMap, false);
-  await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
-  return { reviewedBytes, nextCanonicalBytes };
-}
-
-async function generateCurrentSourceActivation({
-  capitalTopologyPath,
-  incheonTopologyPath,
-  incheonAccessibilityPath,
-  seoulRevalidationSnapshotPath,
-  seoulRevalidationEvidencePath,
-  builderGitSha,
-  buildNow,
-  check = false,
-  handoff = CURRENT_SOURCE_HANDOFF,
-}) {
-  const { capitalSnapshotId, revalidationDate } = validateCurrentSourceActivationPaths({
-    capitalTopologyPath,
-    incheonTopologyPath,
-    incheonAccessibilityPath,
-    seoulRevalidationSnapshotPath,
-    seoulRevalidationEvidencePath,
-  });
-  const topologyReverificationPath =
-    capitalTopologyReverificationPathForSnapshotId(capitalSnapshotId);
-  await requireCleanBuilder(builderGitSha, {
-    check,
-    allowedDescendantPaths: [
-      ...CURRENT_SOURCE_ACTIVATION_OUTPUTS,
-      ...CURRENT_SOURCE_DOWNSTREAM_OUTPUTS,
-      topologyReverificationPath,
-    ],
-  });
-  validateBuildNow(buildNow, handoff);
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-source-activation-"));
-  try {
-    const readMutableInput = (relativePath) => check
-      ? readBuilderBaselineBytes(builderGitSha, relativePath)
-      : readRegularBytes(root, relativePath);
-    const [capitalTopologyBytes, incheonTopologyBytes, incheonAccessibilityBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
-      sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
-      canonicalBytes, productionScopePolicyBytes,
-      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
-      readRegularBytes(root, capitalTopologyPath, "current capital topology"),
-      readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
-      readRegularBytes(root, incheonAccessibilityPath, "current Incheon accessibility"),
-      fetchCurrentRawArtifact(temporaryRoot, handoff),
-      readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
-      readMutableInput("tools/datapack/release/source-snapshots.json"),
-      readMutableInput("tools/datapack/source-inventory.json"),
-      readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
-      readRegularBytes(root, "tools/datapack/official-od-fare-quotes.json"),
-      readMutableInput("tools/datapack/release/candidate-build-spec.json"),
-      readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
-      readRegularBytes(root, "tools/datapack/nationwide-coverage-targets.json", "production scope policy"),
-      readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
-      readRegularBytes(root, seoulRevalidationEvidencePath, "Seoul revalidation evidence"),
-    ]);
-    const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
-    const quoteBundle = parseJson(quoteBundleBytes, "official OD fare quote bundle");
-    const capitalTopology = parseJson(capitalTopologyBytes, "current capital topology");
-    const candidateTopology = requireCurrentSourceSeparatedCapitalTopology(capitalTopology);
-    validateCurrentCapitalTopologyOwnership(candidateTopology);
-    const candidateTopologyBytes = capitalTopologyBytes;
-    const incheonTopology = parseJson(incheonTopologyBytes, "current Incheon topology");
-    const incheonAccessibility = parseJson(incheonAccessibilityBytes, "current Incheon accessibility");
-    validateSourceSeparatedCurrentTopology({
-      capitalTopology: candidateTopology,
-      incheonSnapshot: incheonTopology,
-    });
-    const officialOdFareQuotes = (quoteBundle.quotes ?? [])
-      .filter(({ sourceId }) => sourceId === "seoul-metro-official-od-fares");
-    const positionSnapshotBytes = await collectPositionSnapshotBytes(sourceInventory);
-    const primary = buildCurrentSourcePrimaryOutputs({
-      handoff,
-      rawArtifact: rawArtifact.value,
-      rawArtifactBytes: rawArtifact.bytes,
-      sourceSnapshots: parseJson(sourceSnapshotBytes, "source snapshots"),
-      sourceInventory,
-      staticRevalidationDate: revalidationDate,
-      staticRevalidations: [
-        {
-          snapshot: parseJson(seoulRevalidationSnapshotBytes, "Seoul revalidation snapshot"),
-          evidence: parseJson(seoulRevalidationEvidenceBytes, "Seoul revalidation evidence"),
-        },
-      ],
-      canonicalPackBytes: canonicalBytes,
-      productionInput: parseJson(productionInputBytes, "production input"),
-      officialOdFareQuotes,
-      baseSpec,
-      baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
-      baselineTopologyBytes,
-      currentTopology: capitalTopology,
-      currentTopologyBytes: capitalTopologyBytes,
-      currentTopologyPath: capitalTopologyPath,
-      currentIncheonTopology: incheonTopology,
-      currentIncheonTopologyBytes: incheonTopologyBytes,
-      currentIncheonTopologyPath: incheonTopologyPath,
-      currentIncheonAccessibility: incheonAccessibility,
-      currentIncheonAccessibilityBytes: incheonAccessibilityBytes,
-      currentIncheonAccessibilityPath: incheonAccessibilityPath,
-      buildNow,
-      snapshotBytesByPath: positionSnapshotBytes,
-      layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory),
-    });
-    const incheonAccessibilityAdmission = admittedIncheonAccessibilityEvidence({
-      sourceInventory: primary.sourceInventory,
-      snapshot: incheonAccessibility,
-      snapshotBytes: incheonAccessibilityBytes,
-      topologySnapshot: incheonTopology,
-      topologyMode: "registered-topology-successor",
-      now: new Date(buildNow),
-    });
-    if (incheonAccessibilityAdmission.snapshotPath !== incheonAccessibilityPath) {
-      throw new Error("current Incheon accessibility snapshot path does not match admission");
-    }
-
-    const primaryBytes = {
-      reverification: jsonBytes(primary.topologyReverification),
-      snapshots: jsonBytes(primary.sourceSnapshots),
-      inventory: jsonBytes(primary.sourceInventory),
-      input: jsonBytes(primary.productionInput),
-    };
-    const { reviewedBytes, nextCanonicalBytes } = await materializeCurrentSourceActivationPacks({
-      temporaryRoot,
-      primaryBytes,
-      topologyReverificationPath,
-      productionScopePolicyBytes,
-      primary,
-      positionSnapshotBytes,
-      capitalTopology,
-      capitalTopologyBytes,
-      capitalTopologyPath,
-      buildNow,
-      canonicalBytes,
-    });
-
-    const nextSpec = buildCurrentCandidateSpec({
-      baseSpec: parseJson(baseSpecBytes, "candidate build spec"),
-      builderGitSha,
-      sourceInventoryBytes: primaryBytes.inventory,
-      fullTopology: capitalTopology,
-      fullTopologyBytes: capitalTopologyBytes,
-      fullTopologyPath: capitalTopologyPath,
-      candidateTopology,
-      candidateTopologyBytes,
-      candidateTopologyPath: capitalTopologyPath,
-      topologyReverificationBytes: primaryBytes.reverification,
-      productionScopePolicyBytes,
-      incheonAccessibilityPath,
-      incheonAccessibilityBytes,
-      incheonAccessibilitySnapshotId: incheonAccessibilityAdmission.snapshotId,
-    });
-    await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[5], jsonBytes(nextSpec));
-    await prepareReleaseEvidenceRoot(temporaryRoot, nextSpec);
-    await runNode("tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs", [
-      "--release-evidence-only",
-      "--release-root", temporaryRoot,
-    ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
-
-    const [finalSpecBytes, releaseRequestBytes, hashEvidenceBytes] = await Promise.all([
-      readFile(contained(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[5])),
-      readFile(contained(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[6])),
-      readFile(contained(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[7])),
-    ]);
-    const finalSpec = parseJson(finalSpecBytes, "generated candidate build spec");
-    await validatePreparedCandidate({ temporaryRoot, spec: finalSpec, buildNow });
-
-    const outputs = [
-      { relativePath: topologyReverificationPath, bytes: primaryBytes.reverification },
-      { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[0], bytes: primaryBytes.snapshots },
-      { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[1], bytes: primaryBytes.inventory },
-      { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[2], bytes: primaryBytes.input },
-      { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[3], bytes: reviewedBytes },
-      { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], bytes: nextCanonicalBytes },
-      { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[5], bytes: finalSpecBytes },
-      { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[6], bytes: releaseRequestBytes },
-      { relativePath: CURRENT_SOURCE_ACTIVATION_OUTPUTS[7], bytes: hashEvidenceBytes },
-    ];
-    const validateOutputBytes = async () => {
-      for (const output of outputs) {
-        const actual = await readRegularBytes(root, output.relativePath);
-        if (!actual.equals(output.bytes)) {
-          throw new Error(`current source activation output mismatch: ${output.relativePath}`);
-        }
-      }
-    };
-    if (check) {
-      await validateOutputBytes();
-    } else {
-      await commitCurrentSourceActivation({
-        repositoryRoot: root,
-        outputs,
-        validate: validateOutputBytes,
-      });
-    }
-    return {
-      candidateId: finalSpec.candidateId,
-      sourceSnapshotSetHash: finalSpec.sourceSnapshotSetHash,
-      sourceInventorySha256: finalSpec.sourceInventorySha256,
-      outputCount: outputs.length,
-      check,
-    };
-  } finally {
-    await rm(temporaryRoot, { recursive: true, force: true });
-  }
-}
-
-export function parseCurrentSourceActivationArgs(argv) {
-  const args = { check: false };
-  for (let index = 0; index < argv.length; index += 1) {
-    const flag = argv[index];
-    if (flag === "--check") {
-      args.check = true;
-      continue;
-    }
-    if (!["--capital-topology", "--incheon-topology", "--incheon-accessibility",
-      "--seoul-revalidation-snapshot", "--seoul-revalidation-evidence",
-      "--builder-git-sha", "--build-now"].includes(flag)) {
-      throw new Error(`unknown activation argument: ${flag ?? ""}`);
-    }
-    const value = argv[index + 1];
-    if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value`);
-    const key = flag.slice(2).replaceAll("-", "_");
-    if (args[key] != null) throw new Error(`duplicate activation argument: ${flag}`);
-    args[key] = value;
-    index += 1;
-  }
-  for (const key of ["capital_topology", "incheon_topology", "incheon_accessibility",
-    "seoul_revalidation_snapshot", "seoul_revalidation_evidence",
-    "builder_git_sha", "build_now"]) {
-    if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
-  }
-  return args;
-}
-
 export function parseCurrentTopologySourceAdmissionArgs(argv) {
   const args = { check: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -4063,8 +3272,17 @@ export function parseApprovedItxBootstrapArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  if (argv.includes("--topology-source-admission")) {
-    const args = parseCurrentTopologySourceAdmissionArgs(argv.filter((value) => value !== "--topology-source-admission"));
+  const topologySourceAdmission = argv.includes("--topology-source-admission");
+  const approvedItxBootstrap = argv.includes("--approved-itx-bootstrap");
+  if (topologySourceAdmission === approvedItxBootstrap) {
+    throw new Error(
+      "activate-current-source-set requires --topology-source-admission or --approved-itx-bootstrap",
+    );
+  }
+  if (topologySourceAdmission) {
+    const args = parseCurrentTopologySourceAdmissionArgs(
+      argv.filter((value) => value !== "--topology-source-admission"),
+    );
     const result = await generateCurrentCapitalTopologySourceAdmission({
       capitalTopologyPath: args.capital_topology,
       incheonTopologyPath: args.incheon_topology,
@@ -4078,11 +3296,10 @@ async function main() {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  const approvedItxBootstrap = argv.includes("--approved-itx-bootstrap");
-  const args = approvedItxBootstrap
-    ? parseApprovedItxBootstrapArgs(argv.filter((value) => value !== "--approved-itx-bootstrap"))
-    : parseCurrentSourceActivationArgs(argv);
-  const currentTopologyOptions = {
+  const args = parseApprovedItxBootstrapArgs(
+    argv.filter((value) => value !== "--approved-itx-bootstrap"),
+  );
+  const result = await generateApprovedItxCurrentSourceBootstrap({
     capitalTopologyPath: args.capital_topology,
     incheonTopologyPath: args.incheon_topology,
     incheonAccessibilityPath: args.incheon_accessibility,
@@ -4092,19 +3309,7 @@ async function main() {
     builderGitSha: args.builder_git_sha,
     buildNow: args.build_now,
     check: args.check,
-  };
-  const result = approvedItxBootstrap
-    ? await generateApprovedItxCurrentSourceBootstrap(currentTopologyOptions)
-    : await generateCurrentSourceActivation({
-        capitalTopologyPath: args.capital_topology,
-        incheonTopologyPath: args.incheon_topology,
-        incheonAccessibilityPath: args.incheon_accessibility,
-        seoulRevalidationSnapshotPath: args.seoul_revalidation_snapshot,
-        seoulRevalidationEvidencePath: args.seoul_revalidation_evidence,
-        builderGitSha: args.builder_git_sha,
-        buildNow: args.build_now,
-        check: args.check,
-      });
+  });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 

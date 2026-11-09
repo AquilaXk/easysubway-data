@@ -27,6 +27,7 @@ import {
   validateServicePatternEvidence,
   validateTimetableNoDataEvidence,
   validateItxOdJoin,
+  validateKricLine4PilotCollectionArtifact,
   validateKricTimetablePayload,
 } from "./collect-kric-line4-timetables.mjs";
 import { normalizeKricSubwayTimetable } from "./normalize-kric-timetable.mjs";
@@ -738,4 +739,46 @@ test("KRIC 4호선 시각표 수집기: HTTP 503은 3회까지 시도한 뒤 키
   const error = await collectRequest(async () => { calls += 1; return new Response("down", { status: 503 }); }).catch((caught) => caught);
   assert.equal(error.message, "KRIC timetable HTTP 503");
   assert.equal(calls, 3);
+});
+
+test("KRIC pilot artifact는 명시적인 허용 sourceId를 요구한다", () => {
+  assert.throws(
+    () => validateKricLine4PilotCollectionArtifact({ artifactKind: "kric-line4-timetable-collection" }),
+    /sourceId is required/,
+  );
+  assert.throws(
+    () => validateKricLine4PilotCollectionArtifact({
+      artifactKind: "kric-line4-timetable-collection",
+      sourceId: "untrusted-source",
+    }),
+    /sourceId mismatch/,
+  );
+});
+
+function syntheticCollection({ intermediate, outside, nonStop, reconstruction, trips, stopTimes }) {
+  const responses = Array.from({ length: 153 }, (_, index) => {
+    const bytes = Buffer.from(JSON.stringify({ header: { resultCode: "00" }, index }));
+    return { requestKey: `subwayTimetableExp|S1|${index}|8`, rawSha256: createHash("sha256").update(bytes).digest("hex"), byteSize: bytes.length, bodyBase64: bytes.toString("base64") };
+  });
+  return {
+    artifactKind: "kric-line4-timetable-collection", sourceId: "kric-subway-route-info", lineId: "seoul-4",
+    operation: "subwayTimetableExp", collectedAt: "2026-10-01T03:57:13.955Z", capturedAt: "2026-10-01",
+    requestCount: 153, failedRequestCount: 0, expectedNoDataRequestCount: 51,
+    intermediateRowCount: intermediate, excludedOutsidePilotGroupCount: outside, excludedNonStopRowCount: nonStop,
+    reconstructionRowCount: reconstruction, transitTripCount: trips, transitStopTimeCount: stopTimes,
+    rawResponseInventory: { responseCount: 153, inventorySha256: createHash("sha256").update(JSON.stringify(responses)).digest("hex"), responses },
+    excludedOutsidePilotGroups: Array.from({ length: outside }, () => ({})),
+    excludedNonStopRows: Array.from({ length: nonStop }, () => ({})),
+    transitTrips: Array.from({ length: trips }, () => ({})),
+    transitStopTimes: Array.from({ length: stopTimes }, () => ({})),
+  };
+}
+
+test("KRIC pilot artifact 고정 건수는 2026-10-01 승인 관측값이다(#862)", () => {
+  assert.doesNotThrow(() => validateKricLine4PilotCollectionArtifact(syntheticCollection({
+    intermediate: 32677, outside: 415, nonStop: 42, reconstruction: 21645, trips: 458, stopTimes: 21645,
+  })));
+  assert.throws(() => validateKricLine4PilotCollectionArtifact(syntheticCollection({
+    intermediate: 33062, outside: 429, nonStop: 42, reconstruction: 22004, trips: 466, stopTimes: 22004,
+  })), /intermediateRowCount mismatch/);
 });

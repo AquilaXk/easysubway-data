@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual, promisify } from "node:util";
 
-import { validateKricLine4PilotCollectionArtifact } from "./apply-kric-line4-pilot-schedule.mjs";
+import { validateKricLine4PilotCollectionArtifact } from "./collect-kric-line4-timetables.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
