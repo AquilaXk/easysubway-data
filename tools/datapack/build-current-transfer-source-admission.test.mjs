@@ -28,8 +28,9 @@ test("active Seoul TRANSFER source handoff는 exact current identity와 producti
 
   assert.equal(input.candidate.sourceSnapshots.find(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID)?.sourceId, TRANSFER_SOURCE_ID);
   assert.equal(input.source.requiredForProductionPack, true);
-  assert.equal(input.candidate.sourceSnapshots.some(({ sourceId }) =>
-    sourceId === "molit-railway-transfer-movement"), false);
+  assert.equal(input.candidate.assemblySourceIds.includes("molit-railway-transfer-movement"), false);
+  assert.equal(input.candidate.sourceSnapshots.find(({ sourceId }) =>
+    sourceId === "molit-railway-transfer-movement")?.snapshotId, "molit-railway-transfer-movement-20260811");
   assert.equal(input.inventory.sources.some(({ id, requiredForProductionPack }) =>
     id === "molit-railway-transfer-movement" && requiredForProductionPack === true), false);
 });

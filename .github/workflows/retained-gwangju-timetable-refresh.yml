@@ -218,6 +218,12 @@ jobs:
         run: |
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
           GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${RETAINED_GWANGJU_BRANCH}" --title "Refresh retained Gwangju timetable" --body-file "${RETAINED_GWANGJU_STATE_ROOT}/pull-request-body.md"
+      - name: Summarize source fetch attempts
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
       - name: Release this failed run's claim
         if: ${{ failure() && env.RETAINED_GWANGJU_BRANCH != '' && env.RETAINED_GWANGJU_CLAIM_SHA != '' && steps.publish.outcome == 'skipped' }}
         env:
@@ -227,12 +233,6 @@ jobs:
           set -euo pipefail
           # #1326: 게시 step이 건너뛰어진(게시된 것이 없는) 실패 run은 자기 빈 claim을 같은 run에서 푼다. 삭제 규칙은 도구가 정한다.
           node tools/ci/release-own-claim.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${RETAINED_GWANGJU_BRANCH}" --claim-sha "${RETAINED_GWANGJU_CLAIM_SHA}" --publication-outcome "${PUBLICATION_OUTCOME}"
-      - name: Summarize source fetch attempts
-        if: ${{ always() }}
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
       - name: Report refresh failure as an issue
         if: ${{ failure() }}
         env:
