@@ -84,11 +84,23 @@ const KRIC_REGIONAL_WHEELCHAIR_LIFT_PROFILE = Object.freeze({
   },
 });
 
+const KRIC_REGIONAL_ESCALATOR_IGNORED_PROFILE = Object.freeze({
+  idTag: "kric-escalator",
+  reportedTypes: Object.freeze([]),
+  absenceCoveredTypes: Object.freeze([]),
+  rowType: () => undefined,
+  providerCode: () => "ES",
+  floorFrom: () => "",
+  validateRow: () => {},
+});
+
 function kricFacilityProfile(snapshot, query) {
   const profile = KRIC_FACILITY_PROFILES.get(snapshot?.sourceId);
   if (!profile) throw new Error(`unknown KRIC facility source: ${snapshot?.sourceId ?? "<missing>"}`);
-  if (snapshot?.sourceId === KRIC_STANDARD_SOURCE_ID && isKricRegionalWheelchairLiftQuery(query)) {
-    return KRIC_REGIONAL_WHEELCHAIR_LIFT_PROFILE;
+  if (isKricRegionalWheelchairLiftQuery(query)) {
+    return snapshot?.sourceId === KRIC_STANDARD_SOURCE_ID
+      ? KRIC_REGIONAL_WHEELCHAIR_LIFT_PROFILE
+      : KRIC_REGIONAL_ESCALATOR_IGNORED_PROFILE;
   }
   return profile;
 }
@@ -122,11 +134,8 @@ export function validateKricStandardProviderRows(queries) {
 // 그 snapshot 원천이 이 유형을 말하는 행. 규칙이 없는 원천이거나 원천이 이 유형의 증거를 내지 않으면 null이다.
 // coverage report 결속이 쓰며, null인 증거는 결속하지 않는다.
 export function kricRowsOfType(snapshot, rows, facilityType, query) {
-  const baseProfile = KRIC_FACILITY_PROFILES.get(snapshot?.sourceId);
-  if (!baseProfile) return null;
-  const profile = snapshot?.sourceId === KRIC_STANDARD_SOURCE_ID && isKricRegionalWheelchairLiftQuery(query)
-    ? KRIC_REGIONAL_WHEELCHAIR_LIFT_PROFILE
-    : baseProfile;
+  if (!KRIC_FACILITY_PROFILES.has(snapshot?.sourceId)) return null;
+  const profile = kricFacilityProfile(snapshot, query);
   if (!profile.reportedTypes.includes(facilityType)) return null;
   return rows.filter((row) => profile.rowType(row) === facilityType);
 }

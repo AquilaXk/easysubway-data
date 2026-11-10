@@ -118,7 +118,10 @@ test("저장소의 기본 정책 파일이 위 기본값과 같다", async () =>
   // #1014 F4: 수도권 topology는 간선 2%까지만 자동 통과하도록 전용 override가 있다. 나머지 값은 기본값 그대로다.
   assert.deepEqual(parseLedgerChangePolicy(policy), {
     ...POLICY,
-    sourceOverrides: { "capital-route-topology": { maxRowDeltaRatio: 0.02 } },
+    sourceOverrides: {
+      "capital-route-topology": { maxRowDeltaRatio: 0.02 },
+      "kric-station-convenience-standard": { maxRowDeltaRatio: 0.25 },
+    },
   });
 });
 

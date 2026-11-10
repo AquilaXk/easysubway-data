@@ -123,7 +123,9 @@ export function buildFixture(inventory, input) {
         artifactKind: input.pack.artifactKind ?? "fixture",
         schemaVersion: requiredString(input.pack.schemaVersion, "pack.schemaVersion"),
         url: input.pack.url ?? `catalog/${input.pack.id}-v${input.pack.version}.sqlite.gz`,
-        sourceInventory: selectedSources.map((source) => packSourceInventoryEntry(source, evidenceObservedDates.get(source.id))),
+        sourceInventory: selectedSources.map((source) =>
+          packSourceInventoryEntry(source, evidenceObservedDates.get(source.id), input.supportedV1Scope),
+        ),
         requiredTables: input.requiredTables ?? compactUnique([
           "catalog_metadata",
           "operators",
@@ -642,7 +644,17 @@ export function latestEvidenceObservedDates(rows) {
   return dates;
 }
 
-export function packSourceInventoryEntry(source, evidenceObservedDate) {
+export function packSourceInventoryEntry(source, evidenceObservedDate, supportedV1Scope) {
+  const supportedRegionIds = new Set(supportedV1Scope?.includedRegionIds ?? []);
+  const supportedOperatorIds = new Set(supportedV1Scope?.includedOperatorIds ?? []);
+  const rawRegionIds = requiredStringArray(source.coverageScope?.regionIds, `${source.id}.coverageScope.regionIds`);
+  const rawOperatorIds = requiredStringArray(source.coverageScope?.operatorIds, `${source.id}.coverageScope.operatorIds`);
+  const regionIds = supportedRegionIds.size > 0
+    ? rawRegionIds.filter((regionId) => supportedRegionIds.has(regionId))
+    : rawRegionIds;
+  const operatorIds = supportedOperatorIds.size > 0
+    ? rawOperatorIds.filter((operatorId) => supportedOperatorIds.has(operatorId))
+    : rawOperatorIds;
   return {
     id: requiredString(source.id, "source.id"),
     owner: requiredString(source.owner, `${source.id}.owner`),
@@ -656,8 +668,8 @@ export function packSourceInventoryEntry(source, evidenceObservedDate) {
       : requiredString(source.observedDataUpdatedAt, `${source.id}.observedDataUpdatedAt`)}T00:00:00.000Z`,
     fields: requiredStringArray(source.fieldsProvided, `${source.id}.fieldsProvided`),
     coverageScope: {
-      regionIds: requiredStringArray(source.coverageScope?.regionIds, `${source.id}.coverageScope.regionIds`),
-      operatorIds: requiredStringArray(source.coverageScope?.operatorIds, `${source.id}.coverageScope.operatorIds`),
+      regionIds: requiredStringArray(regionIds, `${source.id}.coverageScope.regionIds`),
+      operatorIds: requiredStringArray(operatorIds, `${source.id}.coverageScope.operatorIds`),
       ...(source.coverageScope?.lineIds === undefined
         ? {}
         : { lineIds: requiredStringArray(source.coverageScope.lineIds, `${source.id}.coverageScope.lineIds`) }),

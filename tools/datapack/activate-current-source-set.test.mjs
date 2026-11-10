@@ -2880,6 +2880,26 @@ test("원천 행 updatedAt은 싣고 있는 증거의 관측일을 inventory 관
   assert.equal(packSourceInventoryEntry(syntheticSource("2026-10-02"), "2026-10-09").updatedAt, "2026-10-02T00:00:00.000Z");
   // 증거 행이 없는 원천은 inventory 관측일이다.
   assert.equal(packSourceInventoryEntry(syntheticSource("2026-10-07"), undefined).updatedAt, "2026-10-07T00:00:00.000Z");
+  // supportedV1Scope가 주어지면 그 팩의 지원 권역·운영기관 범위로만 coverageScope를 투영한다.
+  const multiRegionSource = {
+    ...syntheticSource("2026-10-07"),
+    coverageScope: {
+      regionIds: ["capital", "daejeon", "gwangju"],
+      operatorIds: ["seoul-metro", "korail", "daejeon-transportation", "gwangju-metropolitan-rapid-transit"],
+      sourceDomains: ["accessibility_facilities"],
+    },
+  };
+  assert.deepEqual(
+    packSourceInventoryEntry(multiRegionSource, "2026-10-07", {
+      includedRegionIds: ["capital"],
+      includedOperatorIds: ["seoul-metro", "korail", "incheon-transit"],
+    }).coverageScope,
+    {
+      regionIds: ["capital"],
+      operatorIds: ["seoul-metro", "korail"],
+      sourceDomains: ["accessibility_facilities"],
+    },
+  );
 });
 
 test("topology-only 갱신 뒤 원천 행은 증거가 같은 snapshot이면 이전 행 그대로이고 증거가 옮겨졌을 때만 증거 관측일을 따른다(#1007 반례)", () => {

@@ -936,10 +936,10 @@ function supersedeFacilityEvidence(rows, claimed, sourceId) {
 // 대전 1호선(DJ/1, 22역)·광주 1호선(GJ/1, 20역)의 KRIC 휠체어리프트 조회가 포함된 경우(또는 컷오버 이후 스냅샷인 경우),
 // 노선-역 코드 정합성, 결과 코드 00(전수 조회 완료), 정본 역-노선 누락 여부를 Fail-Closed로 검증한다.
 function assertKricRegionalWheelchairLiftQueryCoverage(pack, snapshot) {
+  if (snapshot?.sourceId !== KRIC_STANDARD_SOURCE_ID) return;
   const regionalQueries = (snapshot?.queries ?? []).filter(isKricRegionalWheelchairLiftQuery);
   const requiresRegionalCoverage = regionalQueries.length > 0
-    || (snapshot?.sourceId === KRIC_STANDARD_SOURCE_ID
-      && typeof snapshot?.capturedAt === "string"
+    || (typeof snapshot?.capturedAt === "string"
       && snapshot.capturedAt > KRIC_REGIONAL_WHEELCHAIR_LIFT_CUTOVER_CAPTURED_AT);
   if (!requiresRegionalCoverage) return;
 
