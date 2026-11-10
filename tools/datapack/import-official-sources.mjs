@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { assertFacilityAbsencesCovered, facilityAbsenceCoverageBySource } from "./lib/facility-evidence-states.mjs";
+import { KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES } from "./lib/kric-standard-facilities.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 
 const SUMMARY_RIDE_EDGE_PRODUCTION_POLICY = "fixture-only";
@@ -646,14 +647,20 @@ export function latestEvidenceObservedDates(rows) {
 
 export function packSourceInventoryEntry(source, evidenceObservedDate, supportedV1Scope) {
   const supportedRegionIds = new Set(supportedV1Scope?.includedRegionIds ?? []);
-  const supportedOperatorIds = new Set(supportedV1Scope?.includedOperatorIds ?? []);
   const rawRegionIds = requiredStringArray(source.coverageScope?.regionIds, `${source.id}.coverageScope.regionIds`);
   const rawOperatorIds = requiredStringArray(source.coverageScope?.operatorIds, `${source.id}.coverageScope.operatorIds`);
   const regionIds = supportedRegionIds.size > 0
     ? rawRegionIds.filter((regionId) => supportedRegionIds.has(regionId))
     : rawRegionIds;
-  const operatorIds = supportedOperatorIds.size > 0
-    ? rawOperatorIds.filter((operatorId) => supportedOperatorIds.has(operatorId))
+  const excludedRegionOperatorIds = supportedRegionIds.size > 0
+    ? new Set(
+      [...KRIC_REGIONAL_WHEELCHAIR_LIFT_LINE_SCOPES.values()]
+        .filter(({ regionId }) => !supportedRegionIds.has(regionId))
+        .map(({ operatorId }) => operatorId),
+    )
+    : new Set();
+  const operatorIds = excludedRegionOperatorIds.size > 0
+    ? rawOperatorIds.filter((operatorId) => !excludedRegionOperatorIds.has(operatorId))
     : rawOperatorIds;
   return {
     id: requiredString(source.id, "source.id"),
