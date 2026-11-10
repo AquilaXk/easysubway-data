@@ -891,16 +891,33 @@ test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 
 test("인천 3개 원천 입력은 원장 LOCKED terminal head·약관 해시·내용 해시와 결속되고 어긋나면 실패한다", async () => {
   const worktreeSelectionInputs = async () => {
     const readWorktree = (relative) => readFile(path.join(root, relative));
-    const [sourceInventory, sourceSnapshots, fanIn, freshnessPolicy] = await Promise.all([
+    const [committed, worktreeInventory, worktreeSnapshots, freshnessPolicy] = await Promise.all([
+      committedSelectionInputs(),
       readWorktree("tools/datapack/source-inventory.json").then(JSON.parse),
       readWorktree("tools/datapack/release/source-snapshots.json").then(JSON.parse),
-      pinnedRead("tools/datapack/release/current-five-region-source-fan-in.json").then(JSON.parse),
       readWorktree("release/product-gates/datapack-freshness-sla.json").then(JSON.parse),
     ]);
+    const incheonSourceIds = new Set([
+      "incheon-transit-station-info",
+      "incheon-line1-train-timetable",
+      "incheon-line2-train-timetable",
+      "incheon-transit-accessibility",
+    ]);
+    const worktreeSourcesById = new Map(
+      worktreeInventory.sources.filter(({ id }) => incheonSourceIds.has(id)).map((entry) => [entry.id, entry]),
+    );
+    const sourceInventory = {
+      ...committed.sourceInventory,
+      sources: committed.sourceInventory.sources.map((entry) => worktreeSourcesById.get(entry.id) ?? entry),
+    };
+    const sourceSnapshots = [
+      ...committed.sourceSnapshots.filter(({ sourceId }) => !incheonSourceIds.has(sourceId)),
+      ...worktreeSnapshots.filter(({ sourceId }) => incheonSourceIds.has(sourceId)),
+    ];
     return {
       sourceInventory,
       sourceSnapshots,
-      fanIn,
+      fanIn: committed.fanIn,
       freshnessPolicy,
       readSourceBytes: (relative) => (
         relative.startsWith("tools/datapack/sources/incheon-") ? readWorktree(relative) : pinnedRead(relative)
@@ -2970,5 +2987,36 @@ test("반증: 대전·광주 KRIC 조회에 역 누락·비정상 결과 코드�
   assert.throws(
     () => withCapitalKricFacilities({ pack, snapshot: missingAllRegionalAfterCutover }),
     /KRIC regional wheelchair-lift coverage incomplete/,
+  );
+
+  // 5. KRIC 에스컬레이터 원천(kric-station-escalator-detailed)에 대전·광주 조회(결과 00·03 포함)가 들어 있어도
+  // 지역 에스컬레이터 CSV 증거와 충돌하거나 휠체어리프트 커버리지 실패를 일으키지 않고 무시한다.
+  const afterStandard = withCapitalKricFacilities({ pack, snapshot });
+  const escalatorWithRegional = {
+    ...snapshot,
+    sourceId: "kric-station-escalator-detailed",
+    snapshotId: "kric-station-escalator-detailed-20261110T000000000Z",
+    queries: snapshot.queries.map((q) => {
+      if (q.lineId === "line-e57a361e8892" && q.stinCd === "100") {
+        return { ...q, providerResultCode: "03", status: "UNVERIFIED_EVIDENCE_BLOCKED", rows: [] };
+      }
+      if (q.lineId === "line-7051a9c2525c" || q.lineId === "line-e57a361e8892") {
+        return { ...q, providerResultCode: "00", status: "PRESENT", rows: [{ dtlLoc: "1번출구", exitNo: "1" }] };
+      }
+      return { ...q, providerResultCode: "00", status: "EMPTY", rows: [] };
+    }),
+  };
+  const afterEscalator = withCapitalKricFacilities({
+    pack: { ...pack, ...afterStandard },
+    snapshot: escalatorWithRegional,
+  });
+  const regionalLineIds = new Set(["line-7051a9c2525c", "line-e57a361e8892"]);
+  assert.equal(
+    afterEscalator.facilities.filter((f) => f.sourceId === "kric-station-escalator-detailed" && regionalLineIds.has(f.lineId)).length,
+    0,
+  );
+  assert.equal(
+    afterEscalator.stationFacilityEvidence.filter((e) => e.sourceId === "kric-station-escalator-detailed" && regionalLineIds.has(e.lineId)).length,
+    0,
   );
 });
