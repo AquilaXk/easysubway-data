@@ -3,8 +3,8 @@
   "artifactKind": "datapack-car-door-hint-quarantine",
   "issue": "https://github.com/AquilaXk/easysubway-data/issues/854",
   "sourceId": "kric-station-convenience-standard",
-  "sourceSnapshotId": "kric-station-convenience-standard-20261109T131042779Z",
-  "rawSha256": "51d72d972269e48554975669b24b0b8ce67c063f45ca5804969af5dd36f2df25",
+  "sourceSnapshotId": "kric-station-convenience-standard-20261110T124113426Z",
+  "rawSha256": "80ed50473f5d60660f61d91a2d209b5d725d3c4238018fdf0df27dcd444a3716",
   "contract": {
     "targetFacilityTypes": [
       "STAIR",

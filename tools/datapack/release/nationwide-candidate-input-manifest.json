@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261109-seq181",
-  "candidateBuildSpecSha256": "8095d86b7886df99f788fc524fbe5120b2c1c8c8587b6318c12d4858eb90d74f",
-  "preparationSha256": "8f6261b61531b99b77ee737b204fec2d5662071c47d9f5c4bb3863cdcc6f463b",
-  "fanInSha256": "6b1f84ec800a983d0cada38f413122beab4f8d91635dd05a1595058dadae0ee0",
+  "candidateId": "nationwide-candidate-20261111-seq182",
+  "candidateBuildSpecSha256": "51c19623e91befae041a9675bfcd802e86cae3ba1e25c231d12f97315af30977",
+  "preparationSha256": "8b57fa10a658d3eb3f48ddbc6de8e7389d879a6035303fbeeb4f9a3da763abb7",
+  "fanInSha256": "271fc4d60e75eaf8717c021f14ed474ddec9175da4bef1c17c8da14aadbe13a8",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -19,12 +19,12 @@
     },
     {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-      "sha256": "4943f8697e45d8616a43747830c15c0f8151a7fabb7b682fd152e09d81c26d81",
+      "sha256": "99910f26e219a2dc69ce15f3cb4af27aceda854ac29755d877a62e22497450a1",
       "byteSize": 14856
     },
     {
-      "path": "tools/datapack/itx-cheongchun-topology-evidence-20261107174307877.json",
-      "sha256": "079bde102a6f803ec4b0fd4e3f58113f7d77bdf4e002abeaddffb7f9342cab94",
+      "path": "tools/datapack/itx-cheongchun-topology-evidence-20261109172230815.json",
+      "sha256": "a20a19521925e82797ef3ad0fe0dbf781363840f4027124362eb2e483a03c7f4",
       "byteSize": 2200
     },
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "6b1f84ec800a983d0cada38f413122beab4f8d91635dd05a1595058dadae0ee0",
+      "sha256": "271fc4d60e75eaf8717c021f14ed474ddec9175da4bef1c17c8da14aadbe13a8",
       "byteSize": 36443
     },
     {
@@ -74,23 +74,23 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "a133c523e054c802da980e641d7fe56852150f6da2985761f2bcae237e3c58d7",
-      "byteSize": 11162107
+      "sha256": "7776f67a9ea5f5c5eac84916605e968a24368e40c0bb88a622b821e265cbe7cd",
+      "byteSize": 12610140
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
-      "sha256": "c73dc1a573ebc647cdd21ae18ae3ebe6a7caccaf8c144d6206a4385070bed915",
+      "sha256": "1c2aa51215c986f95094fa28fd56dd208519e9eb0f8eeb8e2295cdc1fa6d3bdf",
       "byteSize": 222917
     },
     {
       "path": "tools/datapack/source-governance-policy.json",
-      "sha256": "b78543c726fa55758ec8ed6f1ba83c03e8a36707cc7b733348a7d904492e6887",
-      "byteSize": 63914
+      "sha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+      "byteSize": 67647
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "90484e2e604becaa7b2b2fa0c3a1de351e0afa9cd9ba9e5fcf9e9b4415f3ac73",
-      "byteSize": 417448
+      "sha256": "1346b4fd63d36fdaf0e995f84e67304d396f21b4e5c8cb03a84c852ca31b66b2",
+      "byteSize": 418594
     },
     {
       "path": "tools/datapack/sources/busan-transportation-accessibility-5ffef68ba7dab2acf43ba8b32c9c1944ed0c7d957e23a02feb8f7bebac4090d7-20261108.json",
@@ -118,38 +118,38 @@
       "byteSize": 260470
     },
     {
-      "path": "tools/datapack/sources/daegu-line1-train-timetable-0d94c46413dd1e84d19052d303ce21621f1282157335307425695f3f96cd626a.json",
-      "sha256": "0d94c46413dd1e84d19052d303ce21621f1282157335307425695f3f96cd626a",
+      "path": "tools/datapack/sources/daegu-line1-train-timetable-4068e37186e93d7ade8a30e553a6e1b70afd18e2b34b03345337db1a7d6284f3.json",
+      "sha256": "4068e37186e93d7ade8a30e553a6e1b70afd18e2b34b03345337db1a7d6284f3",
       "byteSize": 1663202
     },
     {
-      "path": "tools/datapack/sources/daegu-line2-train-timetable-8f72f6cd434c04ecc92be308fb0f968ce3b5dd15693aa827248bda580d8c45d6.json",
-      "sha256": "8f72f6cd434c04ecc92be308fb0f968ce3b5dd15693aa827248bda580d8c45d6",
+      "path": "tools/datapack/sources/daegu-line2-train-timetable-210b905729d35ec94a013652aae9826937a45d174dffa4086d0ad3947f66eb37.json",
+      "sha256": "210b905729d35ec94a013652aae9826937a45d174dffa4086d0ad3947f66eb37",
       "byteSize": 1411287
     },
     {
-      "path": "tools/datapack/sources/daegu-line3-train-timetable-99f08d47bba39279ea1716ca8aaa24000f3fe96648b280e985c82f3f2053c134.json",
-      "sha256": "99f08d47bba39279ea1716ca8aaa24000f3fe96648b280e985c82f3f2053c134",
+      "path": "tools/datapack/sources/daegu-line3-train-timetable-01a1740e613c3495f2625db2199e7dfb047ed5c0096fe912db676b5df4f4cdea.json",
+      "sha256": "01a1740e613c3495f2625db2199e7dfb047ed5c0096fe912db676b5df4f4cdea",
       "byteSize": 1572973
     },
     {
-      "path": "tools/datapack/sources/daegu-transportation-accessibility-cb32b7602bc66339be9bade5f16a65718b05f2224afe69680a1a37d8d221d764-20261109.json",
-      "sha256": "e8d74c1deb4f371e7e77dffb4ee56a5e602b69c68632889ac543853cdb744128",
+      "path": "tools/datapack/sources/daegu-transportation-accessibility-18a1dc3377b56d64ebd6c0b4500c6b302a4035d7e08e1df1bdf9b67c4e21a1ff-20261110.json",
+      "sha256": "b7d6c572713ecdc464b1120eb335abe209e82d2588fc40984bee9aa744787d22",
       "byteSize": 27934
     },
     {
-      "path": "tools/datapack/sources/daejeon-transportation-accessibility-5160538461ecb9a7bca31f302d91684a72d2fdb57af819634a774d2276a114f3-20261109.json",
-      "sha256": "2ad88bed121347a858f3b4fd4ed6cc162fa5138a1938ad32873d09a2c8d5e734",
+      "path": "tools/datapack/sources/daejeon-transportation-accessibility-67350d2e2314718f2731ebb4152c83617172581bc19bfb940a99ffec3932f116-20261110.json",
+      "sha256": "735a2f8220a272254b42a0c062b8d34b9487088f3016b4c2e6ce0e1878247bc7",
       "byteSize": 35955
     },
     {
-      "path": "tools/datapack/sources/gwangju-transportation-accessibility-d8fd506e1db4a91ca02c22ae99e39ed556d1a43139f2063bb5279d048353d902-20261109.json",
-      "sha256": "779dcc1a1316b287a2fd974cc6099720ab23b0e6c9c17268b55e088bc4627f60",
+      "path": "tools/datapack/sources/gwangju-transportation-accessibility-8d9d5eebfb862f0e82a805bc97f00ccb73b1b3f6e65d313fdae0975761a92a14-20261110.json",
+      "sha256": "5273a989fd907a13530f84b9f969c76d11f0b771d84e5f0037a45b1056eaef11",
       "byteSize": 28112
     },
     {
-      "path": "tools/datapack/sources/gwangju-transportation-route-topology-1b5eb504df627a52d158dcb83ba0c359b887d55ae524fe000c49978e50e99f14.json",
-      "sha256": "1b5eb504df627a52d158dcb83ba0c359b887d55ae524fe000c49978e50e99f14",
+      "path": "tools/datapack/sources/gwangju-transportation-route-topology-cd7652a73affddd863202b5736d07d326ea32a3ec13a5618df4d6a7af7abc9ed.json",
+      "sha256": "cd7652a73affddd863202b5736d07d326ea32a3ec13a5618df4d6a7af7abc9ed",
       "byteSize": 94606
     },
     {
@@ -168,8 +168,8 @@
       "byteSize": 65917
     },
     {
-      "path": "tools/datapack/sources/korail-metropolitan-planned-timetable-9875db41d7140c94648f00764d289c27e88fb31b7709981b23741e76fe8a2bf6.json",
-      "sha256": "fc299c002cc0f83ed06297ed2ac554fefaf17d99ce09c2077409cbf2995bbcd8",
+      "path": "tools/datapack/sources/korail-metropolitan-planned-timetable-6119afde55260c5a0fe449810c1dd81b4b53367fe89959dd59418dcec83ecda9.json",
+      "sha256": "e1ba5c37a437365e45093372195b363aae0e1427e31179e9fb95f03198b13111",
       "byteSize": 613416
     },
     {
@@ -193,18 +193,18 @@
       "byteSize": 29394372
     },
     {
-      "path": "tools/datapack/sources/kric-station-convenience-standard-20261109T131042779Z.json",
-      "sha256": "c1e12964c9bfe4ae2c72dc59720ef18ecce3826e4b15557e67b02e95d979fee1",
-      "byteSize": 774800
+      "path": "tools/datapack/sources/kric-station-convenience-standard-20261110T124113426Z.json",
+      "sha256": "a289faec8f40b45a50e5966d1de8bacd803355fcdafc9d8478c172bc62db9a81",
+      "byteSize": 938693
     },
     {
-      "path": "tools/datapack/sources/kric-station-escalator-detailed-20261108T164202956Z.json",
-      "sha256": "bd7196a0f8ad59fe00466009965dfd75ab51a2b836a1ec1d948b73bab41b16fb",
-      "byteSize": 675961
+      "path": "tools/datapack/sources/kric-station-escalator-detailed-20261109T204653373Z.json",
+      "sha256": "66a85492fbbde3303a32230bdba636c32a07178f4ab8e88e44dd6c00d9cb9019",
+      "byteSize": 797384
     },
     {
-      "path": "tools/datapack/sources/kric-subway-timetable-station-lines-20261108.json",
-      "sha256": "3e3c0a6c959d417196f5642893bab6b6297372860d26c7bab1ef0698fb5c73dc",
+      "path": "tools/datapack/sources/kric-subway-timetable-station-lines-20261109.json",
+      "sha256": "866736e7ad6d4959c8c9f939c2b4de0419e45992341a291fa821440fd36bd64a",
       "byteSize": 10461819
     },
     {

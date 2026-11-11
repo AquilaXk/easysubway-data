@@ -63,7 +63,7 @@
       },
       "itxCoverageContract": {
         "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-        "sha256": "4943f8697e45d8616a43747830c15c0f8151a7fabb7b682fd152e09d81c26d81"
+        "sha256": "99910f26e219a2dc69ce15f3cb4af27aceda854ac29755d877a62e22497450a1"
       },
       "incheonTimetables": {
         "line1": {
@@ -114,8 +114,8 @@
         }
       ]
     },
-    "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20261107174307877.json",
-    "itxTopologyEvidenceSha256": "079bde102a6f803ec4b0fd4e3f58113f7d77bdf4e002abeaddffb7f9342cab94",
+    "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20261109172230815.json",
+    "itxTopologyEvidenceSha256": "a20a19521925e82797ef3ad0fe0dbf781363840f4027124362eb2e483a03c7f4",
     "derivedDistanceDirections": [
       {
         "directionKey": "station-021157f2f07e:line-558d0bd8312d->seoul-4",
@@ -7852,27 +7852,27 @@
     ]
   },
   "releaseIdentity": {
-    "candidateId": "nationwide-candidate-20261109-seq181",
-    "publishedAt": "2026-11-09T14:14:51.195Z",
-    "releaseSequence": 181
+    "candidateId": "nationwide-candidate-20261111-seq182",
+    "publishedAt": "2026-11-11T02:00:07.088Z",
+    "releaseSequence": 182
   },
   "builderIdentity": {
-    "gitSha": "7d0f401649c26edfe360fb0abd98f935eca8faa8",
+    "gitSha": "65406dd5828d5a5bb8e558bd5b5666025ab50cdf",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
-    "candidateId": "nationwide-candidate-20261109-seq181",
+    "candidateId": "nationwide-candidate-20261111-seq182",
     "scopeId": "nationwide_routing_android_v1",
-    "approvalId": "release-request-nationwide-candidate-20261109-seq181",
-    "requestedBy": "data-operator-lead",
-    "approvedBy": "data-release-authority"
+    "approvalId": "release-request-nationwide-candidate-20261111-seq182",
+    "requestedBy": "datapack-scheduled-refresh",
+    "approvedBy": "datapack-release-gates"
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "fb85aabbd11a501d299fd1b74f9c69cb5ce15b03024d17cceafb53c4ff5b916a"
+    "sha256": "254a91c7fbec3406043970782f1805e9248dd3f3dc47ea507a489f8e06fadd77"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",
-    "sha256": "9095a561ab0d72fd5364908a55afba8c633f2c2cabf21e7935c898779ebaa134"
+    "sha256": "05c32f4d9b0e0f3d9f045f448b10cf3a76358e54030f49240e2b258522e38d6d"
   }
 }
