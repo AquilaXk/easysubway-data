@@ -26,7 +26,6 @@ jobs:
     permissions:
       actions: read
       contents: read
-      issues: write
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -41,8 +40,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node tools/ci/check-scheduler-heartbeat.mjs --repository "${GITHUB_REPOSITORY}" --policy release/product-gates/external-scheduler-heartbeat.json
-      - name: Report refresh failure as an issue
+      - name: Report refresh failure summary
         if: ${{ failure() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: node tools/ci/report-refresh-failure.mjs --workflow data-workflow-scheduler-watchdog.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

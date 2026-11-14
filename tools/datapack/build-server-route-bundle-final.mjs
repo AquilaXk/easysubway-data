@@ -91,6 +91,7 @@ const FIXED_INPUTS = {
 const execFileAsync = promisify(execFile);
 
 export const E_SERVER_BUNDLE_DECOMPRESSED_BUDGET = "E_SERVER_BUNDLE_DECOMPRESSED_BUDGET";
+const SERVER_ROUTE_BUNDLE_MAX_TOTAL_DECOMPRESSED_BYTES = 201_326_592;
 
 export function evaluateDecompressedBudget(payloadBytesByComponent, maxTotalBytes) {
   if (!Number.isSafeInteger(maxTotalBytes) || maxTotalBytes <= 0) {
@@ -103,10 +104,29 @@ export function evaluateDecompressedBudget(payloadBytesByComponent, maxTotalByte
     if (!compressedBytes || !Buffer.isBuffer(compressedBytes)) {
       throw new Error(`missing or invalid payload bytes for ${component}`);
     }
+    const remaining = maxTotalBytes - totalBytes;
+    const maxOutputLength = Math.max(1, remaining + 1);
     let decompressed;
     try {
-      decompressed = zstdDecompressSync(compressedBytes);
+      decompressed = zstdDecompressSync(compressedBytes, { maxOutputLength });
     } catch (cause) {
+      if (cause?.code === "ERR_BUFFER_TOO_LARGE") {
+        const headroomBytes = maxTotalBytes - totalBytes;
+        const error = new Error(
+          `${E_SERVER_BUNDLE_DECOMPRESSED_BUDGET}: ${component} payload exceeds remaining budget ${remaining} bytes (limit: ${maxTotalBytes})`,
+          { cause },
+        );
+        error.code = E_SERVER_BUNDLE_DECOMPRESSED_BUDGET;
+        error.details = {
+          components,
+          exceedingComponent: component,
+          totalBytesSoFar: totalBytes,
+          maxTotalBytes,
+          headroomBytes,
+          headroomRatio: maxTotalBytes === 0 ? 0 : headroomBytes / maxTotalBytes,
+        };
+        throw error;
+      }
       throw new Error(`failed to decompress ${component} payload`, { cause });
     }
     const byteLength = decompressed.length;
@@ -710,7 +730,9 @@ async function assertEmbeddedEvidence(input) {
   try {
     let sqliteBytes;
     try {
-      sqliteBytes = zstdDecompressSync(input.accessibilityPayloadBytes);
+      sqliteBytes = zstdDecompressSync(input.accessibilityPayloadBytes, {
+        maxOutputLength: SERVER_ROUTE_BUNDLE_MAX_TOTAL_DECOMPRESSED_BYTES,
+      });
     } catch {
       throw new Error("embedded accessibility evidence component is not valid Zstd");
     }
@@ -759,7 +781,9 @@ async function assertEmbeddedEvidence(input) {
 async function readEmbeddedTopology(topologyPayloadBytes, temporary) {
   let sqliteBytes;
   try {
-    sqliteBytes = zstdDecompressSync(topologyPayloadBytes);
+    sqliteBytes = zstdDecompressSync(topologyPayloadBytes, {
+      maxOutputLength: SERVER_ROUTE_BUNDLE_MAX_TOTAL_DECOMPRESSED_BYTES,
+    });
   } catch {
     throw new Error("embedded topology component is not valid Zstd");
   }

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { deflateSync } from "node:zlib";
 
 import {
   connectorAssetPaths,
   connectorCenterline,
+  decodePngRgba,
   validateBusanRouteMapConnectorEvidence,
 } from "./collect-busan-route-map-connectors.mjs";
 
@@ -52,4 +54,36 @@ test("connector evidence는 공식 host·PNG identity·centerline을 fail closed
   const tampered = structuredClone(evidence);
   tampered.assets[0].sourceUrl = "https://example.com/301-302.png";
   assert.throws(() => validateBusanRouteMapConnectorEvidence(tampered), /invalid connector evidence/);
+});
+
+function buildTestPng({ width, height, idatData, ihdrExtraChunks = [] }) {
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const chunk = (type, data) => {
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    out.write(type, 4, 4, "ascii");
+    data.copy(out, 8);
+    return out;
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width >>> 0, 0);
+  ihdr.writeUInt32BE(height >>> 0, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([sig, chunk("IHDR", ihdr), ...ihdrExtraChunks, chunk("IDAT", idatData), chunk("IEND", Buffer.alloc(0))]);
+}
+
+test("decodePngRgba enforces dimension and maxOutputLength bounds fail-closed before inflating bombs", () => {
+  const oversizedHeader = buildTestPng({ width: 100_000, height: 100_000, idatData: deflateSync(Buffer.from([0])) });
+  assert.throws(() => decodePngRgba(oversizedHeader), /dimension|budget|limit/i);
+
+  const bombPng = buildTestPng({
+    width: 2,
+    height: 2,
+    idatData: deflateSync(Buffer.alloc(1024 * 1024, 0)),
+  });
+  assert.throws(
+    () => decodePngRgba(bombPng),
+    (err) => err?.cause?.code === "ERR_BUFFER_TOO_LARGE",
+  );
 });

@@ -1,10 +1,10 @@
 name: Current Capital Topology Registration
 
-# 수도권 topology 등록(#456, #969, #870 전체 자동화 1단계): 갱신 PR(current-capital-topology-refresh)이 병합돼 보호 admission이 main에 들어오면
-# 그 topology 원본을 OCI에 게시하고 원장에 등록한 결과를 App 토큰 PR로 올린다.
-# - 판정(decide-capital-topology-registration)이 REGISTER·RECOVER_CLAIM·OPEN_PR·BLOCKED_BY_PENDING_PR·REGISTERED를 정한다. 쓰기 step은 앞의 둘에서만 돈다.
+# 수도권 topology 등록(#456, #969): 갱신 커밋으로 보호 admission이 main에 들어오면
+# 그 topology 원본을 OCI에 게시하고 원장에 등록한 결과를 main에 직접 push한다.
+# - 판정(decide-capital-topology-registration)이 REGISTER·RECOVER_CLAIM·REGISTERED·SUPERSEDED를 정한다. 쓰기 step은 앞의 둘에서만 돈다.
 # - push·정기 실행은 저장소 변수 DATAPACK_SCHEDULED_SOURCE_REGISTRATION이 true일 때만 돈다. 사람 dispatch는 항상 돈다.
-# - 이상(판정 불가 claim·admission 누락/만료·CI 실패·방치)은 job을 실패시키고 실패 이슈로 드러난다. 이전 데이터로 대체하지 않는다.
+# - 이상(admission 누락/만료·정책 변경·원장 게이트 실패)은 job을 실패시키고 실행 요약으로 드러낸다. 이전 데이터로 대체하지 않는다.
 on:
   push:
     branches:
@@ -36,8 +36,6 @@ jobs:
     permissions:
       actions: read
       contents: write
-      pull-requests: write
-      issues: write
     environment: datapack-release-check
     timeout-minutes: 15
     steps:
@@ -56,6 +54,7 @@ jobs:
           mkdir -p "${operation_parent}"
           chmod 700 "${operation_parent}"
           printf 'REGISTRATION_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
+          printf 'REGISTRATION_MAIN_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
       - name: Decide whether capital topology registration is needed
         id: decision
         env:
@@ -63,7 +62,7 @@ jobs:
           RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
         run: |
           set -euo pipefail
-          main_sha="$(git rev-parse HEAD)"
+          main_sha="${REGISTRATION_MAIN_SHA}"
           # 판정 시점의 checkout이 아직 main이어야 한다. 그 사이 main이 움직였으면 새 push·정기 실행이 자기 판정을 한다.
           if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" != "${main_sha}" ]]; then
             echo "::notice title=Capital topology registration::main moved after this run started; a newer run decides on the new main."
@@ -71,209 +70,68 @@ jobs:
             exit 0
           fi
           if [[ -n "${RECOVERY_RUN_ID}" ]]; then
-            # 사람이 지정한 복구는 판정을 거치지 않는다. 같은 입력의 producer run·claim 검증은 claim step이 한다.
+            # 사람이 지정한 복구는 판정을 거치지 않는다. producer run 검증과 artifact 다운로드는 다음 step이 한다.
             [[ "${RECOVERY_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "recovery run ID is invalid" >&2; exit 1; }
             printf 'state=RECOVER_CLAIM\nrecovery_run_id=%s\n' "${RECOVERY_RUN_ID}" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
           decision_root="${RUNNER_TEMP}/capital-topology-registration-decision/${GITHUB_RUN_ID}"
           mkdir -p "${decision_root}"
-          git ls-remote --heads origin "refs/heads/automation/456-capital-topology-registration-*" > "${decision_root}/claims.txt"
-          git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/automation-branches.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
-          # #987 리뷰 F1: 끝난 run 이력은 쌓여 상한을 넘는다. 끝나지 않은 상태별로만 조회하고, 복구에 필요한 claim의 producer run은 아래에서 run id로 직접 받는다.
-          mkdir -p "${decision_root}/runs"
-          for status in in_progress queued waiting pending requested; do
-            gh run list --repo "${GITHUB_REPOSITORY}" --workflow current-capital-topology-registration.yml --status "${status}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "${decision_root}/runs/${status}.json"
-          done
-          # claim을 만든 run이 게시 receipt artifact를 남겼는지가 복구 가능 여부다(이슈 #973). run id는 claim 브랜치 이름의 접미사다.
+          printf '[]\n' > "${decision_root}/prs.json"
+          : > "${decision_root}/claims.txt"
+          : > "${decision_root}/automation-branches.txt"
+          printf '[]\n' > "${decision_root}/runs.json"
           printf '{}\n' > "${decision_root}/artifacts.json"
-          while read -r _ claim_ref; do
-            [[ -n "${claim_ref}" ]] || continue
-            claim_run="${claim_ref##*-}"
-            [[ "${claim_run}" =~ ^[1-9][0-9]*$ ]] || { echo "registration claim run ID is invalid" >&2; exit 1; }
-            # claim을 만든 run(끝났을 수 있다)을 run id로 직접 받는다. 기록이 없으면(Not Found) 목록에 없는 run으로 판정이 정리 대상으로 본다.
-            if gh run view "${claim_run}" --repo "${GITHUB_REPOSITORY}" --json databaseId,status,conclusion,workflowName,headBranch,headSha > "${decision_root}/runs/claim-${claim_run}.json" 2> "${decision_root}/run-error.txt"; then
-              jq '[.]' "${decision_root}/runs/claim-${claim_run}.json" > "${decision_root}/runs/claim-${claim_run}.next.json"
-              mv "${decision_root}/runs/claim-${claim_run}.next.json" "${decision_root}/runs/claim-${claim_run}.json"
-            else
-              grep -q "Not Found" "${decision_root}/run-error.txt" || { cat "${decision_root}/run-error.txt" >&2; exit 1; }
-              printf '[]\n' > "${decision_root}/runs/claim-${claim_run}.json"
-            fi
-            if ! names="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${claim_run}/artifacts" --jq '[.artifacts[].name]' 2> "${decision_root}/artifact-error.txt")"; then
-              grep -q "Not Found" "${decision_root}/artifact-error.txt" || { cat "${decision_root}/artifact-error.txt" >&2; exit 1; }
-              names='[]'
-            fi
-            jq --arg id "${claim_run}" --argjson names "${names}" '. + {($id): $names}' "${decision_root}/artifacts.json" > "${decision_root}/artifacts.next.json"
-            mv "${decision_root}/artifacts.next.json" "${decision_root}/artifacts.json"
-          done < "${decision_root}/claims.txt"
-          jq -s 'add | unique_by(.databaseId)' "${decision_root}"/runs/*.json > "${decision_root}/runs.json"
           node tools/ci/decide-capital-topology-registration.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --prs "${decision_root}/prs.json" --claims "${decision_root}/claims.txt" --automation-branches "${decision_root}/automation-branches.txt" --runs "${decision_root}/runs.json" --artifacts "${decision_root}/artifacts.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --pr-limit 1000 --run-limit 200 --github-output "${GITHUB_OUTPUT}"
-      - name: Mint App token for the open refresh pull request
-        id: app-token-open
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Ensure required CI on the open refresh pull request
-        id: required-ci
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
-        run: |
-          set -euo pipefail
-          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다). #969: CI가 실패했으면 바로 실패한다.
-          node tools/ci/refresh-pr-required-ci.mjs --workflow current-capital-topology-registration.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
-      - name: Enforce open refresh pull request age limit
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CI_STATE: ${{ steps.required-ci.outputs.state }}
-        run: |
-          set -euo pipefail
-          # #939: 열린 등록 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
-          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow current-capital-topology-registration.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${CI_STATE}"
-      - name: Note registration waiting on another pending automation pull request
-        if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
-        env:
-          BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
-        run: |
-          echo "::notice title=Capital topology registration::waiting for pending source-ledger automation pull request(s) ${BLOCKED_BY}; they write the same ledger files."
-      - name: Note registration waiting on a running producer
-        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
-        env:
-          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
-        run: |
-          echo "::notice title=Capital topology registration::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
-      - name: Remove stale registration claims named by the decision
-        if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
-        run: |
-          set -euo pipefail
-          # 판정이 정리 대상으로 알린 claim만 지운다: 병합된 PR의 남은 브랜치, 게시 증거 없이 버려진 이전 claim. 사람이 지울 일이 아니다(이슈 #973).
-          # #995: 조용히 지우지 않는다. 병합된 PR의 claim은 보고 없이, 게시 증거 없이 버려진 claim은 #926 실패 보고를 먼저 하고 지운다.
-          [[ -n "${CLEANUP_CLAIMS}" ]] || exit 0
-          gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-registration.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/capital-topology-registration-decision/${GITHUB_RUN_ID}/claims.txt"
-      - name: Claim exact main before OCI publication
-        if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+      - name: Prepare retained publication recovery evidence
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_RUN_ID: ${{ steps.decision.outputs.recovery_run_id }}
         run: |
           set -euo pipefail
-          main_sha="$(git rev-parse HEAD)"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          gh auth setup-git
-          if [[ -n "${RECOVERY_RUN_ID}" ]]; then
-            [[ "${RECOVERY_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "recovery run ID is invalid" >&2; exit 1; }
-            metadata="$(gh run view "${RECOVERY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --json databaseId,status,conclusion,event,workflowName,headBranch,headSha --jq '[.databaseId,.status,.conclusion,.event,.workflowName,.headBranch,.headSha] | @tsv')"
-            IFS=$'\t' read -r run_id run_status run_conclusion run_event run_workflow run_branch run_head <<< "${metadata}"
-            # producer run은 사람 dispatch뿐 아니라 push·정기 실행일 수 있다(#969).
-            [[ "${run_event}" == "workflow_dispatch" || "${run_event}" == "push" || "${run_event}" == "schedule" ]] || { echo "recovery producer run event is invalid" >&2; exit 1; }
-            [[ "${run_id}" == "${RECOVERY_RUN_ID}" && "${run_status}" == "completed" && "${run_conclusion}" == "failure" && "${run_workflow}" == "Current Capital Topology Registration" && "${run_branch}" == "main" && "${run_head}" == "${main_sha}" ]] || { echo "recovery producer run identity is invalid" >&2; exit 1; }
-            branch="automation/456-capital-topology-registration-${RECOVERY_RUN_ID}"
-            git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-            read -r claim_head claim_parent extra_parent <<< "$(git rev-list --parents -n 1 "origin/${branch}")"
-            [[ "${claim_head}" == "$(git rev-parse "origin/${branch}")" && "${claim_parent}" == "${main_sha}" && -z "${extra_parent:-}" && "$(git show -s --format=%s "origin/${branch}")" == "Claim capital topology registration" ]] || { echo "recovery claim identity is invalid" >&2; exit 1; }
-            git diff --quiet "${claim_parent}" "${claim_head}" || { echo "recovery claim is not empty" >&2; exit 1; }
-            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state all --head "${branch}" --json number --jq 'length')" == "0" ]] || { echo "recovery claim already has a pull request" >&2; exit 1; }
-            source_root="${RUNNER_TEMP}/current-capital-topology-registration/retained-${RECOVERY_RUN_ID}"
-            mkdir -p "${source_root}"
-            chmod 700 "${source_root}"
-            gh run download "${RECOVERY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --name "current-capital-topology-registration-${RECOVERY_RUN_ID}" --dir "${source_root}"
-            [[ -f "${source_root}/capital-route-topology-registration.json" && -f "${source_root}/capital-route-topology.raw-receipt.json" ]] || { echo "retained registration evidence is incomplete" >&2; exit 1; }
-            git switch --track -c "${branch}" "origin/${branch}"
-            git switch --detach "${main_sha}"
-            printf 'REGISTRATION_SOURCE_OPERATION_ROOT=%s\n' "${source_root}" >> "${GITHUB_ENV}"
-          else
-            branch="automation/456-capital-topology-registration-${GITHUB_RUN_ID}"
-            claims="${RUNNER_TEMP}/current-capital-topology-registration/claims.txt"
-            git ls-remote --heads origin "refs/heads/automation/456-capital-topology-registration-*" > "${claims}"
-            [[ ! -s "${claims}" ]] || { echo "competing registration claim exists" >&2; exit 1; }
-            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${branch}" --json number --jq 'length')" == "0" ]] || { echo "registration claim PR exists" >&2; exit 1; }
-            git switch -c "${branch}"
-            git commit --allow-empty -m "Claim capital topology registration"
-            git push origin "${branch}"
-            git switch --detach "${main_sha}"
-          fi
-          printf 'REGISTRATION_BRANCH=%s\nREGISTRATION_MAIN_SHA=%s\n' "${branch}" "${main_sha}" >> "${GITHUB_ENV}"
+          main_sha="${REGISTRATION_MAIN_SHA}"
+          [[ "${RECOVERY_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "recovery run ID is invalid" >&2; exit 1; }
+          metadata="$(gh run view "${RECOVERY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --json databaseId,status,conclusion,event,workflowName,headBranch,headSha --jq '[.databaseId,.status,.conclusion,.event,.workflowName,.headBranch,.headSha] | @tsv')"
+          IFS=$'\t' read -r run_id run_status run_conclusion run_event run_workflow run_branch run_head <<< "${metadata}"
+          [[ "${run_event}" == "workflow_dispatch" || "${run_event}" == "push" || "${run_event}" == "schedule" ]] || { echo "recovery producer run event is invalid" >&2; exit 1; }
+          [[ "${run_id}" == "${RECOVERY_RUN_ID}" && "${run_status}" == "completed" && "${run_conclusion}" == "failure" && "${run_workflow}" == "Current Capital Topology Registration" && "${run_branch}" == "main" && "${run_head}" == "${main_sha}" ]] || { echo "recovery producer run identity is invalid" >&2; exit 1; }
+          source_root="${RUNNER_TEMP}/current-capital-topology-registration/retained-${RECOVERY_RUN_ID}"
+          mkdir -p "${source_root}"
+          chmod 700 "${source_root}"
+          gh run download "${RECOVERY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --name "current-capital-topology-registration-${RECOVERY_RUN_ID}" --dir "${source_root}"
+          [[ -f "${source_root}/capital-route-topology-registration.json" && -f "${source_root}/capital-route-topology.raw-receipt.json" ]] || { echo "retained registration evidence is incomplete" >&2; exit 1; }
+          printf 'REGISTRATION_SOURCE_OPERATION_ROOT=%s\n' "${source_root}" >> "${GITHUB_ENV}"
       - name: Publish and register once
         if: ${{ steps.decision.outputs.state == 'REGISTER' }}
         env:
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          gh auth setup-git
           git fetch --no-tags origin main:refs/remotes/origin/main
-          [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed before OCI publication" >&2; exit 1; }
           node tools/datapack/run-current-capital-route-topology-registration.mjs --repository-root "${GITHUB_WORKSPACE}" --operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}"
       - name: Recover published registration without OCI
         if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
+          GH_TOKEN: ${{ github.token }}
           RECOVERY_RUN_ID: ${{ steps.decision.outputs.recovery_run_id }}
         run: |
           set -euo pipefail
+          gh auth setup-git
           git fetch --no-tags origin main:refs/remotes/origin/main
-          [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed before recovery registration" >&2; exit 1; }
           node tools/datapack/run-current-capital-route-topology-registration.mjs recover-published --repository-root "${GITHUB_WORKSPACE}" --source-operation-root "${REGISTRATION_SOURCE_OPERATION_ROOT}" --target-operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}" --expected-publication-operation-id "${RECOVERY_RUN_ID}"
-      - name: Recheck that no source-ledger automation is pending before pushing
-        id: recheck
+      - name: Commit and push registration outputs directly to main
         if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # #987 리뷰 F5, #1710: 게시·등록은 길다. 그 사이 원장을 쓰는 다른 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 push하지 않고
-          # 다음 실행(차단 해소 후 재dispatch·정기 실행)에 맡긴다.
-          recheck_root="${RUNNER_TEMP}/current-capital-topology-registration/recheck-${GITHUB_RUN_ID}"
-          mkdir -p "${recheck_root}"
-          node tools/ci/reclaim-stale-claims.mjs --repository "${GITHUB_REPOSITORY}"
-          git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${recheck_root}/automation-branches.txt" --pr-limit 1000 --output "${recheck_root}/prs.json"
-          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --except-workflow current-capital-topology-registration.yml --github-output "${GITHUB_OUTPUT}"
-      - name: Note registration superseded by pending source automation
-        if: ${{ (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') && steps.recheck.outputs.idle == 'false' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BLOCKED_BY: ${{ steps.recheck.outputs.blocked_by }}
-        run: |
-          set -euo pipefail
-          branch="automation/456-capital-topology-registration-${GITHUB_RUN_ID}"
-          if [[ "${REGISTRATION_BRANCH:-}" == "${branch}" ]] && git ls-remote --exit-code --heads origin "refs/heads/${branch}" > /dev/null; then
-            gh auth setup-git
-            git push origin --delete "${branch}"
-          fi
-          echo "::notice title=Capital topology registration::source-ledger automation (${BLOCKED_BY}) started while the registration was running; nothing was pushed and the next run decides again."
-      - name: Mint App token for the registration pull request
-        id: app-token-pr
-        if: ${{ (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') && steps.recheck.outputs.idle == 'true' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Commit exactly two registration outputs and open draft PR
-        if: ${{ (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') && steps.recheck.outputs.idle == 'true' }}
-        env:
-          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git switch "${REGISTRATION_BRANCH}"
-          # #989: 재등록은 원장과 inventory만 바꾼다. governance 정책·신선도 SLA는 처음 등록할 때만 바뀌는 정책이라 자동 병합 정책(등록 allowlist)이 허용하지 않는다.
-          # 두 파일이 바뀌어 있으면 재등록이 정책 변경을 요구한 것이므로 아무것도 push하지 않고 실패해 실패 보고로 드러낸다(추정·이전 값으로 덮지 않는다).
+          [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "registration commit must stay on its source main" >&2; exit 1; }
+          # #989: 재등록은 원장과 inventory만 바꾼다. governance 정책·신선도 SLA가 바뀌어 있으면 push하지 않고 실패한다.
           expected=(tools/datapack/source-inventory.json tools/datapack/release/source-snapshots.json)
           changed="$(git status --porcelain=v1 | sed -E 's/^.. //' | LC_ALL=C sort)"
           for policy in tools/datapack/source-governance-policy.json release/product-gates/datapack-freshness-sla.json; do
@@ -282,21 +140,28 @@ jobs:
             esac
           done
           [[ "${changed}" == "$(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)" ]] || { echo "registration changed an invalid path set" >&2; exit 1; }
-          # #975 리뷰 F5: 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)를 통과해야 push·PR이 만들어진다.
+          # #975 리뷰 F5: 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)를 통과해야 push한다.
           evidence_root="$(mktemp -d "${RUNNER_TEMP}/registration-evidence.XXXXXX")"
           node tools/ci/source-ledger-gate.mjs --base-sha "${REGISTRATION_MAIN_SHA}" --output "${evidence_root}/gate.json"
-          git add "${expected[@]}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${expected[@]}"
           git commit -m "Register current capital topology"
-          git push origin "${REGISTRATION_BRANCH}"
           node tools/ci/automation-pr-evidence.mjs registration-body --gate "${evidence_root}/gate.json" --base-sha "${REGISTRATION_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --output "${evidence_root}/body.md"
-          # #967: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨). push는 GITHUB_TOKEN 그대로다.
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REGISTRATION_BRANCH}" --title "Register current capital topology" --body-file "${evidence_root}/body.md"
+          cat "${evidence_root}/body.md" >> "${GITHUB_STEP_SUMMARY}"
+          gh auth setup-git
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse origin/main)" != "${REGISTRATION_MAIN_SHA}" ]]; then
+            echo "::notice title=Capital topology registration::main moved from ${REGISTRATION_MAIN_SHA} while registration was running; nothing was pushed and the next run decides again."
+            exit 0
+          fi
+          git push origin HEAD:main
       - name: Detect retained publication receipt
         id: receipt
         if: ${{ always() && (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') }}
         run: |
           set -euo pipefail
-          # 판정은 이 artifact의 유무로 claim을 복구할지 새로 시작할지 정한다. 게시 receipt가 없으면 올리지 않는다.
+          # 복구 run 실행에 필요한 OCI 게시 receipt artifact 유무를 남긴다.
           if [[ -n "${REGISTRATION_OPERATION_ROOT:-}" && -f "${REGISTRATION_OPERATION_ROOT}/capital-route-topology.raw-receipt.json" ]]; then
             echo "has_receipt=true" >> "${GITHUB_OUTPUT}"
           else
@@ -312,30 +177,7 @@ jobs:
             ${{ env.REGISTRATION_OPERATION_ROOT }}/capital-route-topology.raw-receipt.json
           if-no-files-found: ignore
           retention-days: 14
-      - name: Remove this run's claim after a failed or cancelled run
-        if: ${{ (failure() || cancelled()) && env.REGISTRATION_BRANCH != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # 이 run이 만든 claim만 다룬다. 복구 실행은 자기가 복구하는 claim을 지우지 않는다.
-          branch="automation/456-capital-topology-registration-${GITHUB_RUN_ID}"
-          [[ "${REGISTRATION_BRANCH}" == "${branch}" ]] || exit 0
-          git ls-remote --exit-code --heads origin "refs/heads/${branch}" > /dev/null || exit 0
-          # PR이 있는 claim은 지우지 않는다.
-          [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state all --head "${branch}" --json number --jq 'length')" == "0" ]] || exit 0
-          gh auth setup-git
-          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-          # 게시 receipt가 있고 claim이 빈 커밋 하나뿐이면 복구용으로 남긴다(artifact와 함께 다음 실행이 PR만 다시 만든다).
-          if [[ -f "${REGISTRATION_OPERATION_ROOT}/capital-route-topology.raw-receipt.json" ]] \
-            && [[ "$(git rev-list --count "${REGISTRATION_MAIN_SHA}..origin/${branch}")" == "1" ]] \
-            && git diff --quiet "${REGISTRATION_MAIN_SHA}" "origin/${branch}"; then
-            echo "::notice title=Capital topology registration::kept ${branch} with its publication receipt for recovery."
-            exit 0
-          fi
-          git push origin --delete "${branch}"
-          echo "::notice title=Capital topology registration::removed ${branch}; no recoverable publication evidence remained, so the next run starts over."
-      - name: Report refresh failure as an issue
+      - name: Report refresh failure summary
         if: ${{ failure() || cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}

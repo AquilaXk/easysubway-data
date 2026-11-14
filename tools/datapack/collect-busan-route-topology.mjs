@@ -7,7 +7,14 @@ import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 import { fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, withRequestInterval } from "./lib/source-collection-retry.mjs";
+import { decodeXmlBytes, decodeXmlEntities } from "./lib/xml-decode.mjs";
 import { sha256 } from "../lib/hash.mjs";
+
+const BUSAN_TOPOLOGY_XML_DECODE_OPTIONS = Object.freeze({
+  respectDeclaredEncoding: true,
+  rejectReplacementChar: true,
+  errorPrefix: "Busan route topology schema mismatch: ",
+});
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
 const SOURCE_ID = "busan-transportation-route-topology";
@@ -140,7 +147,7 @@ async function collectResponse({ key, stationCode, fetchImpl, sleepImpl, retryBu
   let raw;
   let envelope;
   try {
-    const decoded = decodeXmlBytes(rawBytes);
+    const decoded = decodeXmlBytes(rawBytes, BUSAN_TOPOLOGY_XML_DECODE_OPTIONS);
     raw = decoded.raw;
     envelope = parseXmlEnvelope(raw);
     envelope.responseEncoding = decoded.responseEncoding;
@@ -186,7 +193,7 @@ export function parseBusanRouteTopologyScope(html) {
     if (stations.has(stationCode)) throw new Error(`Busan route topology scope duplicate station: ${stationCode}`);
     stations.set(stationCode, {
       stationCode,
-      stationName: decodeXml(encodedName.trim()),
+      stationName: decodeXmlEntities(encodedName.trim(), { stripControlChars: true }),
       lineId: LINE_IDS[lineCode],
       neighbors: new Set(),
     });
@@ -363,7 +370,7 @@ export function extractBusanTransferRows(snapshot) {
   }))));
   if (rawSha256 !== snapshot.rawSha256) throw new Error("Busan route topology raw hash mismatch");
   const parsed = decoded.map(({ stationCode, bytes, rawSha256: responseSha256 }) => {
-    const { raw } = decodeXmlBytes(bytes);
+    const { raw } = decodeXmlBytes(bytes, BUSAN_TOPOLOGY_XML_DECODE_OPTIONS);
     const envelope = parseXmlEnvelope(raw);
     if (envelope.resultCode !== "00" || envelope.body == null) {
       throw new Error(`Busan route topology retained response is not a success: ${safeToken(stationCode ?? "all")}`);
@@ -453,31 +460,6 @@ function parseEdges(body) {
   };
 }
 
-function decodeXmlBytes(bytes) {
-  const prefix = bytes.subarray(0, 256).toString("latin1");
-  const declared = /<\?xml\b[^>]*\bencoding=["']([^"']+)["']/i.exec(prefix)?.[1]?.toLowerCase() ?? "utf-8";
-  const encoding = new Map([
-    ["utf-8", "utf-8"], ["utf8", "utf-8"], ["euc-kr", "euc-kr"],
-    ["ks_c_5601-1987", "euc-kr"], ["ks-c-5601-1987", "euc-kr"],
-  ]).get(declared);
-  if (!encoding) throw new Error(`Busan route topology schema mismatch: XML encoding ${safeToken(declared)}`);
-  let raw;
-  let responseEncoding = encoding;
-  try {
-    raw = new TextDecoder(encoding, { fatal: true }).decode(bytes);
-  } catch {
-    if (encoding !== "utf-8") throw new Error(`Busan route topology schema mismatch: XML ${encoding} decoding`);
-    try {
-      raw = new TextDecoder("euc-kr", { fatal: true }).decode(bytes);
-      responseEncoding = "euc-kr-after-invalid-utf8";
-    } catch {
-      throw new Error("Busan route topology schema mismatch: XML utf-8/euc-kr decoding");
-    }
-  }
-  if (raw.includes("\uFFFD")) throw new Error("Busan route topology schema mismatch: XML replacement character");
-  return { raw, responseEncoding };
-}
-
 function parseXmlEnvelope(raw) {
   if (typeof raw !== "string" || /<!DOCTYPE|<!ENTITY/i.test(raw)) {
     throw new Error("Busan route topology schema mismatch: XML document");
@@ -536,7 +518,7 @@ function validateNormalizedEdges(edges) {
 // 부산교통공사 envelope도 data.go.kr 코드 체계라 일시 오류 코드(01·02·04·05·30·99)만 재시도한다. 쿼터(22·23) 등은 재시도하지 않는다.
 function isTransientProviderBody(rawBytes) {
   try {
-    return isTransientDataGoKrResultCode(parseXmlEnvelope(decodeXmlBytes(rawBytes).raw).resultCode);
+    return isTransientDataGoKrResultCode(parseXmlEnvelope(decodeXmlBytes(rawBytes, BUSAN_TOPOLOGY_XML_DECODE_OPTIONS).raw).resultCode);
   } catch {
     return false;
   }
@@ -567,7 +549,7 @@ function sleep(delayMillis) {
 
 function scalar(raw, field) {
   const match = new RegExp(String.raw`<${field}\b[^>]*>([^<]{0,512})</${field}>`, "i").exec(raw);
-  return match ? decodeXml(match[1].trim()) : null;
+  return match ? decodeXmlEntities(match[1].trim(), { stripControlChars: true }) : null;
 }
 
 function singleScalar(raw, field, label) {
@@ -575,7 +557,7 @@ function singleScalar(raw, field, label) {
   if (matches.length !== 1) {
     throw new Error(`Busan route topology schema mismatch: ${label}.${field} ${matches.length > 1 ? "duplicate field" : "missing field"}`);
   }
-  return decodeXml(matches[0][1].trim());
+  return decodeXmlEntities(matches[0][1].trim(), { stripControlChars: true });
 }
 
 function stationPairs(raw) {
@@ -591,11 +573,6 @@ function stationPairs(raw) {
 
 function xmlTagStructure(raw) {
   return scanXmlStructure(raw).tagSummary;
-}
-
-function decodeXml(value) {
-  return value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'").replaceAll("&amp;", "&").replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 }
 
 function unsignedInteger(value, minimum, maximum, label) {

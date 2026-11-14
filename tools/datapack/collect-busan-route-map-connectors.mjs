@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { inflateSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 import { sha256 } from "../lib/hash.mjs";
+import { inflateWithLimit, readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 
 const SOURCE_BASE_URL = "https://www2.humetro.busan.kr/homepage/default/img/cyber-station/";
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const MAX_CONNECTOR_PNG_BYTES = 4 * 1024 * 1024;
+const MAX_CONNECTOR_PNG_DIMENSION = 4096;
+const MAX_CONNECTOR_PNG_SCANLINE_BYTES = 16 * 1024 * 1024;
+const MAX_CONNECTOR_PNG_CHUNKS = 1024;
 
 export function connectorCenterline({ width, height, rgba }) {
   if (!Number.isInteger(width) || width < 2 || !Number.isInteger(height) || height < 2
@@ -62,39 +66,78 @@ export function validateBusanRouteMapConnectorEvidence(evidence) {
 }
 
 export function decodePngRgba(bytes) {
-  if (!Buffer.isBuffer(bytes) || bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
+  if (
+    !Buffer.isBuffer(bytes)
+    || bytes.length < 33
+    || bytes.length > MAX_CONNECTOR_PNG_BYTES
+    || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)
+  ) {
     throw new Error("invalid connector PNG");
   }
   let offset = 8;
   let width;
   let height;
+  let ihdrSeen = false;
+  let chunkCount = 0;
+  let idatTotalLength = 0;
   const idat = [];
   while (offset + 12 <= bytes.length) {
+    chunkCount += 1;
+    if (chunkCount > MAX_CONNECTOR_PNG_CHUNKS) {
+      throw new Error("connector PNG chunk limit exceeded");
+    }
     const length = bytes.readUInt32BE(offset);
     const type = bytes.toString("ascii", offset + 4, offset + 8);
     const dataStart = offset + 8;
+    if (length > bytes.length - dataStart - 4) throw new Error("invalid connector PNG");
     const dataEnd = dataStart + length;
-    if (dataEnd + 4 > bytes.length) throw new Error("invalid connector PNG");
     const data = bytes.subarray(dataStart, dataEnd);
     if (type === "IHDR") {
+      if (ihdrSeen || chunkCount !== 1 || length !== 13) {
+        throw new Error("invalid connector PNG IHDR");
+      }
+      ihdrSeen = true;
       width = data.readUInt32BE(0);
       height = data.readUInt32BE(4);
+      if (
+        width < 2
+        || width > MAX_CONNECTOR_PNG_DIMENSION
+        || height < 2
+        || height > MAX_CONNECTOR_PNG_DIMENSION
+      ) {
+        throw new Error(`connector PNG dimension exceeds limit: ${width}x${height}`);
+      }
       if (data[8] !== 8 || data[9] !== 6 || data[10] !== 0 || data[11] !== 0 || data[12] !== 0) {
         throw new Error("connector PNG must be non-interlaced 8-bit RGBA");
       }
     } else if (type === "IDAT") {
+      if (!ihdrSeen) throw new Error("invalid connector PNG");
+      idatTotalLength += data.length;
+      if (idatTotalLength > MAX_CONNECTOR_PNG_BYTES) {
+        throw new Error("connector PNG IDAT compressed limit exceeded");
+      }
       idat.push(data);
     } else if (type === "IEND") {
       break;
+    } else if (!ihdrSeen) {
+      throw new Error("invalid connector PNG");
     }
     offset = dataEnd + 4;
   }
-  if (!Number.isInteger(width) || !Number.isInteger(height) || idat.length === 0) {
+  if (!ihdrSeen || !Number.isInteger(width) || !Number.isInteger(height) || idat.length === 0) {
     throw new Error("invalid connector PNG");
   }
-  const inflated = inflateSync(Buffer.concat(idat));
   const stride = width * 4;
-  if (inflated.length !== height * (stride + 1)) throw new Error("invalid connector PNG scanlines");
+  const expectedScanlineBytes = height * (stride + 1);
+  if (!Number.isSafeInteger(expectedScanlineBytes) || expectedScanlineBytes > MAX_CONNECTOR_PNG_SCANLINE_BYTES) {
+    throw new Error(`connector PNG scanlines exceed budget (${expectedScanlineBytes} > ${MAX_CONNECTOR_PNG_SCANLINE_BYTES})`);
+  }
+  const inflated = inflateWithLimit(Buffer.concat(idat, idatTotalLength), {
+    maxOutputLength: expectedScanlineBytes,
+    maxCompressedBytes: MAX_CONNECTOR_PNG_BYTES,
+    label: "connector PNG IDAT",
+  });
+  if (inflated.length !== expectedScanlineBytes) throw new Error("invalid connector PNG scanlines");
   const rgba = Buffer.alloc(width * height * 4);
   let inputOffset = 0;
   for (let y = 0; y < height; y += 1) {
@@ -189,10 +232,14 @@ async function fetchOfficialPng(url, fetchImpl) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) });
-      const bytes = Buffer.from(await response.arrayBuffer());
       if (!response.ok || !String(response.headers.get("content-type") ?? "").startsWith("image/png")) {
+        await response.body?.cancel?.().catch(() => {});
         throw new Error(`connector HTTP boundary failed: ${response.status}`);
       }
+      const bytes = await readResponseBytesWithLimit(response, {
+        maxBytes: MAX_CONNECTOR_PNG_BYTES,
+        label: "connector PNG",
+      });
       decodePngRgba(bytes);
       return bytes;
     } catch (error) {

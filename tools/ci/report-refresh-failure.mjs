@@ -1,15 +1,10 @@
 #!/usr/bin/env node
-// 원천 자동 갱신 workflow 실패를 이슈로 드러낸다(#860 알림 조건, #870 실패 동작).
-// - workflow마다 열린 실패 이슈를 하나만 둔다. 없으면 만들고, 있으면 본문 상태 블록에 실패 run을 쌓는다.
-// - 댓글 알림은 workflow 이슈당 하루 한 번이다. 이미 보고한 run(재실행 포함)은 다시 쓰지 않는다.
-// - 같은 workflow의 열린 실패 이슈가 둘 이상이면 하나를 고르지 않고 실패한다.
-// - 이 보고는 실패를 덮지 않는다. 갱신 job은 이미 실패했고, 이 단계는 실패를 사람이 보게 할 뿐이다.
-// - 원천 재확인은 재확인 기한을 넘긴 recipe(--overdue)가 있으면 run이 성공으로 끝났어도(대기 run) 같은 이슈에 기록한다(#3036).
-// - 원천이 여럿인 workflow는 실패한 원천(--source-id)을 이슈에 적고, 원천마다 마지막 실패 시각을 상태 블록 표지로 남긴다(#3036).
-//   판정이 이 표지로 선택 원천의 재시도를 쿨다운한다. 이슈가 닫히면(회복) 표지도 함께 사라진다.
+// 원천 자동 갱신 workflow 실패를 GitHub Actions Step Summary와 ::error 주석으로 드러낸다(단독 운영, 이슈 자동 생성 없음).
+// - 이 보고는 실패를 덮지 않는다. 갱신 job은 이미 실패했고, 이 단계는 실패 원인과 재확인·롤백 맥락을 요약할 뿐이다.
+// - 이전 데이터로 대체하지 않는다.
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -17,9 +12,6 @@ import { guardFailureReasonPath, isValidReasonLine } from "./failure-reason.mjs"
 import { REVERIFICATION_BLOCKING_CODES } from "./source-reverification-paths.mjs";
 
 export const REFRESH_WORKFLOWS = Object.freeze({
-  "automation-pr-ci-rerun.yml": "자동화 PR의 CI 첫 시도 실패 job 한 번 재실행",
-  "automation-blocked-redispatch.yml": "차단 PR 때문에 잃은 정기 슬롯 자동 재dispatch",
-  "automation-pr-behind-recreate.yml": "뒤처진 자동화 PR 재생성(데이터 전용 PR)",
   "current-capital-topology-refresh.yml": "수도권 노선 구조(capital-route-topology)",
   "current-capital-topology-registration.yml": "수도권 노선 구조 등록(capital-route-topology)",
   "data-workflow-scheduler-watchdog.yml": "외부 정기 dispatch 스케줄러(OCI k3s CronJob) 중단 감시",
@@ -458,7 +450,92 @@ async function resolveFailureReason({ reasonArg, env, runId, readText }) {
   return validatedReason(await readGuardReason(env, runId, readText));
 }
 
-export const PARENT_EPIC_NUMBER = 870;
+const LOCAL_PATH_PATTERN = /\/(?:Users|Volumes|home|private\/tmp)\/[^\s`'"()[\]]+/gu;
+
+function redactLocalPaths(value) {
+  return String(value).replace(LOCAL_PATH_PATTERN, "<redacted-path>");
+}
+
+function escapeAnnotationValue(value) {
+  return String(value).replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+}
+
+function validatedFailures(failures) {
+  if (!Array.isArray(failures) || failures.some((entry) => !FAILURE_RECIPE_ID.test(entry?.recipeId) || !FAILURE_CODE.test(entry.code))) {
+    fail("FAILURES", "entries must be { recipeId, code }");
+  }
+  return failures;
+}
+
+export function planRefreshFailureSummary({
+  repository,
+  workflowFile,
+  runId,
+  now,
+  orphan: orphanInput,
+  failures: failuresInput = [],
+  overdue: overdueInput = [],
+  sourceId: sourceIdInput,
+  reason: reasonInput,
+}) {
+  const input = validated({ repository, workflowFile, runId });
+  const orphan = validatedOrphan(orphanInput);
+  const sourceId = validatedSourceId(sourceIdInput);
+  const reason = validatedReason(reasonInput);
+  const failures = validatedFailures(failuresInput);
+  const overdue = Array.isArray(overdueInput) ? overdueInput : fail("OVERDUE", "overdue must be an array");
+  if (overdue.some((recipeId) => !FAILURE_RECIPE_ID.test(recipeId))) fail("OVERDUE", "recipe ids must be identifiers");
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CLOCK");
+
+  const label = REPORTABLE_WORKFLOWS[input.workflowFile];
+  const reportedAt = now.toISOString();
+  const title = `원천 자동 갱신 실패 (${input.workflowFile})`;
+  const heading = overdue.length > 0 && !orphan
+    ? `### 원천 재확인 기한 초과 요약 (${input.workflowFile})`
+    : `### ${title}`;
+  const failureItems = failures.map(({ recipeId, code }) => `\`${recipeId}\` (${code})`);
+  const sanitizedOrphan = orphan ? { ...orphan, reason: redactLocalPaths(orphan.reason) } : null;
+  const sanitizedReason = reason === undefined ? undefined : redactLocalPaths(reason);
+
+  const summaryLines = [
+    heading,
+    `- 대상: ${label}`,
+    `- 보고 시각(UTC): ${reportedAt}`,
+    `- 실행 URL: ${input.runUrl}`,
+    ...(sanitizedOrphan ? orphanLines(input, sanitizedOrphan) : []),
+    ...(overdue.length > 0 ? [`- 재확인 기한을 넘긴 recipe: ${overdue.map(inlineCode).join(", ")}`] : []),
+    ...sourceLines(sourceId),
+    ...reasonLines(sanitizedReason),
+    ...(failureItems.length > 0 ? [`- 실패 recipe: ${failureItems.join(", ")}`] : []),
+    ...(mergedBlocks([], failures).length > 0 ? ["- 공급처 기대 관측 변경(SOURCE_EXPECTATION_CHANGED)이 포함되어 수동 기대값 점검이 필요하다."] : []),
+    ...chainNote(input.workflowFile),
+    "- 이전 데이터로 대체하지 않았다.",
+    "- GitHub 이슈 자동 생성은 중단되었다(단독 운영).",
+  ];
+
+  const annotationParts = [
+    label,
+    ...(sourceId ? [`원천=${sourceId}`] : []),
+    ...(sanitizedReason ? [sanitizedReason] : []),
+    ...(overdue.length > 0 ? [`연체=${overdue.join(",")}`] : []),
+    ...(failures.length > 0 ? [`실패=${failures.map(({ recipeId, code }) => `${recipeId}:${code}`).join(",")}`] : []),
+    ...(sanitizedOrphan ? [`branch=${sanitizedOrphan.branch} conclusion=${sanitizedOrphan.conclusion} ${sanitizedOrphan.reason}`] : []),
+    ...(Object.hasOwn(CHAIN_WORKFLOWS, input.workflowFile) ? ["rollback.manifestMismatch 확인 필요"] : []),
+    input.runUrl,
+  ];
+  const annotation = `::error title=${escapeAnnotationValue(title)}::${escapeAnnotationValue(redactLocalPaths(annotationParts.join(" | ")))}`;
+  const summary = redactLocalPaths(summaryLines.join("\n"));
+  return {
+    action: "summary",
+    issueNumber: null,
+    title,
+    summary,
+    body: summary,
+    annotation,
+    workflowFile: input.workflowFile,
+    runUrl: input.runUrl,
+  };
+}
 
 export async function reportRefreshFailure({
   argv = process.argv.slice(2),
@@ -467,50 +544,19 @@ export async function reportRefreshFailure({
   now = () => new Date(),
   orphan,
   readText = (file) => readFile(file, "utf8"),
-  parentEpicNumber = PARENT_EPIC_NUMBER,
+  appendText = (file, text) => appendFile(file, text, "utf8"),
+  emitAnnotation = (line) => process.stderr.write(`${line}\n`),
 } = {}) {
+  void runGh;
   const { failuresPath, overdueList, sourceId, reason: reasonArg, ...args } = parseArgs(argv);
   const input = validated(args);
   const overdue = parseOverdue(overdueList);
   const reason = await resolveFailureReason({ reasonArg, env, runId: input.runId, readText });
   const failures = await readFailures(failuresPath, readText);
-  const openIssues = await listOpenIssues(input.repository, runGh);
-  const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures, overdue, sourceId, reason });
-  if (plan.action === "create") {
-    const createdOutput = await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
-    const createdMatch = /\/issues\/([1-9]\d*)\s*$/u.exec(String(createdOutput ?? ""));
-    if (!createdMatch) {
-      fail("CREATE_ISSUE", "gh issue create 출력에서 생성된 이슈 번호를 읽을 수 없다.");
-    }
-    const createdIssueNumber = Number(createdMatch[1]);
-    if (parentEpicNumber == null) {
-      return { ...plan, issueNumber: createdIssueNumber, createdIssueNumber };
-    }
-    if (!Number.isSafeInteger(parentEpicNumber) || parentEpicNumber <= 0) {
-      fail("SUB_ISSUE_LINK", "parentEpicNumber는 양의 정수여야 한다.");
-    }
-    const restId = String(await runGh(["api", `repos/${input.repository}/issues/${createdIssueNumber}`, "--jq", ".id"]) ?? "").trim();
-    if (!/^[1-9]\d*$/u.test(restId)) {
-      fail("SUB_ISSUE_LINK", `생성된 이슈 #${createdIssueNumber}의 REST ID를 읽을 수 없다.`);
-    }
-    await runGh(["api", "--method", "POST", `repos/${input.repository}/issues/${parentEpicNumber}/sub_issues`, "-F", `sub_issue_id=${restId}`]);
-    return {
-      ...plan,
-      issueNumber: createdIssueNumber,
-      createdIssueNumber,
-      linkedParentEpicNumber: parentEpicNumber,
-    };
-  }
-  // 댓글을 먼저 단다. 본문 갱신이 실패해도 댓글에 run이 남아 다음 보고가 같은 run을 건너뛴다.
-  if (plan.action === "comment") {
-    await runGh(["issue", "comment", String(plan.issueNumber), "--repo", input.repository, "--body-file", "-"], plan.body);
-  }
-  if (plan.issueBody !== undefined) {
-    await runGh(["issue", "edit", String(plan.issueNumber), "--repo", input.repository, "--body-file", "-"], plan.issueBody);
-  }
-  if (plan.duplicateNumbers.length > 0) {
-    const numbers = [plan.issueNumber, ...plan.duplicateNumbers].map((number) => `#${number}`).join(", ");
-    fail("DUPLICATE_ISSUES", `${input.workflowFile}의 열린 실패 이슈가 여럿이다(${numbers}). 이번 실패는 #${plan.issueNumber}에 기록했다. #${plan.issueNumber} 하나만 남기고 나머지를 닫으면 다음 실패부터 정상 보고된다.`);
+  const plan = planRefreshFailureSummary({ ...input, now: now(), orphan, failures, overdue, sourceId, reason });
+  emitAnnotation(plan.annotation);
+  if (typeof env.GITHUB_STEP_SUMMARY === "string" && env.GITHUB_STEP_SUMMARY.trim() !== "") {
+    await appendText(env.GITHUB_STEP_SUMMARY, `${plan.summary}\n`);
   }
   return plan;
 }
@@ -518,7 +564,7 @@ export async function reportRefreshFailure({
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const plan = await reportRefreshFailure();
-    process.stdout.write(`${JSON.stringify({ action: plan.action, issueNumber: plan.issueNumber ?? null })}\n`);
+    process.stdout.write(`${JSON.stringify({ action: plan.action, issueNumber: null })}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;

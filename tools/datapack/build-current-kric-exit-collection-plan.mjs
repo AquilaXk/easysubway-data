@@ -228,7 +228,7 @@ function validateCanonicalCoverageLineOperatorScopes(value, pack) {
     if (!Array.isArray(scopes) || scopes.length === 0) throw new Error(`${label} mismatch`);
     const keys = scopes.map((scope) => {
       assertKeys(scope, ACTIVE_SCOPE_KEYS, `${label} keys`);
-      return ACTIVE_SCOPE_KEYS.map((key) => requiredString(scope[key], `${label} ${key}`)).join(" ");
+      return ACTIVE_SCOPE_KEYS.map((key) => requiredString(scope[key], `${label} ${key}`)).join("\u0000");
     });
     if (new Set(keys).size !== keys.length) throw new Error(`${label} duplicate`);
     return keys.sort(compareBytes);

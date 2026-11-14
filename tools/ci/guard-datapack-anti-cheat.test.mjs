@@ -327,7 +327,7 @@ test('checkCircularOracles keeps flagging production functions next to the share
 test('checkCircularOracles allows literal bindings and object keys named action even when another scope binds action from a production call', (t) => {
   const violations = circularOracleViolationsFor(t, {
     'tools/ci/scoped-action.test.mjs':
-      'import { runRedispatch } from "./redispatch-blocked-workflows.mjs";\n' +
+      'import { runRedispatch } from "./collect-automation-prs.mjs";\n' +
       ASSERT_IMPORT +
       'function testOne() {\n' +
       '  const action = runRedispatch({ id: 1 }).action;\n' +

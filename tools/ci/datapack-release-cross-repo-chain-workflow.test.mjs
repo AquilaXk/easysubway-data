@@ -138,13 +138,14 @@ test("the chain job runs the stages in order, serializes itself and rolls back o
     "Run the hub compatibility and promotion gates", "Publish the data pack to production", "Create the platform token",
     "Create the backend read token", "Select the deploy inputs", "Deploy the release (PREVIEW then DEPLOY)", "Verify the public release",
     "Create the platform token for the rollback", "Roll back to the previous active release", "Upload the chain state",
-    "Report the chain failure as an issue",
+    "Report the chain failure summary",
   ].map((name) => chain.indexOf(`      - name: ${name}\n`));
   assert.ok(order.every((index) => index !== -1), "all stages exist");
   assert.deepEqual([...order].sort((a, b) => a - b), order);
   assert.match(chain, /\n    concurrency:\n      group: datapack-release-chain\n      cancel-in-progress: false\n/u);
   assert.match(chain, /\n    timeout-minutes: 55\n/u);
-  assert.match(chain, /\n    permissions:\n      actions: write\n      contents: read\n      issues: write\n/u);
+  assert.match(chain, /\n    permissions:\n      actions: write\n      contents: read\n/u);
+  assert.doesNotMatch(yml, /\bissues:\s*write\b/u);
   for (const stage of ["plan", "hub-gates", "publish", "select-deploy", "deploy", "verify", "rollback"]) {
     assert.equal(chain.split(`node tools/ci/datapack-release-chain.mjs ${stage} --state "\${RUNNER_TEMP}/chain-state.json"`).length - 1, 1, stage);
   }
@@ -155,7 +156,7 @@ test("the chain job runs the stages in order, serializes itself and rolls back o
   assert.match(stepBody("Verify the public release"), /\n        id: verify\n/u);
   assert.match(stepBody("Upload the chain state"), /if: \$\{\{ always\(\) \}\}/u);
   // 실패 보고는 마지막 step이고 failure()에서만 돈다.
-  const report = stepBody("Report the chain failure as an issue");
+  const report = stepBody("Report the chain failure summary");
   assert.match(report, /if: \$\{\{ failure\(\) \}\}/u);
   assert.ok(report.includes('node tools/ci/report-refresh-failure.mjs --workflow datapack-release-cross-repo-chain.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"'));
   // 발행·배포 단계가 쓰는 공개 URL은 저장소 변수에서만 온다.
@@ -163,9 +164,9 @@ test("the chain job runs the stages in order, serializes itself and rolls back o
   assert.match(chain, /CHAIN_DATAPACK_BASE_URL: \$\{\{ vars\.OCI_SERVER_ROUTE_PUBLIC_BASE_URL \}\}/u);
 });
 
-test("a failed release-candidate or production-publish run is reported as the chain failure issue (data#1084)", () => {
+test("a failed release-candidate or production-publish run is reported in the workflow summary", () => {
   const job = jobBlock("report-release-failure");
-  assert.match(job, /\n    permissions:\n      actions: read\n      contents: read\n      issues: write\n/u);
+  assert.match(job, /\n    permissions:\n      contents: read\n/u);
   assert.match(job, /FAILED_RUN_ID: \$\{\{ github\.event\.workflow_run\.id \}\}/u);
   assert.ok(job.includes('--workflow datapack-release-cross-repo-chain.yml --repository "${GITHUB_REPOSITORY}" --run-id "${FAILED_RUN_ID}"'));
 });

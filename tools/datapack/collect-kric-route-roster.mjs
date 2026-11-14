@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { fetchBytesWithSourceRetry, isTransientKricResultCode } from "./lib/source-collection-retry.mjs";
+import { decodeXmlEntities } from "./lib/xml-decode.mjs";
 
 const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo";
 const FIELDS = ["lnCd", "mreaWideCd", "railOprIsttCd", "routCd", "routNm", "stinCd", "stinConsOrdr", "stinNm"];
@@ -94,12 +95,7 @@ function transportCode(error) {
 
 function scalar(raw, field) {
   const match = new RegExp(`<${field}\\b[^>]*>([^<]{0,2048})<\\/${field}>`, "i").exec(raw);
-  return match ? decodeXml(match[1].trim()) : null;
-}
-
-function decodeXml(value) {
-  return value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'").replaceAll("&amp;", "&").replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+  return match ? decodeXmlEntities(match[1].trim(), { stripControlChars: true }) : null;
 }
 
 function requiredString(value, label) {

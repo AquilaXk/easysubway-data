@@ -10,7 +10,8 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
@@ -368,7 +369,10 @@ async function main() {
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
     const inputGzipBytes = await readFile(packPath);
-    await writeFile(sqlitePath, gunzipSync(inputGzipBytes));
+    await writeFile(sqlitePath, gunzipWithLimit(inputGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "capital route topology pack",
+    }));
     const beforeItx = countServiceClass(sqlitePath, "ITX_CHEONGCHUN");
     const beforeGaps = Object.fromEntries(
       (snapshot.topologyGaps ?? []).map(({ lineId }) => [lineId, countLocalRide(sqlitePath, lineId)]),

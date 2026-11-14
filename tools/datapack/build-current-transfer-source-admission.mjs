@@ -2,7 +2,7 @@
 import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { partitionMolitTransferTuples } from "./build-accessibility-source-coverage-report.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
@@ -293,12 +293,16 @@ function validateSourceContext({ gzipBytes, metadata, metadataBytes, policy, sna
   let rebuilt;
   try {
     rebuilt = buildMolitRailwayTransferMovementSnapshot({
-      bytes: gunzipSync(gzip),
+      bytes: gunzipWithLimit(gzip, {
+        maxOutputLength: 128 * 1024 * 1024,
+        label: "transfer source snapshot",
+      }),
       capturedAt: metadata.capturedAt,
       editionDate: molitRailwayTransferMovementEditionFromSnapshotId(snapshotId),
       freshnessPolicy: policy,
     });
   } catch (error) {
+    if (error?.cause?.code === "ERR_BUFFER_TOO_LARGE" || error?.code === "ERR_BUFFER_TOO_LARGE") throw error;
     throw new Error("source snapshot identity mismatch", { cause: error });
   }
   const { gzipBytes: ignoredBytes, gzipSha256: ignoredGzip, rows, ...rebuiltMetadata } = rebuilt;

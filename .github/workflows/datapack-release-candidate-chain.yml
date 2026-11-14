@@ -14,11 +14,11 @@ on:
     paths:
       - tools/datapack/release/candidate-build-spec.json
       - tools/datapack/release/release-request.json
+  workflow_dispatch: {}
 
 permissions:
   actions: write
   contents: read
-  issues: write
 
 concurrency:
   group: datapack-release-candidate-chain-${{ github.workflow }}-${{ github.ref }}
@@ -40,6 +40,8 @@ jobs:
           node-version: "24.19.0"
       - name: Skip a candidate superseded on main
         id: supersede
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin main
@@ -50,7 +52,41 @@ jobs:
           diff_status=$?
           set -e
           case "${diff_status}" in
-            0) echo "current=true" >> "${GITHUB_OUTPUT}" ;;
+            0)
+              unchanged="$(node --input-type=module -e '
+                import { execFileSync } from "node:child_process";
+                const before = process.env.BEFORE_SHA ?? "";
+                const current = process.env.GITHUB_SHA ?? "";
+                if (!/^[0-9a-f]{40}$/u.test(before) || /^0{40}$/u.test(before)) process.exit(0);
+                try {
+                  execFileSync("git", ["cat-file", "-e", before + "^{commit}"], { stdio: "ignore" });
+                } catch {
+                  process.exit(0);
+                }
+                const loadJson = (rev, file) => {
+                  try {
+                    return JSON.parse(execFileSync("git", ["show", rev + ":" + file], { encoding: "utf8" }));
+                  } catch {
+                    return null;
+                  }
+                };
+                const bs = "tools/datapack/release/candidate-build-spec.json";
+                const rr = "tools/datapack/release/release-request.json";
+                const prevSpec = loadJson(before, bs);
+                const currSpec = loadJson(current, bs);
+                const prevReq = loadJson(before, rr);
+                const currReq = loadJson(current, rr);
+                const sameCandidate = typeof prevSpec?.candidateId === "string" && prevSpec.candidateId.length > 0 && prevSpec.candidateId === currSpec?.candidateId;
+                const sameApproval = typeof prevReq?.approvalId === "string" && prevReq.approvalId.length > 0 && prevReq.approvalId === currReq?.approvalId;
+                if (sameCandidate && sameApproval) process.stdout.write("true");
+              ')"
+              if [[ "${unchanged}" == "true" ]]; then
+                echo "::notice title=Release candidate chain::candidateId와 approvalId가 ${BEFORE_SHA}..${GITHUB_SHA} 사이에서 바뀌지 않아 RC dispatch를 건너뛴다."
+                echo "current=false" >> "${GITHUB_OUTPUT}"
+              else
+                echo "current=true" >> "${GITHUB_OUTPUT}"
+              fi
+              ;;
             1)
               echo "::notice title=Release candidate chain::main의 후보가 ${GITHUB_SHA} 이후 다시 바뀌었다. 새 push의 실행이 RC를 dispatch한다."
               echo "current=false" >> "${GITHUB_OUTPUT}"
@@ -170,7 +206,6 @@ jobs:
       - name: Report a release candidate handover failure
         if: ${{ failure() && steps.dispatch.outcome == 'success' && vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' }}
         env:
-          GH_TOKEN: ${{ github.token }}
           RC_RUN_ID: ${{ steps.dispatch.outputs.rc_run_id }}
         run: |
           set -euo pipefail

@@ -42,9 +42,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import { request as httpsRequest } from "node:https";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { inflateRawSync } from "node:zlib";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
+import { unzipXlsx } from "./lib/zip-xlsx.mjs";
 import {
   ARTIFACT_KIND as LINE1_ARTIFACT_KIND,
   DATASET_ID as LINE1_DATASET_ID,
@@ -1378,37 +1379,6 @@ export function parseGtxADistanceXlsx(xlsxBytes) {
   };
 }
 
-function unzipXlsx(buffer) {
-  /** @type {Map<string, Buffer>} */
-  const out = new Map();
-  let offset = 0;
-  while (offset + 30 < buffer.length) {
-    if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
-    const method = buffer.readUInt16LE(offset + 8);
-    const flags = buffer.readUInt16LE(offset + 6);
-    let compSize = buffer.readUInt32LE(offset + 18);
-    const nameLen = buffer.readUInt16LE(offset + 26);
-    const extraLen = buffer.readUInt16LE(offset + 28);
-    const name = buffer.subarray(offset + 30, offset + 30 + nameLen).toString("utf8");
-    let start = offset + 30 + nameLen + extraLen;
-    if ((flags & 0x8) !== 0 && compSize === 0) {
-      // Data descriptor follows the payload; scan for next signature (best-effort).
-      throw new Error(`xlsx entry uses data descriptor unsupported: ${name}`);
-    }
-    const compressed = buffer.subarray(start, start + compSize);
-    let data;
-    if (method === 0) data = Buffer.from(compressed);
-    else if (method === 8) data = inflateRawSync(compressed);
-    else throw new Error(`unsupported zip method ${method} for ${name}`);
-    out.set(name, data);
-    offset = start + compSize;
-  }
-  if (!out.has("xl/sharedStrings.xml") || !out.has("xl/worksheets/sheet1.xml")) {
-    throw new Error("failed to unzip xlsx local entries");
-  }
-  return out;
-}
-
 function parseSheetRows(xml, strings) {
   const rows = [];
   for (const rowMatch of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
@@ -1791,7 +1761,7 @@ async function downloadBytes(fetchImpl, source, requestTimeoutMs, downloadDetail
           Referer: source.detailUrl,
         },
       }, requestTimeoutMs),
-      async (fileResponse) => Buffer.from(await fileResponse.arrayBuffer()),
+      async (fileResponse) => readResponseBytesWithLimit(fileResponse, { label: `${source.slug} CSV` }),
       retry,
     );
     if (!response.ok) throw new Error(`${source.slug} CSV HTTP ${response.status}`);

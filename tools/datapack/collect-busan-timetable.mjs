@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, withRequestInterval } from "./lib/source-collection-retry.mjs";
+import { decodeXmlBytes, decodeXmlEntities } from "./lib/xml-decode.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_process.tnn"; // NOSONAR -- provider contract is HTTP-only
 const SOURCE_ID = "busan-transportation-timetable";
@@ -125,7 +126,7 @@ async function collectResponse({ station, day, key, fetchImpl, sleepImpl, random
   if (!XML_CONTENT_TYPES.has(contentType)) {
     throw new Error(`Busan timetable schema mismatch: content-type ${contentType || "missing"}; rawSha256=${rawSha256}`);
   }
-  const { raw, responseEncoding } = decodeXml(bytes);
+  const { raw, responseEncoding } = decodeXmlBytes(bytes);
   const resultCode = scalar(raw, "resultCode");
   if (resultCode !== "00") throw new Error(`Busan timetable provider resultCode ${safeToken(resultCode ?? "missing")}; rawSha256=${rawSha256}`);
   const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(raw)?.[1];
@@ -229,29 +230,15 @@ function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl, recordTelemetry =
 
 function providerResultCode(bytes) {
   try {
-    return scalar(decodeXml(bytes).raw, "resultCode");
+    return scalar(decodeXmlBytes(bytes).raw, "resultCode");
   } catch {
     return null;
   }
 }
 
-function decodeXml(bytes) {
-  try {
-    return { raw: new TextDecoder("utf-8", { fatal: true }).decode(bytes), responseEncoding: "utf-8" };
-  } catch {
-    return { raw: new TextDecoder("euc-kr", { fatal: true }).decode(bytes), responseEncoding: "euc-kr" };
-  }
-}
-
 function scalar(raw, field) {
   const value = new RegExp(String.raw`<${field}\b[^>]*>([^<]{0,200})<\/${field}>`, "i").exec(raw)?.[1];
-  return value == null ? null : decodeEntities(value.trim());
-}
-
-function decodeEntities(value) {
-  return value.replace(/&(amp|lt|gt|quot|apos);/g, (_, entity) => ({
-    amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
-  })[entity]);
+  return value == null ? null : decodeXmlEntities(value.trim());
 }
 
 function validDate(value, label) {

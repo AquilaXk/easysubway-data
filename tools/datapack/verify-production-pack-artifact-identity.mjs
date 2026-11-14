@@ -6,7 +6,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -115,8 +115,9 @@ async function verifyProductionPackArtifact({ evidencePath, assetPath, indexPath
     const assetGzip = await readFile(assetPath);
     let assetSqlite;
     try {
-      assetSqlite = gunzipSync(assetGzip);
-    } catch {
+      assetSqlite = gunzipWithLimit(assetGzip, { maxOutputLength: 512 * 1024 * 1024, label: `deployed ${packId} asset` });
+    } catch (error) {
+      if (error?.cause?.code === "ERR_BUFFER_TOO_LARGE" || error?.code === "ERR_BUFFER_TOO_LARGE") throw error;
       throw new Error("deployed asset is not valid gzip");
     }
     const gzipSha256 = sha256(assetGzip);

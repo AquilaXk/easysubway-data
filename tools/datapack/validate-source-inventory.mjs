@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
@@ -646,7 +646,10 @@ async function validateAdmittedCandidateEvidence(inventory, candidates, official
       }
       const gzipBytes = await readFile(path.resolve(path.dirname(candidateBinding.metadataPath), metadata.gzipPath));
       if (sha256(gzipBytes) !== candidateBinding.gzipSha256) throw new Error(`${candidate.id} official snapshot gzip hash mismatch`);
-      const rawBytes = gunzipSync(gzipBytes);
+      const rawBytes = gunzipWithLimit(gzipBytes, {
+        maxOutputLength: 128 * 1024 * 1024,
+        label: `${candidate.id} official snapshot`,
+      });
       if (sha256(rawBytes) !== candidateBinding.rawSha256) {
         throw new Error(`${candidate.id} official snapshot raw hash mismatch`);
       }

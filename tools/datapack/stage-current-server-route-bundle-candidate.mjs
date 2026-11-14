@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { gunzipSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 
 import { prepareCurrentServerRouteBundleFinal } from "./prepare-current-server-route-bundle-final.mjs";
@@ -12,6 +11,7 @@ import {
 } from "./nationwide-candidate-input-binding.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { canonicalJson, selectEffectiveDataPack, stagedPackPath } from "./lib/manifest-validation.mjs";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
@@ -111,7 +111,12 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     throw new Error("active production pack compressed identity mismatch");
   }
   let sqlite;
-  try { sqlite = gunzipSync(compressed); } catch { throw new Error("active production pack is not valid gzip"); }
+  try {
+    sqlite = gunzipWithLimit(compressed, { maxOutputLength: 512 * 1024 * 1024, label: "active production pack" });
+  } catch (error) {
+    if (error?.cause?.code === "ERR_BUFFER_TOO_LARGE" || error?.code === "ERR_BUFFER_TOO_LARGE") throw error;
+    throw new Error("active production pack is not valid gzip");
+  }
   if (sqlite.length === 0 || active.sqliteSha256 !== sha256(sqlite)) {
     throw new Error("active production pack sqlite identity mismatch");
   }

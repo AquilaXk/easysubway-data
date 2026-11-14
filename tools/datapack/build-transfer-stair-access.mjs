@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
 import {
@@ -250,7 +250,10 @@ export async function loadTransferStairAccessInputs({ repositoryRoot, evaluation
   const resolved = await resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: evaluationAt, read });
   const edition = molitRailwayTransferMovementEditionFromSnapshotId(resolved.metadata.snapshotId);
   const rebuilt = buildMolitRailwayTransferMovementSnapshot({
-    bytes: gunzipSync(resolved.gzipBytes),
+    bytes: gunzipWithLimit(resolved.gzipBytes, {
+      maxOutputLength: 128 * 1024 * 1024,
+      label: `${MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID} snapshot`,
+    }),
     capturedAt: resolved.metadata.capturedAt,
     editionDate: edition,
     freshnessPolicy,

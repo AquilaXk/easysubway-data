@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import {
   buildMolitRailwayTransferMovementSnapshot,
@@ -554,7 +554,10 @@ export async function loadSelectableAccessibilityArtifacts({
     ]) {
       for (const pack of document?.packs ?? []) {
         const compressedPath = resolvePackPath(root, pack);
-        const sqliteBytes = gunzipSync(await readFile(compressedPath));
+        const sqliteBytes = gunzipWithLimit(await readFile(compressedPath), {
+          maxOutputLength: 512 * 1024 * 1024,
+          label: `${kind}-${pack.id}`,
+        });
         const sqliteSha256 = digest(sqliteBytes);
         if (sqliteSha256 !== pack.sqliteSha256) {
           throw new Error(`${kind}-${pack.id}:SQLITE_SHA256_MISMATCH`);
@@ -643,7 +646,10 @@ export async function loadMolitTransferSnapshot({
   }
   if (freshUntilMillis <= evaluatedMillis) throw new Error("MOLIT transfer snapshot is stale");
   const rebuilt = buildMolitRailwayTransferMovementSnapshot({
-    bytes: gunzipSync(gzipBytes),
+    bytes: gunzipWithLimit(gzipBytes, {
+      maxOutputLength: 128 * 1024 * 1024,
+      label: `${MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID} snapshot`,
+    }),
     capturedAt: metadata.capturedAt,
     editionDate: molitRailwayTransferMovementEditionFromSnapshotId(admission.snapshotId),
     freshnessPolicy: JSON.parse(await readFile(path.resolve(repositoryRoot, "release/product-gates/datapack-freshness-sla.json"), "utf8")),

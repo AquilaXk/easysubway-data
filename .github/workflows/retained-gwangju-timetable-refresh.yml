@@ -18,8 +18,6 @@ jobs:
     permissions:
       actions: read
       contents: write
-      pull-requests: write
-      issues: write
     environment: datapack-release-check
     timeout-minutes: 45
     steps:
@@ -36,128 +34,22 @@ jobs:
           echo "SOURCE_FETCH_TELEMETRY_PATH=${RUNNER_TEMP}/source-fetch-telemetry.jsonl" >> "${GITHUB_ENV}"
       - name: Read retained timetable due state
         id: decision
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           state_root="${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}"
           mkdir -p "${state_root}"
           node tools/ci/decide-retained-gwangju-timetable-refresh.mjs > "${state_root}/due.json"
-          git ls-remote --heads origin "refs/heads/automation/504-retained-gwangju-timetable-refresh-*" > "${state_root}/claims.txt"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claims.txt" --pr-limit 1000 --output "${state_root}/prs.json"
-          # #995: PR 없는 claim은 DUE·CURRENT와 무관하게 만든 run과 게시 증거로 판정한다. 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다).
-          node tools/ci/claim-orphans.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claims.txt" --prs "${state_root}/prs.json" --output "${state_root}/claim-evidence.json"
           STATE_ROOT="${state_root}" node --input-type=module -e '
             import { appendFile, readFile } from "node:fs/promises";
-            import { classifyRetainedGwangjuRefreshDelivery, parseRetainedGwangjuRefreshClaims } from "./tools/ci/retained-gwangju-refresh-delivery.mjs";
-            const root = process.env.STATE_ROOT;
-            const result = classifyRetainedGwangjuRefreshDelivery({ decision: JSON.parse(await readFile(root + "/due.json")), repository: process.env.GITHUB_REPOSITORY, claims: parseRetainedGwangjuRefreshClaims(await readFile(root + "/claims.txt", "utf8")), pullRequests: JSON.parse(await readFile(root + "/prs.json", "utf8")), claimEvidence: JSON.parse(await readFile(root + "/claim-evidence.json", "utf8")) });
-            await appendFile(process.env.GITHUB_OUTPUT, "state=" + result.state + "\nbranch=" + (result.branch ?? "") + "\ncleanup_claims=" + result.cleanupClaims.join(",") + "\n");
+            const decision = JSON.parse(await readFile(process.env.STATE_ROOT + "/due.json", "utf8"));
+            if (decision?.state !== "CURRENT" && decision?.state !== "DUE") {
+              throw new Error("unexpected retained Gwangju due state: " + String(decision?.state));
+            }
+            await appendFile(process.env.GITHUB_OUTPUT, "state=" + decision.state + "\n");
           '
-          printf 'RETAINED_GWANGJU_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
-      - name: Remove abandoned retained timetable claims named by the decision
-        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
-        run: |
-          set -euo pipefail
-          # #995: 판정이 정리 대상으로 알린 claim만 지운다(만든 run이 끝났고 빈 claim뿐인 고아). 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
-          gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RETAINED_GWANGJU_STATE_ROOT}/claims.txt"
-      - name: Note retained timetable refresh waiting on a running producer
-        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
-        env:
-          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
-        run: |
-          echo "::notice title=Retained Gwangju timetable refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
-      - name: Mint App token for the open refresh pull request
-        id: app-token-open
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Ensure required CI on the open refresh pull request
-        id: required-ci
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
-        run: |
-          set -euo pipefail
-          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다).
-          node tools/ci/refresh-pr-required-ci.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
-      - name: Enforce open refresh pull request age limit
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # #939: 열린 갱신 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
-          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow retained-gwangju-timetable-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
-      - name: Mint App token for the refresh pull request
-        id: app-token-recover
-        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Recover completed retained timetable claim
-        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
-        env:
-          APP_PR_TOKEN: ${{ steps.app-token-recover.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          branch="${{ steps.decision.outputs.branch }}"
-          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-          [[ "$(git rev-list --count "origin/${branch}^^..origin/${branch}")" == "2" ]] || { echo "retained timetable claim must have one claim and one output commit" >&2; exit 1; }
-          git merge-base --is-ancestor "origin/${branch}^^" origin/main || { echo "retained timetable claim source main is not an origin/main ancestor" >&2; exit 1; }
-          [[ "$(git log -1 --format=%s "origin/${branch}^")" == "Claim retained Gwangju timetable refresh" ]] || { echo "retained timetable claim commit is invalid" >&2; exit 1; }
-          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Refresh retained Gwangju timetable" ]] || { echo "retained timetable output commit is invalid" >&2; exit 1; }
-          git diff --quiet "origin/${branch}^^" "origin/${branch}^" || { echo "retained timetable claim must be empty" >&2; exit 1; }
-          changed="${RETAINED_GWANGJU_STATE_ROOT}/recovery-changed.txt"; deleted="${RETAINED_GWANGJU_STATE_ROOT}/recovery-deleted.txt"
-          git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}" > "${changed}"
-          git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}" > "${deleted}"
-          CHANGED="${changed}" DELETED="${deleted}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { validateRetainedGwangjuRefreshOutputPaths } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; await validateRetainedGwangjuRefreshOutputPaths({ changedPaths: (await readFile(process.env.CHANGED, "utf8")).split("\n").filter(Boolean), deletedPaths: (await readFile(process.env.DELETED, "utf8")).split("\n").filter(Boolean) });'
-          existing="${RETAINED_GWANGJU_STATE_ROOT}/recovery-prs.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
-          EXISTING="${existing}" BRANCH="${branch}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { assertRetainedGwangjuRecoveryPullRequestAbsent } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; assertRetainedGwangjuRecoveryPullRequestAbsent({ repository: process.env.GITHUB_REPOSITORY, branch: process.env.BRANCH, pullRequests: JSON.parse(await readFile(process.env.EXISTING, "utf8")) });'
-          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          # #1012: 정책이 읽는 증거 블록이 든 본문을 만든다. 기준은 복구한 branch와 main의 실제 분기점이다. 증거가 어긋나면 PR을 만들지 않고 실패한다.
-          body_file="${RETAINED_GWANGJU_STATE_ROOT}/pull-request-body-recovery.md"
-          node tools/ci/refresh-automation-pr.mjs body --stage gwangju-timetable-refresh --base-sha "$(git merge-base origin/main "origin/${branch}")" --head-sha "$(git rev-parse "origin/${branch}")" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due retained Gwangju timetable through the current official-source operation." --refs "Refs #504" --output "${body_file}"
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh retained Gwangju timetable" --body-file "${body_file}"
-      - name: Create retained timetable claim before provider access
-        if: ${{ steps.decision.outputs.state == 'DUE' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          branch="automation/504-retained-gwangju-timetable-refresh-${GITHUB_RUN_ID}"
-          main_sha="$(git rev-parse HEAD)"
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${main_sha}" ]] || { echo "retained timetable source main changed before claim" >&2; exit 1; }
-          git switch -c "${branch}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "Claim retained Gwangju timetable refresh"
-          claim_head="$(git rev-parse HEAD)"
-          gh auth setup-git
-          git push origin "${branch}"
-          git switch --detach "${main_sha}"
           {
-            printf 'RETAINED_GWANGJU_BRANCH=%s\n' "${branch}"
-            printf 'RETAINED_GWANGJU_CLAIM_SHA=%s\n' "${claim_head}"
-            printf 'RETAINED_GWANGJU_MAIN_SHA=%s\n' "${main_sha}"
+            printf 'RETAINED_GWANGJU_STATE_ROOT=%s\n' "${state_root}"
+            printf 'RETAINED_GWANGJU_MAIN_SHA=%s\n' "$(git rev-parse HEAD)"
           } >> "${GITHUB_ENV}"
       - name: Collect due retained Gwangju timetable
         if: ${{ steps.decision.outputs.state == 'DUE' }}
@@ -167,7 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           # #995: 수집·계약 준비까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
-          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its claimed main" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its source main" >&2; exit 1; }
           node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation" --phase collect
       - name: Publish and register retained Gwangju timetable
         id: publish
@@ -175,65 +67,47 @@ jobs:
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # #995: 수집 step이 남긴 파일을 OCI에 게시하고 원장에 등록한다. 이 step이 시작되면 게시됐을 수 있다(claim 정리가 이 step 이름으로 판정한다: claim-orphans.mjs).
-          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its claimed main" >&2; exit 1; }
+          # #995: 수집 step이 남긴 파일을 OCI에 게시하고 원장에 등록한다. 게시 직전 origin/main 이동 여부를 먼저 검사한다.
+          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its source main" >&2; exit 1; }
+          gh auth setup-git
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable source main changed before publish" >&2; exit 1; }
           node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation" --phase publish
-      - name: Finalize retained timetable claim
+      - name: Commit and push retained Gwangju timetable
         if: ${{ steps.decision.outputs.state == 'DUE' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ -z "$(git ls-files --others --exclude-standard)" ]] || { echo "retained timetable controller left untracked checkout files" >&2; exit 1; }
-          git switch "${RETAINED_GWANGJU_BRANCH}"
-          [[ "$(git rev-parse HEAD^)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable claim is not based on its source main" >&2; exit 1; }
-          git add -A
+          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable commit must stay on its source main" >&2; exit 1; }
+          git add -- tools/datapack/source-inventory.json tools/datapack/release/source-snapshots.json
+          [[ -z "$(git diff --name-only)" ]] || { echo "retained timetable modified an unallowed tracked path" >&2; exit 1; }
           changed="${RETAINED_GWANGJU_STATE_ROOT}/changed.txt"; deleted="${RETAINED_GWANGJU_STATE_ROOT}/deleted.txt"
           git diff --cached --name-only --diff-filter=ACMR > "${changed}"
           git diff --cached --name-only --diff-filter=D > "${deleted}"
           CHANGED="${changed}" DELETED="${deleted}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { validateRetainedGwangjuRefreshOutputPaths } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; validateRetainedGwangjuRefreshOutputPaths({ changedPaths: (await readFile(process.env.CHANGED, "utf8")).split("\n").filter(Boolean), deletedPaths: (await readFile(process.env.DELETED, "utf8")).split("\n").filter(Boolean) });'
           git diff --cached --quiet && { echo "retained timetable controller produced no registration output" >&2; exit 1; }
           git diff --quiet "${RETAINED_GWANGJU_MAIN_SHA}" -- tools/datapack/source-governance-policy.json release/product-gates/datapack-freshness-sla.json || { echo "retained timetable changed governance or freshness policy" >&2; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Refresh retained Gwangju timetable"
-          # #1012: push 전에 증거 블록이 든 PR 본문을 만든다. 원장 게이트·inventory 범위·증거 결속이 어긋나면 여기서 실패해 push도 PR도 없다(#926 실패 보고).
-          node tools/ci/refresh-automation-pr.mjs body --stage gwangju-timetable-refresh --base-sha "${RETAINED_GWANGJU_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due retained Gwangju timetable through the current official-source operation." --refs "Refs #504" --output "${RETAINED_GWANGJU_STATE_ROOT}/pull-request-body.md"
-          git push origin "${RETAINED_GWANGJU_BRANCH}"
-      - name: Mint App token for the refresh pull request
-        id: app-token-pr
-        if: ${{ steps.decision.outputs.state == 'DUE' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Create retained timetable draft pull request
-        if: ${{ steps.decision.outputs.state == 'DUE' }}
-        env:
-          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${RETAINED_GWANGJU_BRANCH}" --title "Refresh retained Gwangju timetable" --body-file "${RETAINED_GWANGJU_STATE_ROOT}/pull-request-body.md"
+          summary_file="${RETAINED_GWANGJU_STATE_ROOT}/commit-summary.md"
+          node tools/ci/refresh-automation-pr.mjs body --stage gwangju-timetable-refresh --base-sha "${RETAINED_GWANGJU_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due retained Gwangju timetable through the current official-source operation." --refs "Direct main commit" --output "${summary_file}"
+          cat "${summary_file}" >> "${GITHUB_STEP_SUMMARY}"
+          gh auth setup-git
+          git fetch --no-tags origin main
+          [[ "$(git rev-parse origin/main)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable target main changed before push" >&2; exit 1; }
+          git push origin HEAD:main
       - name: Summarize source fetch attempts
         if: ${{ always() }}
         continue-on-error: true
         run: |
           set -euo pipefail
           node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
-      - name: Release this failed run's claim
-        if: ${{ failure() && env.RETAINED_GWANGJU_BRANCH != '' && env.RETAINED_GWANGJU_CLAIM_SHA != '' && steps.publish.outcome == 'skipped' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PUBLICATION_OUTCOME: ${{ steps.publish.outcome }}
-        run: |
-          set -euo pipefail
-          # #1326: 게시 step이 건너뛰어진(게시된 것이 없는) 실패 run은 자기 빈 claim을 같은 run에서 푼다. 삭제 규칙은 도구가 정한다.
-          node tools/ci/release-own-claim.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${RETAINED_GWANGJU_BRANCH}" --claim-sha "${RETAINED_GWANGJU_CLAIM_SHA}" --publication-outcome "${PUBLICATION_OUTCOME}"
-      - name: Report refresh failure as an issue
+      - name: Report refresh failure summary
         if: ${{ failure() }}
         env:
           GH_TOKEN: ${{ github.token }}

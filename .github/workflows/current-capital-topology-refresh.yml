@@ -19,8 +19,6 @@ jobs:
     permissions:
       actions: read
       contents: write
-      pull-requests: write
-      issues: write
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -35,199 +33,44 @@ jobs:
           set -euo pipefail
           operation_root="${RUNNER_TEMP}/current-capital-topology-refresh/${GITHUB_RUN_ID}"
           mkdir -p "${operation_root}"
-          printf 'TOPOLOGY_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
-          printf 'TOPOLOGY_DECISION=%s\n' "${RUNNER_TEMP}/current-capital-topology-refresh/decision.json" >> "${GITHUB_ENV}"
+          {
+            printf 'TOPOLOGY_OPERATION_ROOT=%s\n' "${operation_root}"
+            printf 'TOPOLOGY_DECISION=%s\n' "${RUNNER_TEMP}/current-capital-topology-refresh/decision.json"
+            printf 'TOPOLOGY_MAIN_SHA=%s\n' "$(git rev-parse HEAD)"
+          } >> "${GITHUB_ENV}"
       - name: Decide whether current topology refresh is due
         id: decision
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CLAIMS_PATH: ${{ runner.temp }}/current-capital-topology-refresh/claims.json
         run: |
           set -euo pipefail
           state_root="${RUNNER_TEMP}/current-capital-topology-refresh"
-          main_sha="$(git rev-parse HEAD)"
-          git ls-remote --heads origin "refs/heads/automation/636-current-topology-refresh-*" > "${state_root}/claim-refs.txt"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claim-refs.txt" --pr-limit 1000 --output "${state_root}/prs.json"
-          : > "${state_root}/claims.json"
-          while IFS=$'\t' read -r head_sha ref; do
-            [[ -z "${head_sha}" ]] && continue
-            git fetch --no-tags origin "${ref}"
-            merge_base="$(git merge-base "${main_sha}" "${head_sha}")"
-            commit_count="$(git rev-list --count "${merge_base}..${head_sha}")"
-            subjects="$(git log --format=%s --reverse "${merge_base}..${head_sha}")"
-            node --input-type=module -e 'import { appendFile } from "node:fs/promises"; const [headSha, ref, mergeBaseSha, commitCount, subjects] = process.argv.slice(1); await appendFile(process.env.CLAIMS_PATH, JSON.stringify({ headSha, ref, mergeBaseSha, commitCount: Number(commitCount), subjects: subjects ? subjects.split("\n") : [] }) + "\n");' "${head_sha}" "${ref}" "${merge_base}" "${commit_count}" "${subjects}"
-          done < "${state_root}/claim-refs.txt"
-          node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, JSON.stringify(claims) + "\n", { flag: "w" });'
-          # #995: PR 없는 claim은 만든 run과 게시 증거로 판정한다. 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다).
-          node tools/ci/claim-orphans.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claim-refs.txt" --prs "${state_root}/prs.json" --output "${state_root}/claim-evidence.json"
+          mkdir -p "${state_root}"
+          main_sha="${TOPOLOGY_MAIN_SHA}"
+          printf '[]\n' > "${state_root}/prs.json"
+          printf '[]\n' > "${state_root}/claims.json"
+          printf '[]\n' > "${state_root}/claim-evidence.json"
           node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --claim-evidence "${state_root}/claim-evidence.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
-      - name: Remove abandoned topology refresh claims named by the decision
-        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
-        run: |
-          set -euo pipefail
-          # #995: 판정이 정리 대상으로 알린 claim만 지운다(main이 움직여 current가 아니고 만든 run이 끝난 빈 claim). 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
-          gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/current-capital-topology-refresh/claim-refs.txt"
-      - name: Note current topology refresh waiting on a running producer
-        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
-        env:
-          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
-        run: |
-          echo "::notice title=Current topology refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
       - name: Note current topology refresh waiting on ITX promotion
         if: ${{ steps.decision.outputs.state == 'WAIT_ITX_PROMOTION' }}
         run: |
           echo "::notice title=Current topology refresh::ITX evidence is inside its refresh window; waiting for the ITX promotion workflow to renew it."
-      - name: Mint App token for the open refresh pull request
-        id: app-token-open
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Ensure required CI on the open refresh pull request
-        id: required-ci
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
-        run: |
-          set -euo pipefail
-          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다).
-          node tools/ci/refresh-pr-required-ci.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
-      - name: Enforce open refresh pull request age limit
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # #939: 열린 갱신 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
-          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow current-capital-topology-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
       - name: Preflight immutable current topology identities
         id: preflight
-        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM' }}
-        run: |
-          set -euo pipefail
-          git ls-tree -r --name-only HEAD > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
-          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
+          GH_TOKEN: ${{ github.token }}
           PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
-      - name: Mint App token for the refresh pull request
-        id: app-token-recover
-        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Recover a completed claimed refresh
-        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
-        env:
-          APP_PR_TOKEN: ${{ steps.app-token-recover.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          branch="${{ steps.decision.outputs.branch }}"
-          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-          [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "3" ]] || { echo "topology claim must have exactly three commits" >&2; exit 1; }
-          [[ "$(git rev-parse "origin/${branch}^^^")" == "$(git rev-parse HEAD)" ]] || { echo "topology claim is not based on current main" >&2; exit 1; }
-          [[ "$(git log -1 --format=%s "origin/${branch}^^")" == "Claim current topology refresh" ]] || { echo "topology claim subject is invalid" >&2; exit 1; }
-          [[ "$(git log -1 --format=%s "origin/${branch}^")" == "Register current topology inputs" ]] || { echo "topology input subject is invalid" >&2; exit 1; }
-          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Activate current topology inputs" ]] || { echo "topology activation subject is invalid" >&2; exit 1; }
-          git diff --quiet HEAD "origin/${branch}^^" || { echo "topology claim commit must preserve the current main tree" >&2; exit 1; }
-          input_deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^^" "origin/${branch}^")"
-          [[ -z "${input_deleted}" ]] || { echo "topology input commit deleted a tracked path" >&2; exit 1; }
-          activation_deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
-          [[ -z "${activation_deleted}" ]] || { echo "topology activation commit deleted a tracked path" >&2; exit 1; }
-          mapfile -t input_paths < <(git diff --name-only --diff-filter=ACMR "origin/${branch}^^" "origin/${branch}^")
-          [[ "${#input_paths[@]}" == "4" ]] || { echo "topology input commit must change exactly four paths" >&2; exit 1; }
-          for pattern in '^tools/datapack/sources/capital-route-topology-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-transit-station-info-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line1-train-timetable-[0-9]{8}\.json$' '^tools/datapack/sources/incheon-line2-train-timetable-[0-9]{8}\.json$'; do
-            [[ "$(printf '%s\n' "${input_paths[@]}" | grep -Ec "${pattern}")" == "1" ]] || { echo "topology claim input identity is invalid" >&2; exit 1; }
-          done
-          input_unexpected="$(printf '%s\n' "${input_paths[@]}" | grep -Ev '^tools/datapack/sources/(capital-route-topology|incheon-transit-station-info|incheon-line1-train-timetable|incheon-line2-train-timetable)-[0-9]{8}\.json$' || true)"
-          [[ -z "${input_unexpected}" ]] || { echo "topology input commit changed an unsupported path" >&2; exit 1; }
-          mapfile -t activation_paths < <(git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}")
-          [[ "${#activation_paths[@]}" -gt 0 ]] || { echo "topology activation commit must change a nonempty subset of the four source admission paths" >&2; exit 1; }
-          [[ "$(printf '%s\n' "${activation_paths[@]}" | grep -Ec '^tools/datapack/release/capital-topology-reverification-[0-9]{8}\.json$')" == "1" ]] || { echo "topology activation reverification identity is invalid" >&2; exit 1; }
-          # #862 결정 C: topology 갱신은 원천 admission까지만 한다. 후보 spec·request·hash는 전국 후보 갱신이 만든다.
-          activation_unexpected="$(printf '%s\n' "${activation_paths[@]}" | grep -Ev '^(tools/datapack/source-inventory\.json|tools/datapack/release/(capital-production-reviewed-pack\.json|capital-production-canonical-pack\.json|capital-topology-reverification-[0-9]{8}\.json))$' || true)"
-          [[ -z "${activation_unexpected}" ]] || { echo "topology activation commit changed an unsupported path" >&2; exit 1; }
-          existing="${RUNNER_TEMP}/current-capital-topology-refresh/claim-prs.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
-          [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "topology claim already has a pull request" >&2; exit 1; }
-          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          # #1012: 정책이 읽는 증거 블록이 든 본문을 만든다. 기준은 복구한 branch와 main의 실제 분기점이다. 증거가 어긋나면 PR을 만들지 않고 실패한다.
-          body_file="${RUNNER_TEMP}/current-capital-topology-refresh/pull-request-body-recovery-${GITHUB_RUN_ID}.md"
-          node tools/ci/refresh-automation-pr.mjs body --stage capital-topology-refresh --base-sha "$(git merge-base origin/main "origin/${branch}")" --head-sha "$(git rev-parse "origin/${branch}")" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh due current capital and Incheon topology inputs." --refs "Refs #636, #625" --output "${body_file}"
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh current capital topology inputs" --body-file "${body_file}"
-      - name: Create durable claim before provider access
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          branch="automation/636-current-topology-refresh-${GITHUB_RUN_ID}"
-          main_sha="$(git rev-parse HEAD)"
-          git switch -c "${branch}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "Claim current topology refresh"
-          claim_sha="$(git rev-parse HEAD)"
           gh auth setup-git
-          git push origin "${branch}"
-          git switch --detach "${main_sha}"
-          {
-            printf 'TOPOLOGY_BRANCH=%s\n' "${branch}"
-            printf 'TOPOLOGY_CLAIM_SHA=%s\n' "${claim_sha}"
-            printf 'TOPOLOGY_MAIN_SHA=%s\n' "${main_sha}"
-          } >> "${GITHUB_ENV}"
-      - name: Reuse an exact empty claim after provider failure
-        if: ${{ steps.decision.outputs.state == 'REUSE_CLAIM' && steps.preflight.outputs.state == 'CLEAR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          branch="${{ steps.decision.outputs.branch }}"
-          main_sha="$(git rev-parse HEAD)"
-          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-          claim_sha="$(git rev-parse "origin/${branch}")"
-          [[ "$(git rev-list --count HEAD.."origin/${branch}")" == "1" ]] || { echo "reusable topology claim must have exactly one commit" >&2; exit 1; }
-          [[ "$(git rev-parse "origin/${branch}^")" == "$(git rev-parse HEAD)" ]] || { echo "reusable topology claim is not based on current main" >&2; exit 1; }
-          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Claim current topology refresh" ]] || { echo "reusable topology claim subject is invalid" >&2; exit 1; }
-          git switch -c "${branch}" --track "origin/${branch}"
-          gh auth setup-git
-          git switch --detach "${main_sha}"
-          {
-            printf 'TOPOLOGY_BRANCH=%s\n' "${branch}"
-            printf 'TOPOLOGY_CLAIM_SHA=%s\n' "${claim_sha}"
-            printf 'TOPOLOGY_MAIN_SHA=%s\n' "${main_sha}"
-          } >> "${GITHUB_ENV}"
-      - name: Recheck immutable identities after claim
-        id: claimed-preflight
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.preflight.outputs.state == 'CLEAR' }}
-        run: |
-          set -euo pipefail
           git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "main changed after topology claim" >&2; exit 1; }
-          git ls-tree -r --name-only "${TOPOLOGY_MAIN_SHA}" > "${TOPOLOGY_OPERATION_ROOT}/existing-paths.txt"
+          [[ "$(git rev-parse origin/main)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "main changed before topology preflight" >&2; exit 1; }
+          git ls-tree -r --name-only "${TOPOLOGY_MAIN_SHA}" > "${PATHS}"
           node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { currentCapitalTopologyPreflight } from "./tools/ci/decide-current-capital-topology-refresh.mjs"; const existingPaths = (await readFile(process.env.PATHS, "utf8")).split("\n").filter(Boolean); const result = currentCapitalTopologyPreflight({ existingPaths }); process.stdout.write("state=" + result.state + "\n");' >> "${GITHUB_OUTPUT}"
-        env:
-          PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
       - name: Collect each official current topology input once
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology collector is not running from its claimed main" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology collector is not running from its source main" >&2; exit 1; }
           node tools/datapack/collect-capital-route-topology.mjs --download --output "${TOPOLOGY_OPERATION_ROOT}/capital-route-topology.json"
           node tools/datapack/collect-incheon-station-info.mjs --download --output "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info.json"
           station_stamp="$(node --input-type=module -e 'import { readFile, rename } from "node:fs/promises"; const root = process.env.TOPOLOGY_OPERATION_ROOT; const source = root + "/incheon-transit-station-info.json"; const snapshot = JSON.parse(await readFile(source, "utf8")); const capturedAt = snapshot.capturedAt; if (snapshot.sourceId !== "incheon-transit-station-info" || typeof capturedAt !== "string" || new Date(capturedAt).toISOString() !== capturedAt) throw new Error("station collector identity is invalid"); const stamp = capturedAt.slice(0, 10).replaceAll("-", ""); await rename(source, root + "/incheon-transit-station-info-" + stamp + ".json"); process.stdout.write(stamp);')"
@@ -236,7 +79,7 @@ jobs:
           node tools/datapack/collect-incheon-timetable.mjs --download --topology-snapshot "${TOPOLOGY_OPERATION_ROOT}/incheon-transit-station-info-${station_stamp}.json" --output-dir "${TOPOLOGY_OPERATION_ROOT}/timetables"
 
       - name: Derive immutable input identities from collector output
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           node --input-type=module -e '
@@ -264,11 +107,10 @@ jobs:
             console.log("TOPOLOGY_BUILD_NOW=" + new Date().toISOString());
           ' >> "${GITHUB_ENV}"
       - name: Commit exactly four immutable current topology inputs
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
-          git switch "${TOPOLOGY_BRANCH}"
-          [[ "$(git rev-parse HEAD^)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology claim is not based on its operation main" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology input commit must start from its source main" >&2; exit 1; }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           input_keys=(TOPOLOGY_CAPITAL_PATH TOPOLOGY_INCHEON_PATH TOPOLOGY_LINE1_PATH TOPOLOGY_LINE2_PATH)
@@ -279,7 +121,7 @@ jobs:
             cp "${source}" "${target}"
             input_targets+=("${target}")
           done
-          git add "${input_targets[@]}"
+          git add -- "${input_targets[@]}"
           mapfile -t input_paths < <(git diff --cached --name-only)
           [[ "${#input_paths[@]}" == "${#input_keys[@]}" ]] || { echo "topology collection changed an invalid component input count" >&2; exit 1; }
           for key in "${input_keys[@]}"; do required="${!key}"; printf '%s\n' "${input_paths[@]}" | grep -Fqx "${required}" || exit 1; done
@@ -287,7 +129,7 @@ jobs:
           git commit -m "Register current topology inputs"
           printf 'TOPOLOGY_BUILDER_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
       - name: Derive current activation dependencies
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           node --input-type=module -e '
@@ -297,19 +139,19 @@ jobs:
             console.log("TOPOLOGY_INCHEON_ACCESSIBILITY_PATH=tools/datapack/sources/" + source[0].registrationEvidence.snapshotId + ".json");
           ' >> "${GITHUB_ENV}"
       - name: Validate current activation dependencies
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
         run: |
           set -euo pipefail
           [[ -f "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" && ! -e "${TOPOLOGY_REVERIFICATION_PATH}" ]] || { echo "topology activation dependency or target is invalid" >&2; exit 1; }
       - name: Activate current topology inputs exactly once
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # #862 결정 C: 원천 admission(inventory·reviewed pack·canonical pack·재검증 증거)까지만 만든다. 후보는 다시 만들지 않는다.
           node tools/datapack/activate-current-source-set.mjs --topology-source-admission --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
-          git add tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json "${TOPOLOGY_REVERIFICATION_PATH}"
+          git add -- tools/datapack/source-inventory.json tools/datapack/release/capital-production-reviewed-pack.json tools/datapack/release/capital-production-canonical-pack.json "${TOPOLOGY_REVERIFICATION_PATH}"
           deleted="$(git diff --cached --name-only --diff-filter=D)"
           [[ -z "${deleted}" ]] || { echo "topology activation deleted a tracked path" >&2; exit 1; }
           mapfile -t activation_paths < <(git diff --cached --name-only --diff-filter=ACMR)
@@ -320,28 +162,12 @@ jobs:
           git commit -m "Activate current topology inputs"
           node tools/datapack/activate-current-source-set.mjs --topology-source-admission --check --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
           [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "topology activation changed an unsupported path" >&2; exit 1; }
-          # #1012: push 전에 증거 블록이 든 PR 본문을 만든다. 경로 allowlist·원장 불변·inventory 범위·증거 결속이 어긋나면 여기서 실패해 push도 PR도 없다(#926 실패 보고).
-          node tools/ci/refresh-automation-pr.mjs body --stage capital-topology-refresh --base-sha "${TOPOLOGY_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh due current capital and Incheon topology inputs." --refs "Refs #636, #625" --output "${TOPOLOGY_OPERATION_ROOT}/pull-request-body.md"
-          git push origin "${TOPOLOGY_BRANCH}"
-      - name: Mint App token for the refresh pull request
-        id: app-token-pr
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Create draft pull request
-        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
-        env:
-          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${TOPOLOGY_BRANCH}" --title "Refresh current capital topology inputs" --body-file "${TOPOLOGY_OPERATION_ROOT}/pull-request-body.md"
+          node tools/ci/refresh-automation-pr.mjs body --stage capital-topology-refresh --base-sha "${TOPOLOGY_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh due current capital and Incheon topology inputs." --refs "Direct main commit" --output "${TOPOLOGY_OPERATION_ROOT}/commit-summary.md"
+          cat "${TOPOLOGY_OPERATION_ROOT}/commit-summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          gh auth setup-git
+          git fetch --no-tags origin main
+          [[ "$(git rev-parse origin/main)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "topology target main changed before push" >&2; exit 1; }
+          git push origin HEAD:main
       - name: Upload sanitized decision metadata
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -350,18 +176,7 @@ jobs:
           path: ${{ runner.temp }}/current-capital-topology-refresh/decision.json
           if-no-files-found: ignore
           retention-days: 14
-      - name: Remove this failed run's empty topology claim
-        if: ${{ failure() && env.TOPOLOGY_BRANCH != '' && env.TOPOLOGY_CLAIM_SHA != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # #1064: topology 갱신은 OCI에 게시하지 않으므로 출력 없는 빈 claim 하나는 게시도 출력도 없다는 전체 증거다. 실패한 run이 다음 실행까지 claim을 남기면
-          # 후보 갱신의 원장 writer 대기(PT2H)가 실패 주기마다 새로 걸려 후보가 매 주기 막힌다. 도구가 #926 실패 보고를 먼저 확인하고, 원격 sha가 claim을 만들 때 기록한 sha와 같은 빈 claim이고 PR이 없을 때만 지운다.
-          # 출력 커밋이 있는 claim(RECOVER_CLAIM 대상)과 PR이 있는 claim은 도구가 거부해 그대로 남는다. 실패 보고 step은 계속 마지막이라 이 step의 실패도 보고된다.
-          # #1326: 광주·서울·KRIC도 같은 도구로 자기 claim을 푼다(release-own-claim이 git 인증 준비와 원격 sha 확인을 한다).
-          node tools/ci/release-own-claim.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${TOPOLOGY_BRANCH}" --claim-sha "${TOPOLOGY_CLAIM_SHA}"
-      - name: Report refresh failure as an issue
+      - name: Report refresh failure summary
         if: ${{ failure() }}
         env:
           GH_TOKEN: ${{ github.token }}

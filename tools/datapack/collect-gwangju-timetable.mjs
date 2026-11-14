@@ -9,6 +9,8 @@ import {
   withSourceCollectionRetry,
 } from "./lib/source-collection-retry.mjs";
 import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
+import { decodeXmlBytes, decodeXmlEntities } from "./lib/xml-decode.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "gwangju-transportation-timetable";
@@ -163,7 +165,7 @@ async function collectPage({ pageNo, key, fetchImpl, retry }) {
   if (!XML_CONTENT_TYPES.has(contentType)) {
     throw new Error(`Gwangju timetable schema mismatch: content-type ${contentType || "missing"}; rawSha256=${rawSha256}`);
   }
-  const { raw, responseEncoding } = decodeXml(bytes);
+  const { raw, responseEncoding } = decodeXmlBytes(bytes);
   const resultCode = scalar(raw, "resultCode");
   if (classifyDataGoResultCode(resultCode) !== "success") {
     throw new Error(`Gwangju timetable provider resultCode ${safeToken(resultCode ?? "missing")}; rawSha256=${rawSha256}`);
@@ -229,7 +231,7 @@ function validateRows(rows) {
 
 function extractXmlResultCode(bytes) {
   try {
-    return scalar(decodeXml(bytes).raw, "resultCode");
+    return scalar(decodeXmlBytes(bytes).raw, "resultCode");
   } catch {
     return null;
   }
@@ -243,7 +245,7 @@ async function fetchPageWithRetry(url, fetchImpl, retry) {
         signal: AbortSignal.timeout(15_000),
         headers: { accept: "application/xml,text/xml" },
       });
-      const bytes = Buffer.from(await response.arrayBuffer());
+      const bytes = await readResponseBytesWithLimit(response, { maxBytes: 16 * 1024 * 1024, label: "Gwangju timetable" });
       const resultCode = response.ok ? extractXmlResultCode(bytes) : null;
       return { response, bytes, resultCode };
     }, {
@@ -261,23 +263,9 @@ async function fetchPageWithRetry(url, fetchImpl, retry) {
   }
 }
 
-function decodeXml(bytes) {
-  try {
-    return { raw: new TextDecoder("utf-8", { fatal: true }).decode(bytes), responseEncoding: "utf-8" };
-  } catch {
-    return { raw: new TextDecoder("euc-kr", { fatal: true }).decode(bytes), responseEncoding: "euc-kr" };
-  }
-}
-
 function scalar(raw, field) {
   const value = new RegExp(String.raw`<${field}\b[^>]*>([^<]{0,200})<\/${field}>`, "i").exec(raw)?.[1];
-  return value == null ? null : decodeEntities(value.trim());
-}
-
-function decodeEntities(value) {
-  return value.replace(/&(amp|lt|gt|quot|apos);/g, (_, entity) => ({
-    amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
-  })[entity]);
+  return value == null ? null : decodeXmlEntities(value.trim());
 }
 
 function validDate(value, label) {

@@ -12,6 +12,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 export const SOURCE_ID = "capital-line1-route-topology";
@@ -315,7 +316,7 @@ async function downloadOfficialCsv(fetchImpl) {
   if (!response.ok) {
     throw new Error(`capital line-1 CSV HTTP ${response.status}`);
   }
-  return Buffer.from(await response.arrayBuffer());
+  return readResponseBytesWithLimit(response, { maxBytes: 16 * 1024 * 1024, label: "capital line-1 CSV" });
 }
 
 function validDate(value, label) {

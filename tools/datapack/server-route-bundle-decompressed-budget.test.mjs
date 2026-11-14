@@ -69,3 +69,26 @@ test("evaluateDecompressedBudget verifies components against budget", () => {
     },
   );
 });
+
+test("evaluateDecompressedBudget rejects zstd bombs via maxOutputLength before allocating full payload", () => {
+  const compress = (buf) => zstdCompressSync(buf, {
+    params: {
+      [constants.ZSTD_c_compressionLevel]: 10,
+      [constants.ZSTD_c_checksumFlag]: 1,
+    },
+  });
+  const payloadBytesByComponent = {
+    accessibility: compress(Buffer.alloc(2 * 1024 * 1024, 0x41)),
+    fare: compress(Buffer.from("fare")),
+    timetable: compress(Buffer.from("timetable")),
+    topology: compress(Buffer.from("topology")),
+  };
+  assert.throws(
+    () => evaluateDecompressedBudget(payloadBytesByComponent, 1024),
+    (err) => {
+      assert.equal(err.code, E_SERVER_BUNDLE_DECOMPRESSED_BUDGET);
+      assert.equal(err.cause?.code, "ERR_BUFFER_TOO_LARGE");
+      return true;
+    },
+  );
+});

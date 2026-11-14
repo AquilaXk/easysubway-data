@@ -1,19 +1,13 @@
 name: Source Reverification
 
-# P7D 원천 재확인(#984, #969 남은 단계 1, #870 전체 자동화 1단계): 만료되기 전에 사람 없이 원천을 다시 등록한다.
+# P7D 원천 재확인(단독 운영): 만료되기 전에 원천을 다시 확인해 main에 직접 등록한다.
 # - 판정(decide-source-reverification)이 정책(scheduledPipeline.cadence·alertBeforePackExpiry)과 원장 head의 freshUntil로 DUE인 recipe를 고른다.
-# - 공급자·OCI에 닿기 전에 claim 브랜치(빈 커밋)를 push해 다른 원장 쓰기 자동화가 기다리게 하고, 그 브랜치 위에서 controller가 recipe별로 커밋한다.
-# - 결과는 App 토큰 PR 하나다. 본문에 source-reverification 증거 블록이 붙고, 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA)를 통과해야 한다.
+# - controller가 recipe별로 커밋하고 원장 변화 게이트(source-ledger-gate)를 통과하면 요약 증거를 남기고 main으로 push한다(PR·claim·이슈 생성 없음).
 # - 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_SOURCE_REVERIFICATION이 true일 때만 돈다(기본 꺼짐). 사람 dispatch는 항상 돈다.
-# - 이상(수집 실패·등록 실패·sha 드리프트·수치 급변·판정 불가·CI 실패·방치)은 job을 실패시키고 실패 이슈(#926 경로)로 드러난다. 이전 데이터로 대체하지 않는다.
-# - 재확인 기한을 넘긴 recipe(판정의 overdue_recipes, #3036)는 run이 대기로 성공해도 같은 실패 이슈에 기록한다. job 결론은 바꾸지 않는다(막힘 재dispatch는 성공 run을 본다).
-# - 재생(#3036): 뒤처진 재확인 PR은 공급자의 하루 호출 한도를 다시 쓰지 않도록 원본 run의 수집분(artifact)으로 공급자 호출 없이 다시 등록한다.
-#   재생할 수 없는 묶음은 담지 않으며, 다음 정기 실행이 다시 수집한다. 재생 입력은 dispatch에만 있으므로 재생 run은 대기로 끝나지 않고
-#   다른 원장 쓰기 자동화나 main 이동에 막히면 REVERIFICATION_REPLAY_BLOCKED로 실패한다(같은 replay_run_id로 다시 dispatch하면 복구된다).
-# - 공급자 하루 호출 예산(#3036): 판정이 같은 KST 날 앞선 run의 operation별 요청 수를 읽어, 부산 묶음처럼 하루 한도가 있는 묶음은 남은 예산이 모자라거나
-#   같은 날 시도 상한(3회)에 닿으면 시작하지 않는다. 막힌 묶음은 PR 뒤 마지막 step이 이름 있는 코드로 job을 실패시킨다. 모든 run은 실패·취소에도
-#   자기 시도별 계측 파일을 artifact로 남겨 다음 run이 셀 수 있게 하고, 셀 수 없으면 그 묶음을 막는다(fail closed).
-# - recipe 하나가 실패해도 나머지 recipe의 등록은 PR로 올라간다(#1102). 의존 묶음(topology와 그에 결속되는 recipe)은 전부 등록되거나 전부 되돌려지고, 실패한 recipe는 PR 뒤 마지막 step이 job을 실패시켜 드러낸다.
+# - 이상(수집 실패·등록 실패·sha 드리프트·수치 급변·판정 불가·일부 recipe 실패·일일 예산 초과)은 job을 실패시키고 Step Summary·주석으로 드러낸다.
+# - 재확인 기한을 넘긴 recipe(overdue_recipes)는 대기 run에서도 마지막 요약 step에 기록한다(job 결론은 바꾸지 않는다).
+# - 재생: 공급자 하루 호출 한도를 다시 쓰지 않도록 원본 run의 수집분(artifact)으로 공급자 호출 없이 다시 등록한다.
+#   main 이동에 막히면 REVERIFICATION_REPLAY_BLOCKED로 실패해 같은 replay_run_id로 다시 dispatch할 수 있게 한다.
 on:
   schedule:
     - cron: "23 */2 * * *"
@@ -45,8 +39,6 @@ jobs:
     permissions:
       actions: read
       contents: write
-      pull-requests: write
-      issues: write
     environment: datapack-release-check
     timeout-minutes: 90
     steps:
@@ -59,7 +51,7 @@ jobs:
           node-version: "24.19.0"
       - name: Record source fetch attempts for the job summary
         run: |
-          # 원천 수집기가 시도마다 JSON 한 줄(원천 id·호스트·결과·오류 코드·소요)을 이 파일에 덧붙인다. URL·serviceKey·헤더는 기록하지 않는다(#3036).
+          # 원천 수집기가 시도마다 JSON 한 줄(원천 id·호스트·결과·오류 코드·소요)을 이 파일에 덧붙인다. URL·serviceKey·헤더는 기록하지 않는다.
           # 빈 파일로 먼저 만든다: 다음 run의 하루 호출 예산 판정은 이 파일이 없으면 요청 수를 증명할 수 없다고 본다.
           : > "${RUNNER_TEMP}/source-fetch-telemetry.jsonl"
           echo "SOURCE_FETCH_TELEMETRY_PATH=${RUNNER_TEMP}/source-fetch-telemetry.jsonl" >> "${GITHUB_ENV}"
@@ -74,112 +66,20 @@ jobs:
           set -euo pipefail
           decision_root="${RUNNER_TEMP}/source-reverification-decision/${GITHUB_RUN_ID}"
           mkdir -p "${decision_root}"
-          node tools/ci/reclaim-stale-claims.mjs --repository "${GITHUB_REPOSITORY}"
-          # PR 목록은 열린 PR 전체와 automation/* 브랜치별 PR(전 상태)만 받는다. PR 이력은 쌓이므로 전체를 받지 않는다(#993).
-          # 열린 PR 목록이 상한과 같은 개수면 잘렸을 수 있으므로 실패한다(#972 리뷰 F3).
-          git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/automation-branches.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
-          # #987 리뷰 F1: 끝난 run 이력은 하루 12개씩 쌓여 17일이면 상한을 넘는다. 끝나지 않은 상태별로만 조회한다(끝난 run은 판정에 필요 없다).
-          mkdir -p "${decision_root}/runs"
-          for status in in_progress queued waiting pending requested; do
-            gh run list --repo "${GITHUB_REPOSITORY}" --workflow source-reverification.yml --status "${status}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "${decision_root}/runs/${status}.json"
-          done
-          jq -s 'add | unique_by(.databaseId)' "${decision_root}"/runs/*.json > "${decision_root}/runs.json"
-          # #1122: 열린 이슈의 막힌 recipe 표지(공급처 기대 관측 변경)를 읽어 같은 원인의 재수집을 건너뛴다. 목록이 상한과 같은 개수면 잘렸을 수 있어 판정이 실패한다.
-          gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 1000 --json number,title,body,author > "${decision_root}/issues.json"
-          # #3036: 같은 KST 날 앞선 run이 원천별로 보낸 요청 수(각 run의 계측 artifact)를 공급자 호출 전에 읽는다. 읽지 못하면 예산 대상 묶음만 막힌다.
+          printf '[]\n' > "${decision_root}/prs.json"
+          printf '[]\n' > "${decision_root}/runs.json"
+          printf '[]\n' > "${decision_root}/issues.json"
+          : > "${decision_root}/automation-branches.txt"
+          echo "REVERIFICATION_MAIN_SHA=$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
+          # 같은 KST 날 앞선 run이 원천별로 보낸 요청 수(각 run의 계측 artifact)를 공급자 호출 전에 읽는다. 읽지 못하면 예산 대상 묶음만 막힌다.
           node tools/ci/provider-call-ledger.mjs --ledger "${decision_root}/provider-call-ledger.json"
           node tools/ci/decide-source-reverification.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --policy release/product-gates/datapack-freshness-sla.json --prs "${decision_root}/prs.json" --automation-branches "${decision_root}/automation-branches.txt" --runs "${decision_root}/runs.json" --issues "${decision_root}/issues.json" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --call-budget release/product-gates/provider-daily-call-budget.json --provider-call-ledger "${decision_root}/provider-call-ledger.json" --replay-run-id "${REPLAY_RUN_ID}" --allow-same-day-budget-retry "${ALLOW_SAME_DAY_BUDGET_RETRY}" --github-output "${GITHUB_OUTPUT}"
-      - name: Mint App token for the open refresh pull request
-        id: app-token-open
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Ensure required CI on the open refresh pull request
-        id: required-ci
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
-        run: |
-          set -euo pipefail
-          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다). #969: CI가 실패했으면 바로 실패한다.
-          node tools/ci/refresh-pr-required-ci.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
-      - name: Enforce open refresh pull request age limit
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CI_STATE: ${{ steps.required-ci.outputs.state }}
-        run: |
-          set -euo pipefail
-          # #939: 열린 재확인 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
-          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow source-reverification.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${CI_STATE}"
-      - name: Note reverification waiting on a pending source pull request
-        if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
-        env:
-          BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
-        run: |
-          echo "::notice title=Source reverification::P7D sources are due but source-ledger automation (${BLOCKED_BY}) is pending; it writes the same ledger files, so this run waits."
-      - name: Note reverification waiting on a running producer
-        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
-        env:
-          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
-        run: |
-          echo "::notice title=Source reverification::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
-      - name: Note recipes skipped because of an open expectation-change failure issue
-        if: ${{ steps.decision.outputs.blocked_recipes != '' }}
-        env:
-          BLOCKED_RECIPES: ${{ steps.decision.outputs.blocked_recipes }}
-        run: |
-          echo "::warning title=Source reverification::${BLOCKED_RECIPES} skipped: the provider's expected observation changed and the failure issue is still open. Update the expected values, then close the issue to resume."
       - name: Note no P7D source is due
         if: ${{ steps.decision.outputs.state == 'NOT_DUE' }}
         run: |
           echo "::notice title=Source reverification::no P7D source is due; nothing to reverify."
-      - name: Remove stale reverification claims named by the decision
-        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
-        run: |
-          set -euo pipefail
-          # 판정이 정리 대상으로 알린 claim만 지운다: 병합된 PR의 남은 claim, 끝났거나 기록이 없는 run의 PR 없는 claim. 사람이 지울 일이 아니다(#973).
-          # #995: 조용히 지우지 않는다. 병합된 PR의 claim은 보고 없이, 끝난 run의 PR 없는 claim은 #926 실패 보고를 먼저 하고 지운다.
-          gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/source-reverification-decision/${GITHUB_RUN_ID}/automation-branches.txt"
-      - name: Claim exact main before provider access
-        id: claim
-        if: ${{ steps.decision.outputs.state == 'RUN' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          main_sha="$(git rev-parse HEAD)"
-          # 판정 뒤 main이 움직였으면 이 실행은 낡은 판정이다. 아무것도 시작하지 않고 다음 실행이 새 main으로 다시 판정한다(이상이 아니다).
-          if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" != "${main_sha}" ]]; then
-            echo "::notice title=Source reverification::main moved after the decision; a newer run decides on the new main."
-            echo "claimed=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          branch="automation/984-source-reverification-${GITHUB_RUN_ID}"
-          # 이름을 먼저 기록한다. push가 도중에 끊겨도 정리 step이 이 브랜치를 확인한다.
-          printf 'REVERIFICATION_BRANCH=%s\nREVERIFICATION_MAIN_SHA=%s\n' "${branch}" "${main_sha}" >> "${GITHUB_ENV}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          gh auth setup-git
-          git switch -c "${branch}"
-          git commit --allow-empty -m "Claim source reverification"
-          git push origin "${branch}"
-          echo "claimed=true" >> "${GITHUB_OUTPUT}"
       - name: Verify the replay source run
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.decision.outputs.replay_run_id != '' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.decision.outputs.replay_run_id != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPLAY_RUN_ID: ${{ steps.decision.outputs.replay_run_id }}
@@ -192,7 +92,7 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REPLAY_RUN_ID}/jobs?filter=all&per_page=100" > "${source_root}/jobs.json"
           node tools/ci/verify-source-reverification-replay-run.mjs --source-run-id "${REPLAY_RUN_ID}" --repository "${GITHUB_REPOSITORY}" --run "${source_root}/run.json" --jobs "${source_root}/jobs.json"
       - name: Download the retained reverification collection
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.decision.outputs.replay_run_id != '' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.decision.outputs.replay_run_id != '' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           repository: ${{ github.repository }}
@@ -202,7 +102,7 @@ jobs:
           github-token: ${{ github.token }}
       - name: Reverify due P7D sources
         id: reverify
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ steps.decision.outputs.replay_run_id == '' && secrets.DATA_GO_KR_SERVICE_KEY || '' }}
           # OCI 주소는 등록기가 영수증 결속(namespace·bucket)을 확인하는 데 쓴다.
@@ -217,7 +117,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 등록 도구는 origin/main이 명시한 main이고 HEAD가 그 후손일 때만 돈다. 이 실행이 읽은 main이 지금도 main이어야 한다.
           git fetch --no-tags origin main:refs/remotes/origin/main
-          [[ "$(git rev-parse origin/main)" == "${REVERIFICATION_MAIN_SHA}" ]] || { echo "main changed after the claim" >&2; exit 1; }
+          [[ "$(git rev-parse origin/main)" == "${REVERIFICATION_MAIN_SHA}" ]] || { echo "main changed after the decision" >&2; exit 1; }
           operation="${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}"
           mkdir -p "${operation}"
           if [[ -n "${REPLAY_RUN_ID}" ]]; then
@@ -226,108 +126,65 @@ jobs:
           else
             node tools/datapack/run-source-reverification.mjs --operation-root "${operation}/operation" --recipes "${RECIPES}" --replay-bundle "${operation}/replay-bundle" > "${operation}/result.json"
           fi
-          # #975 리뷰 F5: controller의 커밋 전체가 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)를 통과해야 PR이 된다.
+          # controller의 커밋 전체가 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)를 통과해야 main에 push한다.
           node tools/ci/source-ledger-gate.mjs --base-sha "${REVERIFICATION_MAIN_SHA}" --output "${operation}/gate.json"
           printf 'REVERIFICATION_RESULT=%s\nREVERIFICATION_GATE=%s\nREVERIFICATION_HEAD_SHA=%s\n' "${operation}/result.json" "${operation}/gate.json" "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
           echo "registered=$(jq '.steps | length' "${operation}/result.json")" >> "${GITHUB_OUTPUT}"
-          # controller는 재생할 수 있는 의존 묶음을 등록했을 때만 manifest를 마지막에 쓴다. 없으면 이 run의 PR이 뒤처졌을 때 다시 수집한다.
           if [[ -f "${operation}/replay-bundle/manifest.json" ]]; then
             echo "replay_bundle=true" >> "${GITHUB_OUTPUT}"
           else
-            echo "::notice title=Source reverification::no replayable dependency group was registered, so this run keeps no replay bundle; a behind pull request from it collects again."
+            echo "::notice title=Source reverification::no replayable dependency group was registered, so this run keeps no replay bundle."
             echo "replay_bundle=false" >> "${GITHUB_OUTPUT}"
           fi
       - name: Note the replay left nothing to register
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.reverify.outputs.registered == '0' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.reverify.outputs.registered == '0' }}
         run: |
-          echo "::notice title=Source reverification::the replay registered nothing because main already holds the same or newer snapshots; no pull request is opened."
-      - name: Recheck that no source-ledger automation is pending before pushing
-        id: recheck
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.reverify.outputs.registered != '0' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # controller는 길다. 그 사이 원장을 쓰는 다른 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 올리지 않고 다음 실행에 맡긴다(#975 리뷰 F6).
-          recheck_root="${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}/recheck"
-          mkdir -p "${recheck_root}"
-          node tools/ci/reclaim-stale-claims.mjs --repository "${GITHUB_REPOSITORY}"
-          git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${recheck_root}/automation-branches.txt" --pr-limit 1000 --output "${recheck_root}/prs.json"
-          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --except-workflow source-reverification.yml --github-output "${GITHUB_OUTPUT}"
-      - name: Note reverification superseded by pending source automation
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'false' }}
-        env:
-          BLOCKED_BY: ${{ steps.recheck.outputs.blocked_by }}
-        run: |
-          echo "::notice title=Source reverification::source-ledger automation (${BLOCKED_BY}) started while the reverification was running; nothing was pushed and the next run decides again."
-      - name: Verify the reverification is based on the current main and push its branch
+          echo "::notice title=Source reverification::the replay registered nothing because main already holds the same or newer snapshots; nothing pushed to main."
+      - name: Verify the reverification is based on the current main and push to main
         id: push
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.reverify.outputs.registered != '0' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # 병합이 연달아 일어나 main이 움직였으면 이 체인에서는 정상 경로다. 올리지 않고 끝내며 다음 실행이 다시 만든다(#975 리뷰 F4).
+          # main이 움직였으면 올리지 않고 끝내며 다음 실행이 새 main에서 다시 결정한다.
           git fetch --no-tags origin main
           if [[ "$(git rev-parse origin/main)" != "${REVERIFICATION_MAIN_SHA}" ]]; then
             echo "::notice title=Source reverification::main moved from ${REVERIFICATION_MAIN_SHA} while the reverification was running; nothing was pushed and a newer run decides on the new main."
             echo "pushed=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
+          body="${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}/summary-body.md"
+          node tools/ci/automation-pr-evidence.mjs source-reverification-body --gate "${REVERIFICATION_GATE}" --result "${REVERIFICATION_RESULT}" --base-sha "${REVERIFICATION_MAIN_SHA}" --head-sha "${REVERIFICATION_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --output "${body}"
           gh auth setup-git
-          git push origin "${REVERIFICATION_BRANCH}"
+          git push origin HEAD:main
+          cat "${body}" >> "${GITHUB_STEP_SUMMARY}"
           echo "pushed=true" >> "${GITHUB_OUTPUT}"
       - name: Note reverification superseded by a newer main
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'false' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.reverify.outputs.registered != '0' && steps.push.outputs.pushed == 'false' }}
         run: |
           echo "::notice title=Source reverification::the reverification was built on an older main and was dropped; the next run rebuilds it."
-      - name: Fail a replay that could not open its pull request
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.decision.outputs.replay_run_id != '' && (steps.claim.outputs.claimed == 'false' || steps.recheck.outputs.idle == 'false' || steps.push.outputs.pushed == 'false') }}
+      - name: Fail a replay that could not push to main
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.decision.outputs.replay_run_id != '' && steps.reverify.outputs.registered != '0' && steps.push.outputs.pushed == 'false' }}
         env:
           REPLAY_RUN_ID: ${{ steps.decision.outputs.replay_run_id }}
         run: |
           # 재생 입력은 이 dispatch에만 있다. 대기로 끝내면 다음 정기 실행이 공급자에서 다시 수집하므로 실패로 드러내고 같은 입력으로 다시 dispatch하게 한다.
-          echo "::error title=Source reverification::REVERIFICATION_REPLAY_BLOCKED: replay of run ${REPLAY_RUN_ID} was not pushed because main moved or another source-ledger automation started; dispatch source-reverification.yml again with replay_run_id=${REPLAY_RUN_ID}"
+          echo "::error title=Source reverification::REVERIFICATION_REPLAY_BLOCKED: replay of run ${REPLAY_RUN_ID} was not pushed because main moved; dispatch source-reverification.yml again with replay_run_id=${REPLAY_RUN_ID}"
           exit 1
-      # PR이 열리자마자 main이 움직여 recreate가 돌아도 artifact가 이미 있어야 다시 수집하지 않으므로 PR 생성 전에 올린다.
-      # 재생 가능한 묶음의 등록기는 수집 시각에서 24시간이 지난 증거를 거부하므로 그 뒤의 재생은 반드시 실패한다. 보관을 1일로 두어 그 뒤에는 recreate가 다시 수집 경로를 고른다.
       - name: Upload the retained collection for a later replay
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' && steps.reverify.outputs.replay_bundle == 'true' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.reverify.outputs.registered != '0' && steps.push.outputs.pushed == 'true' && steps.reverify.outputs.replay_bundle == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: source-reverification-${{ github.run_id }}
           path: ${{ runner.temp }}/source-reverification/${{ github.run_id }}/replay-bundle
           if-no-files-found: error
           retention-days: 1
-      - name: Mint App token for the reverification pull request
-        id: app-token-pr
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: Create source reverification pull request
-        id: create-pr
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}
-        env:
-          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          body="${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}/pr-body.md"
-          node tools/ci/automation-pr-evidence.mjs source-reverification-body --gate "${REVERIFICATION_GATE}" --result "${REVERIFICATION_RESULT}" --base-sha "${REVERIFICATION_MAIN_SHA}" --head-sha "${REVERIFICATION_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --output "${body}"
-          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REVERIFICATION_BRANCH}" --title "[Data] P7D 원천을 만료 전에 다시 확인해 등록" --body-file "${body}"
       - name: Report recipes that failed
         if: ${{ always() && steps.reverify.outcome == 'success' }}
         run: |
           set -euo pipefail
-          # #1102: recipe 하나가 실패해도 나머지 recipe의 등록은 위에서 PR로 올라갔다. 등록하지 못한 recipe가 있으면 여기서 job을 실패시켜 실패 이슈(#926)로 드러낸다.
-          # 의존 묶음의 일부만 등록된 상태는 만들지 않는다(controller가 묶음 단위로 되돌린다). 실패한 recipe는 원장이 그대로라 다음 정기 실행이 다시 시도한다.
+          # recipe 하나가 실패해도 나머지 recipe의 등록은 위에서 main에 반영됐다. 등록하지 못한 recipe가 있으면 여기서 job을 실패시켜 드러낸다.
           node tools/ci/source-reverification-failures.mjs --result "${REVERIFICATION_RESULT}"
       - name: Fail recipes blocked by the provider daily call budget
         if: ${{ always() && steps.decision.outputs.budget_blocked != '' }}
@@ -335,26 +192,8 @@ jobs:
           BUDGET_BLOCKED: ${{ steps.decision.outputs.budget_blocked }}
           BUDGET_BLOCKED_REASON: ${{ steps.decision.outputs.budget_blocked_reason }}
         run: |
-          # #3036: 공급자 하루 호출 예산·시도 상한에 막힌 묶음은 이 KST 날 다시 수집하지 않는다. 다른 묶음의 PR은 위에서 올라갔고, 여기서 job을 실패시켜 실패 이슈로 드러낸다.
           echo "::error title=Source reverification::${BUDGET_BLOCKED} not collected today: ${BUDGET_BLOCKED_REASON}"
           exit 1
-      - name: Remove this run's claim unless it became a pull request
-        if: ${{ always() && env.REVERIFICATION_BRANCH != '' && steps.create-pr.outcome != 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # 실패·취소·시간 초과·대기 어느 경우에도 PR이 되지 못한 claim은 남기지 않는다. OCI 객체는 내용 주소라 다음 실행이 같은 원본으로 다시 시작해도 안전하다.
-          branch="automation/984-source-reverification-${GITHUB_RUN_ID}"
-          [[ "${REVERIFICATION_BRANCH}" == "${branch}" ]] || exit 0
-          git ls-remote --exit-code --heads origin "refs/heads/${branch}" > /dev/null || exit 0
-          gh auth setup-git
-          if [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${branch}" --json number --jq 'length')" != "0" ]]; then
-            gh pr close "${branch}" --repo "${GITHUB_REPOSITORY}" --delete-branch --comment "재확인 run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}이 PR 생성 뒤 실패해 이 PR과 브랜치를 정리한다."
-          else
-            git push origin --delete "${branch}"
-            echo "::notice title=Source reverification::removed ${branch}; the next run starts over."
-          fi
       - name: Summarize source fetch attempts
         # 관측 표일 뿐이다. 이 step이 실패해도 job 결과를 바꾸지 않고, 수집 실패는 위 step들이 이미 드러낸다.
         if: ${{ always() }}
@@ -363,7 +202,7 @@ jobs:
           set -euo pipefail
           node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
       - name: Upload provider call evidence
-        # #3036: 다음 run의 하루 호출 예산 판정이 이 run이 원천별로 보낸 요청 수를 센다. 실패·취소에도 올리고, KST 하루 창(최대 24시간)을 덮도록 2일 보관한다.
+        # 다음 run의 하루 호출 예산 판정이 이 run이 원천별로 보낸 요청 수를 센다. 실패·취소에도 올리고, KST 하루 창(최대 24시간)을 덮도록 2일 보관한다.
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -371,11 +210,8 @@ jobs:
           path: ${{ runner.temp }}/source-fetch-telemetry.jsonl
           if-no-files-found: error
           retention-days: 2
-      - name: Report refresh failure as an issue
+      - name: Report refresh failure summary
         if: ${{ failure() || cancelled() || steps.decision.outputs.overdue_recipes != '' }}
         env:
-          GH_TOKEN: ${{ github.token }}
           OVERDUE_RECIPES: ${{ job.status == 'success' && steps.decision.outputs.overdue_recipes || '' }}
-        # #1122: controller가 남긴 실패 목록(없을 수 있다)에서 기대 관측 변경 실패를 이슈에 표지로 남긴다.
-        # #3036: 실패하지 않은 대기 run만 연체 recipe를 넘긴다(실패·취소 run은 지금처럼 실패로 적는다).
         run: node tools/ci/report-refresh-failure.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --failures "${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}/operation/failures.json" --overdue "${OVERDUE_RECIPES}"

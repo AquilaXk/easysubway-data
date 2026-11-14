@@ -2,7 +2,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { sha256 } from "../lib/hash.mjs";
@@ -127,7 +128,7 @@ export async function runMolitRailwayTransferMovementCollector(argv, fixture = {
     if (path.basename(output) !== `${metadata.snapshotId}.csv.gz`) throw new Error("--output must use the canonical snapshot filename");
     if (sha256(gzipBytes) !== metadata.gzipSha256) throw new Error("gzip hash mismatch");
     const rebuilt = buildMolitRailwayTransferMovementSnapshot({
-      bytes: gunzipSync(gzipBytes), capturedAt: required(args["captured-at"], "--captured-at"),
+      bytes: gunzipWithLimit(gzipBytes, { maxOutputLength: 128 * 1024 * 1024, label: output }), capturedAt: required(args["captured-at"], "--captured-at"),
       editionDate: molitRailwayTransferMovementEditionFromSnapshotId(metadata.snapshotId), freshnessPolicy,
       expectedRowCount: fixture.expectedRowCount ?? metadata.rowCount, expectedRawSha256: fixture.expectedRawSha256 ?? metadata.rawSha256,
     });

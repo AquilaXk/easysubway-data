@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
@@ -1091,7 +1091,10 @@ function resolveTwoPersonAuthority(requestedByOption, approvedByOption) {
 }
 
 function parseMolitTransferCsvRows(molitTransferGzipBytes) {
-  const molitTransferUncompressed = gunzipSync(molitTransferGzipBytes);
+  const molitTransferUncompressed = gunzipWithLimit(molitTransferGzipBytes, {
+    maxOutputLength: 128 * 1024 * 1024,
+    label: "molit railway transfer CSV",
+  });
   const molitTransferText = new TextDecoder("euc-kr").decode(molitTransferUncompressed);
   const molitLines = molitTransferText.split(/\r?\n/).filter(Boolean);
   return molitLines.slice(1).map((line) => {

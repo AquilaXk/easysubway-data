@@ -29,10 +29,14 @@ GoogleService-Info.plist
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+TODO.md
 CURSOR.md
 COPILOT.md
+.coderabbit.yaml
 docs/
 .codex/
+.gemini/
+.agents/
 .evidence/
 .claude/
 .cursor/

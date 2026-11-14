@@ -59,10 +59,11 @@ test("accepts only the closed CLI contract", () => {
   assert.throws(() => parseArgs(["--repository-root", "/repo", "--operation-root", "/tmp/op", "--expected-main-sha", "A".repeat(40)]));
   assert.deepEqual(parseArgs(["recover-published", "--repository-root", "/repo", "--source-operation-root", "/tmp/source", "--target-operation-root", "/tmp/target", "--expected-main-sha", SHA, "--expected-publication-operation-id", "123"]).phase, "recover-published");
 });
-test("workflow fails closed on claim reads and retains only recovery metadata", async () => {
+test("workflow fails closed on main ref checks and retains only recovery metadata", async () => {
   const workflow = await readFile(new URL("../../.github/workflows/current-capital-topology-registration.yml", import.meta.url), "utf8");
   assert.match(workflow, /environment: datapack-release-check/u);
-  assert.match(workflow, /git ls-remote --heads origin[^\n]+ > "\$\{claims\}"/u);
+  assert.match(workflow, /git ls-remote origin refs\/heads\/main/u);
+  assert.doesNotMatch(workflow, /gh pr|gh issue|automation\//u);
   assert.match(workflow, /source_root=[^\n]+[\s\S]*mkdir -p "\$\{source_root\}"[\s\S]*chmod 700 "\$\{source_root\}"[\s\S]*gh run download[^\n]+--dir "\$\{source_root\}"/u);
   assert.doesNotMatch(workflow, /mkdir -m 700 -p "\$\{REGISTRATION_OPERATION_ROOT\}"/u);
   assert.match(workflow, /Recover published registration without OCI/u);

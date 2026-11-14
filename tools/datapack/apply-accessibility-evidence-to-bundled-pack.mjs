@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -656,7 +657,10 @@ async function stripLegacyCore({ check }) {
   try {
     const sqlitePath = path.join(directory, "core.sqlite");
     const currentGzipBytes = await readFile(packPath);
-    await writeFile(sqlitePath, gunzipSync(currentGzipBytes));
+    await writeFile(sqlitePath, gunzipWithLimit(currentGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "bundled datapack",
+    }));
     const database = new DatabaseSync(sqlitePath);
     let stale;
     try {
@@ -924,7 +928,10 @@ async function main() {
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
     const currentGzipBytes = await readFile(packPath);
-    await writeFile(sqlitePath, gunzipSync(currentGzipBytes));
+    await writeFile(sqlitePath, gunzipWithLimit(currentGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "bundled datapack",
+    }));
     if (check) {
       assertEvidence(sqlitePath, pack);
       const sqliteBytes = await readFile(sqlitePath);

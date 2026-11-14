@@ -5,7 +5,7 @@ import https from "node:https";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./bounded-zlib.mjs";
 import { sha256 } from "../../lib/hash.mjs";
 import {
   findMatchingPackSigningPublicKey,
@@ -14,22 +14,55 @@ import {
 } from "./manifest-validation.mjs";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_OBJECT_RESPONSE_BYTES = 256 * 1024 * 1024;
+const MAX_PACK_SQLITE_BYTES = 512 * 1024 * 1024;
 
 // ─── 기본 HTTP 요청 ────────────────────────────────────────────────────────────
 
-export function request(url, method, body = Buffer.alloc(0), headers = {}) {
+export function request(url, method, body = Buffer.alloc(0), headers = {}, { maxResponseBytes = MAX_OBJECT_RESPONSE_BYTES } = {}) {
   const transport = url.protocol === "https:" ? https : http;
   return new Promise((resolve, reject) => {
     const chunks = [];
+    let totalBytes = 0;
+    let settled = false;
     const req = transport.request(url, { method, headers }, (res) => {
-      res.on("data", (c) => chunks.push(c));
-      res.on("end", () => { res.body = Buffer.concat(chunks); resolve(res); });
-      res.on("error", reject);
+      res.on("data", (c) => {
+        totalBytes += c.length;
+        if (totalBytes > maxResponseBytes) {
+          if (!settled) {
+            settled = true;
+            req.destroy(new Error(`object storage response exceeds maximum size (${maxResponseBytes} bytes)`));
+          }
+          return;
+        }
+        chunks.push(c);
+      });
+      res.on("end", () => {
+        if (!settled) {
+          settled = true;
+          res.body = Buffer.concat(chunks, totalBytes);
+          resolve(res);
+        }
+      });
+      res.on("error", (err) => {
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      });
     });
     req.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      req.destroy(new Error(`request timeout after ${REQUEST_TIMEOUT_MS}ms`));
+      if (!settled) {
+        settled = true;
+        req.destroy(new Error(`request timeout after ${REQUEST_TIMEOUT_MS}ms`));
+      }
     });
-    req.on("error", reject);
+    req.on("error", (err) => {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
     if (body.length > 0) req.write(body);
     req.end();
   });
@@ -84,12 +117,11 @@ export async function validateReferencedPacksForRescue(baseUrl, manifest) {
       const matchedPublicKey = validatePackSignature(pack);
       validateRouteRegressionSignature(pack, matchedPublicKey);
 
-      let sqliteBytes;
-      try {
-        sqliteBytes = gunzipSync(response.body);
-      } catch (error) {
-        throw new Error(`${pack.id}@${pack.version} gzip decompression failed: ${error.message}`);
-      }
+      const sqliteBytes = gunzipWithLimit(response.body, {
+        maxOutputLength: MAX_PACK_SQLITE_BYTES,
+        maxCompressedBytes: MAX_OBJECT_RESPONSE_BYTES,
+        label: `${pack.id}@${pack.version} pack`,
+      });
       if (sha256(sqliteBytes) !== pack.sqliteSha256) {
         throw new Error(`${pack.id}@${pack.version} sqlite checksum mismatch`);
       }

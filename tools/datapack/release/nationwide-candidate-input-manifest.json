@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
   "candidateId": "nationwide-candidate-20261109-seq181",
-  "candidateBuildSpecSha256": "8095d86b7886df99f788fc524fbe5120b2c1c8c8587b6318c12d4858eb90d74f",
+  "candidateBuildSpecSha256": "c3e3e1080166d887e10f1645c63e1bdbc64444b6172586f91646018b1f734e9f",
   "preparationSha256": "8f6261b61531b99b77ee737b204fec2d5662071c47d9f5c4bb3863cdcc6f463b",
   "fanInSha256": "6b1f84ec800a983d0cada38f413122beab4f8d91635dd05a1595058dadae0ee0",
   "objectKeyPrefix": "candidate-inputs/sha256/",

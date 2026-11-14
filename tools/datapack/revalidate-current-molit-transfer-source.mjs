@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { link, lstat, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import {
   buildMolitRailwayTransferMovementSnapshot,
@@ -139,7 +139,7 @@ async function loadLockedSnapshot(repositoryRoot, readFileImpl) {
     validateCandidate(candidate[0], metadata, metadataBytes, gzipBytes);
     const freshnessPolicy = JSON.parse(policyBytes);
     const rebuilt = buildMolitRailwayTransferMovementSnapshot({
-      bytes: gunzipSync(gzipBytes),
+      bytes: gunzipWithLimit(gzipBytes, { maxOutputLength: 128 * 1024 * 1024, label: `${MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID} snapshot` }),
       capturedAt: metadata.capturedAt,
       editionDate,
       freshnessPolicy,

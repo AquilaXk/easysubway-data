@@ -267,21 +267,18 @@ test("committed release candidate files produce the fixed RC modeArgs with a nat
   assert.deepEqual(fixed, manualFixed);
 });
 
-test("nationwide candidate refresh workflow runs in CI on main and opens one automation PR with required CI", () => {
+test("nationwide candidate refresh workflow runs in CI on main, pushes directly to main, and dispatches RC chain", () => {
   const yml = workflowText("nationwide-candidate-refresh.yml");
   assert.match(yml, /\n  workflow_dispatch:\n    inputs:\n/u);
-  // #1032: 스케줄러 App의 dispatch는 입력 없이 정기 역할을 쓰므로 입력은 선택이다. 사람 dispatch의 입력 검증은 plan 단계가 한다(비면 실패).
+  // 스케줄러 dispatch는 입력 없이 정기 역할을 쓰므로 입력은 선택이다. 사람 dispatch의 입력 검증은 plan 단계가 한다(비면 실패).
   for (const input of ["releaseSequence", "requestedBy", "approvedBy"]) {
     assert.match(yml, new RegExp(`\\n      ${input}:\\n[\\s\\S]*?required: false\\n        type: string\\n`, "u"));
   }
-  // #929 D3: 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_CANDIDATE_REFRESH가 true일 때만 돈다(QA 승인 뒤 메인이 켠다).
   assert.match(yml, /^on:\n  schedule:\n    - cron: "[^"]+"\n  workflow_dispatch:\n/mu);
   assert.doesNotMatch(yml, /\n  (push|pull_request|workflow_run):/u);
-  // #939: 후보 갱신 PR은 App 토큰으로 열고 CI를 dispatch하지 않는다. 그래서 actions 권한이 없다.
-  // #969: 권한은 job에만 주고(issues 쓰기는 실패 보고용) workflow dispatch 권한(actions: write)은 여전히 없다.
-  assert.match(yml, /\n    permissions:\n      actions: read\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
-  assert.doesNotMatch(yml, /actions: write/u);
-  // #1032, #1040, #1384: job 가드는 sender.type으로 사람 dispatch만 변수와 무관하게 허용하고, 스케줄러 App 식별과 재실행 불일치(actor != triggering_actor) 차단은 decide·plan 단계가 맡는다.
+  // 단독 운영: PR·이슈 없이 main에 직접 push한 뒤 datapack-release-candidate-chain.yml만 dispatch한다.
+  assert.match(yml, /\n    permissions:\n      actions: write\n      contents: write\n/u);
+  assert.doesNotMatch(yml, /pull-requests:\s*write|issues:\s*write|create-github-app-token|gh pr create|automation\//u);
   assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.event\.sender\.type == 'User'\) \|\| vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true'\) \}\}/u);
   assert.match(yml, /cancel-in-progress: false/u);
   assert.match(yml, /persist-credentials: false/u);
@@ -301,32 +298,28 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   const refresh = stepBody(yml, "Refresh nationwide candidate");
   assert.match(refresh, /node tools\/datapack\/refresh-nationwide-candidate\.mjs --evaluated-at "\$\{EVALUATED_AT\}" --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}" --gate-run "\$\{RUNNER_TEMP\}\/candidate-gate-run\.json"/u);
   assert.match(refresh, /EVALUATED_AT: \$\{\{ steps\.plan\.outputs\.evaluated_at \}\}/u);
-  // #942: 후보 입력 매니페스트 바이트를 OCI에 올리는 PAR은 시크릿에서만 받는다.
+  // 후보 입력 매니페스트 바이트를 OCI에 올리는 PAR은 시크릿에서만 받는다.
   assert.match(refresh, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}/u);
   const scope = stepBody(yml, "Verify candidate refresh output scope");
   assert.match(scope, /NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS/u);
   assert.match(scope, /git add -- "\$\{outputs\[@\]\}"/u);
-  const commit = stepBody(yml, "Commit and push candidate refresh branch");
-  assert.match(commit, /automation\/927-nationwide-candidate-refresh-\$\{GITHUB_RUN_ID\}/u);
-  for (const body of [scope, commit]) assert.doesNotMatch(body, /git add (-A|--all|\.)(\s|$)/u);
-  assert.doesNotMatch(commit, /git add/u);
-  const pr = stepBody(yml, "Create candidate refresh pull request");
-  // #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(#948 실험: dispatch CI는 인정되지 않음).
-  assert.match(pr, /GH_TOKEN="\$\{APP_PR_TOKEN\}" gh pr create --repo "\$\{GITHUB_REPOSITORY\}" --draft --base main --head "\$\{CANDIDATE_BRANCH\}"/u);
-  assert.match(pr, /APP_PR_TOKEN: \$\{\{ steps\.app-token-pr\.outputs\.token \}\}/u);
-  assert.doesNotMatch(yml, /gh workflow run|Run required CI on the candidate refresh head/u);
+  const push = stepBody(yml, "Commit and push nationwide candidate directly to main");
+  assert.match(push, /git push origin HEAD:main/u);
+  for (const body of [scope, push]) assert.doesNotMatch(body, /git add (-A|--all|\.)(\s|$)/u);
+  assert.doesNotMatch(push, /git add/u);
+  const dispatch = stepBody(yml, "Dispatch release candidate chain for pushed candidate");
+  assert.match(dispatch, /gh workflow run datapack-release-candidate-chain\.yml --repo "\$\{GITHUB_REPOSITORY\}" --ref main/u);
   assert.ok(yml.indexOf("Validate candidate refresh inputs") < yml.indexOf("Refresh nationwide candidate"));
   assert.ok(yml.indexOf("Refresh nationwide candidate") < yml.indexOf("Verify candidate refresh output scope"));
-  assert.ok(yml.indexOf("Verify candidate refresh output scope") < yml.indexOf("Commit and push candidate refresh branch"));
-  assert.ok(yml.indexOf("Commit and push candidate refresh branch") < yml.indexOf("Mint App token for the candidate refresh pull request"));
-  assert.ok(yml.indexOf("Mint App token for the candidate refresh pull request") < yml.indexOf("Create candidate refresh pull request"));
-  assert.doesNotMatch(yml, /gh pr merge|automerge|git push origin main|production-publish|datapack-release\.yml/u);
+  assert.ok(yml.indexOf("Verify candidate refresh output scope") < yml.indexOf("Commit and push nationwide candidate directly to main"));
+  assert.ok(yml.indexOf("Commit and push nationwide candidate directly to main") < yml.indexOf("Dispatch release candidate chain for pushed candidate"));
+  assert.doesNotMatch(yml, /gh pr merge|automerge|production-publish|datapack-release\.yml/u);
 });
 
 test("release candidate chain dispatches RC as workflow_dispatch when a candidate lands on main", () => {
   const yml = workflowText("datapack-release-candidate-chain.yml");
-  assert.match(yml, /^on:\n  push:\n    branches: \[main\]\n    paths:\n      - tools\/datapack\/release\/candidate-build-spec\.json\n      - tools\/datapack\/release\/release-request\.json\n/mu);
-  assert.doesNotMatch(yml, /\n  (schedule|workflow_dispatch|pull_request|workflow_run):/u);
+  assert.match(yml, /^on:\n  push:\n    branches: \[main\]\n    paths:\n      - tools\/datapack\/release\/candidate-build-spec\.json\n      - tools\/datapack\/release\/release-request\.json\n  workflow_dispatch: \{\}\n/mu);
+  assert.doesNotMatch(yml, /\n  (schedule|pull_request|workflow_run):/u);
   assert.match(yml, /\npermissions:\n  actions: write\n  contents: read\n/u);
   assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/u);
   const supersede = stepBody(yml, "Skip a candidate superseded on main");
@@ -376,47 +369,126 @@ test("candidate chain treats only git diff exit 1 as superseded and fails on any
   }
 });
 
-test("a failure after the automation branch is pushed closes its PR and deletes the branch (F2)", async () => {
+test("candidate chain skips dispatching RC when candidateId and approvalId are unchanged across BEFORE_SHA and GITHUB_SHA", async () => {
+  const yml = workflowText("datapack-release-candidate-chain.yml");
+  const supersede = stepBody(yml, "Skip a candidate superseded on main");
+  assert.match(supersede, /BEFORE_SHA:\s*\$\{\{\s*github\.event\.before\s*\}\}/u);
+  const origin = await gitRepository();
+  const clone = path.join(origin, "clone");
+  try {
+    await mkdir(path.join(origin, "tools/datapack/release"), { recursive: true });
+    await writeFile(
+      path.join(origin, RELEASE_CANDIDATE_PATHS.buildSpecPath),
+      JSON.stringify({ candidateId: "nationwide-candidate-20261109-seq181", productionScopeSha256: "old" }) + "\n",
+    );
+    await writeFile(
+      path.join(origin, RELEASE_CANDIDATE_PATHS.releaseRequestPath),
+      JSON.stringify({
+        candidateId: "nationwide-candidate-20261109-seq181",
+        approvalId: "release-request-nationwide-candidate-20261109-seq181",
+        buildSpecSha256: "old",
+      }) + "\n",
+    );
+    git(origin, "add", RELEASE_CANDIDATE_PATHS.buildSpecPath, RELEASE_CANDIDATE_PATHS.releaseRequestPath);
+    git(origin, "commit", "-q", "-m", "seq181 initial");
+    const commit1 = git(origin, "rev-parse", "HEAD");
+
+    await writeFile(
+      path.join(origin, RELEASE_CANDIDATE_PATHS.buildSpecPath),
+      JSON.stringify({ candidateId: "nationwide-candidate-20261109-seq181", productionScopeSha256: "rehashed" }) + "\n",
+    );
+    await writeFile(
+      path.join(origin, RELEASE_CANDIDATE_PATHS.releaseRequestPath),
+      JSON.stringify({
+        candidateId: "nationwide-candidate-20261109-seq181",
+        approvalId: "release-request-nationwide-candidate-20261109-seq181",
+        buildSpecSha256: "rehashed",
+      }) + "\n",
+    );
+    git(origin, "commit", "-q", "-am", "seq181 rehashed");
+    const commit2 = git(origin, "rev-parse", "HEAD");
+
+    git(path.dirname(clone), "clone", "-q", origin, clone);
+    const runWithBefore = async (sha, beforeSha) => {
+      git(clone, "fetch", "-q", "--no-tags", "origin", "main");
+      const output = path.join(clone, `github-output-${Math.random()}`);
+      await writeFile(output, "");
+      const env = beforeSha === undefined
+        ? { GITHUB_SHA: sha, GITHUB_OUTPUT: output }
+        : { GITHUB_SHA: sha, BEFORE_SHA: beforeSha, GITHUB_OUTPUT: output };
+      const result = runStep(yml, "Skip a candidate superseded on main", { cwd: clone, env });
+      return { ...result, output: await readFile(output, "utf8") };
+    };
+
+    const unchanged = await runWithBefore(commit2, commit1);
+    assert.equal(unchanged.status, 0, unchanged.stderr);
+    assert.equal(unchanged.output, "current=false\n");
+
+    await writeFile(
+      path.join(origin, RELEASE_CANDIDATE_PATHS.buildSpecPath),
+      JSON.stringify({ candidateId: "nationwide-candidate-20261110-seq182", productionScopeSha256: "new" }) + "\n",
+    );
+    await writeFile(
+      path.join(origin, RELEASE_CANDIDATE_PATHS.releaseRequestPath),
+      JSON.stringify({
+        candidateId: "nationwide-candidate-20261110-seq182",
+        approvalId: "release-request-nationwide-candidate-20261110-seq182",
+        buildSpecSha256: "new",
+      }) + "\n",
+    );
+    git(origin, "commit", "-q", "-am", "seq182");
+    const commit3 = git(origin, "rev-parse", "HEAD");
+
+    const advanced = await runWithBefore(commit3, commit2);
+    assert.equal(advanced.status, 0, advanced.stderr);
+    assert.equal(advanced.output, "current=true\n");
+
+    const zeroBefore = await runWithBefore(commit3, "0".repeat(40));
+    assert.equal(zeroBefore.status, 0, zeroBefore.stderr);
+    assert.equal(zeroBefore.output, "current=true\n");
+  } finally {
+    await rm(origin, { recursive: true, force: true });
+  }
+});
+
+test("candidate direct push aborts cleanly with pushed=false when origin/main moved after CANDIDATE_BASE_SHA (F2)", async () => {
   const yml = workflowText("nationwide-candidate-refresh.yml");
-  const cleanup = stepBody(yml, "Remove the candidate refresh branch after a later failure");
-  assert.match(cleanup, /\n        if: \$\{\{ \(failure\(\) \|\| cancelled\(\)\) && env\.CANDIDATE_BRANCH != '' \}\}\n/u);
-  // #969: 실패 보고 step만 정리 뒤에 온다(정리가 실패해도 보고가 돈다).
-  const report = stepBody(yml, "Report refresh failure as an issue");
+  const report = stepBody(yml, "Report refresh failure summary");
   assert.equal(yml.trimEnd().endsWith(report.trimEnd()), true, "the failure report is the last step");
-  assert.ok(yml.indexOf(cleanup.trimEnd()) < yml.indexOf("Report refresh failure as an issue"), "cleanup runs after every other step except the failure report");
-  const pr = stepBody(yml, "Create candidate refresh pull request");
-  assert.match(pr, /printf 'CANDIDATE_PR_URL=%s\\n' "\$\{pr_url\}" >> "\$\{GITHUB_ENV\}"/u);
-  assert.match(pr, /set -euo pipefail/u);
 
   const origin = await gitRepository();
   const clone = path.join(origin, "clone");
-  const bin = path.join(origin, "bin");
   try {
     await writeFile(path.join(origin, "README"), "x\n");
     git(origin, "add", "README");
     git(origin, "commit", "-q", "-m", "base");
-    git(origin, "branch", "automation/927-nationwide-candidate-refresh-1");
-    git(origin, "branch", "automation/927-nationwide-candidate-refresh-2");
+    const baseSha = git(origin, "rev-parse", "HEAD");
     git(path.dirname(clone), "clone", "-q", origin, clone);
-    await mkdir(bin);
-    const ghLog = path.join(origin, "gh.log");
-    await writeFile(path.join(bin, "gh"), `#!/bin/sh\necho "$@" >> "${ghLog}"\nif [ "$1 $2" = "pr close" ]; then git push origin --delete automation/927-nationwide-candidate-refresh-2 >/dev/null 2>&1; fi\n`);
-    spawnSync("/bin/chmod", ["755", path.join(bin, "gh")]);
-    const env = (extra) => ({ PATH: `${bin}:${process.env.PATH}`, GH_TOKEN: "test", GITHUB_REPOSITORY: "AquilaXk/easysubway-data", GITHUB_SERVER_URL: "https://github.com", GITHUB_RUN_ID: "42", ...extra });
-    // PR 전에 실패: 브랜치만 지운다.
-    const noPr = spawnSync("/bin/bash", ["-e", "-c", stepScript(yml, "Remove the candidate refresh branch after a later failure")], {
-      cwd: clone, encoding: "utf8", env: env({ CANDIDATE_BRANCH: "automation/927-nationwide-candidate-refresh-1", CANDIDATE_PR_URL: "" }),
+    await writeFile(path.join(origin, "README"), "moved\n");
+    git(origin, "add", "README");
+    git(origin, "commit", "-q", "-m", "advance-main");
+    const advancedSha = git(origin, "rev-parse", "HEAD");
+    const githubOutput = path.join(origin, "github-output.txt");
+    await writeFile(githubOutput, "");
+    const result = spawnSync("/bin/bash", ["-e", "-c", stepScript(yml, "Commit and push nationwide candidate directly to main")], {
+      cwd: clone,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        CANDIDATE_BASE_SHA: baseSha,
+        STALE_PATHS: "",
+        EVALUATED_AT: "2026-10-04T04:31:38.280Z",
+        RELEASE_SEQUENCE: "127",
+        REQUESTED_BY: "datapack-scheduled-refresh",
+        APPROVED_BY: "datapack-release-gates",
+        GH_TOKEN: "test",
+        GITHUB_OUTPUT: githubOutput,
+      },
     });
-    assert.equal(noPr.status, 0, noPr.stderr);
-    assert.equal(git(origin, "branch", "--list", "automation/927-nationwide-candidate-refresh-1"), "");
-    // PR 뒤에 실패(예: CI dispatch 실패): PR을 닫으며 브랜치를 지운다.
-    const prUrl = "https://github.com/AquilaXk/easysubway-data/pull/9999";
-    const withPr = spawnSync("/bin/bash", ["-e", "-c", stepScript(yml, "Remove the candidate refresh branch after a later failure")], {
-      cwd: clone, encoding: "utf8", env: env({ CANDIDATE_BRANCH: "automation/927-nationwide-candidate-refresh-2", CANDIDATE_PR_URL: prUrl }),
-    });
-    assert.equal(withPr.status, 0, withPr.stderr);
-    assert.match(await readFile(ghLog, "utf8"), new RegExp(`^pr close ${prUrl} --repo AquilaXk/easysubway-data --delete-branch --comment `, "mu"));
-    assert.equal(git(origin, "branch", "--list", "automation/927-nationwide-candidate-refresh-2"), "");
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(await readFile(githubOutput, "utf8"), "pushed=false\n");
+    assert.equal(git(origin, "rev-parse", "HEAD"), advancedSha);
   } finally {
     await rm(origin, { recursive: true, force: true });
   }

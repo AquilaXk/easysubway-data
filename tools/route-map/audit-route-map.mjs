@@ -578,7 +578,7 @@ function reviewedAmbiguityEntries(raw) {
 }
 
 function reviewedLineTrackKeyFor(region, lineId) {
-  return `${normalizedText(region)} ${normalizedText(lineId)}`;
+  return `${normalizedText(region)}\u0000${normalizedText(lineId)}`;
 }
 
 // #1638 line-track 0표(소거법 배정) 노선의 수동 검수 기록. region+lineId로

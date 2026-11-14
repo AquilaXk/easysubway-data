@@ -19,10 +19,11 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { inflateRawSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 
 import { parseSharedStrings } from "./parse-kric-code-catalog.mjs";
+import { decodeXmlEntities } from "./lib/xml-decode.mjs";
+import { unzipXlsx } from "./lib/zip-xlsx.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const DATASET_ID = "32";
@@ -406,7 +407,12 @@ function validateTopologySourceBinding({ topologySnapshot, topologySource }) {
 }
 
 function parseOfficialXlsxRows(xlsxBytes) {
-  const files = unzipXlsx(Buffer.from(xlsxBytes));
+  const files = unzipXlsx(xlsxBytes, {
+    maxArchiveBytes: 32 * 1024 * 1024,
+    maxEntries: 256,
+    maxEntryBytes: 32 * 1024 * 1024,
+    maxTotalBytes: 64 * 1024 * 1024,
+  });
   const shared = files.get("xl/sharedStrings.xml")?.toString("utf8") ?? "";
   const sheet = files.get("xl/worksheets/sheet1.xml")?.toString("utf8");
   if (!sheet) throw new Error("Daejeon route map positions XLSX missing sheet1");
@@ -422,7 +428,7 @@ function parseWorksheetRowsWithSelfClosing(xml, sharedStrings) {
     const row = [];
     for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/gi)) {
       const attributes = Object.fromEntries([...cellMatch[1].matchAll(/(?:^|[ \t\r\n])([:\w-]+)[ \t\r\n]*=[ \t\r\n]*"([^"]*)"/g)]
-        .map(([, name, value]) => [name, decodeXml(value)]));
+        .map(([, name, value]) => [name, decodeXmlEntities(value)]));
       const column = columnIndex(attributes.r);
       if (column >= 100) throw new Error("Daejeon route map XLSX column limit exceeded");
       const body = cellMatch[2] ?? "";
@@ -437,11 +443,11 @@ function parseWorksheetRowsWithSelfClosing(xml, sharedStrings) {
 function worksheetCellValue(attributes, body, sharedStrings) {
   if (attributes.t === "inlineStr") {
     return [...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)]
-      .map(([, text]) => decodeXml(text))
+      .map(([, text]) => decodeXmlEntities(text))
       .join("");
   }
   const raw = /<v\b[^>]*>([\s\S]*?)<\/v>/i.exec(body)?.[1] ?? "";
-  if (attributes.t !== "s") return decodeXml(raw);
+  if (attributes.t !== "s") return decodeXmlEntities(raw);
   const normalizedIndex = raw.trim();
   const index = Number(normalizedIndex);
   if (!/^\d+$/.test(normalizedIndex) || !Number.isInteger(index) || index < 0 || index >= sharedStrings.length) {
@@ -462,40 +468,6 @@ function boundedCell(value) {
   const normalized = String(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, " ");
   if (normalized.length > 2_048) throw new Error("Daejeon route map XLSX cell limit exceeded");
   return normalized;
-}
-
-function decodeXml(value) {
-  return String(value).replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'").replaceAll("&amp;", "&");
-}
-
-function unzipXlsx(buffer) {
-  const out = new Map();
-  let offset = 0;
-  while (offset + 30 < buffer.length) {
-    if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
-    const method = buffer.readUInt16LE(offset + 8);
-    const flags = buffer.readUInt16LE(offset + 6);
-    const compSize = buffer.readUInt32LE(offset + 18);
-    const nameLen = buffer.readUInt16LE(offset + 26);
-    const extraLen = buffer.readUInt16LE(offset + 28);
-    const name = buffer.subarray(offset + 30, offset + 30 + nameLen).toString("utf8");
-    const start = offset + 30 + nameLen + extraLen;
-    if ((flags & 0x8) !== 0 && compSize === 0) {
-      throw new Error(`xlsx entry uses data descriptor unsupported: ${name}`);
-    }
-    const compressed = buffer.subarray(start, start + compSize);
-    let data;
-    if (method === 0) data = Buffer.from(compressed);
-    else if (method === 8) data = inflateRawSync(compressed);
-    else throw new Error(`unsupported zip method ${method} for ${name}`);
-    out.set(name, data);
-    offset = start + compSize;
-  }
-  if (!out.has("xl/sharedStrings.xml") || !out.has("xl/worksheets/sheet1.xml")) {
-    throw new Error("failed to unzip xlsx local entries");
-  }
-  return out;
 }
 
 function indexSchematicCanvas(schematicCanvas) {

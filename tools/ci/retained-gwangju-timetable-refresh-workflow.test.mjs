@@ -4,92 +4,48 @@ import test from "node:test";
 
 import { ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
-// #995: 광주 보관 시간표 갱신 workflow가 PR 없는 claim(고아)을 DUE·CURRENT와 무관하게 판정하고, 정리 대상은 보고한 뒤 지운다.
-// 504 사례(run 37399282636): 수집 step이 실패해 빈 claim이 남았고, CURRENT 판정이 claim을 보지 않아 다른 원장 쓰기 자동화가 계속 대기했다.
+// 1인 프로젝트 표준: 광주 보관 시간표 갱신 workflow는 claim/PR 없이 main 직렬 CAS 검사 후 직접 push한다.
 const FILE = "retained-gwangju-timetable-refresh.yml";
 const { yml, workflow, job, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const names = () => steps().map(({ name }) => name);
 const before = (earlier, later) => assert.ok(names().indexOf(earlier) !== -1 && names().indexOf(earlier) < names().indexOf(later), `${earlier} -> ${later}`);
 
-test("run 조회에 actions 읽기 권한이 필요하다. 쓰기 권한은 늘리지 않는다", () => {
+test("run 조회용 actions: read와 contents: write만 가지며 PR/이슈/App/workflow_dispatch 쓰기 권한이 없다", () => {
   assert.deepEqual(workflow.permissions, {});
   assert.deepEqual(job.permissions, {
     actions: "read",
     contents: "write",
-    "pull-requests": "write",
-    issues: "write",
   });
-  assert.doesNotMatch(yml, /actions: write|gh workflow run|repository_dispatch/u);
+  assert.doesNotMatch(yml, /pull-requests:\s*write|issues:\s*write|actions:\s*write|create-github-app-token|gh pr create|gh workflow run|repository_dispatch|automation\//u);
 });
 
-test("판정 step이 claim 증거(run 상태·claim 뒤 커밋)를 모아 판정에 넘기고 정리 대상을 출력한다", () => {
+test("판정 step이 due 상태를 결정하고 base main SHA를 기록한다", () => {
   const decision = step("Read retained timetable due state");
-  const collect = decision.run.indexOf("node tools/ci/collect-automation-prs.mjs");
-  const evidence = decision.run.indexOf('node tools/ci/claim-orphans.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claims.txt" --prs "${state_root}/prs.json" --output "${state_root}/claim-evidence.json"');
-  assert.ok(collect !== -1 && evidence > collect, "증거는 PR 목록을 받은 뒤에 모은다");
-  assert.ok(decision.run.indexOf("classifyRetainedGwangjuRefreshDelivery") > evidence);
-  assert.match(decision.run, /claimEvidence: JSON\.parse\(await readFile\(root \+ "\/claim-evidence\.json", "utf8"\)\)/u);
-  assert.match(decision.run, /\\ncleanup_claims=" \+ result\.cleanupClaims\.join\(","\) \+ "\\n"/u);
-  // 끝난 run 이력은 쌓이므로 목록으로 받지 않는다(#987 리뷰 F1·#994). claim마다 gh run view 한 번은 claim-orphans가 한다.
-  assert.doesNotMatch(decision.run, /gh run list/u);
-  assert.deepEqual(decision.env, { GH_TOKEN: "${{ github.token }}" });
+  assert.ok(decision.run.includes('node tools/ci/decide-retained-gwangju-timetable-refresh.mjs > "${state_root}/due.json"'));
+  assert.match(decision.run, /RETAINED_GWANGJU_MAIN_SHA=%s/u);
+  assert.doesNotMatch(decision.run, /gh run list|collect-automation-prs|claim-orphans|gh pr list/u);
 });
 
-test("정리 대상 claim은 보고한 뒤 지우고, 그 일은 복구·새 claim보다 먼저다", () => {
-  const cleanup = step("Remove abandoned retained timetable claims named by the decision");
-  assert.equal(ifCondition(cleanup), "${{ steps.decision.outputs.cleanup_claims != '' }}");
-  assert.deepEqual(cleanup.env, {
-    GH_TOKEN: "${{ github.token }}",
-    CLEANUP_CLAIMS: "${{ steps.decision.outputs.cleanup_claims }}",
-  });
-  assert.doesNotMatch(cleanup.run, /\$\{\{/u, "표현식은 env로 받는다");
-  assert.ok(cleanup.run.includes("gh auth setup-git"));
-  assert.ok(
-    cleanup.run.includes(
-      'node tools/ci/remove-orphan-claims.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RETAINED_GWANGJU_STATE_ROOT}/claims.txt"',
-    ),
-  );
-  assert.doesNotMatch(cleanup.run, /git push origin --delete/u, "삭제는 보고 뒤에 도구가 한다. 셸이 직접 지우지 않는다");
-  before("Read retained timetable due state", cleanup.name);
-  before(cleanup.name, "Recover completed retained timetable claim");
-  before(cleanup.name, "Create retained timetable claim before provider access");
-});
-
-test("만든 run이 아직 도는 claim은 notice로 기다린다", () => {
-  const running = step("Note retained timetable refresh waiting on a running producer");
-  assert.equal(ifCondition(running), "${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}");
-  assert.deepEqual(running.env, { CLAIM_BRANCH: "${{ steps.decision.outputs.branch }}" });
-  assert.doesNotMatch(running.run, /\$\{\{/u);
-  assert.ok(
-    running.run.includes(
-      "::notice title=Retained Gwangju timetable refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish.",
-    ),
-  );
-});
-
-test("복구·claim·수집·PR step은 판정 state로만 열린다. CURRENT에서는 아무 쓰기도 하지 않는다", () => {
+test("수집·게시·push step은 DUE에서만 열린다. CURRENT에서는 아무 쓰기도 하지 않는다", () => {
   const states = new Map([
-    ["Recover completed retained timetable claim", "RECOVER_CLAIM"],
-    ["Create retained timetable claim before provider access", "DUE"],
     ["Collect due retained Gwangju timetable", "DUE"],
     ["Publish and register retained Gwangju timetable", "DUE"],
-    ["Finalize retained timetable claim", "DUE"],
-    ["Create retained timetable draft pull request", "DUE"],
+    ["Commit and push retained Gwangju timetable", "DUE"],
   ]);
   for (const [name, state] of states) assert.equal(ifCondition(step(name)), `\${{ steps.decision.outputs.state == '${state}' }}`, name);
 });
 
-test("실패 보고는 마지막 step이고 이 workflow 이름으로 돈다", () => {
-  const report = step("Report refresh failure as an issue");
+test("실패 보고는 마지막 step이고 요약으로 동작한다", () => {
+  const report = step("Report refresh failure summary");
   assert.equal(ifCondition(report), "${{ failure() }}");
   assert.ok(report.run.includes('node tools/ci/report-refresh-failure.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"'));
   assert.equal(job.steps.at(-1)?.name, report.name);
 });
 
-// #995 F1: claim 정리는 만든 run이 게시 step까지 갔는지로 판정한다. 수집과 게시가 한 step이면 수집 실패도 게시 가능성으로 보이므로 step을 나눈다.
-test("수집과 게시·등록은 서로 다른 step이고 게시 step은 수집 step 뒤에서 같은 operation root를 쓴다", () => {
+test("수집과 게시·등록은 서로 다른 step이고 게시 전·push 전 origin/main CAS와 허용 경로를 검증한다", () => {
   const collect = step("Collect due retained Gwangju timetable");
   const publish = step("Publish and register retained Gwangju timetable");
+  const push = step("Commit and push retained Gwangju timetable");
   const operation = '--operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation"';
   assert.ok(collect.run.includes(`run-retained-gwangju-timetable-refresh.mjs ${operation} --phase collect`));
   assert.ok(publish.run.includes(`run-retained-gwangju-timetable-refresh.mjs ${operation} --phase publish`));
@@ -98,9 +54,15 @@ test("수집과 게시·등록은 서로 다른 step이고 게시 step은 수집
     assert.equal(item.env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL, "${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}");
     assert.ok(item.run.includes('[[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]]'));
   }
-  before("Create retained timetable claim before provider access", collect.name);
+  assert.ok(publish.run.includes('git ls-remote origin refs/heads/main'));
+  assert.ok(push.run.includes('git add -- tools/datapack/source-inventory.json tools/datapack/release/source-snapshots.json'));
+  assert.ok(push.run.includes('validateRetainedGwangjuRefreshOutputPaths'));
+  assert.ok(push.run.includes('refresh-automation-pr.mjs body --stage gwangju-timetable-refresh'));
+  assert.ok(push.run.includes('git push origin HEAD:main'));
+  assert.doesNotMatch(push.run, /git add -A|git add \.|--force|\s-f\b/u);
+  before("Read retained timetable due state", collect.name);
   before(collect.name, publish.name);
-  before(publish.name, "Finalize retained timetable claim");
+  before(publish.name, push.name);
   assert.equal(names().includes("Refresh due retained Gwangju timetable"), false);
 });
 
@@ -114,7 +76,7 @@ test("계측 파일 경로는 수집 전에 정하고 요약 step은 always()·c
   assert.equal(summary.continueOnError, true);
   assert.match(summary.run, /node tools\/ci\/summarize-source-fetch-telemetry\.mjs --input "\$\{SOURCE_FETCH_TELEMETRY_PATH:-\}" >> "\$\{GITHUB_STEP_SUMMARY\}"/u);
   assert.equal(steps().filter(({ continueOnError }) => continueOnError).length, 1, "요약 step만 continue-on-error다");
-  before("Create retained timetable draft pull request", summary.name);
-  before(summary.name, "Report refresh failure as an issue");
+  before("Commit and push retained Gwangju timetable", summary.name);
+  before(summary.name, "Report refresh failure summary");
 });
 

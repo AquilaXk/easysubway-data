@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { deriveTopology } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { validateTrackedItxTopologyEvidence } from "./build-datapack.mjs";
@@ -39,7 +39,10 @@ export async function main(argv, {
     for (const pack of manifest.packs ?? []) {
       const compressed = await readFile(localPackPathForUrl(args.root, pack));
       const sqlitePath = path.join(temporaryDir, `${pack.id}-v${pack.version}.sqlite`);
-      const sqliteBytes = gunzipSync(compressed);
+      const sqliteBytes = gunzipWithLimit(compressed, {
+        maxOutputLength: 512 * 1024 * 1024,
+        label: `${pack.id}-v${pack.version} pack`,
+      });
       await writeFile(sqlitePath, sqliteBytes);
       const binding = await validateCurrentItxTopologyEvidencePack({
         compressed,

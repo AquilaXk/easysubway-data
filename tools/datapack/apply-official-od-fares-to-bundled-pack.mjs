@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -175,7 +176,10 @@ async function main() {
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
     const currentGzipBytes = await readFile(packPath);
-    await writeFile(sqlitePath, gunzipSync(currentGzipBytes));
+    await writeFile(sqlitePath, gunzipWithLimit(currentGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "official OD fare pack",
+    }));
     if (check) {
       assertStoredQuotes(sqlitePath, quotes);
       const sqliteBytes = await readFile(sqlitePath);

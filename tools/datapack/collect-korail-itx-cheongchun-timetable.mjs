@@ -5,7 +5,6 @@ import { lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { DatabaseSync } from "node:sqlite";
 

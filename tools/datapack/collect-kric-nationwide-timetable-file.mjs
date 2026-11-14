@@ -3,10 +3,11 @@ import { createHash } from "node:crypto";
 import { link, lstat, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { inflateRawSync } from "node:zlib";
 
 import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 import { isTransientTransportError, unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
+import { decodeXmlEntities } from "./lib/xml-decode.mjs";
+import { unzipXlsx } from "./lib/zip-xlsx.mjs";
 
 export const KRIC_NATIONWIDE_TIMETABLE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=900&operation=1";
 export const KRIC_CURRENT_STATION_LINE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1";
@@ -277,43 +278,21 @@ function hasRequiredXlsxEntries(bytes) {
 }
 
 function xlsxEntries(bytes, maximumInflatedBytes) {
-  const entries = new Map();
-  let offset = 0;
-  let inflatedBytes = 0;
-  while (offset + 30 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50) {
-    const flags = bytes.readUInt16LE(offset + 6);
-    const method = bytes.readUInt16LE(offset + 8);
-    const compressedSize = bytes.readUInt32LE(offset + 18);
-    const nameLength = bytes.readUInt16LE(offset + 26);
-    const extraLength = bytes.readUInt16LE(offset + 28);
-    if ((flags & 0x0009) !== 0) fail("WORKBOOK");
-    const start = offset + 30 + nameLength + extraLength;
-    const end = start + compressedSize;
-    if (end > bytes.length) fail("WORKBOOK");
-    const name = bytes.subarray(offset + 30, offset + 30 + nameLength).toString("utf8");
-    const compressed = bytes.subarray(start, end);
-    let value;
-    try {
-      const remaining = maximumInflatedBytes - inflatedBytes;
-      value = inflateXlsxEntry(compressed, method, remaining);
-    } catch { value = null; }
-    if (value == null || value.length > maximumInflatedBytes - inflatedBytes || entries.has(name)) fail("WORKBOOK");
-    entries.set(name, value);
-    inflatedBytes += value.length;
-    offset = end;
+  try {
+    return unzipXlsx(bytes, {
+      maxArchiveBytes: DEFAULT_MAXIMUM_BYTES,
+      maxEntryBytes: maximumInflatedBytes,
+      maxTotalBytes: maximumInflatedBytes,
+      requiredEntries: [],
+    });
+  } catch {
+    fail("WORKBOOK");
   }
-  return entries;
-}
-
-function inflateXlsxEntry(compressed, method, maximumOutputLength) {
-  if (method === 0) return Buffer.from(compressed);
-  if (method === 8) return inflateRawSync(compressed, { maxOutputLength: maximumOutputLength });
-  return null;
 }
 
 function xlsxSharedStrings(xml) {
   return [...xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/gi)].map(([, item]) =>
-    [...item.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)].map(([, value]) => decodeXml(value)).join(""),
+    [...item.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)].map(([, value]) => decodeXmlEntities(value)).join(""),
   );
 }
 
@@ -364,10 +343,10 @@ function xlsxCell(type, value, strings) {
   const rawValue = /<v\b[^>]*>([\s\S]*?)<\/v>/i.exec(value)?.[1] ?? "";
   if (type === "inlineStr") {
     return [...value.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)]
-      .map(([, text]) => decodeXml(text)).join("");
+      .map(([, text]) => decodeXmlEntities(text)).join("");
   }
   if (type === "s") return strings[Number(rawValue)];
-  return decodeXml(rawValue);
+  return decodeXmlEntities(rawValue);
 }
 
 function xlsxColumn(reference) {
@@ -378,12 +357,7 @@ function xlsxColumn(reference) {
 
 function xmlAttributes(raw) {
   return Object.fromEntries([...raw.matchAll(/(?:^|\s)([:\w-]+)\s*=\s*"([^"]*)"/gu)]
-    .map(([, name, value]) => [name, decodeXml(value)]));
-}
-
-function decodeXml(value) {
-  return String(value).replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'").replaceAll("&amp;", "&");
+    .map(([, name, value]) => [name, decodeXmlEntities(value)]));
 }
 
 function requiredWorkbookText(value, row) {

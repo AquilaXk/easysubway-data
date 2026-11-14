@@ -18,15 +18,14 @@ test("트리거: 3시간마다 정기 실행과 사람 dispatch뿐이다", () =>
   });
 });
 
-test("권한은 job에만 주고 읽기와 이슈 쓰기뿐이며, 변수가 true일 때만 정기 실행이 돈다(기본 꺼짐)", () => {
+test("권한은 job에만 주고 읽기뿐이며, 변수가 true일 때만 정기 실행이 돈다(기본 꺼짐)", () => {
   assert.deepEqual(workflow.permissions, {});
   assert.deepEqual(Object.keys(workflow.jobs), ["watch"]);
   assert.deepEqual(job.permissions, {
     actions: "read",
     contents: "read",
-    issues: "write",
   });
-  assert.doesNotMatch(yml, /actions: write|gh workflow run|repository_dispatch|contents: write|pull-requests/u);
+  assert.doesNotMatch(yml, /actions: write|gh workflow run|repository_dispatch|contents: write|pull-requests|issues: write/u);
   assert.equal(
     job.if,
     "${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_SCHEDULER_WATCHDOG == 'true') }}",
@@ -48,10 +47,10 @@ test("heartbeat 점검은 정책 파일을 읽고 GITHUB_TOKEN으로 run 목록�
     'node tools/ci/check-scheduler-heartbeat.mjs --repository "${GITHUB_REPOSITORY}" --policy release/product-gates/external-scheduler-heartbeat.json',
   );
   assert.equal(check.continueOnError, null);
-  assert.deepEqual(steps().map(({ name }) => name), ["Checkout", "Set up Node.js", "Check external scheduler heartbeat", "Report refresh failure as an issue"]);
+  assert.deepEqual(steps().map(({ name }) => name), ["Checkout", "Set up Node.js", "Check external scheduler heartbeat", "Report refresh failure summary"]);
 });
 
-test("실패 보고가 마지막 step이고 기존 실패 이슈 경로(#926)에 등록돼 있다", () => {
+test("실패 보고가 마지막 step이고 요약 경로에 등록돼 있다", () => {
   assertFailureReportLast({ yml, job, steps, step, file: FILE });
   assert.ok(Object.hasOwn(REFRESH_WORKFLOWS, FILE));
   assert.equal(ifCondition(step("Check external scheduler heartbeat")), null);

@@ -667,7 +667,7 @@
   "sourceInventorySha256": "f55ad90f2c69a366641c5fb7632809678d223f5a686fb53c8fe7a2f772fe5837",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
-    "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
+    "sha256": "a8405b5fa23ae6b3cc67000d1f8c1b29efaaa3a2e74c009760f1a3cc1b6f7ef3"
   },
   "productionScopePolicy": {
     "path": "tools/datapack/nationwide-coverage-targets.json",

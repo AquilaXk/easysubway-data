@@ -12,7 +12,8 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
@@ -219,7 +220,10 @@ async function main() {
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
     const inputGzipBytes = await readFile(packPath);
-    const inputSqliteBytes = gunzipSync(inputGzipBytes);
+    const inputSqliteBytes = gunzipWithLimit(inputGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "capital line-1 topology input pack",
+    });
     await writeFile(sqlitePath, inputSqliteBytes);
     const beforeItx = countServiceClass(sqlitePath, "ITX_CHEONGCHUN");
     applyCapitalLine1Topology(sqlitePath, snapshot);

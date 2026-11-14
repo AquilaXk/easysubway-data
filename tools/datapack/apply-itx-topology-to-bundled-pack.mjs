@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
   projectedItxDirectionalPairs,
@@ -416,7 +417,10 @@ export function validateTopologyEvidence({
   admittedInput,
 }) {
   const pack = index.packs?.find(({ id }) => id === "capital");
-  const inputSqliteBytes = gunzipSync(inputGzipBytes);
+  const inputSqliteBytes = gunzipWithLimit(inputGzipBytes, {
+    maxOutputLength: 512 * 1024 * 1024,
+    label: "ITX topology input pack",
+  });
   const sourceIdentity = stationCatalogIdentity(
     source?.stationCatalogPackIdentity,
     "ITX topology station catalog identity",
@@ -1218,7 +1222,10 @@ async function computeItxTopologyPack({
   const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-${randomUUID()}-`));
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
-    const inputSqliteBytes = gunzipSync(inputGzipBytes);
+    const inputSqliteBytes = gunzipWithLimit(inputGzipBytes, {
+    maxOutputLength: 512 * 1024 * 1024,
+    label: "ITX topology input pack",
+  });
     if (admittedInputPack.sha256 !== sha256(inputGzipBytes)
       || admittedInputPack.sqliteSha256 !== sha256(inputSqliteBytes)
       || admittedInputPack.byteSize !== inputGzipBytes.length) {

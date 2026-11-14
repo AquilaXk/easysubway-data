@@ -695,7 +695,7 @@ export function extractMapCatalogSourceSqlite(
   if (active.sha256 !== sha256(gzip)) {
     throw new Error("current active pack SHA mismatch");
   }
-  const sqlite = gunzipSync(gzip);
+  const sqlite = gunzipSync(gzip, { maxOutputLength: 512 * 1024 * 1024 });
   if (active.sqliteSha256 !== sha256(sqlite)) {
     throw new Error("current active pack gunzip SHA mismatch");
   }

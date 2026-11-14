@@ -4,6 +4,7 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 import { TOPOLOGY_REVERIFICATION_CADENCE } from "./lib/topology-freshness-cutover.mjs";
 
 export const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/54a2719638910f30ad7da2a4493d286fafb7ffca/contracts/bundles/data-contracts-v1.0.0.json";
@@ -132,7 +133,7 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
 async function download(url) {
   const response = await fetch(url, { redirect: "error" });
   if (!response.ok) throw new Error(`contract bundle download failed: HTTP ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  return readResponseBytesWithLimit(response, { maxBytes: 16 * 1024 * 1024, label: "contract bundle" });
 }
 
 function exactKeys(value, expected, label) {

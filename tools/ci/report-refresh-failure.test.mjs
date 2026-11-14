@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,12 +11,12 @@ import {
   CHAIN_WORKFLOWS,
   COMMENT_INTERVAL_MS,
   GH_CANDIDATES,
-  PARENT_EPIC_NUMBER,
   REFRESH_WORKFLOWS,
   defaultRunGh,
   failureIssuesOf,
   failureReasonOf,
   planRefreshFailureReport,
+  planRefreshFailureSummary,
   recordedRunIdsOf,
   refreshFailureMarker,
   reportRefreshFailure,
@@ -41,54 +41,6 @@ function stepBody(yml, name) {
   return yml.slice(begin, end === -1 ? yml.length : end);
 }
 
-// gh issue list/create/comment/edit만 흉내 내는 저장소. 실행된 쓰기 호출을 기록한다.
-function fakeGitHub(initialIssues = []) {
-  const issues = structuredClone(initialIssues);
-  const writes = [];
-  const subIssues = [];
-  let clock = start;
-  const runGh = async (args, input) => {
-    const [surface, command] = args;
-    if (surface === "api") {
-      if (command === "--method" && args[2] === "POST") {
-        subIssues.push({ endpoint: args[3], field: args[5] });
-        return "{}\n";
-      }
-      const match = /^repos\/[^/]+\/[^/]+\/issues\/(\d+)$/u.exec(command ?? "");
-      assert.ok(match, `unexpected gh api call ${args.join(" ")}`);
-      return `${10_000 + Number(match[1])}\n`;
-    }
-    if (command === "list") {
-      return JSON.stringify(issues.filter(({ state }) => state === "OPEN").map(({ state, ...issue }) => issue));
-    }
-    writes.push({ command, args, input });
-    if (command === "create") {
-      const number = 100 + issues.length;
-      issues.push({
-        number, state: "OPEN", title: args[args.indexOf("--title") + 1], body: input,
-        author: { login: "app/github-actions", is_bot: true }, createdAt: clock.toISOString(), comments: [],
-      });
-      return `https://github.com/${repository}/issues/${number}\n`;
-    }
-    const issue = issues.find(({ number }) => number === Number(args[2]));
-    assert.ok(issue, `unknown issue ${args[2]}`);
-    if (command === "comment") issue.comments.push({ author: { login: "github-actions" }, body: input, createdAt: clock.toISOString() });
-    else if (command === "edit") issue.body = input;
-    else assert.fail(`unexpected gh command ${command}`);
-    return "";
-  };
-  return { issues, writes, subIssues, runGh, setClock: (value) => { clock = value; } };
-}
-
-async function report(github, runId, now) {
-  github.setClock(now);
-  return reportRefreshFailure({
-    argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", String(runId)],
-    runGh: github.runGh,
-    now: () => now,
-  });
-}
-
 function botIssue(number, overrides = {}) {
   const plan = planRefreshFailureReport({ repository, workflowFile, runId: String(number), openIssues: [], now: start });
   return {
@@ -97,63 +49,86 @@ function botIssue(number, overrides = {}) {
   };
 }
 
-test("first failure of a refresh workflow opens one issue that names the failed run (#860·#870)", () => {
-  const plan = planRefreshFailureReport({ repository, workflowFile, runId: "123", openIssues: [], now: start });
-  assert.equal(plan.action, "create");
-  assert.match(plan.title, /^\[Fix\] 원천 자동 갱신 실패: /u);
-  assert.ok(plan.title.includes(workflowFile));
-  assert.ok(plan.body.includes(refreshFailureMarker(workflowFile)));
-  assert.ok(plan.body.includes(runUrl(123)));
-  assert.match(plan.body, /이전 데이터로 대체하지 않았다/u);
-  assert.match(plan.body, /Refs #860/u);
-  assert.match(plan.body, /Refs #870/u);
-  assert.doesNotMatch(plan.body, /\/Users\/|\/Volumes\/|\/home\/runner/u);
-});
-
-test("a later failure after the comment interval comments once and records the run in the issue status", async () => {
-  const github = fakeGitHub();
-  await report(github, 1, start);
-  const plan = await report(github, 2, new Date(start.getTime() + COMMENT_INTERVAL_MS));
-  assert.equal(plan.action, "comment");
-  assert.deepEqual(github.writes.map(({ command }) => command), ["create", "comment", "edit"]);
-  assert.ok(github.issues[0].comments[0].body.includes(runUrl(2)));
-  assert.ok(github.issues[0].body.includes(runUrl(2)));
-  assert.ok(github.issues[0].body.includes(runUrl(1)));
-});
-
-test("failures inside the comment interval only update the issue status, without a comment (F1)", async () => {
-  const github = fakeGitHub();
-  await report(github, 1, start);
-  const plan = await report(github, 2, new Date(start.getTime() + hours(2)));
-  assert.equal(plan.action, "status");
-  assert.deepEqual(github.writes.map(({ command }) => command), ["create", "edit"]);
-  assert.equal(github.issues[0].comments.length, 0);
-  assert.ok(github.issues[0].body.includes(runUrl(2)));
-});
-
-test("the same run reported again (rerun or retried step) changes nothing (F1)", async () => {
-  const github = fakeGitHub();
-  await report(github, 1, start);
-  await report(github, 2, new Date(start.getTime() + COMMENT_INTERVAL_MS));
-  const writesBefore = github.writes.length;
-  for (const [runId, offset] of [[1, hours(30)], [2, hours(30)], [2, hours(60)]]) {
-    const plan = await report(github, runId, new Date(start.getTime() + offset));
-    assert.equal(plan.action, "skip", `run ${runId}`);
+test("단독 운영 실패 보고는 이슈/댓글/sub-issue API를 호출하지 않고 step summary와 ::error 주석만 남긴다", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "refresh-summary-"));
+  try {
+    const summaryPath = path.join(dir, "step-summary.md");
+    const ghCalls = [];
+    const annotations = [];
+    const result = await reportRefreshFailure({
+      argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"],
+      env: { GITHUB_STEP_SUMMARY: summaryPath },
+      runGh: async (args) => { ghCalls.push(args); return "[]"; },
+      emitAnnotation: (line) => { annotations.push(line); },
+      now: () => start,
+    });
+    assert.deepEqual(ghCalls, []);
+    assert.equal(result.action, "summary");
+    assert.equal(result.issueNumber, null);
+    assert.equal(annotations.length, 1);
+    assert.match(annotations[0], /^::error title=원천 자동 갱신 실패 \(current-capital-topology-refresh\.yml\)::/u);
+    assert.ok(annotations[0].includes(runUrl(123)));
+    const written = await readFile(summaryPath, "utf8");
+    assert.ok(written.includes(workflowFile));
+    assert.ok(written.includes(runUrl(123)));
+    assert.match(written, /이전 데이터로 대체하지 않았다/u);
+    assert.doesNotMatch(written, /\/Users\/|\/Volumes\/|\/home\/runner/u);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
-  assert.equal(github.writes.length, writesBefore);
 });
 
-test("a two-hourly outage of three days posts one issue and one comment per day (F1 반복 시나리오)", async () => {
-  const github = fakeGitHub();
-  const actions = [];
-  for (let index = 0; index < 36; index += 1) {
-    actions.push((await report(github, 1000 + index, new Date(start.getTime() + hours(2 * index)))).action);
+test("step summary와 ::error 주석은 로컬 파일 경로를 노출하지 않고, 체인 workflow에만 롤백 안내를 포함한다", () => {
+  const chain = planRefreshFailureSummary({
+    repository,
+    workflowFile: "datapack-release-cross-repo-chain.yml",
+    runId: "37900000001",
+    now: start,
+  });
+  assert.equal(chain.action, "summary");
+  assert.ok(chain.summary.includes(CHAIN_ROLLBACK_NOTE));
+  assert.match(chain.annotation, /rollback\.manifestMismatch/u);
+
+  const orphanSummary = planRefreshFailureSummary({
+    repository,
+    workflowFile,
+    runId: "123",
+    now: start,
+    orphan: { branch: "automation/636-current-topology-refresh-123", conclusion: "cancelled", reason: "failed at /Volumes/secret/work/out.json" },
+  });
+  assert.doesNotMatch(orphanSummary.summary, /\/Volumes\/secret/u);
+  assert.doesNotMatch(orphanSummary.annotation, /\/Volumes\/secret/u);
+  assert.ok(orphanSummary.summary.includes("<redacted-path>"));
+
+  const refresh = planRefreshFailureSummary({ repository, workflowFile, runId: "37900000002", now: start });
+  assert.equal(refresh.summary.includes(CHAIN_ROLLBACK_NOTE), false);
+});
+
+test("unknown workflow, repository, run identity, or clock is rejected before emitting any summary or GitHub call", async () => {
+  assert.throws(() => planRefreshFailureSummary({ repository, workflowFile: "ci.yml", runId: "1", now: start }),
+    /REFRESH_FAILURE_REPORT_WORKFLOW/u);
+  assert.throws(() => planRefreshFailureSummary({ repository: "not a repo", workflowFile, runId: "1", now: start }),
+    /REFRESH_FAILURE_REPORT_REPOSITORY/u);
+  for (const runId of ["0", "-1", "12a", "", undefined]) {
+    assert.throws(() => planRefreshFailureSummary({ repository, workflowFile, runId, now: start }),
+      /REFRESH_FAILURE_REPORT_RUN_ID/u);
   }
-  assert.equal(github.issues.length, 1);
-  assert.equal(actions.filter((action) => action === "create").length, 1);
-  assert.equal(github.issues[0].comments.length, 2);
-  assert.equal(actions.filter((action) => action === "status").length, 33);
-  assert.ok(github.issues[0].body.includes(runUrl(1035)));
+  assert.throws(() => planRefreshFailureSummary({ repository, workflowFile, runId: "1", now: new Date(Number.NaN) }),
+    /REFRESH_FAILURE_REPORT_CLOCK/u);
+  const calls = [];
+  const annotations = [];
+  await assert.rejects(reportRefreshFailure({
+    argv: ["--workflow", "ci.yml", "--repository", repository, "--run-id", "1"],
+    runGh: async (args) => { calls.push(args); return "[]"; },
+    emitAnnotation: (line) => { annotations.push(line); },
+  }), /REFRESH_FAILURE_REPORT_WORKFLOW/u);
+  await assert.rejects(reportRefreshFailure({
+    argv: ["--workflow", workflowFile, "--repository", repository],
+    runGh: async (args) => { calls.push(args); return "[]"; },
+    emitAnnotation: (line) => { annotations.push(line); },
+  }), /REFRESH_FAILURE_REPORT_ARGUMENTS/u);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(annotations, []);
 });
 
 test("an open failure issue without the status block fails instead of guessing what was reported", () => {
@@ -162,98 +137,27 @@ test("an open failure issue without the status block fails instead of guessing w
     /REFRESH_FAILURE_REPORT_STATUS_BLOCK/u);
 });
 
-test("only bot-authored issues with the exact failure title count as the workflow failure issue (F2)", async () => {
+test("only bot-authored issues with the exact failure title count as the workflow failure issue (F2)", () => {
   const humanCopy = botIssue(5, { author: { login: "AquilaXk", is_bot: false } });
   const otherTitle = botIssue(6, { title: "[Fix] 다른 제목" });
-  const github = fakeGitHub([humanCopy, otherTitle]);
-  const plan = await report(github, 7, start);
-  assert.equal(plan.action, "create");
-  const github2 = fakeGitHub([humanCopy, otherTitle, botIssue(8)]);
-  const plan2 = await report(github2, 9, new Date(start.getTime() + hours(2)));
-  assert.equal(plan2.action, "status");
-  assert.equal(plan2.issueNumber, 8);
-});
-
-test("duplicate bot failure issues keep reporting into the oldest one and then fail with recovery guidance (F2)", async () => {
-  const github = fakeGitHub([botIssue(13), botIssue(12)]);
-  await assert.rejects(report(github, 20, new Date(start.getTime() + COMMENT_INTERVAL_MS)),
-    (error) => /REFRESH_FAILURE_REPORT_DUPLICATE_ISSUES/u.test(error.message)
-      && error.message.includes("#12, #13") && /하나만 남기고 나머지를 닫/u.test(error.message));
-  const oldest = github.issues.find(({ number }) => number === 12);
-  assert.ok(oldest.body.includes(runUrl(20)), "the failure is still recorded");
-  assert.equal(oldest.comments.length, 1);
-  assert.match(oldest.comments[0].body, /#13/u);
-  assert.equal(github.issues.find(({ number }) => number === 13).comments.length, 0);
-});
-
-test("unknown workflow, repository, run identity, or clock is rejected before any GitHub call", async () => {
-  assert.throws(() => planRefreshFailureReport({ repository, workflowFile: "ci.yml", runId: "1", openIssues: [], now: start }),
-    /REFRESH_FAILURE_REPORT_WORKFLOW/u);
-  assert.throws(() => planRefreshFailureReport({ repository: "not a repo", workflowFile, runId: "1", openIssues: [], now: start }),
-    /REFRESH_FAILURE_REPORT_REPOSITORY/u);
-  for (const runId of ["0", "-1", "12a", "", undefined]) {
-    assert.throws(() => planRefreshFailureReport({ repository, workflowFile, runId, openIssues: [], now: start }),
-      /REFRESH_FAILURE_REPORT_RUN_ID/u);
-  }
-  assert.throws(() => planRefreshFailureReport({ repository, workflowFile, runId: "1", openIssues: [], now: new Date(Number.NaN) }),
-    /REFRESH_FAILURE_REPORT_CLOCK/u);
-  const calls = [];
-  await assert.rejects(reportRefreshFailure({
-    argv: ["--workflow", "ci.yml", "--repository", repository, "--run-id", "1"],
-    runGh: async (args) => { calls.push(args); return "[]"; },
-  }), /REFRESH_FAILURE_REPORT_WORKFLOW/u);
-  await assert.rejects(reportRefreshFailure({
-    argv: ["--workflow", workflowFile, "--repository", repository],
-    runGh: async (args) => { calls.push(args); return "[]"; },
-  }), /REFRESH_FAILURE_REPORT_ARGUMENTS/u);
-  assert.deepEqual(calls, []);
-});
-
-test("CLI lists open issues once with comments, then creates through gh with the planned body and links it as a sub-issue of #870 (#1556)", async () => {
-  assert.equal(PARENT_EPIC_NUMBER, 870);
-  const calls = [];
-  const created = await reportRefreshFailure({
-    argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"],
-    runGh: async (args, input) => {
-      calls.push({ args, input });
-      if (args[0] === "issue" && args[1] === "list") return "[]\n";
-      if (args[0] === "issue" && args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
-      if (args[0] === "api" && args[1] === `repos/${repository}/issues/99`) return "777888\n";
-      return "{}\n";
-    },
-    now: () => start,
-  });
+  const created = planRefreshFailureReport({ repository, workflowFile, runId: "7", openIssues: [humanCopy, otherTitle], now: start });
   assert.equal(created.action, "create");
-  assert.equal(created.createdIssueNumber, 99);
-  assert.equal(created.linkedParentEpicNumber, 870);
-  assert.deepEqual(calls[0].args, [
-    "issue", "list", "--repo", repository, "--state", "open", "--limit", "1000",
-    "--json", "number,title,body,author,createdAt,comments",
-  ]);
-  assert.deepEqual(calls[1].args.slice(0, 4), ["issue", "create", "--repo", repository]);
-  assert.equal(calls[1].args[calls[1].args.indexOf("--title") + 1], created.title);
-  assert.ok(calls[1].args.includes("--body-file"));
-  assert.equal(calls[1].input, created.body);
-  assert.deepEqual(calls[2].args, ["api", `repos/${repository}/issues/99`, "--jq", ".id"]);
-  assert.deepEqual(calls[3].args, ["api", "--method", "POST", `repos/${repository}/issues/870/sub_issues`, "-F", "sub_issue_id=777888"]);
-  assert.equal(calls.length, 4);
+  const updated = planRefreshFailureReport({ repository, workflowFile, runId: "9", openIssues: [humanCopy, otherTitle, botIssue(8)], now: new Date(start.getTime() + hours(2)) });
+  assert.equal(updated.action, "status");
+  assert.equal(updated.issueNumber, 8);
 });
 
-test("a malformed issue listing fails the report instead of opening a duplicate issue", async () => {
-  const calls = [];
-  await assert.rejects(reportRefreshFailure({
-    argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"],
-    runGh: async (args) => { calls.push(args); return "{\"not\":\"a list\"}"; },
-    now: () => start,
-  }), /REFRESH_FAILURE_REPORT_ISSUES/u);
-  assert.equal(calls.length, 1);
+test("duplicate bot failure issues plan status into the oldest one and list duplicateNumbers (F2)", () => {
+  const plan = planRefreshFailureReport({
+    repository, workflowFile, runId: "20", openIssues: [botIssue(13), botIssue(12)], now: new Date(start.getTime() + COMMENT_INTERVAL_MS),
+  });
+  assert.equal(plan.action, "comment");
+  assert.equal(plan.issueNumber, 12);
+  assert.deepEqual(plan.duplicateNumbers, [13]);
 });
 
-test("every scheduled source refresh workflow reports its own failure as an issue (#860 알림 조건)", () => {
+test("every scheduled source refresh workflow reports its own failure summary without creating GitHub issues", () => {
   assert.deepEqual(Object.keys(REFRESH_WORKFLOWS).sort(), [
-    "automation-blocked-redispatch.yml",
-    "automation-pr-behind-recreate.yml",
-    "automation-pr-ci-rerun.yml",
     "current-capital-topology-refresh.yml",
     "current-capital-topology-registration.yml",
     "data-workflow-scheduler-watchdog.yml",
@@ -267,24 +171,20 @@ test("every scheduled source refresh workflow reports its own failure as an issu
   ]);
   for (const file of Object.keys(REFRESH_WORKFLOWS)) {
     const yml = workflowText(file);
-    // F4: issues write는 workflow 전체가 아니라 갱신 job에만 준다.
     assert.match(yml, /\npermissions: \{\}\n/u, `${file} must not grant permissions at workflow level`);
-    assert.doesNotMatch(yml, /\n  issues: write\n/u, `${file} must not grant issues: write at workflow level`);
-    assert.match(yml, /\n    permissions:\n(?:      [a-z-]+: (?:read|write)\n)*      issues: write\n/u, `${file} needs job-level issues: write`);
+    assert.doesNotMatch(yml, /\bissues:\s*write\b/u, `${file} must not grant issues: write`);
+    assert.doesNotMatch(yml, /\bpull-requests:\s*write\b/u, `${file} must not grant pull-requests: write`);
     assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1, `${file} has exactly one job permission block`);
     const stepName = file === "kric-current-facility-refresh.yml"
-      ? "KRIC current facility refresh / Report refresh failure as an issue"
-      : "Report refresh failure as an issue";
+      ? "KRIC current facility refresh / Report refresh failure summary"
+      : "Report refresh failure summary";
     const body = stepBody(yml, stepName);
-    // #972 리뷰: 등록 workflow는 취소·시간 초과로 끝난 실행도 보고한다(PR 없는 claim이 조용히 남지 않게).
-    // #3036: 원천 재확인은 재확인 기한을 넘긴 recipe가 있으면 대기로 성공한 run도 보고한다.
     const failedOrCancelled = String.raw`failure\(\) \|\| cancelled\(\)`;
     const condition = {
       "source-reverification.yml": String.raw`${failedOrCancelled} \|\| steps\.decision\.outputs\.overdue_recipes != ''`,
       ...Object.fromEntries(["current-capital-topology-registration.yml", "nationwide-candidate-refresh.yml", "source-derivative-rebinding.yml", "itx-current-promotion.yml"].map((name) => [name, failedOrCancelled])),
     }[file] ?? String.raw`failure\(\)`;
     assert.match(body, new RegExp(String.raw`\n        if: \$\{\{ ${condition} \}\}\n`, "u"), `${file} must report only on failure`);
-    assert.match(body, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
     assert.ok(body.includes(
       `node tools/ci/report-refresh-failure.mjs --workflow ${file} --repository "\${GITHUB_REPOSITORY}" --run-id "\${GITHUB_RUN_ID}"`,
     ), `${file} must report with its own workflow identity`);
@@ -344,23 +244,30 @@ test("an orphan claim removal report opens an issue that states the run conclusi
   assert.doesNotMatch(plan.body, /가 실패했다/u, "producer run의 conclusion을 그대로 적고 무조건 실패라고 쓰지 않는다");
 });
 
-test("a run already recorded as failed still gets one comment that records the claim removal, and the same removal is not repeated", async () => {
-  const github = fakeGitHub();
-  await report(github, 123, start);
-  const writesBefore = github.writes.length;
-  const orphanReport = (when) => { github.setClock(when); return reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => when, orphan: orphanClaim() }); };
-  const first = await orphanReport(new Date(start.getTime() + hours(1)));
-  assert.equal(first.action, "comment");
-  assert.equal(github.writes.length, writesBefore + 1);
-  const [comment] = github.issues[0].comments;
-  assert.ok(comment.body.includes("automation/636-current-topology-refresh-123"));
-  assert.match(comment.body, /conclusion: cancelled/u);
-  assert.match(comment.body, /삭제/u);
-  assert.equal((await orphanReport(new Date(start.getTime() + hours(2)))).action, "skip");
-  assert.equal(github.writes.length, writesBefore + 1);
-  // 같은 run의 다른 claim 삭제는 따로 기록한다.
-  const other = await reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => new Date(start.getTime() + hours(3)), orphan: orphanClaim({ branch: "automation/636-current-topology-refresh-124" }) });
-  assert.equal(other.action, "comment");
+test("CLI의 orphan 보고는 이슈 작성 없이 summary와 주석만 남긴다", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "refresh-orphan-"));
+  try {
+    const summaryPath = path.join(dir, "step-summary.md");
+    const calls = [];
+    const annotations = [];
+    const result = await reportRefreshFailure({
+      argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"],
+      env: { GITHUB_STEP_SUMMARY: summaryPath },
+      runGh: async (args) => { calls.push(args); return "[]"; },
+      emitAnnotation: (line) => { annotations.push(line); },
+      now: () => start,
+      orphan: orphanClaim(),
+    });
+    assert.deepEqual(calls, []);
+    assert.equal(result.action, "summary");
+    assert.ok(result.summary.includes("automation/636-current-topology-refresh-123"));
+    assert.match(result.summary, /conclusion: cancelled/u);
+    assert.match(annotations[0], /EMPTY_CLAIM_NO_PUBLICATION/u);
+    const written = await readFile(summaryPath, "utf8");
+    assert.ok(written.includes("automation/636-current-topology-refresh-123"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("an orphan claim whose producer run succeeded is reported as succeeded, not failed", () => {
@@ -375,20 +282,72 @@ test("an invalid orphan description is rejected before any GitHub call", async (
   }
 });
 
-// #995 F3 잔여: 이슈를 만들 때 본문에 적은 삭제 기록도 "이미 기록됨"이다. 같은 삭제를 comment로 다시 쓰지 않는다.
-test("an orphan removal already written in the issue body is not repeated as a comment", async () => {
-  const github = fakeGitHub();
-  const orphanReport = (when) => { github.setClock(when); return reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => when, orphan: orphanClaim() }); };
-  assert.equal((await orphanReport(start)).action, "create");
-  assert.ok(github.issues[0].body.includes("easysubway-orphan-claim-removed:automation/636-current-topology-refresh-123"));
-  const writesBefore = github.writes.length;
-  assert.equal((await orphanReport(new Date(start.getTime() + hours(1)))).action, "skip");
-  assert.equal(github.writes.length, writesBefore);
-  assert.equal(github.issues[0].comments.length, 0);
-  // 다른 claim의 삭제는 여전히 따로 기록한다.
-  github.setClock(new Date(start.getTime() + hours(2)));
-  const other = await reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => new Date(start.getTime() + hours(2)), orphan: orphanClaim({ branch: "automation/636-current-topology-refresh-124" }) });
-  assert.equal(other.action, "comment");
+test("CLI의 --failures·--overdue는 검증 실패 시 GitHub 호출이나 주석 없이 실패하고, 정상 입력은 summary를 남긴다", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "refresh-failures-"));
+  try {
+    const file = path.join(dir, "failures.json");
+    const calls = [];
+    const annotations = [];
+    await writeFile(file, JSON.stringify([blocking, { recipeId: "busan-timetable", code: "SOURCE_FETCH_FAILED" }]));
+    const run = (extra = []) => reportRefreshFailure({
+      argv: ["--workflow", reverificationFile, "--repository", repository, "--run-id", "9", "--failures", file, ...extra],
+      env: { GITHUB_STEP_SUMMARY: path.join(dir, "summary.md") },
+      runGh: async (args) => { calls.push(args); return "[]"; },
+      emitAnnotation: (line) => { annotations.push(line); },
+      now: () => start,
+    });
+    const withFailures = await run(["--overdue", "busan-topology,daegu-sources"]);
+    assert.equal(withFailures.action, "summary");
+    assert.ok(withFailures.summary.includes("kric-station-timetable"));
+    assert.ok(withFailures.summary.includes("SOURCE_EXPECTATION_CHANGED"));
+    assert.match(withFailures.summary, /재확인 기한을 넘긴 recipe: `busan-topology`, `daegu-sources`/u);
+    assert.match(withFailures.annotation, /busan-topology/u);
+    const absent = await reportRefreshFailure({
+      argv: ["--workflow", reverificationFile, "--repository", repository, "--run-id", "10", "--failures", path.join(dir, "absent.json"), "--overdue", ""],
+      runGh: async (args) => { calls.push(args); return "[]"; },
+      emitAnnotation: (line) => { annotations.push(line); },
+      now: () => start,
+    });
+    assert.doesNotMatch(absent.summary, /재확인 기한/u);
+    assert.equal(calls.length, 0);
+
+    const beforeAnnotations = annotations.length;
+    await writeFile(file, "{\"not\":\"a list\"}");
+    await assert.rejects(run(), /REFRESH_FAILURE_REPORT_FAILURES/u);
+    await writeFile(file, "not json");
+    await assert.rejects(run(), /REFRESH_FAILURE_REPORT_FAILURES/u);
+    await writeFile(file, JSON.stringify([{ recipeId: "a -->\n<!-- x", code: "SOURCE_EXPECTATION_CHANGED" }]));
+    await assert.rejects(run(), /REFRESH_FAILURE_REPORT_FAILURES/u);
+
+    await writeFile(file, "[]");
+    await assert.rejects(run(["--overdue", "busan topology"]), /REFRESH_FAILURE_REPORT_OVERDUE/u);
+    await assert.rejects(run(["--overdue", "busan-topology,"]), /REFRESH_FAILURE_REPORT_OVERDUE/u);
+    assert.equal(calls.length, 0);
+    assert.equal(annotations.length, beforeAnnotations);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("recordedRunIdsOf는 봇이 쓴 본문과 봇의 알림 댓글에 적힌 run만 읽는다 (#1287)", () => {
+  const first = planRefreshFailureReport({ repository, workflowFile, runId: "11", openIssues: [], now: start });
+  const second = planRefreshFailureReport({
+    repository, workflowFile, runId: "12",
+    openIssues: [botIssue(5, { body: first.body })],
+    now: new Date(start.getTime() + COMMENT_INTERVAL_MS),
+  });
+  const issue = {
+    number: 5,
+    title: first.title,
+    body: second.issueBody,
+    author: { login: "app/github-actions", is_bot: true },
+    createdAt: start.toISOString(),
+    comments: [{ author: { login: "github-actions" }, body: second.body, createdAt: new Date(start.getTime() + COMMENT_INTERVAL_MS).toISOString() }],
+  };
+  assert.deepEqual([...new Set(recordedRunIdsOf(issue))].sort(), [11, 12]);
+  const withHuman = { ...issue, comments: [...issue.comments, { author: { login: "AquilaXk" }, body: `${runUrl(99)}`, createdAt: start.toISOString() }] };
+  assert.deepEqual([...new Set(recordedRunIdsOf(withHuman))].sort(), [11, 12]);
+  assert.deepEqual(recordedRunIdsOf({ ...issue, body: "본문에 run이 없다", comments: [] }), []);
 });
 
 test("데이터팩 발행·배포 체인도 같은 실패 이슈 경로(#926)로 보고하고 admin이 찾는 제목 규칙을 유지한다 (data#1084)", () => {
@@ -454,36 +413,6 @@ test("막힌 recipe 표지는 이 workflow의 봇 실패 이슈만 가리킨다 
   assert.deepEqual(failureIssuesOf({ openIssues: [issue], workflowFile: workflowFile }), []);
 });
 
-test("CLI의 --failures 파일은 기대 관측 변경 실패만 표지로 옮기고, 파일이 없으면 실패 없음이며, 형식이 틀리면 실패한다 (#1122)", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "refresh-failures-"));
-  try {
-    const file = path.join(dir, "failures.json");
-    await writeFile(file, JSON.stringify([blocking, { recipeId: "busan-timetable", code: "SOURCE_FETCH_FAILED" }]));
-    const run = (failuresPath) => reportRefreshFailure({
-      argv: ["--workflow", reverificationFile, "--repository", repository, "--run-id", "9", "--failures", failuresPath],
-      runGh: async (args) => {
-        if (args[1] === "list") return "[]";
-        if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
-        if (args[0] === "api" && args.includes("--jq")) return "777888\n";
-        return "{}";
-      },
-      now: () => start,
-    });
-    const withFailures = await run(file);
-    assert.ok(withFailures.body.includes(blockMarker("kric-station-timetable", "SOURCE_EXPECTATION_CHANGED")));
-    assert.doesNotMatch(withFailures.body, /busan-timetable/u);
-    assert.doesNotMatch((await run(path.join(dir, "absent.json"))).body, /reverification-blocked/u);
-    await writeFile(file, "{\"not\":\"a list\"}");
-    await assert.rejects(run(file), /REFRESH_FAILURE_REPORT_FAILURES/u);
-    await writeFile(file, "not json");
-    await assert.rejects(run(file), /REFRESH_FAILURE_REPORT_FAILURES/u);
-    await writeFile(file, JSON.stringify([{ recipeId: "a -->\n<!-- x", code: "SOURCE_EXPECTATION_CHANGED" }]));
-    await assert.rejects(run(file), /REFRESH_FAILURE_REPORT_FAILURES/u);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 // #3036 7-26: 재확인 기한을 넘긴 recipe는 대기 run이 성공으로 끝나도 같은 실패 이슈 경로로 드러난다. 실패 즉시 보고는 그대로다.
 test("재확인 기한을 넘긴 recipe(overdue)는 run이 성공이어도 실패 이슈를 열고, 열린 이슈에는 run과 연체 recipe를 기록한다 (#3036)", () => {
   const created = reverificationReport(9, start, { openIssues: [], overdue: ["busan-topology"] });
@@ -499,38 +428,6 @@ test("재확인 기한을 넘긴 recipe(overdue)는 run이 성공이어도 실�
   assert.ok(nextDay.issueBody.includes(runUrl(10)));
   // 연체가 없으면 지금과 같은 실패 보고다.
   assert.match(reverificationReport(11, start, { openIssues: [] }).body, /가 실패했다/u);
-});
-
-test("CLI의 --overdue는 쉼표로 나눈 recipe id이고 빈 값은 연체 없음이며, 식별자가 아니면 GitHub에 쓰기 전에 실패한다 (#3036)", async () => {
-  const writes = [];
-  const cli = (value) => reportRefreshFailure({
-    argv: ["--workflow", reverificationFile, "--repository", repository, "--run-id", "9", "--failures", path.join(os.tmpdir(), "absent-reverification-failures.json"), "--overdue", value],
-    runGh: async (args) => {
-      if (args[1] === "list") return "[]";
-      writes.push(args[0] === "api" ? "api" : args[1]);
-      if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
-      if (args[0] === "api" && args.includes("--jq")) return "777888\n";
-      return "{}";
-    },
-    now: () => start,
-  });
-  assert.match((await cli("busan-topology,daegu-sources")).body, /재확인 기한을 넘긴 recipe: `busan-topology`, `daegu-sources`/u);
-  assert.doesNotMatch((await cli("")).body, /재확인 기한/u);
-  const before = writes.length;
-  await assert.rejects(cli("busan topology"), /REFRESH_FAILURE_REPORT_OVERDUE/u);
-  await assert.rejects(cli("busan-topology,"), /REFRESH_FAILURE_REPORT_OVERDUE/u);
-  assert.equal(writes.length, before);
-});
-
-test("recordedRunIdsOf는 봇이 쓴 본문과 봇의 알림 댓글에 적힌 run만 읽는다 (#1287)", async () => {
-  const github = fakeGitHub();
-  await report(github, 11, start);
-  await report(github, 12, new Date(start.getTime() + COMMENT_INTERVAL_MS));
-  const [issue] = github.issues;
-  assert.deepEqual([...new Set(recordedRunIdsOf(issue))].sort(), [11, 12]);
-  const withHuman = { ...issue, comments: [...issue.comments, { author: { login: "AquilaXk" }, body: `${runUrl(99)}`, createdAt: start.toISOString() }] };
-  assert.deepEqual([...new Set(recordedRunIdsOf(withHuman))].sort(), [11, 12]);
-  assert.deepEqual(recordedRunIdsOf({ ...issue, body: "본문에 run이 없다", comments: [] }), []);
 });
 
 // #3036: 원천이 여럿인 workflow의 실패 이슈는 어느 원천이 실패했는지 적고, 원천별 마지막 실패 시각을 상태 블록 표지로 남긴다.
@@ -606,38 +503,29 @@ test("원천 표지는 상태 블록 안의 형식이 맞는 것만 읽고, 시�
   assert.throws(() => sourceFailuresOf("상태 블록이 없다"), /REFRESH_FAILURE_REPORT_STATUS_BLOCK/u);
 });
 
-test("CLI의 --source-id는 식별자이거나 빈 값(원천 없음)일 때만 받고, 아니면 GitHub에 쓰기 전에 실패한다 (#3036)", async () => {
-  const writes = [];
-  const cli = (...extra) => reportRefreshFailure({
-    argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "9", ...extra],
-    runGh: async (args) => {
-      if (args[1] === "list") return "[]";
-      writes.push(args[0] === "api" ? "api" : args[1]);
-      if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
-      if (args[0] === "api" && args.includes("--jq")) return "777888\n";
-      return "{}";
-    },
-    now: () => start,
-  });
-  assert.match((await cli("--source-id", KRIC_ESCALATOR)).body, /실패 원천: `kric-station-escalator-detailed`/u);
-  for (const unnamed of [[], ["--source-id", ""]]) assert.doesNotMatch((await cli(...unnamed)).body, /실패 원천/u);
-  const before = writes.length;
-  for (const bad of ["Kric Escalator", "a -->\n<!-- x", "-lead"]) await assert.rejects(cli("--source-id", bad), /REFRESH_FAILURE_REPORT_SOURCE_ID/u, JSON.stringify(bad));
-  assert.equal(writes.length, before);
-  await assert.rejects(reportRefreshFailure({
-    argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "9"],
-    runGh: async (args) => (args[1] === "list" ? "[]" : "invalid-create-output"),
-    now: () => start,
-  }), /REFRESH_FAILURE_REPORT_CREATE_ISSUE/u);
-  await assert.rejects(reportRefreshFailure({
-    argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "9"],
-    runGh: async (args) => {
-      if (args[1] === "list") return "[]";
-      if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
-      return "not-an-id";
-    },
-    now: () => start,
-  }), /REFRESH_FAILURE_REPORT_SUB_ISSUE_LINK/u);
+test("CLI의 --source-id는 식별자이거나 빈 값일 때만 받고, 잘못된 입력은 summary·주석·GitHub 호출 없이 거부한다", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "refresh-source-id-"));
+  try {
+    const calls = [];
+    const annotations = [];
+    const cli = (...extra) => reportRefreshFailure({
+      argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "9", ...extra],
+      env: { GITHUB_STEP_SUMMARY: path.join(dir, "summary.md") },
+      runGh: async (args) => { calls.push(args); return "[]"; },
+      emitAnnotation: (line) => { annotations.push(line); },
+      now: () => start,
+    });
+    assert.match((await cli("--source-id", KRIC_ESCALATOR)).summary, /실패 원천: `kric-station-escalator-detailed`/u);
+    for (const unnamed of [[], ["--source-id", ""]]) assert.doesNotMatch((await cli(...unnamed)).summary, /실패 원천/u);
+    const before = annotations.length;
+    for (const bad of ["Kric Escalator", "a -->\n<!-- x", "-lead"]) {
+      await assert.rejects(cli("--source-id", bad), /REFRESH_FAILURE_REPORT_SOURCE_ID/u, JSON.stringify(bad));
+    }
+    assert.equal(calls.length, 0);
+    assert.equal(annotations.length, before);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("가드 실패 사유(reason=)는 실패 이슈 본문·재알림 댓글·상태 블록 표지에 기록되고, 사유 없는 후속 보고는 이전 사유를 유지한다 (#3036 7-20)", () => {
@@ -675,33 +563,34 @@ test("가드 실패 사유(reason=)는 실패 이슈 본문·재알림 댓글·�
   assert.equal(failureReasonOf(unnamed.body), null);
 });
 
-test("CLI는 --reason 또는 RUNNER_TEMP의 가드 사유 파일을 읽고, 형식이 틀린 사유는 거부한다 (#3036 7-20)", async () => {
+test("CLI는 --reason 또는 RUNNER_TEMP의 가드 사유 파일을 읽고, 형식이 틀린 사유는 summary·GitHub 호출 없이 거부한다", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "refresh-reason-"));
   try {
+    const calls = [];
+    const annotations = [];
     const runWith = (argv, env = {}) => reportRefreshFailure({
       argv: ["--workflow", kricFile, "--repository", repository, "--run-id", "42", ...argv],
       env,
-      runGh: async (args) => {
-        if (args[1] === "list") return "[]";
-        if (args[1] === "create") return `https://github.com/${repository}/issues/99\n`;
-        if (args[0] === "api" && args.includes("--jq")) return "777888\n";
-        return "{}";
-      },
+      runGh: async (args) => { calls.push(args); return "[]"; },
+      emitAnnotation: (line) => { annotations.push(line); },
       now: () => start,
     });
 
     const reasonFile = guardFailureReasonPath({ RUNNER_TEMP: dir, GITHUB_RUN_ID: "42" });
     await writeFile(reasonFile, "reason=SECRET_MISSING secret=KRIC_SERVICE_KEY\n");
-    const fromEnvFile = await runWith([], { RUNNER_TEMP: dir, GITHUB_RUN_ID: "42" });
-    assert.match(fromEnvFile.body, /- 가드 사유: `reason=SECRET_MISSING secret=KRIC_SERVICE_KEY`/u);
-    assert.equal(failureReasonOf(fromEnvFile.body), "reason=SECRET_MISSING secret=KRIC_SERVICE_KEY");
+    const fromEnvFile = await runWith([], { RUNNER_TEMP: dir, GITHUB_RUN_ID: "42", GITHUB_STEP_SUMMARY: path.join(dir, "summary.md") });
+    assert.match(fromEnvFile.summary, /- 가드 사유: `reason=SECRET_MISSING secret=KRIC_SERVICE_KEY`/u);
+    assert.match(fromEnvFile.annotation, /reason=SECRET_MISSING secret=KRIC_SERVICE_KEY/u);
 
     const fromCli = await runWith(["--reason", "reason=AUTOMATION_PR_CI"], { RUNNER_TEMP: dir, GITHUB_RUN_ID: "42" });
-    assert.equal(failureReasonOf(fromCli.body), "reason=AUTOMATION_PR_CI");
+    assert.match(fromCli.summary, /- 가드 사유: `reason=AUTOMATION_PR_CI`/u);
 
+    const before = annotations.length;
     await assert.rejects(runWith(["--reason", "not-valid"]), /REFRESH_FAILURE_REPORT_REASON/u);
     await writeFile(reasonFile, "bad-reason-in-file\n");
     await assert.rejects(runWith([], { RUNNER_TEMP: dir, GITHUB_RUN_ID: "42" }), /REFRESH_FAILURE_REPORT_REASON/u);
+    assert.equal(calls.length, 0);
+    assert.equal(annotations.length, before);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

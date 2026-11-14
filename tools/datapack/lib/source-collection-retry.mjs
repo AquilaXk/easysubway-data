@@ -19,6 +19,7 @@ import {
   unwrapTransientRetryFailure,
   withTransientRetry,
 } from "./transient-retry.mjs";
+import { readResponseBytesWithLimit } from "./bounded-zlib.mjs";
 import { SourceFetchTelemetryWriteError, buildAttemptRecord, emitAttemptRecord, sourceIdFromLabel } from "./source-fetch-telemetry.mjs";
 
 export const SOURCE_COLLECTION_RETRY_POLICY = Object.freeze({
@@ -332,7 +333,7 @@ export const transportFailureWithCode = (label) => (failure) => {
  * @returns {Promise<{ response: Response, bytes: Buffer }>}
  */
 export async function fetchBytesWithSourceRetry({
-  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, resultCodeOf, recordTelemetry = true, telemetry = true, replay = false, sleep, budget, random, timeoutMs = 15_000, headers = {},
+  url, fetchImpl, accept, label, sourceId, transportFailure, isTransientResult, resultCodeOf, recordTelemetry = true, telemetry = true, replay = false, sleep, budget, random, timeoutMs = 15_000, headers = {}, maxBytes = 128 * 1024 * 1024,
 }) {
   try {
     return await withSourceCollectionRetry(async () => {
@@ -340,7 +341,7 @@ export async function fetchBytesWithSourceRetry({
         ? () => AbortSignal.timeout(timeoutMs)
         : AbortSignal.timeout(timeoutMs);
       const response = await fetchImpl(url, { redirect: "error", signal, headers: { accept, ...headers } });
-      return { response, bytes: Buffer.from(await response.arrayBuffer()) };
+      return { response, bytes: await readResponseBytesWithLimit(response, { maxBytes, label }) };
     }, { label, sourceId, url, isTransientResult, resultCodeOf, recordTelemetry, telemetry, replay, sleep, budget, random });
   } catch (error) {
     if (!isRetryAfterExceedsCap(error)) throw transportFailure(unwrapTransientRetryFailure(error));

@@ -467,9 +467,8 @@ export function assertNoExpressionInRunScripts({ job, steps, file }) {
 
 /** 실패 보고 step이 failure()일 때만 자기 workflow 이름으로 돌고 마지막 step이다. */
 export function assertFailureReportLast({ yml, job, steps, step, file, condition = "${{ failure() }}" }) {
-  const report = step("Report refresh failure as an issue");
+  const report = step("Report refresh failure summary");
   assert.equal(ifCondition(report), condition);
-  assert.equal(report.env.GH_TOKEN, "${{ github.token }}");
   assert.ok(
     report.run.includes(
       `node tools/ci/report-refresh-failure.mjs --workflow ${file} --repository "\${GITHUB_REPOSITORY}" --run-id "\${GITHUB_RUN_ID}"`,

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   validateManifest,
@@ -153,7 +153,10 @@ async function validatePack(
     throw new Error(`${pack.id}@${pack.version} compressed checksum mismatch: ${compressedSha}`);
   }
 
-  const sqliteBytes = gunzipSync(compressedBytes);
+  const sqliteBytes = gunzipWithLimit(compressedBytes, {
+    maxOutputLength: 512 * 1024 * 1024,
+    label: `${pack.id}@${pack.version} pack`,
+  });
   const sqliteSha = sha256(sqliteBytes);
   if (sqliteSha !== pack.sqliteSha256) {
     throw new Error(`${pack.id}@${pack.version} sqlite checksum mismatch: ${sqliteSha}`);
@@ -683,7 +686,7 @@ const CAR_DOOR_HINT_FACILITY_TYPES = new Set([
 const CAR_DOOR_HINT_MAX_CAR_NUMBER = 10;
 const CAR_DOOR_HINT_MAX_DOOR_NUMBER = 4;
 
-function validateStationCarDoorHints(database, pack) {
+export function validateStationCarDoorHints(database, pack) {
   if (!hasTable(database, "station_car_door_hints")) {
     return;
   }
@@ -698,12 +701,15 @@ function validateStationCarDoorHints(database, pack) {
     )
     .all();
 
-  const stationLineKeys = new Set(
-    database
-      .prepare("SELECT station_id, line_id FROM station_lines")
-      .all()
-      .map((row) => `${row.station_id} ${row.line_id}`),
-  );
+  const stationLinesByStation = new Map();
+  for (const row of database.prepare("SELECT station_id, line_id FROM station_lines").all()) {
+    let lines = stationLinesByStation.get(row.station_id);
+    if (!lines) {
+      lines = new Set();
+      stationLinesByStation.set(row.station_id, lines);
+    }
+    lines.add(row.line_id);
+  }
 
   for (const hint of hints) {
     if (!CAR_DOOR_HINT_FACILITY_TYPES.has(hint.target_facility_type)) {
@@ -731,7 +737,7 @@ function validateStationCarDoorHints(database, pack) {
     }
     // FK 정합은 PRAGMA foreign_key_check가 1차로 잡지만, station-line 참조 정합을
     // 명시적으로 재확인한다(방어적 계층 원칙).
-    if (!stationLineKeys.has(`${hint.station_id} ${hint.line_id}`)) {
+    if (!stationLinesByStation.get(hint.station_id)?.has(hint.line_id)) {
       throw new Error(
         `${pack.id}@${pack.version} station_car_door_hints references missing station-line: ${hint.id}`,
       );

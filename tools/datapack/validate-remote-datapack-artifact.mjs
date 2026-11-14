@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { gunzipWithLimit, readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -124,7 +124,10 @@ function summarizeDownloadedPack({ pack, packUrl, packBytes }) {
     sha256MatchesManifest: compressedSha256 === pack.sha256,
   };
   try {
-    const sqliteBytes = gunzipSync(packBytes);
+    const sqliteBytes = gunzipWithLimit(packBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: `${pack.id}@${pack.version} pack`,
+    });
     const sqliteSha256 = sha256(sqliteBytes);
     summary.sqliteSha256 = sqliteSha256;
     summary.sqliteSha256MatchesManifest = sqliteSha256 === pack.sqliteSha256;
@@ -157,7 +160,7 @@ async function download(url, { revalidate = false } = {}) {
   if (!response.ok) {
     throw new Error(`download failed: ${url} ${response.status}`);
   }
-  return Buffer.from(await response.arrayBuffer());
+  return readResponseBytesWithLimit(response, { maxBytes: 256 * 1024 * 1024, label: url });
 }
 
 export function buildValidatorArgs({ manifestPath, outputRoot, requireProduction, serverRouteCoverageEvidence, serverRouteCoverageProvenance }) {

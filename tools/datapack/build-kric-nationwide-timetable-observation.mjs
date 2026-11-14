@@ -5,6 +5,7 @@ import { crc32, createInflateRaw } from "node:zlib";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { sha256 } from "../lib/hash.mjs";
+import { decodeXmlEntities } from "./lib/xml-decode.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 const RECEIPT_KIND = "kric-nationwide-timetable-file-receipt";
@@ -179,7 +180,7 @@ async function readSharedStrings(bytes, entries) {
       const start = item.indexOf("<si");
       if (start < 0) continue;
       if (result.length >= MAXIMUM_SHARED_STRINGS) fail("BOUND");
-      const value = [...item.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/giu)].map(([, text]) => decodeXml(text)).join("");
+      const value = [...item.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/giu)].map(([, text]) => decodeXmlEntities(text)).join("");
       if (Buffer.byteLength(value) > MAXIMUM_CELL_TEXT) fail("BOUND");
       result.push(value);
     }
@@ -239,9 +240,9 @@ function parseCell(attributes, body, sharedStrings, styleCount) {
   const type = attributes.t ?? "n"; const styleId = attributes.s === undefined ? null : Number(attributes.s);
   if (!Number.isSafeInteger(styleId ?? 0) || (styleId !== null && (styleId < 0 || styleId >= styleCount))) fail("STYLE");
   let value;
-  if (type === "inlineStr") value = [...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/giu)].map(([, text]) => decodeXml(text)).join("");
+  if (type === "inlineStr") value = [...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/giu)].map(([, text]) => decodeXmlEntities(text)).join("");
   else if (type === "s") { const index = Number(/^\s*<v\b[^>]*>([\s\S]*?)<\/v>\s*$/iu.exec(body)?.[1]); if (!Number.isSafeInteger(index) || index < 0 || index >= sharedStrings.length) fail("SHARED_STRING"); value = sharedStrings[index]; }
-  else if (["n", "str", "b", "e", "d"].includes(type)) value = decodeXml(/<v\b[^>]*>([\s\S]*?)<\/v>/iu.exec(body)?.[1] ?? "");
+  else if (["n", "str", "b", "e", "d"].includes(type)) value = decodeXmlEntities(/<v\b[^>]*>([\s\S]*?)<\/v>/iu.exec(body)?.[1] ?? "");
   else fail("CELL");
   if (Buffer.byteLength(value) > MAXIMUM_CELL_TEXT) fail("BOUND");
   return Object.freeze({ value, cellType: type, styleId });
@@ -296,5 +297,4 @@ function normalized(value, code) { const result = String(value ?? "").normalize(
 function columnIndex(reference, rowNumber) { const match = /^([A-Z]{1,3})(\d+)$/u.exec(reference ?? ""); if (!match || Number(match[2]) !== rowNumber) fail("COLUMN"); return [...match[1]].reduce((sum, letter) => sum * 26 + letter.codePointAt(0) - 64, 0) - 1; }
 function compareRecords(left, right) { for (const field of [...IDENTITY_FIELDS]) { const comparison = codepointCompare(left[field], right[field]); if (comparison !== 0) return comparison; } return left.sourceRowNumber - right.sourceRowNumber; }
 function sameTextArray(left, right) { return Array.isArray(left) && left.length === right.length && left.every((value, index) => value === right[index]); }
-function xmlAttributes(raw) { return Object.fromEntries([...String(raw).matchAll(/(?:^|\s)([:\w-]+)\s*=\s*"([^"]*)"/gu)].map(([, name, value]) => [name, decodeXml(value)])); }
-function decodeXml(value) { return String(value).replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&apos;", "'").replaceAll("&amp;", "&"); }
+function xmlAttributes(raw) { return Object.fromEntries([...String(raw).matchAll(/(?:^|\s)([:\w-]+)\s*=\s*"([^"]*)"/gu)].map(([, name, value]) => [name, decodeXmlEntities(value)])); }

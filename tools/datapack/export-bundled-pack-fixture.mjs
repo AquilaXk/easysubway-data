@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const TABLES = Object.freeze([
@@ -379,7 +379,7 @@ async function main(argv) {
   const outputPath = path.resolve(requiredArg(args, "output"));
   const schemaPath = path.resolve(args.schema ?? path.join(import.meta.dirname, "schema/catalog-schema.sql"));
   const gzipBytes = await readFile(packPath);
-  const sqliteBytes = gunzipSync(gzipBytes);
+  const sqliteBytes = gunzipWithLimit(gzipBytes, { maxOutputLength: 512 * 1024 * 1024, label: packPath });
   const expectedDatabase = new DatabaseSync(":memory:");
   expectedDatabase.exec(await readFile(schemaPath, "utf8"));
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-export-bundled-pack-"));

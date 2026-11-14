@@ -21,6 +21,8 @@ import { pathToFileURL } from "node:url";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { buildAttemptRecord, emitAttemptRecord } from "./lib/source-fetch-telemetry.mjs";
+import { readResponseTextWithLimit } from "./lib/bounded-zlib.mjs";
+import { decodeXmlEntities } from "./lib/xml-decode.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { sha256 } from "../lib/hash.mjs";
@@ -846,7 +848,11 @@ async function fetchPublicApiPage({ url, request, expectedContentTypes, fetchImp
   if (!expectedContentTypes.has(contentType)) {
     return { reasonCode: "PUBLIC_API_SCHEMA_MISMATCH", httpStatus: response.status, contentType: contentType ?? null };
   }
-  return { raw: await response.text(), httpStatus: response.status, contentType };
+  return {
+    raw: await readResponseTextWithLimit(response, { maxBytes: 16 * 1024 * 1024, label: "public API coverage" }),
+    httpStatus: response.status,
+    contentType,
+  };
 }
 
 function transportReason(error) {
@@ -860,18 +866,8 @@ function captureXmlRows(raw, fields) {
   const items = [...raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].slice(0, 100);
   return items.map(([, item]) => Object.fromEntries(fields.flatMap((field) => {
     const match = new RegExp(`<${field}\\b[^>]*>([^<]{0,512})<\\/${field}>`, "i").exec(item);
-    return match ? [[field, decodeXml(match[1].trim())]] : [];
+    return match ? [[field, decodeXmlEntities(match[1].trim(), { stripControlChars: true })]] : [];
   })));
-}
-
-function decodeXml(value) {
-  return value
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'")
-    .replaceAll("&amp;", "&")
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 }
 
 function parseXml(raw) {

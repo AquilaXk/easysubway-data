@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { link, lstat, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { molitRailwayTransferMovementEditionFromSnapshotId } from "./collect-molit-railway-transfer-movement.mjs";
 
@@ -151,7 +151,12 @@ export function evaluateCurrentMolitTransferFreshness({
   validatePolicy(policy);
   const compatibilityPolicy = molitCompatibilityPolicy(policy);
   validateMetadata(metadata, metadataBytes, gzipBytes);
-  validateEvidence(evidence, metadata, metadataBytes, gunzipSync(gzipBytes).length);
+  validateEvidence(
+    evidence,
+    metadata,
+    metadataBytes,
+    gunzipWithLimit(gzipBytes, { maxOutputLength: 128 * 1024 * 1024, label: `${SOURCE_ID} gzip` }).length,
+  );
   parseEvaluationAt(evaluationAt);
 
   const sourceIdentity = {

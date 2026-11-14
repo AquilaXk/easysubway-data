@@ -5,6 +5,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
+import { decodeXmlEntities } from "./lib/xml-decode.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 
 const ENDPOINT = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
@@ -200,7 +202,10 @@ async function fetchKasiMonth(request, { url, sleepImpl, retryBudget, randomImpl
         const options = { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml, text/xml" } };
         const response = await request(options);
         if (!response?.ok) return { response, raw: null };
-        return { response, raw: Buffer.from(await response.arrayBuffer()) };
+        return {
+          response,
+          raw: await readResponseBytesWithLimit(response, { maxBytes: 16 * 1024 * 1024, label: "KASI public holiday" }),
+        };
       } catch (error) {
         const attempt = closedTransportAttempt(error, attemptNumber);
         if (attempt !== null) transportAttempts.push(attempt);
@@ -439,7 +444,9 @@ function categoryFor({ name, code }) {
   return "NETWORK_UNKNOWN";
 }
 
-export function decodeXml(value) { return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&amp;/g, "&"); }
+export function decodeXml(value) {
+  return decodeXmlEntities(value);
+}
 function safeStatus(value) { return Number.isInteger(value) && value >= 100 && value <= 599 ? value : "UNKNOWN"; }
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value ?? "") ? value : "UNKNOWN"; }
 

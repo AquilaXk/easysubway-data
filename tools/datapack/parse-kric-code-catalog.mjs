@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { decodeXmlEntities } from "./lib/xml-decode.mjs";
 
 const execFileAsync = promisify(execFile);
 const MAXIMUM_SHEETS = 10;
@@ -36,7 +37,7 @@ export function parseWorkbookSheetRefs(workbookXml, relationshipsXml) {
 export function parseSharedStrings(xml) {
   if (!xml) return [];
   const strings = [...xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/gi)].map(([, item]) => {
-    const parts = [...item.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)].map(([, value]) => decodeXml(value));
+    const parts = [...item.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)].map(([, value]) => decodeXmlEntities(value));
     return boundedText(parts.join(""), "shared string");
   });
   if (strings.length > 200_000) throw new Error("KRIC XLSX shared string limit exceeded");
@@ -66,11 +67,11 @@ export function parseWorksheetRows(xml, sharedStrings) {
 function worksheetCellValue(attributes, body, sharedStrings) {
   if (attributes.t === "inlineStr") {
     return [...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)]
-      .map(([, text]) => decodeXml(text))
+      .map(([, text]) => decodeXmlEntities(text))
       .join("");
   }
   const raw = /<v\b[^>]*>([\s\S]*?)<\/v>/i.exec(body)?.[1] ?? "";
-  if (attributes.t !== "s") return decodeXml(raw);
+  if (attributes.t !== "s") return decodeXmlEntities(raw);
   const normalizedIndex = raw.trim();
   const index = Number(normalizedIndex);
   if (!/^\d+$/.test(normalizedIndex) || !Number.isInteger(index) || index < 0 || index >= sharedStrings.length) {
@@ -117,7 +118,7 @@ export function buildProviderLineCatalog({ sourceId, sourceSha256, capturedAt, s
 
 function xmlAttributes(raw) {
   return Object.fromEntries([...raw.matchAll(/(?:^|[ \t\r\n])([:\w-]+)[ \t\r\n]*=[ \t\r\n]*"([^"]*)"/g)]
-    .map(([, name, value]) => [name, decodeXml(value)]));
+    .map(([, name, value]) => [name, decodeXmlEntities(value)]));
 }
 
 function columnIndex(reference) {
@@ -132,11 +133,6 @@ function boundedText(value, label) {
   const normalized = String(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, " ");
   if (normalized.length > MAXIMUM_CELL_LENGTH) throw new Error(`KRIC XLSX ${label} limit exceeded`);
   return normalized;
-}
-
-function decodeXml(value) {
-  return String(value).replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'").replaceAll("&amp;", "&");
 }
 
 export async function unzipEntry(input, entry, optional = false) {

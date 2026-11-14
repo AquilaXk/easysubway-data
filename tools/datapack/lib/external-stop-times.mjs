@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 
+import { gunzipWithLimit } from "./bounded-zlib.mjs";
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { sha256 } from "../../lib/hash.mjs";
 
@@ -271,7 +272,11 @@ function readBoundTimetable(binding, pack, readBytes) {
   const bytes = readBytes(binding.path);
   if (sha256(bytes) !== binding.sha256) fail("SHA256_MISMATCH", binding.path);
   let content;
-  try { content = JSON.parse(gunzipSync(bytes).toString("utf8")); } catch { fail("CONTENT", binding.path); }
+  try {
+    content = JSON.parse(
+      gunzipWithLimit(bytes, { maxOutputLength: 256 * 1024 * 1024, label: binding.path }).toString("utf8"),
+    );
+  } catch { fail("CONTENT", binding.path); }
   assertValidContentEnvelope(content, binding, bytes);
   const inlineTripIds = new Set((pack.transitTrips ?? []).map(({ id }) => id));
   const stopKeys = new Set((pack.transitStopTimes ?? []).map(({ tripId, stopSequence }) => `${tripId}\u0000${stopSequence}`));

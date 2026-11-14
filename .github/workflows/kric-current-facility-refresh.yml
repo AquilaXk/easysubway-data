@@ -19,8 +19,6 @@ jobs:
     permissions:
       actions: read
       contents: write
-      pull-requests: write
-      issues: write
     environment: datapack-release-check
     timeout-minutes: 45
     steps:
@@ -40,27 +38,24 @@ jobs:
           set -euo pipefail
           operation_root="${RUNNER_TEMP}/kric-current-facility-refresh/${GITHUB_RUN_ID}"
           mkdir -p "$(dirname "${operation_root}")"
-          printf 'KRIC_REFRESH_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
-          printf 'KRIC_REFRESH_DECISION=%s\n' "${RUNNER_TEMP}/kric-current-facility-refresh/decision.json" >> "${GITHUB_ENV}"
+          {
+            printf 'KRIC_REFRESH_OPERATION_ROOT=%s\n' "${operation_root}"
+            printf 'KRIC_REFRESH_DECISION=%s\n' "${RUNNER_TEMP}/kric-current-facility-refresh/decision.json"
+            printf 'KRIC_REFRESH_MAIN_SHA=%s\n' "$(git rev-parse HEAD)"
+          } >> "${GITHUB_ENV}"
 
       - name: KRIC current facility refresh / Read due state
         id: decision
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           prs="${RUNNER_TEMP}/kric-current-facility-refresh/open-prs.json"
           claims="${RUNNER_TEMP}/kric-current-facility-refresh/claims.txt"
           claim_evidence="${RUNNER_TEMP}/kric-current-facility-refresh/claim-evidence.json"
-          git ls-remote --heads origin \
-            "refs/heads/automation/629-kric-facility-refresh-*" > "${claims}"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --pr-limit 1000 --output "${prs}"
-          # #995: PR 없는 claim은 DUE 여부와 무관하게 만든 run과 게시 증거(출력 커밋·receipt artifact)로 판정한다.
-          # 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다). 닫힌(Abandon) claim도 같은 증거로 정리 대상이 된다.
-          node tools/ci/claim-orphans.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"
-          # #3036: 선택 원천(에스컬레이터)이 실패하면 실패 이슈의 표지가 그 원천을 24시간 쉬게 한다. 판정은 열린 실패 이슈를 같은 필드로 읽는다(source-reverification과 같다).
           issues="${RUNNER_TEMP}/kric-current-facility-refresh/open-issues.json"
-          gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 1000 --json number,title,body,author > "${issues}"
+          printf '[]\n' > "${prs}"
+          : > "${claims}"
+          printf '[]\n' > "${claim_evidence}"
+          printf '[]\n' > "${issues}"
           node tools/ci/decide-current-kric-facility-refresh.mjs \
             --inventory tools/datapack/source-inventory.json \
             --policy release/product-gates/datapack-freshness-sla.json \
@@ -71,324 +66,6 @@ jobs:
             --repository "${GITHUB_REPOSITORY}" \
             --output "${KRIC_REFRESH_DECISION}" \
             --github-output "${GITHUB_OUTPUT}"
-
-      - name: KRIC current facility refresh / Remove abandoned claims named by the decision
-        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
-        run: |
-          set -euo pipefail
-          # #995: 판정이 정리 대상으로 알린 claim만 지운다(만든 run이 끝났고 receipt 없는 빈 claim뿐인 고아, 닫힌 Abandon claim).
-          # 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
-          gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/kric-current-facility-refresh/claims.txt"
-
-      - name: KRIC current facility refresh / Note refresh waiting on a running producer
-        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
-        env:
-          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
-        run: |
-          echo "::notice title=KRIC facility refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
-
-      - name: KRIC current facility refresh / Mint App token for the open refresh pull request
-        id: app-token-open
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: KRIC current facility refresh / Ensure required CI on the open refresh pull request
-        id: required-ci
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
-        run: |
-          set -euo pipefail
-          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다).
-          node tools/ci/refresh-pr-required-ci.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
-      - name: KRIC current facility refresh / Enforce open refresh pull request age limit
-        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # #939: 열린 갱신 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
-          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow kric-current-facility-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
-      - name: KRIC current facility refresh / Mint App token for the refresh pull request
-        id: app-token-recover
-        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: KRIC current facility refresh / Recover claimed refresh
-        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
-        env:
-          APP_PR_TOKEN: ${{ steps.app-token-recover.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
-          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
-        run: |
-          set -euo pipefail
-          branch="${{ steps.decision.outputs.branch }}"
-          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-          validate_output_set() {
-            local changed="$1"
-            local deleted="$2"
-            [[ -z "${deleted}" ]] || {
-              echo "KRIC refresh claim removed a tracked input" >&2
-              exit 1
-            }
-            [[ -n "${changed}" ]] || {
-              echo "KRIC refresh claim is incomplete" >&2
-              exit 1
-            }
-            # #862 결정 C: 원천 갱신은 원장 등록까지만 한다. 후보 spec·request·hash는 전국 후보 갱신이 만든다.
-            for required in \
-              tools/datapack/release/source-snapshots.json \
-              tools/datapack/source-inventory.json; do
-              grep -Fqx "${required}" <<< "${changed}" || {
-                echo "KRIC refresh claim is incomplete" >&2
-                exit 1
-              }
-            done
-            grep -Eq '^tools/datapack/sources/[^/]+\.json$' <<< "${changed}" || {
-              echo "KRIC refresh claim is incomplete" >&2
-              exit 1
-            }
-            local unexpected
-            unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
-              'tools/datapack/(release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
-            if [[ -n "${unexpected}" ]]; then
-              echo "KRIC refresh claim changed an unsupported path" >&2
-              exit 1
-            fi
-          }
-
-          changed_outputs() {
-            {
-              git diff --name-only --diff-filter=ACMR
-              git ls-files --others --exclude-standard
-            } | LC_ALL=C sort -u
-          }
-
-          validate_terminal_claim_topology() {
-            local output_sha="origin/${branch}"
-            local output_parent
-            local parent_record
-            local claim_commit
-            local source_main_sha
-            local merged_main_sha=""
-            local -a parent_fields
-            output_parent="$(git rev-parse "${output_sha}^")"
-            [[ "$(git rev-list --count "${output_parent}..${output_sha}")" == "1" ]] || {
-              echo "KRIC refresh branch has multiple output commits" >&2
-              exit 1
-            }
-            parent_record="$(git rev-list --parents -n 1 "${output_parent}")"
-            read -r -a parent_fields <<< "${parent_record}"
-            case "${#parent_fields[@]}" in
-              2)
-                claim_commit="${output_parent}"
-                ;;
-              3)
-                claim_commit="$(git rev-parse "${output_parent}^1")"
-                merged_main_sha="$(git rev-parse "${output_parent}^2")"
-                ;;
-              *)
-                echo "KRIC refresh branch has an invalid recovery topology" >&2
-                exit 1
-                ;;
-            esac
-            [[ "$(git log -1 --format=%s "${claim_commit}")" == "Claim KRIC facility refresh" ]] || {
-              echo "KRIC refresh branch has no exact claim commit" >&2
-              exit 1
-            }
-            source_main_sha="$(git rev-parse "${claim_commit}^")"
-            [[ "$(git rev-list --count "${source_main_sha}..${claim_commit}")" == "1" ]] || {
-              echo "KRIC refresh branch has multiple claim commits" >&2
-              exit 1
-            }
-            git merge-base --is-ancestor "${source_main_sha}" HEAD || {
-              echo "KRIC refresh source main is not an ancestor of current main" >&2
-              exit 1
-            }
-            if [[ -n "${merged_main_sha}" ]]; then
-              git merge-base --is-ancestor "${source_main_sha}" "${merged_main_sha}" || {
-                echo "KRIC refresh merge does not descend from the source main" >&2
-                exit 1
-              }
-              git merge-base --is-ancestor "${merged_main_sha}" HEAD || {
-                echo "KRIC refresh merged main is not an ancestor of current main" >&2
-                exit 1
-              }
-              git diff --quiet "${merged_main_sha}" "${output_parent}" || {
-                echo "KRIC refresh merge contains unsupported changes" >&2
-                exit 1
-              }
-            fi
-          }
-
-          [[ "${branch}" =~ ^automation/629-kric-facility-refresh-([0-9]+)$ ]] || {
-            echo "KRIC refresh claim branch identity is invalid" >&2
-            exit 1
-          }
-          subject="$(git log -1 --format=%s "origin/${branch}")"
-          if [[ "${subject}" == "Claim KRIC facility refresh" ]]; then
-            source_run_id="${BASH_REMATCH[1]}"
-            source_main_sha="$(git rev-parse "origin/${branch}^")"
-            [[ "$(git rev-list --count "${source_main_sha}..origin/${branch}")" == "1" ]] || {
-              echo "KRIC refresh claim is not an exact one-commit claim" >&2
-              exit 1
-            }
-            git merge-base --is-ancestor "${source_main_sha}" HEAD || {
-              echo "KRIC refresh claim main is not an ancestor of current main" >&2
-              exit 1
-            }
-            metadata="$(gh run view "${source_run_id}" --repo "${GITHUB_REPOSITORY}" \
-              --json headSha,status,conclusion,event,workflowName,updatedAt \
-              --jq '[.headSha,.status,.conclusion,.event,.workflowName,.updatedAt] | @tsv')"
-            IFS=$'\t' read -r run_head run_status run_conclusion run_event run_workflow run_updated_at <<< "${metadata}"
-            [[ "${run_head}" == "${source_main_sha}" \
-              && "${run_status}" == "completed" \
-              && "${run_conclusion}" == "failure" \
-              && ( "${run_event}" == "schedule" || "${run_event}" == "workflow_dispatch" ) \
-              && "${run_workflow}" == "KRIC Current Facility Refresh" ]] || {
-              echo "KRIC refresh source run identity is invalid" >&2
-              exit 1
-            }
-            claim_artifacts="${RUNNER_TEMP}/kric-current-facility-refresh/claim-artifacts.json"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}/artifacts?per_page=100" > "${claim_artifacts}"
-            evidence_state="$(SOURCE_RUN_ID="${source_run_id}" SOURCE_RUN_UPDATED_AT="${run_updated_at}" \
-              CLAIM_ARTIFACTS="${claim_artifacts}" node --input-type=module -e '
-              import { readFile } from "node:fs/promises";
-              import { classifyKricFacilityClaimEvidence } from "./tools/ci/decide-current-kric-facility-refresh.mjs";
-              const artifacts = JSON.parse(await readFile(process.env.CLAIM_ARTIFACTS, "utf8"));
-              process.stdout.write(classifyKricFacilityClaimEvidence({
-                sourceRunId: process.env.SOURCE_RUN_ID,
-                sourceRunUpdatedAt: process.env.SOURCE_RUN_UPDATED_AT,
-                artifacts,
-              }));
-            ')"
-            # #995: 이 Abandon 경로는 판정이 보존 artifact를 AVAILABLE로 본 뒤 이 step까지 사이에 artifact가 만료·삭제된 경우에만 닿는다.
-            # 판정은 만료됐거나 없는 artifact를 복구 대상에서 빼고(게시 step이 시작됐으면 이상으로 실패), 그 밖에는 정리 대상으로 알린다.
-            # Abandon 커밋이 남은 claim은 다음 판정이 정리 대상으로 보고하고 지운다.
-            if [[ "${evidence_state}" == "EXPIRED" ]]; then
-              # 보존 증거가 만료돼 회수할 수 없는 claim이다. 성공으로 넘기지 않고 claim을 닫은 기록을 남긴 뒤 실패한다.
-              # 다음 run의 decision은 이 claim을 회수 대상에서 빼고 신선도 상태(DUE/EXPIRED)로 새로 판정한다.
-              git config user.name "github-actions[bot]"
-              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              gh auth setup-git
-              git switch --detach "origin/${branch}"
-              git commit --allow-empty -m "Abandon KRIC facility refresh claim" \
-                -m "Retained evidence of source run ${source_run_id} expired before recovery; nothing was recovered or published from this claim."
-              git push origin "HEAD:refs/heads/${branch}"
-              message="KRIC refresh claim ${branch} was abandoned: retained evidence of run ${source_run_id} expired before recovery"
-              echo "::error title=KRIC refresh claim abandoned::${message}"
-              printf '%s\n' "${message}" >> "${GITHUB_STEP_SUMMARY}"
-              exit 1
-            fi
-            [[ "${evidence_state}" == "AVAILABLE" ]] || {
-              echo "KRIC refresh retained evidence state is invalid" >&2
-              exit 1
-            }
-            evidence_root="${RUNNER_TEMP}/kric-current-facility-refresh/retained-${source_run_id}"
-            source_root="${evidence_root}/${source_run_id}"
-            target_root="${KRIC_REFRESH_OPERATION_ROOT}"
-            gh run download "${source_run_id}" --repo "${GITHUB_REPOSITORY}" \
-              --name "kric-current-facility-refresh-${source_run_id}" --dir "${evidence_root}"
-            [[ -f "${evidence_root}/decision.json" \
-              && -f "${source_root}/journal.json" \
-              && -f "${source_root}/raw-receipt.json" ]] || {
-              echo "KRIC refresh retained evidence is incomplete" >&2
-              exit 1
-            }
-            cp "${source_root}/raw-receipt.json" "${source_root}/receipt.json"
-            main_sha="$(git rev-parse HEAD)"
-            # #3036: 복구 대상 원천은 보존한 journal의 원천이다. recover-published가 두 journal의 원천이 같은지 다시 확인한다.
-            # 이 변경 이전 journal에는 sourceId가 없고 그때는 표준 원천뿐이었으므로 키가 없을 때만 표준으로 읽는다. 있는 값은 그대로 두어 prepare가 거부한다.
-            source_id="$(SOURCE_JOURNAL="${source_root}/journal.json" node --input-type=module -e '
-              import { readFile } from "node:fs/promises";
-              import { kricFacilityJournalSourceId } from "./tools/datapack/lib/kric-standard-facilities.mjs";
-              process.stdout.write(String(kricFacilityJournalSourceId(JSON.parse(await readFile(process.env.SOURCE_JOURNAL, "utf8")))));
-            ')"
-            printf 'KRIC_REFRESH_RECOVERED_SOURCE_ID=%s\n' "${source_id}" >> "${GITHUB_ENV}"
-            node tools/datapack/run-current-capital-facility-operation.mjs \
-              --phase prepare --source-id "${source_id}" --operation-root "${target_root}" --expected-main-sha "${main_sha}" --expected-facility-head-sha "${main_sha}"
-            node tools/datapack/run-current-capital-facility-operation.mjs \
-              --phase recover-published --operation-root "${target_root}" --source-operation-root "${source_root}"
-            node tools/datapack/run-current-capital-facility-operation.mjs \
-              --phase finalize --operation-root "${target_root}"
-            validate_output_set "$(changed_outputs)" "$(git diff --name-only --diff-filter=D)"
-            git stash push --include-untracked -m "Recover KRIC facility snapshot ${source_run_id}" -- \
-              tools/datapack/release/source-snapshots.json \
-              tools/datapack/source-inventory.json tools/datapack/sources
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            gh auth setup-git
-            git switch --track -c "${branch}" "origin/${branch}"
-            git merge --no-edit "${main_sha}"
-            git stash pop
-            validate_output_set "$(changed_outputs)" "$(git diff --name-only --diff-filter=D)"
-            git add tools/datapack/release/source-snapshots.json \
-              tools/datapack/source-inventory.json tools/datapack/sources
-            git diff --cached --quiet && exit 1
-            git commit -m "Refresh KRIC facility snapshot"
-            git push origin "${branch}"
-          elif [[ "${subject}" == "Refresh KRIC facility snapshot" ]]; then
-            validate_terminal_claim_topology
-          else
-            echo "KRIC refresh claim has no recognized terminal commit" >&2
-            exit 1
-          fi
-          deleted="$(git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}")"
-          changed="$(git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}")"
-          validate_output_set "${changed}" "${deleted}"
-          existing="${RUNNER_TEMP}/kric-current-facility-refresh/claim-prs.json"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" \
-            --limit 100 --json number,state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
-          [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || {
-            echo "KRIC refresh claim already has a pull request" >&2
-            exit 1
-          }
-          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          # #1012: 정책이 읽는 증거 블록이 든 본문을 만든다. 기준은 복구한 branch와 main의 실제 분기점이다. 증거가 어긋나면 PR을 만들지 않고 실패한다.
-          body_file="${RUNNER_TEMP}/kric-current-facility-refresh/pull-request-body-recovery-${GITHUB_RUN_ID}.md"
-          node tools/ci/refresh-automation-pr.mjs body --stage kric-facility-refresh --base-sha "$(git merge-base origin/main "origin/${branch}")" --head-sha "$(git rev-parse "origin/${branch}")" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due KRIC facility snapshot through the current OCI operation." --refs "Refs #629, #39, #29" --output "${body_file}"
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" \
-            --title "Refresh KRIC facility snapshot" \
-            --body-file "${body_file}"
-
-      - name: KRIC current facility refresh / Create durable claim
-        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          branch="automation/629-kric-facility-refresh-${GITHUB_RUN_ID}"
-          main_sha="$(git rev-parse HEAD)"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "${branch}"
-          git commit --allow-empty -m "Claim KRIC facility refresh"
-          claim_head="$(git rev-parse HEAD)"
-          gh auth setup-git
-          git push origin "${branch}"
-          git switch --detach "${main_sha}"
-          {
-            printf 'KRIC_REFRESH_BRANCH=%s\n' "${branch}"
-            printf 'KRIC_REFRESH_CLAIM_SHA=%s\n' "${claim_head}"
-            printf 'KRIC_REFRESH_MAIN_SHA=%s\n' "${main_sha}"
-          } >> "${GITHUB_ENV}"
 
       - name: KRIC current facility refresh / Validate provider configuration
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -415,9 +92,9 @@ jobs:
         run: |
           set -euo pipefail
           # #995: 준비와 공급자 수집까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
-          # #3036: 판정이 고른 원천 하나(표준 또는 에스컬레이터)를 갱신한다. 원천은 journal에 남아 게시·등록·복구가 따른다.
+          # #3036: 판정이 고른 원천 하나(표준 또는 에스컬레이터)를 갱신한다.
           [[ "$(git rev-parse HEAD)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
-            echo "KRIC refresh operation is not running from its claimed main" >&2
+            echo "KRIC refresh operation is not running from its source main" >&2
             exit 1
           }
           node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --source-id "${KRIC_REFRESH_SOURCE_ID}" --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${KRIC_REFRESH_MAIN_SHA}" --expected-facility-head-sha "${KRIC_REFRESH_MAIN_SHA}"
@@ -428,24 +105,44 @@ jobs:
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # #995: finalize phase가 raw object를 OCI에 게시하고 receipt를 쓴 뒤 등록한다. 이 step이 시작되면 게시됐을 수 있다(claim 정리가 이 step 이름으로 판정한다: claim-orphans.mjs).
+          # #995: finalize phase가 raw object를 OCI에 게시하고 receipt를 쓴 뒤 등록한다. 게시 직전 origin/main 이동 여부를 확인한다.
+          [[ "$(git rev-parse HEAD)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
+            echo "KRIC refresh operation is not running from its source main" >&2
+            exit 1
+          }
+          gh auth setup-git
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
+            echo "KRIC refresh source main changed before publish" >&2
+            exit 1
+          }
           node tools/datapack/run-current-capital-facility-operation.mjs --phase finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"
 
-      - name: KRIC current facility refresh / Finalize claimed refresh branch
+      - name: KRIC current facility refresh / Commit and push KRIC facility refresh
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git switch "${KRIC_REFRESH_BRANCH}"
-          [[ "$(git rev-parse HEAD^)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
-            echo "KRIC refresh claim is not based on its operation main" >&2
+          [[ "$(git rev-parse HEAD)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
+            echo "KRIC refresh commit must stay on its source main" >&2
             exit 1
           }
-          git add -A
+          mapfile -t untracked < <(git ls-files --others --exclude-standard)
+          for entry in "${untracked[@]}"; do
+            [[ "${entry}" =~ ^tools/datapack/sources/[^/]+\.json$ ]] || {
+              echo "KRIC refresh created an unsupported untracked file: ${entry}" >&2
+              exit 1
+            }
+          done
+          git add -- tools/datapack/release/source-snapshots.json tools/datapack/source-inventory.json ${untracked[@]+"${untracked[@]}"}
+          [[ -z "$(git diff --name-only)" ]] || {
+            echo "KRIC refresh modified an unallowed tracked path" >&2
+            exit 1
+          }
           deleted="$(git diff --cached --name-only --diff-filter=D)"
           [[ -z "${deleted}" ]] || {
             echo "KRIC refresh removed a tracked input" >&2
@@ -476,32 +173,19 @@ jobs:
             exit 1
           fi
           git diff --cached --quiet && exit 1
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Refresh KRIC facility snapshot"
-          # #1012: push 전에 증거 블록이 든 PR 본문을 만든다. 원장 게이트·inventory 범위·증거 결속이 어긋나면 여기서 실패해 push도 PR도 없다(#926 실패 보고).
-          node tools/ci/refresh-automation-pr.mjs body --stage kric-facility-refresh --base-sha "${KRIC_REFRESH_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due KRIC facility snapshot through the current OCI operation." --refs "Refs #629, #39, #29" --output "${RUNNER_TEMP}/kric-current-facility-refresh/pull-request-body-${GITHUB_RUN_ID}.md"
-          git push origin "${KRIC_REFRESH_BRANCH}"
-
-      - name: KRIC current facility refresh / Mint App token for the refresh pull request
-        id: app-token-pr
-        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
-        with:
-          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
-          owner: AquilaXk
-          repositories: easysubway-data
-          permission-pull-requests: write
-      - name: KRIC current facility refresh / Create draft pull request
-        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
-        env:
-          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${KRIC_REFRESH_BRANCH}" \
-            --title "Refresh KRIC facility snapshot" \
-            --body-file "${RUNNER_TEMP}/kric-current-facility-refresh/pull-request-body-${GITHUB_RUN_ID}.md"
+          summary_file="${RUNNER_TEMP}/kric-current-facility-refresh/commit-summary-${GITHUB_RUN_ID}.md"
+          node tools/ci/refresh-automation-pr.mjs body --stage kric-facility-refresh --base-sha "${KRIC_REFRESH_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due KRIC facility snapshot through the current OCI operation." --refs "Direct main commit" --output "${summary_file}"
+          cat "${summary_file}" >> "${GITHUB_STEP_SUMMARY}"
+          gh auth setup-git
+          git fetch --no-tags origin main
+          [[ "$(git rev-parse origin/main)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
+            echo "KRIC refresh target main changed before push" >&2
+            exit 1
+          }
+          git push origin HEAD:main
 
       - name: KRIC current facility refresh / Upload sanitized evidence
         if: ${{ always() }}
@@ -514,23 +198,11 @@ jobs:
             ${{ runner.temp }}/kric-current-facility-refresh/${{ github.run_id }}/raw-receipt.json
           if-no-files-found: ignore
           retention-days: 14
-      - name: KRIC current facility refresh / Release this failed run's claim
-        if: ${{ failure() && env.KRIC_REFRESH_BRANCH != '' && env.KRIC_REFRESH_CLAIM_SHA != '' && steps.publish.outcome == 'skipped' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PUBLICATION_OUTCOME: ${{ steps.publish.outcome }}
-        run: |
-          set -euo pipefail
-          # #1326: 게시 step이 건너뛰어진(게시된 것이 없는) 실패 run은 자기 빈 claim을 같은 run에서 푼다. 삭제 규칙은 도구가 정한다.
-          node tools/ci/release-own-claim.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${KRIC_REFRESH_BRANCH}" --claim-sha "${KRIC_REFRESH_CLAIM_SHA}" --publication-outcome "${PUBLICATION_OUTCOME}"
 
-      - name: KRIC current facility refresh / Report refresh failure as an issue
+      - name: KRIC current facility refresh / Report refresh failure summary
         if: ${{ failure() }}
         env:
           GH_TOKEN: ${{ github.token }}
           DECISION_SOURCE_ID: ${{ steps.decision.outputs.source_id }}
         run: |
-          # #3036: 실패 이슈에 실패한 원천을 적고 그 원천의 실패 시각 표지를 남긴다. 선택 원천의 재시도 쿨다운이 이 표지를 읽는다.
-          # 판정이 고른 원천이 없으면(복구 run) 복구한 journal의 원천을 쓰고, 둘 다 없으면 원천 없이 보고한다.
-          failed_source_id="${DECISION_SOURCE_ID:-${KRIC_REFRESH_RECOVERED_SOURCE_ID:-}}"
-          node tools/ci/report-refresh-failure.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --source-id "${failed_source_id}"
+          node tools/ci/report-refresh-failure.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --source-id "${DECISION_SOURCE_ID:-}"

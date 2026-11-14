@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { decodeXmlEntities } from "../datapack/lib/xml-decode.mjs";
 
 // 참조 페이스는 오너가 도식을 설계한 Pretendard의 Regular·SemiBold·Bold·ExtraBold·
 // Black이다. 바탕층은 라벨을 이 페이스의 글리프 윤곽선으로 굽는다
@@ -82,20 +83,8 @@ export function buildSvgTree(svgText) {
   return root;
 }
 
-// XML 엔티티 ↔ 평문. `<style>` 내용은 XML 텍스트라 `&quot;` 같은 엔티티가 그대로
-// 들어온다(오너 SVG의 `[data-label-role=&quot;ordinary&quot;]`·font-family 목록).
-// 디코드하지 않으면 선택자 파싱과 `;` 분리가 모두 깨진다.
-const XML_ENTITIES = [
-  ["&lt;", "<"],
-  ["&gt;", ">"],
-  ["&quot;", '"'],
-  ["&apos;", "'"],
-];
-
 export function decodeXmlText(value) {
-  let result = value;
-  for (const [entity, plain] of XML_ENTITIES) result = result.replaceAll(entity, plain);
-  return result.replaceAll("&amp;", "&");
+  return decodeXmlEntities(value);
 }
 
 /** XML 속성값 안에 쓸 수 있게 `& < > "`를 엔티티로 바꾼다. */

@@ -4,6 +4,7 @@ import { classifyKricTransportFailure } from "./collect-kric-accessibility-snaps
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { isRetryAfterExceedsCap, isTransientKricResultCode, kricJsonResultCodeOf, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 
 const QUERY_KEYS = [
   "queryId", "routeEdgeId", "providerOperatorId", "providerLineId",
@@ -398,7 +399,9 @@ async function requestProviderBytes({ fetchImpl, queryId, requestTimeoutMs, retr
         signal: AbortSignal.timeout(requestTimeoutMs),
         headers: { accept: "application/json" },
       });
-      return response?.ok ? { response, bytes: Buffer.from(await response.arrayBuffer()) } : { response };
+      return response?.ok
+        ? { response, bytes: await readResponseBytesWithLimit(response, { maxBytes: 16 * 1024 * 1024, label: `KRIC EXIT ${queryId}` }) }
+        : { response };
     }, {
       label: `KRIC EXIT ${queryId}`,
       isTransientResult: ({ bytes }) => bytes !== undefined && isTransientKricResultCode(kricJsonResultCodeOf(bytes)),

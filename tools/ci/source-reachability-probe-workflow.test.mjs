@@ -12,8 +12,8 @@ import { loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 // 서울 k3s와 같은 스크립트를 platform의 고정 커밋에서 받아 쓰고, 비밀·환경·쓰기 권한이 없다.
 const root = path.resolve(import.meta.dirname, "../..");
 const PLATFORM_PROBE_SCRIPT_REL_PATH = "tools/ops/source-reachability-probe.mjs";
-const PINNED_PLATFORM_PROBE_REF = "e158262aa37608b1014bc1689c67ec7fa9fff36c";
-const PINNED_PLATFORM_PROBE_SHA256 = "7d51e0cf8540a3e0919a8515e7336d502cdba13862f44fe1e0791002b045198a";
+const PINNED_PLATFORM_PROBE_REF = "8a0e30829d8d349c0bc6b942f17b4d9260a9caf5";
+const PINNED_PLATFORM_PROBE_SHA256 = "0d21a078fdac3af74fe2a8b7feaeb6b65973e9d6a772149f2cd531f4eeceedd7";
 const { yml, workflow, job, steps, step } = loadWorkflow(root, "source-reachability-probe.yml");
 
 function sha256Hex(content) {

@@ -11,6 +11,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, assertExpectedApiObservation, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { isRetryAfterExceedsCap, isTransientKricResultCode, kricJsonResultCodeOf, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 import { isTransientTransportError, unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
@@ -63,10 +64,14 @@ async function readResponseBytes(response, label, bodyTimeoutMs) {
             if (done) return Buffer.concat(chunks, total);
             const chunk = Buffer.from(value);
             total += chunk.byteLength;
+            if (total > 16 * 1024 * 1024) {
+              await reader.cancel().catch(() => {});
+              throw new Error(`KRIC response exceeds maximum size (16777216 bytes): ${label}`);
+            }
             chunks.push(chunk);
           }
         }
-        return Buffer.from(await response.arrayBuffer());
+        return readResponseBytesWithLimit(response, { maxBytes: 16 * 1024 * 1024, label });
       })(),
       new Promise((_, reject) => {
         bodyTimer = setTimeout(() => {

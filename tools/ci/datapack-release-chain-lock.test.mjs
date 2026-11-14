@@ -82,8 +82,9 @@ test("RC chain은 RC가 성공하면 체인 workflow를 dispatch하고 rc_run_id
   assert.match(handover, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
   assert.match(handover, /RC_RUN_ID: \$\{\{ steps\.dispatch\.outputs\.rc_run_id \}\}/u);
   assert.doesNotMatch(runBlock(handover), /\$\{\{/u);
-  // dispatch 권한과 실패 이슈 권한: actions write, issues write, contents read.
-  assert.match(rcChain, /\npermissions:\n  actions: write\n  contents: read\n  issues: write\n/u);
+  // dispatch 권한: actions write, contents read (이슈 쓰기 없음).
+  assert.match(rcChain, /\npermissions:\n  actions: write\n  contents: read\n/u);
+  assert.doesNotMatch(rcChain, /\bissues:\s*write\b/u);
   const script = runBlock(handover);
   // 체인 run은 시계가 아니라 이름(chain rc=<rc_run_id>)으로 찾는다.
   assert.doesNotMatch(script, /created=|dispatched_after|date -u/u);
@@ -162,7 +163,7 @@ test("RC chain은 RC dispatch 뒤 체인이 시작되지 못한 모든 실패를
   assert.ok(rcChain.trimEnd().endsWith(report.trimEnd()), "the failure report is the last step");
   // failure()만으로는 RC를 dispatch하지 못한 경우(main 이동 등 정상 경쟁)까지 올리므로 dispatch가 성공한 뒤의 실패로 한정한다.
   assert.match(report, /if: \$\{\{ failure\(\) && steps\.dispatch\.outcome == 'success' && vars\.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' \}\}/u);
-  assert.match(report, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
+  assert.doesNotMatch(report, /GH_TOKEN:/u);
   assert.match(report, /RC_RUN_ID: \$\{\{ steps\.dispatch\.outputs\.rc_run_id \}\}/u);
   const script = runBlock(report);
   assert.doesNotMatch(script, /\$\{\{/u);

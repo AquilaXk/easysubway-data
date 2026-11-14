@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 
 import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
@@ -144,8 +145,12 @@ export function buildServerTimetableSnapshot({
   if (canonicalGzipBytes != null) {
     let canonicalSqlBytes;
     try {
-      canonicalSqlBytes = gunzipSync(canonicalGzipBytes);
-    } catch {
+      canonicalSqlBytes = gunzipWithLimit(canonicalGzipBytes, {
+        maxOutputLength: 512 * 1024 * 1024,
+        label: "canonical timetable SQL",
+      });
+    } catch (error) {
+      if (error?.cause?.code === "ERR_BUFFER_TOO_LARGE" || error?.code === "ERR_BUFFER_TOO_LARGE") throw error;
       throw new Error("canonical gzip transport does not match normalized SQL");
     }
     if (!canonicalSqlBytes.equals(sqlBytes)) {
@@ -503,7 +508,10 @@ function officialSubwayFareSql(canonicalPackGzipBytes, baselineSql) {
   const sqlitePath = path.join(directory, "capital.sqlite");
   let db;
   try {
-    writeFileSync(sqlitePath, gunzipSync(canonicalPackGzipBytes));
+    writeFileSync(sqlitePath, gunzipWithLimit(canonicalPackGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "canonical datapack sqlite",
+    }));
     db = new DatabaseSync(sqlitePath, { readOnly: true });
     const quotes = db.prepare(`
       SELECT origin_station_id, destination_station_id, gnrl_card_fare, source_id, snapshot_id
@@ -579,8 +587,12 @@ function validateCanonicalTopologyPack({
 }) {
   let canonicalPackSqliteBytes;
   try {
-    canonicalPackSqliteBytes = gunzipSync(canonicalPackGzipBytes);
-  } catch {
+    canonicalPackSqliteBytes = gunzipWithLimit(canonicalPackGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "canonical topology datapack",
+    });
+  } catch (error) {
+    if (error?.cause?.code === "ERR_BUFFER_TOO_LARGE" || error?.code === "ERR_BUFFER_TOO_LARGE") throw error;
     throw new Error("canonical topology pack identity mismatch");
   }
   const outputSha256 = sha256(canonicalPackGzipBytes);
@@ -685,7 +697,10 @@ function canonicalSubwayStationMapping(canonicalPackGzipBytes, subwayRoster) {
   const sqlitePath = path.join(directory, "capital.sqlite");
   let db;
   try {
-    writeFileSync(sqlitePath, gunzipSync(canonicalPackGzipBytes));
+    writeFileSync(sqlitePath, gunzipWithLimit(canonicalPackGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "canonical datapack sqlite",
+    }));
     db = new DatabaseSync(sqlitePath, { readOnly: true });
     const canonicalStations = db.prepare(`
       SELECT stations.id, stations.name_ko, station_lines.line_sequence
@@ -908,8 +923,12 @@ function validateAdmission({
 function normalizeBaselineSql(baselineGzipBytes) {
   let sql;
   try {
-    sql = gunzipSync(baselineGzipBytes).toString("utf8");
-  } catch {
+    sql = gunzipWithLimit(baselineGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "subway baseline SQL",
+    }).toString("utf8");
+  } catch (error) {
+    if (error?.cause?.code === "ERR_BUFFER_TOO_LARGE" || error?.code === "ERR_BUFFER_TOO_LARGE") throw error;
     throw new Error("subway baseline must be gzip-compressed SQL");
   }
   const statements = sql.lines ? sql.lines() : sql.split(/\r?\n/);

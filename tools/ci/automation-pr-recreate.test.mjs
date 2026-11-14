@@ -392,91 +392,7 @@ test("CLI plan은 닫을 대상 수를 출력하고 알 수 없는 명령·인�
   }
 });
 
-// ---------------------------------------------------------------------------
-// workflow 계약
-// ---------------------------------------------------------------------------
-const FILE = "automation-pr-behind-recreate.yml";
-const { yml, workflow, job, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
-const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
-const APP_TOKEN_ACTION = "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510";
-const NEEDED = "${{ steps.plan.outputs.targets != '0' }}";
-
-test("트리거는 main push와 CI 완료이고 변수가 true일 때만 돈다. pull_request_target과 PR 코드 checkout이 없다", () => {
-  assert.deepEqual(workflow.on, {
-    push: {
-      branches: ["main"],
-    },
-    workflow_run: {
-      workflows: ["CI"],
-      types: ["completed"],
-    },
-  });
-  assert.doesNotMatch(code, /pull_request_target/u);
-  assert.equal(
-    job.if,
-    "${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' && (github.event_name == 'push' || (github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository)) }}",
-  );
-  const checkouts = steps().filter(({ uses }) => uses?.startsWith("actions/checkout@"));
-  assert.equal(checkouts.length, 1);
-  assert.equal(checkouts[0].with.ref, undefined);
-  for (const forbidden of [/refs\/pull/u, /pull_request\.head/u, /head_sha/u, /actions\/download-artifact/u, /gh pr merge|update-branch|--admin/u, /gh pr create/u]) assert.doesNotMatch(code, forbidden, String(forbidden));
-  assert.deepEqual([...new Set([...code.matchAll(/node (\S+)/gu)].map((match) => match[1]))], ["tools/ci/automation-pr-recreate.mjs", "tools/ci/report-refresh-failure.mjs"]);
-});
-
-test("권한은 job 하나에만 있고 쓰기는 ref 삭제(contents)와 workflow 재실행(actions)뿐이다. PR 닫기는 App 토큰(pull_requests: write)으로 한다", () => {
-  assert.deepEqual(workflow.permissions, {});
-  assert.equal(Object.keys(workflow.jobs).length, 1);
-  assert.deepEqual(job.permissions, {
-    actions: "write",
-    contents: "write",
-    issues: "write",
-    "pull-requests": "read",
-  });
-  assert.deepEqual(job.concurrency, {
-    group: "automation-pr-recreate",
-    "cancel-in-progress": false,
-  });
-  const mint = steps().filter(({ uses }) => uses === APP_TOKEN_ACTION);
-  assert.equal(mint.length, 1);
-  assert.equal(ifCondition(mint[0]), NEEDED);
-  assert.deepEqual(mint[0].with, {
-    "client-id": "${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}",
-    "private-key": "${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}",
-    owner: "AquilaXk",
-    repositories: "easysubway-data",
-    "permission-pull-requests": "write",
-  });
-  assert.deepEqual([...new Set([...code.matchAll(/secrets\.(\w+)/gu)].map((match) => match[1]))].sort(), ["EASYSUBWAY_RELEASE_APP_CLIENT_ID", "EASYSUBWAY_RELEASE_APP_PRIVATE_KEY"]);
-  assert.equal(code.split("steps.app-token.outputs.token").length - 1, 1);
-});
-
-test("계획(읽기)이 먼저고, 닫을 대상이 있을 때만 App 토큰을 받아 실행 step에서 쓴다", () => {
-  const names = steps().map(({ name }) => name);
-  assert.deepEqual(names, [
-    "Checkout the default branch",
-    "Set up Node.js",
-    "Plan the behind automation pull requests",
-    "Mint App token for closing pull requests",
-    "Close behind automation pull requests and request a fresh run",
-    "Report refresh failure as an issue",
-  ]);
-  assertNoExpressionInRunScripts({ steps, file: FILE });
-  const plan = step("Plan the behind automation pull requests");
-  assert.equal(plan.id, "plan");
-  assert.equal(plan.env.GH_TOKEN, "${{ github.token }}");
-  assert.ok(plan.run.includes('node tools/ci/automation-pr-recreate.mjs plan --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"'));
-  const run = step("Close behind automation pull requests and request a fresh run");
-  assert.equal(ifCondition(run), NEEDED);
-  assert.equal(run.env.GH_TOKEN, "${{ github.token }}");
-  assert.equal(run.env.APP_TOKEN, "${{ steps.app-token.outputs.token }}");
-  assert.ok(run.run.includes('node tools/ci/automation-pr-recreate.mjs run --repository "${GITHUB_REPOSITORY}"'));
-});
-
-test("실패하면 마지막 step이 #926 경로로 이슈를 연다", () => {
-  assertFailureReportLast({ yml, step, file: FILE });
-  assert.ok(Object.hasOwn(REFRESH_WORKFLOWS, FILE));
-  assert.doesNotMatch(code, /continue-on-error|\|\| true|\|\| exit 0/u);
-});
+// (automation-pr-behind-recreate.yml is retired in solo-project mode; unit tests for planBehindRecreation continue below.)
 
 // ---------------------------------------------------------------------------
 // #1127: 하루 한 번만 받을 수 있는 수집분을 들고 있는 단계는 닫는 순간 그날 수집분을 잃는다.
@@ -575,12 +491,7 @@ test("수도권 topology 갱신 PR은 같은 KST 날 만들어졌으면 닫지 �
   await assert.rejects(planBehindRecreation({ gateEnabled: { "itx-promotion": true }, repository: REPOSITORY, api: noDate.api, now: NOW }), /AUTOMATION_PR_INPUT/u);
 });
 
-test("워크플로: 재생 입력 dispatch를 위해 actions: write 하나만 쓰고 artifact는 REST 조회로만 읽는다 (다운로드·PR 코드 실행 없음)", () => {
-  assert.equal(job.permissions.actions, "write");
-  const header = yml.split("\n").filter((line) => line.startsWith("#")).join("\n");
-  assert.match(header, /replay_run_id/u);
-  assert.match(header, /#1127/u);
-});
+// (automation-pr-behind-recreate.yml runtime contract retired in solo-project mode.)
 
 // ---------------------------------------------------------------------------
 // #1131 리뷰: 닫기와 재생이 어긋나 수집분을 잃는 경로를 없앤다.
@@ -656,13 +567,7 @@ test("F2: 재생 run을 받는 변수 DATAPACK_SCHEDULED_ITX_PROMOTION이 true�
   }
 });
 
-test("F2: workflow가 변수를 plan과 run step에 env로 넘긴다", () => {
-  for (const name of ["Plan the behind automation pull requests", "Close behind automation pull requests and request a fresh run"]) {
-    assert.equal(step(name).env.DATAPACK_SCHEDULED_ITX_PROMOTION, "${{ vars.DATAPACK_SCHEDULED_ITX_PROMOTION }}", name);
-    assert.equal(step(name).env.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION, "${{ vars.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION }}", name);
-  }
-  assertNoExpressionInRunScripts({ steps, file: FILE });
-});
+// (workflow env step assertions retired with automation-pr-behind-recreate.yml.)
 
 test("F3: 같은 KST 날의 topology PR도 ITX admission 파일을 담고 있지 않으면 닫고 다시 만든다", async () => {
   const withIt = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6), createdAt: "2026-10-05T16:00:00Z" })], behind: { [sha(6)]: 2 }, files: { 40: TOPOLOGY_FILES_WITH_ITX } });
@@ -698,15 +603,7 @@ test("F4: 재생 run id는 판정 도구와 같은 규칙(안전한 정수)으�
   assert.equal(isReplayRunId("9007199254740992"), false);
 });
 
-test("워크플로 머리말은 상한의 의미(같은 main tip에서 24시간 안에 RECREATE_DAILY_LIMIT회, 별도 starvation 상한)를 코드와 같게 설명한다 (#1147 리뷰 F1)", () => {
-  const header = yml.split("\n").slice(0, yml.split("\n").findIndex((line) => line === "on:")).filter((line) => line.startsWith("#")).join("\n");
-  assert.match(header, new RegExp(`같은 단계가 같은 main tip에서 24시간 안에 ${RECREATE_DAILY_LIMIT}회를 넘게 닫히면`, "u"));
-  assert.match(header, /main이 전진하면.*이전 닫힘은 세지 않으므로 사람이 PR을 닫지 않아도 상한이 풀린다/su);
-  assert.match(header, new RegExp(`tip과 관계없이 24시간 안에 ${RECREATE_STARVATION_LIMIT}회`, "u"));
-  assert.match(header, /AUTOMATION_PR_RECREATE_STARVATION/u);
-  // 옛 의미("main tip" 없이 24시간 안에 3회)로 되돌린 문구는 허용하지 않는다.
-  assert.doesNotMatch(header, /같은 단계가 24시간 안에/u);
-});
+// (header limit assertions retired with automation-pr-behind-recreate.yml.)
 
 // #3036 replay
 const reverificationArtifact = (runId, prefix) => [liveArtifact(runId, {}, prefix)];

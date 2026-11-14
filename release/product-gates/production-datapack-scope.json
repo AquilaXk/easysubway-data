@@ -10338,7 +10338,7 @@
   ],
   "evidencePolicy": {
     "githubSummaryOnly": true,
-    "localOnlyEvidenceRoot": ".codex/evidence/datapack/production-scope/<rc-or-run>/",
+    "localOnlyEvidenceRoot": ".evidence/evidence/datapack/production-scope/<rc-or-run>/",
     "forbiddenInGithubSummary": [
       "production signing private key",
       "object storage credential",

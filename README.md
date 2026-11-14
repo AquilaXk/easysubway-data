@@ -22,9 +22,9 @@ We build on public data from the Ministry of Land, Infrastructure and Transport,
 
 Each release includes our [source inventory](tools/datapack/source-inventory.json) recording the provider, license, collection time, and coverage for every data source. Route maps track back to original geometry through our [geometry provenance manifest](tools/route-map/geometry-provenance-manifest.json).
 
-## Current scope
+## Coverage
 
-Candidate data covers five metropolitan areas across South Korea: Capital Area, Gwangju, Daejeon, Daegu, and Busan. Facilities for Sangnoksu and Sadang stations in the Capital Area have completed on-site verification. Remaining lines and regions undergo automated checks before admission.
+Provides nationwide Korean urban railway and metropolitan rail data covering five regions: Capital Area, Busan, Daegu, Daejeon, and Gwangju. Includes official barrier-free facility locations, accessible transfer routes, station timetables, and vector route map data.
 
 ## Artifacts
 

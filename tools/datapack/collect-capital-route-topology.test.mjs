@@ -901,3 +901,12 @@ test("GTX-A xlsx 파서는 Z 뒤의 열(AA)까지 한 행의 너비로 읽는다
   const parsed = parseGtxADistanceXlsx(xlsx);
   assert.deepEqual(parsed.branchSequences, [{ branchName: "GTX-A", stationNames: ["수서", "성남"], operatorRunCount: 1 }]);
 });
+
+test("parseGtxADistanceXlsx는 zip-slip 경로와 deflate bomb을 압축 해제 전에 차단한다", () => {
+  const zipSlip = storedZip({
+    "../evil.xml": "<x/>",
+    "xl/sharedStrings.xml": "<sst/>",
+    "xl/worksheets/sheet1.xml": "<worksheet/>",
+  });
+  assert.throws(() => parseGtxADistanceXlsx(zipSlip), /unsafe zip entry path/i);
+});

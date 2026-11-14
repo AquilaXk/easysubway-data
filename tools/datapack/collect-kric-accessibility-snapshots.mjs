@@ -6,7 +6,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isRetryAfterExceedsCap, withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 
@@ -572,7 +572,10 @@ export async function loadCanonicalStationLinesFromBundledIndex({ bundledIndex, 
   try {
     const memberships = new Map();
     for (const { index, pack, packPath } of resolvedPacks) {
-      const sqliteBytes = gunzipSync(await readFile(packPath));
+      const sqliteBytes = gunzipWithLimit(await readFile(packPath), {
+        maxOutputLength: 512 * 1024 * 1024,
+        label: `${pack.id} pack`,
+      });
       if (hashBytes(sqliteBytes) !== pack.sqliteSha256) throw new Error(`${pack.id}:SQLITE_SHA256_MISMATCH`);
       const sqlitePath = path.join(temporaryDirectory, `${index}.sqlite`);
       await writeFile(sqlitePath, sqliteBytes);
