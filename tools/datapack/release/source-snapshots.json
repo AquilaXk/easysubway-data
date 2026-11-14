@@ -376724,5 +376724,53 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "sourceId": "itx-cheongchun-source-timetable",
+    "snapshotId": "itx-cheongchun-source-timetable-20261114015051099",
+    "previousSnapshotId": "itx-cheongchun-source-timetable-20261109172230815",
+    "retrievedAt": "2026-11-14T01:50:51.099Z",
+    "sourceUpdatedAt": "2026-11-14T01:50:51.099Z",
+    "freshnessExpiresAt": "2026-11-16T15:00:00.000Z",
+    "fetchStatus": "SUCCESS",
+    "httpStatus": 200,
+    "rawObjectUri": "oci://easysubway-source-raw/source-raw/itx-cheongchun-source-timetable/20261114/a4a0f2e6daae55dd4b4ffb1df76cc14c086f390ddc6ccde379da72c9211815c5.json",
+    "rawSha256": "a4a0f2e6daae55dd4b4ffb1df76cc14c086f390ddc6ccde379da72c9211815c5",
+    "rawObjectSha256": "a4a0f2e6daae55dd4b4ffb1df76cc14c086f390ddc6ccde379da72c9211815c5",
+    "contentSha256": "fef3c9e8aec40fadd94c3ed8574e2448374626caa05c3af345e1934d61da1046",
+    "rowCount": 1008,
+    "coverageCount": 972,
+    "schemaFingerprint": "64cd2e99dc8167cae3078c1a029281d867e2977acf5dc23e17f5c6e3efd9d568",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "redactedRequestFingerprint": "295b46e5106a194309c26f2dbb9393d0170d958aef981271d4f20c35e5cf98a3",
+    "diffSummary": {
+      "status": "CHANGED",
+      "rawHashChanged": true,
+      "schemaHashChanged": false,
+      "requestHashChanged": true,
+      "sourceUpdatedAtChanged": true,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    },
+    "rawReceipt": {
+      "receiptVersion": 1,
+      "sourceId": "itx-cheongchun-source-timetable",
+      "snapshotId": "itx-cheongchun-source-timetable-20261114015051099",
+      "capturedAt": "2026-11-14T01:50:51.099Z",
+      "storedAt": "2026-11-14T01:59:34.883Z",
+      "rawObjectUri": "oci://easysubway-source-raw/source-raw/itx-cheongchun-source-timetable/20261114/a4a0f2e6daae55dd4b4ffb1df76cc14c086f390ddc6ccde379da72c9211815c5.json",
+      "rawObjectSha256": "a4a0f2e6daae55dd4b4ffb1df76cc14c086f390ddc6ccde379da72c9211815c5",
+      "snapshotRawSha256": "a4a0f2e6daae55dd4b4ffb1df76cc14c086f390ddc6ccde379da72c9211815c5",
+      "snapshotFileSha256": "fef3c9e8aec40fadd94c3ed8574e2448374626caa05c3af345e1934d61da1046",
+      "byteSize": 4029017,
+      "contentType": "application/json",
+      "storageMode": "OBJECT_STORAGE_PREAUTH",
+      "immutableWriteVerified": true,
+      "redactedRequestUrl": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2"
+    },
+    "snapshotStatus": "LOCKED"
   }
 ]

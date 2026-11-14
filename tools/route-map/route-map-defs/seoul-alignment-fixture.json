@@ -5,7 +5,7 @@
     "geometry": "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
     "geometrySha256": "f95b0898ea43e81498f3278bdcc16ec3e98f0e66ea4c66544d6b2c00c87d1c49",
     "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    "packSha256": "811a724cc71700d69c1a5d0306d6580441d9ba50032ed5520b3395104b18e226"
+    "packSha256": "76919742f15bf953e56503fcfe1563ea8ad9f5ed4fea20c3574d449b522acd10"
   },
   "stationCount": 799,
   "unmatchedCount": 1,
