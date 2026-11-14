@@ -7,7 +7,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { emitStationCatalogPack } from "./emit-station-catalog-pack.mjs";
+import { emitStationCatalogPack, sortByTupleUtf8Bytes, sortStringsByUtf8Bytes } from "./emit-station-catalog-pack.mjs";
 
 test("capital production canonical fixture에서 deterministic한 station catalog만 emit한다", async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "station-catalog-pack-"));
@@ -166,3 +166,18 @@ function expectedRows(pack, table) {
   return sortRows(pack[source].map((row) => Object.fromEntries(fields.map(([from, to]) => [to, from === "nameSub" ? row[from] ?? "" : row[from]]))), order);
 }
 function sortRows(rows, fields) { return [...rows].sort((left, right) => { for (const field of fields) { const result = Buffer.compare(Buffer.from(String(left[field])), Buffer.from(String(right[field]))); if (result) return result; } return 0; }); }
+
+test("sortByTupleUtf8Bytes·sortStringsByUtf8Bytes는 Buffer.compare 바이트 순서와 정확히 동치다", () => {
+  const sampleRows = [
+    { station_id: "s-2", line_id: "l-1", line_sequence: 10 },
+    { station_id: "s-2", line_id: "l-1", line_sequence: 2 },
+    { station_id: "s-10", line_id: "l-1", line_sequence: 1 },
+    { station_id: "s-가", line_id: "l-1", line_sequence: 1 },
+    { station_id: "s-나", line_id: "l-1", line_sequence: 1 },
+    { station_id: "s-2", line_id: "l-10", line_sequence: 1 },
+  ];
+  const fields = ["station_id", "line_id", "line_sequence"];
+  const cache = new Map();
+  assert.deepEqual(sortByTupleUtf8Bytes(sampleRows, fields, cache), sortRows(sampleRows, fields));
+  assert.deepEqual(sortStringsByUtf8Bytes(["s-나", "s-2", "s-10", "s-가", "s-2"], cache), ["s-10", "s-2", "s-2", "s-가", "s-나"]);
+});

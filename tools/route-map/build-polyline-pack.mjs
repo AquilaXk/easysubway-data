@@ -496,7 +496,7 @@ export function planLine({ line, sequence, minGap = DEFAULT_MIN_GAP }) {
 /** gz 팩을 임시 sqlite로 푼다. 절대·상대(리포 루트 기준) 경로 모두 지원. */
 function readPackToTemp(packPath, prefix) {
   const abs = path.isAbsolute(packPath) ? packPath : path.join(repoRoot, packPath);
-  const bytes = gunzipSync(readFileSync(abs));
+  const bytes = gunzipSync(readFileSync(abs), { maxOutputLength: 128 * 1024 * 1024 });
   const dir = mkdtempSync(path.join(tmpdir(), prefix));
   const sqlitePath = path.join(dir, "pack.sqlite");
   writeFileSync(sqlitePath, bytes);

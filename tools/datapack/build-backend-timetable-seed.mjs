@@ -35,6 +35,8 @@ const SERVICE_CALENDAR_DAY_MAP = {
 const DEFAULT_START_DATE = "20260101";
 const DEFAULT_END_DATE = "20261231";
 const DEFAULT_TIMEZONE = "Asia/Seoul";
+export const DEFAULT_INSERT_BATCH_SIZE = 500;
+export const MAX_INSERT_BATCH_SIZE = 1000;
 
 export function buildBackendTimetableSeed(artifact, options = {}) {
   const trips = artifact?.transitTrips ?? [];
@@ -46,6 +48,7 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
   if (!/^\d{8}$/.test(feedEndDate)) {
     throw new Error(`feed_end_date must be 8-digit YYYYMMDD (transit_feed_info VARCHAR(8)): ${feedEndDate}`);
   }
+  const insertBatchSize = resolveInsertBatchSize(options.insertBatchSize);
   const dayMap = options.serviceCalendarDayMap ?? SERVICE_CALENDAR_DAY_MAP;
   const excludedServiceCalendarIds = new Set(options.excludeServiceCalendarIds ?? []);
 
@@ -67,12 +70,48 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
 
   const statements = [
     ...(options.includeFeedInfo === false ? [] : [feedInfoInsert(feedEndDate)]),
-    ...evidence.artifactRows.map(routeServiceArtifactEvidenceInsert),
-    ...evidence.stationCatalogRows.map(routeServiceStationCatalogEvidenceInsert),
-    ...calendars.map(calendarInsert),
-    ...routes.map(routeInsert),
-    ...trips.map(tripInsert),
-    ...stopTimes.map(stopTimeInsert),
+    ...batchInsertStatements(
+      "route_service_artifact_evidence",
+      "service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue",
+      evidence.artifactRows,
+      routeServiceArtifactEvidenceTuple,
+      insertBatchSize,
+    ),
+    ...batchInsertStatements(
+      "route_service_station_catalog_evidence",
+      "service_class, station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id, station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256, admission_status, admission_eligible, fresh_until, source_issue",
+      evidence.stationCatalogRows,
+      routeServiceStationCatalogEvidenceTuple,
+      insertBatchSize,
+    ),
+    ...batchInsertStatements(
+      "service_calendars",
+      "service_id, start_date, end_date, timezone, monday, tuesday, wednesday, thursday, friday, saturday, sunday",
+      calendars,
+      calendarTuple,
+      insertBatchSize,
+    ),
+    ...batchInsertStatements(
+      "transit_routes",
+      "id, timezone, line_id, route_short_name, route_long_name, direction_name",
+      routes,
+      routeTuple,
+      insertBatchSize,
+    ),
+    ...batchInsertStatements(
+      "transit_trips",
+      "id, route_id, service_id, service_pattern, service_class, train_no, service_day_start_seconds, trip_headsign, direction_id",
+      trips,
+      tripTuple,
+      insertBatchSize,
+    ),
+    ...batchInsertStatements(
+      "transit_stop_times",
+      "trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds",
+      stopTimes,
+      stopTimeTuple,
+      insertBatchSize,
+    ),
   ];
   const sql = `${statements.join("\n")}\n`;
 
@@ -357,32 +396,51 @@ function deriveLineIdFromRouteId(routeId) {
   return match ? match[1] : routeId;
 }
 
-function calendarInsert(c) {
+function resolveInsertBatchSize(value) {
+  const resolved = value === undefined ? DEFAULT_INSERT_BATCH_SIZE : value;
+  if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > MAX_INSERT_BATCH_SIZE) {
+    throw new Error(`insertBatchSize must be an integer between 1 and ${MAX_INSERT_BATCH_SIZE}: ${resolved}`);
+  }
+  return resolved;
+}
+
+function batchInsertStatements(tableName, columns, rows, formatTuple, batchSize) {
+  if (rows.length === 0) return [];
+  const prefix = `INSERT INTO ${tableName} (${columns}) VALUES `;
+  const statements = [];
+  for (let start = 0; start < rows.length; start += batchSize) {
+    const end = Math.min(start + batchSize, rows.length);
+    const tuples = [];
+    for (let index = start; index < end; index += 1) {
+      tuples.push(formatTuple(rows[index]));
+    }
+    // 로더의 한 줄=한 statement 불변식을 유지한 채 multi-row VALUES 배치를 방출한다.
+    statements.push(`${prefix}${tuples.join(", ")};`);
+  }
+  return statements;
+}
+
+function calendarTuple(c) {
   return (
-    "INSERT INTO service_calendars (service_id, start_date, end_date, timezone, monday, tuesday, wednesday, thursday, friday, saturday, sunday) VALUES (" +
-    `${quote(c.serviceId)}, ${quote(c.startDate)}, ${quote(c.endDate)}, ${quote(c.timezone)}, ` +
-    `${bool(c.monday)}, ${bool(c.tuesday)}, ${bool(c.wednesday)}, ${bool(c.thursday)}, ${bool(c.friday)}, ${bool(c.saturday)}, ${bool(c.sunday)});`
+    `(${quote(c.serviceId)}, ${quote(c.startDate)}, ${quote(c.endDate)}, ${quote(c.timezone)}, ` +
+    `${bool(c.monday)}, ${bool(c.tuesday)}, ${bool(c.wednesday)}, ${bool(c.thursday)}, ${bool(c.friday)}, ${bool(c.saturday)}, ${bool(c.sunday)})`
   );
 }
 
-function routeInsert(r) {
-  return (
-    "INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES (" +
-    `${quote(r.id)}, ${quote(r.timezone)}, ${quote(r.lineId)}, ${quote(r.shortName)}, ${quote(r.longName)}, ${quote(r.directionName)});`
-  );
+function routeTuple(r) {
+  return `(${quote(r.id)}, ${quote(r.timezone)}, ${quote(r.lineId)}, ${quote(r.shortName)}, ${quote(r.longName)}, ${quote(r.directionName)})`;
 }
 
-function tripInsert(t) {
+function tripTuple(t) {
   return (
-    "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, train_no, service_day_start_seconds, trip_headsign, direction_id) VALUES (" +
-    `${quote(requireString(t.id, "transitTrips.id"))}, ${quote(requireString(t.routeId, "transitTrips.routeId"))}, ` +
+    `(${quote(requireString(t.id, "transitTrips.id"))}, ${quote(requireString(t.routeId, "transitTrips.routeId"))}, ` +
     `${quote(requireString(t.serviceId, "transitTrips.serviceId"))}, ${quote(t.servicePattern)}, ` +
     `${quote(t.serviceClass ?? "SUBWAY")}, ${nullableQuote(t.trainNo)}, ${t.serviceDayStartSeconds ?? 0}, ` +
-    `${quote(t.tripHeadsign ?? "")}, ${quote(t.directionId ?? "")});`
+    `${quote(t.tripHeadsign ?? "")}, ${quote(t.directionId ?? "")})`
   );
 }
 
-function routeServiceArtifactEvidenceInsert(row) {
+function routeServiceArtifactEvidenceTuple(row) {
   const hashes = [
     [row.timetableArtifactSha256, "timetableArtifactSha256"],
     [row.canonicalPackSha256, "canonicalPackSha256"],
@@ -397,16 +455,15 @@ function routeServiceArtifactEvidenceInsert(row) {
     throw new Error("routeServiceArtifactEvidence.sourceIssue must be 2135");
   }
   return (
-    "INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +
-    `${quote(requireString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"))}, ` +
+    `(${quote(requireString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"))}, ` +
     `${quote(requireString(row.timetableArtifactId, "routeServiceArtifactEvidence.timetableArtifactId"))}, ` +
     `${quote(row.timetableArtifactSha256)}, ${quote(requireString(row.canonicalPackId, "routeServiceArtifactEvidence.canonicalPackId"))}, ` +
     `${quote(row.canonicalPackSha256)}, ${quote(row.canonicalPackSqliteSha256)}, ${quote(row.admissionStatus)}, ` +
-    `${bool(row.admissionEligible)}, ${row.freshUntil == null ? "NULL" : quote(row.freshUntil)}, ${row.sourceIssue});`
+    `${bool(row.admissionEligible)}, ${row.freshUntil == null ? "NULL" : quote(row.freshUntil)}, ${row.sourceIssue})`
   );
 }
 
-function routeServiceStationCatalogEvidenceInsert(row) {
+function routeServiceStationCatalogEvidenceTuple(row) {
   const hashes = [
     [row.stationCatalogStationSetSha256, "stationCatalogStationSetSha256"],
     [row.stationCatalogPayloadSha256, "stationCatalogPayloadSha256"],
@@ -419,21 +476,19 @@ function routeServiceStationCatalogEvidenceInsert(row) {
   }
   if (row.sourceIssue !== 2649) throw new Error("routeServiceStationCatalogEvidence.sourceIssue must be 2649");
   return (
-    "INSERT INTO route_service_station_catalog_evidence (service_class, station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id, station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +
-    `${quote(requireString(row.serviceClass, "routeServiceStationCatalogEvidence.serviceClass"))}, ` +
+    `(${quote(requireString(row.serviceClass, "routeServiceStationCatalogEvidence.serviceClass"))}, ` +
     `${quote(requireString(row.stationCatalogArtifactKind, "routeServiceStationCatalogEvidence.stationCatalogArtifactKind"))}, ` +
     `${row.stationCatalogManifestVersion}, ${quote(requireString(row.stationCatalogPackId, "routeServiceStationCatalogEvidence.stationCatalogPackId"))}, ` +
     `${quote(row.stationCatalogStationSetSha256)}, ${quote(row.stationCatalogPayloadSha256)}, ${quote(row.stationCatalogManifestSha256)}, ${quote(row.admissionStatus)}, ` +
-    `${bool(row.admissionEligible)}, ${row.freshUntil == null ? "NULL" : quote(row.freshUntil)}, ${row.sourceIssue});`
+    `${bool(row.admissionEligible)}, ${row.freshUntil == null ? "NULL" : quote(row.freshUntil)}, ${row.sourceIssue})`
   );
 }
 
-function stopTimeInsert(s) {
+function stopTimeTuple(s) {
   return (
-    "INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES (" +
-    `${quote(requireString(s.tripId, "transitStopTimes.tripId"))}, ${requireInteger(s.stopSequence, "stopSequence")}, ` +
+    `(${quote(requireString(s.tripId, "transitStopTimes.tripId"))}, ${requireInteger(s.stopSequence, "stopSequence")}, ` +
     `${quote(requireString(s.stationId, "transitStopTimes.stationId"))}, ${quote(requireString(s.lineId, "transitStopTimes.lineId"))}, ` +
-    `${s.pickupType ?? 0}, ${s.dropOffType ?? 0}, ${requireInteger(s.arrivalSeconds, "arrivalSeconds")}, ${requireInteger(s.departureSeconds, "departureSeconds")});`
+    `${s.pickupType ?? 0}, ${s.dropOffType ?? 0}, ${requireInteger(s.arrivalSeconds, "arrivalSeconds")}, ${requireInteger(s.departureSeconds, "departureSeconds")})`
   );
 }
 

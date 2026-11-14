@@ -125,7 +125,7 @@ function parseArgs(argv) {
 }
 
 function openPack(packPath) {
-  const bytes = gunzipSync(readFileSync(path.join(root, packPath)));
+  const bytes = gunzipSync(readFileSync(path.join(root, packPath)), { maxOutputLength: 128 * 1024 * 1024 });
   const dir = mkdtempSync(path.join(tmpdir(), "octolinear-"));
   const sqlitePath = path.join(dir, "pack.sqlite");
   writeFileSync(sqlitePath, bytes);

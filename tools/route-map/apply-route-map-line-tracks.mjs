@@ -151,7 +151,7 @@ async function main() {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-line-tracks-"));
   const sqlitePath = path.join(tmp, "capital.sqlite");
   try {
-    await writeFile(sqlitePath, gunzipSync(await readFile(packPath)));
+    await writeFile(sqlitePath, gunzipSync(await readFile(packPath), { maxOutputLength: 128 * 1024 * 1024 }));
     const database = new DatabaseSync(sqlitePath);
     const summary = [];
     try {

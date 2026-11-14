@@ -3715,6 +3715,87 @@ test("emergency datapack drill은 rollback, patch, route regression 증거를 �
   assert.equal(evidence.verification.commandOutputSha256, sha256('{"failures":[],"sampleSize":100}'));
 });
 
+test("emergency datapack drill은 셸 주입·비허용 바이너리·경로 이탈 입력을 실행 전 fail-closed로 거부한다", async (t) => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-emergency-drill-reject-"));
+  t.after(() => rm(outputDir, { recursive: true, force: true }));
+  const inputPath = path.join(outputDir, "drill-input.json");
+  const outputPath = path.join(outputDir, "drill-evidence.json");
+  const canaryPath = path.join(outputDir, "pwned");
+  const fixedManifestSha256 = "c".repeat(64);
+  const basePayload = {
+    channel: "production",
+    previousKnownGoodManifest: { url: "https://cdn.easysubway.example/current-42.json", sha256: "a".repeat(64) },
+    badManifest: { url: "https://cdn.easysubway.example/current-43.json", sha256: "b".repeat(64) },
+    fixedManifest: { url: "https://cdn.easysubway.example/current-44.json", sha256: fixedManifestSha256 },
+    rollback: {
+      startedAt: "2026-07-01T10:00:00.000Z",
+      completedAt: "2026-07-01T10:03:20.000Z",
+      currentReleaseSequence: 43,
+      failedReleaseSequence: 43,
+      knownGoodReleaseSequence: 42,
+      rescueReleaseSequence: 44,
+      rescueManifestSha256: fixedManifestSha256,
+      manifestLastStatus: "PASS",
+      idempotentReplayStatus: "PASS",
+    },
+    emergencyPatch: {
+      auditId: "patch-route-edge-1",
+      rows: [
+        { table: "network_edges", id: "e1" },
+        { table: "facilities", id: "f1" },
+        { table: "transit_stop_times", id: "s1" },
+      ],
+    },
+    routeRegressionReplay: {
+      command: "node -e 'process.stdout.write(JSON.stringify({failures:[],sampleSize:100}))'",
+      before: { blocked: true, blocker: "bad network edge" },
+      after: { blocked: false },
+    },
+  };
+
+  for (const unsafeCommand of [
+    `node -e 'process.stdout.write("{}")'; touch "${canaryPath}"`,
+    `bash -c "touch '${canaryPath}'"`,
+    `node -e 'require("node:fs").writeFileSync(${JSON.stringify(canaryPath)},"1")'`,
+    "node ../../etc/passwd.mjs",
+    "echo $(id)",
+  ]) {
+    await writeFile(
+      inputPath,
+      JSON.stringify({
+        ...basePayload,
+        routeRegressionReplay: { ...basePayload.routeRegressionReplay, command: unsafeCommand },
+      }),
+    );
+    await rm(outputPath, { force: true });
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["tools/datapack/run-emergency-datapack-drill.mjs", "--input", inputPath, "--output", outputPath],
+        { cwd: root },
+      ),
+    );
+    await assert.rejects(readFile(canaryPath), /ENOENT/);
+    await assert.rejects(readFile(outputPath), /ENOENT/);
+  }
+
+  await writeFile(inputPath, JSON.stringify(basePayload));
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/run-emergency-datapack-drill.mjs", "--input", "../escape.json", "--output", outputPath],
+      { cwd: root },
+    ),
+  );
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/run-emergency-datapack-drill.mjs", "--input", inputPath, "--output", inputPath],
+      { cwd: root },
+    ),
+  );
+});
+
 test("데이터팩 만료 알림 evidence는 SLA 임박 manifest를 FIRING으로 기록한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-expiry-alert-${Date.now()}`);
   await rm(outputDir, { recursive: true, force: true });

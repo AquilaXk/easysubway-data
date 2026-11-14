@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { execFileAsync } from "./test-fixtures/datapack-tools-support.mjs";
+import { fetchSourceSnapshotText } from "./build-source-snapshot.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
@@ -213,4 +214,105 @@ test("source snapshot command는 정책상 필수인 provider validity가 없으
       /--provider-valid-until is required/,
     );
   });
+});
+
+test("source snapshot --url fetch는 HTTPS·redirect error·30초 timeout·64MiB streaming 상한을 강제한다", async () => {
+  // Non-HTTPS or credential-bearing URLs must fail closed before network call
+  await assert.rejects(
+    fetchSourceSnapshotText("http://example.invalid/feed.csv", {
+      fetchImpl: async () => {
+        throw new Error("should not call fetch for http URL");
+      },
+    }),
+    /https/i,
+  );
+  await assert.rejects(
+    fetchSourceSnapshotText("https://user:pass@example.invalid/feed.csv", {
+      fetchImpl: async () => {
+        throw new Error("should not call fetch for credential URL");
+      },
+    }),
+    /credential/i,
+  );
+
+  // CLI rejects non-HTTPS --url before writing output
+  await withSnapshotWorkDir("url-reject", "ignored", async ({ workDir, outputPath }) => {
+    const policyPath = path.join(workDir, "policy.json");
+    await writeFile(policyPath, PLANNED_TIMETABLE_POLICY);
+    await assert.rejects(
+      runBuildSourceSnapshot([
+        "--url", "http://example.invalid/feed.csv",
+        "--output", outputPath,
+        "--snapshot-id", "snapshot-planned-a",
+        "--source-id", "planned-a",
+        "--coverage-count", "1",
+        "--provider", "provider-a",
+        "--source-class-id", "planned_timetable",
+        "--freshness-policy", policyPath,
+        "--retrieved-at", "2026-07-02T00:00:00Z",
+        "--freshness-basis-at", "2026-07-01T00:00:00Z",
+        "--provider-valid-until", "2026-08-01T00:00:00Z",
+        "--raw-object-uri", "s3://bucket/snapshot-planned-a.csv",
+        "--freshness-expires-at", "2026-07-31T00:00:00Z",
+        "--raw-retention-expires-at", "2026-10-01T00:00:00Z",
+      ]),
+      /https/i,
+    );
+  });
+
+  // Verifies redirect: "error", AbortSignal on options, and bounded stream reading
+  let seenInit = null;
+  const okText = await fetchSourceSnapshotText("https://data.go.kr/feed.csv", {
+    fetchImpl: async (_url, init) => {
+      seenInit = init;
+      return new Response("station\nSadang\n", { status: 200 });
+    },
+  });
+  assert.equal(okText, "station\nSadang\n");
+  assert.equal(seenInit?.redirect, "error");
+  assert.ok(seenInit?.signal instanceof AbortSignal);
+
+  // Timed-out fetch fails closed via AbortSignal.timeout
+  await assert.rejects(
+    fetchSourceSnapshotText("https://data.go.kr/slow.csv", {
+      timeoutMs: 10,
+      fetchImpl: (_url, init) => new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+      }),
+    }),
+    /TimeoutError|timed out|abort/i,
+  );
+
+  // Redirected response fails closed
+  await assert.rejects(
+    fetchSourceSnapshotText("https://data.go.kr/feed.csv", {
+      fetchImpl: async () => ({ ok: true, status: 200, redirected: true, text: async () => "ok" }),
+    }),
+    /redirect/i,
+  );
+
+  // Oversized streaming body (> 64 MiB default or bounded limit) fails closed without buffering full payload
+  let canceled = false;
+  const bigChunk = new Uint8Array(1024 * 1024);
+  let sentChunks = 0;
+  const largeStream = new ReadableStream({
+    pull(controller) {
+      if (sentChunks >= 70) {
+        controller.close();
+        return;
+      }
+      sentChunks += 1;
+      controller.enqueue(bigChunk);
+    },
+    cancel() {
+      canceled = true;
+    },
+  });
+  await assert.rejects(
+    fetchSourceSnapshotText("https://data.go.kr/large.csv", {
+      fetchImpl: async () => new Response(largeStream, { status: 200 }),
+    }),
+    /exceeds maximum size/i,
+  );
+  assert.equal(canceled, true, "stream reader should cancel on oversized body");
 });

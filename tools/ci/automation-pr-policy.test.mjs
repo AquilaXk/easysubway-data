@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { crc32, deflateRawSync } from "node:zlib";
 
 import {
   automationPrEvidenceBlock,
@@ -24,6 +25,7 @@ import {
   decideAutomationPullRequest,
   evaluateAutomationPullRequest,
   main,
+  readBoundedZipMemberBytes,
   recomputeAutomationGates,
   validateCandidateEvidence,
 } from "./automation-pr-policy.mjs";
@@ -1479,4 +1481,109 @@ test("validateCandidateEvidence는 선택적 goldenDiffReport와 PR 본문의 Jo
     () => validateCandidateEvidence(parseAutomationPrEvidence(bodyWithGoldenLine), { goldenDiffReport: changedReport }),
     /AUTOMATION_PR_CANDIDATE_GATE: JOURNEY_GOLDEN_DIFF_UNDECLARED_CHANGES/u,
   );
+});
+
+function buildTestZip(entries) {
+  const localParts = [];
+  const cdParts = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const nameBuf = Buffer.from(entry.name, "utf8");
+    const raw = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(entry.data, "utf8");
+    const method = entry.method ?? 8;
+    const compressed = method === 0 ? raw : deflateRawSync(raw);
+    const sum = entry.crc ?? crc32(raw);
+    const flags = entry.flags ?? 0;
+    const uncompSize = entry.uncompSize ?? raw.length;
+    const compSize = compressed.length;
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(flags, 6);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE((flags & 0x0008) ? 0 : sum, 14);
+    local.writeUInt32LE((flags & 0x0008) ? 0 : compSize, 18);
+    local.writeUInt32LE((flags & 0x0008) ? 0 : uncompSize, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    nameBuf.copy(local, 30);
+
+    const dd = (flags & 0x0008)
+      ? (() => {
+        const b = Buffer.alloc(16);
+        b.writeUInt32LE(0x08074b50, 0);
+        b.writeUInt32LE(sum, 4);
+        b.writeUInt32LE(compSize, 8);
+        b.writeUInt32LE(uncompSize, 12);
+        return b;
+      })()
+      : Buffer.alloc(0);
+
+    const cd = Buffer.alloc(46 + nameBuf.length);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(entry.versionMadeBy ?? 0x0314, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(flags, 8);
+    cd.writeUInt16LE(method, 10);
+    cd.writeUInt32LE(sum, 16);
+    cd.writeUInt32LE(compSize, 20);
+    cd.writeUInt32LE(uncompSize, 24);
+    cd.writeUInt16LE(nameBuf.length, 28);
+    cd.writeUInt32LE((entry.externalAttrs ?? 0) >>> 0, 38);
+    cd.writeUInt32LE(offset, 42);
+    nameBuf.copy(cd, 46);
+
+    localParts.push(local, compressed, dd);
+    cdParts.push(cd);
+    offset += local.length + compressed.length + dd.length;
+  }
+  const cdBuf = Buffer.concat(cdParts);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localParts, cdBuf, eocd]);
+}
+
+test("artifact zip 리더는 인프로세스 바운드 파서로 멤버를 정확히 읽고 악성·초과·글로브/플래그 주입을 fail closed한다", async () => {
+  const source = await readFile(new URL("./automation-pr-policy.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /execFileAsync\(["']unzip["']/, "must not shell out to unzip");
+
+  const payload = JSON.stringify({ schemaVersion: 1, ok: true });
+  const zip = buildTestZip([
+    { name: "evidence-digest.json", data: payload, flags: 0x0008 },
+    { name: "-p", data: "flag-literal" },
+    { name: "[a]*.json", data: "glob-literal" },
+  ]);
+
+  assert.equal(readBoundedZipMemberBytes(zip, "evidence-digest.json").toString("utf8"), payload);
+  assert.equal(readBoundedZipMemberBytes(zip, "-p").toString("utf8"), "flag-literal");
+  assert.equal(readBoundedZipMemberBytes(zip, "[a]*.json").toString("utf8"), "glob-literal");
+  assert.throws(() => readBoundedZipMemberBytes(zip, "*.json"), /missing|not found/i);
+
+  // Decompression bomb > maxEntryBytes (both truthful header and forged small uncompSize header)
+  const bomb = buildTestZip([{ name: "evidence-digest.json", data: Buffer.alloc(2 * 1024 * 1024, 0x41) }]);
+  assert.throws(() => readBoundedZipMemberBytes(bomb, "evidence-digest.json"), /exceeds|too large|size/i);
+  const forgedBomb = buildTestZip([{ name: "evidence-digest.json", data: Buffer.alloc(2 * 1024 * 1024, 0x41), uncompSize: 16 }]);
+  assert.throws(() => readBoundedZipMemberBytes(forgedBomb, "evidence-digest.json"), /exceeds|too large|size/i);
+
+  // Zip-slip traversal
+  const traversal = buildTestZip([{ name: "../escape.json", data: "{}" }]);
+  assert.throws(() => readBoundedZipMemberBytes(traversal, "../escape.json"), /unsafe zip entry/i);
+
+  // Duplicate entry
+  const duplicate = buildTestZip([
+    { name: "evidence-digest.json", data: "{}" },
+    { name: "evidence-digest.json", data: "{}" },
+  ]);
+  assert.throws(() => readBoundedZipMemberBytes(duplicate, "evidence-digest.json"), /duplicate zip entry/i);
+
+  // Symlink external attributes
+  const symlinkZip = buildTestZip([{ name: "evidence-digest.json", data: "/etc/passwd", externalAttrs: 0o120777 << 16 }]);
+  assert.throws(() => readBoundedZipMemberBytes(symlinkZip, "evidence-digest.json"), /symlink/i);
+
+  // CRC32 corruption
+  const badCrc = buildTestZip([{ name: "evidence-digest.json", data: "{}", crc: 0xdeadbeef }]);
+  assert.throws(() => readBoundedZipMemberBytes(badCrc, "evidence-digest.json"), /crc/i);
 });

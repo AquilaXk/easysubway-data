@@ -125,6 +125,8 @@ export function buildServerTimetableSnapshot({
     routeServiceStationCatalogEvidence,
   }, {
     includeFeedInfo: false,
+    // snapshotSha256 고정 및 행 단위 values() 파서 호환을 위해 단일 행 INSERT를 유지한다.
+    insertBatchSize: 1,
     excludeServiceCalendarIds: existingCalendarIds,
     serviceCalendarDayMap: ITX_SERVICE_CALENDAR_DAY_MAP,
     startDate: earliestServiceDate(source.selectedServiceDates),

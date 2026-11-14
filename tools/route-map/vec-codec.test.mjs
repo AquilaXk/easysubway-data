@@ -214,3 +214,55 @@ test("가장 큰 id 65534를 참조하는 그리기는 다시 읽으면 같은 i
   });
   assert.deepEqual(decodeVec(bytes).commands, [{ op: "drawPath", pathId: 65534, paintId: 65534, patternId: null }]);
 });
+
+test("초기 버퍼를 넘는 대용량 .vec 인코딩 시 버퍼 확장·정렬 패딩·정확한 슬라이스 경계를 유지한다", () => {
+  const paths = [];
+  const commands = [];
+  for (let i = 0; i < 400; i += 1) {
+    const verbs = Uint8Array.from({ length: 31 }, (_, idx) => (idx === 0 ? VERB.moveTo : VERB.lineTo));
+    const points = Float32Array.from({ length: 62 }, (_, idx) => i + idx * 0.25);
+    paths.push({ fillType: i % 2, verbs, points });
+    commands.push({ op: "drawPath", pathId: i, paintId: 0, patternId: null });
+  }
+  const textPositions = Array.from({ length: 200 }, (_, i) => ({
+    x: i * 1.5,
+    y: i * 2.5,
+    dx: i % 2 === 0 ? 4 : null,
+    dy: i % 3 === 0 ? -4 : null,
+    reset: i % 5 === 0,
+    transform: i % 4 === 0 ? Float64Array.from({ length: 16 }, (_, k) => (k % 5 === 0 ? 1 : 0)) : null,
+  }));
+  const texts = Array.from({ length: 200 }, (_, i) => ({
+    xAnchorMultiplier: 0.5,
+    fontSize: 12,
+    fontWeight: 4,
+    decoration: 0,
+    decorationStyle: 0,
+    decorationColor: 0xff000000,
+    fontFamily: i % 2 === 0 ? "Pretendard" : null,
+    text: `수도권역-${i}`,
+  }));
+  const doc = {
+    width: 2400,
+    height: 1800,
+    paints: [FILL, STROKE],
+    paths,
+    textPositions,
+    texts,
+    commands: [
+      { op: "pattern", x: 1, y: 2, width: 16, height: 16, transform: Float64Array.from({ length: 16 }, (_, k) => (k % 5 === 0 ? 1 : 0)) },
+      ...commands,
+    ],
+  };
+
+  const t0 = performance.now();
+  const encoded = encodeVec(doc);
+  const elapsedMs = performance.now() - t0;
+
+  assert.ok(encoded instanceof Uint8Array);
+  assert.ok(encoded.byteLength > 65_536, `expected resized >64KiB output, got ${encoded.byteLength}`);
+  assert.equal(encoded.byteOffset, 0);
+  assert.equal(encoded.buffer.byteLength, encoded.byteLength, "done() must return exact slice without trailing capacity");
+  assert.deepEqual(decodeVec(encoded), doc);
+  assert.ok(Number.isFinite(elapsedMs) && elapsedMs < 2_000, `encodeVec took unexpectedly long: ${elapsedMs.toFixed(2)}ms`);
+});

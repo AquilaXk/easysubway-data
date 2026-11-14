@@ -2751,3 +2751,46 @@ test("apply-route-map-line-tracks --check does not write and flags missing line 
     /line-ghost/,
   );
 });
+
+test("tools/route-map/*.mjs의 gunzipSync는 128MiB 상한(maxOutputLength)으로 gzip bomb을 fail-closed 거부한다", async (t) => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const routeMapDir = import.meta.dirname;
+  const prodFiles = readdirSync(routeMapDir)
+    .filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"));
+  const callers = [];
+  for (const name of prodFiles) {
+    const content = readFileSync(path.join(routeMapDir, name), "utf8");
+    const matches = [...content.matchAll(/gunzipSync\(([^;]+)\)/g)];
+    for (const match of matches) {
+      callers.push({ name, call: match[0] });
+    }
+  }
+  assert.ok(callers.length >= 8, `expected >= 8 gunzipSync callers, got ${callers.length}`);
+  for (const { name, call } of callers) {
+    assert.match(call, /maxOutputLength:\s*128\s*\*\s*1024\s*\*\s*1024/, `${name}: ${call}`);
+  }
+
+  // 실제 129MiB gzip bomb을 pack-io.openPack 및 CLI에 넣어 ERR_BUFFER_TOO_LARGE fail-closed를 검증한다.
+  const bombGz = gzipSync(Buffer.alloc(129 * 1024 * 1024), { level: 1 });
+  const bombDir = await mkdtemp(path.join(tmpdir(), "easysubway-bomb-test-"));
+  t.after(() => rm(bombDir, { recursive: true, force: true }));
+  const bombAbs = path.join(bombDir, "bomb.sqlite.gz");
+  await writeFile(bombAbs, bombGz);
+  const { openPack } = await import("./pack-io.mjs");
+  assert.throws(
+    () => openPack("bomb.sqlite.gz", "bomb-", bombDir),
+    (err) => err?.code === "ERR_BUFFER_TOO_LARGE",
+  );
+  await assert.rejects(
+    execFileAsync("node", [buildLineTracksScript, "--pack", bombAbs, "--region", "수도권", "--source", "pack-down-path"], { cwd: root }),
+    (err) => /Cannot create a Buffer larger than 134217728 bytes/.test(String(err?.stderr ?? err?.message ?? "")),
+  );
+  const indexDummy = path.join(bombDir, "index.json");
+  const tracksDummy = path.join(bombDir, "tracks.json");
+  await writeFile(indexDummy, JSON.stringify({ packs: [] }));
+  await writeFile(tracksDummy, JSON.stringify({ region: "테스트", lines: [] }));
+  await assert.rejects(
+    execFileAsync("node", [applyLineTracksScript, "--pack", bombAbs, "--index", indexDummy, "--tracks", tracksDummy], { cwd: root }),
+    (err) => /Cannot create a Buffer larger than 134217728 bytes/.test(String(err?.stderr ?? err?.message ?? "")),
+  );
+});

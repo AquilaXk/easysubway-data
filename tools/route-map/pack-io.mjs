@@ -83,7 +83,7 @@ export function resolveBundledRouteMapPackPath(root = repoRoot) {
  */
 export function openPack(packRelPath, tmpPrefix = "route-map-pack-", root = repoRoot) {
   const packPath = resolveWithinRepo(packRelPath, root);
-  const sqliteBytes = gunzipSync(readFileSync(packPath));
+  const sqliteBytes = gunzipSync(readFileSync(packPath), { maxOutputLength: 128 * 1024 * 1024 });
   const dir = mkdtempSync(path.join(tmpdir(), tmpPrefix));
   const sqlitePath = path.join(dir, "pack.sqlite");
   writeFileSync(sqlitePath, sqliteBytes);

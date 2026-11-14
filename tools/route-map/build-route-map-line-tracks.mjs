@@ -161,7 +161,7 @@ async function openPack(packPath) {
   if (resolved.endsWith(".gz")) {
     const tempDir = await mkdtemp(path.join(tmpdir(), "easysubway-line-tracks-"));
     const tempFile = path.join(tempDir, "pack.sqlite");
-    await writeTemp(tempFile, gunzipSync(raw));
+    await writeTemp(tempFile, gunzipSync(raw, { maxOutputLength: 128 * 1024 * 1024 }));
     return { db: new DatabaseSync(tempFile), tempDir };
   }
   return { db: new DatabaseSync(resolved), tempDir: null };

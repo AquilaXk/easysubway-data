@@ -331,36 +331,53 @@ export function decodeVec(bytes) {
 }
 
 class Writer {
-  constructor() {
-    this.chunks = [];
-    this.length = 0;
-    this.scratch = new DataView(new ArrayBuffer(4));
+  constructor(initialCapacity = 1024) {
+    this.buf = new Uint8Array(initialCapacity);
+    this.view = new DataView(this.buf.buffer);
+    this.offset = 0;
   }
 
-  push(bytes) {
-    this.chunks.push(bytes);
-    this.length += bytes.byteLength;
+  ensure(extra) {
+    const needed = this.offset + extra;
+    if (needed <= this.buf.byteLength) return;
+    let nextCapacity = this.buf.byteLength;
+    while (nextCapacity < needed) nextCapacity *= 2;
+    const grown = new Uint8Array(nextCapacity);
+    grown.set(this.buf.subarray(0, this.offset));
+    this.buf = grown;
+    this.view = new DataView(this.buf.buffer);
   }
 
-  scalar(setter, byteCount, value) {
-    this.scratch[setter](0, value, true);
-    this.push(new Uint8Array(this.scratch.buffer.slice(0, byteCount)));
+  pushBytes(bytes) {
+    const length = bytes.length;
+    if (length === 0) return;
+    this.ensure(length);
+    this.buf.set(bytes, this.offset);
+    this.offset += length;
   }
 
   uint8(value) {
-    this.push(Uint8Array.of(value));
+    this.ensure(1);
+    this.buf[this.offset] = value;
+    this.offset += 1;
   }
 
   uint16(value) {
-    this.scalar("setUint16", 2, value);
+    this.ensure(2);
+    this.view.setUint16(this.offset, value, true);
+    this.offset += 2;
   }
 
   uint32(value) {
-    this.scalar("setUint32", 4, value);
+    this.ensure(4);
+    this.view.setUint32(this.offset, value, true);
+    this.offset += 4;
   }
 
   float32(value) {
-    this.scalar("setFloat32", 4, value);
+    this.ensure(4);
+    this.view.setFloat32(this.offset, value, true);
+    this.offset += 4;
   }
 
   optionalFloat32(value) {
@@ -368,12 +385,25 @@ class Writer {
   }
 
   utf8WithLength(value, kind) {
+    if (typeof value === "string" && value.length <= 21_845) {
+      const maxBytes = value.length * 3;
+      this.ensure(2 + maxBytes);
+      const { read, written } = utf8Encoder.encodeInto(
+        value,
+        this.buf.subarray(this.offset + 2, this.offset + 2 + maxBytes),
+      );
+      if (read === value.length) {
+        this.view.setUint16(this.offset, written, true);
+        this.offset += 2 + written;
+        return;
+      }
+    }
     const bytes = utf8Encoder.encode(value);
     if (bytes.byteLength > VEC_MAX_STRING_BYTES) {
       throw new Error(`${kind} ${bytes.byteLength}바이트가 상한 ${VEC_MAX_STRING_BYTES}바이트를 넘습니다.`);
     }
     this.uint16(bytes.byteLength);
-    this.push(bytes);
+    this.pushBytes(bytes);
   }
 
   // _writeTransform(1284-1291행): 없으면 길이 0, 있으면 길이 16과 8바이트 정렬 float64.
@@ -387,34 +417,45 @@ class Writer {
   }
 
   align(alignment) {
-    const mod = this.length % alignment;
-    if (mod !== 0) this.push(new Uint8Array(alignment - mod));
+    const mod = this.offset % alignment;
+    if (mod !== 0) {
+      const pad = alignment - mod;
+      this.ensure(pad);
+      this.buf.fill(0, this.offset, this.offset + pad);
+      this.offset += pad;
+    }
   }
 
   float32List(list) {
     this.align(4);
-    const bytes = new Uint8Array(4 * list.length);
-    const view = new DataView(bytes.buffer);
-    list.forEach((value, index) => view.setFloat32(4 * index, value, true));
-    this.push(bytes);
+    const count = list.length;
+    if (count === 0) return;
+    this.ensure(4 * count);
+    let pos = this.offset;
+    const view = this.view;
+    for (let i = 0; i < count; i += 1) {
+      view.setFloat32(pos, list[i], true);
+      pos += 4;
+    }
+    this.offset = pos;
   }
 
   float64List(list) {
     this.align(8);
-    const bytes = new Uint8Array(8 * list.length);
-    const view = new DataView(bytes.buffer);
-    list.forEach((value, index) => view.setFloat64(8 * index, value, true));
-    this.push(bytes);
+    const count = list.length;
+    if (count === 0) return;
+    this.ensure(8 * count);
+    let pos = this.offset;
+    const view = this.view;
+    for (let i = 0; i < count; i += 1) {
+      view.setFloat64(pos, list[i], true);
+      pos += 8;
+    }
+    this.offset = pos;
   }
 
   done() {
-    const out = new Uint8Array(this.length);
-    let offset = 0;
-    for (const chunk of this.chunks) {
-      out.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return out;
+    return this.buf.slice(0, this.offset);
   }
 }
 
@@ -428,7 +469,10 @@ function writeTextPositions(writer, textPositions) {
   textPositions.forEach(({ x, y, dx, dy, reset, transform }, id) => {
     writer.uint8(TAG.textPosition);
     writer.uint16(id);
-    for (const value of [x, y, dx, dy]) writer.optionalFloat32(value);
+    writer.optionalFloat32(x);
+    writer.optionalFloat32(y);
+    writer.optionalFloat32(dx);
+    writer.optionalFloat32(dy);
     writer.uint8(reset ? 1 : 0);
     writer.transform(transform);
   });
@@ -482,7 +526,7 @@ export function encodeVec({ width, height, paints, paths, textPositions = [], te
     writer.uint8(fillType);
     writer.uint16(id);
     writer.uint32(verbs.length);
-    writer.push(Uint8Array.from(verbs));
+    writer.pushBytes(verbs);
     writer.uint32(points.length);
     writer.float32List(points);
   });

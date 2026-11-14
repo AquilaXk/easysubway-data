@@ -32,12 +32,13 @@ export async function emitStationCatalogPack(input) {
   const rows = projection(pack);
   const temp = await mkdtemp(path.join(path.dirname(output), ".station-catalog-pack-"));
   let reservation;
+  const bufferCache = new Map();
   try {
     const artifact = temp;
     const file = path.join(artifact, "payload/catalog.sqlite");
     await mkdir(path.dirname(file), { recursive: true });
-    writeSqlite(file, rows);
-    const stationSetSha256 = digest(rows.stations.map((row) => row.id).sort(bytes));
+    writeSqlite(file, rows, bufferCache);
+    const stationSetSha256 = digest(sortStringsByUtf8Bytes(rows.stations.map((row) => row.id), bufferCache));
     const manifest = { manifestVersion: 1, artifactKind: "station-catalog-pack", catalogPackId, stationSetSha256, payloadSha256: await inventory(artifact) };
     validateArtifactComponentManifest(manifest, stationSetSha256);
     await writeFile(path.join(artifact, "manifest.json"), Buffer.from(canonicalJson(manifest)), { flag: "wx" });
@@ -124,13 +125,16 @@ function validateRows(rows) {
   if (rows.station_aliases.some((row) => !stations.has(row.station_id)) || rows.station_lines.some((row) => !stations.has(row.station_id) || !lines.has(row.line_id))) throw new Error("foreign key mismatch");
 }
 
-function writeSqlite(file, rows) {
+function writeSqlite(file, rows, bufferCache = new Map()) {
   const db = new DatabaseSync(file);
   try {
     db.exec("PRAGMA page_size=4096; PRAGMA auto_vacuum=NONE; PRAGMA encoding='UTF-8'; PRAGMA foreign_keys=ON; CREATE TABLE stations(id TEXT NOT NULL PRIMARY KEY,name_ko TEXT NOT NULL,name_en TEXT NOT NULL DEFAULT '',name_sub TEXT NOT NULL DEFAULT '',normalized_name TEXT NOT NULL,region TEXT NOT NULL DEFAULT ''); CREATE TABLE station_aliases(station_id TEXT NOT NULL,alias TEXT NOT NULL,normalized_alias TEXT NOT NULL,FOREIGN KEY(station_id) REFERENCES stations(id)); CREATE TABLE lines(id TEXT NOT NULL PRIMARY KEY,name_ko TEXT NOT NULL,name_en TEXT NOT NULL DEFAULT ''); CREATE TABLE station_lines(station_id TEXT NOT NULL,line_id TEXT NOT NULL,station_code TEXT NOT NULL DEFAULT '',line_sequence INTEGER NOT NULL,PRIMARY KEY(station_id,line_id),FOREIGN KEY(station_id) REFERENCES stations(id),FOREIGN KEY(line_id) REFERENCES lines(id)); CREATE TABLE station_search_index(station_id TEXT NOT NULL,token TEXT NOT NULL,normalized_token TEXT NOT NULL,source_kind TEXT NOT NULL CHECK(source_kind IN ('STATION_NAME','STATION_ALIAS')),PRIMARY KEY(station_id,source_kind,normalized_token,token),FOREIGN KEY(station_id) REFERENCES stations(id)); BEGIN");
-    for (const [name, columns] of Object.entries({ stations: TABLES.stations.target, station_aliases: TABLES.station_aliases.target, lines: TABLES.lines.target, station_lines: TABLES.station_lines.target })) insertRows(db, name, columns, rows[name]);
-    const index = [...rows.stations.map((row) => ({ station_id: row.id, token: row.name_ko, normalized_token: row.normalized_name, source_kind: "STATION_NAME" })), ...rows.station_aliases.map((row) => ({ station_id: row.station_id, token: row.alias, normalized_token: row.normalized_alias, source_kind: "STATION_ALIAS" }))].sort((a, b) => compareTuple(a, b, ["station_id", "source_kind", "normalized_token", "token"]));
-    insertRows(db, "station_search_index", ["station_id", "token", "normalized_token", "source_kind"], index);
+    for (const [name, columns] of Object.entries({ stations: TABLES.stations.target, station_aliases: TABLES.station_aliases.target, lines: TABLES.lines.target, station_lines: TABLES.station_lines.target })) insertRows(db, name, columns, rows[name], bufferCache);
+    const index = sortByTupleUtf8Bytes([
+      ...rows.stations.map((row) => ({ station_id: row.id, token: row.name_ko, normalized_token: row.normalized_name, source_kind: "STATION_NAME" })),
+      ...rows.station_aliases.map((row) => ({ station_id: row.station_id, token: row.alias, normalized_token: row.normalized_alias, source_kind: "STATION_ALIAS" })),
+    ], ["station_id", "source_kind", "normalized_token", "token"], bufferCache);
+    insertRows(db, "station_search_index", ["station_id", "token", "normalized_token", "source_kind"], index, bufferCache);
     if (db.prepare("PRAGMA foreign_key_check").all().length) throw new Error("foreign key mismatch");
     db.exec("COMMIT; PRAGMA user_version=18; VACUUM;");
   } catch (error) {
@@ -139,13 +143,48 @@ function writeSqlite(file, rows) {
   } finally { db.close(); }
 }
 
-function insertRows(db, table, columns, rows) { const insert = db.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`); for (const row of [...rows].sort((a, b) => compareTuple(a, b, columns))) insert.run(...columns.map((column) => row[column])); }
+function insertRows(db, table, columns, rows, bufferCache = new Map()) {
+  const insert = db.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`);
+  for (const row of sortByTupleUtf8Bytes(rows, columns, bufferCache)) insert.run(...columns.map((column) => row[column]));
+}
 async function inventory(root) { const payload = path.join(root, "payload"); const names = await readdir(payload); if (canonicalJson(names.sort(bytes)) !== canonicalJson(["catalog.sqlite"])) throw new Error("payload paths mismatch"); const file = path.join(payload, "catalog.sqlite"); const stat = await lstat(file); if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) throw new Error("payload has unknown or invalid file"); const value = await readFile(file); return digest([{ path: "payload/catalog.sqlite", sizeBytes: value.length, sha256: digest(value) }]); }
 async function validateOutput(root) { const actual = []; async function collect(current) { for (const entry of await readdir(current, { withFileTypes: true })) { const target = path.join(current, entry.name); if (entry.isDirectory()) await collect(target); else if (entry.isFile() && !entry.isSymbolicLink()) actual.push(path.relative(root, target).split(path.sep).join("/")); else throw new Error("artifact output must be regular files"); } } await collect(root); if (canonicalJson(actual.sort(bytes)) !== canonicalJson(["manifest.json", "payload/catalog.sqlite"])) throw new Error("unknown artifact output"); }
 function parse(bytes) { try { return JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("canonical fixture must be JSON"); } }
 function digest(value) { return createHash("sha256").update(Buffer.isBuffer(value) ? value : Buffer.from(canonicalJson(value))).digest("hex"); }
-function compareTuple(left, right, fields) { for (const field of fields) { const result = bytes(left[field], right[field]); if (result) return result; } return 0; }
-function bytes(left, right) { return Buffer.compare(Buffer.from(String(left)), Buffer.from(String(right))); }
+function cachedUtf8Buffer(value, cache) {
+  const text = String(value);
+  let buf = cache.get(text);
+  if (buf === undefined) {
+    buf = Buffer.from(text);
+    cache.set(text, buf);
+  }
+  return buf;
+}
+export function sortStringsByUtf8Bytes(values, bufferCache = new Map()) {
+  if (values.length <= 1) return [...values];
+  const keyed = values.map((value) => ({ value, buf: cachedUtf8Buffer(value, bufferCache) }));
+  keyed.sort((left, right) => (left.buf === right.buf ? 0 : Buffer.compare(left.buf, right.buf)));
+  return keyed.map((entry) => entry.value);
+}
+export function sortByTupleUtf8Bytes(rows, fields, bufferCache = new Map()) {
+  if (rows.length <= 1) return [...rows];
+  const keyed = rows.map((row) => ({
+    row,
+    keys: fields.map((field) => cachedUtf8Buffer(row[field], bufferCache)),
+  }));
+  keyed.sort((left, right) => {
+    for (let i = 0; i < left.keys.length; i += 1) {
+      const lBuf = left.keys[i];
+      const rBuf = right.keys[i];
+      if (lBuf === rBuf) continue;
+      const cmp = Buffer.compare(lBuf, rBuf);
+      if (cmp !== 0) return cmp;
+    }
+    return 0;
+  });
+  return keyed.map((entry) => entry.row);
+}
+function bytes(left, right) { return left === right ? 0 : Buffer.compare(Buffer.from(String(left)), Buffer.from(String(right))); }
 function quote(value) { return `"${value.replaceAll('"', '""')}"`; }
 function raw(value, label) { if (typeof value !== "string" || !value || value.trim() !== value) throw new Error(`${label} must be raw`); return value; }
 function exact(value, expected, label) { if (value !== expected) throw new Error(`${label} must be ${expected}`); return value; }

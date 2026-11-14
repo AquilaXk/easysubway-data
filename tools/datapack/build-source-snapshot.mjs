@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { deriveFreshness } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import {
@@ -8,11 +9,14 @@ import {
   requiredCredentialFreeObjectUri,
   validateLineage,
 } from "./source-snapshot-policy.mjs";
+import { readResponseTextWithLimit } from "./lib/bounded-zlib.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const DEFAULT_FRESHNESS_POLICY = "release/product-gates/datapack-freshness-sla.json";
+export const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
+export const DEFAULT_MAX_SOURCE_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -164,6 +168,34 @@ function parseArgs(argv) {
   return args;
 }
 
+export async function fetchSourceSnapshotText(rawUrl, {
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
+  maxBytes = DEFAULT_MAX_SOURCE_SNAPSHOT_BYTES,
+} = {}) {
+  const url = new URL(rawUrl);
+  if (url.protocol !== "https:") {
+    throw new Error(`source snapshot url must use https: ${url.protocol}`);
+  }
+  if (url.username !== "" || url.password !== "") {
+    throw new Error("source snapshot url must not contain embedded credentials");
+  }
+  const response = await fetchImpl(url.toString(), {
+    signal: AbortSignal.timeout(timeoutMs),
+    redirect: "error",
+  });
+  if (response?.redirected === true) {
+    throw new Error("source fetch redirect is disallowed");
+  }
+  if (!response?.ok) {
+    throw new Error(`source fetch failed: ${response?.status}`);
+  }
+  return readResponseTextWithLimit(response, {
+    maxBytes,
+    label: "source snapshot response",
+  });
+}
+
 async function readRaw(args) {
   if ((args.input == null) === (args.url == null)) {
     throw new Error("exactly one of --input or --url is required");
@@ -171,11 +203,7 @@ async function readRaw(args) {
   if (args.input != null) {
     return readFile(path.resolve(args.input), "utf8");
   }
-  const response = await fetch(args.url);
-  if (!response.ok) {
-    throw new Error(`source fetch failed: ${response.status}`);
-  }
-  return response.text();
+  return fetchSourceSnapshotText(args.url);
 }
 
 function canonicalizeRaw(raw) {
@@ -279,7 +307,9 @@ function requiredText(value, label) {
 }
 
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}

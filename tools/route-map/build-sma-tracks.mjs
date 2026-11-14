@@ -191,7 +191,7 @@ async function loadPack(packPath) {
   const bytes = await readFile(path.resolve(packPath));
   const dir = await mkdtemp(path.join(tmpdir(), "sma-tracks-"));
   const sqlitePath = path.join(dir, "pack.sqlite");
-  await writeFile(sqlitePath, packPath.endsWith(".gz") ? gunzipSync(bytes) : bytes);
+  await writeFile(sqlitePath, packPath.endsWith(".gz") ? gunzipSync(bytes, { maxOutputLength: 128 * 1024 * 1024 }) : bytes);
   return { db: new DatabaseSync(sqlitePath), dir };
 }
 

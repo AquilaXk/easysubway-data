@@ -4,9 +4,14 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
+import {
+  buildBackendTimetableSeed,
+  DEFAULT_INSERT_BATCH_SIZE,
+  MAX_INSERT_BATCH_SIZE,
+} from "./build-backend-timetable-seed.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -455,4 +460,77 @@ test("값에 개행이 있으면 거부한다(한 줄=한 statement 불변식, �
     transitStopTimes: [ARTIFACT.transitStopTimes[0]],
   };
   assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /newline|개행|single-line|한 줄/i);
+});
+
+test("multi-row VALUES 배치 INSERT는 단일 행 불변식·이스케이프·삽입 결과 동등성을 유지한다", () => {
+  assert.equal(DEFAULT_INSERT_BATCH_SIZE, 500);
+  assert.equal(MAX_INSERT_BATCH_SIZE, 1000);
+
+  const transitTrips = [];
+  const transitStopTimes = [];
+  for (let i = 0; i < 501; i += 1) {
+    const tripId = `route-seoul-4-up-t${String(i).padStart(4, "0")}`;
+    transitTrips.push({
+      id: tripId,
+      routeId: "route-seoul-4-up",
+      serviceId: i % 2 === 0 ? "weekday-kric" : "holiday-kric",
+      tripHeadsign: i === 0 ? "O'Brien'왕십리" : `역-${i}`,
+      directionId: "up",
+      servicePattern: "LOCAL",
+      trainNo: i === 1 ? null : String(4000 + i),
+    });
+    const base = 20000 + i * 10;
+    transitStopTimes.push(
+      { tripId, stopSequence: 1, stationId: "station-seoul-4-448", lineId: "seoul-4", arrivalSeconds: base, departureSeconds: base + 10 },
+      { tripId, stopSequence: 2, stationId: "station-seoul-4-433", lineId: "seoul-4", arrivalSeconds: base + 60, departureSeconds: base + 70 },
+    );
+  }
+  const bulkArtifact = { transitTrips, transitStopTimes };
+  const batched = buildBackendTimetableSeed(bulkArtifact, OPTIONS);
+  const singleRow = buildBackendTimetableSeed(bulkArtifact, { ...OPTIONS, insertBatchSize: 1 });
+
+  const tripStatements = batched.statements.filter((s) => s.startsWith("INSERT INTO transit_trips "));
+  const stopTimeStatements = batched.statements.filter((s) => s.startsWith("INSERT INTO transit_stop_times "));
+  assert.equal(tripStatements.length, 2);
+  assert.equal(stopTimeStatements.length, 3);
+  for (const statement of batched.statements) {
+    assert.equal(/[\r\n]/.test(statement), false);
+    assert.match(statement, /^INSERT INTO [a-z_]+ \([^)]+\) VALUES \(.+\);$/);
+  }
+  assert.deepEqual(batched.sql.trimEnd().split("\n"), batched.statements);
+
+  const loadIntoMemorySqlite = (sqlText) => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE transit_feed_info (id INTEGER PRIMARY KEY, feed_end_date TEXT NOT NULL);
+      CREATE TABLE service_calendars (service_id TEXT PRIMARY KEY, start_date TEXT NOT NULL, end_date TEXT NOT NULL, timezone TEXT NOT NULL, monday INTEGER NOT NULL, tuesday INTEGER NOT NULL, wednesday INTEGER NOT NULL, thursday INTEGER NOT NULL, friday INTEGER NOT NULL, saturday INTEGER NOT NULL, sunday INTEGER NOT NULL);
+      CREATE TABLE transit_routes (id TEXT PRIMARY KEY, timezone TEXT NOT NULL, line_id TEXT NOT NULL, route_short_name TEXT NOT NULL, route_long_name TEXT NOT NULL, direction_name TEXT NOT NULL);
+      CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL, service_id TEXT NOT NULL, service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, train_no TEXT, service_day_start_seconds INTEGER NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL);
+      CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL, station_id TEXT NOT NULL, line_id TEXT NOT NULL, pickup_type INTEGER NOT NULL, drop_off_type INTEGER NOT NULL, arrival_seconds INTEGER NOT NULL, departure_seconds INTEGER NOT NULL, PRIMARY KEY (trip_id, stop_sequence));
+    `);
+    db.exec(sqlText);
+    const dump = {
+      feedInfo: db.prepare("SELECT * FROM transit_feed_info ORDER BY id").all(),
+      calendars: db.prepare("SELECT * FROM service_calendars ORDER BY service_id").all(),
+      routes: db.prepare("SELECT * FROM transit_routes ORDER BY id").all(),
+      trips: db.prepare("SELECT * FROM transit_trips ORDER BY id").all(),
+      stopTimes: db.prepare("SELECT * FROM transit_stop_times ORDER BY trip_id, stop_sequence").all(),
+    };
+    db.close();
+    return dump;
+  };
+
+  const batchedDump = loadIntoMemorySqlite(batched.sql);
+  const singleDump = loadIntoMemorySqlite(singleRow.sql);
+  assert.deepEqual(batchedDump, singleDump);
+  assert.equal(batchedDump.trips.length, 501);
+  assert.equal(batchedDump.stopTimes.length, 1002);
+  assert.equal(batchedDump.trips[0].trip_headsign, "O'Brien'왕십리");
+  assert.equal(batchedDump.trips[1].train_no, null);
+});
+
+test("잘못된 insertBatchSize는 fail-closed로 거부한다", () => {
+  for (const insertBatchSize of [0, -1, 1.5, Number.NaN, MAX_INSERT_BATCH_SIZE + 1, "500"]) {
+    assert.throws(() => buildBackendTimetableSeed(ARTIFACT, { ...OPTIONS, insertBatchSize }), /insertBatchSize/);
+  }
 });

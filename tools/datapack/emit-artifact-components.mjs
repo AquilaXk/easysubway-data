@@ -249,7 +249,15 @@ async function emitMap(out, db, ids, stationSetSha256, build, mapAssets) {
     if (colors.length > 1) throw new Error("map line requires one svg color");
     return { lineId, color: colors[0] ?? line.color };
   });
-  const displayed = new Map(); for (const row of rows) displayed.set(row.stationId, [...(displayed.get(row.stationId) ?? []), row.lineId]);
+  const displayed = new Map();
+  for (const row of rows) {
+    let stationLineIds = displayed.get(row.stationId);
+    if (!stationLineIds) {
+      stationLineIds = [];
+      displayed.set(row.stationId, stationLineIds);
+    }
+    stationLineIds.push(row.lineId);
+  }
   const interchanges = [...displayed].filter(([, lines]) => new Set(lines).size >= 2).sort(([a], [b]) => bytes(a, b)).map(([stationId, lines]) => ({ stationId, lineIds: [...new Set(lines)].sort(bytes) }));
   for (const [file, value] of [["stations-layout.json", rows], ["line-styles.json", lineStyles], ["interchange-layout.json", interchanges]]) await json(path.join(payload, file), value);
   const manifest = { manifestVersion: 1, artifactKind: "map-pack", mapPackId: ids.mapPackId, stationSetSha256, payloadSha256: await inventory(artifact, new Set(["payload/metropolitan.svg", "payload/stations-layout.json", "payload/line-styles.json", "payload/interchange-layout.json"])) };

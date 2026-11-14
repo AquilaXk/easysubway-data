@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
@@ -666,5 +667,62 @@ test("5권역 alignment fixture는 raw geometry·pack SHA-256과 결속된다", 
       );
       assert.ok(existsSync(bundledPackPath), `${fixtureName}: bundled pack missing`);
     }
+  }
+});
+
+test("run-sma-pipeline.sh의 node -e 호출은 경로·ID를 process.argv로 전달하고 셸 변수 보간이 없다", () => {
+  const scriptPath = path.resolve(import.meta.dirname, "run-sma-pipeline.sh");
+  execFileSync("bash", ["-n", scriptPath]);
+  const script = readFileSync(scriptPath, "utf8");
+  const nodeLines = script.split("\n").filter((line) => /\bnode\s+-e\b/.test(line));
+  assert.equal(nodeLines.length, 3, "run-sma-pipeline.sh node -e line count mismatch");
+  for (const line of nodeLines) {
+    assert.match(line, /node -e '[^']*' -- /, `expected single-quoted node -e with -- argv in: ${line}`);
+    assert.ok(line.includes("process.argv["), `expected process.argv access in: ${line}`);
+    assert.doesNotMatch(line, /'\$[A-Za-z_]/, `unexpected inline shell variable interpolation in: ${line}`);
+  }
+  const gunzipLines = nodeLines.filter((line) => line.includes("gunzipSync"));
+  assert.equal(gunzipLines.length, 2);
+  for (const line of gunzipLines) {
+    assert.match(line, /maxOutputLength\s*:\s*128\s*\*\s*1024\s*\*\s*1024/);
+  }
+
+  // 메타문자(', $, 공백)가 섞인 임시 경로에서도 1·2·3번째 node -e 스니펫이 안전하게 동작해야 한다.
+  const tmp = mkdtempSync(path.join(tmpdir(), "sma-argv-"));
+  try {
+    const weirdDir = path.join(tmp, "dir'with spaces & $var");
+    rmSync(weirdDir, { recursive: true, force: true });
+    execFileSync("mkdir", ["-p", weirdDir]);
+    const sqliteRaw = path.join(tmp, "p.sqlite");
+    const db = new DatabaseSync(sqliteRaw);
+    db.exec(`
+      CREATE TABLE lines (id TEXT PRIMARY KEY, name_ko TEXT);
+      CREATE TABLE route_map_line_tracks (region TEXT, line_id TEXT, path TEXT);
+      INSERT INTO lines VALUES ('line-seohae-1', '수도권 서해선');
+      INSERT INTO route_map_line_tracks VALUES ('수도권', 'line-seohae-1', 'M 0 0 L 10 10');
+    `);
+    db.close();
+    const packFile = path.join(weirdDir, "pack'test.sqlite.gz");
+    writeFileSync(packFile, gzipSync(readFileSync(sqliteRaw)));
+    const seohaeFile = path.join(weirdDir, "seohae'out.json");
+    const tracksFile = path.join(weirdDir, "tracks'in.json");
+    const tracksOutFile = path.join(weirdDir, "tracks'out.json");
+    writeFileSync(tracksFile, JSON.stringify({ lineCount: 1, lines: [{ lineId: "other", paths: [] }] }));
+
+    const snippets = nodeLines.map((line) => {
+      const m = /node -e '([^']*)' --/.exec(line);
+      assert.ok(m, `could not extract snippet from: ${line}`);
+      return m[1];
+    });
+    const resolvedId = execFileSync(process.execPath, ["-e", snippets[0], "--", packFile], { encoding: "utf8" }).trim();
+    assert.equal(resolvedId, "line-seohae-1");
+    execFileSync(process.execPath, ["-e", snippets[1], "--", packFile, resolvedId, seohaeFile]);
+    assert.deepEqual(JSON.parse(readFileSync(seohaeFile, "utf8")), ["M 0 0 L 10 10"]);
+    execFileSync(process.execPath, ["-e", snippets[2], "--", tracksFile, seohaeFile, resolvedId, tracksOutFile]);
+    const merged = JSON.parse(readFileSync(tracksOutFile, "utf8"));
+    assert.equal(merged.lineCount, 2);
+    assert.equal(merged.lines.find((l) => l.lineId === resolvedId)?.trackCount, 1);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
   }
 });

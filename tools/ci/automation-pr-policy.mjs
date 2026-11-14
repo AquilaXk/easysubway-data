@@ -28,11 +28,11 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { crc32, inflateRawSync } from "node:zlib";
 
 import { automationPrEvidencePayload, itxPromotionAllowedPaths, itxPromotionSourceRow, parseAutomationPrEvidence } from "./automation-pr-evidence.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
@@ -722,6 +722,170 @@ async function gh(args, options) {
   }
 }
 
+const ZIP_LOCAL_HEADER_SIG = 0x04034b50;
+const ZIP_CENTRAL_DIR_SIG = 0x02014b50;
+const ZIP_EOCD_SIG = 0x06054b50;
+const DEFAULT_MAX_ZIP_ARCHIVE_BYTES = 64 * 1024 * 1024;
+const DEFAULT_MAX_ZIP_ENTRIES = 1_024;
+const DEFAULT_MAX_ZIP_ENTRY_BYTES = 1024 * 1024;
+
+function assertSafeZipMemberPath(name) {
+  if (
+    typeof name !== "string"
+    || name.length === 0
+    || name.length > 1_024
+    || name.includes("\0")
+    || /[\x00-\x1f\x7f]/.test(name)
+    || name.includes("\\")
+    || name.startsWith("/")
+    || name.endsWith("/")
+    || name.includes("//")
+    || /^[A-Za-z]:/.test(name)
+  ) {
+    throw new Error(`unsafe zip entry path: ${String(name)}`);
+  }
+  const segments = name.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`unsafe zip entry path: ${name}`);
+  }
+}
+
+/**
+ * Bounded, fail-closed in-process ZIP reader (exact UTF-8 member lookup; no shell/unzip subprocess).
+ * Supports data-descriptor entries via central directory metadata while bounding archive, count,
+ * and decompressed output sizes and rejecting symlinks, encrypted entries, zip-slip paths, and CRC mismatches.
+ */
+export function readBoundedZipMemberBytes(archiveBytes, member, {
+  maxArchiveBytes = DEFAULT_MAX_ZIP_ARCHIVE_BYTES,
+  maxEntries = DEFAULT_MAX_ZIP_ENTRIES,
+  maxEntryBytes = DEFAULT_MAX_ZIP_ENTRY_BYTES,
+} = {}) {
+  assertSafeZipMemberPath(member);
+  const buf = Buffer.isBuffer(archiveBytes)
+    ? archiveBytes
+    : archiveBytes instanceof Uint8Array
+      ? Buffer.from(archiveBytes.buffer, archiveBytes.byteOffset, archiveBytes.byteLength)
+      : (() => { throw new TypeError("artifact zip must be a Buffer or Uint8Array"); })();
+  if (buf.length < 22) throw new Error("artifact zip is empty or truncated");
+  if (buf.length > maxArchiveBytes) throw new Error(`artifact zip exceeds limit (${maxArchiveBytes} bytes)`);
+
+  let eocdPos = -1;
+  const minPos = Math.max(0, buf.length - 22 - 65_535);
+  for (let i = buf.length - 22; i >= minPos; i -= 1) {
+    if (buf.readUInt32LE(i) === ZIP_EOCD_SIG && buf.readUInt16LE(i + 20) === buf.length - (i + 22)) {
+      eocdPos = i;
+      break;
+    }
+  }
+  if (eocdPos < 0) throw new Error("artifact zip EOCD record not found");
+
+  const diskNum = buf.readUInt16LE(eocdPos + 4);
+  const cdDisk = buf.readUInt16LE(eocdPos + 6);
+  const diskEntries = buf.readUInt16LE(eocdPos + 8);
+  const totalEntries = buf.readUInt16LE(eocdPos + 10);
+  const cdSize = buf.readUInt32LE(eocdPos + 12);
+  const cdOffset = buf.readUInt32LE(eocdPos + 16);
+  if (diskNum !== 0 || cdDisk !== 0 || diskEntries !== totalEntries) {
+    throw new Error("multi-disk artifact zip is unsupported");
+  }
+  if (totalEntries === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
+    throw new Error("zip64 artifact archive is unsupported");
+  }
+  if (totalEntries < 1 || totalEntries > maxEntries) {
+    throw new Error(`artifact zip entry count ${totalEntries} exceeds limit (${maxEntries})`);
+  }
+  const cdEnd = cdOffset + cdSize;
+  if (cdEnd > eocdPos) throw new Error("artifact zip central directory extends past EOCD");
+
+  const seen = new Set();
+  let target = null;
+  let pos = cdOffset;
+  for (let i = 0; i < totalEntries; i += 1) {
+    if (pos + 46 > cdEnd || buf.readUInt32LE(pos) !== ZIP_CENTRAL_DIR_SIG) {
+      throw new Error(`invalid zip central directory entry at offset ${pos}`);
+    }
+    const versionMadeBy = buf.readUInt16LE(pos + 4);
+    const flags = buf.readUInt16LE(pos + 8);
+    const method = buf.readUInt16LE(pos + 10);
+    const expectedCrc = buf.readUInt32LE(pos + 16);
+    const compSize = buf.readUInt32LE(pos + 20);
+    const uncompSize = buf.readUInt32LE(pos + 24);
+    const nameLen = buf.readUInt16LE(pos + 28);
+    const extraLen = buf.readUInt16LE(pos + 30);
+    const commentLen = buf.readUInt16LE(pos + 32);
+    const externalAttrs = buf.readUInt32LE(pos + 38);
+    const localOffset = buf.readUInt32LE(pos + 42);
+    const nextPos = pos + 46 + nameLen + extraLen + commentLen;
+    if (nameLen === 0 || nextPos > cdEnd) {
+      throw new Error(`truncated zip central directory entry at offset ${pos}`);
+    }
+    const name = buf.subarray(pos + 46, pos + 46 + nameLen).toString("utf8");
+    assertSafeZipMemberPath(name);
+    if (seen.has(name)) throw new Error(`duplicate zip entry: ${name}`);
+    seen.add(name);
+    const hostOs = versionMadeBy >> 8;
+    const mode = (externalAttrs >>> 16) & 0o170000;
+    if ((hostOs === 3 || hostOs === 19) && mode === 0o120000) {
+      throw new Error(`symlink zip entry unsupported: ${name}`);
+    }
+    if (name === member) {
+      if (compSize === 0xffffffff || uncompSize === 0xffffffff || localOffset === 0xffffffff) {
+        throw new Error(`zip64 entry unsupported: ${name}`);
+      }
+      target = { flags, method, expectedCrc, compSize, uncompSize, localOffset };
+    }
+    pos = nextPos;
+  }
+  if (pos !== cdEnd) throw new Error("artifact zip central directory size mismatch");
+  if (!target) throw new Error(`artifact zip member not found: ${member}`);
+  if ((target.flags & 0x0001) !== 0) throw new Error(`encrypted zip entry unsupported: ${member}`);
+  if (target.uncompSize > maxEntryBytes) {
+    throw new Error(`zip entry ${member} exceeds limit (${maxEntryBytes} bytes)`);
+  }
+
+  const lh = target.localOffset;
+  if (lh + 30 > cdOffset || buf.readUInt32LE(lh) !== ZIP_LOCAL_HEADER_SIG) {
+    throw new Error(`invalid zip local file header for ${member}`);
+  }
+  const localNameLen = buf.readUInt16LE(lh + 26);
+  const localExtraLen = buf.readUInt16LE(lh + 28);
+  const dataStart = lh + 30 + localNameLen + localExtraLen;
+  const dataEnd = dataStart + target.compSize;
+  if (dataEnd > cdOffset) {
+    throw new Error(`truncated zip local entry payload for ${member}`);
+  }
+  const localName = buf.subarray(lh + 30, lh + 30 + localNameLen).toString("utf8");
+  if (localName !== member) {
+    throw new Error(`zip local/central filename mismatch for ${member}`);
+  }
+  const compressed = buf.subarray(dataStart, dataEnd);
+  let data;
+  if (target.method === 0) {
+    if (target.compSize !== target.uncompSize || target.compSize > maxEntryBytes) {
+      throw new Error(`zip entry ${member} size mismatch or exceeds limit`);
+    }
+    data = Buffer.from(compressed);
+  } else if (target.method === 8) {
+    try {
+      data = inflateRawSync(compressed, { maxOutputLength: maxEntryBytes });
+    } catch (cause) {
+      if (cause?.code === "ERR_BUFFER_TOO_LARGE") {
+        throw new Error(`zip entry ${member} exceeds decompressed size limit (${maxEntryBytes} bytes)`, { cause });
+      }
+      throw new Error(`failed to inflate zip entry ${member}`, { cause });
+    }
+  } else {
+    throw new Error(`unsupported zip compression method ${target.method} for ${member}`);
+  }
+  if (data.length !== target.uncompSize) {
+    throw new Error(`zip entry ${member} decompressed size mismatch`);
+  }
+  if (crc32(data) !== target.expectedCrc) {
+    throw new Error(`zip entry ${member} crc32 mismatch`);
+  }
+  return data;
+}
+
 /** `gh api`로 GitHub를 읽는 api 함수. */
 async function ghApi(endpoint) {
   const hash = endpoint.indexOf("#");
@@ -730,16 +894,7 @@ async function ghApi(endpoint) {
     const member = endpoint.slice(hash + 1);
     if (member !== EVIDENCE_ARTIFACT_MEMBER) throw inputError(`artifact member ${member}`);
     const { stdout: bytes } = await gh(["api", endpoint.slice(0, hash)], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
-    return parseGithubBody(async () => {
-      const dir = await mkdtemp(path.join(os.tmpdir(), "automation-pr-artifact-"));
-      try {
-        const zip = path.join(dir, "artifact.zip");
-        await writeFile(zip, bytes);
-        return JSON.parse((await execFileAsync("unzip", ["-p", zip, member], { maxBuffer: 1024 * 1024 })).stdout);
-      } finally {
-        await rm(dir, { recursive: true, force: true });
-      }
-    });
+    return parseGithubBody(async () => JSON.parse(readBoundedZipMemberBytes(bytes, member).toString("utf8")));
   }
   const { stdout } = await gh(["api", "-H", "Accept: application/vnd.github+json", endpoint], { maxBuffer: 256 * 1024 * 1024 });
   return parseGithubBody(async () => JSON.parse(stdout));

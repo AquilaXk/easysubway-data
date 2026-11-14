@@ -1,13 +1,111 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
-import { promisify } from "node:util";
+import { execFileSync } from "node:child_process";
+import { lstat, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const REQUIRED_PATCH_TABLES = ["facilities", "network_edges", "transit_stop_times"];
-const execFileAsync = promisify(execFile);
+const ALLOWED_CHANNELS = new Set(["production", "staging"]);
+const ALLOWED_SCRIPT_PATH = /^tools\/(?:datapack|routes|route-map)\/[A-Za-z0-9._/-]+\.mjs$/;
+const ALLOWED_SCRIPT_ARG = /^[A-Za-z0-9._:=/-]+$/;
+const ALLOWED_INLINE_JSON_REPLAY = /^process\.stdout\.write\(JSON\.stringify\(\{[A-Za-z0-9_:"',[\]{}.-]+\}\)\)$/;
+const FORBIDDEN_UNQUOTED_SHELL_CHARS = /[;|&<>()$`"\\*?[\]{}#!~]/;
+const FORBIDDEN_QUOTED_CHARS = /["`$\\]/;
+
+export function validateCliPath(rawPath, label) {
+  const value = requireString(rawPath, label);
+  if (value.includes("\0") || /[\x00-\x1f\x7f]/.test(value)) {
+    throw new Error(`${label} contains control characters`);
+  }
+  if (value.startsWith("-")) {
+    throw new Error(`${label} must not start with '-'`);
+  }
+  if (value.split(/[/\\]/).includes("..")) {
+    throw new Error(`${label} must not contain parent directory traversal`);
+  }
+  return path.resolve(value);
+}
+
+async function rejectSymlinkIfPresent(resolvedPath, label) {
+  try {
+    const stat = await lstat(resolvedPath);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`${label} must not be a symlink`);
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
+
+function tokenizeReplayCommand(command) {
+  const raw = requireString(command, "routeRegressionReplay.command");
+  if (raw.includes("\0") || /[\x00-\x1f\x7f\r\n]/.test(raw)) {
+    throw new Error("routeRegressionReplay.command contains control characters");
+  }
+  const tokens = [];
+  let current = "";
+  let inToken = false;
+  let inSingleQuote = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (inSingleQuote) {
+      if (ch === "'") {
+        inSingleQuote = false;
+      } else if (FORBIDDEN_QUOTED_CHARS.test(ch)) {
+        throw new Error("routeRegressionReplay.command contains forbidden quoted characters");
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+    if (ch === "'") {
+      inSingleQuote = true;
+      inToken = true;
+    } else if (ch === " " || ch === "\t") {
+      if (inToken) {
+        tokens.push(current);
+        current = "";
+        inToken = false;
+      }
+    } else if (FORBIDDEN_UNQUOTED_SHELL_CHARS.test(ch)) {
+      throw new Error(`routeRegressionReplay.command contains forbidden shell character '${ch}'`);
+    } else {
+      current += ch;
+      inToken = true;
+    }
+  }
+  if (inSingleQuote) {
+    throw new Error("routeRegressionReplay.command has unterminated single quote");
+  }
+  if (inToken) tokens.push(current);
+  return tokens;
+}
+
+export function parseReplayCommand(command) {
+  const tokens = tokenizeReplayCommand(command);
+  if (tokens.length < 2 || tokens[0] !== "node") {
+    throw new Error("routeRegressionReplay.command must invoke allowlisted node command");
+  }
+  const second = tokens[1];
+  if (second === "-e") {
+    if (tokens.length !== 3 || !ALLOWED_INLINE_JSON_REPLAY.test(tokens[2])) {
+      throw new Error("routeRegressionReplay.command inline script is not allowlisted");
+    }
+    return { file: process.execPath, args: ["-e", tokens[2]] };
+  }
+  if (second.startsWith("-") || second.includes("//") || second.split("/").includes("..") || !ALLOWED_SCRIPT_PATH.test(second)) {
+    throw new Error("routeRegressionReplay.command script path is not allowlisted");
+  }
+  for (const arg of tokens.slice(2)) {
+    if (arg.split(/[/\\]/).includes("..") || !ALLOWED_SCRIPT_ARG.test(arg)) {
+      throw new Error("routeRegressionReplay.command contains non-allowlisted argument");
+    }
+  }
+  return { file: process.execPath, args: tokens.slice(1) };
+}
 
 function argValue(args, name) {
   const index = args.indexOf(name);
@@ -56,10 +154,24 @@ function parseTime(value, name) {
   return millis;
 }
 
+function requireHttpsUrl(value, name) {
+  const raw = requireString(value, name);
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`${name} must be a valid URL`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`${name} must use https protocol`);
+  }
+  return raw;
+}
+
 function manifest(input, field) {
   const value = requireObject(input[field], field);
   return {
-    url: requireString(value.url, `${field}.url`),
+    url: requireHttpsUrl(value.url, `${field}.url`),
     sha256: requireSha(value.sha256, `${field}.sha256`),
   };
 }
@@ -77,15 +189,20 @@ function correctedTables(rows) {
   return tables;
 }
 
-async function main() {
-  const args = process.argv.slice(2);
-  const inputPath = argValue(args, "--input");
-  const outputPath = argValue(args, "--output");
-  if (!inputPath || !outputPath) {
-    throw new Error("--input and --output are required");
+export async function runEmergencyDatapackDrill({ inputPath: rawInputPath, outputPath: rawOutputPath }) {
+  const inputPath = validateCliPath(rawInputPath, "--input");
+  const outputPath = validateCliPath(rawOutputPath, "--output");
+  if (inputPath === outputPath) {
+    throw new Error("--input and --output must be distinct paths");
   }
+  await rejectSymlinkIfPresent(inputPath, "--input");
+  await rejectSymlinkIfPresent(outputPath, "--output");
 
   const input = JSON.parse(await readFile(inputPath, "utf8"));
+  const channel = requireString(input.channel, "channel");
+  if (!ALLOWED_CHANNELS.has(channel)) {
+    throw new Error(`channel must be one of: ${[...ALLOWED_CHANNELS].join(", ")}`);
+  }
   const previousKnownGoodManifest = manifest(input, "previousKnownGoodManifest");
   const badManifest = manifest(input, "badManifest");
   const fixedManifest = manifest(input, "fixedManifest");
@@ -117,11 +234,17 @@ async function main() {
   }
 
   const command = requireString(routeRegressionReplay.command, "routeRegressionReplay.command");
-  const { stdout: commandOutput } = await execFileAsync("bash", ["-c", command], { maxBuffer: 10 * 1024 * 1024 });
+  const parsedCommand = parseReplayCommand(command);
+  const commandOutput = execFileSync(parsedCommand.file, parsedCommand.args, {
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+    timeout: 30_000,
+    shell: false,
+  });
   const evidence = {
     schemaVersion: 1,
     artifactKind: "emergency-datapack-release-drill",
-    channel: requireString(input.channel, "channel"),
+    channel,
     rollback: {
       previousKnownGoodManifestUrl: previousKnownGoodManifest.url,
       previousKnownGoodManifestSha256: previousKnownGoodManifest.sha256,
@@ -155,11 +278,24 @@ async function main() {
   };
 
   await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`);
+  return evidence;
 }
 
-try {
-  await main();
-} catch (error) {
-  console.error(error.message);
-  process.exitCode = 1;
+async function main() {
+  const args = process.argv.slice(2);
+  const inputPath = argValue(args, "--input");
+  const outputPath = argValue(args, "--output");
+  if (!inputPath || !outputPath) {
+    throw new Error("--input and --output are required");
+  }
+  await runEmergencyDatapackDrill({ inputPath, outputPath });
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
 }
