@@ -646,7 +646,14 @@ export function latestEvidenceObservedDates(rows) {
 }
 
 export function packSourceInventoryEntry(source, evidenceObservedDate, supportedV1Scope) {
-  const supportedRegionIds = new Set(supportedV1Scope?.includedRegionIds ?? []);
+  const sourceDomains = requiredStringArray(
+    source.coverageScope?.sourceDomains,
+    `${source.id}.coverageScope.sourceDomains`,
+  );
+  const projectRegionalAccessibilityScope = sourceDomains.includes("accessibility_facilities");
+  const supportedRegionIds = projectRegionalAccessibilityScope
+    ? new Set(supportedV1Scope?.includedRegionIds ?? [])
+    : new Set();
   const rawRegionIds = requiredStringArray(source.coverageScope?.regionIds, `${source.id}.coverageScope.regionIds`);
   const rawOperatorIds = requiredStringArray(source.coverageScope?.operatorIds, `${source.id}.coverageScope.operatorIds`);
   const regionIds = supportedRegionIds.size > 0
@@ -680,7 +687,7 @@ export function packSourceInventoryEntry(source, evidenceObservedDate, supported
       ...(source.coverageScope?.lineIds === undefined
         ? {}
         : { lineIds: requiredStringArray(source.coverageScope.lineIds, `${source.id}.coverageScope.lineIds`) }),
-      sourceDomains: requiredStringArray(source.coverageScope?.sourceDomains, `${source.id}.coverageScope.sourceDomains`),
+      sourceDomains,
     },
   };
 }

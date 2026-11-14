@@ -2287,6 +2287,12 @@ test("topology source admission은 후보 spec 없이 inventory·reviewed·canon
   };
   const admission = buildCurrentTopologySourceAdmissionOutputs(common);
   assert.equal(Object.hasOwn(admission, "spec"), false);
+  const committedReviewedPack = await readJson("tools/datapack/release/capital-production-reviewed-pack.json");
+  const omitUpdatedAt = (rows) => rows.map(({ updatedAt: _u, ...rest }) => rest);
+  assert.deepEqual(
+    omitUpdatedAt(admission.reviewedPack.packs[0].sourceInventory),
+    omitUpdatedAt(committedReviewedPack.packs[0].sourceInventory),
+  );
   const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
   const primary = buildCurrentTopologyRefreshPrimaryOutputs({
     ...common,
@@ -2887,6 +2893,30 @@ test("원천 행 updatedAt은 싣고 있는 증거의 관측일을 inventory 관
       operatorIds: ["seoul-metro", "korail"],
       sourceDomains: ["accessibility_facilities"],
     },
+  );
+  const membershipSource = {
+    ...syntheticSource("2026-10-07"),
+    id: "molit-urban-rail-full-route",
+    coverageScope: {
+      regionIds: ["capital", "busan", "daegu", "gwangju", "daejeon"],
+      operatorIds: [
+        "seoul-metro",
+        "korail",
+        "incheon-transit",
+        "busan-transportation",
+        "daegu-transportation",
+        "gwangju-metropolitan-rapid-transit",
+        "daejeon-transportation",
+      ],
+      sourceDomains: ["station_line_membership"],
+    },
+  };
+  assert.deepEqual(
+    packSourceInventoryEntry(membershipSource, "2026-10-07", {
+      includedRegionIds: ["capital"],
+      includedOperatorIds: ["seoul-metro"],
+    }).coverageScope,
+    membershipSource.coverageScope,
   );
 });
 
