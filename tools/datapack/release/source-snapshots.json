@@ -377421,5 +377421,50 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "korail-metropolitan-timetable-file",
+    "snapshotId": "korail-metropolitan-timetable-file-abe2bcf101fd90e992a2f1213eac6b313a3422a74d7bf8d44424bf210219f4d1",
+    "previousSnapshotId": "korail-metropolitan-timetable-file-b8d78c536f07e7d976c2bb82b2c581857779914990a5d4c445a6e879c1b80535",
+    "capturedAt": "2026-11-14T15:17:15.062Z",
+    "retrievedAt": "2026-11-14T15:17:15.062Z",
+    "sourceUpdatedAt": null,
+    "provider": "한국철도공사",
+    "rowCount": 14,
+    "coverageCount": 8,
+    "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+    "contentSha256": "abe2bcf101fd90e992a2f1213eac6b313a3422a74d7bf8d44424bf210219f4d1",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261003/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx",
+    "rawObjectSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+    "rawReceiptSha256": "46cd8a5a367d4e7d5ad509936a05ebbb51bc73ce13777b1cd8f8ab20de6a963c",
+    "byteSize": 51799,
+    "freshUntil": "2026-11-21T15:17:15.062Z",
+    "freshnessExpiresAt": "2026-11-21T15:17:15.062Z",
+    "rawRetentionExpiresAt": "2027-02-12T15:17:15.062Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "c23122e2baffd9af79c9256707208d649fc39e0bb1f6eafd2edb46ffc8793c2a",
+    "redactedRequestFingerprint": "5a1b7a80110e4729400959211151473a70be6cc685ce883d3d5d734cb874bd84",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
+    },
+    "rawObjectReusedFromSnapshotId": "korail-metropolitan-timetable-file-b8d78c536f07e7d976c2bb82b2c581857779914990a5d4c445a6e879c1b80535",
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
