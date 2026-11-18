@@ -1,0 +1,355 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { gzipSync } from "node:zlib";
+
+import { gunzipWithLimit } from "./bounded-zlib.mjs";
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+import { sha256 } from "../../lib/hash.mjs";
+
+// #899: 공식 원천 시간표(trip·stop_time)를 커밋된 전국 팩 JSON 밖의 결정적 gzip 파일로 둔다.
+// 팩 JSON이 GitHub 파일 한도(100MB) 안에서 여유를 갖게 하고, 원천 단위로 같은 provenance를 행마다 복제하지 않는다.
+//
+// 파일(gzip 전 JSON): { schemaVersion: 3, artifactKind, tripColumns, stopTimeColumns,
+//   sections: [{ header: { sourceId, sourceSnapshotId, evidenceHash, provenanceKind, derivationKind, updatedAt },
+//                stopTimeProvenance: "TRIP_INHERITED" | "ROW_COPY" | "ROW_HASH", trips: [[...]], stopTimes: [[...]] }] }
+// - trip은 헤더(원천 공통 provenance)와 trip별 providerRecordHash로 원래 객체를 그대로 복원한다.
+// - TRIP_INHERITED: stop_time 행에 provenance가 없고 tripId FK로 trip provenance를 이어받는다.
+// - ROW_COPY: stop_time 행 provenance가 소속 trip과 같았다. 펼칠 때 같은 값을 다시 붙인다.
+// - ROW_HASH: stop_time 행이 원천 공통 provenance와 정차별 providerRecordHash를 갖는다.
+// 팩 결속: pack.externalTransitStopTimes = { path, sha256, tripCount, stopTimeCount,
+//   sections: [{ sourceId, sourceSnapshotId, stopTimeProvenance, tripCount, stopTimeCount, byLine: { lineId: { tripCount, stopTimeCount } } }] }
+// 읽는 쪽(build-datapack·후보 accessibility 입력·anti-cheat guard)은 expandExternalStopTimes로 펼친다.
+// 바이트 sha·결속 요약·trip FK·provenance·고아 trip·중복 중 하나라도 어긋나면 실패한다.
+
+export const OFFICIAL_STOP_TIMES_PATH = "tools/datapack/release/nationwide-official-stop-times.json.gz";
+export const EXTERNAL_STOP_TIMES_KEY = "externalTransitStopTimes";
+const ARTIFACT_KIND = "datapack-official-timetable";
+const HEADER_FIELDS = Object.freeze(["sourceId", "sourceSnapshotId", "evidenceHash", "provenanceKind", "derivationKind", "updatedAt"]);
+const TRIP_COLUMNS = Object.freeze([
+  "id", "routeId", "serviceId", "tripHeadsign", "directionId",
+  "lineId", "trainNo", "servicePattern", "serviceClass", "serviceDayStartSeconds", "providerRecordHash",
+]);
+const OPTIONAL_TRIP_STRING_COLUMNS = Object.freeze(["lineId", "trainNo", "servicePattern", "serviceClass"]);
+const OPTIONAL_TRIP_COLUMNS = Object.freeze(new Set([...OPTIONAL_TRIP_STRING_COLUMNS, "serviceDayStartSeconds"]));
+const REQUIRED_TRIP_KEYS = Object.freeze([
+  ...TRIP_COLUMNS.filter((column) => !OPTIONAL_TRIP_COLUMNS.has(column)),
+  ...HEADER_FIELDS,
+]);
+const ALLOWED_TRIP_KEY_SET = Object.freeze(new Set([...TRIP_COLUMNS, ...HEADER_FIELDS]));
+const STOP_TIME_COLUMNS = Object.freeze([
+  "tripId", "stopSequence", "stationId", "lineId", "arrivalSeconds", "departureSeconds",
+  "pickupType", "dropOffType", "timeSource", "stopHeadsign", "providerRecordHash",
+]);
+// timeSource·stopHeadsign·providerRecordHash(ROW_HASH 전용)는 선택 열이다: 없는 행은 null로 두고 펼칠 때 키를 만들지 않는다.
+const OPTIONAL_STOP_TIME_STRING_COLUMNS = Object.freeze(["timeSource", "stopHeadsign"]);
+const OPTIONAL_STOP_TIME_COLUMNS = Object.freeze(new Set([...OPTIONAL_STOP_TIME_STRING_COLUMNS, "providerRecordHash"]));
+const REQUIRED_STOP_TIME_COLUMNS = Object.freeze(STOP_TIME_COLUMNS.filter((column) => !OPTIONAL_STOP_TIME_COLUMNS.has(column)));
+const ROW_PROVENANCE_FIELDS = Object.freeze([...HEADER_FIELDS, "providerRecordHash"]);
+const CONTENT_KEYS = Object.freeze(["schemaVersion", "artifactKind", "tripColumns", "stopTimeColumns", "sections"]);
+const SECTION_KEYS = Object.freeze(["header", "stopTimeProvenance", "trips", "stopTimes"]);
+const STOP_TIME_PROVENANCE = Object.freeze({
+  TRIP_INHERITED: "TRIP_INHERITED",
+  ROW_COPY: "ROW_COPY",
+  ROW_HASH: "ROW_HASH",
+});
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
+const GZIP_LEVEL = 9;
+const fail = (code, detail = "") => { throw new Error(`EXTERNAL_STOP_TIMES_${code}${detail ? `: ${detail}` : ""}`); };
+const sameKeys = (object, keys) => Object.keys(object).length === keys.length && keys.every((key) => Object.hasOwn(object, key));
+const isNonEmptyString = (value) => typeof value === "string" && value.length > 0;
+
+/**
+ * 팩에서 지정한 원천의 trip·stop_time을 떼어 결정적 gzip 바이트와 결속을 만든다. 같은 입력이면 같은 바이트다.
+ * @returns {{ bytes: Buffer, binding: object, inlineTrips: object[], inlineStopTimes: object[] }}
+ */
+export function buildExternalStopTimesArtifact({ trips, stopTimes, sourceIds, inlineSourceSnapshotIds = [] }) {
+  if (!Array.isArray(sourceIds) || sourceIds.length === 0 || new Set(sourceIds).size !== sourceIds.length) fail("SOURCE_IDS");
+  if (!Array.isArray(inlineSourceSnapshotIds) || inlineSourceSnapshotIds.some((id) => !isNonEmptyString(id))) fail("INLINE_SNAPSHOT_IDS");
+  const keptInline = new Set(inlineSourceSnapshotIds);
+  const external = new Set(sourceIds);
+  const isExternal = (row) => external.has(row.sourceId) && !keptInline.has(row.sourceSnapshotId);
+  const sectionsByKey = new Map();
+  const tripSection = new Map();
+  const inlineTrips = [];
+  for (const trip of trips) {
+    if (!isExternal(trip)) { inlineTrips.push(trip); continue; }
+    const key = `${trip.sourceId}\u0000${trip.sourceSnapshotId}`;
+    if (!sectionsByKey.has(key)) {
+      sectionsByKey.set(key, { header: tripHeader(trip), tripKeys: Object.keys(trip), trips: [], stopTimes: [], rowProvenance: new Set() });
+    }
+    const section = sectionsByKey.get(key);
+    assertTripShape(trip, section);
+    if (tripSection.has(trip.id)) fail("TRIP_DUPLICATE", trip.id);
+    tripSection.set(trip.id, { section, trip });
+    section.trips.push(trip);
+  }
+  for (const sourceId of sourceIds) {
+    if (![...sectionsByKey.values()].some(({ header }) => header.sourceId === sourceId)) fail("SOURCE_HAS_NO_TRIPS", sourceId);
+  }
+  const inlineStopTimes = [];
+  for (const row of stopTimes) {
+    const owner = tripSection.get(row.tripId);
+    if (!owner) {
+      if (isExternal(row)) fail("ORPHAN_STOP_TIME", row.tripId);
+      inlineStopTimes.push(row);
+      continue;
+    }
+    owner.section.rowProvenance.add(stopTimeProvenanceKind(row, owner.trip));
+    owner.section.stopTimes.push(row);
+  }
+  const sections = [...sectionsByKey.values()]
+    .sort((left, right) => codepointCompare(left.header.sourceId, right.header.sourceId)
+      || codepointCompare(left.header.sourceSnapshotId, right.header.sourceSnapshotId))
+    .map(serializeSection);
+  const content = {
+    schemaVersion: 3,
+    artifactKind: ARTIFACT_KIND,
+    tripColumns: [...TRIP_COLUMNS],
+    stopTimeColumns: [...STOP_TIME_COLUMNS],
+    sections,
+  };
+  const bytes = gzipSync(Buffer.from(`${JSON.stringify(content)}\n`), { level: GZIP_LEVEL });
+  return { bytes, binding: bindingFor(content, bytes), inlineTrips, inlineStopTimes };
+}
+
+function serializeSection(section) {
+  if (section.rowProvenance.size !== 1) fail("STOP_TIME_PROVENANCE_MIXED", section.header.sourceId);
+  const stopTimeProvenance = [...section.rowProvenance][0];
+  const withStops = new Set(section.stopTimes.map(({ tripId }) => tripId));
+  for (const { id } of section.trips) if (!withStops.has(id)) fail("TRIP_WITHOUT_STOP_TIMES", id);
+  const keepRowHash = stopTimeProvenance === STOP_TIME_PROVENANCE.ROW_HASH;
+  return {
+    header: section.header,
+    stopTimeProvenance,
+    trips: [...section.trips]
+      .sort((left, right) => codepointCompare(left.id, right.id))
+      .map((trip) => TRIP_COLUMNS.map((column) => trip[column] ?? null)),
+    stopTimes: [...section.stopTimes]
+      .sort((left, right) => codepointCompare(left.tripId, right.tripId) || left.stopSequence - right.stopSequence)
+      .map((row) => STOP_TIME_COLUMNS.map((column) => (column === "providerRecordHash" && !keepRowHash ? null : (row[column] ?? null)))),
+  };
+}
+
+function tripHeader(trip) {
+  const header = Object.fromEntries(HEADER_FIELDS.map((field) => [field, trip[field]]));
+  if (HEADER_FIELDS.some((field) => !isNonEmptyString(header[field]))) fail("TRIP_PROVENANCE_MISSING", trip.id);
+  return header;
+}
+
+function assertTripOptionalFields(trip) {
+  for (const column of OPTIONAL_TRIP_STRING_COLUMNS) {
+    if (trip[column] !== undefined && !isNonEmptyString(trip[column])) fail("TRIP_SHAPE", trip.id);
+  }
+  if (trip.serviceDayStartSeconds !== undefined && (!Number.isFinite(trip.serviceDayStartSeconds))) {
+    fail("TRIP_SHAPE", trip.id);
+  }
+}
+
+function assertTripShape(trip, section) {
+  const keys = Object.keys(trip);
+  if (keys.some((key) => !ALLOWED_TRIP_KEY_SET.has(key))
+    || REQUIRED_TRIP_KEYS.some((key) => !Object.hasOwn(trip, key))
+    || !sameKeys(trip, section.tripKeys)) {
+    fail("TRIP_SHAPE", trip.id);
+  }
+  assertTripOptionalFields(trip);
+  if (!isNonEmptyString(trip.providerRecordHash)) fail("TRIP_PROVENANCE_MISSING", trip.id);
+  for (const field of HEADER_FIELDS) if (trip[field] !== section.header[field]) fail("TRIP_HEADER_MISMATCH", `${trip.id} ${field}`);
+}
+
+function stopTimeProvenanceKind(row, trip) {
+  const { timeSource, stopHeadsign, ...base } = row;
+  if ((timeSource !== undefined && !isNonEmptyString(timeSource))
+    || (stopHeadsign !== undefined && !isNonEmptyString(stopHeadsign))) {
+    fail("STOP_TIME_SHAPE", `${row.tripId}:${row.stopSequence}`);
+  }
+  if (sameKeys(base, REQUIRED_STOP_TIME_COLUMNS)) return STOP_TIME_PROVENANCE.TRIP_INHERITED;
+  if (sameKeys(base, [...REQUIRED_STOP_TIME_COLUMNS, ...ROW_PROVENANCE_FIELDS])
+    && HEADER_FIELDS.every((field) => row[field] === trip[field])) {
+    if (row.providerRecordHash === trip.providerRecordHash) return STOP_TIME_PROVENANCE.ROW_COPY;
+    if (SHA256_HEX_PATTERN.test(row.providerRecordHash ?? "")) return STOP_TIME_PROVENANCE.ROW_HASH;
+  }
+  fail("STOP_TIME_SHAPE", `${row.tripId}:${row.stopSequence}`);
+}
+
+function bindingFor(content, bytes) {
+  const sections = content.sections.map((section) => {
+    const byLine = {};
+    for (const values of section.stopTimes) {
+      const lineId = values[3];
+      const line = byLine[lineId] ?? { tripIds: new Set(), stopTimeCount: 0 };
+      line.tripIds.add(values[0]);
+      line.stopTimeCount += 1;
+      byLine[lineId] = line;
+    }
+    return {
+      sourceId: section.header.sourceId,
+      sourceSnapshotId: section.header.sourceSnapshotId,
+      stopTimeProvenance: section.stopTimeProvenance,
+      tripCount: section.trips.length,
+      stopTimeCount: section.stopTimes.length,
+      byLine: Object.fromEntries(Object.entries(byLine).sort(([left], [right]) => codepointCompare(left, right))
+        .map(([lineId, { tripIds, stopTimeCount }]) => [lineId, { tripCount: tripIds.size, stopTimeCount }])),
+    };
+  });
+  return {
+    path: OFFICIAL_STOP_TIMES_PATH,
+    sha256: sha256(bytes),
+    tripCount: sections.reduce((total, { tripCount }) => total + tripCount, 0),
+    stopTimeCount: sections.reduce((total, { stopTimeCount }) => total + stopTimeCount, 0),
+    sections,
+  };
+}
+
+/**
+ * 팩이 결속한 외부 시간표를 펼쳐 transitTrips·transitStopTimes에 더하고 결속 키를 지운 fixture를 돌려준다.
+ * 결속이 없는 팩은 그대로 둔다.
+ */
+export function expandExternalStopTimes(fixture, { repositoryRoot, readBytes = (relative) => readFileSync(path.join(repositoryRoot, relative)) } = {}) {
+  if (!Array.isArray(fixture?.packs)) return fixture;
+  let changed = false;
+  const packs = fixture.packs.map((pack) => {
+    const binding = pack?.[EXTERNAL_STOP_TIMES_KEY];
+    if (binding === undefined) return pack;
+    changed = true;
+    const { trips, stopTimes } = readBoundTimetable(binding, pack, readBytes);
+    const expanded = {
+      ...pack,
+      transitTrips: [...(pack.transitTrips ?? []), ...trips],
+      transitStopTimes: [...(pack.transitStopTimes ?? []), ...stopTimes],
+    };
+    delete expanded[EXTERNAL_STOP_TIMES_KEY];
+    return expanded;
+  });
+  return changed ? { ...fixture, packs } : fixture;
+}
+
+function assertValidContentEnvelope(content, binding, bytes) {
+  if (!sameKeys(content ?? {}, CONTENT_KEYS) || content.schemaVersion !== 3 || content.artifactKind !== ARTIFACT_KIND
+    || JSON.stringify(content.tripColumns) !== JSON.stringify(TRIP_COLUMNS)
+    || JSON.stringify(content.stopTimeColumns) !== JSON.stringify(STOP_TIME_COLUMNS) || !Array.isArray(content.sections)) {
+    fail("CONTENT", binding.path);
+  }
+  for (const section of content.sections) {
+    if (!section || typeof section !== "object" || !sameKeys(section, SECTION_KEYS)
+      || !sameKeys(section.header ?? {}, HEADER_FIELDS) || HEADER_FIELDS.some((field) => !isNonEmptyString(section.header[field]))
+      || !Object.values(STOP_TIME_PROVENANCE).includes(section.stopTimeProvenance)
+      || !Array.isArray(section.trips) || !Array.isArray(section.stopTimes)) fail("SECTION", section?.header?.sourceId);
+    if (section.trips.some((values) => !Array.isArray(values) || values.length !== TRIP_COLUMNS.length)
+      || section.stopTimes.some((values) => !Array.isArray(values) || values.length !== STOP_TIME_COLUMNS.length)) fail("ROW_SHAPE", section.header.sourceId);
+  }
+  if (JSON.stringify(bindingFor(content, bytes)) !== JSON.stringify(binding)) fail("BINDING_MISMATCH", binding.path);
+}
+
+function expandTripTuple(values, header) {
+  const trip = {
+    id: values[0],
+    routeId: values[1],
+    serviceId: values[2],
+    tripHeadsign: values[3],
+    directionId: values[4],
+  };
+  if (values[5] !== null) trip.lineId = values[5];
+  if (values[6] !== null) trip.trainNo = values[6];
+  if (values[7] !== null) trip.servicePattern = values[7];
+  if (values[8] !== null) trip.serviceClass = values[8];
+  if (values[9] !== null) trip.serviceDayStartSeconds = values[9];
+  trip.providerRecordHash = values[10];
+
+  trip.sourceId = header.sourceId;
+  trip.sourceSnapshotId = header.sourceSnapshotId;
+  trip.evidenceHash = header.evidenceHash;
+  trip.provenanceKind = header.provenanceKind;
+  trip.derivationKind = header.derivationKind;
+  trip.updatedAt = header.updatedAt;
+
+  assertTripOptionalFields(trip);
+  if (!isNonEmptyString(trip.providerRecordHash)) fail("TRIP_PROVENANCE_MISSING", trip.id);
+  return trip;
+}
+
+function expandStopTimeTuple(values, section, trip) {
+  const row = {
+    tripId: values[0],
+    stopSequence: values[1],
+    stationId: values[2],
+    lineId: values[3],
+    arrivalSeconds: values[4],
+    departureSeconds: values[5],
+    pickupType: values[6],
+    dropOffType: values[7],
+  };
+  if (values[8] !== null) row.timeSource = values[8];
+  if (values[9] !== null) row.stopHeadsign = values[9];
+  if (values[10] !== null) row.providerRecordHash = values[10];
+
+  for (const column of OPTIONAL_STOP_TIME_STRING_COLUMNS) {
+    if (row[column] !== undefined && !isNonEmptyString(row[column])) fail("ROW_SHAPE", row.tripId);
+  }
+
+  if (section.stopTimeProvenance === STOP_TIME_PROVENANCE.ROW_HASH) {
+    if (!SHA256_HEX_PATTERN.test(row.providerRecordHash ?? "")) fail("ROW_SHAPE", row.tripId);
+    row.sourceId = section.header.sourceId;
+    row.sourceSnapshotId = section.header.sourceSnapshotId;
+    row.evidenceHash = section.header.evidenceHash;
+    row.provenanceKind = section.header.provenanceKind;
+    row.derivationKind = section.header.derivationKind;
+    row.updatedAt = section.header.updatedAt;
+    return row;
+  }
+
+  if (row.providerRecordHash !== undefined) fail("ROW_SHAPE", row.tripId);
+
+  if (section.stopTimeProvenance === STOP_TIME_PROVENANCE.ROW_COPY) {
+    row.sourceId = trip.sourceId;
+    row.sourceSnapshotId = trip.sourceSnapshotId;
+    row.evidenceHash = trip.evidenceHash;
+    row.provenanceKind = trip.provenanceKind;
+    row.derivationKind = trip.derivationKind;
+    row.updatedAt = trip.updatedAt;
+    row.providerRecordHash = trip.providerRecordHash;
+  }
+
+  return row;
+}
+
+function readBoundTimetable(binding, pack, readBytes) {
+  if (binding?.path !== OFFICIAL_STOP_TIMES_PATH || !SHA256_HEX_PATTERN.test(binding.sha256 ?? "")) fail("BINDING");
+  const bytes = readBytes(binding.path);
+  if (sha256(bytes) !== binding.sha256) fail("SHA256_MISMATCH", binding.path);
+  let content;
+  try {
+    content = JSON.parse(
+      gunzipWithLimit(bytes, { maxOutputLength: 256 * 1024 * 1024, label: binding.path }).toString("utf8"),
+    );
+  } catch { fail("CONTENT", binding.path); }
+  assertValidContentEnvelope(content, binding, bytes);
+  const inlineTripIds = new Set((pack.transitTrips ?? []).map(({ id }) => id));
+  const stopKeys = new Set((pack.transitStopTimes ?? []).map(({ tripId, stopSequence }) => `${tripId}\u0000${stopSequence}`));
+  const trips = [];
+  const stopTimes = [];
+  for (const section of content.sections) {
+    const sectionTrips = new Map();
+    for (const values of section.trips) {
+      const trip = expandTripTuple(values, section.header);
+      if (inlineTripIds.has(trip.id) || sectionTrips.has(trip.id)) fail("TRIP_DUPLICATE", trip.id);
+      inlineTripIds.add(trip.id);
+      sectionTrips.set(trip.id, trip);
+      trips.push(trip);
+    }
+    const withStops = new Set();
+    for (const values of section.stopTimes) {
+      const tripId = values[0];
+      const trip = sectionTrips.get(tripId);
+      if (!trip) fail("ORPHAN_STOP_TIME", tripId);
+      const expandedRow = expandStopTimeTuple(values, section, trip);
+      const key = `${expandedRow.tripId}\u0000${expandedRow.stopSequence}`;
+      if (stopKeys.has(key)) fail("DUPLICATE_STOP_TIME", key);
+      stopKeys.add(key);
+      withStops.add(expandedRow.tripId);
+      stopTimes.push(expandedRow);
+    }
+    for (const id of sectionTrips.keys()) if (!withStops.has(id)) fail("TRIP_WITHOUT_STOP_TIMES", id);
+  }
+  return { trips, stopTimes };
+}

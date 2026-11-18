@@ -1,0 +1,989 @@
+#!/usr/bin/env node
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { DatabaseSync } from "node:sqlite";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
+
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
+import { RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS } from "./lib/retired-sources.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
+import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const root = path.resolve(import.meta.dirname, "../..");
+function getTargetStationIds(pack) {
+  const ids = new Set();
+  for (const f of pack?.facilities ?? []) if (f.stationId) ids.add(f.stationId);
+  for (const e of pack?.stationFacilityEvidence ?? []) if (e.stationId) ids.add(e.stationId);
+  for (const edge of pack?.networkEdges ?? []) {
+    if (typeof edge.fromNodeId === "string" && edge.fromNodeId.startsWith("station-")) {
+      ids.add(edge.fromNodeId.split(":")[0]);
+    }
+    if (typeof edge.toNodeId === "string" && edge.toNodeId.startsWith("station-")) {
+      ids.add(edge.toNodeId.split(":")[0]);
+    }
+  }
+  return [...ids].filter(Boolean).sort(codepointCompare);
+}
+// #3036: 전국 팩에는 reviewed 역의 다른 노선 KRIC 행(사당 2호선 등)도 있으므로 역이 아니라 역-노선 단위로 바꾼다.
+function parseEdgeEndpointStationLine(node, fallbackLineId) {
+  if (typeof node !== "string" || !node.startsWith("station-")) return null;
+  const [stationId, nodeLineId] = node.split(":");
+  const lineId = nodeLineId || fallbackLineId;
+  if (!stationId || !lineId) return null;
+  return `${stationId}:${lineId}`;
+}
+
+function getTargetStationLineKeys(pack) {
+  const keys = new Set();
+  for (const row of [...(pack?.facilities ?? []), ...(pack?.stationFacilityEvidence ?? [])]) {
+    if (row.stationId && row.lineId) keys.add(`${row.stationId}:${row.lineId}`);
+  }
+  for (const edge of pack?.networkEdges ?? []) {
+    const fromParts = typeof edge?.fromNodeId === "string" ? edge.fromNodeId.split(":") : [];
+    const toParts = typeof edge?.toNodeId === "string" ? edge.toNodeId.split(":") : [];
+    const edgeLineId = edge?.lineId || fromParts[1] || toParts[1];
+    const fromKey = parseEdgeEndpointStationLine(edge?.fromNodeId, edgeLineId);
+    const toKey = parseEdgeEndpointStationLine(edge?.toNodeId, edgeLineId);
+    if (!fromKey || !toKey) {
+      throw new Error(`reviewed networkEdge station-line node is invalid: ${String(edge?.id ?? "")}`);
+    }
+    keys.add(fromKey);
+    keys.add(toKey);
+  }
+  return keys;
+}
+const facilityTypes = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT", "ACCESSIBILITY_STATUS_PROBE"];
+const accessibilityRouteSourceId = "seoul-metro-accessibility";
+// 데이터팩에서 걷어내는 원천: 퇴역한 KRIC 접근성 원천과 서울교통공사 접근성 원천(현행 근거로 다시 채운다).
+const replacedSourceIds = new Set([...RETIRED_KRIC_ACCESSIBILITY_SOURCE_IDS, "seoul-metro-accessibility"]);
+const CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+]);
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
+  "stations", "stationLines", "stationExits", "stationCarDoorHints", "networkEdges",
+  "routeMapPositions", "routeMapLineTracks", "facilities", "stationFacilityEvidence",
+  "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips",
+  "transitStopTimes", "officialOdFareQuotes",
+]);
+
+/**
+ * 번들 팩 gzip: level 9·OS 표지 255. 같은 입력이면 같은 바이트(Node 24.19.0 번들 zlib).
+ * Node zlib은 gzip 헤더 MTIME을 옵션과 무관하게 항상 0으로 쓰므로 mtime 옵션을 따로 두지 않는다.
+ */
+export function gzipBundledPack(sqliteBytes) {
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9 });
+  gzipBytes[9] = 255;
+  return gzipBytes;
+}
+
+class StaleAccessibilityEvidenceError extends Error {}
+
+function option(name, fallback) {
+  const index = process.argv.indexOf(name);
+  return index < 0 ? fallback : process.argv[index + 1];
+}
+
+function epoch(value) { return Math.floor(Date.parse(value) / 1000); }
+
+function applyEvidence(sqlitePath, pack) {
+  const targetStationIds = getTargetStationIds(pack);
+  const database = new DatabaseSync(sqlitePath);
+  database.exec("PRAGMA foreign_keys = ON; BEGIN IMMEDIATE");
+  try {
+    if (targetStationIds.length > 0) {
+      const placeholders = targetStationIds.map(() => "?").join(",");
+      database.prepare(`DELETE FROM facilities WHERE station_id IN (${placeholders}) AND (type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT') OR source_id IN (${[...replacedSourceIds].map(() => "?").join(",")}))`).run(...targetStationIds, ...replacedSourceIds);
+    }
+    const insertFacility = database.prepare(`
+      INSERT INTO facilities (
+        id, station_id, exit_id, type, name, status, floor_from, floor_to, description,
+        source_id, source_snapshot_id, provider_facility_ref, provider_record_hash,
+        provenance_kind, verified_at, retrieved_at, evidence_hash, status_meaning,
+        operational_status, installation_status, confidence
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `);
+    for (const row of pack.facilities) insertFacility.run(
+      row.id, row.stationId, row.exitId, row.type, row.name, row.status, row.floorFrom, row.floorTo,
+      row.description, row.sourceId, row.sourceSnapshotId, row.providerFacilityRef, row.providerRecordHash,
+      row.provenanceKind, epoch(row.verifiedAt), epoch(row.retrievedAt), row.evidenceHash, row.statusMeaning,
+      row.operationalStatus, row.installationStatus, row.confidence,
+    );
+    database.prepare(`
+      DELETE FROM data_quality_records
+      WHERE target_type = 'facility'
+        AND NOT EXISTS (SELECT 1 FROM facilities WHERE facilities.id = data_quality_records.target_id)
+    `).run();
+
+    if (targetStationIds.length > 0) {
+      const placeholders = targetStationIds.map(() => "?").join(",");
+      database.prepare(`DELETE FROM station_facility_evidence WHERE station_id IN (${placeholders}) AND facility_type IN (${facilityTypes.map(() => "?").join(",")})`).run(...targetStationIds, ...facilityTypes);
+    }
+    const insertEvidence = database.prepare(`
+      INSERT INTO station_facility_evidence (
+        station_id, line_id, facility_type, evidence_kind, source_id, source_snapshot_id,
+        provider_record_hash, evidence_hash, provenance_kind, installation_status,
+        operational_status, status_meaning, confidence, verified_at, retrieved_at,
+        strict_route_eligible, strict_route_eligible_reason
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `);
+    for (const row of pack.stationFacilityEvidence) insertEvidence.run(
+      row.stationId, row.lineId, row.facilityType, row.evidenceKind, row.sourceId,
+      row.sourceSnapshotId, row.providerRecordHash, row.evidenceHash, row.provenanceKind,
+      row.installationStatus, row.operationalStatus, row.statusMeaning, row.confidence,
+      epoch(row.verifiedAt), epoch(row.retrievedAt), row.strictRouteEligible ? 1 : 0,
+      row.strictRouteEligibleReason,
+    );
+    syncAccessibilityEdges(database, pack);
+    normalizeUnprovenInternalRouteEdges(database, { check: false });
+    normalizeUnprovenStationExitElevatorClaims(database, { check: false });
+
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+function assertEvidence(sqlitePath, pack) {
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    if (database.prepare("PRAGMA integrity_check").get().integrity_check !== "ok") throw new Error("bundled datapack integrity_check failed");
+    const targetStationIds = getTargetStationIds(pack);
+    const placeholders = targetStationIds.map(() => "?").join(",");
+    const facilityWhere = targetStationIds.length > 0
+      ? `WHERE station_id IN (${placeholders}) AND (type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT') OR source_id IN (${[...replacedSourceIds].map(() => "?").join(",")}))`
+      : `WHERE type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT') OR source_id IN (${[...replacedSourceIds].map(() => "?").join(",")})`;
+    const facilityArgs = targetStationIds.length > 0
+      ? [...targetStationIds, ...replacedSourceIds]
+      : [...replacedSourceIds];
+    const facilities = database.prepare(`
+      SELECT id, station_id AS stationId, exit_id AS exitId, type, name, status,
+        floor_from AS floorFrom, floor_to AS floorTo, description, source_id AS sourceId,
+        source_snapshot_id AS sourceSnapshotId, provider_facility_ref AS providerFacilityRef,
+        provider_record_hash AS providerRecordHash, provenance_kind AS provenanceKind,
+        verified_at AS verifiedAt, retrieved_at AS retrievedAt, evidence_hash AS evidenceHash,
+        status_meaning AS statusMeaning, operational_status AS operationalStatus,
+        installation_status AS installationStatus, confidence
+      FROM facilities
+      ${facilityWhere}
+      ORDER BY id
+    `).all(...facilityArgs).map((row) => ({ ...row }));
+    const expectedFacilities = pack.facilities.map((row) => ({
+      id: row.id,
+      stationId: row.stationId,
+      exitId: row.exitId ?? null,
+      type: row.type,
+      name: row.name,
+      status: row.status,
+      floorFrom: row.floorFrom,
+      floorTo: row.floorTo,
+      description: row.description,
+      sourceId: row.sourceId,
+      sourceSnapshotId: row.sourceSnapshotId,
+      providerFacilityRef: row.providerFacilityRef,
+      providerRecordHash: row.providerRecordHash,
+      provenanceKind: row.provenanceKind,
+      verifiedAt: epoch(row.verifiedAt),
+      retrievedAt: epoch(row.retrievedAt),
+      evidenceHash: row.evidenceHash,
+      statusMeaning: row.statusMeaning,
+      operationalStatus: row.operationalStatus,
+      installationStatus: row.installationStatus,
+      confidence: row.confidence,
+    })).sort((left, right) => codepointCompare(left.id, right.id));
+    if (JSON.stringify(facilities) !== JSON.stringify(expectedFacilities)) {
+      throw new StaleAccessibilityEvidenceError("bundled accessibility facilities are stale");
+    }
+    const evidence = targetStationIds.length > 0 ? database.prepare(`
+      SELECT station_id AS stationId, line_id AS lineId, facility_type AS facilityType,
+        evidence_kind AS evidenceKind, source_id AS sourceId, source_snapshot_id AS sourceSnapshotId,
+        provider_record_hash AS providerRecordHash, evidence_hash AS evidenceHash,
+        provenance_kind AS provenanceKind, installation_status AS installationStatus,
+        operational_status AS operationalStatus, status_meaning AS statusMeaning, confidence,
+        verified_at AS verifiedAt, retrieved_at AS retrievedAt,
+        strict_route_eligible AS strictRouteEligible,
+        strict_route_eligible_reason AS strictRouteEligibleReason
+      FROM station_facility_evidence
+      WHERE station_id IN (${placeholders}) AND facility_type IN (${facilityTypes.map(() => "?").join(",")})
+      ORDER BY station_id, line_id, facility_type
+    `).all(...targetStationIds, ...facilityTypes).map((row) => ({ ...row })) : [];
+    const expectedEvidence = pack.stationFacilityEvidence.map((row) => ({
+      stationId: row.stationId,
+      lineId: row.lineId,
+      facilityType: row.facilityType,
+      evidenceKind: row.evidenceKind,
+      sourceId: row.sourceId,
+      sourceSnapshotId: row.sourceSnapshotId,
+      providerRecordHash: row.providerRecordHash,
+      evidenceHash: row.evidenceHash,
+      provenanceKind: row.provenanceKind,
+      installationStatus: row.installationStatus,
+      operationalStatus: row.operationalStatus,
+      statusMeaning: row.statusMeaning,
+      confidence: row.confidence,
+      verifiedAt: epoch(row.verifiedAt),
+      retrievedAt: epoch(row.retrievedAt),
+      strictRouteEligible: row.strictRouteEligible ? 1 : 0,
+      strictRouteEligibleReason: row.strictRouteEligibleReason,
+    })).sort((left, right) => codepointCompare(
+      `${left.stationId}:${left.lineId}:${left.facilityType}`,
+      `${right.stationId}:${right.lineId}:${right.facilityType}`,
+    ));
+    if (JSON.stringify(evidence) !== JSON.stringify(expectedEvidence)) {
+      throw new StaleAccessibilityEvidenceError("bundled accessibility facility evidence is stale");
+    }
+    const snapshotIds = [...new Set(pack.stationFacilityEvidence.map(({ sourceSnapshotId }) => sourceSnapshotId))];
+    const stale = targetStationIds.length > 0 && snapshotIds.length > 0 ? database.prepare(`SELECT count(*) AS count FROM station_facility_evidence WHERE station_id IN (${placeholders}) AND source_snapshot_id NOT IN (${snapshotIds.map(() => "?").join(",")})`).get(...targetStationIds, ...snapshotIds).count : 0;
+    if (stale !== 0) throw new StaleAccessibilityEvidenceError("bundled accessibility source snapshot is stale");
+    const staleFacility = targetStationIds.length > 0 ? database.prepare(`SELECT count(*) AS count FROM facilities WHERE station_id IN (${placeholders}) AND source_id IN (${[...replacedSourceIds].map(() => "?").join(",")})`).get(...targetStationIds, ...replacedSourceIds).count : 0;
+    if (staleFacility !== 0) throw new StaleAccessibilityEvidenceError("bundled accessibility facility source is stale");
+    const danglingQuality = database.prepare(`
+      SELECT count(*) AS count
+      FROM data_quality_records
+      WHERE target_type = 'facility'
+        AND NOT EXISTS (SELECT 1 FROM facilities WHERE facilities.id = data_quality_records.target_id)
+    `).get().count;
+    if (danglingQuality !== 0) {
+      throw new StaleAccessibilityEvidenceError("bundled facility quality record is stale");
+    }
+    assertAccessibilityEdges(database, pack);
+    normalizeUnprovenInternalRouteEdges(database, { check: true });
+    normalizeUnprovenStationExitElevatorClaims(database, { check: true });
+  } finally {
+    database.close();
+  }
+}
+
+export function applyEvidenceIfStale(sqlitePath, pack) {
+  try {
+    assertEvidence(sqlitePath, pack);
+  } catch (error) {
+    if (!(error instanceof StaleAccessibilityEvidenceError)) throw error;
+    applyEvidence(sqlitePath, pack);
+  }
+}
+
+function currentCanonicalSourceRoster(capital) {
+  const sources = capital?.sourceInventory;
+  if (!Array.isArray(sources)) return null;
+  const sourceIds = sources.map(({ id }) => id);
+  const suffix = sourceIds.slice(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length);
+  const provenanceSourceIds = canonicalProvenanceSourceIds(capital);
+  if (JSON.stringify(sourceIds.slice(0, CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length))
+      !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)
+    || sourceIds.some((sourceId) => typeof sourceId !== "string" || sourceId.length === 0)
+    || new Set(sourceIds).size !== sourceIds.length
+    || suffix.some((sourceId) => CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.includes(sourceId)
+      || !provenanceSourceIds.has(sourceId))) {
+    return null;
+  }
+  return sourceIds;
+}
+
+export function overlayReviewedSourcesOnCanonicalRoster(canonical, reviewedPack) {
+  if (!Array.isArray(reviewedPack?.sourceInventory)) {
+    throw new Error("reviewedPack.sourceInventory must be an array");
+  }
+  const pack = canonical.packs?.find(({ id }) => id === "capital");
+  if (!pack) throw new Error("canonical capital pack is missing");
+  const canonicalSourceIds = currentCanonicalSourceRoster(pack);
+  if (!canonicalSourceIds) throw new Error("canonical current source roster is invalid");
+  const canonicalSources = new Map(pack.sourceInventory.map((source) => [source.id, source]));
+  const reviewedSources = new Map();
+  for (const source of reviewedPack.sourceInventory) {
+    if (!source || typeof source.id !== "string" || source.id.length === 0
+      || reviewedSources.has(source.id)) {
+      throw new Error("reviewed source inventory contains duplicate or invalid source ID");
+    }
+    if (!canonicalSources.has(source.id)) {
+      throw new Error("reviewed source inventory contains unknown canonical source ID");
+    }
+    reviewedSources.set(source.id, source);
+  }
+  return {
+    ...reviewedPack,
+    sourceInventory: canonicalSourceIds.map((sourceId) =>
+      reviewedSources.get(sourceId) ?? canonicalSources.get(sourceId)),
+  };
+}
+
+export function syncCanonicalFixture(canonical, reviewedPack) {
+  if (!Array.isArray(reviewedPack?.sourceInventory)) throw new Error("reviewedPack.sourceInventory must be an array");
+  if (typeof reviewedPack.metadata?.productionCoverageEvidence !== "string") {
+    throw new Error("reviewedPack.metadata.productionCoverageEvidence must be a string");
+  }
+  const productionCoverageEvidence = JSON.parse(reviewedPack.metadata.productionCoverageEvidence);
+  const pack = canonical.packs?.find(({ id }) => id === "capital");
+  if (!pack) throw new Error("canonical capital pack is missing");
+  const targetStationIds = new Set(getTargetStationIds(reviewedPack));
+  const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) => !targetStationIds.has(stationId)
+      || (!facilityTypes.includes(type)
+        && !replacedSourceIds.has(sourceId)
+        && sourceId !== "kric-station-convenience-standard"));
+  pack.facilities = retainedFacilities.concat(reviewedPack.facilities);
+  const facilityIds = new Set(pack.facilities.map(({ id }) => id));
+  pack.dataQualityRecords = (pack.dataQualityRecords ?? []).filter(({ targetType, targetId }) =>
+    targetType !== "facility" || facilityIds.has(targetId));
+  pack.stationFacilityEvidence = (pack.stationFacilityEvidence ?? [])
+    .filter(({ stationId, facilityType }) => !targetStationIds.has(stationId) || !facilityTypes.includes(facilityType))
+    .concat(reviewedPack.stationFacilityEvidence);
+  pack.networkEdges = (pack.networkEdges ?? [])
+    .filter((edge) => !isAccessibilityRouteEdge(edge))
+    .concat(accessibilityRouteEdges(reviewedPack))
+    .sort((left, right) => codepointCompare(left.id, right.id));
+  pack.stationExits = (pack.stationExits ?? []).map((exit) => {
+    const hasElevatorInFacilities = (pack.facilities ?? []).some(
+      (f) => f.stationId === exit.stationId && f.type === "ELEVATOR" && f.exitId === exit.id,
+    );
+    const hashValid = (!exit.providerRecordHash || /^[0-9a-f]{64}$/.test(exit.providerRecordHash))
+      && (!exit.evidenceHash || /^[0-9a-f]{64}$/.test(exit.evidenceHash));
+    const proven = Boolean(exit.sourceId && exit.sourceSnapshotId && hashValid);
+    const hasElevatorConnection = Boolean(hasElevatorInFacilities || (exit.hasElevatorConnection && proven));
+    return exit.hasElevatorConnection !== hasElevatorConnection
+      ? { ...exit, hasElevatorConnection }
+      : exit;
+  });
+  const freshSources = reviewedPack.sourceInventory;
+  const freshSourceIds = new Set(freshSources.map(({ id }) => id));
+  const canonicalSourceIds = currentCanonicalSourceRoster(pack);
+  if (canonicalSourceIds
+    && JSON.stringify(freshSources.map(({ id }) => id)) !== JSON.stringify(canonicalSourceIds)) {
+    throw new Error("reviewed source inventory cannot replace current canonical source authority");
+  }
+  pack.sourceInventory = pack.sourceInventory
+    .filter(({ id }) => !replacedSourceIds.has(id) && !freshSourceIds.has(id))
+    .concat(freshSources);
+  const sourceInventoryIds = new Set(pack.sourceInventory.map(({ id }) => id));
+  // 내부 경로 접근성의 근거를 만드는 원천이 없으므로 내부 경로 간선은 모두 비운다.
+  pack.internalRouteEdges = [];
+  pack.movementPathCandidates = (reviewedPack.movementPathCandidates ?? [])
+    .filter(({ sourceId }) => sourceInventoryIds.has(sourceId));
+  if (pack.movementPathCandidates.length === 0) {
+    delete pack.metadata.movementPathCandidateCount;
+  } else {
+    pack.metadata.movementPathCandidateCount = String(pack.movementPathCandidates.length);
+  }
+  const reviewedFareSourceIds = new Set([
+    ...reviewedPack.sourceInventory
+      .filter(({ coverageScope }) => coverageScope?.sourceDomains?.includes("official_od_fares"))
+      .map(({ id }) => id),
+    ...(reviewedPack.officialOdFareQuotes ?? []).map(({ sourceId }) => sourceId),
+  ]);
+  if ((reviewedPack.officialOdFareQuotes ?? [])
+    .some(({ sourceId }) => !sourceInventoryIds.has(sourceId))) {
+    throw new Error("reviewed official OD fare source is missing from sourceInventory");
+  }
+  pack.officialOdFareQuotes = (pack.officialOdFareQuotes ?? [])
+    .filter(({ sourceId }) => sourceInventoryIds.has(sourceId) && !reviewedFareSourceIds.has(sourceId))
+    .concat(reviewedPack.officialOdFareQuotes ?? []);
+  pack.routeServiceArtifactEvidence = reviewedPack.routeServiceArtifactEvidence ?? [];
+  pack.requiredTables = [...new Set([
+    ...(pack.requiredTables ?? []),
+    ...(reviewedPack.requiredTables ?? []),
+  ])];
+  pack.metadata.productionCoverageEvidence = JSON.stringify(productionCoverageEvidence.map((entry) => ({
+    ...entry,
+    sourceIds: entry.sourceIds.filter((sourceId) => !replacedSourceIds.has(sourceId) || sourceInventoryIds.has(sourceId)),
+  })));
+  pack.minimumTableRows.facilities = pack.facilities.length;
+  pack.minimumTableRows.station_facility_evidence = pack.stationFacilityEvidence.length;
+  if (pack.officialOdFareQuotes.length > 0) {
+    if (!pack.requiredTables.includes("official_od_fare_quotes")) pack.requiredTables.push("official_od_fare_quotes");
+    pack.minimumTableRows.official_od_fare_quotes = pack.officialOdFareQuotes.length;
+  } else {
+    pack.requiredTables = pack.requiredTables.filter((table) => table !== "official_od_fare_quotes");
+    delete pack.minimumTableRows.official_od_fare_quotes;
+  }
+  return canonical;
+}
+
+export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
+  if (!Array.isArray(reviewedPack?.sourceInventory)) {
+    throw new Error("reviewedPack.sourceInventory must be an array");
+  }
+  const activePacks = canonical.packs?.filter(({ id }) => id === canonical.manifest?.activePack?.id) ?? [];
+  if (typeof canonical.manifest?.activePack?.id !== "string" || activePacks.length !== 1) {
+    throw new Error("canonical capital pack is missing");
+  }
+  const [pack] = activePacks;
+  const targetStationLines = getTargetStationLineKeys(reviewedPack);
+  const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, lineId, type, sourceId }) =>
+    !targetStationLines.has(`${stationId}:${lineId}`)
+      || (!facilityTypes.includes(type)
+        && !replacedSourceIds.has(sourceId)
+        && sourceId !== "kric-station-convenience-standard"));
+  pack.facilities = retainedFacilities.concat(reviewedPack.facilities ?? []);
+  const facilityIds = new Set(pack.facilities.map(({ id }) => id));
+  pack.dataQualityRecords = (pack.dataQualityRecords ?? []).filter(({ targetType, targetId }) =>
+    targetType !== "facility" || facilityIds.has(targetId));
+  pack.stationFacilityEvidence = (pack.stationFacilityEvidence ?? [])
+    .filter(({ stationId, lineId, facilityType }) =>
+      !targetStationLines.has(`${stationId}:${lineId}`) || !facilityTypes.includes(facilityType))
+    .concat(reviewedPack.stationFacilityEvidence ?? []);
+  pack.networkEdges = (pack.networkEdges ?? [])
+    .filter((edge) => !isAccessibilityRouteEdge(edge))
+    .concat(accessibilityRouteEdges(reviewedPack))
+    .sort((left, right) => codepointCompare(left.id, right.id));
+  pack.stationExits = (pack.stationExits ?? []).map((exit) => {
+    const hasElevatorInFacilities = (pack.facilities ?? []).some(
+      (f) => f.stationId === exit.stationId && f.type === "ELEVATOR" && f.exitId === exit.id,
+    );
+    const hashValid = (!exit.providerRecordHash || /^[0-9a-f]{64}$/.test(exit.providerRecordHash))
+      && (!exit.evidenceHash || /^[0-9a-f]{64}$/.test(exit.evidenceHash));
+    const proven = Boolean(exit.sourceId && exit.sourceSnapshotId && hashValid);
+    const hasElevatorConnection = Boolean(hasElevatorInFacilities || (exit.hasElevatorConnection && proven));
+    return exit.hasElevatorConnection !== hasElevatorConnection
+      ? { ...exit, hasElevatorConnection }
+      : exit;
+  });
+  const reviewedSources = new Map(reviewedPack.sourceInventory.map((source) => [source.id, source]));
+  const accessibilitySourceIds = new Set([
+    "seoul-metro-accessibility",
+    "kric-station-convenience-standard",
+  ]);
+  if ([...accessibilitySourceIds].some((sourceId) => !reviewedSources.has(sourceId))) {
+    throw new Error("reviewed accessibility source authority is incomplete");
+  }
+  pack.sourceInventory = pack.sourceInventory.map((source) =>
+    accessibilitySourceIds.has(source.id) ? reviewedSources.get(source.id) : source);
+  pack.minimumTableRows.facilities = pack.facilities.length;
+  pack.minimumTableRows.station_facility_evidence = pack.stationFacilityEvidence.length;
+  return canonical;
+}
+
+export function retainPreAuthorityRideEdges(fixture, label) {
+  const packs = fixture?.packs?.filter(({ id }) => id === fixture?.manifest?.activePack?.id) ?? [];
+  const edges = packs[0]?.networkEdges;
+  if (typeof fixture?.manifest?.activePack?.id !== "string" || packs.length !== 1 || !Array.isArray(edges)
+    || edges.some(({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType))) {
+    throw new Error(`current ${label} pre-authority edge contract is invalid`);
+  }
+  packs[0].networkEdges = edges.filter(({ edgeType }) => edgeType === "RIDE");
+  return fixture;
+}
+
+function isAccessibilityRouteEdge(edge) {
+  return edge.sourceId === accessibilityRouteSourceId && ["ENTRY", "EXIT"].includes(edge.edgeType);
+}
+
+function accessibilityRouteEdges(pack) {
+  return (pack.networkEdges ?? []).filter(isAccessibilityRouteEdge);
+}
+
+export function syncAccessibilityEdges(database, pack) {
+  database.prepare("DELETE FROM network_edges WHERE source_id = ? AND edge_type IN ('ENTRY','EXIT')")
+    .run(accessibilityRouteSourceId);
+  const insert = database.prepare(`
+    INSERT INTO network_edges (
+      id, from_node_id, to_node_id, duration_seconds, distance_meters, edge_type,
+      service_pattern, service_class, includes_stairs, stair_access_state,
+      accessibility_status, reliability_score, source_id, source_snapshot_id,
+      provider_record_hash, provenance_kind, verification_status, facility_id,
+      last_verified_at, evidence_hash
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+  for (const row of accessibilityRouteEdges(pack)) insert.run(
+    row.id, row.fromNodeId, row.toNodeId, row.durationSeconds, row.distanceMeters,
+    row.edgeType, row.servicePattern, row.serviceClass ?? "SUBWAY", row.includesStairs ? 1 : 0,
+    row.stairAccessState, row.accessibilityStatus, row.reliabilityScore, row.sourceId,
+    row.sourceSnapshotId, row.providerRecordHash, row.provenanceKind, row.verificationStatus,
+    row.facilityId ?? null, epoch(row.lastVerifiedAt), row.evidenceHash,
+  );
+}
+
+export function assertAccessibilityEdges(database, pack) {
+  const actual = database.prepare(`
+    SELECT id, from_node_id AS fromNodeId, to_node_id AS toNodeId,
+      duration_seconds AS durationSeconds, distance_meters AS distanceMeters,
+      edge_type AS edgeType, service_pattern AS servicePattern, service_class AS serviceClass,
+      includes_stairs AS includesStairs, stair_access_state AS stairAccessState,
+      accessibility_status AS accessibilityStatus, reliability_score AS reliabilityScore,
+      source_id AS sourceId, source_snapshot_id AS sourceSnapshotId,
+      provider_record_hash AS providerRecordHash, provenance_kind AS provenanceKind,
+      verification_status AS verificationStatus, facility_id AS facilityId,
+      last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
+    FROM network_edges
+    WHERE source_id = ? AND edge_type IN ('ENTRY','EXIT')
+    ORDER BY id
+  `).all(accessibilityRouteSourceId);
+  const expected = accessibilityRouteEdges(pack).map((row) => ({
+    id: row.id,
+    fromNodeId: row.fromNodeId,
+    toNodeId: row.toNodeId,
+    durationSeconds: row.durationSeconds,
+    distanceMeters: row.distanceMeters,
+    edgeType: row.edgeType,
+    servicePattern: row.servicePattern,
+    serviceClass: row.serviceClass ?? "SUBWAY",
+    includesStairs: row.includesStairs ? 1 : 0,
+    stairAccessState: row.stairAccessState,
+    accessibilityStatus: row.accessibilityStatus,
+    reliabilityScore: row.reliabilityScore,
+    sourceId: row.sourceId,
+    sourceSnapshotId: row.sourceSnapshotId,
+    providerRecordHash: row.providerRecordHash,
+    provenanceKind: row.provenanceKind,
+    verificationStatus: row.verificationStatus,
+    facilityId: row.facilityId ?? null,
+    lastVerifiedAt: epoch(row.lastVerifiedAt),
+    evidenceHash: row.evidenceHash,
+  })).sort((left, right) => codepointCompare(left.id, right.id));
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new StaleAccessibilityEvidenceError("bundled accessibility edge is stale");
+  }
+}
+
+function assertCanonicalFixture(canonical, reviewedPack) {
+  const expected = syncCanonicalFixture(structuredClone(canonical), reviewedPack);
+  if (JSON.stringify(expected) !== JSON.stringify(canonical)) {
+    throw new Error("canonical accessibility fixture is stale");
+  }
+}
+
+export function stripLegacyCoreClaims(database, { check }) {
+  const facilityCount = database.prepare("SELECT count(*) AS count FROM facilities").get().count;
+  const qualityCount = database.prepare(`
+    SELECT count(*) AS count
+    FROM data_quality_records
+    WHERE target_type = 'facility'
+  `).get().count;
+  const pathwayColumns = new Set(
+    database.prepare("PRAGMA table_info(station_pathway_edges)").all().map(({ name }) => name),
+  );
+  const outsideTransferColumns = new Set(
+    database.prepare("PRAGMA table_info(out_of_station_transfer_links)").all().map(({ name }) => name),
+  );
+  const stalePathwayCount = pathwayColumns.has("requires_facility_id")
+    ? database.prepare(`
+        SELECT count(*) AS count FROM station_pathway_edges
+        WHERE requires_facility_id IS NOT NULL
+          OR accessibility_status <> 'UNKNOWN'
+      `).get().count
+    : 0;
+  const staleOutsideTransferCount = outsideTransferColumns.has("accessibility_status")
+    ? database.prepare(`
+        SELECT count(*) AS count FROM out_of_station_transfer_links
+        WHERE accessibility_status <> 'UNKNOWN'
+      `).get().count
+    : 0;
+  const staleExit = normalizeUnprovenStationExitElevatorClaims(database, { check });
+  const stale = facilityCount !== 0
+    || qualityCount !== 0
+    || stalePathwayCount !== 0
+    || staleOutsideTransferCount !== 0
+    || staleExit;
+  if (check && stale) throw new Error("legacy core accessibility claims are stale");
+  if (!check && stale) {
+    const pathwayCleanup = pathwayColumns.has("requires_facility_id") ? `
+      UPDATE station_pathway_edges
+      SET accessibility_status = 'UNKNOWN',
+          requires_facility_id = NULL;
+    ` : "";
+    const outsideTransferCleanup = outsideTransferColumns.has("accessibility_status") ? `
+      UPDATE out_of_station_transfer_links
+      SET accessibility_status = 'UNKNOWN'
+      WHERE accessibility_status <> 'UNKNOWN';
+    ` : "";
+    database.exec(`
+      ${pathwayCleanup}
+      ${outsideTransferCleanup}
+      DELETE FROM data_quality_records WHERE target_type = 'facility';
+      DELETE FROM facilities;
+      VACUUM;
+    `);
+  }
+  return stale;
+}
+
+export function normalizeUnprovenStationExitElevatorClaims(database, { check }) {
+  const columns = new Set(
+    database.prepare("PRAGMA table_info(station_exits)").all().map(({ name }) => name),
+  );
+  if (!columns.has("has_elevator_connection")) return false;
+  const incomplete = incompleteProvenanceSql(columns);
+  const stale = database.prepare(`
+    SELECT count(*) AS count FROM station_exits
+    WHERE has_elevator_connection = 1 AND (${incomplete})
+  `).get().count !== 0;
+  if (check && stale) {
+    throw new StaleAccessibilityEvidenceError("bundled station exit elevator claim is stale");
+  }
+  if (stale) database.exec(`
+    UPDATE station_exits
+    SET has_elevator_connection = 0
+    WHERE has_elevator_connection = 1 AND (${incomplete});
+  `);
+  return stale;
+}
+
+function incompleteProvenanceSql(columns) {
+  if (!["source_id", "source_snapshot_id", "provider_record_hash", "evidence_hash"]
+    .every((name) => columns.has(name))) return "1";
+  return `COALESCE(source_id, '') = '' OR COALESCE(source_snapshot_id, '') = ''
+    OR length(COALESCE(provider_record_hash, '')) <> 64
+    OR COALESCE(provider_record_hash, '') GLOB '*[^0-9a-f]*'
+    OR length(COALESCE(evidence_hash, '')) <> 64
+    OR COALESCE(evidence_hash, '') GLOB '*[^0-9a-f]*'`;
+}
+
+export function normalizeUnprovenInternalRouteEdges(database, { check }) {
+  // 근거를 만드는 원천이 없으므로 UNKNOWN이 아닌 내부 경로 간선은 모두 근거 없는 주장이다.
+  const stale = database.prepare("SELECT id FROM internal_route_edges WHERE accessibility_status <> 'UNKNOWN'").all();
+  if (check && stale.length > 0) {
+    throw new StaleAccessibilityEvidenceError("bundled internal route accessibility evidence is stale");
+  }
+  if (!check) {
+    const update = database.prepare("UPDATE internal_route_edges SET accessibility_status = 'UNKNOWN' WHERE id = ?");
+    for (const { id } of stale) update.run(id);
+  }
+  return stale.length > 0;
+}
+
+async function stripLegacyCore({ check }) {
+  const packPath = path.join(root, "apps/mobile/assets/datapacks/core.sqlite.gz");
+  const indexPath = path.join(root, "apps/mobile/assets/datapacks/index.json");
+  const directory = await mkdtemp(path.join(os.tmpdir(), `accessibility-core-${randomUUID()}-`));
+  try {
+    const sqlitePath = path.join(directory, "core.sqlite");
+    const currentGzipBytes = await readFile(packPath);
+    await writeFile(sqlitePath, gunzipWithLimit(currentGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "bundled datapack",
+    }));
+    const database = new DatabaseSync(sqlitePath);
+    let stale;
+    try {
+      const claimsStale = stripLegacyCoreClaims(database, { check });
+      const edgeStale = normalizeUnprovenInternalRouteEdges(database, { check });
+      stale = claimsStale || edgeStale;
+    } finally {
+      database.close();
+    }
+    if (!check && !stale) return;
+    const sqliteBytes = await readFile(sqlitePath);
+    if (check) {
+      const index = JSON.parse(await readFile(indexPath, "utf8"));
+      const entry = index.packs.find(({ id }) => id === "core");
+      if (!entry) throw new Error("core pack index entry is missing");
+      if (entry.sha256 !== sha256(currentGzipBytes)
+        || entry.sqliteSha256 !== sha256(sqliteBytes)
+        || entry.byteSize !== currentGzipBytes.length) {
+        throw new Error("core pack index identity is stale");
+      }
+      return;
+    }
+    const gzipBytes = gzipBundledPack(sqliteBytes);
+    const index = JSON.parse(await readFile(indexPath, "utf8"));
+    const entry = index.packs.find(({ id }) => id === "core");
+    if (!entry) throw new Error("core pack index entry is missing");
+    Object.assign(entry, { sha256: sha256(gzipBytes), sqliteSha256: sha256(sqliteBytes), byteSize: gzipBytes.length });
+    await Promise.all([
+      writeFile(packPath, gzipBytes),
+      writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`),
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function canonicalProvenanceSourceIds(capital) {
+  return new Set(CANONICAL_PROVENANCE_PROPERTIES.flatMap((property) =>
+    (capital[property] ?? []).map(({ sourceId }) => sourceId)
+      .filter((sourceId) => typeof sourceId === "string" && sourceId.length > 0)));
+}
+
+function registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory) {
+  const inventoryBySource = new Map((sourceInventory ?? []).map((entry) => [entry.id, entry]));
+  return canonicalTail.filter((sourceId) => {
+    const head = headsBySource[sourceId];
+    const snapshot = snapshots.find((entry) => entry.sourceId === sourceId && entry.snapshotId === head);
+    const registration = inventoryBySource.get(sourceId)?.registrationEvidence;
+    return snapshot && registration?.sourceId === sourceId
+      && registration.snapshotId === snapshot.snapshotId
+      && registration.rawObjectUri === snapshot.rawObjectUri
+      && registration.rawObjectSha256 === snapshot.rawSha256
+      && registration.contentSha256 === snapshot.contentSha256;
+  });
+}
+
+export function currentCandidateReleaseSnapshots({
+  snapshots, canonical, candidate, productionScopeBytes, sourceInventoryBytes,
+  headsBySource = validateLineage(snapshots).headsBySource,
+}) {
+  const { requiredSourceIds, supplementalSourceIds, sourceInventory } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
+  const candidateSourceIds = candidate?.sourceSnapshots?.map((projection) => projection?.sourceId);
+  const candidateSourceIdSet = Array.isArray(candidateSourceIds) ? new Set(candidateSourceIds) : new Set();
+  const allowedSourceIdSet = new Set([...requiredSourceIds, ...(supplementalSourceIds ?? [])]);
+  if (!Array.isArray(candidateSourceIds) || !Array.isArray(candidate.sourceSnapshotIds)
+    || candidateSourceIds.length < requiredSourceIds.length
+    || candidateSourceIds.length > allowedSourceIdSet.size
+    || candidate.sourceSnapshotIds.length !== candidateSourceIds.length
+    || candidateSourceIdSet.size !== candidateSourceIds.length
+    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
+    || candidate.sourceSnapshots.some((projection, index) => projection.snapshotId !== candidate.sourceSnapshotIds[index])
+    || requiredSourceIds.some((sourceId) => !candidateSourceIdSet.has(sourceId))
+    || candidateSourceIds.some((sourceId) => !allowedSourceIdSet.has(sourceId))
+    // 원천 순서는 후보 생성기가 정한다. 전국 후보에서 TRANSFER는 마지막 원천이 아니므로 포함 여부만 본다.
+    || !candidateSourceIdSet.has(TRANSFER_SOURCE_ID)) {
+    throw new Error("current candidate source set does not match production scope");
+  }
+  const capital = canonical.packs?.find(({ id }) => id === "capital");
+  const canonicalSourceIds = capital?.sourceInventory?.map(({ id }) => id);
+  const canonicalTail = Array.isArray(canonicalSourceIds)
+    ? canonicalSourceIds.slice(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length) : [];
+  const canonicalProvenanceIds = capital ? canonicalProvenanceSourceIds(capital) : new Set();
+  if (!Array.isArray(canonicalSourceIds)
+    || JSON.stringify(canonicalSourceIds.slice(0, CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.length))
+      !== JSON.stringify(CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS)
+    || new Set(canonicalTail).size !== canonicalTail.length
+    || canonicalTail.some((sourceId) => CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS.includes(sourceId)
+      || !canonicalProvenanceIds.has(sourceId))) {
+    throw new Error("capital canonical active source identity drift");
+  }
+  const registeredTail = new Set(registeredCanonicalTailSourceIds(canonicalTail, snapshots, headsBySource, sourceInventory.sources));
+  if (canonicalTail.some((sourceId) => candidateSourceIds.includes(sourceId) && !registeredTail.has(sourceId))) {
+    throw new Error("current candidate canonical source registration mismatch");
+  }
+  return candidateSourceIds.map((sourceId) => {
+    const head = headsBySource[sourceId];
+    const selected = snapshots.filter((snapshot) => snapshot.sourceId === sourceId && snapshot.snapshotId === head);
+    if (selected.length !== 1) throw new Error(`current candidate source head is missing: ${sourceId}`);
+    return selected[0];
+  });
+}
+
+export async function syncReleaseEvidence({ check, releaseRoot: explicitReleaseRoot } = {}) {
+  const releaseRoot = path.resolve(explicitReleaseRoot ?? option("--release-root", root));
+  const paths = {
+    spec: path.join(releaseRoot, "tools/datapack/release/candidate-build-spec.json"),
+    snapshots: path.join(releaseRoot, "tools/datapack/release/source-snapshots.json"),
+    inventory: path.join(releaseRoot, "tools/datapack/source-inventory.json"),
+    request: path.join(releaseRoot, "tools/datapack/release/release-request.json"),
+    hashes: path.join(releaseRoot, "tools/datapack/release/hash-evidence.json"),
+    canonical: path.join(releaseRoot, "tools/datapack/release/capital-production-canonical-pack.json"),
+    governance: path.join(releaseRoot, "tools/datapack/source-governance-policy.json"),
+    freshness: path.join(releaseRoot, "release/product-gates/datapack-freshness-sla.json"),
+    scope: path.join(releaseRoot, "release/product-gates/production-datapack-scope.json"),
+  };
+  const [specBytes, snapshotBytes, inventoryBytes, requestBytes, hashBytes, canonicalBytes, governanceBytes, freshnessBytes, productionScopeBytes] = await Promise.all(
+    Object.values(paths).map((file) => readFile(file)),
+  );
+  const spec = JSON.parse(specBytes);
+  const snapshots = JSON.parse(snapshotBytes);
+  const inventory = JSON.parse(inventoryBytes);
+  const request = JSON.parse(requestBytes);
+  const hashes = JSON.parse(hashBytes);
+  const governance = JSON.parse(governanceBytes);
+  const freshness = JSON.parse(freshnessBytes);
+  const inventoryBySource = new Map(inventory.sources.map((entry) => [entry.id, entry]));
+  const canonical = JSON.parse(canonicalBytes);
+  const releaseSnapshots = currentCandidateReleaseSnapshots({
+    snapshots, canonical, candidate: spec, productionScopeBytes, sourceInventoryBytes: inventoryBytes,
+  });
+  const selectedSnapshotIds = new Set(releaseSnapshots.map(({ snapshotId }) => snapshotId));
+  const selectedInLedgerOrder = snapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId));
+  if (selectedSnapshotIds.size !== releaseSnapshots.length || selectedInLedgerOrder.length !== releaseSnapshots.length) {
+    throw new Error("current candidate source ledger selection mismatch");
+  }
+  spec.sourceSnapshotIds = releaseSnapshots.map(({ snapshotId }) => snapshotId);
+  spec.sourceSnapshots = releaseSnapshots.map((snapshot) => deriveReleaseProjection({
+    snapshot,
+    sourceInventory: inventory,
+    governancePolicy: governance,
+    governancePolicyBytes: governanceBytes,
+    freshnessPolicy: freshness,
+    nowMillis: Date.parse(snapshot.retrievedAt),
+  }));
+  spec.sourceSnapshotSetHash = sha256(JSON.stringify(selectedInLedgerOrder));
+  spec.sourceInventorySha256 = sha256(JSON.stringify(inventory));
+  spec.itxTopologyEvidenceSha256 = sha256(await readFile(path.resolve(releaseRoot, spec.itxTopologyEvidencePath)));
+  spec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
+  const nextSpecBytes = Buffer.from(`${JSON.stringify(spec, null, 2)}\n`);
+  request.candidateId = spec.candidateId;
+  request.buildSpecSha256 = sha256(nextSpecBytes);
+  request.approvalId = `release-request-${spec.candidateId}-${request.buildSpecSha256}`;
+  request.sourceSnapshotSetHash = spec.sourceSnapshotSetHash;
+  hashes.builderGitSha = spec.builderGitSha;
+  hashes.identifiers.candidateId.value = spec.candidateId;
+  hashes.identifiers.approvalId.value = request.approvalId;
+  hashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.";
+  hashes.sourceSnapshotSetHash.value = spec.sourceSnapshotSetHash;
+  hashes.sourceSnapshotSetHash.contract = `source별 head ${releaseSnapshots.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
+  const candidateSnapshotSelection = "const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');";
+  hashes.sourceSnapshotSetHash.reproductionCommand = `node -e "import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');${candidateSnapshotSelection}console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})"`;
+  hashes.sourceInventorySha256.value = spec.sourceInventorySha256;
+  hashes.fixturePath.sha256 = sha256(canonicalBytes);
+  hashes.sourceSnapshots.note = "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.";
+  hashes.sourceSnapshots.order = `release snapshot ledger 순서: ${selectedInLedgerOrder.map(({ sourceId }) => sourceId).join(" → ")}`;
+  hashes.sourceSnapshots.committedVerificationCommand = `node -e "import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');${candidateSnapshotSelection}const e=require('./tools/datapack/release/hash-evidence.json'),v=e.perSourceEvidence;if(!Array.isArray(v)||v.length!==r.length)throw new Error('source snapshot evidence count mismatch');for(const [i,n] of r.entries()){const q=v[i],h=c.createHash('sha256').update(JSON.stringify([n])).digest('hex');if(!q||q.sourceId!==n.sourceId||q.snapshotId!==n.snapshotId)throw new Error('source snapshot evidence order or identity mismatch: '+n.sourceId);if(q.perSourceSnapshotSetHash!==h)throw new Error('source snapshot evidence hash mismatch: '+n.sourceId)}})"`;
+  hashes.perSourceEvidence = selectedInLedgerOrder.map((snapshot) => ({
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    rawSha256: snapshot.rawSha256,
+    adminReviewRecordHash: inventoryBySource.get(snapshot.sourceId).admissionEvidence.adminReviewRecordHash,
+    perSourceSnapshotSetHash: sha256(JSON.stringify([snapshot])),
+  }));
+  const nextRequestBytes = Buffer.from(`${JSON.stringify(request, null, 2)}\n`);
+  const nextHashBytes = Buffer.from(`${JSON.stringify(hashes, null, 2)}\n`);
+  if (check) {
+    for (const [label, actual, expected] of [
+      ["candidate build spec", specBytes, nextSpecBytes],
+      ["release request", requestBytes, nextRequestBytes],
+      ["hash evidence", hashBytes, nextHashBytes],
+    ]) if (!actual.equals(expected)) throw new Error(`${label} is stale`);
+    return { spec, inventory };
+  }
+  await Promise.all([
+    writeFile(paths.spec, nextSpecBytes),
+    writeFile(paths.request, nextRequestBytes),
+    writeFile(paths.hashes, nextHashBytes),
+  ]);
+  return { spec, inventory };
+}
+
+export function accessibilityIndexMetadata(pack, spec, inventory, currentFreshnessExpiresAt) {
+  const evidenceBySource = new Map(inventory.sources.map((source) => [source.id, source.accessibilityAdmissionEvidence]));
+  const snapshotBySource = new Map(spec.sourceSnapshots.map((snapshot) => [snapshot.sourceId, snapshot]));
+  const consumed = new Map();
+  for (const { sourceId, sourceSnapshotId } of [
+    ...pack.facilities,
+    ...pack.stationFacilityEvidence,
+    ...accessibilityRouteEdges(pack),
+  ]) {
+    if (consumed.has(sourceId) && consumed.get(sourceId) !== sourceSnapshotId) {
+      throw new Error(`accessibility snapshot mismatch: ${sourceId}`);
+    }
+    consumed.set(sourceId, sourceSnapshotId);
+  }
+  const accessibilityFreshnessExpiresAt = [...consumed].map(([sourceId, snapshotId]) => {
+    const evidence = evidenceBySource.get(sourceId);
+    if (evidence?.snapshotId !== snapshotId
+      || !Number.isFinite(Date.parse(evidence.observedAt))
+      || !Number.isFinite(Date.parse(evidence.freshUntil))) {
+      throw new Error(`accessibility admission evidence missing: ${sourceId}`);
+    }
+    const snapshot = snapshotBySource.get(sourceId);
+    if (snapshot?.snapshotId !== snapshotId) throw new Error(`accessibility snapshot mismatch: ${sourceId}`);
+    if (!Number.isFinite(Date.parse(snapshot.freshnessExpiresAt))) {
+      throw new Error(`accessibility snapshot freshness missing: ${sourceId}`);
+    }
+    return snapshot.freshnessExpiresAt;
+  }).sort((left, right) => Date.parse(left) - Date.parse(right)).at(0);
+  const qualityAsOf = [...consumed.keys()].map((sourceId) => evidenceBySource.get(sourceId).observedAt)
+    .sort((left, right) => Date.parse(left) - Date.parse(right)).at(-1);
+  const currentFreshnessMillis = Date.parse(currentFreshnessExpiresAt);
+  const accessibilityFreshnessMillis = Date.parse(accessibilityFreshnessExpiresAt);
+  if (!Number.isFinite(currentFreshnessMillis)) throw new Error("bundled pack freshness missing");
+  if (!Number.isFinite(accessibilityFreshnessMillis)) throw new Error("accessibility snapshot freshness missing");
+  return {
+    builtAt: candidateBuildNow().toISOString(),
+    qualityAsOf,
+    // ponytail: accessibility refresh may tighten, never extend another domain's pack expiry; the identity test owns extension.
+    freshnessExpiresAt: new Date(Math.min(currentFreshnessMillis, accessibilityFreshnessMillis)).toISOString(),
+    sourceSnapshotSetHash: spec.sourceSnapshotSetHash,
+  };
+}
+
+async function main() {
+  const modes = ["--core-only", "--release-evidence-only", "--candidate-fixtures-only"]
+    .filter((mode) => process.argv.includes(mode));
+  if (modes.length > 1) throw new Error("--core-only, --release-evidence-only, and --candidate-fixtures-only are mutually exclusive");
+  if (modes[0] === "--core-only") {
+    await stripLegacyCore({ check: process.argv.includes("--check") });
+    return;
+  }
+  if (modes[0] === "--release-evidence-only") {
+    await syncReleaseEvidence({ check: process.argv.includes("--check") });
+    return;
+  }
+  const check = process.argv.includes("--check");
+  if (modes[0] === "--candidate-fixtures-only") {
+    await syncReleaseEvidence({ check });
+    return;
+  }
+  const fixturePath = path.resolve(root, option("--fixture", "tools/datapack/release/capital-production-reviewed-pack.json"));
+  const canonicalPath = path.resolve(root, option("--canonical-fixture", "tools/datapack/release/capital-production-canonical-pack.json"));
+  const pack = JSON.parse(await readFile(fixturePath, "utf8")).packs?.find(({ id }) => id === "capital");
+  if (!pack || pack.facilities?.length !== 4 || pack.stationFacilityEvidence?.length !== 8) {
+    throw new Error("reviewed capital accessibility evidence must contain 4 facilities and 8 evidence rows");
+  }
+  const canonical = JSON.parse(await readFile(canonicalPath, "utf8"));
+  if (check) assertCanonicalFixture(canonical, pack);
+  else await writeFile(canonicalPath, `${JSON.stringify(syncCanonicalFixture(canonical, pack))}\n`);
+  const releaseEvidence = await syncReleaseEvidence({ check });
+  const packPath = path.resolve(root, option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+  const indexPath = path.resolve(root, option("--index", "apps/mobile/assets/datapacks/index.json"));
+  const directory = await mkdtemp(path.join(os.tmpdir(), `accessibility-pack-${randomUUID()}-`));
+  try {
+    const sqlitePath = path.join(directory, "capital.sqlite");
+    const currentGzipBytes = await readFile(packPath);
+    await writeFile(sqlitePath, gunzipWithLimit(currentGzipBytes, {
+      maxOutputLength: 512 * 1024 * 1024,
+      label: "bundled datapack",
+    }));
+    if (check) {
+      assertEvidence(sqlitePath, pack);
+      const sqliteBytes = await readFile(sqlitePath);
+      const index = JSON.parse(await readFile(indexPath, "utf8"));
+      const entry = index.packs.find(({ id }) => id === "capital");
+      if (!entry || entry.sha256 !== sha256(currentGzipBytes) || entry.sqliteSha256 !== sha256(sqliteBytes) || entry.byteSize !== currentGzipBytes.length) {
+        throw new Error("bundled accessibility pack index is stale");
+      }
+      const metadata = accessibilityIndexMetadata(
+        pack,
+        releaseEvidence.spec,
+        releaseEvidence.inventory,
+        index.freshnessExpiresAt,
+      );
+      if (index.qualityAsOf !== metadata.qualityAsOf
+        || index.freshnessExpiresAt !== metadata.freshnessExpiresAt
+        || index.sourceSnapshotSetHash !== metadata.sourceSnapshotSetHash
+        || Date.parse(index.builtAt) < Date.parse(metadata.qualityAsOf)) {
+        throw new Error("bundled accessibility pack metadata is stale");
+      }
+      return;
+    }
+    applyEvidenceIfStale(sqlitePath, pack);
+    assertEvidence(sqlitePath, pack);
+    const sqliteBytes = await readFile(sqlitePath);
+    const gzipBytes = gzipBundledPack(sqliteBytes);
+    const index = JSON.parse(await readFile(indexPath, "utf8"));
+    const entry = index.packs.find(({ id }) => id === "capital");
+    if (!entry) throw new Error("capital pack index entry is missing");
+    Object.assign(entry, { sha256: sha256(gzipBytes), sqliteSha256: sha256(sqliteBytes), byteSize: gzipBytes.length });
+    Object.assign(index, accessibilityIndexMetadata(
+      pack,
+      releaseEvidence.spec,
+      releaseEvidence.inventory,
+      index.freshnessExpiresAt,
+    ));
+    await writeFile(packPath, gzipBytes);
+    await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function candidateBuildNow() {
+  const value = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  const date = value ? new Date(value) : new Date();
+  if ((value && !value.endsWith("Z")) || !Number.isFinite(date.getTime())) {
+    throw new Error("EASYSUBWAY_DATAPACK_BUILD_NOW must be UTC ISO-8601");
+  }
+  return date;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error) => { process.stderr.write(`${error.stack ?? error.message}\n`); process.exitCode = 1; });
+}

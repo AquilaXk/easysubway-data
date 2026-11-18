@@ -1,0 +1,11 @@
+{
+  "source": "itx-current-promotion run 37970736919 provider-response-capture (observedAt 2026-10-09T18:05:20.948Z), service key never recorded",
+  "unknownError99": "{\"header\":{\"resultCode\":\"99\",\"resultMsg\":\"UNKNOWN_ERROR.\"}}",
+  "gradeList": "{\"response\":{\"header\":{\"resultCode\":\"00\",\"resultMsg\":\"NORMAL SERVICE.\"},\"body\":{\"items\":{\"item\":[{\"vehiclekndid\":\"00\",\"vehiclekndnm\":\"KTX\"},{\"vehiclekndid\":\"01\",\"vehiclekndnm\":\"새마을호\"},{\"vehiclekndid\":\"02\",\"vehiclekndnm\":\"무궁화호\"},{\"vehiclekndid\":\"03\",\"vehiclekndnm\":\"통근열차\"},{\"vehiclekndid\":\"04\",\"vehiclekndnm\":\"누리로\"},{\"vehiclekndid\":\"06\",\"vehiclekndnm\":\"AREX직통\"},{\"vehiclekndid\":\"07\",\"vehiclekndnm\":\"KTX-산천(A-type)\"},{\"vehiclekndid\":\"08\",\"vehiclekndnm\":\"ITX-새마을\"},{\"vehiclekndid\":\"09\",\"vehiclekndnm\":\"ITX-청춘\"},{\"vehiclekndid\":\"10\",\"vehiclekndnm\":\"KTX-산천(B-type)\"},{\"vehiclekndid\":\"0A\",\"vehiclekndnm\":\"KTX-산천\"},{\"vehiclekndid\":\"16\",\"vehiclekndnm\":\"KTX-이음\"},{\"vehiclekndid\":\"17\",\"vehiclekndnm\":\"SRT\"},{\"vehiclekndid\":\"18\",\"vehiclekndnm\":\"ITX-마음\"},{\"vehiclekndid\":\"19\",\"vehiclekndnm\":\"KTX-청룡\"}]}}}}",
+  "cityCodeList": "{\"response\":{\"header\":{\"resultCode\":\"00\",\"resultMsg\":\"NORMAL SERVICE.\"},\"body\":{\"items\":{\"item\":[{\"citycode\":\"11\",\"cityname\":\"서울특별시\"},{\"citycode\":\"12\",\"cityname\":\"세종특별자치시\"},{\"citycode\":\"21\",\"cityname\":\"부산광역시\"},{\"citycode\":\"22\",\"cityname\":\"대구광역시\"},{\"citycode\":\"23\",\"cityname\":\"인천광역시\"},{\"citycode\":\"24\",\"cityname\":\"광주광역시\"},{\"citycode\":\"25\",\"cityname\":\"대전광역시\"},{\"citycode\":\"26\",\"cityname\":\"울산광역시\"},{\"citycode\":\"31\",\"cityname\":\"경기도\"},{\"citycode\":\"32\",\"cityname\":\"강원특별자치도\"},{\"citycode\":\"33\",\"cityname\":\"충청북도\"},{\"citycode\":\"34\",\"cityname\":\"충청남도\"},{\"citycode\":\"35\",\"cityname\":\"전북특별자치도\"},{\"citycode\":\"36\",\"cityname\":\"전라남도\"},{\"citycode\":\"37\",\"cityname\":\"경상북도\"},{\"citycode\":\"38\",\"cityname\":\"경상남도\"}]}}}}",
+  "sha256": {
+    "unknownError99": "46b5809ff3714f869653f7d0b2660ca2d0ac96fe61bcb4d41080c2f17a9f5993",
+    "gradeList": "56eed0d61f5bb51c1feda4addd091b68973ee322ba49b15f9875e0886c3b6a04",
+    "cityCodeList": "c58f86196fc4ec0f428239827667aaff454fb91f196d8650954ae61079f05c7b"
+  }
+}

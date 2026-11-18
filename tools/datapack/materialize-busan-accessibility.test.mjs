@@ -1,0 +1,369 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import test from "node:test";
+import { promisify } from "node:util";
+import {
+  loadRegionalBusanTimetablePrefix,
+  materializeRegionalProductionCandidate,
+} from "./materialize-test-fixture.mjs";
+
+import {
+  materializeBusanAccessibility,
+  materializedBusanAccessibilityPackContentHash,
+} from "./materialize-busan-accessibility.mjs";
+import { COVERAGE_REVIEW_NOW } from "./test-fixtures/coverage-review-clock.mjs";
+
+const execFileAsync = promisify(execFile);
+const root = path.resolve(import.meta.dirname, "../..");
+process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
+const topologyNow = new Date("2026-07-19T18:14:03.004Z");
+const routeMapNow = new Date("2026-07-20T11:13:18.000Z");
+const SOURCE_ID = "busan-transportation-accessibility";
+const BUSAN_LINE_IDS = Object.freeze([
+  "line-ab1a041f6266",
+  "line-d74614a04530",
+  "line-d812a5bc1e5f",
+  "line-eb7b47920390",
+]);
+const ACCESSIBILITY_FIELDS = Object.freeze([
+  "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
+]);
+
+async function inputs() {
+  const [
+    regional,
+    accessibilitySnapshot,
+  ] = await Promise.all([
+    loadRegionalBusanTimetablePrefix({
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json"),
+      readJson,
+      topologyNow,
+      timetableNow: routeMapNow,
+    }),
+    readJson("tools/datapack/sources/busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909.json"),
+  ]);
+  const { busanTimetableFixture: timetableFixture, busanTopology: topologySnapshot, inventory } = regional;
+  const admission = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence;
+  const snapshotId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(accessibilitySnapshot)).digest("hex")}-${compactSeoulDate(accessibilitySnapshot.capturedAt)}`;
+  Object.assign(admission, {
+    snapshotId,
+    snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+    capturedAt: accessibilitySnapshot.capturedAt,
+    freshUntil: accessibilitySnapshot.freshUntil,
+    stationCount: accessibilitySnapshot.stationCount,
+    rowCount: accessibilitySnapshot.rowCount,
+    facilityCount: accessibilitySnapshot.rowCount * 3,
+    rawSha256: accessibilitySnapshot.rawSha256,
+    rowsSha256: accessibilitySnapshot.rowsSha256,
+    topologySnapshotId: inventory.sources.find(({ id }) =>
+      id === topologySnapshot.sourceId).topologyAdmissionEvidence.snapshotId,
+    topologyContentSha256: topologySnapshot.contentSha256,
+  });
+  return {
+    timetableFixture,
+    topologySnapshot,
+    accessibilitySnapshot,
+    inventory,
+  };
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
+test("부산 접근성은 topology와 같은 역명 정규화를 사용하고 다른 역명은 거부한다", async () => {
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const official = topologySnapshot.scope.find(({ stationName }) => stationName.includes("·"));
+  assert.ok(official);
+  const pack = timetableFixture.packs[0];
+  const membership = pack.stationLines.find(({ lineId, stationCode }) =>
+    lineId === official.lineId && stationCode === official.stationCode);
+  const station = pack.stations.find(({ id }) => id === membership.stationId);
+  station.nameKo = official.stationName.replaceAll("·", ".");
+  const options = { baseFixture: timetableFixture, topologySnapshot, accessibilitySnapshot, inventory };
+  const result = materializeBusanAccessibility(options);
+  assert.equal(result.packs[0].stations.find(({ id }) => id === station.id).nameKo, station.nameKo);
+  station.nameKo = `${official.stationName}다른역`;
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+});
+
+test("부산 접근성은 canonical edge ID를 보존하고 공식 edge 증거 변조는 거부한다", async () => {
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const edges = timetableFixture.packs[0].networkEdges.filter(({ sourceId }) =>
+    sourceId === topologySnapshot.sourceId);
+  for (const edge of edges) edge.id = `canonical-${edge.id}`;
+  const options = { baseFixture: timetableFixture, topologySnapshot, accessibilitySnapshot, inventory };
+  const result = materializeBusanAccessibility(options);
+  assert.deepEqual(result.packs[0].networkEdges.filter(({ sourceId }) =>
+    sourceId === topologySnapshot.sourceId), edges);
+  const originalHash = edges[0].providerRecordHash;
+  edges[0].providerRecordHash = "0".repeat(64);
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+  edges[0].providerRecordHash = originalHash;
+  edges[0].id = edges[1].id;
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+});
+
+test("부산 공식 114역 편의시설 중 원문에 count가 명시된 336건만 facility·evidence로 materialize한다", async () => {
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const fixture = materializeBusanAccessibility({
+    baseFixture: timetableFixture,
+    accessibilitySnapshot,
+    topologySnapshot,
+    inventory,
+  });
+  const pack = fixture.packs[0];
+  const facilities = pack.facilities.filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const evidence = pack.stationFacilityEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const source = pack.sourceInventory.find(({ id }) => id === SOURCE_ID);
+
+  // 원문에서 wl_i·wl_o가 빈 값인 6역(95~100)은 휠체어리프트 미관측이다(0으로 간주하지 않는다).
+  assert.equal(facilities.length, 336);
+  assert.equal(evidence.length, 336);
+  assert.equal(new Set(facilities.map(({ id }) => id)).size, 336);
+  assert.equal(new Set(evidence.map(({ stationId, lineId, facilityType }) =>
+    `${stationId}:${lineId}:${facilityType}`)).size, 336);
+  assert.deepEqual([...new Set(facilities.map(({ type }) => type))].sort(), [
+    "ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT",
+  ]);
+  assert.equal(new Set(facilities.map(({ lineId }) => lineId)).size, 4);
+  assert.ok(facilities.every(({ status, statusMeaning, provenanceKind, derivationKind, operationalStatus }) => (
+    status === "UNKNOWN"
+      && statusMeaning === "STATIC_LOCATION"
+      && provenanceKind === "OFFICIAL_SOURCE"
+      && derivationKind === "OFFICIAL"
+      && operationalStatus === "UNKNOWN"
+  )));
+  assert.ok(evidence.every(({ provenanceKind, operationalStatus, statusMeaning, strictRouteEligible }) => (
+    provenanceKind === "OFFICIAL_SOURCE"
+      && operationalStatus === "UNKNOWN"
+      && statusMeaning === "STATIC_LOCATION"
+      && strictRouteEligible === false
+  )));
+
+  // 원문에 명시적 0이 적힌 역만 wheelchair_lift NOT_EXISTS를 남긴다.
+  const wheelchair = evidence.filter(({ facilityType }) => facilityType === "WHEELCHAIR_LIFT");
+  assert.equal(wheelchair.length, 108);
+  assert.equal(wheelchair.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 105);
+  assert.equal(wheelchair.filter(({ evidenceKind }) => evidenceKind === "EXISTS").length, 3);
+  assert.deepEqual(
+    [...new Set(wheelchair.map(({ lineId }) => lineId))].sort(),
+    accessibilitySnapshot.lineIds,
+  );
+
+  const station219 = facilities.find(({ id }) => id === "facility-busan-219-wheelchair-lift");
+  assert.equal(station219.installationStatus, "INSTALLED");
+  assert.equal(
+    evidence.find(({ stationId, lineId, facilityType }) =>
+      stationId === station219.stationId
+        && lineId === station219.lineId
+        && facilityType === "WHEELCHAIR_LIFT").evidenceKind,
+    "EXISTS",
+  );
+  for (const code of ["95", "96", "97", "98", "99", "100"]) {
+    assert.equal(facilities.some(({ id }) => id === `facility-busan-${code}-wheelchair-lift`), false, code);
+    assert.equal(facilities.some(({ id }) => id === `facility-busan-${code}-elevator`), true, code);
+  }
+  const explicitZero = facilities.find(({ id }) => id === "facility-busan-101-wheelchair-lift");
+  assert.equal(explicitZero.installationStatus, "NOT_INSTALLED");
+
+  assert.equal(source.license, "공공누리 제1유형");
+  assert.deepEqual(source.coverageScope.lineIds, accessibilitySnapshot.lineIds);
+  assert.equal(pack.minimumTableRows.facilities, pack.facilities.length);
+  assert.equal(pack.minimumTableRows.station_facility_evidence, pack.stationFacilityEvidence.length);
+  assert.match(pack.id, /^nationwide-busan-accessibility-[a-f0-9]{64}$/);
+  assert.equal(typeof materializedBusanAccessibilityPackContentHash(pack, pack.version), "string");
+  assert.match(materializedBusanAccessibilityPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
+  assert.equal(pack.version, "20260909");
+  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260909" });
+});
+
+test("부산 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+
+  const invalidWindow = structuredClone(accessibilitySnapshot);
+  invalidWindow.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowInventory = structuredClone(inventory);
+  invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID)
+    .accessibilityAdmissionEvidence.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(invalidWindow)).digest("hex")}-${compactSeoulDate(invalidWindow.capturedAt)}`;
+  Object.assign(invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence, {
+    snapshotId: invalidWindowId, snapshotPath: `tools/datapack/sources/${invalidWindowId}.json`,
+  });
+  assert.throws(() => materializeBusanAccessibility({
+    baseFixture: timetableFixture,
+    accessibilitySnapshot: invalidWindow,
+    topologySnapshot,
+    inventory: invalidWindowInventory,
+  }), /freshness/);
+
+  const badHash = structuredClone(accessibilitySnapshot);
+  badHash.rowsSha256 = "0".repeat(64);
+  assert.throws(() => materializeBusanAccessibility({
+    baseFixture: timetableFixture,
+    accessibilitySnapshot: badHash,
+    topologySnapshot,
+    inventory,
+  }), /snapshot/);
+
+  const badSource = structuredClone(accessibilitySnapshot);
+  badSource.sourceId = "wrong-source";
+  assert.throws(() => materializeBusanAccessibility({
+    baseFixture: timetableFixture,
+    accessibilitySnapshot: badSource,
+    topologySnapshot,
+    inventory,
+  }), /snapshot/);
+
+  const badScope = structuredClone(accessibilitySnapshot);
+  badScope.rows = badScope.rows.slice(0, 113);
+  badScope.rowCount = 113;
+  badScope.stationCount = 113;
+  badScope.rowsSha256 = createHash("sha256").update(JSON.stringify(badScope.rows)).digest("hex");
+  const badScopeInventory = structuredClone(inventory);
+  Object.assign(
+    badScopeInventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence,
+    { rowCount: 113, stationCount: 113, facilityCount: 339, rowsSha256: badScope.rowsSha256 },
+  );
+  assert.throws(() => materializeBusanAccessibility({
+    baseFixture: timetableFixture,
+    accessibilitySnapshot: badScope,
+    topologySnapshot,
+    inventory: badScopeInventory,
+  }), /snapshot/);
+
+  const mismatchedInventory = structuredClone(inventory);
+  mismatchedInventory.sources.find(({ id }) => id === SOURCE_ID)
+    .accessibilityAdmissionEvidence.rowsSha256 = "0".repeat(64);
+  assert.throws(() => materializeBusanAccessibility({
+    baseFixture: timetableFixture,
+    accessibilitySnapshot,
+    topologySnapshot,
+    inventory: mismatchedInventory,
+  }), /inventory evidence/);
+
+  const admitted = materializeBusanAccessibility({
+    baseFixture: timetableFixture,
+    accessibilitySnapshot,
+    topologySnapshot,
+    inventory,
+  });
+  assert.throws(() => materializeBusanAccessibility({
+    baseFixture: admitted,
+    accessibilitySnapshot,
+    topologySnapshot,
+    inventory,
+  }), /already exists/);
+});
+
+test("materialized SQLite와 provenance가 부산 accessibility_facilities 4건을 SUPPORTED로 만든다", async (context) => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-busan-accessibility-pack-"));
+  context.after(() => rm(outputDir, { recursive: true, force: true }));
+  const fixturePath = path.join(outputDir, "fixture.json");
+  const packOutput = path.join(outputDir, "pack");
+  const reportPath = path.join(outputDir, "coverage.json");
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const fixture = materializeBusanAccessibility({
+    baseFixture: timetableFixture,
+    accessibilitySnapshot,
+    topologySnapshot,
+    inventory,
+  });
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await mkdir(packOutput, { recursive: true });
+
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  });
+  await execFileAsync(process.execPath, [
+    "tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutput,
+  ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey } });
+  await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
+
+  const manifestPath = path.join(packOutput, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const sqlitePath = path.join(
+    packOutput,
+    new URL(manifest.packs[0].url).pathname.split("/").slice(-2).join("/"),
+  ).replace(/\.gz$/, "");
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM facilities WHERE source_id = ?")
+    .get(SOURCE_ID).count, 336);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_facility_evidence WHERE source_id = ?")
+    .get(SOURCE_ID).count, 336);
+  assert.equal(database.prepare(`
+    SELECT COUNT(DISTINCT facility_type) AS count
+    FROM station_facility_evidence
+    WHERE source_id = ?
+  `).get(SOURCE_ID).count, 3);
+  database.close();
+
+  const provenance = JSON.parse(await readFile(path.join(packOutput, "current.provenance.json"), "utf8"));
+  const facilityRecords = provenance.packs.flatMap(({ records }) => records).filter(
+    ({ sourceId, entityType }) => sourceId === SOURCE_ID && entityType === "facility",
+  );
+  for (const field of ACCESSIBILITY_FIELDS) {
+    const fieldRecords = facilityRecords.filter((record) => record.field === field);
+    assert.ok(fieldRecords.length > 0, `provenance missing field: ${field}`);
+    assert.deepEqual(
+      [...new Set(fieldRecords.flatMap(({ coverageScope }) => coverageScope?.lineIds ?? []))].sort(),
+      [...BUSAN_LINE_IDS],
+    );
+    const expectedSnapshotId = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence.snapshotId;
+    assert.ok(fieldRecords.every((record) => (
+      record.sourceSnapshotId === expectedSnapshotId
+        && record.evidenceHash === accessibilitySnapshot.rowsSha256
+        && /^[a-f0-9]{64}$/.test(record.providerRecordHash)
+        && record.derivationKind === "OFFICIAL"
+    )));
+  }
+
+  await execFileAsync(process.execPath, [
+    "tools/datapack/report-coverage-gaps.mjs",
+    "--targets", "tools/datapack/nationwide-coverage-targets.json",
+    "--inventory", "tools/datapack/source-inventory.json",
+    "--manifest", manifestPath,
+    "--provenance", path.join(packOutput, "current.provenance.json"),
+    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
+    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
+    "--now", COVERAGE_REVIEW_NOW,
+    "--output", reportPath,
+    "--allow-gaps",
+  ], { cwd: root });
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  const accessibilityRequirements = report.requirements.filter(
+    ({ operatorId, sourceDomain }) => operatorId === "busan-transportation"
+      && sourceDomain === "accessibility_facilities",
+  );
+  assert.equal(accessibilityRequirements.length, 4);
+  assert.ok(accessibilityRequirements.every(({ status }) => status === "SUPPORTED"));
+  assert.deepEqual(
+    accessibilityRequirements.map(({ lineId }) => lineId).sort(),
+    [...BUSAN_LINE_IDS],
+  );
+  const routeMapRequirements = report.requirements.filter(
+    ({ operatorId, sourceDomain }) => operatorId === "busan-transportation"
+      && sourceDomain === "route_map_positions",
+  );
+  assert.ok(routeMapRequirements.every(({ status }) => status === "MISSING"));
+  assert.deepEqual(
+    routeMapRequirements.map(({ lineId }) => lineId).sort(),
+    [...BUSAN_LINE_IDS],
+  );
+  assert.equal(report.summary.launchRequired.completionReady, false);
+});
+
+async function readJson(relativePath) {
+  return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
+}

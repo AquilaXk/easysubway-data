@@ -1,0 +1,114 @@
+name: Retained Gwangju Timetable Refresh
+
+on:
+  schedule:
+    - cron: "43 */2 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: retained-gwangju-timetable-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    environment: datapack-release-check
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Record source fetch attempts for the job summary
+        run: |
+          : > "${RUNNER_TEMP}/source-fetch-telemetry.jsonl"
+          echo "SOURCE_FETCH_TELEMETRY_PATH=${RUNNER_TEMP}/source-fetch-telemetry.jsonl" >> "${GITHUB_ENV}"
+      - name: Read retained timetable due state
+        id: decision
+        run: |
+          set -euo pipefail
+          state_root="${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}"
+          mkdir -p "${state_root}"
+          node tools/ci/decide-retained-gwangju-timetable-refresh.mjs > "${state_root}/due.json"
+          STATE_ROOT="${state_root}" node --input-type=module -e '
+            import { appendFile, readFile } from "node:fs/promises";
+            const decision = JSON.parse(await readFile(process.env.STATE_ROOT + "/due.json", "utf8"));
+            if (decision?.state !== "CURRENT" && decision?.state !== "DUE") {
+              throw new Error("unexpected retained Gwangju due state: " + String(decision?.state));
+            }
+            await appendFile(process.env.GITHUB_OUTPUT, "state=" + decision.state + "\n");
+          '
+          {
+            printf 'RETAINED_GWANGJU_STATE_ROOT=%s\n' "${state_root}"
+            printf 'RETAINED_GWANGJU_MAIN_SHA=%s\n' "$(git rev-parse HEAD)"
+          } >> "${GITHUB_ENV}"
+      - name: Collect due retained Gwangju timetable
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          # #995: 수집·계약 준비까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
+          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its source main" >&2; exit 1; }
+          node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation" --phase collect
+      - name: Publish and register retained Gwangju timetable
+        id: publish
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # #995: 수집 step이 남긴 파일을 OCI에 게시하고 원장에 등록한다. 게시 직전 origin/main 이동 여부를 먼저 검사한다.
+          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its source main" >&2; exit 1; }
+          gh auth setup-git
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable source main changed before publish" >&2; exit 1; }
+          node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation" --phase publish
+      - name: Commit and push retained Gwangju timetable
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ -z "$(git ls-files --others --exclude-standard)" ]] || { echo "retained timetable controller left untracked checkout files" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable commit must stay on its source main" >&2; exit 1; }
+          git add -- tools/datapack/source-inventory.json tools/datapack/release/source-snapshots.json
+          [[ -z "$(git diff --name-only)" ]] || { echo "retained timetable modified an unallowed tracked path" >&2; exit 1; }
+          changed="${RETAINED_GWANGJU_STATE_ROOT}/changed.txt"; deleted="${RETAINED_GWANGJU_STATE_ROOT}/deleted.txt"
+          git diff --cached --name-only --diff-filter=ACMR > "${changed}"
+          git diff --cached --name-only --diff-filter=D > "${deleted}"
+          CHANGED="${changed}" DELETED="${deleted}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { validateRetainedGwangjuRefreshOutputPaths } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; validateRetainedGwangjuRefreshOutputPaths({ changedPaths: (await readFile(process.env.CHANGED, "utf8")).split("\n").filter(Boolean), deletedPaths: (await readFile(process.env.DELETED, "utf8")).split("\n").filter(Boolean) });'
+          git diff --cached --quiet && { echo "retained timetable controller produced no registration output" >&2; exit 1; }
+          git diff --quiet "${RETAINED_GWANGJU_MAIN_SHA}" -- tools/datapack/source-governance-policy.json release/product-gates/datapack-freshness-sla.json || { echo "retained timetable changed governance or freshness policy" >&2; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Refresh retained Gwangju timetable"
+          summary_file="${RETAINED_GWANGJU_STATE_ROOT}/commit-summary.md"
+          node tools/ci/refresh-automation-pr.mjs body --stage gwangju-timetable-refresh --base-sha "${RETAINED_GWANGJU_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due retained Gwangju timetable through the current official-source operation." --refs "Direct main commit" --output "${summary_file}"
+          cat "${summary_file}" >> "${GITHUB_STEP_SUMMARY}"
+          gh auth setup-git
+          git fetch --no-tags origin main
+          [[ "$(git rev-parse origin/main)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable target main changed before push" >&2; exit 1; }
+          git push origin HEAD:main
+      - name: Summarize source fetch attempts
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report refresh failure summary
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

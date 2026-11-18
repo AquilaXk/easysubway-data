@@ -1,0 +1,490 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  ALLOWED_DATA_GO_FILE_TYPES,
+  BODY_TIMEOUT_MS,
+  HEADER_TIMEOUT_MS,
+  MIN_BODY_THROUGHPUT_BYTES_PER_SECOND,
+  OBSERVED_FILE_BYTES,
+  REQUEST_TIMEOUT_MS,
+  downloadDataGoFile,
+  isCanonicalDataGoDownloadUrl,
+  parseDataGoDownloadAction,
+  resolveDataGoFileDownload,
+  verifyDataGoDownloadProvenance,
+} from "./data-go-file-download.mjs";
+import { defineSourceCollectionRetryTests } from "./source-collection-retry-test-support.mjs";
+import { createTransientRetryBudget } from "./transient-retry.mjs";
+import { sha256 } from "../../lib/hash.mjs";
+
+// #1099·#1334: 일시 오류는 원천 수집 표준 정책(최대 3회 시도, full jitter)으로 같은 요청을 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
+// 난수 0.5는 상한(base·2^n)의 절반이라 대기가 1·2초로 고정된다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
+
+const fixtureDir = path.resolve(import.meta.dirname, "../fixtures/data-go-file-download");
+const read = (name) => readFile(path.join(fixtureDir, name), "utf8");
+
+// 포털 detail 페이지(JSON-LD 없는 1호선 상선, JSON-LD 있는 접근성)와 selectFileDataDownload.do 실제 응답을 재생한다.
+async function portalFetch({ pages = {}, selects = {}, files = {}, calls = [] } = {}) {
+  return async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    const parsed = new URL(url);
+    const respond = (body, status = 200, headers = {}) => new Response(body, { status, headers });
+    if (parsed.pathname.endsWith("/fileData.do")) {
+      const id = parsed.pathname.split("/")[2];
+      return pages[id] === undefined ? respond("not found", 404) : respond(pages[id], 200, { "content-type": "text/html" });
+    }
+    if (parsed.pathname === "/tcs/dss/selectFileDataDownload.do") {
+      const id = parsed.searchParams.get("publicDataPk");
+      return selects[id] === undefined ? respond("{}", 500) : respond(selects[id], 200, { "content-type": "application/json" });
+    }
+    if (parsed.pathname === "/cmm/cmm/fileDownload.do") {
+      const file = files[parsed.searchParams.get("atchFileId")];
+      return file === undefined
+        ? respond("missing", 404)
+        : respond(file.body, file.status ?? 200, { "content-type": file.type ?? "application/octet-stream; charset=UTF-8" });
+    }
+    return respond("unexpected", 500);
+  };
+}
+
+async function realPortal(overrides = {}) {
+  const calls = [];
+  const fetchImpl = await portalFetch({
+    calls,
+    pages: { 15065526: await read("detail-15065526.html"), 15149872: await read("detail-15149872.html") },
+    selects: { 15065526: await read("select-15065526.json"), 15149872: await read("select-15149872.json") },
+    files: {
+      FILE_000000003042523: { body: "상선,csv\n1,2\n" },
+      FILE_000000007633578: { body: "호선,역명\n1,a\n" },
+    },
+    ...overrides,
+  });
+  return { fetchImpl, calls };
+}
+
+test("detail 페이지의 다운로드 버튼에서 데이터셋 PK·상세 PK·파일 순번을 정확히 한 번만 읽는다", async () => {
+  assert.deepEqual(parseDataGoDownloadAction(await read("detail-15065526.html"), "15065526"), {
+    publicDataPk: "15065526",
+    publicDataDetailPk: "uddi:2e3b04af-143f-480f-8948-ef72ce788d05",
+    fileDetailSn: "1",
+  });
+  assert.deepEqual(parseDataGoDownloadAction(await read("detail-15149872.html"), "15149872"), {
+    publicDataPk: "15149872",
+    publicDataDetailPk: "uddi:f296123b-22e5-428f-86af-f78b86307a6a",
+    fileDetailSn: "1",
+  });
+});
+
+test("다운로드 버튼이 없거나 둘 이상이거나 다른 데이터셋이면 명시적으로 실패한다", async () => {
+  const html = await read("detail-15065526.html");
+  assert.throws(() => parseDataGoDownloadAction("<html>none</html>", "15065526"), /exactly one download action/);
+  assert.throws(() => parseDataGoDownloadAction(html, "15065527"), /exactly one download action/);
+  const second = html.replace("'1', '9')", "'2', '9')");
+  assert.throws(() => parseDataGoDownloadAction(`${html}${second}`, "15065526"), /exactly one download action/);
+  assert.throws(() => parseDataGoDownloadAction(undefined, "15065526"), /HTML is required/);
+  assert.throws(() => parseDataGoDownloadAction(html, "../15065526"), /dataset id/);
+});
+
+test("JSON-LD가 없는 페이지도 selectFileDataDownload.do 응답으로 canonical FILE URL을 결정한다", async () => {
+  const { fetchImpl, calls } = await realPortal();
+  const resolved = await resolveDataGoFileDownload(fetchImpl, "15065526");
+  assert.deepEqual(resolved, {
+    datasetId: "15065526",
+    detailUrl: "https://www.data.go.kr/data/15065526/fileData.do",
+    downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003042523&fileDetailSn=1&insertDataPrcus=N",
+  });
+  assert.equal(isCanonicalDataGoDownloadUrl(resolved.downloadUrl), true);
+  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), [
+    "/data/15065526/fileData.do",
+    "/tcs/dss/selectFileDataDownload.do",
+  ]);
+  const query = new URL(calls[1].url).searchParams;
+  assert.equal(query.get("publicDataPk"), "15065526");
+  assert.equal(query.get("publicDataDetailPk"), "uddi:2e3b04af-143f-480f-8948-ef72ce788d05");
+  assert.equal(query.get("fileDetailSn"), "1");
+  assert.equal(query.get("publicDataTyCode"), "PR0051");
+  assert.equal(calls[1].init.method ?? "GET", "GET");
+  // JSON-LD가 있는 페이지도 같은 단일 경로로 해석된다.
+  assert.equal(
+    (await resolveDataGoFileDownload(fetchImpl, "15149872")).downloadUrl,
+    "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000007633578&fileDetailSn=1&insertDataPrcus=N",
+  );
+});
+
+test("해석 단계의 모든 실패(HTTP·형식·불일치)는 명시적 오류이며 대체 URL을 만들지 않는다", async () => {
+  const selectBody = JSON.parse(await read("select-15065526.json"));
+  const withSelect = async (mutate) => {
+    const body = structuredClone(selectBody);
+    mutate(body);
+    return (await realPortal({
+      selects: { 15065526: JSON.stringify(body), 15149872: await read("select-15149872.json") },
+    })).fetchImpl;
+  };
+  await assert.rejects(resolveDataGoFileDownload((await realPortal({ pages: {} })).fetchImpl, "15065526"),
+    /15065526 detail HTTP 404/);
+  await assert.rejects(resolveDataGoFileDownload((await realPortal({ selects: {} })).fetchImpl, "15065526", retryFast()),
+    /15065526 download lookup HTTP 500/);
+  await assert.rejects(resolveDataGoFileDownload((await realPortal({
+    selects: { 15065526: "<html>login</html>" },
+  })).fetchImpl, "15065526"), /download lookup is not JSON/);
+  await assert.rejects(resolveDataGoFileDownload(await withSelect((body) => { body.status = false; }), "15065526"),
+    /download lookup rejected/);
+  await assert.rejects(resolveDataGoFileDownload(await withSelect((body) => { body.dpk = "uddi:other"; }), "15065526"),
+    /download lookup detail PK mismatch/);
+  await assert.rejects(resolveDataGoFileDownload(await withSelect((body) => { body.atchFileId = "../x"; }), "15065526"),
+    /atchFileId is invalid/);
+  await assert.rejects(resolveDataGoFileDownload(await withSelect((body) => { body.fileDetailSn = "0"; }), "15065526"),
+    /fileDetailSn is invalid/);
+  await assert.rejects(resolveDataGoFileDownload(await withSelect((body) => { body.fileDetailSn = "2"; }), "15065526"),
+    /fileDetailSn is invalid/);
+});
+
+test("다운로드는 FILE 본문을 받아 sha256과 provenance를 돌려주고 Referer를 붙인다", async () => {
+  const { fetchImpl, calls } = await realPortal();
+  const downloaded = await downloadDataGoFile(fetchImpl, "15065526");
+  assert.equal(Buffer.from(downloaded.bytes).toString("utf8"), "상선,csv\n1,2\n");
+  assert.equal(downloaded.rawSha256, sha256(Buffer.from("상선,csv\n1,2\n")));
+  assert.equal(downloaded.detailUrl, "https://www.data.go.kr/data/15065526/fileData.do");
+  assert.equal(downloaded.datasetId, "15065526");
+  assert.match(downloaded.downloadUrl, /fileDownload\.do\?atchFileId=FILE_000000003042523/);
+  const fileCall = calls.at(-1);
+  assert.equal(fileCall.init.headers.Referer, "https://www.data.go.kr/data/15065526/fileData.do");
+  assert.ok(!JSON.stringify(calls).includes("serviceKey"));
+});
+
+test("다운로드 본문이 비었거나 오류 페이지거나 HTTP 오류면 성공으로 보지 않는다", async () => {
+  await assert.rejects(downloadDataGoFile((await realPortal({
+    files: { FILE_000000003042523: { body: "" } },
+  })).fetchImpl, "15065526"), /15065526 file is empty/);
+  await assert.rejects(downloadDataGoFile((await realPortal({
+    files: { FILE_000000003042523: { body: "<html>error</html>", type: "text/html;charset=UTF-8" } },
+  })).fetchImpl, "15065526"), /15065526 file content-type is not allowed/);
+  await assert.rejects(downloadDataGoFile((await realPortal({
+    files: { FILE_000000003042523: { body: "x", status: 503 } },
+  })).fetchImpl, "15065526", retryFast()), /15065526 file HTTP 503/);
+  await assert.rejects(downloadDataGoFile((await realPortal({ files: {} })).fetchImpl, "15065526"),
+    /15065526 file HTTP 404/);
+});
+
+test("provenance 검증은 데이터셋 순서·URL·원본 sha 불일치를 거부한다", async () => {
+  const { fetchImpl } = await realPortal();
+  const first = await downloadDataGoFile(fetchImpl, "15065526");
+  const second = await downloadDataGoFile(fetchImpl, "15149872");
+  const bytesByDatasetId = { 15065526: first.bytes, 15149872: second.bytes };
+  const entry = ({ datasetId, detailUrl, downloadUrl, rawSha256 }) => ({ datasetId, detailUrl, downloadUrl, rawSha256 });
+  const provenance = [entry(first), entry(second)];
+  assert.deepEqual(
+    verifyDataGoDownloadProvenance(provenance, ["15065526", "15149872"], bytesByDatasetId),
+    provenance,
+  );
+  assert.throws(() => verifyDataGoDownloadProvenance(provenance, ["15149872", "15065526"], bytesByDatasetId),
+    /download provenance is invalid/);
+  assert.throws(() => verifyDataGoDownloadProvenance(provenance.slice(0, 1), ["15065526", "15149872"], bytesByDatasetId),
+    /download provenance is invalid/);
+  assert.throws(() => verifyDataGoDownloadProvenance(
+    [{ ...provenance[0], rawSha256: "0".repeat(64) }, provenance[1]], ["15065526", "15149872"], bytesByDatasetId,
+  ), /15065526 download provenance sha256 mismatch/);
+  assert.throws(() => verifyDataGoDownloadProvenance(
+    [{ ...provenance[0], downloadUrl: "https://evil.example/cmm/cmm/fileDownload.do?atchFileId=FILE_1&fileDetailSn=1" }, provenance[1]],
+    ["15065526", "15149872"], bytesByDatasetId,
+  ), /15065526 download provenance is invalid/);
+  assert.throws(() => verifyDataGoDownloadProvenance(
+    [{ ...provenance[0], detailUrl: "https://www.data.go.kr/data/1/fileData.do" }, provenance[1]],
+    ["15065526", "15149872"], bytesByDatasetId,
+  ), /15065526 download provenance is invalid/);
+  assert.throws(() => verifyDataGoDownloadProvenance(
+    provenance, ["15065526", "15149872"], { 15065526: Buffer.from("changed"), 15149872: second.bytes },
+  ), /15065526 download provenance sha256 mismatch/);
+});
+
+test("모든 요청은 redirect를 따르지 않고, 다른 호스트로 넘어가는 응답은 외부 본문을 받지 않고 실패한다", async () => {
+  const { fetchImpl, calls } = await realPortal();
+  await downloadDataGoFile(fetchImpl, "15065526");
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every(({ init }) => init.redirect === "error"));
+  // 실제 fetch는 redirect "error"에서 3xx를 TypeError로 거부한다. 따르는 모드였다면 외부 호스트 본문을 받는 상황을 재현한다.
+  for (const hop of ["/data/15065526/fileData.do", "/tcs/dss/selectFileDataDownload.do", "/cmm/cmm/fileDownload.do"]) {
+    const redirecting = (inner) => async (url, init = {}) => {
+      if (new URL(url).pathname !== hop) return inner(url, init);
+      if (init.redirect === "error") throw new TypeError("fetch failed", { cause: new Error("redirect mode is set to error") });
+      return new Response("호선,역명\n1,foreign\n", { status: 200, headers: { "content-type": "application/octet-stream" } });
+    };
+    const portal = await realPortal();
+    await assert.rejects(downloadDataGoFile(redirecting(portal.fetchImpl), "15065526"), TypeError, hop);
+  }
+});
+
+test("실제 전체 detail 페이지(gzip)에서도 다운로드 버튼을 한 번만 읽는다", async () => {
+  const html = gunzipSync(await readFile(path.join(fixtureDir, "detail-15065526.full.html.gz"))).toString("utf8");
+  assert.ok(html.length > 100_000);
+  assert.equal(html.split("fn_fileDataDown(").length - 1, 1);
+  assert.deepEqual(parseDataGoDownloadAction(html, "15065526"), {
+    publicDataPk: "15065526",
+    publicDataDetailPk: "uddi:2e3b04af-143f-480f-8948-ef72ce788d05",
+    fileDetailSn: "1",
+  });
+});
+
+test("해석 규칙에 맞지 않는 다른 모양의 다운로드 호출이 하나라도 있으면 조용히 하나를 고르지 않고 실패한다", async () => {
+  const html = await read("detail-15065526.html");
+  const detailPk = "uddi:2e3b04af-143f-480f-8948-ef72ce788d05";
+  for (const extra of [
+    `<button onclick='fileDetailObj.fn_fileDataDown("15065526", "${detailPk}", "", "2", "9")'>x</button>`,
+    `<button onclick="fileDetailObj.fn_fileDataDown('15065526', '${detailPk}', '', '2', '9', 'extra')">x</button>`,
+    `<button onclick="fileDetailObj.fn_fileDataDown(dataPk, detailPk)">x</button>`,
+    `<button onclick="fileDetailObj.fn_fileDataDown('15065526', 'uddi:ZZ', '', '1', '9')">x</button>`,
+    `<script>fn_fileDataDown(</script>`,
+  ]) {
+    assert.throws(() => parseDataGoDownloadAction(`${html}${extra}`, "15065526"), /download action/, extra);
+  }
+  // 따옴표 모양만 다른 같은 파일 호출은 같은 행동으로 본다.
+  assert.deepEqual(
+    parseDataGoDownloadAction(`${html}<a onclick="fn_fileDataDown(&quot;x&quot;)"></a>`.replace("&quot;x&quot;", `"15065526", "${detailPk}", "", "1", "9"`), "15065526"),
+    { publicDataPk: "15065526", publicDataDetailPk: detailPk, fileDetailSn: "1" },
+  );
+});
+
+test("허용한 content-type(CSV·XLS·octet-stream)만 받고 그 밖이거나 없으면 실패한다", async () => {
+  const fileWith = async (type) => (await realPortal({
+    files: { FILE_000000003042523: { body: "호선,역명\n1,a\n", type } },
+  })).fetchImpl;
+  for (const type of ALLOWED_DATA_GO_FILE_TYPES) {
+    assert.equal((await downloadDataGoFile(await fileWith(`${type}; charset=UTF-8`), "15065526")).bytes.byteLength > 0, true, type);
+  }
+  assert.deepEqual([...ALLOWED_DATA_GO_FILE_TYPES].sort(), [
+    "application/csv",
+    "application/octet-stream",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv",
+  ]);
+  for (const type of ["text/plain", "application/json", "text/html", "application/xml"]) {
+    await assert.rejects(downloadDataGoFile(await fileWith(type), "15065526"), /15065526 file content-type is not allowed/, type);
+  }
+  const noType = async () => new Response("x");
+  const portal = await realPortal();
+  await assert.rejects(downloadDataGoFile(async (url, init) => (
+    new URL(url).pathname === "/cmm/cmm/fileDownload.do" ? noType() : portal.fetchImpl(url, init)
+  ), "15065526"), /file content-type is not allowed/);
+});
+
+test("content-type이 허용돼도 본문이 HTML 문서면 실패한다", async () => {
+  for (const body of ["<!DOCTYPE html><html></html>", "\ufeff  \n<HTML lang=ko>", "<html><body>오류</body></html>", " <!doctype HTML>"]) {
+    await assert.rejects(downloadDataGoFile((await realPortal({
+      files: { FILE_000000003042523: { body } },
+    })).fetchImpl, "15065526"), /15065526 file is not a data file/, body);
+  }
+});
+
+test("본문은 크기 상한을 넘으면 헤더 선언·실제 수신 어느 쪽이든 실패한다", async () => {
+  const body = "a,b\n".repeat(100);
+  const portalFor = async (files) => (await realPortal({ files })).fetchImpl;
+  const ok = await downloadDataGoFile(await portalFor({ FILE_000000003042523: { body } }), "15065526", { maxBytes: body.length });
+  assert.equal(ok.bytes.byteLength, body.length);
+  await assert.rejects(downloadDataGoFile(
+    await portalFor({ FILE_000000003042523: { body } }), "15065526", { maxBytes: body.length - 1 },
+  ), /15065526 file exceeds/);
+  // Content-Length가 거짓이거나 없어도(chunked) 실제로 받은 바이트로 상한을 막는다.
+  const portal = await realPortal();
+  const lying = async (url, init) => {
+    if (new URL(url).pathname !== "/cmm/cmm/fileDownload.do") return portal.fetchImpl(url, init);
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(body));
+        controller.enqueue(new TextEncoder().encode(body));
+        controller.close();
+      },
+    }), { status: 200, headers: { "content-type": "application/octet-stream" } });
+  };
+  await assert.rejects(downloadDataGoFile(lying, "15065526", { maxBytes: body.length + 10 }), /15065526 file exceeds/);
+  const declared = async (url, init) => {
+    if (new URL(url).pathname !== "/cmm/cmm/fileDownload.do") return portal.fetchImpl(url, init);
+    return new Response("a", { status: 200, headers: { "content-type": "application/octet-stream", "content-length": "999999999" } });
+  };
+  await assert.rejects(downloadDataGoFile(declared, "15065526"), /15065526 file exceeds/);
+});
+
+test("발췌 fixture HTML은 문서 언어를 선언한다(정적 분석 접근성 규칙)", async () => {
+  for (const name of ["detail-15065526.html", "detail-15149872.html"]) {
+    assert.match(await read(name), /<html lang="ko">/u, name);
+  }
+});
+
+const brokenStream = (code) => new Response(new ReadableStream({
+  start(controller) { controller.error(Object.assign(new TypeError("terminated"), { cause: Object.assign(new Error("transport"), { code }) })); },
+}), { status: 200, headers: { "content-type": "application/octet-stream" } });
+
+// 포털 fetch를 감싸 처음 몇 번은 지정한 일시 오류를 내고 이후에는 원래 응답을 돌려준다.
+function flaky(fetchImpl, { match, failures }) {
+  const pending = [...failures];
+  const counts = { total: 0 };
+  return {
+    counts,
+    fetchImpl: async (url, init) => {
+      if (match(new URL(url))) {
+        counts.total += 1;
+        const next = pending.shift();
+        if (next !== undefined) return next();
+      }
+      return fetchImpl(url, init);
+    },
+  };
+}
+
+test("detail·lookup·FILE 요청이 HTTP 5xx·연결 timeout·본문 수신 오류를 만나도 같은 요청을 다시 보내 다운로드를 끝낸다", async () => {
+  const { fetchImpl } = await realPortal();
+  const connectTimeout = () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); };
+  const waits = [];
+  let current = fetchImpl;
+  const cases = [
+    [(url) => url.pathname.endsWith("/fileData.do"), [() => new Response("busy", { status: 503 }), connectTimeout]],
+    [(url) => url.pathname === "/tcs/dss/selectFileDataDownload.do", [() => new Response("{}", { status: 502 })]],
+    [(url) => url.pathname === "/cmm/cmm/fileDownload.do", [() => brokenStream("UND_ERR_BODY_TIMEOUT"), () => brokenStream("ECONNRESET")]],
+  ];
+  const counters = cases.map(([match, failures]) => {
+    const wrapped = flaky(current, { match, failures });
+    current = wrapped.fetchImpl;
+    return wrapped.counts;
+  });
+  const downloaded = await downloadDataGoFile(current, "15065526", retryFast(waits));
+  assert.equal(Buffer.from(downloaded.bytes).toString("utf8"), "상선,csv\n1,2\n");
+  assert.equal(downloaded.rawSha256, sha256(Buffer.from("상선,csv\n1,2\n")));
+  assert.deepEqual(counters.map(({ total }) => total), [3, 2, 3]);
+  assert.deepEqual(waits, [1_000, 2_000, 1_000, 1_000, 2_000]);
+});
+
+test("일시 오류가 한도(3회 시도)를 넘으면 기존 오류로 끝난다", async () => {
+  const { fetchImpl } = await realPortal();
+  const waits = [];
+  const always = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 10 }, () => () => new Response("busy", { status: 503 })) });
+  await assert.rejects(downloadDataGoFile(always.fetchImpl, "15065526", retryFast(waits)), /15065526 file HTTP 503/);
+  assert.equal(always.counts.total, 3);
+  assert.deepEqual(waits, [1_000, 2_000]);
+
+  const transport = flaky(fetchImpl, { match: (url) => url.pathname.endsWith("/fileData.do"), failures: Array.from({ length: 10 }, () => () => { throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); }) });
+  await assert.rejects(resolveDataGoFileDownload(transport.fetchImpl, "15065526", retryFast()), (error) => error.code === "ECONNRESET");
+  assert.equal(transport.counts.total, 3);
+
+  const budgeted = flaky(fetchImpl, { match: (url) => url.pathname.endsWith("/fileData.do"), failures: Array.from({ length: 10 }, () => () => { throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); }) });
+  await assert.rejects(resolveDataGoFileDownload(budgeted.fetchImpl, "15065526", { sleepImpl: async () => {}, randomImpl: () => 0.5, retryBudget: createTransientRetryBudget(2_500) }), (error) => error.code === "ECONNRESET");
+  assert.equal(budgeted.counts.total, 2);
+});
+
+test("인증·내용 오류(HTTP 401·403·404·408, 허용 밖 content-type)는 재시도하지 않는다", async () => {
+  const { fetchImpl } = await realPortal();
+  for (const status of [401, 403, 404, 408]) {
+    const denied = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: [() => new Response("denied", { status })] });
+    const waits = [];
+    await assert.rejects(downloadDataGoFile(denied.fetchImpl, "15065526", retryFast(waits)), new RegExp(`15065526 file HTTP ${status}`));
+    assert.equal(denied.counts.total, 1, String(status));
+    assert.deepEqual(waits, []);
+  }
+  const html = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: [() => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } })] });
+  await assert.rejects(downloadDataGoFile(html.fetchImpl, "15065526", retryFast()), /file content-type is not allowed/);
+  assert.equal(html.counts.total, 1);
+});
+
+test("HTTP 429는 Retry-After가 없으면 1회만 다시 보내고, 힌트가 cap(20초)을 넘으면 기다리지 않고 실패한다", async () => {
+  const { fetchImpl } = await realPortal();
+  const unhinted = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 5 }, () => () => new Response("slow", { status: 429 })) });
+  await assert.rejects(downloadDataGoFile(unhinted.fetchImpl, "15065526", retryFast()), /15065526 file HTTP 429/);
+  assert.equal(unhinted.counts.total, 2);
+
+  const waits = [];
+  const hinted = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: [() => new Response("slow", { status: 429, headers: { "retry-after": "21" } })] });
+  await assert.rejects(downloadDataGoFile(hinted.fetchImpl, "15065526", retryFast(waits)), /RETRY_AFTER_EXCEEDS_CAP/);
+  assert.equal(hinted.counts.total, 1);
+  assert.deepEqual(waits, []);
+});
+
+defineSourceCollectionRetryTests({
+  name: "data.go.kr 파일 다운로드",
+  httpError: /15065526 (detail|file) HTTP 403/,
+  delegate: (await realPortal()).fetchImpl,
+  headers: { "content-type": "application/octet-stream" },
+  run: async ({ fetchImpl, sleepImpl }) => {
+    const { bytes, rawSha256 } = await downloadDataGoFile(fetchImpl, "15065526", { sleepImpl, randomImpl: () => 0 });
+    return { text: Buffer.from(bytes).toString("utf8"), rawSha256 };
+  },
+});
+
+test("FILE 요청이 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  const { fetchImpl } = await realPortal();
+  const busy = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 10 }, () => () => new Response("busy", { status: 503 })) });
+  await assert.rejects(downloadDataGoFile(busy.fetchImpl, "15065526", { sleepImpl: async () => {}, randomImpl: () => 0.5, retryBudget: createTransientRetryBudget(2_500) }), /15065526 file HTTP 503/);
+  assert.equal(busy.counts.total, 2);
+});
+
+test("#997 헤더 timeout과 본문 수신 한도를 분리하고 본문 데드라인 초과는 재시도 없이 TIMEOUT으로 실패한다", { timeout: 5_000 }, async () => {
+  assert.equal(HEADER_TIMEOUT_MS, 60_000);
+  assert.equal(REQUEST_TIMEOUT_MS, HEADER_TIMEOUT_MS);
+  assert.equal(OBSERVED_FILE_BYTES, 1_663_202);
+  assert.equal(MIN_BODY_THROUGHPUT_BYTES_PER_SECOND, 15_000);
+  assert.equal(BODY_TIMEOUT_MS, 120_000);
+
+  const { fetchImpl } = await realPortal();
+
+  // (1) 헤더 응답 직후 타이머가 해제되어 본문이 headerTimeoutMs보다 느려도 bodyTimeoutMs 안이면 성공한다.
+  const slowFile = async (url, init) => {
+    if (new URL(url).pathname !== "/cmm/cmm/fileDownload.do") return fetchImpl(url, init);
+    const payload = new TextEncoder().encode("상선,csv\n1,2\n");
+    const body = new ReadableStream({
+      async start(controller) {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        init.signal?.throwIfAborted();
+        controller.enqueue(payload);
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } });
+  };
+  const downloaded = await downloadDataGoFile(slowFile, "15065526", { headerTimeoutMs: 30, bodyTimeoutMs: 2_000 });
+  assert.equal(Buffer.from(downloaded.bytes).toString("utf8"), "상선,csv\n1,2\n");
+
+  // (2) 본문 스트림이 멈춰 bodyTimeoutMs를 넘기면 재시도 없이 data.go.kr ... TIMEOUT으로 실패한다.
+  let fileCalls = 0;
+  let cancelled = false;
+  const waits = [];
+  const stalledFile = async (url, init) => {
+    if (new URL(url).pathname !== "/cmm/cmm/fileDownload.do") return fetchImpl(url, init);
+    fileCalls += 1;
+    const body = new ReadableStream({
+      pull() { return new Promise(() => {}); },
+      cancel() { cancelled = true; },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } });
+  };
+  await assert.rejects(
+    downloadDataGoFile(stalledFile, "15065526", { headerTimeoutMs: 500, bodyTimeoutMs: 40, ...retryFast(waits) }),
+    /data\.go\.kr 15065526 file TIMEOUT/u,
+  );
+  assert.equal(fileCalls, 1);
+  assert.equal(cancelled, true);
+  assert.deepEqual(waits, []);
+
+  // (3) 헤더 timeout은 일시 오류로 재시도한 뒤 성공한다.
+  let detailCalls = 0;
+  const headerFlaky = async (url, init) => {
+    if (new URL(url).pathname.endsWith("/fileData.do")) {
+      detailCalls += 1;
+      if (detailCalls === 1) return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+    }
+    return fetchImpl(url, init);
+  };
+  const retryWaits = [];
+  const afterHeaderRetry = await downloadDataGoFile(headerFlaky, "15065526", { headerTimeoutMs: 25, bodyTimeoutMs: 1_000, ...retryFast(retryWaits) });
+  assert.equal(detailCalls, 2);
+  assert.deepEqual(retryWaits, [1_000]);
+  assert.equal(Buffer.from(afterHeaderRetry.bytes).toString("utf8"), "상선,csv\n1,2\n");
+
+  // (4) 유효하지 않은 timeout 인자는 거부한다.
+  for (const bad of [0, -1, 1.5, "60"]) {
+    await assert.rejects(resolveDataGoFileDownload(fetchImpl, "15065526", { headerTimeoutMs: bad }), /headerTimeoutMs/u);
+    await assert.rejects(downloadDataGoFile(fetchImpl, "15065526", { bodyTimeoutMs: bad }), /bodyTimeoutMs/u);
+  }
+});

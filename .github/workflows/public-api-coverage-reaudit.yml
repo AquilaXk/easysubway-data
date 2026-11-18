@@ -1,0 +1,94 @@
+name: Public API Coverage Reaudit
+
+# 공식 미지원 근거(부산김해 1건·대구 3건 등) 정기/수동 부분 재감사 및 공급자 일일 호출 예산 연동(Refs AquilaXk/easysubway#3036, 7-47).
+# - 정기 실행은 저장소 변수 PUBLIC_API_COVERAGE_REAUDIT_ENABLED가 true일 때만 돈다(기본 꺼짐). 사람(sender.type이 User) workflow_dispatch는 항상 돈다.
+# - 공급자 호출 전에 같은 KST 날 앞선 run의 계측 artifact를 읽고(provider-call-ledger.mjs), provider-daily-call-budget.json의 coverageReaudit 예산(재시도 여유분 포함)을 먼저 확인해 부족하면 fail-closed로 중단한다.
+on:
+  schedule:
+    - cron: "17 18 * * 0"
+  workflow_dispatch:
+    inputs:
+      line_ids:
+        description: Comma-separated line IDs to reaudit (defaults to the 4 official unsupported lines)
+        required: false
+        default: "line-e4cce88f0d7f,line-0ffaa95b1b5d,line-5b8d9b05e7e6,line-e2938a4cc492"
+        type: string
+      allow_same_day_budget_retry:
+        description: Unblock the daily failed-attempt limit for one manual retry when daily call budget remains
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: public-api-coverage-reaudit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reaudit:
+    name: Public API coverage reaudit
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User') || vars.PUBLIC_API_COVERAGE_REAUDIT_ENABLED == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    environment: datapack-release-check
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Record source fetch attempts for the job summary
+        run: |
+          : > "${RUNNER_TEMP}/source-fetch-telemetry.jsonl"
+          echo "SOURCE_FETCH_TELEMETRY_PATH=${RUNNER_TEMP}/source-fetch-telemetry.jsonl" >> "${GITHUB_ENV}"
+      - name: Check provider daily call budget before coverage reaudit
+        id: budget
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          LINE_IDS: ${{ inputs.line_ids }}
+          ALLOW_SAME_DAY_BUDGET_RETRY: ${{ github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User' && inputs.allow_same_day_budget_retry == true && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          reaudit_root="${RUNNER_TEMP}/public-api-coverage-reaudit/${GITHUB_RUN_ID}"
+          mkdir -p "${reaudit_root}"
+          node tools/ci/provider-call-ledger.mjs --ledger "${reaudit_root}/provider-call-ledger.json" --workflow public-api-coverage-reaudit.yml
+          node tools/datapack/collect-nationwide-public-api-coverage.mjs --plan tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json --merge-into tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json --scope PARTIAL --line-ids "${LINE_IDS}" --call-budget release/product-gates/provider-daily-call-budget.json --provider-call-ledger "${reaudit_root}/provider-call-ledger.json" --allow-same-day-budget-retry "${ALLOW_SAME_DAY_BUDGET_RETRY}" --dry-run --output "${reaudit_root}/budget-preflight.json"
+      - name: Reaudit official unsupported public API coverage
+        id: reaudit
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          LINE_IDS: ${{ inputs.line_ids }}
+          ALLOW_SAME_DAY_BUDGET_RETRY: ${{ github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User' && inputs.allow_same_day_budget_retry == true && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          reaudit_root="${RUNNER_TEMP}/public-api-coverage-reaudit/${GITHUB_RUN_ID}"
+          node tools/datapack/collect-nationwide-public-api-coverage.mjs --plan tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json --merge-into tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json --scope PARTIAL --line-ids "${LINE_IDS}" --call-budget release/product-gates/provider-daily-call-budget.json --provider-call-ledger "${reaudit_root}/provider-call-ledger.json" --allow-same-day-budget-retry "${ALLOW_SAME_DAY_BUDGET_RETRY}" --output "${reaudit_root}/nationwide-public-api-coverage-resolutions.json"
+      - name: Upload reaudited coverage resolutions
+        if: ${{ steps.reaudit.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: public-api-coverage-reaudit-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-api-coverage-reaudit/${{ github.run_id }}/nationwide-public-api-coverage-resolutions.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summarize source fetch attempts
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node tools/ci/summarize-source-fetch-telemetry.mjs --input "${SOURCE_FETCH_TELEMETRY_PATH:-}" >> "${GITHUB_STEP_SUMMARY}"
+      - name: Upload provider call evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: public-api-coverage-reaudit-calls-${{ github.run_id }}
+          path: ${{ runner.temp }}/source-fetch-telemetry.jsonl
+          if-no-files-found: error
+          retention-days: 2

@@ -1,0 +1,536 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { test } from "node:test";
+import { promisify } from "node:util";
+import {
+  buildBackendTimetableSeed,
+  DEFAULT_INSERT_BATCH_SIZE,
+  MAX_INSERT_BATCH_SIZE,
+} from "./build-backend-timetable-seed.mjs";
+import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
+
+const execFileAsync = promisify(execFile);
+const root = path.resolve(import.meta.dirname, "../..");
+
+// 재구성 artifact(수집기 산출물) 축약 — up/down 각 1 trip, weekday/holiday 각 1.
+const ARTIFACT = {
+  transitTrips: [
+    {
+      id: "route-seoul-4-up-4719-8",
+      routeId: "route-seoul-4-up",
+      serviceId: "weekday-kric",
+      tripHeadsign: "station-seoul-4-433",
+      directionId: "up",
+      servicePattern: "LOCAL",
+      trainNo: "4719",
+    },
+    {
+      id: "route-seoul-4-down-4108-9",
+      routeId: "route-seoul-4-down",
+      serviceId: "holiday-kric",
+      tripHeadsign: "station-seoul-4-456",
+      directionId: "down",
+      servicePattern: "LOCAL",
+      trainNo: "4108",
+    },
+  ],
+  transitStopTimes: [
+    { tripId: "route-seoul-4-up-4719-8", stopSequence: 1, stationId: "station-seoul-4-448", lineId: "seoul-4", arrivalSeconds: 30000, departureSeconds: 30030 },
+    { tripId: "route-seoul-4-up-4719-8", stopSequence: 2, stationId: "station-seoul-4-433", lineId: "seoul-4", arrivalSeconds: 30900, departureSeconds: 30930 },
+    { tripId: "route-seoul-4-down-4108-9", stopSequence: 1, stationId: "station-seoul-4-433", lineId: "seoul-4", arrivalSeconds: 40000, departureSeconds: 40030 },
+  ],
+};
+
+const OPTIONS = {
+  lineId: "seoul-4",
+  startDate: "20260101",
+  endDate: "20261231",
+  buildNow: new Date("2026-07-14T00:00:00.000Z"),
+};
+
+const STATION_CATALOG_IDENTITY = Object.freeze({
+  artifactKind: "station-catalog-pack",
+  manifestVersion: 1,
+  catalogPackId: "itx-test-catalog-v1",
+  stationSetSha256: "a".repeat(64),
+  payloadSha256: "b".repeat(64),
+  manifestSha256: "c".repeat(64),
+});
+
+const CANONICAL_PACK_IDENTITY = Object.freeze({
+  id: "capital",
+  sha256: "d".repeat(64),
+  sqliteSha256: "e".repeat(64),
+});
+
+function artifactEvidence({ timetableArtifactId, timetableArtifactSha256, freshUntil, admissionEligible = true, sourceIssue = 2135 } = {}) {
+  return {
+    serviceClass: "ITX_CHEONGCHUN",
+    timetableArtifactId,
+    timetableArtifactSha256,
+    canonicalPackId: CANONICAL_PACK_IDENTITY.id,
+    canonicalPackSha256: CANONICAL_PACK_IDENTITY.sha256,
+    canonicalPackSqliteSha256: CANONICAL_PACK_IDENTITY.sqliteSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible,
+    freshUntil,
+    sourceIssue,
+  };
+}
+
+function stationCatalogEvidence({ freshUntil, admissionEligible = true, sourceIssue = 2649 } = {}) {
+  return {
+    serviceClass: "ITX_CHEONGCHUN",
+    stationCatalogArtifactKind: STATION_CATALOG_IDENTITY.artifactKind,
+    stationCatalogManifestVersion: STATION_CATALOG_IDENTITY.manifestVersion,
+    stationCatalogPackId: STATION_CATALOG_IDENTITY.catalogPackId,
+    stationCatalogStationSetSha256: STATION_CATALOG_IDENTITY.stationSetSha256,
+    stationCatalogPayloadSha256: STATION_CATALOG_IDENTITY.payloadSha256,
+    stationCatalogManifestSha256: STATION_CATALOG_IDENTITY.manifestSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible,
+    freshUntil,
+    sourceIssue,
+  };
+}
+
+test("service_calendar는 토요일을 휴일 다이어로 매핑한다 (holiday-kric=토·일, weekday-kric=월~금)", () => {
+  const seed = buildBackendTimetableSeed(ARTIFACT, OPTIONS);
+  const byId = Object.fromEntries(seed.calendars.map((c) => [c.serviceId, c]));
+
+  assert.deepEqual(
+    { mon: byId["weekday-kric"].monday, fri: byId["weekday-kric"].friday, sat: byId["weekday-kric"].saturday, sun: byId["weekday-kric"].sunday },
+    { mon: true, fri: true, sat: false, sun: false },
+  );
+  assert.deepEqual(
+    { mon: byId["holiday-kric"].monday, fri: byId["holiday-kric"].friday, sat: byId["holiday-kric"].saturday, sun: byId["holiday-kric"].sunday },
+    { mon: false, fri: false, sat: true, sun: true },
+  );
+  assert.equal(byId["weekday-kric"].startDate, "20260101");
+  assert.equal(byId["weekday-kric"].endDate, "20261231");
+});
+
+test("transit_routes를 distinct routeId에서 line_id·direction으로 파생한다", () => {
+  const seed = buildBackendTimetableSeed(ARTIFACT, OPTIONS);
+  const byId = Object.fromEntries(seed.routes.map((r) => [r.id, r]));
+  assert.deepEqual(Object.keys(byId).sort(), ["route-seoul-4-down", "route-seoul-4-up"]);
+  assert.equal(byId["route-seoul-4-up"].lineId, "seoul-4");
+  assert.equal(byId["route-seoul-4-up"].directionName, "up");
+  assert.equal(byId["route-seoul-4-down"].directionName, "down");
+});
+
+test("SQL은 FK 순서(calendars→routes→trips→stop_times)로 INSERT를 낸다", () => {
+  const { sql } = buildBackendTimetableSeed(ARTIFACT, OPTIONS);
+  const iCal = sql.indexOf("INSERT INTO service_calendars");
+  const iRoute = sql.indexOf("INSERT INTO transit_routes");
+  const iTrip = sql.indexOf("INSERT INTO transit_trips");
+  const iStop = sql.indexOf("INSERT INTO transit_stop_times");
+  assert.ok(iCal >= 0 && iRoute > iCal && iTrip > iRoute && iStop > iTrip, `순서 위반: ${[iCal, iRoute, iTrip, iStop]}`);
+});
+
+test("trip seed는 service_class·exact train_no를 명시하고 기본 SUBWAY를 보존한다", () => {
+  const { sql } = buildBackendTimetableSeed(ARTIFACT, OPTIONS);
+  assert.match(
+    sql,
+    /INSERT INTO transit_trips \(id, route_id, service_id, service_pattern, service_class, train_no, service_day_start_seconds, trip_headsign, direction_id\)/,
+  );
+  assert.match(sql, /'LOCAL', 'SUBWAY', '4719', 0/);
+});
+
+test("final seed는 모든 trip의 explicit LOCAL/EXPRESS servicePattern을 요구한다", () => {
+  for (const servicePattern of [undefined, null, "", " ", "RAPID", "UNKNOWN"]) {
+    const trip = { ...ARTIFACT.transitTrips[0], servicePattern };
+    assert.throws(
+      () => buildBackendTimetableSeed({
+        transitTrips: [trip],
+        transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+      }, OPTIONS),
+      /service_pattern must be explicitly LOCAL or EXPRESS/,
+    );
+  }
+});
+
+test("serviceClass/servicePattern 조합은 SUBWAY LOCAL·EXPRESS와 ITX EXPRESS만 허용한다", () => {
+  const subwayExpress = {
+    ...ARTIFACT,
+    transitTrips: ARTIFACT.transitTrips.map((trip) => ({ ...trip, servicePattern: "EXPRESS" })),
+  };
+  assert.match(buildBackendTimetableSeed(subwayExpress, OPTIONS).sql, /'EXPRESS', 'SUBWAY'/);
+
+  assert.throws(
+    () => buildBackendTimetableSeed({
+      transitTrips: [{
+        ...ARTIFACT.transitTrips[0],
+        serviceClass: "ITX_CHEONGCHUN",
+        servicePattern: "LOCAL",
+      }],
+      transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+    }, OPTIONS),
+    /ITX_CHEONGCHUN.*EXPRESS/,
+  );
+});
+
+test("EXPRESS 통과역 row는 pickup/drop-off를 모두 금지하고 실제 정차역만 승하차 가능하게 보존한다", () => {
+  const trip = { ...ARTIFACT.transitTrips[0], servicePattern: "EXPRESS" };
+  const passThrough = {
+    tripId: trip.id,
+    stopSequence: 2,
+    stationId: "station-pass-through",
+    lineId: "seoul-4",
+    pickupType: 1,
+    dropOffType: 1,
+    arrivalSeconds: 30500,
+    departureSeconds: 30500,
+  };
+  const terminal = { ...ARTIFACT.transitStopTimes[1], stopSequence: 3 };
+  const { sql } = buildBackendTimetableSeed({
+    transitTrips: [trip],
+    transitStopTimes: [ARTIFACT.transitStopTimes[0], passThrough, terminal],
+  }, OPTIONS);
+
+  assert.match(sql, /'station-pass-through', 'seoul-4', 1, 1, 30500, 30500/);
+  assert.throws(
+    () => buildBackendTimetableSeed({
+      transitTrips: [trip],
+      transitStopTimes: [
+        ARTIFACT.transitStopTimes[0],
+        { ...passThrough, pickupType: 1, dropOffType: 0 },
+        terminal,
+      ],
+    }, OPTIONS),
+    /EXPRESS.*pickup_type=1.*drop_off_type=1/,
+  );
+});
+
+test("재구성한 EXPRESS의 양 끝 승하차 제한은 허용하고 interior 비대칭 제한은 거부한다", () => {
+  const { transitTrips, transitStopTimes } = reconstructTransitTrips([
+    { stationId: "station-origin", lineId: "seoul-4", trnNo: "X4701", dayCd: "01", arrivalSeconds: null, departureSeconds: 30000, stopRole: "ORIGIN", servicePattern: "EXPRESS" },
+    { stationId: "station-through", lineId: "seoul-4", trnNo: "X4701", dayCd: "01", arrivalSeconds: 30500, departureSeconds: 30500, stopRole: "THROUGH", servicePattern: "EXPRESS" },
+    { stationId: "station-terminal", lineId: "seoul-4", trnNo: "X4701", dayCd: "01", arrivalSeconds: 31000, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "EXPRESS" },
+  ], {
+    lineSequenceByStationLine: { "station-origin|seoul-4": 1, "station-through|seoul-4": 2, "station-terminal|seoul-4": 3 },
+    routeIdByLineDirection: { "seoul-4|up": "route-seoul-4-up" },
+    serviceIdByDayCd: { "01": "weekday-kric" },
+  });
+
+  assert.doesNotThrow(() => buildBackendTimetableSeed({ transitTrips, transitStopTimes }, OPTIONS));
+  assert.throws(
+    () => buildBackendTimetableSeed({
+      transitTrips,
+      transitStopTimes: transitStopTimes.map((row) => row.stopSequence === 2 ? { ...row, pickupType: 1, dropOffType: 0 } : row),
+    }, OPTIONS),
+    /EXPRESS.*pickup_type=1.*drop_off_type=1/,
+  );
+});
+
+test("route service evidence split은 canonical과 station-catalog identity를 별도 seed SQL에 전파한다", async () => {
+  const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
+  const artifact = JSON.parse(artifactBytes);
+  const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
+  artifact.routeServiceArtifactEvidence = [artifactEvidence({
+    timetableArtifactId: artifact.timetableArtifactIdentity.id,
+    timetableArtifactSha256,
+    freshUntil: artifact.freshness.freshUntil,
+  })];
+  artifact.routeServiceStationCatalogEvidence = [stationCatalogEvidence({ freshUntil: artifact.freshness.freshUntil })];
+  const { sql } = buildBackendTimetableSeed(artifact, {
+    ...OPTIONS,
+    lineId: artifact.canonicalLineId,
+    timetableArtifactSha256,
+    canonicalPackIdentity: CANONICAL_PACK_IDENTITY,
+    stationCatalogPackIdentity: STATION_CATALOG_IDENTITY,
+    serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [calendar.serviceId, calendar])),
+  });
+  assert.match(sql, /canonical_pack_id/);
+  assert.match(sql, /station_catalog_artifact_kind/);
+  for (const value of Object.values(CANONICAL_PACK_IDENTITY)) assert.match(sql, new RegExp(String(value)));
+  for (const value of Object.values(STATION_CATALOG_IDENTITY)) assert.match(sql, new RegExp(String(value)));
+});
+
+test("ITX seed는 station-catalog identity missing·legacy·각 필드 mixed mutation을 fail closed한다", async () => {
+  const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
+  const artifact = JSON.parse(artifactBytes);
+  const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
+  artifact.routeServiceArtifactEvidence = [artifactEvidence({ timetableArtifactId: artifact.timetableArtifactIdentity.id, timetableArtifactSha256, freshUntil: artifact.freshness.freshUntil })];
+  artifact.routeServiceStationCatalogEvidence = [stationCatalogEvidence({ freshUntil: artifact.freshness.freshUntil })];
+  const options = { ...OPTIONS, lineId: artifact.canonicalLineId, timetableArtifactSha256, canonicalPackIdentity: CANONICAL_PACK_IDENTITY, stationCatalogPackIdentity: STATION_CATALOG_IDENTITY };
+  assert.throws(() => buildBackendTimetableSeed(artifact, { ...options, stationCatalogPackIdentity: undefined }), /station catalog identity mismatch/);
+  assert.throws(() => buildBackendTimetableSeed({ ...artifact, routeServiceStationCatalogEvidence: [{ ...artifact.routeServiceStationCatalogEvidence[0], canonicalPackId: "capital" }] }, options), /station catalog identity mismatch/);
+  for (const key of ["stationCatalogArtifactKind", "stationCatalogManifestVersion", "stationCatalogPackId", "stationCatalogStationSetSha256", "stationCatalogPayloadSha256", "stationCatalogManifestSha256"]) {
+    assert.throws(() => buildBackendTimetableSeed({ ...artifact, routeServiceStationCatalogEvidence: [{ ...artifact.routeServiceStationCatalogEvidence[0], [key]: key === "stationCatalogManifestVersion" ? 2 : "0".repeat(64) }] }, options), /station catalog identity mismatch/);
+  }
+});
+
+test("CLI는 standalone legacy route-service-evidence sidecar를 output 없이 거부한다", async (context) => {
+  const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-seed-sidecar-"));
+  context.after(() => rm(temporaryDir, { recursive: true, force: true }));
+  const fixtureBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
+  const artifact = { ...JSON.parse(fixtureBytes), stationCatalogPackIdentity: STATION_CATALOG_IDENTITY };
+  const artifactBytes = Buffer.from(`${JSON.stringify(artifact)}\n`);
+  const inputPath = path.join(temporaryDir, "timetable.json");
+  const evidencePath = path.join(temporaryDir, "evidence.json");
+  const outputPath = path.join(temporaryDir, "seed.sql");
+  await Promise.all([writeFile(inputPath, artifactBytes), writeFile(evidencePath, "{}\n")]);
+  const args = ["tools/datapack/build-backend-timetable-seed.mjs", "--input", inputPath, "--route-service-evidence", evidencePath, "--line-id", artifact.canonicalLineId, "--start-date", "20300101", "--end-date", "20300131", "--feed-end-date", "20300131", "--output", outputPath];
+  await assert.rejects(execFileAsync(process.execPath, args, { cwd: root }), /legacy single sidecar is forbidden/);
+  await assert.rejects(readFile(outputPath), { code: "ENOENT" });
+});
+
+test("stale ITX evidence는 seed 생성 단계에서 거부한다", () => {
+  const artifact = {
+    ...ARTIFACT,
+    transitTrips: ARTIFACT.transitTrips.map((trip) => ({
+      ...trip,
+      serviceClass: "ITX_CHEONGCHUN",
+      servicePattern: "EXPRESS",
+    })),
+    routeServiceArtifactEvidence: [artifactEvidence({ timetableArtifactId: "stale", timetableArtifactSha256: "a".repeat(64), freshUntil: "2026-07-13T00:00:00.000Z" })],
+    routeServiceStationCatalogEvidence: [stationCatalogEvidence({ freshUntil: "2026-07-13T00:00:00.000Z" })],
+  };
+  assert.throws(() => buildBackendTimetableSeed(artifact, { ...OPTIONS, timetableArtifactSha256: "a".repeat(64), canonicalPackIdentity: CANONICAL_PACK_IDENTITY, stationCatalogPackIdentity: STATION_CATALOG_IDENTITY }), /must be fresh/);
+});
+
+test("ITX trip 0건인 seed에는 ADMITTED evidence를 기록하지 않는다", () => {
+  const artifact = {
+    ...ARTIFACT,
+    routeServiceArtifactEvidence: [{
+      serviceClass: "ITX_CHEONGCHUN",
+      timetableArtifactId: "wrongly-admitted-subway-only",
+      timetableArtifactSha256: "a".repeat(64),
+      canonicalPackId: "capital",
+      canonicalPackSha256: "b".repeat(64),
+      canonicalPackSqliteSha256: "c".repeat(64),
+      admissionStatus: "ADMITTED",
+      admissionEligible: true,
+      freshUntil: "2999-01-01T00:00:00.000Z",
+      sourceIssue: 2135,
+    }],
+    routeServiceStationCatalogEvidence: [stationCatalogEvidence({ freshUntil: "2999-01-01T00:00:00.000Z" })],
+  };
+
+  assert.throws(
+    () => buildBackendTimetableSeed(artifact, {
+      ...OPTIONS,
+      timetableArtifactSha256: "a".repeat(64),
+      canonicalPackIdentity: CANONICAL_PACK_IDENTITY,
+      stationCatalogPackIdentity: STATION_CATALOG_IDENTITY,
+    }),
+    /route service evidence requires ITX_CHEONGCHUN trips/,
+  );
+});
+
+test("ITX evidence freshUntil은 runtime loader가 읽는 offset ISO-8601 형식이어야 한다", () => {
+  const artifact = {
+    ...ARTIFACT,
+    transitTrips: ARTIFACT.transitTrips.map((trip) => ({
+      ...trip,
+      serviceClass: "ITX_CHEONGCHUN",
+      servicePattern: "EXPRESS",
+    })),
+    routeServiceArtifactEvidence: [artifactEvidence({ timetableArtifactId: "invalid-freshness-format", timetableArtifactSha256: "a".repeat(64), freshUntil: "2999-01-01" })],
+    routeServiceStationCatalogEvidence: [stationCatalogEvidence({ freshUntil: "2999-01-01" })],
+  };
+
+  assert.throws(
+    () => buildBackendTimetableSeed(artifact, {
+      ...OPTIONS,
+      timetableArtifactSha256: "a".repeat(64),
+      canonicalPackIdentity: CANONICAL_PACK_IDENTITY,
+      stationCatalogPackIdentity: STATION_CATALOG_IDENTITY,
+    }),
+    /two-domain freshUntil must exact-match as offset ISO-8601/,
+  );
+});
+
+test("stop_time 행을 스키마 컬럼으로 직역한다 (pickup/drop_off 기본 0)", () => {
+  const { sql } = buildBackendTimetableSeed(ARTIFACT, OPTIONS);
+  assert.match(
+    sql,
+    /INSERT INTO transit_stop_times \(trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds\)/,
+  );
+  assert.match(sql, /\('route-seoul-4-up-4719-8', 1, 'station-seoul-4-448', 'seoul-4', 0, 0, 30000, 30030\)/);
+});
+
+test("V29 CHECK를 위반하는 행(arrival>departure)은 거부한다", () => {
+  const bad = {
+    transitTrips: ARTIFACT.transitTrips,
+    transitStopTimes: [
+      { tripId: "route-seoul-4-up-4719-8", stopSequence: 1, stationId: "station-seoul-4-448", lineId: "seoul-4", arrivalSeconds: 500, departureSeconds: 400 },
+    ],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /arrival/i);
+});
+
+test("시각 범위(0~107999)를 벗어나는 행은 거부한다", () => {
+  const bad = {
+    transitTrips: ARTIFACT.transitTrips,
+    transitStopTimes: [
+      { tripId: "route-seoul-4-up-4719-8", stopSequence: 1, stationId: "station-seoul-4-448", lineId: "seoul-4", arrivalSeconds: 108000, departureSeconds: 108000 },
+    ],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /range|108000|107999/i);
+});
+
+test("미지 serviceId(캘린더 매핑 없음)는 거부한다", () => {
+  const bad = {
+    transitTrips: [{ ...ARTIFACT.transitTrips[0], serviceId: "unknown-kric" }],
+    transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /unknown-kric|service/i);
+});
+
+test("stop_time의 tripId가 trips에 없으면 거부한다(FK)", () => {
+  const bad = {
+    transitTrips: ARTIFACT.transitTrips,
+    transitStopTimes: [
+      { tripId: "route-seoul-4-orphan", stopSequence: 1, stationId: "station-seoul-4-448", lineId: "seoul-4", arrivalSeconds: 30000, departureSeconds: 30030 },
+    ],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /orphan|trip_id|tripId|references|not found/i);
+});
+
+test("(tripId, stopSequence) 중복은 거부한다(PK)", () => {
+  const bad = {
+    transitTrips: ARTIFACT.transitTrips,
+    transitStopTimes: [
+      { tripId: "route-seoul-4-up-4719-8", stopSequence: 1, stationId: "station-seoul-4-448", lineId: "seoul-4", arrivalSeconds: 30000, departureSeconds: 30030 },
+      { tripId: "route-seoul-4-up-4719-8", stopSequence: 1, stationId: "station-seoul-4-433", lineId: "seoul-4", arrivalSeconds: 30900, departureSeconds: 30930 },
+    ],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /duplicate|중복|stop_sequence/i);
+});
+
+test("trip.id 중복은 거부한다(PK)", () => {
+  const bad = {
+    transitTrips: [ARTIFACT.transitTrips[0], { ...ARTIFACT.transitTrips[0] }],
+    transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /duplicate|중복|transitTrips\.id/i);
+});
+
+test("service_pattern이 LOCAL/EXPRESS가 아니면 거부한다(V29 CHECK)", () => {
+  const bad = {
+    transitTrips: [{ ...ARTIFACT.transitTrips[0], servicePattern: "RAPID" }],
+    transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /service_pattern|LOCAL|EXPRESS|RAPID/i);
+});
+
+test("service_day_start_seconds가 범위(0~107999)를 벗어나면 거부한다(V29 CHECK)", () => {
+  const bad = {
+    transitTrips: [{ ...ARTIFACT.transitTrips[0], serviceDayStartSeconds: 200000 }],
+    transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /service_day_start|range|107999|200000/i);
+});
+
+test("trip 내 인접 정차 시각이 단조가 아니면 거부한다(departure[N] > arrival[N+1])", () => {
+  const bad = {
+    transitTrips: ARTIFACT.transitTrips,
+    transitStopTimes: [
+      { tripId: "route-seoul-4-up-4719-8", stopSequence: 1, stationId: "station-seoul-4-448", lineId: "seoul-4", arrivalSeconds: 30000, departureSeconds: 30030 },
+      { tripId: "route-seoul-4-up-4719-8", stopSequence: 2, stationId: "station-seoul-4-433", lineId: "seoul-4", arrivalSeconds: 29000, departureSeconds: 29000 },
+    ],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /monoton|단조|order|departure/i);
+});
+
+test("transit_feed_info를 feed_end_date와 함께 방출한다(기본=endDate)", () => {
+  const { sql } = buildBackendTimetableSeed(ARTIFACT, OPTIONS);
+  assert.match(sql, /INSERT INTO transit_feed_info \(id, feed_end_date\) VALUES \(1, '20261231'\);/);
+});
+
+test("--feed-end-date 명시 시 endDate와 분리된다", () => {
+  const { sql } = buildBackendTimetableSeed(ARTIFACT, { ...OPTIONS, feedEndDate: "20260930" });
+  assert.match(sql, /INSERT INTO transit_feed_info \(id, feed_end_date\) VALUES \(1, '20260930'\);/);
+});
+
+test("feed_end_date가 8자리 YYYYMMDD가 아니면 거부한다(transit_feed_info VARCHAR(8))", () => {
+  assert.throws(() => buildBackendTimetableSeed(ARTIFACT, { ...OPTIONS, feedEndDate: "2026-12-31" }), /feed_end_date|YYYYMMDD|8/i);
+});
+
+test("값에 개행이 있으면 거부한다(한 줄=한 statement 불변식, 로더 라인 파서 전제)", () => {
+  const bad = {
+    transitTrips: [{ ...ARTIFACT.transitTrips[0], tripHeadsign: "사당\n방면" }],
+    transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+  };
+  assert.throws(() => buildBackendTimetableSeed(bad, OPTIONS), /newline|개행|single-line|한 줄/i);
+});
+
+test("multi-row VALUES 배치 INSERT는 단일 행 불변식·이스케이프·삽입 결과 동등성을 유지한다", () => {
+  assert.equal(DEFAULT_INSERT_BATCH_SIZE, 500);
+  assert.equal(MAX_INSERT_BATCH_SIZE, 1000);
+
+  const transitTrips = [];
+  const transitStopTimes = [];
+  for (let i = 0; i < 501; i += 1) {
+    const tripId = `route-seoul-4-up-t${String(i).padStart(4, "0")}`;
+    transitTrips.push({
+      id: tripId,
+      routeId: "route-seoul-4-up",
+      serviceId: i % 2 === 0 ? "weekday-kric" : "holiday-kric",
+      tripHeadsign: i === 0 ? "O'Brien'왕십리" : `역-${i}`,
+      directionId: "up",
+      servicePattern: "LOCAL",
+      trainNo: i === 1 ? null : String(4000 + i),
+    });
+    const base = 20000 + i * 10;
+    transitStopTimes.push(
+      { tripId, stopSequence: 1, stationId: "station-seoul-4-448", lineId: "seoul-4", arrivalSeconds: base, departureSeconds: base + 10 },
+      { tripId, stopSequence: 2, stationId: "station-seoul-4-433", lineId: "seoul-4", arrivalSeconds: base + 60, departureSeconds: base + 70 },
+    );
+  }
+  const bulkArtifact = { transitTrips, transitStopTimes };
+  const batched = buildBackendTimetableSeed(bulkArtifact, OPTIONS);
+  const singleRow = buildBackendTimetableSeed(bulkArtifact, { ...OPTIONS, insertBatchSize: 1 });
+
+  const tripStatements = batched.statements.filter((s) => s.startsWith("INSERT INTO transit_trips "));
+  const stopTimeStatements = batched.statements.filter((s) => s.startsWith("INSERT INTO transit_stop_times "));
+  assert.equal(tripStatements.length, 2);
+  assert.equal(stopTimeStatements.length, 3);
+  for (const statement of batched.statements) {
+    assert.equal(/[\r\n]/.test(statement), false);
+    assert.match(statement, /^INSERT INTO [a-z_]+ \([^)]+\) VALUES \(.+\);$/);
+  }
+  assert.deepEqual(batched.sql.trimEnd().split("\n"), batched.statements);
+
+  const loadIntoMemorySqlite = (sqlText) => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE transit_feed_info (id INTEGER PRIMARY KEY, feed_end_date TEXT NOT NULL);
+      CREATE TABLE service_calendars (service_id TEXT PRIMARY KEY, start_date TEXT NOT NULL, end_date TEXT NOT NULL, timezone TEXT NOT NULL, monday INTEGER NOT NULL, tuesday INTEGER NOT NULL, wednesday INTEGER NOT NULL, thursday INTEGER NOT NULL, friday INTEGER NOT NULL, saturday INTEGER NOT NULL, sunday INTEGER NOT NULL);
+      CREATE TABLE transit_routes (id TEXT PRIMARY KEY, timezone TEXT NOT NULL, line_id TEXT NOT NULL, route_short_name TEXT NOT NULL, route_long_name TEXT NOT NULL, direction_name TEXT NOT NULL);
+      CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL, service_id TEXT NOT NULL, service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, train_no TEXT, service_day_start_seconds INTEGER NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL);
+      CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL, station_id TEXT NOT NULL, line_id TEXT NOT NULL, pickup_type INTEGER NOT NULL, drop_off_type INTEGER NOT NULL, arrival_seconds INTEGER NOT NULL, departure_seconds INTEGER NOT NULL, PRIMARY KEY (trip_id, stop_sequence));
+    `);
+    db.exec(sqlText);
+    const dump = {
+      feedInfo: db.prepare("SELECT * FROM transit_feed_info ORDER BY id").all(),
+      calendars: db.prepare("SELECT * FROM service_calendars ORDER BY service_id").all(),
+      routes: db.prepare("SELECT * FROM transit_routes ORDER BY id").all(),
+      trips: db.prepare("SELECT * FROM transit_trips ORDER BY id").all(),
+      stopTimes: db.prepare("SELECT * FROM transit_stop_times ORDER BY trip_id, stop_sequence").all(),
+    };
+    db.close();
+    return dump;
+  };
+
+  const batchedDump = loadIntoMemorySqlite(batched.sql);
+  const singleDump = loadIntoMemorySqlite(singleRow.sql);
+  assert.deepEqual(batchedDump, singleDump);
+  assert.equal(batchedDump.trips.length, 501);
+  assert.equal(batchedDump.stopTimes.length, 1002);
+  assert.equal(batchedDump.trips[0].trip_headsign, "O'Brien'왕십리");
+  assert.equal(batchedDump.trips[1].train_no, null);
+});
+
+test("잘못된 insertBatchSize는 fail-closed로 거부한다", () => {
+  for (const insertBatchSize of [0, -1, 1.5, Number.NaN, MAX_INSERT_BATCH_SIZE + 1, "500"]) {
+    assert.throws(() => buildBackendTimetableSeed(ARTIFACT, { ...OPTIONS, insertBatchSize }), /insertBatchSize/);
+  }
+});

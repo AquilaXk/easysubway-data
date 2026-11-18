@@ -1,0 +1,178 @@
+#!/usr/bin/env node
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { planUnboundClaims } from "./claim-orphans.mjs";
+import { parseIsoDurationMs } from "../lib/iso-duration.mjs";
+
+const WORKFLOW = "seoul-current-accessibility-refresh.yml";
+const SOURCE_ID = "seoul-metro-accessibility";
+const AUTOMATION_BRANCH = /^automation\/639-seoul-accessibility-refresh-\d+$/;
+const CLAIM_REF = /^[\da-f]{40}\trefs\/heads\/(automation\/639-seoul-accessibility-refresh-\d+)$/;
+
+function parseJson(bytes, label) {
+  try {
+    return JSON.parse(bytes);
+  } catch {
+    throw new Error(`${label} is invalid JSON`);
+  }
+}
+
+function requireObject(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} is invalid`);
+  }
+  return value;
+}
+
+function requireInstant(value, label) {
+  if (typeof value !== "string"
+    || !Number.isFinite(Date.parse(value))
+    || new Date(value).toISOString() !== value) {
+    throw new Error(`${label} is invalid`);
+  }
+  return Date.parse(value);
+}
+
+function seoulAutomationPullRequests(value, repository) {
+  if (!Array.isArray(value)) {
+    throw new Error("open pull requests are invalid");
+  }
+  if (typeof repository !== "string" || !/^[^/\s]+\/[^/\s]+$/.test(repository)) {
+    throw new Error("repository is invalid");
+  }
+  return value.filter((pullRequest) => {
+    requireObject(pullRequest, "open pull request");
+    const belongsToSeoulRefresh = AUTOMATION_BRANCH.test(pullRequest.headRefName)
+      && pullRequest.baseRefName === "main"
+      && pullRequest.isCrossRepository === false
+      && pullRequest.headRepository?.nameWithOwner === repository;
+    if (!belongsToSeoulRefresh) return false;
+    if (!["OPEN", "CLOSED", "MERGED"].includes(pullRequest.state)
+      || typeof pullRequest.isDraft !== "boolean") {
+      throw new Error("open pull request state is invalid");
+    }
+    return true;
+  });
+}
+
+function automationClaims(bytes) {
+  const claims = bytes.toString("utf8").split("\n").filter(Boolean).map((line) => {
+    const match = CLAIM_REF.exec(line);
+    if (!match) throw new Error("Seoul refresh claim is invalid");
+    return { sha: line.slice(0, 40), branch: match[1] };
+  });
+  if (new Set(claims.map(({ branch }) => branch)).size !== claims.length) {
+    throw new Error("duplicate Seoul refresh claims exist");
+  }
+  return claims;
+}
+
+export async function decideCurrentSeoulAccessibilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, now = new Date() } = {}) {
+  const [inventoryBytes, policyBytes, prsBytes, claimsBytes, evidenceBytes] = await Promise.all([
+    readFile(path.resolve(inventoryPath)),
+    readFile(path.resolve(policyPath)),
+    readFile(path.resolve(prsPath)),
+    readFile(path.resolve(claimsPath)),
+    readFile(path.resolve(claimEvidencePath)),
+  ]);
+  const inventory = requireObject(parseJson(inventoryBytes, "source inventory"), "source inventory");
+  const source = inventory.sources?.find(({ id }) => id === SOURCE_ID);
+  const freshUntil = requireInstant(
+    source?.accessibilityAdmissionEvidence?.freshUntil,
+    "Seoul accessibility freshUntil",
+  );
+  const policy = requireObject(parseJson(policyBytes, "freshness policy"), "freshness policy");
+  const alertBeforePackExpiry = policy.monitoring?.alertBeforePackExpiry;
+  const threshold = parseIsoDurationMs(alertBeforePackExpiry, "freshness alert threshold");
+  const currentTime = now instanceof Date ? now.getTime() : Number.NaN;
+  if (!Number.isFinite(currentTime)) throw new Error("decision time is invalid");
+  const pullRequests = seoulAutomationPullRequests(
+    parseJson(prsBytes, "open pull requests"),
+    repository,
+  );
+  const pullRequestBranches = pullRequests.map(({ headRefName }) => headRefName);
+  if (new Set(pullRequestBranches).size !== pullRequestBranches.length) {
+    throw new Error("duplicate Seoul refresh pull requests exist");
+  }
+  const openPullRequests = pullRequests.filter(({ state }) => state === "OPEN");
+  if (openPullRequests.length > 1) throw new Error("duplicate Seoul refresh pull requests exist");
+  const claims = automationClaims(claimsBytes);
+  // #995: PR 없는 claim은 만든 run과 게시 증거로 가른다. 빈 claim뿐인 고아는 복구할 것이 없으므로 정리 대상(보고 뒤 삭제)이다.
+  const plan = planUnboundClaims({
+    workflowFile: WORKFLOW, repository, claimBranches: claims.map(({ branch }) => branch), pullRequests,
+    evidence: parseJson(evidenceBytes, "claim evidence"),
+  });
+  const cleanupClaims = plan.abandoned;
+  if (openPullRequests.length === 1) return { state: "OPEN_PR", alertBeforePackExpiry, cleanupClaims };
+  for (const { branch } of claims) {
+    const associated = pullRequests.filter(({ headRefName }) => headRefName === branch);
+    if (associated.length > 1) throw new Error("duplicate Seoul refresh pull requests exist");
+    if (associated[0]?.state === "CLOSED") throw new Error("closed Seoul refresh claim requires manual resolution");
+  }
+  if (plan.active.length + plan.recoverable.length > 1) throw new Error("duplicate Seoul refresh claims exist");
+  if (plan.active.length === 1) return { state: "CLAIM_IN_PROGRESS", alertBeforePackExpiry, branch: plan.active[0], cleanupClaims };
+  if (plan.recoverable.length === 1) return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: plan.recoverable[0], cleanupClaims };
+  if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry, cleanupClaims };
+  if (currentTime >= freshUntil - threshold) return { state: "DUE", alertBeforePackExpiry, cleanupClaims };
+  return { state: "NOT_DUE", alertBeforePackExpiry, cleanupClaims };
+}
+
+export async function runCurrentSeoulAccessibilityRefreshDecision({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, outputPath, githubOutputPath, now } = {}) {
+  const result = await decideCurrentSeoulAccessibilityRefresh({
+    inventoryPath,
+    policyPath,
+    prsPath,
+    claimsPath,
+    claimEvidencePath,
+    repository,
+    now,
+  });
+  await Promise.all([
+    writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }),
+    writeFile(
+      path.resolve(githubOutputPath),
+      `state=${result.state}\nbranch=${result.branch ?? ""}\ncleanup_claims=${result.cleanupClaims.join(",")}\n`,
+      { flag: "a" },
+    ),
+  ]);
+  return result;
+}
+
+function parseArgs(argv) {
+  const options = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const name = argv[index];
+    if (!name?.startsWith("--") || options[name.slice(2)] !== undefined) {
+      throw new Error("decision arguments are invalid");
+    }
+    options[name.slice(2)] = argv[index + 1];
+  }
+  const allowed = new Set([
+    "inventory", "policy", "prs", "claims", "claim-evidence", "repository", "output", "github-output",
+  ]);
+  if (Object.keys(options).some((name) => !allowed.has(name))
+    || Object.values(options).some((value) => typeof value !== "string" || value === "")) {
+    throw new Error("decision arguments are invalid");
+  }
+  return options;
+}
+
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+  try {
+    const options = parseArgs(process.argv.slice(2));
+    await runCurrentSeoulAccessibilityRefreshDecision({
+      inventoryPath: options.inventory,
+      policyPath: options.policy,
+      prsPath: options.prs,
+      claimsPath: options.claims,
+      claimEvidencePath: options["claim-evidence"],
+      repository: options.repository,
+      outputPath: options.output,
+      githubOutputPath: options["github-output"],
+    });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Seoul refresh decision failed");
+    process.exitCode = 1;
+  }
+}

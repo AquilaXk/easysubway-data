@@ -1,0 +1,227 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
+import {
+  loadRegionalCapitalKricRouteMapPrefix,
+} from "./materialize-test-fixture.mjs";
+
+import { listCapitalLightRailRouteMapPositionLines } from "./collect-kric-capital-light-rail-route-map-positions.mjs";
+import {
+  materializeCapitalLightRailRouteMapPositions,
+  materializedCapitalLightRailRouteMapPackContentHash,
+} from "./materialize-kric-capital-light-rail-route-map-positions.mjs";
+
+const root = path.resolve(import.meta.dirname, "../..");
+const routeMapNow = new Date("2026-07-25T06:00:00.000Z");
+const SAMPLE_SOURCE_ID = "kric-gimpo-goldline-route-map-positions";
+const SAMPLE_LINE_ID = "line-5500c1600f71";
+const SAMPLE_OPERATOR_ID = "operator-2e23276dfa94";
+
+async function readJson(relativePath) {
+  return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
+}
+
+async function inputs() {
+  return loadRegionalCapitalKricRouteMapPrefix(
+    path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`),
+  );
+}
+
+test("공식 김포골드라인 역사좌표 snapshot을 누적 production candidate pack에 materialize한다", async () => {
+  const { baseFixture, sampleSnapshot, sampleSnapshotSha256, topologySnapshot, inventory } = await inputs();
+  const fixture = materializeCapitalLightRailRouteMapPositions({
+    baseFixture,
+    snapshot: sampleSnapshot,
+    snapshotSha256: sampleSnapshotSha256,
+    topologySnapshot,
+    inventory,
+    now: routeMapNow,
+  });
+  const pack = fixture.packs[0];
+  const rows = pack.routeMapPositions.filter(({ sourceId }) => sourceId === SAMPLE_SOURCE_ID);
+  const source = pack.sourceInventory.find(({ id }) => id === SAMPLE_SOURCE_ID);
+
+  assert.equal(rows.length, 10);
+  assert.deepEqual([...new Set(rows.map(({ lineId }) => lineId))], [SAMPLE_LINE_ID]);
+  assert.ok(rows.every(({ labelPolygon, region }) => labelPolygon.length === 4 && region === "수도권"));
+  assert.ok(rows.every(({ x, y }) => Number.isInteger(x) && Number.isInteger(y) && x < 5000 && y < 5000));
+  const positionsByStationId = new Map(
+    sampleSnapshot.positions.map((position) => [position.stationId, position]),
+  );
+  assert.ok(rows.every((row) => {
+    const position = positionsByStationId.get(row.stationId);
+    return position != null
+      && row.x === position.x
+      && row.y === position.y
+      && row.labelDx === position.labelDx
+      && row.labelDy === position.labelDy;
+  }), "materialized canvas coordinates must equal snapshot positions without projection");
+  assert.deepEqual(source.coverageScope.lineIds, [SAMPLE_LINE_ID]);
+  assert.deepEqual(source.coverageScope.operatorIds, [SAMPLE_OPERATOR_ID]);
+  assert.equal(pack.minimumTableRows.route_map_positions, pack.routeMapPositions.length);
+  assert.match(pack.id, /^nationwide-capital-light-rail-route-map-[a-f0-9]{64}$/);
+  assert.match(materializedCapitalLightRailRouteMapPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
+  assert.equal(pack.version, "20260725");
+  assert.ok(pack.operators.some(({ id }) => id === SAMPLE_OPERATOR_ID));
+  assert.ok(pack.coverageLineOperatorScopes?.some((scope) => (
+    scope.lineId === SAMPLE_LINE_ID && scope.operatorId === SAMPLE_OPERATOR_ID
+  )));
+
+  const mismatchedInventory = structuredClone(inventory);
+  mismatchedInventory.sources.find(({ id }) => id === SAMPLE_SOURCE_ID)
+    .routeMapAdmissionEvidence.positionsSha256 = "0".repeat(64);
+  assert.throws(
+    () => materializeCapitalLightRailRouteMapPositions({
+      baseFixture, snapshot: sampleSnapshot, snapshotSha256: sampleSnapshotSha256,
+      topologySnapshot, inventory: mismatchedInventory, now: routeMapNow,
+    }),
+    /inventory evidence/,
+  );
+});
+
+// 광역철도와 같은 축이다. 신분당선 정본은 FILE admission 당시 표기(서울교통공사)와 노선 운영기관
+// (네오트랜스)을 dual coverage로 등재해 단일 운영기관 대조로는 조립이 거부됐다 — 카탈로그 등재 집합과
+// 정본이 정확히 같을 때만 통과하고, 그 밖의 주장은 그대로 거부된다.
+test("dual-operator 노선은 카탈로그 등재 집합과 정본이 같을 때만 materialize된다", async () => {
+  const { baseFixture, topologySnapshot, inventory } = await inputs();
+  const line = listCapitalLightRailRouteMapPositionLines().find(({ key }) => key === "shinbundang");
+  const snapshotBytes = await readFile(
+    path.join(root, "tools/datapack/sources", `${line.sourceId}-20260725.json`),
+  );
+  const snapshot = JSON.parse(snapshotBytes);
+  const snapshotSha256 = createHash("sha256").update(snapshotBytes).digest("hex");
+  const declaredOperatorIds = [
+    line.operatorId,
+    ...line.additionalCoverageOperators.map(({ operatorId }) => operatorId),
+  ];
+
+  const fixture = materializeCapitalLightRailRouteMapPositions({
+    baseFixture, snapshot, snapshotSha256, topologySnapshot, inventory, now: routeMapNow,
+  });
+  const pack = fixture.packs[0];
+  assert.equal(declaredOperatorIds[0], line.operatorId);
+  assert.deepEqual(
+    pack.sourceInventory.find(({ id }) => id === line.sourceId).coverageScope.operatorIds,
+    declaredOperatorIds,
+  );
+  // 등재 집합은 정본 대조와 운영기관 등재에 그대로 쓰이지만 pack scope 행은 계보 표기를 뺀 나머지다 —
+  // 서울교통공사 표기에는 #2138 activeLineScopes에 대응 scope가 없어 행으로 내지 않는다.
+  assert.deepEqual(line.lineageOnlyOperatorIds, ["seoul-metro"]);
+  assert.deepEqual(
+    pack.coverageLineOperatorScopes
+      .filter(({ lineId }) => lineId === line.lineId)
+      .map(({ operatorId }) => operatorId),
+    declaredOperatorIds.filter((operatorId) => !line.lineageOnlyOperatorIds.includes(operatorId)),
+  );
+  for (const operatorId of declaredOperatorIds) {
+    assert.ok(pack.operators.some(({ id }) => id === operatorId), operatorId);
+  }
+
+  for (const operatorIds of [
+    [line.operatorId, "operator-000000000000"],
+    [line.operatorId],
+    [...declaredOperatorIds].reverse(),
+    [...declaredOperatorIds, "operator-000000000000"],
+  ]) {
+    const mismatched = structuredClone(inventory);
+    mismatched.sources.find(({ id }) => id === line.sourceId).coverageScope.operatorIds = operatorIds;
+    assert.throws(
+      () => materializeCapitalLightRailRouteMapPositions({
+        baseFixture, snapshot, snapshotSha256, topologySnapshot, inventory: mismatched, now: routeMapNow,
+      }),
+      new RegExp(`${line.sourceId} inventory evidence does not match snapshot`),
+      `operatorIds=${operatorIds.join(",")}`,
+    );
+  }
+});
+
+test("current geometry successors are consumed with their immutable identity", async () => {
+  const inventory = await readJson("tools/datapack/source-inventory.json");
+  const schematicCanvas = await readJson("tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json");
+  let fixture = await readJson("tools/datapack/release/capital-production-reviewed-pack.json");
+  for (const line of listCapitalLightRailRouteMapPositionLines().filter(({ geometryLine }) => geometryLine)) {
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
+    const evidence = source.routeMapAdmissionEvidence;
+    const bytes = await readFile(path.join(root, evidence.snapshotPath));
+    const snapshot = JSON.parse(bytes);
+    const topologySnapshot = await readJson(`tools/datapack/sources/${evidence.topologySnapshotId}.json`);
+    fixture = materializeCapitalLightRailRouteMapPositions({
+      baseFixture: fixture, snapshot,
+      snapshotSha256: createHash("sha256").update(bytes).digest("hex"),
+      topologySnapshot, schematicCanvas, inventory, now: new Date(snapshot.capturedAt),
+    });
+    const rows = fixture.packs[0].routeMapPositions.filter(({ sourceId }) => sourceId === source.id);
+    assert.deepEqual(rows.map(({ stationId }) => stationId).sort(), snapshot.positions.map(({ stationId }) => stationId).sort());
+    assert.ok(rows.every(({ sourceSnapshotId }) => sourceSnapshotId === evidence.snapshotId));
+    assert.equal(fixture.packs[0].version, snapshot.capturedAt.slice(0, 10).replaceAll("-", ""));
+  }
+});
+
+test("self-consistent empty or incomplete snapshots cannot escape current topology", async () => {
+  const { baseFixture, sampleSnapshot, topologySnapshot, inventory } = await inputs();
+  for (const positions of [[], sampleSnapshot.positions.slice(1)]) {
+    const snapshot = structuredClone(sampleSnapshot);
+    snapshot.positions = positions;
+    snapshot.quarantinedPositions = [];
+    snapshot.stationCount = positions.length;
+    snapshot.quarantinedCount = 0;
+    snapshot.rawStationCount = positions.length;
+    snapshot.lineStationCounts = { gimpo: positions.length };
+    snapshot.scope = positions.map(({ lineId, stationCode, stationName, stationId }) => ({
+      lineId, stationCode, stationName, stationId,
+    }));
+    snapshot.scopeSha256 = createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex");
+    snapshot.positionsSha256 = createHash("sha256").update(JSON.stringify(positions)).digest("hex");
+    const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+    const changedInventory = structuredClone(inventory);
+    const evidence = changedInventory.sources.find(({ id }) => id === SAMPLE_SOURCE_ID).routeMapAdmissionEvidence;
+    evidence.snapshotSha256 = createHash("sha256").update(snapshotBytes).digest("hex");
+    evidence.stationCount = snapshot.stationCount;
+    evidence.rawStationCount = snapshot.rawStationCount;
+    evidence.quarantinedCount = snapshot.quarantinedCount;
+    evidence.lineStationCounts = structuredClone(snapshot.lineStationCounts);
+    evidence.positionsSha256 = snapshot.positionsSha256;
+    assert.throws(() => materializeCapitalLightRailRouteMapPositions({
+      baseFixture, snapshot, snapshotSha256: evidence.snapshotSha256,
+      topologySnapshot, inventory: changedInventory, now: routeMapNow,
+    }), /topology lineage mismatch/);
+  }
+});
+
+test("5노선 inventory evidence·snapshot byte identity가 모두 맞물린다", async () => {
+  const inventory = await readJson("tools/datapack/source-inventory.json");
+  for (const line of listCapitalLightRailRouteMapPositionLines()) {
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
+    const snapshotBytes = await readFile(
+      path.join(root, source.routeMapAdmissionEvidence.snapshotPath),
+    );
+    const snapshot = JSON.parse(snapshotBytes);
+    assert.ok(source, line.sourceId);
+    assert.equal(
+      source.routeMapAdmissionEvidence.snapshotSha256,
+      createHash("sha256").update(snapshotBytes).digest("hex"),
+    );
+    assert.equal(source.routeMapAdmissionEvidence.rawSha256, snapshot.rawSha256);
+    assert.equal(source.routeMapAdmissionEvidence.stationCount, snapshot.stationCount);
+    assert.equal(source.routeMapAdmissionEvidence.quarantinedCount, snapshot.quarantinedCount);
+    assert.equal(source.routeMapAdmissionEvidence.issue, 2505);
+    assert.equal(source.routeMapAdmissionEvidence.admissionKind, "official-file-latlon");
+  }
+});
+
+test("capital-light rail route_map_positions materialize는 metro_map_pack·capital.sqlite.gz를 건드리지 않는다", async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFileAsync = promisify(execFile);
+  const { stdout } = await execFileAsync("git", [
+    "diff",
+    "--name-only",
+    "HEAD",
+    "--",
+    "apps/mobile/assets/datapacks/metro_map_pack",
+    "apps/mobile/assets/datapacks/capital.sqlite.gz",
+  ], { cwd: root });
+  assert.equal(stdout.trim(), "");
+});

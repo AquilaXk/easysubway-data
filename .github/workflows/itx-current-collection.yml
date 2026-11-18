@@ -1,0 +1,91 @@
+name: ITX Current Collection
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: itx-current-collection-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: ITX current collection
+    runs-on: macos-15
+    environment: itx-current-collection
+    timeout-minutes: 60
+    steps:
+      - name: ITX current collection / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: ITX current collection / Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+
+      - name: ITX current collection / Prepare temp output
+        env:
+          EASYSUBWAY_ITX_COLLECTION_OUTPUT: ${{ runner.temp }}/itx-current-collection
+        run: |
+          set -euo pipefail
+          mkdir -p "${EASYSUBWAY_ITX_COLLECTION_OUTPUT}"
+          printf 'EASYSUBWAY_ITX_COLLECTION_OUTPUT=%s\n' "${EASYSUBWAY_ITX_COLLECTION_OUTPUT}" >> "${GITHUB_ENV}"
+
+      - name: ITX current collection / Emit station catalog pack
+        run: |
+          set -euo pipefail
+          node tools/datapack/emit-station-catalog-pack.mjs \
+            --output "${{ runner.temp }}/itx-current-collection/station-catalog-pack" \
+            --catalog-pack-id "itx-current-station-catalog-v1"
+
+      - name: ITX current collection / Validate provider entry preflight
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DATA_GO_KR_SERVICE_KEY:-}" || "${DATA_GO_KR_SERVICE_KEY}" == *$'\n'* || "${DATA_GO_KR_SERVICE_KEY}" == *$'\r'* ]]; then
+            echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2
+            exit 1
+          fi
+          candidate_path="${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/itx-result.json"
+          completeness_path="${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/itx-completeness.json"
+          if [[ -e "${candidate_path}" || -e "${completeness_path}" ]]; then
+            echo "candidate and completeness paths must be absent" >&2
+            exit 1
+          fi
+
+      - name: ITX current collection / Guard KST quota window
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/ci/guard-itx-current-collection-budget.mjs --output "${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/freshness.json"
+
+      - name: ITX current collection / Collect ITX current timetable
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          candidate_path="${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/itx-result.json"
+          completeness_path="${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/itx-completeness.json"
+          node tools/datapack/run-current-itx-collection.mjs \
+            --output "${candidate_path}" \
+            --completeness-output "${completeness_path}" \
+            --station-catalog-pack "${{ runner.temp }}/itx-current-collection/station-catalog-pack" \
+            --freshness-output "${EASYSUBWAY_ITX_COLLECTION_OUTPUT}/freshness.json"
+
+      - name: ITX current collection / Upload sanitized evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: itx-current-collection-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/itx-current-collection/freshness.json
+            ${{ runner.temp }}/itx-current-collection/itx-result.json
+            ${{ runner.temp }}/itx-current-collection/itx-completeness.json
+            ${{ runner.temp }}/itx-current-collection/provider-response-capture.json
+          if-no-files-found: error
+          retention-days: 14

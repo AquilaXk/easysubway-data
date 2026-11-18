@@ -1,0 +1,10 @@
+{
+  "artifactKind": "transfer-span-oracle",
+  "source": "reviewed-csv(집계만)",
+  "spanP90ByMemberCount": {
+    "2": 13,
+    "3": 28.017851452243796,
+    "4": 54.009258465563114,
+    "5": 56.03570290448759
+  }
+}

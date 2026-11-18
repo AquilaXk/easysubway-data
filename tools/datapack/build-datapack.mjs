@@ -1,0 +1,6071 @@
+#!/usr/bin/env node
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
+import { DatabaseSync } from "node:sqlite";
+import path from "node:path";
+import { buildStationBindings, normalizeSeoulMetroCongestion } from "./normalize-seoul-metro-congestion.mjs";
+import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
+import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
+import { requiredCredentialFreeObjectUri, requiredObjectKey } from "./source-snapshot-policy.mjs";
+import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
+import { assertNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
+import { NATIVE_ADMISSION_KINDS } from "./build-current-five-region-source-fan-in.mjs";
+import {
+  canonicalJson,
+  stagedPackPath,
+  validatePackIdentity,
+  validatePackUrl,
+  validatePackUrlMatchesStagedPath,
+  withoutSignature,
+} from "./lib/manifest-validation.mjs";
+import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
+import { topologySnapshotFreshnessMillis } from "./lib/topology-freshness-cutover.mjs";
+import {
+  officialOdFareAdmissionsBySource,
+  officialOdFareQuoteSetHash,
+} from "./lib/official-od-fare-evidence.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import {
+  CAPITAL_MAP_LINE_IDS,
+  normalizeStationName,
+  projectCapitalTopologyOwnership,
+  requireCurrentSourceSeparatedCapitalTopology,
+} from "./collect-capital-route-topology.mjs";
+import {
+  validateSourceCandidateSchema,
+  validateSourceFreshness,
+} from "./collect-korail-itx-cheongchun-timetable.mjs";
+import { validateItxServiceDates } from "./collect-tago-itx-cheongchun-od.mjs";
+import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
+import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
+import {
+  requireCurrentIncheonStationCodeDerivations,
+  validateIncheonStationInfoSnapshot,
+} from "./collect-incheon-station-info.mjs";
+import { incheonStationInfoPackSource } from "./materialize-incheon-station-info.mjs";
+import { assertNoRetiredTransitReferences } from "./project-retired-transit-lines.mjs";
+import {
+  canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
+  canonicalCurrentReleaseCandidateFixtureJson,
+  rebuildCurrentReleaseCandidateFixture,
+  validateCurrentReleaseCandidateAccessibilityAuthorityReplay,
+} from "./build-current-release-candidate-accessibility-input.mjs";
+import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
+import { buildFixture as buildOfficialSourceFixture } from "./import-official-sources.mjs";
+import {
+  retainPreAuthorityRideEdges,
+  syncCanonicalAccessibilityEvidence,
+} from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import {
+  admittedIncheonAccessibilityEvidence,
+  validateProductionIncheonAccessibilityFixture,
+} from "./materialize-incheon-accessibility.mjs";
+import {
+  admittedIncheonTimetableEvidence,
+  validateProductionIncheonTimetableFixture,
+} from "./materialize-incheon-timetable.mjs";
+import { bindStationContacts, loadStationContactInputs } from "./build-station-contacts.mjs";
+import {
+  deriveTransferGuideSteps,
+  loadTransferGuideInputs,
+  transferGuideReport,
+  transferGuideSourceRow,
+} from "./build-transfer-guide-steps.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
+import { serviceDayStopTimes } from "./lib/service-day-seconds.mjs";
+import { networkEdgeStairColumns } from "./lib/network-edge-stair-columns.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
+import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import { KRIC_ESCALATOR_SOURCE_ID, kricQueryFacilities, kricStationContexts } from "./lib/kric-standard-facilities.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const root = path.resolve(import.meta.dirname, "../..");
+const canonicalSqliteHeaderVersion = 3_053_000;
+const validatedItxStationCatalogEvidence = new WeakMap();
+const stationCatalogPackIdentityKeys = Object.freeze([
+  "artifactKind",
+  "manifestVersion",
+  "catalogPackId",
+  "stationSetSha256",
+  "payloadSha256",
+  "manifestSha256",
+]);
+const productionMinimumTableRowNames = [
+  "stations",
+  "station_lines",
+  "network_edges",
+  "facilities",
+  "station_facility_evidence",
+];
+const candidateBuildSpecArtifactKind = "datapack-candidate-build-spec";
+const candidateBuildSpecHashFields = [
+  "sourceSnapshotSetHash",
+  "approvedAliasLedgerHash",
+  "facilityEvidenceLedgerHash",
+  "routeEvidenceLedgerHash",
+  "approvedOverrideSetHash",
+  "sourceInventorySha256",
+];
+const sourceSnapshotStatuses = new Set(["LOCKED"]);
+const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+const incheonTopologyLineIds = Object.freeze([
+  "line-42b5805f3b5a",
+  "line-98718184f016",
+]);
+const incheonAccessibilitySourceId = "incheon-transit-accessibility";
+
+export function validateSourceSeparatedCurrentTopology({ capitalTopology, incheonSnapshot }) {
+  const capital = loadCapitalRouteTopologySnapshot(capitalTopology);
+  const incheon = validateIncheonStationInfoSnapshot(incheonSnapshot);
+  const capitalLineIds = capital.lines.map(({ lineId }) => lineId);
+  const expectedCapitalLineIds = CAPITAL_MAP_LINE_IDS.filter(
+    (lineId) => !incheonTopologyLineIds.includes(lineId),
+  );
+  const expectedCapitalLineIdSet = new Set(expectedCapitalLineIds);
+  if (new Set(capitalLineIds).size !== capitalLineIds.length
+    || capitalLineIds.length !== expectedCapitalLineIds.length
+    || capitalLineIds.some((lineId) => !expectedCapitalLineIdSet.has(lineId))) {
+    if (capitalLineIds.some((lineId) => incheonTopologyLineIds.includes(lineId))) {
+      throw new Error("topology line ownership overlap");
+    }
+    throw new Error("capital topology ownership is invalid");
+  }
+  if (JSON.stringify(incheon.topologyLineIds) !== JSON.stringify(incheonTopologyLineIds)
+    || incheon.edgeCount !== 116
+    || incheon.edges.some(({ lineId }) => !incheonTopologyLineIds.includes(lineId))) {
+    throw new Error("Incheon topology ownership is invalid");
+  }
+  return {
+    capitalLineCount: capital.lineCount,
+    incheonLineIds: [...incheonTopologyLineIds],
+    incheonEdgeCount: incheon.edgeCount,
+  };
+}
+
+export function admittedIncheonTopologyEvidence({
+  sourceInventory,
+  snapshot,
+  snapshotBytes,
+  now = candidateBuildNow(),
+  requireFresh = true,
+}) {
+  if (typeof requireFresh !== "boolean") {
+    throw new TypeError("Incheon topology admission inputs are invalid");
+  }
+  const incheon = validateIncheonStationInfoSnapshot(snapshot);
+  if (requireFresh) requireCurrentIncheonStationCodeDerivations(incheon);
+  if (!Buffer.isBuffer(snapshotBytes)
+    || !snapshotBytes.equals(Buffer.from(`${JSON.stringify(snapshot)}\n`))
+    || !(now instanceof Date)
+    || Number.isNaN(now.getTime())) {
+    throw new TypeError("Incheon topology admission inputs are invalid");
+  }
+  const sources = sourceInventory?.sources?.filter(({ id }) => id === "incheon-transit-station-info") ?? [];
+  if (sourceInventory?.schemaVersion !== 1
+    || sourceInventory.artifactKind !== "production-source-inventory"
+    || sources.length !== 1) {
+    throw new Error("Incheon topology source inventory identity is invalid");
+  }
+  const source = sources[0];
+  const topology = source.topologyAdmissionEvidence;
+  const membership = source.membershipAdmissionEvidence;
+  const routeMap = source.routeMapAdmissionEvidence;
+  if (source.productionUseAllowed !== true
+    || source.license?.redistributionAllowed !== true
+    || topology?.materializer !== "tools/datapack/materialize-incheon-station-info.mjs"
+    || topology.verificationTest !== "tools/datapack/materialize-incheon-station-info.test.mjs"
+    || topology.snapshotId !== routeMap?.snapshotId
+    || topology.snapshotPath !== routeMap.snapshotPath
+    || topology.snapshotId !== membership?.snapshotId
+    || topology.capturedAt !== incheon.capturedAt
+    || topology.freshUntil !== incheon.freshUntil
+    || topology.stationCount !== 60
+    || topology.edgeCount !== incheon.edgeCount
+    || topology.rawSha256 !== incheon.rawSha256
+    || topology.contentSha256 !== incheon.contentSha256
+    || membership.membershipSourceId !== incheon.sourceId
+    || membership.membershipSourceRawSha256 !== incheon.rawSha256
+    || membership.membershipSourceSnapshotSha256 !== incheon.scopeSha256
+    || routeMap.snapshotSha256 !== sha256(snapshotBytes)
+    || routeMap.rawSha256 !== incheon.rawSha256
+    || routeMap.positionsSha256 !== incheon.positionsSha256
+    || routeMap.topologySourceId !== incheon.sourceId
+    || routeMap.topologySnapshotId !== topology.snapshotId
+    || routeMap.topologyContentSha256 !== incheon.contentSha256
+    || JSON.stringify(incheon.topologyLineIds) !== JSON.stringify(incheonTopologyLineIds)
+    || JSON.stringify(source.coverageScope?.lineIds) !== JSON.stringify([
+      ...incheonTopologyLineIds,
+      "line-15b3b8a93259",
+    ])) {
+    throw new Error("Incheon topology admission identity mismatch");
+  }
+  const capturedAt = requiredUtcDateString(topology.capturedAt, "Incheon topology capturedAt");
+  const freshUntil = requiredUtcDateString(topology.freshUntil, "Incheon topology freshUntil");
+  if (Date.parse(capturedAt) > now.getTime()) {
+    throw new Error("Incheon topology admission is future-dated");
+  }
+  if (requireFresh && Date.parse(freshUntil) <= now.getTime()) {
+    throw new Error("Incheon topology admission is stale");
+  }
+  return {
+    source: structuredClone(source),
+    snapshotId: topology.snapshotId,
+    verifiedAt: capturedAt,
+    freshUntil,
+    contentSha256: topology.contentSha256,
+  };
+}
+
+function incheonStationAliasMap(pack, stationLineKeys) {
+  const aliases = new Map();
+  const stationIds = new Set((pack.stations ?? []).map(({ id }) => id));
+  for (const row of pack.stationAliases ?? []) {
+    if (typeof row?.alias !== "string" || !row.alias.startsWith("station-")
+      || typeof row.stationId !== "string" || !stationIds.has(row.stationId)
+      || row.alias === row.stationId || row.normalizedAlias !== row.alias) {
+      continue;
+    }
+    const targets = aliases.get(row.alias) ?? [];
+    targets.push(row.stationId);
+    aliases.set(row.alias, targets);
+  }
+  return (stationId, lineId) => {
+    if (stationLineKeys.has(`${stationId}:${lineId}`)) return stationId;
+    const targets = (aliases.get(stationId) ?? [])
+      .filter((target) => stationLineKeys.has(`${target}:${lineId}`));
+    if (targets.length !== 1) {
+      throw new Error(`Incheon topology station alias mismatch: ${stationId}:${lineId}`);
+    }
+    return targets[0];
+  };
+}
+
+function hasNetworkEdgeFixtureProvenance(edge) {
+  return [edge.sourceId, edge.sourceSnapshotId, edge.providerRecordHash,
+    edge.evidenceHash, edge.lastFieldVerifiedAt, edge.lastVerifiedAt, edge.verifiedAt].some(Boolean)
+    || edge.fieldProvenance !== undefined
+    || ![undefined, "UNKNOWN"].includes(edge.provenanceKind)
+    || ![undefined, "UNKNOWN"].includes(edge.verificationStatus);
+}
+
+export function validateProductionIncheonNetworkEdgeFixture(pack, expectedIncheonEdges) {
+  if (!Array.isArray(pack?.networkEdges) || !Array.isArray(expectedIncheonEdges)) {
+    throw new TypeError("production Incheon network edge fixture inputs are invalid");
+  }
+  const expectedById = new Map(expectedIncheonEdges.map((edge) => [edge.id, edge]));
+  if (expectedById.size !== expectedIncheonEdges.length) {
+    throw new Error("production Incheon network edge expectation is invalid");
+  }
+  const incheonTopologyLineIds = new Set(expectedIncheonEdges.map(({ fromNodeId }) =>
+    fromNodeId.split(":").at(-1)));
+  const actualTopologyEdges = pack.networkEdges.filter((edge) => {
+    const fromLineId = String(edge.fromNodeId ?? "").split(":").at(-1);
+    const toLineId = String(edge.toNodeId ?? "").split(":").at(-1);
+    return edge.edgeType === "RIDE"
+      && edge.servicePattern === "LOCAL"
+      && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+      && fromLineId === toLineId
+      && incheonTopologyLineIds.has(fromLineId);
+  });
+  const actualIncheonEdges = pack.networkEdges.filter(({ id }) => expectedById.has(id));
+  if (actualTopologyEdges.length !== expectedIncheonEdges.length
+    || actualTopologyEdges.some(({ id }) => !expectedById.has(id))
+    || actualIncheonEdges.length !== expectedIncheonEdges.length
+    || new Set(actualIncheonEdges.map(({ id }) => id)).size !== actualIncheonEdges.length
+    || actualIncheonEdges.some((edge) => !isDeepStrictEqual(edge, expectedById.get(edge.id)))) {
+    throw new Error("production Incheon network edge fixture does not match pinned admission");
+  }
+  if (pack.networkEdges.some((edge) => !isReviewedAccessibilityEdge(edge, pack)
+    && hasNetworkEdgeFixtureProvenance(edge)
+    && !expectedById.has(edge.id))) {
+    throw new Error("production network edge fixture must not contain provenance");
+  }
+}
+
+export function projectIncheonNetworkEdges(pack, snapshot, admission) {
+  const incheon = validateIncheonStationInfoSnapshot(snapshot);
+  if (typeof admission?.snapshotId !== "string"
+    || admission.contentSha256 !== incheon.contentSha256
+    || admission.source?.id !== incheon.sourceId
+    || admission.source.topologyAdmissionEvidence?.snapshotId !== admission.snapshotId
+    || admission.verifiedAt !== incheon.capturedAt
+    || admission.freshUntil !== incheon.freshUntil) {
+    throw new Error("Incheon topology admission does not match snapshot");
+  }
+  if (!Array.isArray(pack?.stationLines)) {
+    throw new TypeError("Incheon topology requires pack stationLines");
+  }
+  const stationLineKeys = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  const resolveStationId = incheonStationAliasMap(pack, stationLineKeys);
+  const generated = incheon.edges.map((sourceEdge) => {
+    const fromStationId = resolveStationId(sourceEdge.fromStationId, sourceEdge.lineId);
+    const toStationId = resolveStationId(sourceEdge.toStationId, sourceEdge.lineId);
+    const edge = {
+      id: `edge-${sourceEdge.lineId}-${fromStationId}-${toStationId}`,
+      fromNodeId: `${fromStationId}:${sourceEdge.lineId}`,
+      toNodeId: `${toStationId}:${sourceEdge.lineId}`,
+      durationSeconds: sourceEdge.durationSeconds,
+      distanceMeters: sourceEdge.distanceMeters,
+      edgeType: "RIDE",
+      servicePattern: "LOCAL",
+      serviceClass: "SUBWAY",
+      includesStairs: false,
+      stairAccessState: "UNKNOWN",
+      accessibilityStatus: "UNKNOWN",
+      reliabilityScore: 100,
+      facilityId: null,
+      sourceId: incheon.sourceId,
+      sourceSnapshotId: admission.snapshotId,
+      providerRecordHash: sha256(Buffer.from(canonicalJson(sourceEdge))),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastVerifiedAt: admission.verifiedAt,
+      evidenceHash: incheon.edgesSha256,
+      fieldProvenance: {
+        duration_seconds: { derivationKind: "GENERATED" },
+        distance_meters: { derivationKind: "GENERATED" },
+      },
+    };
+    return edge;
+  });
+  if (generated.length !== 116 || new Set(generated.map(({ id }) => id)).size !== 116) {
+    throw new Error("Incheon topology generated edge set is invalid");
+  }
+  return generated;
+}
+
+export function materializeIncheonNetworkEdges(pack, snapshot, admission) {
+  if (!Array.isArray(pack?.networkEdges) || !Array.isArray(pack.sourceInventory)) {
+    throw new TypeError("Incheon topology requires pack networkEdges and sourceInventory");
+  }
+  const incheon = validateIncheonStationInfoSnapshot(snapshot);
+  const generated = projectIncheonNetworkEdges(pack, snapshot, admission);
+  const lineIds = new Set(incheonTopologyLineIds);
+  const retained = pack.networkEdges.filter((edge) => {
+    const fromLineId = String(edge.fromNodeId ?? "").split(":").at(-1);
+    const toLineId = String(edge.toNodeId ?? "").split(":").at(-1);
+    return !(edge.edgeType === "RIDE"
+      && edge.servicePattern === "LOCAL"
+      && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+      && fromLineId === toLineId
+      && lineIds.has(fromLineId));
+  });
+  const retainedIds = new Set(retained.map(({ id }) => id));
+  if (generated.some(({ id }) => retainedIds.has(id))) {
+    throw new Error("Incheon topology edge identity overlaps unrelated edge");
+  }
+  pack.networkEdges = [...retained, ...generated];
+
+  const source = admission.source;
+  const packSource = incheonStationInfoPackSource(source, incheon);
+  const existingSources = pack.sourceInventory.filter(({ id }) => id === source.id);
+  if (existingSources.length === 0) pack.sourceInventory.push(packSource);
+  else if (existingSources.length !== 1 || JSON.stringify(existingSources[0]) !== JSON.stringify(packSource)) {
+    throw new Error("Incheon topology pack source inventory mismatch");
+  }
+  return { snapshotId: admission.snapshotId, edgeCount: generated.length };
+}
+
+export async function main(
+  argv = process.argv.slice(2),
+  { repositoryRoot = root } = {},
+) {
+  const root = path.resolve(repositoryRoot);
+  const args = parseArgs(argv);
+  const buildSpecValidationOnlyRequested = args["build-spec"] != null
+    && process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY === "true";
+  const outputDir = path.resolve(root, requireArg(args, "output"));
+  const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
+  const officialOdFareAdmissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));
+  const officialOdFareAdmissionBundle = JSON.parse(officialOdFareAdmissionBytes);
+  const officialOdFareAdmissions = officialOdFareAdmissionsBySource(officialOdFareAdmissionBundle);
+  const {
+    fixture,
+    candidateBuild,
+    artifactFreshUntil,
+    outputArtifactKind,
+    validationOnlyProductionFixture,
+  } = await loadBuildInput(
+    args,
+    officialOdFareAdmissions,
+    officialOdFareAdmissionBytes,
+    root,
+  );
+  if (buildSpecValidationOnlyRequested && validationOnlyProductionFixture !== true) {
+    throw new Error(
+      "build-spec validation-only requires a production source fixture without accessibility authority replay",
+    );
+  }
+  if (fixture.coverageLineOperatorScopeSemantics === "UNION_OF_PACK_SCOPES" && Array.isArray(fixture.packs)) {
+    const packScopes = fixture.packs.flatMap((pack) => pack.coverageLineOperatorScopes ?? []);
+    if (packScopes.length > 0) {
+      const seen = new Set();
+      fixture.coverageLineOperatorScopes = packScopes.filter((scope) => {
+        const key = `${scope.regionId}:${scope.operatorId}:${scope.lineId}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+  }
+  validateFixture(fixture);
+  const manifestPacks = [];
+  const provenancePacks = [];
+  const stagedPackFiles = [];
+  for (const pack of fixture.packs) {
+    const artifactKind = outputArtifactKind ?? pack.artifactKind ?? "fixture";
+    if (artifactKind === "production" && pack.stationContacts == null) {
+      const contactsInputs = await loadStationContactInputs({ repositoryRoot: root });
+      pack.stationContacts = bindStationContacts({ ...contactsInputs, pack }).rows;
+    }
+    // #957: 국토교통부 환승 이동경로 단계 문장을 원문 그대로 싣는다. 매핑하지 못한 시퀀스는 빼고 provenance 보고에 개수와 목록으로 남긴다.
+    if (artifactKind === "production" && pack.transferGuideSteps == null) {
+      const guideInputs = await loadTransferGuideInputs({ repositoryRoot: root, evaluationAt: candidateBuildNow().toISOString() });
+      const guide = deriveTransferGuideSteps({
+        ...guideInputs,
+        catalog: { stations: pack.stations, lines: pack.lines, stationLines: pack.stationLines },
+        routeEdges: pack.networkEdges ?? [],
+      });
+      pack.transferGuideSteps = guide.rows;
+      pack.transferGuideSources = guide.rows.length === 0
+        ? []
+        : [transferGuideSourceRow({ result: guide, rawSha256: guideInputs.snapshot.rawSha256 })];
+      pack.transferGuideReport = transferGuideReport({ result: guide, rawSha256: guideInputs.snapshot.rawSha256 });
+    }
+    const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
+    // requiredString은 non-empty 문자열을 강제하고, 검증·경로 파생·매니페스트는 모두 raw packUrl을
+    // 대상으로 한다(추출 전 로컬 validatePackUrl과 동일 — 검증 대상과 실사용 문자열 일치).
+    requiredString(packUrl, "pack.url");
+    validatePackUrl(packUrl, "pack.url");
+    validatePackUrlMatchesStagedPath(packUrl, pack, "pack.url");
+    const outputPackPath = outputPathForPack(outputDir, packUrl, pack);
+    const outputSqlitePath = outputPackPath.replace(/\.gz$/, "");
+    const stagingDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-pack-"));
+    const stagedSqlitePath = path.join(stagingDir, "pack.sqlite");
+    let sqliteBytes;
+    try {
+      buildSqlitePack(stagedSqlitePath, schema, pack, officialOdFareAdmissions, { repositoryRoot: root });
+      sqliteBytes = await readFile(stagedSqlitePath);
+      // ponytail: offset 96 is informational and otherwise records the platform SQLite patch version.
+      sqliteBytes.writeUInt32BE(canonicalSqliteHeaderVersion, 96);
+    } finally {
+      await rm(stagingDir, { recursive: true, force: true });
+    }
+    // #998: Z_RLE는 SQLite 페이지에서 LZ77 일치를 쓰지 못해 같은 팩이 약 6배 커졌다. 기본 전략 level 9를 쓴다.
+    // 결정성은 mtime 0과 고정 Node 런타임(.nvmrc)이, byte 9(OS 표지) 255가 플랫폼 차이 제거를 맡는다.
+    const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+    compressedBytes[9] = 255;
+    const compressedSha256 = sha256(compressedBytes);
+    const sqliteSha256 = sha256(sqliteBytes);
+    const sizeBytes = compressedBytes.length;
+    stagedPackFiles.push({ outputPackPath, outputSqlitePath, sqliteBytes, compressedBytes });
+    const representativeRouteRegressions = canonicalRepresentativeRouteRegressions(
+      pack.representativeRouteRegressions,
+    );
+
+    const manifestPack = {
+      id: pack.id,
+      version: pack.version,
+      artifactKind,
+      url: packUrl,
+      sha256: compressedSha256,
+      sqliteSha256,
+      sizeBytes,
+      signature: packSignature({
+        id: pack.id,
+        version: pack.version,
+        manifestVersion: fixture.manifest.manifestVersion ?? 1,
+        artifactKind,
+        url: packUrl,
+        sha256: compressedSha256,
+        sqliteSha256,
+        sizeBytes,
+      }),
+      schemaVersion: pack.schemaVersion,
+      sourceInventory: pack.sourceInventory,
+      regionalQualityMetrics: regionalQualityMetrics(pack),
+      ...(pack.routeRegressionScope ? { routeRegressionScope: canonicalRouteRegressionScope(pack.routeRegressionScope) } : {}),
+      representativeRouteRegressions,
+      representativeRouteRegressionSignature: representativeRouteRegressionSignature({
+        id: pack.id,
+        version: pack.version,
+        artifactKind,
+        url: packUrl,
+        sha256: compressedSha256,
+        sqliteSha256,
+        sizeBytes,
+        representativeRouteRegressions,
+      }),
+      requiredTables: pack.requiredTables,
+      minimumTableRows: pack.minimumTableRows ?? {},
+    };
+    manifestPacks.push(manifestPack);
+    provenancePacks.push(packFieldProvenance(pack, {
+      artifactKind,
+      sqliteSha256,
+    }));
+  }
+
+  await mkdir(outputDir, { recursive: true });
+  for (const staged of stagedPackFiles) {
+    await mkdir(path.dirname(staged.outputPackPath), { recursive: true });
+    await rm(staged.outputPackPath, { force: true });
+    await rm(staged.outputSqlitePath, { force: true });
+    await writeFile(staged.outputSqlitePath, staged.sqliteBytes);
+    await writeFile(staged.outputPackPath, staged.compressedBytes);
+  }
+
+  const manifestPublishedAt = optionalUtcDateString(fixture.manifest.publishedAt, "manifest.publishedAt") ?? buildPublishedAt();
+  const manifestExpiresAt = optionalUtcDateString(fixture.manifest.expiresAt, "manifest.expiresAt")
+    ?? buildExpiresAt(manifestPublishedAt);
+  const boundedManifestExpiresAt = artifactFreshUntil != null
+    && Date.parse(artifactFreshUntil) < Date.parse(manifestExpiresAt)
+    && Date.parse(artifactFreshUntil) > Date.parse(manifestPublishedAt)
+    ? artifactFreshUntil
+    : manifestExpiresAt;
+  const manifest = {
+    ...(fixture.manifest.manifestVersion === 2
+      ? {
+          manifestVersion: 2,
+          channel: requiredString(fixture.manifest.channel, "manifest.channel"),
+          releaseSequence: optionalPositiveInteger(fixture.manifest.releaseSequence, "manifest.releaseSequence")
+            ?? defaultReleaseSequence(),
+          publishedAt: manifestPublishedAt,
+          expiresAt: boundedManifestExpiresAt,
+          keyId: requiredString(fixture.manifest.keyId, "manifest.keyId"),
+        }
+      : fixture.manifest.releaseSequence === undefined
+        ? {}
+        : {
+            // fixture(v1) manifest도 fixture build spec이 선언한 releaseSequence를 명시적으로 싣는다.
+            releaseSequence: requiredPositiveInteger(fixture.manifest.releaseSequence, "manifest.releaseSequence"),
+          }),
+    ttlSeconds: fixture.manifest.ttlSeconds,
+    packs: manifestPacks,
+  };
+  if (fixture.manifest.activePack !== undefined) {
+    manifest.activePack = fixture.manifest.activePack;
+  }
+  if (fixture.manifest.emergencyOverride !== undefined) {
+    manifest.emergencyOverride = fixture.manifest.emergencyOverride;
+  }
+  if (fixture.manifest.manifestVersion === 2) {
+    manifest.signature = manifestSignature(manifest, manifestPacks);
+  }
+
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  await writeFile(path.join(outputDir, "current.json"), manifestJson);
+  await writeFile(
+    path.join(outputDir, "current.provenance.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: "datapack-field-provenance",
+      manifestSha256: sha256(Buffer.from(manifestJson)),
+      ...(candidateBuild ? { candidateBuild } : {}),
+      packs: provenancePacks,
+    }, null, 2)}\n`,
+  );
+}
+
+async function loadFixtureModeInput(args, fixtureArg, authorityArgs, repositoryRoot) {
+  if (authorityArgs.some((value) => value != null)) {
+    throw new Error("candidate fixture override requires --build-spec");
+  }
+  const fixture = JSON.parse(await readFile(path.resolve(repositoryRoot, fixtureArg), "utf8"));
+  rejectTestOnlyBuildInput(fixture);
+  if (Object.hasOwn(fixture, "assemblyInputs")) {
+    throw new Error("assembly inputs require --build-spec");
+  }
+  const hasProductionPack = fixture.packs?.some(({ artifactKind }) => artifactKind === "production");
+  const fixtureChannel = fixture.manifest?.channel == null
+    ? null
+    : requiredString(fixture.manifest.channel, "manifest.channel");
+  if (hasProductionPack) {
+    if (process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY !== "true") {
+      throw new Error("production fixture builds are validation-only; release builds require --build-spec");
+    }
+  }
+  if (fixture.manifest.manifestVersion === 2 && (hasProductionPack || fixtureChannel === "production")) {
+    fixture.manifest = {
+      ...fixture.manifest,
+      manifestVersion: 2,
+      channel: fixtureChannel === "candidate" ? "candidate" : "dev",
+      releaseSequence: fixture.manifest.releaseSequence ?? 1,
+      publishedAt: fixture.manifest.publishedAt ?? buildPublishedAt(),
+      ...(hasProductionPack
+        ? { keyId: process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1" }
+        : {}),
+    };
+  }
+  if (args["test-only-itx-admission"] != null) {
+    const admissionPath = await resolveBuildInputPath(
+      args["test-only-itx-admission"],
+      "testOnlyItxAdmission",
+      repositoryRoot,
+    );
+    const admissionBytes = await readFile(admissionPath);
+    await materializeTestOnlyItxAdmission(fixture, JSON.parse(admissionBytes), admissionBytes);
+  }
+  return {
+    fixture,
+    candidateBuild: null,
+    artifactFreshUntil: null,
+    outputArtifactKind: hasProductionPack ? "fixture" : null,
+    validationOnlyProductionFixture: false,
+  };
+}
+
+async function applyCandidateFixtureOverrideInput({
+  buildSpec,
+  buildSpecBytes,
+  accessibilityReplaySourceFixture,
+  sourceFixture,
+  sourceFixtureBytes,
+  candidateFixtureOverrideArg,
+  routeCoverageAuthorityArg,
+  stationLineInputArg,
+  routeEdgeInputArg,
+  repositoryRoot,
+  validationNow,
+  artifactFreshUntil,
+}) {
+  const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({
+    buildSpec,
+    sourceFixture: accessibilityReplaySourceFixture,
+    repositoryRoot,
+  });
+  const [candidateFixtureBytes, authorityBytes] = await Promise.all([
+    readFile(await resolveBuildInputPath(
+      candidateFixtureOverrideArg,
+      "candidateFixtureOverride",
+      repositoryRoot,
+    )),
+    readFile(await resolveBuildInputPath(
+      routeCoverageAuthorityArg,
+      "serverRouteCoverageAuthority",
+      repositoryRoot,
+    )),
+  ]);
+  const validated = validateCandidateFixtureOverride({
+    authorityBytes,
+    buildSpec,
+    buildSpecBytes,
+    candidateFixtureBytes,
+    projectedFixture,
+    sourceFixtureBytes,
+  });
+  const fixture = transferValidatedItxStationCatalogEvidence(
+    sourceFixture,
+    validated.fixture,
+  );
+  const overrideBinding = validated.binding;
+  const [stationLineInputBytes, routeEdgeInputBytes, transferMetricsBytes] = await Promise.all([
+    readFile(await resolveBuildInputPath(
+      stationLineInputArg,
+      "current full-capital station-line input",
+      repositoryRoot,
+    )),
+    readFile(await resolveBuildInputPath(
+      routeEdgeInputArg,
+      "current full-capital route-edge input",
+      repositoryRoot,
+    )),
+    readFile(await resolveBuildInputPath(
+      "tools/datapack/release/current-transfer-topology-metrics.json",
+      "current transfer topology metrics",
+      repositoryRoot,
+    )),
+  ]);
+  validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
+    authority: validated.authority,
+    projectedFixture,
+    stationLineInputBytes,
+    routeEdgeInputBytes,
+    transferMetricsBytes,
+  });
+  const isNationwide = buildSpec?.productionScopeId === "nationwide_routing_android_v1"
+    && (Array.isArray(buildSpec?.sourceSnapshots) && buildSpec.sourceSnapshots.length > 10);
+  const accessibilityFreshUntil = candidateOverrideAccessibilityFreshUntil({
+    authority: validated.authority,
+    stationLineInputBytes,
+    validationNow,
+    isNationwide,
+  });
+  const nextArtifactFreshUntil = new Date(Math.min(
+    Date.parse(artifactFreshUntil),
+    Date.parse(accessibilityFreshUntil),
+  )).toISOString();
+  return { fixture, overrideBinding, artifactFreshUntil: nextArtifactFreshUntil };
+}
+
+async function resolveCandidateBuildFreshnessAndProvenance({
+  buildSpec,
+  buildSpecBytes,
+  sourceFixture,
+  fixture,
+  officialOdFareEvidence,
+  overrideBinding,
+  validationNow,
+  artifactFreshUntil,
+  validationOnlyProductionFixture,
+  repositoryRoot,
+}) {
+  // #913: 시간표 원천 신선도를 팩 만료에 반영한다. inventory는 network edge 증거와 같은 결속 입력
+  // (buildSpec.networkEdgeEvidence.sourceInventory, 바이트 sha 고정)이고 spec sourceInventorySha256과 같아야 한다.
+  // 대상은 발행 범위인 전국 후보의 production 팩이다. 수도권 pilot 범위(capital_pilot_android_v1) 팩의 4호선 pilot trip은
+  // 원천 표기가 없어 이 계산에 넣을 수 없고, 그 범위와 fixture 팩, 검증 전용 빌드(dev 채널 출력)는 발행 대상이 아니다.
+  const productionPacks = (sourceFixture.packs ?? []).filter(({ artifactKind }) => artifactKind === "production");
+  const skipReason = timetableFreshnessSkipReason({
+    productionScopeId: buildSpec.productionScopeId, productionPacks, validationOnly: validationOnlyProductionFixture,
+  });
+  if (skipReason !== null) {
+    return {
+      fixture,
+      candidateBuild: {
+        ...candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence, overrideBinding, validationNow),
+        // 리뷰 F2: 시간표 신선도를 의도적으로 계산하지 않은 사유를 남긴다.
+        artifactFreshness: { timetableFreshness: "SKIPPED", skipReason, freshUntil: artifactFreshUntil },
+      },
+      artifactFreshUntil,
+      outputArtifactKind: validationOnlyProductionFixture ? "fixture" : null,
+      validationOnlyProductionFixture,
+    };
+  }
+  const [{ value: timetableInventory }, freshnessPolicyBytes, ledgerBytes, governancePolicyBytes] = await Promise.all([
+    readPinnedBuildJson(buildSpec.networkEdgeEvidence?.sourceInventory, "buildSpec.networkEdgeEvidence.sourceInventory", undefined, repositoryRoot),
+    readFile(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json")),
+  ]);
+  if (sha256(Buffer.from(JSON.stringify(timetableInventory))) !== buildSpec.sourceInventorySha256) {
+    throw new Error("candidate timetable freshness inventory does not match buildSpec.sourceInventorySha256");
+  }
+  // #913 후속: 서버 번들 FINAL과 같은 입력·같은 계산으로 spec 인용 원천 전체의 정책 신선도를 구한다.
+  const citedSourceFreshness = validateSourceSnapshotFreshness({
+    buildSpec,
+    snapshots: JSON.parse(ledgerBytes),
+    policy: JSON.parse(freshnessPolicyBytes),
+    evaluationAt: requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt"),
+    governancePolicy: JSON.parse(governancePolicyBytes),
+    inventory: timetableInventory,
+    governancePolicySha256: sha256(governancePolicyBytes),
+    governancePolicyBytes,
+  });
+  const artifactFreshness = candidateArtifactFreshness({
+    networkFreshUntil: artifactFreshUntil,
+    citedSources: citedSourceFreshness.results,
+    timetable: productionTimetableFreshness({
+      packs: productionPacks,
+      sourceSnapshots: buildSpec.sourceSnapshots,
+      inventory: timetableInventory,
+      freshnessPolicy: JSON.parse(freshnessPolicyBytes),
+      evaluationAt: requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt"),
+      now: validationNow,
+    }),
+  });
+  const resolvedFreshUntil = artifactFreshness.freshUntil;
+  return {
+    fixture,
+    candidateBuild: {
+      ...candidateBuildProvenance(
+        buildSpec,
+        sha256(buildSpecBytes),
+        officialOdFareEvidence,
+        overrideBinding,
+        validationNow,
+      ),
+      artifactFreshness,
+    },
+    artifactFreshUntil: resolvedFreshUntil,
+    outputArtifactKind: validationOnlyProductionFixture ? "fixture" : null,
+    validationOnlyProductionFixture,
+  };
+}
+
+async function loadBuildInput(
+  args,
+  officialOdFareAdmissions,
+  officialOdFareAdmissionBytes,
+  repositoryRoot = root,
+) {
+  const fixtureArg = args.fixture;
+  const buildSpecArg = args["build-spec"];
+  const candidateFixtureOverrideArg = args["candidate-fixture-override"];
+  const routeCoverageAuthorityArg = args["server-route-coverage-authority"];
+  const stationLineInputArg = args["current-capital-station-line-input"];
+  const routeEdgeInputArg = args["current-capital-route-edge-input"];
+  const authorityArgs = [
+    candidateFixtureOverrideArg,
+    routeCoverageAuthorityArg,
+    stationLineInputArg,
+    routeEdgeInputArg,
+  ];
+  if (authorityArgs.some((value) => value != null) && authorityArgs.some((value) => value == null)) {
+    throw new Error("--candidate-fixture-override, --server-route-coverage-authority, --current-capital-station-line-input and --current-capital-route-edge-input must be provided together");
+  }
+  if ((fixtureArg == null) === (buildSpecArg == null)) {
+    throw new Error("exactly one of --fixture or --build-spec is required");
+  }
+  if (fixtureArg != null) {
+    return loadFixtureModeInput(args, fixtureArg, authorityArgs, repositoryRoot);
+  }
+  if (args["test-only-itx-admission"] != null) {
+    throw new Error("--test-only-itx-admission cannot be used with --build-spec");
+  }
+
+  const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec", repositoryRoot);
+  const buildSpecBytes = await readFile(buildSpecPath);
+  const buildSpec = JSON.parse(buildSpecBytes);
+  const sourceFixturePath = await resolveBuildInputPath(
+    buildSpec.fixturePath,
+    "buildSpec.fixturePath",
+    repositoryRoot,
+  );
+  const sourceFixtureBytes = await readFile(sourceFixturePath);
+  const boundFixture = JSON.parse(sourceFixtureBytes);
+  assertBuildSpecFixtureSha256(buildSpec, sourceFixtureBytes, boundFixture);
+  // #899: 팩이 sha로 결속한 외부 공식 stop_times를 펼친다(결속 불일치는 실패).
+  const sourceFixture = expandExternalStopTimes(boundFixture, { repositoryRoot });
+  rejectTestOnlyBuildInput(sourceFixture);
+  const hasProductionPack = sourceFixture.packs?.some(({ artifactKind }) => artifactKind === "production") === true;
+  const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
+  const accessibilityReplaySourceFixture = replaysAccessibilityAuthority
+    ? structuredClone(sourceFixture)
+    : null;
+  const validationOnlyProductionFixture = hasProductionPack
+    && !replaysAccessibilityAuthority
+    && process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY === "true";
+  const validationNow = replaysAccessibilityAuthority
+    ? candidateReplayNow(buildSpec)
+    : candidateBuildNow();
+  const candidateValidation = await validateCandidateBuildSpec(
+    buildSpec,
+    sourceFixture,
+    officialOdFareAdmissions,
+    officialOdFareAdmissionBytes,
+    repositoryRoot,
+    validationNow,
+    { includePackAccessibilityFreshness: !replaysAccessibilityAuthority },
+  );
+  const { officialOdFareEvidence } = candidateValidation;
+  if (hasProductionPack && !replaysAccessibilityAuthority && !validationOnlyProductionFixture) {
+    throw new Error("production accessibility evidence mismatch: current full-capital authority is required");
+  }
+  let { artifactFreshUntil } = candidateValidation;
+  let fixture = validationOnlyProductionFixture
+    ? {
+        ...sourceFixture,
+        manifest: { ...sourceFixture.manifest, channel: "dev" },
+      }
+    : sourceFixture;
+  let overrideBinding = null;
+  if (candidateFixtureOverrideArg != null) {
+    ({ fixture, overrideBinding, artifactFreshUntil } = await applyCandidateFixtureOverrideInput({
+      buildSpec,
+      buildSpecBytes,
+      accessibilityReplaySourceFixture,
+      sourceFixture,
+      sourceFixtureBytes,
+      candidateFixtureOverrideArg,
+      routeCoverageAuthorityArg,
+      stationLineInputArg,
+      routeEdgeInputArg,
+      repositoryRoot,
+      validationNow,
+      artifactFreshUntil,
+    }));
+  }
+  return resolveCandidateBuildFreshnessAndProvenance({
+    buildSpec,
+    buildSpecBytes,
+    sourceFixture,
+    fixture,
+    officialOdFareEvidence,
+    overrideBinding,
+    validationNow,
+    artifactFreshUntil,
+    validationOnlyProductionFixture,
+    repositoryRoot,
+  });
+}
+
+export function transferValidatedItxStationCatalogEvidence(
+  sourceFixture,
+  replacementFixture,
+  evidenceStore = validatedItxStationCatalogEvidence,
+) {
+  if (!Array.isArray(sourceFixture?.packs) || !Array.isArray(replacementFixture?.packs)
+    || !(evidenceStore instanceof WeakMap)) {
+    throw new Error("candidate fixture override ITX evidence input mismatch");
+  }
+  const replacements = new Map();
+  for (const pack of replacementFixture.packs) {
+    const key = `${pack.id}\u0000${pack.version}`;
+    if (replacements.has(key)) {
+      throw new Error("candidate fixture override pack identity duplicate");
+    }
+    replacements.set(key, pack);
+  }
+  for (const sourcePack of sourceFixture.packs) {
+    const evidence = evidenceStore.get(sourcePack);
+    if (evidence === undefined) continue;
+    const replacementPack = replacements.get(`${sourcePack.id}\u0000${sourcePack.version}`);
+    if (replacementPack === undefined) {
+      throw new Error("candidate fixture override ITX pack identity mismatch");
+    }
+    evidenceStore.set(replacementPack, evidence);
+  }
+  return replacementFixture;
+}
+
+export async function projectCandidateFixtureForAccessibilityAuthority({
+  buildSpec,
+  sourceFixture,
+  repositoryRoot = root,
+  retainPreAuthorityRideOnly = true,
+}) {
+  if (typeof retainPreAuthorityRideOnly !== "boolean") {
+    throw new TypeError("retainPreAuthorityRideOnly must be a boolean");
+  }
+  const trackedSourceFixture = expandExternalStopTimes(JSON.parse(await readFile(await resolveBuildInputPath(
+    buildSpec?.fixturePath,
+    "buildSpec.fixturePath",
+    repositoryRoot,
+  ))), { repositoryRoot });
+  if (canonicalJson(sourceFixture) !== canonicalJson(trackedSourceFixture)) {
+    throw new Error("accessibility replay source fixture mismatch");
+  }
+  const fixture = structuredClone(sourceFixture);
+  const validationNow = candidateReplayNow(buildSpec);
+  const officialOdFareAdmissionBytes = await readFile(
+    path.join(repositoryRoot, "tools/datapack/official-od-fare-admission.json"),
+  );
+  const officialOdFareAdmissions = officialOdFareAdmissionsBySource(
+    JSON.parse(officialOdFareAdmissionBytes.toString("utf8")),
+  );
+  await validateCandidateBuildSpec(
+    structuredClone(buildSpec),
+    fixture,
+    officialOdFareAdmissions,
+    officialOdFareAdmissionBytes,
+    repositoryRoot,
+    validationNow,
+    { includePackAccessibilityFreshness: false },
+  );
+  const accessibilitySourceIds = [
+    "kric-station-convenience-standard",
+    "seoul-metro-accessibility",
+  ];
+  const [inputBytes, inventoryBytes] = await Promise.all([
+    readFile(await resolveBuildInputPath(
+      "tools/datapack/inputs/capital-pilot-production-source-input.json",
+      "capital accessibility source input",
+      repositoryRoot,
+    )),
+    readFile(await resolveBuildInputPath(
+      buildSpec?.networkEdgeEvidence?.sourceInventory?.path,
+      "source inventory",
+      repositoryRoot,
+    )),
+  ]);
+  const input = JSON.parse(inputBytes);
+  const inventory = JSON.parse(inventoryBytes);
+  const snapshotsBySourceId = new Map(await Promise.all(accessibilitySourceIds.map(async (sourceId) => {
+    const inventorySources = inventory.sources?.filter(({ id }) => id === sourceId) ?? [];
+    const candidateSources = buildSpec.sourceSnapshots?.filter((row) => row.sourceId === sourceId) ?? [];
+    const evidence = inventorySources[0]?.accessibilityAdmissionEvidence;
+    const snapshotPath = evidence?.snapshotPath;
+    if (inventorySources.length !== 1 || candidateSources.length !== 1
+      || typeof snapshotPath !== "string"
+      || evidence.snapshotId !== candidateSources[0].snapshotId) {
+      throw new Error(`candidate-selected ${sourceId} accessibility snapshot missing`);
+    }
+    const snapshotBytes = await readFile(await resolveBuildInputPath(
+      snapshotPath,
+      `candidate-selected ${sourceId} accessibility snapshot`,
+      repositoryRoot,
+    ));
+    const snapshot = JSON.parse(snapshotBytes);
+    if (snapshot.snapshotId !== candidateSources[0].snapshotId) {
+      throw new Error(`candidate-selected ${sourceId} accessibility snapshot mismatch`);
+    }
+    return [sourceId, snapshot];
+  })));
+  const materializedInput = materializeAccessibilitySourceInput({
+    input,
+    kricSnapshot: snapshotsBySourceId.get("kric-station-convenience-standard"),
+    seoulSnapshot: snapshotsBySourceId.get("seoul-metro-accessibility"),
+  });
+  const reviewedFixture = buildOfficialSourceFixture(inventory, materializedInput);
+  const reviewedPack = reviewedFixture.packs?.find(({ id }) => id === "capital");
+  if (reviewedFixture.packs?.filter(({ id }) => id === "capital").length !== 1 || !reviewedPack) {
+    throw new Error("candidate-selected reviewed accessibility capital pack is invalid");
+  }
+  syncCanonicalAccessibilityEvidence(fixture, reviewedPack);
+  if (retainPreAuthorityRideOnly) {
+    retainPreAuthorityRideEdges(fixture, "candidate-selected canonical pack");
+  }
+  return fixture;
+}
+
+function candidateReplayNow(buildSpec) {
+  return new Date(requiredUtcDateString(
+    buildSpec?.publishedAt,
+    "buildSpec.publishedAt",
+  ));
+}
+
+export function validateCandidateFixtureOverride({
+  authorityBytes,
+  buildSpec,
+  buildSpecBytes,
+  candidateFixtureBytes,
+  projectedFixture,
+  sourceFixtureBytes,
+}) {
+  for (const [label, bytes] of Object.entries({
+    authorityBytes,
+    buildSpecBytes,
+    candidateFixtureBytes,
+    sourceFixtureBytes,
+  })) {
+    if (!Buffer.isBuffer(bytes)) throw new Error(`${label} must be bytes`);
+  }
+  let authority;
+  let candidateFixture;
+  try {
+    authority = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(authorityBytes));
+    candidateFixture = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(candidateFixtureBytes));
+  } catch {
+    throw new Error("candidate fixture override must be UTF-8 JSON");
+  }
+  const canonicalAuthority = canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(authority);
+  const canonicalFixture = canonicalCurrentReleaseCandidateFixtureJson(candidateFixture);
+  if (authorityBytes.toString("utf8") !== canonicalAuthority
+    || candidateFixtureBytes.toString("utf8") !== canonicalFixture) {
+    throw new Error("candidate fixture override bytes are not canonical");
+  }
+  const buildSpecSha256 = sha256(buildSpecBytes);
+  const sourceFixtureSha256 = sha256(sourceFixtureBytes);
+  const candidateFixtureSha256 = sha256(candidateFixtureBytes);
+  if (authority.buildInput.buildSpecSha256 !== buildSpecSha256
+    || authority.buildInput.sourceFixtureSha256 !== sourceFixtureSha256
+    || authority.buildInput.candidateFixtureSha256 !== candidateFixtureSha256
+    || authority.candidate.candidateId !== buildSpec?.candidateId
+    || authority.candidate.sourceSetSha256 !== buildSpec?.sourceSnapshotSetHash) {
+    throw new Error("candidate fixture override authority binding mismatch");
+  }
+  const expected = rebuildCurrentReleaseCandidateFixture({ projectedFixture, authority });
+  if (canonicalJson(expected) !== canonicalJson(candidateFixture)) {
+    throw new Error("candidate fixture override projection mismatch");
+  }
+  return {
+    authority,
+    fixture: candidateFixture,
+    binding: {
+      sourceFixtureSha256,
+      candidateFixtureSha256,
+      serverRouteCoverageAuthoritySha256: authority.authoritySha256,
+    },
+  };
+}
+
+export function candidateOverrideAccessibilityFreshUntil({
+  authority,
+  stationLineInputBytes,
+  routeEdgeInputBytes,
+  validationNow,
+  isNationwide = false,
+}) {
+  if (!Buffer.isBuffer(stationLineInputBytes)) {
+    throw new TypeError("station-line input must be bytes");
+  }
+  if (!(validationNow instanceof Date) || Number.isNaN(validationNow.getTime())) {
+    throw new TypeError("station-line input validation time is invalid");
+  }
+  if (routeEdgeInputBytes !== undefined && !Buffer.isBuffer(routeEdgeInputBytes)) {
+    throw new TypeError("route-edge input must be bytes");
+  }
+  if (routeEdgeInputBytes !== undefined
+    && sha256(routeEdgeInputBytes) !== authority?.buildInput?.routeEdgeInputSha256) {
+    throw new Error("route-edge input identity mismatch");
+  }
+  let stationLineInput;
+  try {
+    stationLineInput = JSON.parse(new TextDecoder("utf-8", { fatal: true })
+      .decode(stationLineInputBytes));
+  } catch {
+    throw new Error("station-line input must be UTF-8 JSON");
+  }
+  const evidenceRows = stationLineInput?.evidenceRows;
+  if (sha256(stationLineInputBytes) !== authority?.buildInput?.stationLineInputSha256
+    || canonicalJson(stationLineInput?.candidate) !== canonicalJson(authority?.candidate)
+    || !Array.isArray(evidenceRows) || evidenceRows.length === 0) {
+    throw new Error("station-line input identity mismatch");
+  }
+  const freshness = evidenceRows.map((row, index) => {
+    requiredString(row?.sourceId, `station-line input evidenceRows[${index}].sourceId`);
+    requiredString(
+      row?.sourceSnapshotId,
+      `station-line input evidenceRows[${index}].sourceSnapshotId`,
+    );
+    const capturedAt = requiredUtcDateString(
+      row?.capturedAt,
+      `station-line input evidenceRows[${index}].capturedAt`,
+    );
+    const freshUntil = requiredUtcDateString(
+      row?.freshUntil,
+      `station-line input evidenceRows[${index}].freshUntil`,
+    );
+    if (Date.parse(freshUntil) <= Date.parse(capturedAt)) {
+      throw new Error("station-line input evidence freshness mismatch");
+    }
+    return { capturedAt, freshUntil };
+  });
+  const observedAt = new Date(Math.max(...freshness
+    .map(({ capturedAt }) => Date.parse(capturedAt)))).toISOString();
+  if (authority.buildInput.observedAt !== observedAt) {
+    throw new Error("station-line input identity mismatch");
+  }
+  const materialization = materializeStationLineAccessibility({
+    ...stationLineInput,
+    observedAt,
+  });
+  // #866 D1: 닫힘 요구는 authority가 환승 간선 양끝 TRANSFER cell에만 건다(authority replay가 다시 확인한다).
+  // 여기서는 materialization이 authority에 결속된 것과 같은지만 본다.
+  if (materialization.materializationDigest !== authority.buildInput.materializationDigest) {
+    throw new Error("station-line input identity mismatch");
+  }
+  const earliestFreshUntil = Math.min(...freshness
+    .map(({ freshUntil }) => Date.parse(freshUntil)));
+  const nationwide = isNationwide
+    || authority?.candidate?.candidateId?.startsWith("nationwide-candidate")
+    || authority?.candidate?.candidateId?.includes("five-region");
+  if (!nationwide && earliestFreshUntil <= Math.max(validationNow.getTime(), Date.parse(observedAt))) {
+    throw new Error("station-line input accessibility evidence is stale");
+  }
+  if (nationwide && earliestFreshUntil <= Date.parse(observedAt)) {
+    throw new Error("station-line input accessibility evidence is stale");
+  }
+  return new Date(earliestFreshUntil).toISOString();
+}
+
+async function materializeTestOnlyItxAdmission(_fixture, admission, _admissionBytes) {
+  validateTestOnlyItxAdmission(admission);
+  if (Object.hasOwn(admission, "canonicalPackIdentity")) {
+    throw new Error("test-only ITX legacy canonical pack identity is forbidden");
+  }
+  validateTestOnlyItxTimetableIdentity(admission);
+  throw new Error("test-only ITX admission cannot create v19 route service evidence without an independently verified #2135 canonical tuple");
+}
+
+function validateTestOnlyItxAdmission(admission) {
+  if (
+    admission?.fixtureClass !== "TEST_ONLY"
+    || admission?.artifactKind !== "deterministic-itx-cheongchun-admission-fixture"
+  ) {
+    throw new Error("--test-only-itx-admission requires the deterministic TEST_ONLY fixture");
+  }
+  if (
+    admission.serviceClass !== "ITX_CHEONGCHUN"
+    || admission.sourceIssue !== 2116
+    || admission.admissionStatus !== "ADMITTED"
+    || admission.admissionEligible !== true
+    || admission.freshness?.status !== "FRESH"
+  ) {
+    throw new Error("test-only ITX admission must be FRESH and ADMITTED by #2116");
+  }
+  const freshUntil = requiredUtcDateString(
+    admission.freshness.freshUntil,
+    "testOnlyItxAdmission.freshness.freshUntil",
+  );
+  if (Date.parse(freshUntil) <= candidateBuildNow().getTime()) {
+    throw new Error("test-only ITX admission freshness must be in the future");
+  }
+  return freshUntil;
+}
+
+function validateTestOnlyItxTimetableIdentity(admission) {
+  if (admission.timetableArtifactIdentity?.sha256Source !== "FIXTURE_FILE_BYTES") {
+    throw new Error("test-only ITX timetable identity must hash fixture file bytes");
+  }
+}
+
+function rejectTestOnlyBuildInput(fixture) {
+  if (fixture?.fixtureClass === "TEST_ONLY") {
+    throw new Error("TEST_ONLY artifact cannot be used as datapack build input");
+  }
+}
+
+function assertBuildSpecFixtureSha256(buildSpec, sourceFixtureBytes, sourceFixture = undefined) {
+  const hasNativeAdmission = Array.isArray(buildSpec?.sourceSnapshots)
+    && buildSpec.sourceSnapshots.some((snapshot) =>
+      Object.hasOwn(snapshot ?? {}, "admissionRecordSha256s"));
+  const hasAssemblyInputs = Object.hasOwn(sourceFixture ?? {}, "assemblyInputs");
+  const fixtureSha256 = buildSpec?.fixtureSha256;
+  if (fixtureSha256 === undefined && !hasNativeAdmission && !hasAssemblyInputs) return;
+  if (typeof fixtureSha256 !== "string" || !/^[a-f0-9]{64}$/.test(fixtureSha256)) {
+    throw new Error("buildSpec.fixtureSha256 must be a lowercase SHA-256");
+  }
+  if (fixtureSha256 !== sha256(sourceFixtureBytes)) {
+    throw new Error("buildSpec.fixtureSha256 must match source fixture bytes");
+  }
+}
+
+async function validateCandidateBuildSpec(
+  buildSpec,
+  fixture,
+  admissions,
+  admissionBytes,
+  repositoryRoot = root,
+  now = candidateBuildNow(),
+  { includePackAccessibilityFreshness = true } = {},
+) {
+  if (typeof includePackAccessibilityFreshness !== "boolean") {
+    throw new TypeError("candidate accessibility freshness mode is invalid");
+  }
+  if (!buildSpec || typeof buildSpec !== "object" || Array.isArray(buildSpec)) {
+    throw new Error("buildSpec must be an object");
+  }
+  if (buildSpec.schemaVersion !== 1) {
+    throw new Error("buildSpec.schemaVersion must be 1");
+  }
+  if (requiredString(buildSpec.artifactKind, "buildSpec.artifactKind") !== candidateBuildSpecArtifactKind) {
+    throw new Error(`buildSpec.artifactKind must be ${candidateBuildSpecArtifactKind}`);
+  }
+  requiredString(buildSpec.candidateId, "buildSpec.candidateId");
+  requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId");
+  applyCandidateReleaseIdentity(buildSpec, fixture);
+  await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath", repositoryRoot);
+  requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
+  const sourceSnapshots = requiredSourceSnapshots(
+    buildSpec.sourceSnapshots,
+    "buildSpec.sourceSnapshots",
+    now,
+  );
+  const hasNativeAdmissions = sourceSnapshots.some((snapshot) => snapshot.admissionRecordSha256s);
+  const hasAssemblyInputs = Object.hasOwn(fixture, "assemblyInputs");
+  if (hasNativeAdmissions || hasAssemblyInputs) {
+    const inputBytes = Object.fromEntries(await Promise.all(Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS)
+      .map(async ([name, relative]) => [name, await readFile(path.join(repositoryRoot, relative))])));
+    inputBytes.productionScope = await readFile(path.join(repositoryRoot, buildSpec.productionScope.path));
+    validateNationwideCandidateSourceSet({ candidate: buildSpec, inputBytes });
+    if (hasAssemblyInputs) {
+      assertNationwideAssemblyInputs({
+        assemblyInputs: fixture.assemblyInputs,
+        expectedSourceIds: buildSpec.assemblySourceIds,
+        selectedSources: JSON.parse(inputBytes.fanIn).selectedSources,
+      });
+    }
+  }
+  assertSourceSnapshotSet(buildSpec.sourceSnapshotIds, sourceSnapshots);
+  for (const field of candidateBuildSpecHashFields) {
+    sha256HexString(buildSpec[field], `buildSpec.${field}`);
+  }
+  const builderGitSha = requiredString(buildSpec.builderGitSha, "buildSpec.builderGitSha");
+  if (!/^[a-f0-9]{7,40}$/i.test(builderGitSha)) {
+    throw new Error("buildSpec.builderGitSha must be a git sha");
+  }
+  requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
+  await validateCandidateProductionScope(buildSpec, fixture, { repositoryRoot });
+  const artifactFreshUntil = await applyCandidateNetworkEdgeProjectionInternal(
+    buildSpec,
+    fixture,
+    { repositoryRoot, now, includePackAccessibilityFreshness },
+  );
+  return {
+    officialOdFareEvidence: validateOfficialOdFareEvidence(
+      buildSpec.officialOdFareEvidence,
+      fixture,
+      admissions,
+      admissionBytes,
+    ),
+    artifactFreshUntil,
+  };
+}
+
+export async function validateCandidateProductionScope(buildSpec, fixture, { repositoryRoot = root } = {}) {
+  const policyPath = path.join(repositoryRoot, "tools/datapack/nationwide-coverage-targets.json");
+  const policyBytes = await readFile(policyPath);
+  if (buildSpec.productionScopePolicy?.path !== "tools/datapack/nationwide-coverage-targets.json"
+    || buildSpec.productionScopePolicy?.sha256 !== sha256(policyBytes)) {
+    throw new Error("buildSpec production scope policy identity mismatch");
+  }
+  const retiredPolicy = JSON.parse(policyBytes);
+  assertNoRetiredTransitReferences(fixture, retiredPolicy.inactiveLineExclusions);
+}
+
+export function applyCandidateReleaseIdentity(buildSpec, fixture) {
+  const publishedAt = requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt");
+  const releaseSequence = requiredPositiveInteger(
+    buildSpec.releaseSequence,
+    "buildSpec.releaseSequence",
+  );
+  const manifest = fixture?.manifest;
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw new Error("fixture.manifest must be an object");
+  }
+  if (
+    manifest.publishedAt !== undefined
+    && requiredUtcDateString(manifest.publishedAt, "manifest.publishedAt") !== publishedAt
+  ) {
+    throw new Error("manifest.publishedAt must match buildSpec.publishedAt");
+  }
+  if (
+    manifest.releaseSequence !== undefined
+    && requiredPositiveInteger(manifest.releaseSequence, "manifest.releaseSequence") !== releaseSequence
+  ) {
+    throw new Error("manifest.releaseSequence must match buildSpec.releaseSequence");
+  }
+  Object.assign(manifest, { publishedAt, releaseSequence });
+  return { publishedAt, releaseSequence };
+}
+
+export async function applyCandidateNetworkEdgeProjection(
+  buildSpec,
+  fixture,
+  { repositoryRoot = root, now = candidateBuildNow() } = {},
+) {
+  return applyCandidateNetworkEdgeProjectionInternal(buildSpec, fixture, {
+    repositoryRoot,
+    now,
+    includePackAccessibilityFreshness: true,
+  });
+}
+
+export async function admittedTrackedIncheonAccessibilityEvidence(reference, {
+  sourceInventory,
+  topologySnapshot,
+  repositoryRoot = root,
+  topologyMode = "exact-current",
+  now = candidateBuildNow(),
+} = {}) {
+  const pinned = await readPinnedBuildJson(
+    reference,
+    "registered Incheon accessibility snapshot",
+    ["path", "sha256", "snapshotId"],
+    repositoryRoot,
+  );
+  const admission = admittedIncheonAccessibilityEvidence({
+    sourceInventory,
+    snapshot: pinned.value,
+    snapshotBytes: pinned.bytes,
+    topologySnapshot,
+    topologyMode,
+    now,
+  });
+  if (pinned.pinned.snapshotId !== admission.snapshotId
+    || pinned.pinned.path !== admission.snapshotPath) {
+    throw new Error("pinned Incheon accessibility admission identity mismatch");
+  }
+  return admission;
+}
+
+export async function admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
+  sourceInventory,
+  topologySnapshot,
+  repositoryRoot = root,
+  topologyMode = "exact-current",
+  now = candidateBuildNow(),
+} = {}) {
+  const validatedProjections = requiredSourceSnapshots(
+    buildSpec?.sourceSnapshots,
+    "buildSpec.sourceSnapshots",
+    now,
+  ).filter(({ sourceId }) => sourceId === incheonAccessibilitySourceId);
+  const projections = buildSpec.sourceSnapshots.filter(
+    ({ sourceId }) => sourceId === incheonAccessibilitySourceId,
+  );
+  if (validatedProjections.length !== 1 || projections.length !== 1
+    || validatedProjections[0].snapshotId !== projections[0].snapshotId) {
+    throw new Error("buildSpec requires exactly one registered Incheon accessibility projection");
+  }
+  const [projection] = projections;
+  const sourceSnapshotIds = requiredStringArray(
+    buildSpec?.sourceSnapshotIds,
+    "buildSpec.sourceSnapshotIds",
+  );
+  if (sourceSnapshotIds.filter((snapshotId) => snapshotId === projection.snapshotId).length !== 1) {
+    throw new Error("buildSpec requires the registered Incheon accessibility snapshot exactly once");
+  }
+  await validateRegisteredIncheonAccessibilityLedgerProjection(buildSpec, projection, repositoryRoot);
+  const source = sourceInventory?.sources?.find(({ id }) => id === incheonAccessibilitySourceId);
+  const registration = source?.registrationEvidence;
+  const admission = await admittedTrackedIncheonAccessibilityEvidence({
+    path: `tools/datapack/sources/${registration?.snapshotId}.json`,
+    sha256: registration?.snapshotFileSha256,
+    snapshotId: registration?.snapshotId,
+  }, {
+    sourceInventory,
+    topologySnapshot,
+    repositoryRoot,
+    topologyMode,
+    now,
+  });
+  const snapshotPath = `tools/datapack/sources/${admission.snapshotId}.json`;
+  const requestedPath = path.resolve(repositoryRoot, snapshotPath);
+  const metadata = await lstat(requestedPath);
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error("registered Incheon accessibility snapshot must be a regular non-symlink file");
+  }
+  const snapshotBytes = await readFile(requestedPath);
+  const snapshot = JSON.parse(snapshotBytes);
+  const admittedRegistration = admission.source.registrationEvidence;
+  if (projection.snapshotId !== admission.snapshotId
+    || projection.rawObjectUri !== admittedRegistration.rawObjectUri
+    || projection.rawSha256 !== admittedRegistration.rawObjectSha256
+    || projection.schemaFingerprint !== admittedRegistration.normalizedSchemaFingerprint
+    || projection.adminReviewRecordHash !== admittedRegistration.adminReviewRecordHash
+    || projection.licenseStatus !== "PASS"
+    || projection.redistributionAllowed !== true
+    || projection.credentialRedacted !== true
+    || projection.snapshotStatus !== "LOCKED") {
+    throw new Error("registered Incheon accessibility projection does not match admission");
+  }
+  return { admission, projection, snapshot, snapshotBytes };
+}
+
+async function validateRegisteredIncheonAccessibilityLedgerProjection(
+  buildSpec,
+  projection,
+  repositoryRoot,
+) {
+  const ledgerPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
+  const metadata = await lstat(ledgerPath);
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error("registered Incheon source snapshot ledger must be a regular non-symlink file");
+  }
+  const ledgerBytes = await readFile(ledgerPath);
+  const ledger = JSON.parse(ledgerBytes);
+  if (!Array.isArray(ledger)) throw new Error("registered Incheon source snapshot ledger is invalid");
+  const selectedIds = requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
+  const selectedIdSet = new Set(selectedIds);
+  const selected = ledger.filter(({ snapshotId }) => selectedIdSet.has(snapshotId));
+  if (selected.length !== selectedIds.length
+    || new Set(selected.map(({ snapshotId }) => snapshotId)).size !== selectedIds.length
+    || sha256(Buffer.from(JSON.stringify(selected))) !== buildSpec.sourceSnapshotSetHash) {
+    throw new Error("buildSpec source snapshot set is not bound to the tracked ledger");
+  }
+  const rows = selected.filter(({ sourceId }) => sourceId === incheonAccessibilitySourceId);
+  if (rows.length !== 1 || rows[0].snapshotId !== projection.snapshotId) {
+    throw new Error("registered Incheon accessibility ledger selection is invalid");
+  }
+  const row = rows[0];
+  const expected = Object.fromEntries([
+    "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
+    "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash",
+    "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt",
+    "governancePolicyVersion", "governancePolicySha256",
+  ].map((key) => [key, row[key]]));
+  if (!isDeepStrictEqual(projection, expected)) {
+    throw new Error("registered Incheon accessibility projection does not match tracked ledger");
+  }
+  return row;
+}
+
+export function validateRegisteredIncheonAccessibilityFixture(
+  packs,
+  { admission, projection },
+  now = candidateBuildNow(),
+) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())
+    || admission?.source?.id !== incheonAccessibilitySourceId
+    || admission.source.requiredForProductionPack !== true
+    || admission.source.productionUseAllowed !== true
+    || admission.source.license?.redistributionAllowed !== true
+    || projection?.snapshotId !== admission.snapshotId
+    || projection.rawObjectUri !== admission.source.registrationEvidence?.rawObjectUri
+    || projection.rawSha256 !== admission.source.registrationEvidence?.rawObjectSha256
+    || projection.schemaFingerprint !== admission.source.registrationEvidence?.normalizedSchemaFingerprint
+    || projection.adminReviewRecordHash !== admission.source.registrationEvidence?.adminReviewRecordHash
+    || projection.snapshotStatus !== "LOCKED"
+    || projection.licenseStatus !== "PASS"
+    || projection.redistributionAllowed !== true
+    || projection.credentialRedacted !== true
+    || Date.parse(projection.freshnessExpiresAt) <= now.getTime()) {
+    throw new Error("registered Incheon accessibility projection is invalid or stale");
+  }
+  for (const row of packs.flatMap((pack) => [
+    ...(pack?.facilities ?? []),
+    ...(pack?.stationFacilityEvidence ?? []),
+  ]).filter(({ sourceId }) => sourceId === incheonAccessibilitySourceId)) {
+    if (row.sourceId !== admission.source.id
+      || row.sourceSnapshotId !== admission.snapshotId
+      || row.evidenceHash !== admission.evidenceHash) {
+      throw new Error("registered Incheon accessibility row does not match admission");
+    }
+  }
+  return validateProductionIncheonAccessibilityFixture(packs, admission);
+}
+
+async function applyCandidateNetworkEdgeProjectionInternal(
+  buildSpec,
+  fixture,
+  {
+    repositoryRoot = root,
+    now = candidateBuildNow(),
+    includePackAccessibilityFreshness,
+  },
+) {
+  const projectionRoot = path.resolve(repositoryRoot);
+  const itxTopologyEvidence = await validateTrackedItxTopologyEvidence(
+    buildSpec,
+    fixture,
+    projectionRoot,
+  );
+  return validateAndApplyNetworkEdgeProvenance(
+    buildSpec,
+    fixture,
+    itxTopologyEvidence,
+    projectionRoot,
+    now,
+    includePackAccessibilityFreshness,
+  );
+}
+
+function candidateBuildProvenance(
+  buildSpec,
+  buildSpecSha256,
+  officialOdFareEvidence,
+  overrideBinding = null,
+  validationNow = candidateBuildNow(),
+) {
+  const normalizedHashes = Object.fromEntries(candidateBuildSpecHashFields.map((field) => [
+    field,
+    sha256HexString(buildSpec[field], `buildSpec.${field}`),
+  ]));
+  return {
+    schemaVersion: buildSpec.schemaVersion,
+    artifactKind: requiredString(buildSpec.artifactKind, "buildSpec.artifactKind"),
+    candidateId: requiredString(buildSpec.candidateId, "buildSpec.candidateId"),
+    productionScopeId: requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId"),
+    publishedAt: requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt"),
+    releaseSequence: requiredPositiveInteger(buildSpec.releaseSequence, "buildSpec.releaseSequence"),
+    buildSpecSha256,
+    sourceSnapshotIds: requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds"),
+    sourceSnapshots: requiredSourceSnapshots(
+      buildSpec.sourceSnapshots,
+      "buildSpec.sourceSnapshots",
+      validationNow,
+    ),
+    sourceSnapshotSetHash: normalizedHashes.sourceSnapshotSetHash,
+    approvedAliasLedgerHash: normalizedHashes.approvedAliasLedgerHash,
+    facilityEvidenceLedgerHash: normalizedHashes.facilityEvidenceLedgerHash,
+    routeEvidenceLedgerHash: normalizedHashes.routeEvidenceLedgerHash,
+    approvedOverrideSetHash: normalizedHashes.approvedOverrideSetHash,
+    sourceInventorySha256: normalizedHashes.sourceInventorySha256,
+    builderGitSha: requiredString(buildSpec.builderGitSha, "buildSpec.builderGitSha"),
+    builderVersion: requiredString(buildSpec.builderVersion, "buildSpec.builderVersion"),
+    ...(overrideBinding ? {
+      sourceFixtureSha256: sha256HexString(
+        overrideBinding.sourceFixtureSha256,
+        "candidate fixture override sourceFixtureSha256",
+      ),
+      candidateFixtureSha256: sha256HexString(
+        overrideBinding.candidateFixtureSha256,
+        "candidate fixture override candidateFixtureSha256",
+      ),
+      serverRouteCoverageAuthoritySha256: sha256HexString(
+        overrideBinding.serverRouteCoverageAuthoritySha256,
+        "candidate fixture override serverRouteCoverageAuthoritySha256",
+      ),
+    } : {}),
+    ...(buildSpec.itxTopologyEvidenceSha256
+      ? { itxTopologyEvidenceSha256: sha256HexString(
+          buildSpec.itxTopologyEvidenceSha256,
+          "buildSpec.itxTopologyEvidenceSha256",
+        ) }
+      : {}),
+    ...(buildSpec.networkEdgeEvidence
+      ? { networkEdgeEvidence: candidateNetworkEdgeEvidence(
+          buildSpec.networkEdgeEvidence,
+          validationNow,
+          overrideBinding == null,
+        ) }
+      : {}),
+    ...(officialOdFareEvidence ? { officialOdFareEvidence } : {}),
+  };
+}
+
+const currentNetworkEdgeEvidenceKeys = Object.freeze([
+  "sourceInventory",
+  "capitalTopology",
+  "capitalTopologyAdmission",
+  "capitalTopologyCandidate",
+  "capitalTopologyReverification",
+  "itxCoverageContract",
+]);
+
+function exactNetworkEdgeEvidenceKeys(evidence) {
+  return [
+    ...currentNetworkEdgeEvidenceKeys,
+    ...(evidence?.itxCurrentTopologyAdmission == null ? [] : ["itxCurrentTopologyAdmission"]),
+    ...(evidence?.incheonTimetables == null ? [] : ["incheonTimetables"]),
+  ];
+}
+
+export function candidateNetworkEdgeEvidence(evidence, validationNow = candidateBuildNow(), requireFresh = true) {
+  assertExactKeys(
+    evidence,
+    exactNetworkEdgeEvidenceKeys(evidence),
+    "buildSpec.networkEdgeEvidence",
+  );
+  const sourceInventory = pinnedBuildInput(evidence.sourceInventory, "buildSpec.networkEdgeEvidence.sourceInventory");
+  const capitalTopology = pinnedBuildInput(
+    evidence.capitalTopology,
+    "buildSpec.networkEdgeEvidence.capitalTopology",
+    ["path", "sha256", "snapshotId"],
+  );
+  const itxCoverageContract = pinnedBuildInput(
+    evidence.itxCoverageContract,
+    "buildSpec.networkEdgeEvidence.itxCoverageContract",
+  );
+  const capitalTopologyReverification = pinnedBuildInput(
+    evidence.capitalTopologyReverification,
+    "buildSpec.networkEdgeEvidence.capitalTopologyReverification",
+  );
+  const capitalTopologyCandidate = pinnedBuildInput(
+    evidence.capitalTopologyCandidate,
+    "buildSpec.networkEdgeEvidence.capitalTopologyCandidate",
+    ["path", "sha256", "snapshotId"],
+  );
+  const itxCurrentTopologyAdmission = evidence.itxCurrentTopologyAdmission == null
+    ? null
+    : pinnedBuildInput(
+        evidence.itxCurrentTopologyAdmission,
+        "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
+      );
+  if (!evidence?.incheonTimetables || typeof evidence.incheonTimetables !== "object") {
+    throw new Error("production build requires pinned Incheon timetable evidence");
+  }
+  assertExactKeys(evidence.incheonTimetables, ["line1", "line2"],
+    "buildSpec.networkEdgeEvidence.incheonTimetables");
+  const incheonTimetables = Object.fromEntries([1, 2].map((lineNumber) => [`line${lineNumber}`,
+    pinnedBuildInput(evidence.incheonTimetables[`line${lineNumber}`],
+      `buildSpec.networkEdgeEvidence.incheonTimetables.line${lineNumber}`, ["path", "sha256", "snapshotId"])]));
+  return {
+    sourceInventorySha256: sourceInventory.sha256,
+    capitalTopologySnapshotId: capitalTopology.snapshotId,
+    capitalTopologySha256: capitalTopology.sha256,
+    capitalTopologyCandidateSnapshotId: capitalTopologyCandidate.snapshotId,
+    capitalTopologyCandidateSha256: capitalTopologyCandidate.sha256,
+    capitalTopologyReverificationSha256: capitalTopologyReverification.sha256,
+    capitalTopologyAdmission: candidateCapitalTopologyAdmission(
+      evidence.capitalTopologyAdmission,
+      validationNow,
+      requireFresh,
+    ),
+    itxCoverageContractSha256: itxCoverageContract.sha256,
+    ...(itxCurrentTopologyAdmission == null
+      ? {}
+      : { itxCurrentTopologyAdmissionSha256: itxCurrentTopologyAdmission.sha256 }),
+    incheonTimetableSnapshotIds: Object.fromEntries([1, 2].map((lineNumber) => [
+      `line${lineNumber}`, incheonTimetables[`line${lineNumber}`].snapshotId,
+    ])),
+  };
+}
+
+function candidateCapitalTopologyAdmission(admission, validationNow = candidateBuildNow(), requireFresh = true) {
+  if (admission == null) throw new Error("production build requires capital topology edge admission");
+  assertExactKeys(
+    admission,
+    ["schemaVersion", "artifactKind", "issue", "status", "snapshotId", "contentSha256", "reviewedAt", "reverifiedAt", "freshUntil"],
+    "buildSpec.networkEdgeEvidence.capitalTopologyAdmission",
+  );
+  const normalized = {
+    schemaVersion: requiredInteger(admission.schemaVersion, "capital topology edge admission schemaVersion"),
+    artifactKind: requiredString(admission.artifactKind, "capital topology edge admission artifactKind"),
+    issue: requiredInteger(admission.issue, "capital topology edge admission issue"),
+    status: requiredString(admission.status, "capital topology edge admission status"),
+    snapshotId: requiredString(admission.snapshotId, "capital topology edge admission snapshotId"),
+    contentSha256: sha256HexString(admission.contentSha256, "capital topology edge admission contentSha256"),
+    reviewedAt: requiredUtcDateString(admission.reviewedAt, "capital topology edge admission reviewedAt"),
+    reverifiedAt: requiredUtcDateString(admission.reverifiedAt, "capital topology edge admission reverifiedAt"),
+    freshUntil: requiredUtcDateString(admission.freshUntil, "capital topology edge admission freshUntil"),
+  };
+  if (normalized.schemaVersion !== 1
+    || normalized.artifactKind !== "capital-network-edge-admission"
+    || normalized.issue !== 2649
+    || normalized.status !== "ADMITTED") {
+    throw new Error("capital topology edge admission identity is invalid");
+  }
+  if (!(validationNow instanceof Date) || Number.isNaN(validationNow.getTime())) {
+    throw new TypeError("capital topology admission validation time is invalid");
+  }
+  const now = validationNow.getTime();
+  if (Date.parse(normalized.reviewedAt) > Date.parse(normalized.reverifiedAt)) {
+    throw new Error("capital topology edge admission review order is invalid");
+  }
+  if (Date.parse(normalized.reverifiedAt) > now) throw new Error("capital topology edge admission is future-dated");
+  if (requireFresh && Date.parse(normalized.freshUntil) <= now) throw new Error("capital topology edge admission is stale");
+  return normalized;
+}
+
+function pinnedBuildInput(reference, label, keys = ["path", "sha256"]) {
+  assertExactKeys(reference, keys, label);
+  return {
+    path: requiredString(reference.path, `${label}.path`),
+    sha256: sha256HexString(reference.sha256, `${label}.sha256`),
+    ...(reference.snapshotId === undefined
+      ? {}
+      : { snapshotId: requiredString(reference.snapshotId, `${label}.snapshotId`) }),
+  };
+}
+
+async function readPinnedBuildJson(reference, label, keys, repositoryRoot = root) {
+  const pinned = pinnedBuildInput(reference, label, keys);
+  const requestedPath = path.resolve(repositoryRoot, pinned.path);
+  const metadata = await lstat(requestedPath);
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error(`${label}.path must be a regular non-symlink file`);
+  }
+  const bytes = await readFile(await resolveBuildInputPath(
+    pinned.path,
+    `${label}.path`,
+    repositoryRoot,
+  ));
+  if (sha256(bytes) !== pinned.sha256) throw new Error(`${label}.sha256 must match tracked input bytes`);
+  return { bytes, pinned, value: JSON.parse(bytes) };
+}
+
+async function validateAndApplyNetworkEdgeProvenance(
+  buildSpec,
+  fixture,
+  itxTopologyEvidence,
+  repositoryRoot = root,
+  now = candidateBuildNow(),
+  includePackAccessibilityFreshness = true,
+) {
+  if (typeof includePackAccessibilityFreshness !== "boolean") {
+    throw new TypeError("network edge accessibility freshness mode is invalid");
+  }
+  const evidence = buildSpec.networkEdgeEvidence;
+  if (evidence == null) {
+    if (fixture.packs?.some(({ artifactKind }) => artifactKind === "production")) {
+      throw new Error("production build requires network edge evidence");
+    }
+    return null;
+  }
+  if (evidence.capitalTopologyAdmission == null) {
+    throw new Error("production build requires capital topology edge admission");
+  }
+  assertExactKeys(
+    evidence,
+    exactNetworkEdgeEvidenceKeys(evidence),
+    "buildSpec.networkEdgeEvidence",
+  );
+  const sourceInventory = await readPinnedBuildJson(
+    evidence.sourceInventory,
+    "buildSpec.networkEdgeEvidence.sourceInventory",
+    undefined,
+    repositoryRoot,
+  );
+  if (sha256(Buffer.from(JSON.stringify(sourceInventory.value)))
+    !== sha256HexString(buildSpec.sourceInventorySha256, "buildSpec.sourceInventorySha256")) {
+    throw new Error("network edge source inventory must match buildSpec.sourceInventorySha256");
+  }
+  const capitalTopology = await readPinnedBuildJson(
+    evidence.capitalTopology,
+    "buildSpec.networkEdgeEvidence.capitalTopology",
+    ["path", "sha256", "snapshotId"],
+    repositoryRoot,
+  );
+  const capitalTopologyReverification = await readPinnedBuildJson(
+    evidence.capitalTopologyReverification,
+    "buildSpec.networkEdgeEvidence.capitalTopologyReverification",
+    undefined,
+    repositoryRoot,
+  );
+  const capitalTopologyCandidate = await readPinnedBuildJson(
+    evidence.capitalTopologyCandidate,
+    "buildSpec.networkEdgeEvidence.capitalTopologyCandidate",
+    ["path", "sha256", "snapshotId"],
+    repositoryRoot,
+  );
+  const itxContract = await readPinnedBuildJson(
+    evidence.itxCoverageContract,
+    "buildSpec.networkEdgeEvidence.itxCoverageContract",
+    undefined,
+    repositoryRoot,
+  );
+  const itxCurrentTopologyAdmission = evidence.itxCurrentTopologyAdmission == null
+    ? null
+    : await readPinnedBuildJson(
+        evidence.itxCurrentTopologyAdmission,
+        "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
+        undefined,
+        repositoryRoot,
+      );
+  const topology = loadCapitalRouteTopologySnapshot(capitalTopology.value);
+  const candidateTopologyInput = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
+  const candidateTopology = requireCurrentSourceSeparatedCapitalTopology(candidateTopologyInput);
+  const incheonSource = sourceInventory.value.sources?.find(
+    ({ id }) => id === "incheon-transit-station-info",
+  );
+  if (!incheonSource?.routeMapAdmissionEvidence) {
+    throw new Error("production build requires pinned Incheon topology evidence");
+  }
+  const incheonTopology = await readPinnedBuildJson(
+    {
+      path: incheonSource.routeMapAdmissionEvidence.snapshotPath,
+      sha256: incheonSource.routeMapAdmissionEvidence.snapshotSha256,
+    },
+    "buildSpec.networkEdgeEvidence.incheonTopology",
+    undefined,
+    repositoryRoot,
+  );
+  const incheonAdmission = admittedIncheonTopologyEvidence({
+    sourceInventory: sourceInventory.value,
+    snapshot: incheonTopology.value,
+    snapshotBytes: incheonTopology.bytes,
+    now,
+    requireFresh: includePackAccessibilityFreshness,
+  });
+  const registeredIncheonAccessibility = await admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
+    sourceInventory: sourceInventory.value,
+    topologySnapshot: incheonTopology.value,
+    repositoryRoot,
+    topologyMode: "registered-topology-successor",
+    now,
+  });
+  const incheonAccessibilityAdmission = registeredIncheonAccessibility.admission;
+  const incheonTimetablePins = await Promise.all([1, 2].map(async (lineNumber) => {
+    const pinned = await readPinnedBuildJson(evidence.incheonTimetables[`line${lineNumber}`],
+      `buildSpec.networkEdgeEvidence.incheonTimetables.line${lineNumber}`,
+      ["path", "sha256", "snapshotId"], repositoryRoot);
+    return [lineNumber, pinned];
+  }));
+  const incheonTimetableSnapshots = Object.fromEntries(incheonTimetablePins.map(([lineNumber, pinned]) =>
+    [lineNumber, pinned.value]));
+  const incheonTimetableAdmission = admittedIncheonTimetableEvidence({
+    inventory: sourceInventory.value,
+    topologySnapshot: { ...incheonTopology.value, snapshotId: incheonAdmission.snapshotId },
+    timetableSnapshots: incheonTimetableSnapshots,
+    now,
+    requireFresh: includePackAccessibilityFreshness,
+  });
+  for (const [lineNumber, pinned] of incheonTimetablePins) {
+    const admitted = incheonTimetableAdmission.lines.find(({ config }) => config.lineNumber === lineNumber);
+    if (pinned.pinned.snapshotId !== admitted.source.scheduleAdmissionEvidence.snapshotId) {
+      throw new Error("pinned Incheon timetable admission identity mismatch");
+    }
+  }
+  validateSourceSeparatedCurrentTopology({
+    capitalTopology: candidateTopology,
+    incheonSnapshot: incheonTopology.value,
+  });
+  const expectedTopologyFields = JSON.stringify(["branch_name", "distance_meters", "line", "network_edges", "station_name"]);
+  if ([topology, candidateTopology].some((snapshot) =>
+    JSON.stringify([...(snapshot.fieldsProvided ?? [])].sort(compareStrings)) !== expectedTopologyFields)) {
+    throw new Error("capital topology fieldsProvided is invalid");
+  }
+  const topologyAdmission = candidateCapitalTopologyAdmission(
+    evidence.capitalTopologyAdmission,
+    now,
+    includePackAccessibilityFreshness,
+  );
+  if (topologyAdmission.snapshotId !== capitalTopologyCandidate.pinned.snapshotId
+    || topologyAdmission.contentSha256 !== candidateTopology.contentSha256) {
+    throw new Error("capital topology edge admission does not match pinned snapshot");
+  }
+  validateCapitalTopologyReverification(
+    capitalTopologyReverification.value,
+    topology,
+    candidateTopology,
+    topologyAdmission,
+    capitalTopologyCandidate.pinned.snapshotId,
+    capitalTopology.pinned.snapshotId,
+  );
+  const capitalAdmissions = admittedCapitalLineEvidence(
+    sourceInventory.value,
+    candidateTopology,
+    capitalTopologyCandidate.pinned.snapshotId,
+    topologyAdmission.reviewedAt,
+    now,
+    includePackAccessibilityFreshness,
+  );
+  const itxAdmission = await admittedItxNetworkEdgeEvidence(
+    itxContract.value,
+    itxTopologyEvidence,
+    itxCurrentTopologyAdmission?.value ?? null,
+    repositoryRoot,
+    now,
+    includePackAccessibilityFreshness,
+  );
+  const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
+  if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
+  if (productionPacks.some(({ sourceInventory: packSources }) => !Array.isArray(packSources))) {
+    throw new TypeError("network edge evidence requires pack.sourceInventory");
+  }
+  validateRegisteredIncheonAccessibilityFixture(
+    productionPacks,
+    registeredIncheonAccessibility,
+    now,
+  );
+  validateProductionIncheonTimetableFixture(productionPacks, incheonTimetableAdmission);
+  for (const pack of productionPacks) {
+    const expectedIncheonEdges = projectIncheonNetworkEdges(
+      pack,
+      incheonTopology.value,
+      incheonAdmission,
+    );
+    validateProductionIncheonNetworkEdgeFixture(pack, expectedIncheonEdges);
+    if ((pack.outOfStationTransferLinks ?? []).some(hasNetworkEdgeFixtureProvenance)) {
+      throw new Error("production network edge fixture must not contain provenance");
+    }
+    materializeCapitalTopologySource(pack, candidateTopology, capitalAdmissions);
+    applyCapitalNetworkEdgeEvidence(
+      pack,
+      candidateTopology,
+      capitalTopologyCandidate.pinned.snapshotId,
+      capitalAdmissions,
+    );
+    materializeIncheonNetworkEdges(pack, incheonTopology.value, incheonAdmission);
+    applyItxNetworkEdgeEvidence(pack, itxAdmission);
+    // The candidate fixture's persisted legacy row is never an admission input. The verified
+    // #2135 canonical and #2649 station identities are materialized as independent v19 rows.
+    pack.routeServiceArtifactEvidence = [];
+    validatedItxStationCatalogEvidence.set(pack, itxAdmission.routeServiceArtifactEvidence);
+    normalizeUnverifiedNetworkEdgeStates(pack);
+  }
+  const freshnessMillis = [
+    Date.parse(topologyAdmission.freshUntil),
+    Date.parse(incheonAdmission.freshUntil),
+    Date.parse(itxAdmission.freshUntil),
+    ...[...capitalAdmissions.values()].map(({ freshUntil }) => Date.parse(freshUntil)),
+  ];
+  if (includePackAccessibilityFreshness) {
+    const admittedAccessibilityEvidence = new Map([[
+      incheonAccessibilityAdmission.source.id,
+      incheonAccessibilityAdmission,
+    ]]);
+    const kricEscalatorAdmission = await admittedKricEscalatorAccessibilityEvidence(
+      sourceInventory.value,
+      productionPacks,
+      repositoryRoot,
+    );
+    if (kricEscalatorAdmission != null) {
+      admittedAccessibilityEvidence.set(kricEscalatorAdmission.source.id, kricEscalatorAdmission);
+    }
+    freshnessMillis.push(Date.parse(productionAccessibilityFreshUntil(
+      productionPacks,
+      sourceInventory.value,
+      buildSpec.sourceSnapshots,
+      now,
+      { admittedAccessibilityEvidence },
+    )));
+  }
+  return new Date(Math.min(...freshnessMillis)).toISOString();
+}
+
+export async function admittedKricEscalatorAccessibilityEvidence(
+  sourceInventory,
+  productionPacks,
+  repositoryRoot = root,
+) {
+  const escalatorPacks = (productionPacks ?? []).filter((pack) => [
+    ...(pack?.facilities ?? []),
+    ...(pack?.stationFacilityEvidence ?? []),
+    ...(pack?.networkEdges ?? []).filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+  ].some(({ sourceId }) => sourceId === KRIC_ESCALATOR_SOURCE_ID));
+  if (escalatorPacks.length === 0) return null;
+  const kricEscalatorSource = sourceInventory?.sources?.find(({ id }) => id === KRIC_ESCALATOR_SOURCE_ID);
+  const evidence = kricEscalatorSource?.accessibilityAdmissionEvidence;
+  if (evidence == null) return null;
+  if (kricEscalatorSource.requiredForProductionPack !== false
+    || kricEscalatorSource.productionUseAllowed !== true
+    || kricEscalatorSource.capabilities?.facility?.productionUseAllowed !== true
+    || kricEscalatorSource.license?.redistributionAllowed !== true
+    || evidence.decision !== "APPROVED"
+    || evidence.productionUseAllowed !== true
+    || typeof evidence.snapshotId !== "string"
+    || evidence.snapshotId.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
+    || typeof evidence.licenseEvidenceHash !== "string"
+    || evidence.licenseEvidenceHash.length === 0
+    || evidence.licenseEvidenceHash !== kricEscalatorSource.admissionEvidence?.licenseEvidenceHash) {
+    throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+  }
+  let snapshot;
+  try {
+    const { value: rawSnapshot } = await readPinnedBuildJson(
+      { path: evidence.snapshotPath, sha256: evidence.snapshotFileSha256 },
+      "kricEscalatorSource.accessibilityAdmissionEvidence",
+      undefined,
+      repositoryRoot,
+    );
+    snapshot = validateKricAccessibilitySnapshotIdentity(rawSnapshot);
+  } catch {
+    throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+  }
+  if (snapshot.snapshotId !== evidence.snapshotId
+    || snapshot.sourceId !== KRIC_ESCALATOR_SOURCE_ID
+    || snapshot.rawSha256 !== evidence.rawSha256
+    || snapshot.contentSha256 !== evidence.contentSha256
+    || snapshot.capturedAt !== evidence.capturedAt
+    || snapshot.observedAt !== evidence.observedAt
+    || snapshot.freshUntil !== evidence.freshUntil
+    || snapshot.schemaFingerprint !== evidence.schemaFingerprint
+    || snapshot.absenceEvidenceMode !== evidence.absenceEvidenceMode
+    || !Array.isArray(snapshot.queries)) {
+    throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+  }
+  const queries = snapshot.queries.filter(({ status }) => status !== "UNVERIFIED_EVIDENCE_BLOCKED");
+  const evidenceHashes = new Set();
+  for (const pack of escalatorPacks) {
+    if (!Array.isArray(pack.stations) || !Array.isArray(pack.stationLines)) {
+      throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+    }
+    const stationNames = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
+    const stationContexts = kricStationContexts(snapshot, queries, pack.stationLines);
+    for (const query of queries) {
+      const stationName = stationNames.get(query.stationId);
+      if (typeof stationName !== "string" || stationName.length === 0) {
+        throw new Error(`production accessibility snapshot mismatch: ${KRIC_ESCALATOR_SOURCE_ID}`);
+      }
+      const observed = kricQueryFacilities({
+        snapshot,
+        query,
+        stationName,
+        stationContexts,
+      });
+      for (const row of observed.facilities) evidenceHashes.add(row.evidenceHash);
+      for (const row of observed.statusEvidence) evidenceHashes.add(row.evidenceHash);
+    }
+  }
+  return {
+    source: kricEscalatorSource,
+    snapshotId: evidence.snapshotId,
+    freshUntil: evidence.freshUntil,
+    evidenceHashes,
+  };
+}
+
+export function validateCapitalTopologyReverification(
+  evidence,
+  topology,
+  candidateTopology,
+  admission,
+  candidateSnapshotId,
+  baselineSnapshotId,
+) {
+  const sourceSeparatedLineIds = CAPITAL_MAP_LINE_IDS.filter(
+    (lineId) => !incheonTopologyLineIds.includes(lineId),
+  );
+  const candidateLineIds = new Set(candidateTopology.lines?.map(({ lineId }) => lineId) ?? []);
+  const sourceSeparated = candidateLineIds.size === sourceSeparatedLineIds.length
+    && sourceSeparatedLineIds.every((lineId) => candidateLineIds.has(lineId));
+  const topologyLineIds = new Set(topology.lines?.map(({ lineId }) => lineId) ?? []);
+  const sourceSeparatedBaseline = topologyLineIds.size === sourceSeparatedLineIds.length
+    && sourceSeparatedLineIds.every((lineId) => topologyLineIds.has(lineId));
+  const fullBaseline = topologyLineIds.size === CAPITAL_MAP_LINE_IDS.length
+    && CAPITAL_MAP_LINE_IDS.every((lineId) => topologyLineIds.has(lineId));
+  if (!sourceSeparated) {
+    throw new Error("capital topology reverification identity is invalid");
+  }
+  if (sourceSeparated && !sourceSeparatedBaseline && !fullBaseline) {
+    throw new Error("capital topology reverification baseline ownership is invalid");
+  }
+  const baselineTopology = sourceSeparated && fullBaseline
+    ? projectCapitalTopologyOwnership(topology)
+    : topology;
+  assertExactKeys(
+    evidence,
+    ["schemaVersion", "artifactKind", "sourceIssue", "admissionIssue", "baseline", "candidate", "comparison"],
+    "capital topology reverification evidence",
+  );
+  assertExactKeys(evidence.baseline, ["snapshotId", "contentSha256", "normalizedLineSetSha256"], "capital topology reverification baseline");
+  assertExactKeys(
+    evidence.candidate,
+    ["capturedAt", "freshUntil", "contentSha256", "normalizedLineSetSha256", "lineCount", "totalEdgeCount", "lines"],
+    "capital topology reverification candidate",
+  );
+  assertExactKeys(
+    evidence.comparison,
+    ["changedLineCount", "addedEdgeCount", "removedEdgeCount", "modifiedEdgeCount"],
+    "capital topology reverification comparison",
+  );
+  if (evidence.schemaVersion !== 1
+    || evidence.artifactKind !== "capital-topology-reverification-evidence"
+    || evidence.sourceIssue !== 60
+    || evidence.admissionIssue !== 2649
+    || evidence.baseline.snapshotId !== baselineSnapshotId
+    || evidence.baseline.contentSha256 !== baselineTopology.contentSha256
+    || admission.snapshotId !== candidateSnapshotId
+    || admission.contentSha256 !== candidateTopology.contentSha256
+    || evidence.candidate.freshUntil !== admission.freshUntil
+    || Object.values(evidence.comparison).some((count) => count !== 0)) {
+    throw new Error("capital topology reverification identity is invalid");
+  }
+  if (!Array.isArray(evidence.candidate.lines)
+    || evidence.candidate.lines.length !== candidateTopology.lines.length
+    || evidence.candidate.lineCount !== candidateTopology.lineCount
+    || evidence.candidate.totalEdgeCount !== candidateTopology.totalEdgeCount) {
+    throw new Error("capital topology reverification coverage mismatch");
+  }
+  sha256HexString(evidence.baseline.normalizedLineSetSha256, "capital topology reverification baseline normalizedLineSetSha256");
+  sha256HexString(evidence.candidate.contentSha256, "capital topology reverification candidate contentSha256");
+  sha256HexString(evidence.candidate.normalizedLineSetSha256, "capital topology reverification candidate normalizedLineSetSha256");
+  const evidenceCandidateLines = evidence.candidate.lines.map((line) => {
+    const label = "capital topology reverification candidate line";
+    assertExactKeys(line, ["lineId", "datasetId", "rawSha256", "contentSha256"], label);
+    return {
+      lineId: requiredString(line.lineId, `${label}.lineId`),
+      contentSha256: sha256HexString(line.contentSha256, `${label}.contentSha256`),
+      rawSha256: sha256HexString(line.rawSha256, `${label}.rawSha256`),
+      datasetId: requiredString(line.datasetId, `${label}.datasetId`),
+    };
+  });
+  const candidateLines = candidateTopology.lines.map(({
+    lineId, datasetId, rawSha256, contentSha256,
+  }) => ({ lineId, contentSha256, rawSha256, datasetId }));
+  const candidateNormalized = sha256(Buffer.from(JSON.stringify(candidateLines
+    .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
+    .sort((left, right) => compareStrings(left.lineId, right.lineId)))));
+  const topologyNormalized = sha256(Buffer.from(JSON.stringify(baselineTopology.lines
+    .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
+    .sort((left, right) => compareStrings(left.lineId, right.lineId)))));
+  if (candidateNormalized !== evidence.candidate.normalizedLineSetSha256
+    || topologyNormalized !== evidence.baseline.normalizedLineSetSha256
+    || candidateNormalized !== topologyNormalized) {
+    throw new Error("capital topology reverification normalized content mismatch");
+  }
+  if (candidateTopology.official !== true
+    || candidateTopology.fixture !== false
+    || candidateTopology.credentialRequired !== false
+    || candidateTopology.credentialRedacted !== true
+    || candidateTopology.license?.redistributionAllowed !== true
+    || candidateTopology.contentSha256 !== evidence.candidate.contentSha256
+    || candidateTopology.capturedAt !== evidence.candidate.capturedAt
+    || candidateTopology.lines.some(({ capturedAt }) => capturedAt !== candidateTopology.capturedAt)
+    || candidateTopology.freshUntil !== evidence.candidate.freshUntil
+    || candidateTopology.lineCount !== evidence.candidate.lineCount
+    || candidateTopology.totalEdgeCount !== evidence.candidate.totalEdgeCount
+    || JSON.stringify(candidateTopology.topologyGaps) !== JSON.stringify(baselineTopology.topologyGaps)
+    || JSON.stringify(candidateLines) !== JSON.stringify(evidenceCandidateLines)) {
+    throw new Error("capital topology reverification candidate snapshot mismatch");
+  }
+  const capturedAt = Date.parse(requiredUtcDateString(
+    evidence.candidate.capturedAt,
+    "capital topology reverification candidate capturedAt",
+  ));
+  const freshUntil = Date.parse(requiredUtcDateString(
+    evidence.candidate.freshUntil,
+    "capital topology reverification candidate freshUntil",
+  ));
+  if (freshUntil - capturedAt !== topologySnapshotFreshnessMillis(capturedAt)
+    || capturedAt > Date.parse(admission.reverifiedAt)
+    || freshUntil <= Date.parse(admission.reverifiedAt)) {
+    throw new Error("capital topology reverification freshness is invalid");
+  }
+}
+
+function isReviewedAccessibilityEdge(edge, pack) {
+  const nodeId = edge.edgeType === "ENTRY" ? edge.toNodeId : edge.fromNodeId;
+  const [stationId, lineId] = String(nodeId ?? "").split(":");
+  const probes = (pack?.stationFacilityEvidence ?? []).filter((row) =>
+    row.stationId === stationId
+    && row.lineId === lineId
+    && row.facilityType === "ACCESSIBILITY_STATUS_PROBE"
+    && row.sourceId === edge.sourceId
+    && row.sourceSnapshotId === edge.sourceSnapshotId
+    && row.providerRecordHash === edge.providerRecordHash);
+  const probe = probes.length === 1 ? probes[0] : undefined;
+  return edge.sourceId === "seoul-metro-accessibility"
+    && ["ENTRY", "EXIT"].includes(edge.edgeType)
+    && ["UNKNOWN", "NO_OFFICIAL_FEED"].includes(edge.accessibilityStatus)
+    && (edge.accessibilityStatus !== "NO_OFFICIAL_FEED" || probe?.evidenceKind === "NOT_EXISTS")
+    && edge.stairAccessState === "UNKNOWN"
+    && edge.provenanceKind === "OFFICIAL_SOURCE"
+    && edge.verificationStatus === "NOT_VERIFIED"
+    && typeof edge.sourceSnapshotId === "string"
+    && /^[0-9a-f]{64}$/.test(edge.providerRecordHash ?? "")
+    && /^[0-9a-f]{64}$/.test(edge.evidenceHash ?? "")
+    && Number.isFinite(Date.parse(edge.lastVerifiedAt))
+    && probe?.evidenceHash === sha256(JSON.stringify({
+      snapshotId: edge.sourceSnapshotId, stationId, lineId, providerRecordHash: edge.providerRecordHash,
+    }))
+    && edge.evidenceHash === sha256(JSON.stringify({
+      edgeId: edge.id, sourceSnapshotId: edge.sourceSnapshotId, providerRecordHash: edge.providerRecordHash,
+    }));
+}
+
+// #913: 시간표 원천의 신선도. 팩 expiresAt·서버 번들 freshUntil에 함께 반영한다.
+// - spec이 인용한 시간표 정책 클래스 원장 행(KRIC 보관본·계획 시각표·station-lines·지역 시간표)
+// - trip이 가리키는 원천 snapshot 중 원장 행이 없는 것(수도권·코레일 projection, 인천)은 inventory evidence의 수집 시각에
+//   정책 클래스를 적용해 유도한다.
+// trip이 가리키는 원천의 만료를 어느 쪽으로도 계산할 수 없거나 이미 만료됐으면 실패한다.
+const TIMETABLE_SOURCE_CLASS_IDS = Object.freeze([
+  "official_static_timetable_confirmation", "planned_timetable",
+  "busan_timetable_observation", "daegu_timetable_observation", "daejeon_timetable_observation", "incheon_timetable_observation",
+]);
+const TIMETABLE_EVIDENCE_KEYS = Object.freeze(["capitalScheduleAdmissionEvidence", "korailScheduleAdmissionEvidence", "scheduleAdmissionEvidence"]);
+
+export function productionTimetableFreshness({ packs, sourceSnapshots, inventory, freshnessPolicy, evaluationAt, now }) {
+  if (!Array.isArray(packs) || !Array.isArray(sourceSnapshots) || !Array.isArray(inventory?.sources)
+    || !Array.isArray(freshnessPolicy?.sourceClasses) || !(now instanceof Date) || Number.isNaN(now.valueOf())) {
+    throw new Error("TIMETABLE_FRESHNESS_INPUT");
+  }
+  const classOf = new Map(freshnessPolicy.sourceClasses.flatMap((sourceClass) => (sourceClass.sourceIds ?? []).map((sourceId) => [sourceId, sourceClass])));
+  const isTimetable = (sourceId) => TIMETABLE_SOURCE_CLASS_IDS.includes(classOf.get(sourceId)?.id);
+  const entries = new Map();
+  const add = (entry) => {
+    if (!Number.isFinite(Date.parse(entry.freshnessExpiresAt)) || new Date(entry.freshnessExpiresAt).toISOString() !== entry.freshnessExpiresAt) {
+      throw new Error(`TIMETABLE_FRESHNESS_UNRESOLVED: ${entry.sourceId} ${entry.sourceSnapshotId}`);
+    }
+    entries.set(`${entry.sourceId}\u0000${entry.sourceSnapshotId}`, entry);
+  };
+  const specRows = sourceSnapshots.filter(({ sourceId }) => isTimetable(sourceId));
+  for (const row of specRows) {
+    add({ sourceId: row.sourceId, sourceSnapshotId: row.snapshotId, freshnessExpiresAt: row.freshnessExpiresAt, basis: "buildSpec.sourceSnapshots" });
+  }
+  const tripSources = new Map();
+  for (const trip of packs.flatMap((pack) => pack.transitTrips ?? [])) {
+    tripSources.set(`${trip.sourceId}\u0000${trip.sourceSnapshotId ?? ""}`, { sourceId: trip.sourceId, sourceSnapshotId: trip.sourceSnapshotId });
+  }
+  for (const { sourceId, sourceSnapshotId } of tripSources.values()) {
+    const spec = specRows.filter((row) => row.sourceId === sourceId && (sourceSnapshotId === undefined || row.snapshotId === sourceSnapshotId));
+    if (spec.length === 1) continue;
+    const source = inventory.sources.find(({ id }) => id === sourceId);
+    const sourceClass = classOf.get(sourceId);
+    const evidences = TIMETABLE_EVIDENCE_KEYS.map((key) => [key, source?.[key]])
+      .filter(([, evidence]) => evidence && sourceSnapshotId !== undefined && evidence.snapshotId === sourceSnapshotId);
+    if (!isTimetable(sourceId) || evidences.length !== 1 || typeof evidences[0][1][sourceClass.basisField] !== "string") {
+      throw new Error(`TIMETABLE_FRESHNESS_UNRESOLVED: ${sourceId}${sourceSnapshotId === undefined ? "" : ` ${sourceSnapshotId}`}`);
+    }
+    const [key, evidence] = evidences[0];
+    add({
+      sourceId, sourceSnapshotId,
+      freshnessExpiresAt: deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: sourceClass.id,
+        basisAt: evidence[sourceClass.basisField], evaluationAt }),
+      basis: `inventory.${key}`,
+    });
+  }
+  const sources = [...entries.values()].sort((left, right) => (left.sourceId < right.sourceId ? -1 : left.sourceId > right.sourceId ? 1
+    : left.sourceSnapshotId < right.sourceSnapshotId ? -1 : left.sourceSnapshotId > right.sourceSnapshotId ? 1 : 0));
+  for (const entry of sources) {
+    if (Date.parse(entry.freshnessExpiresAt) <= now.valueOf()) {
+      throw new Error(`TIMETABLE_FRESHNESS_EXPIRED: ${entry.sourceId} ${entry.sourceSnapshotId} ${entry.freshnessExpiresAt}`);
+    }
+  }
+  // 리뷰 F2: 전국 production 팩에서 시간표 원천이 하나도 없으면 만료를 계산할 수 없으므로 실패한다.
+  if (sources.length === 0) throw new Error("TIMETABLE_FRESHNESS_UNRESOLVED: no timetable sources");
+  const freshUntil = new Date(Math.min(...sources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)))).toISOString();
+  return { freshUntil, sources };
+}
+
+/** 시간표 신선도를 계산하지 않는 범위와 사유. 발행 가능한 전국 production 빌드만 계산한다(null). */
+export function timetableFreshnessSkipReason({ productionScopeId, productionPacks, validationOnly }) {
+  if (productionScopeId !== "nationwide_routing_android_v1") return "NOT_NATIONWIDE_SCOPE";
+  if (!Array.isArray(productionPacks) || productionPacks.length === 0) return "NO_PRODUCTION_PACK";
+  if (validationOnly === true) return "VALIDATION_ONLY_BUILD";
+  return null;
+}
+
+/** 네트워크(topology·ITX·접근성) 창과 시간표 창 중 이른 쪽을 팩 만료로 하고, 결정한 쪽을 남긴다. */
+// 네트워크(topology·ITX·접근성) 창, 시간표 창, spec이 인용한 모든 원천의 정책 신선도(citedSources) 중 가장 이른 쪽을 팩 만료로 한다.
+// #913 후속: citedSources는 서버 번들 FINAL의 원천 신선도 cutoff와 같은 계산(validateSourceSnapshotFreshness 결과)이다.
+// 이 집합을 빼면 팩·번들 freshUntil이 인용 원천보다 늦어져 FINAL이 발행 단계에서 실패한다(seq126).
+export function candidateArtifactFreshness({ networkFreshUntil, timetable, citedSources }) {
+  const network = Date.parse(networkFreshUntil);
+  if (!Number.isFinite(network)) throw new Error("candidate network freshUntil is invalid");
+  if (!Array.isArray(citedSources) || citedSources.length === 0
+    || citedSources.some(({ status, freshnessExpiresAt }) => status !== "FRESH" || !Number.isFinite(Date.parse(freshnessExpiresAt)))) {
+    throw new Error("CITED_SOURCE_FRESHNESS_UNRESOLVED");
+  }
+  const citedMillis = Math.min(...citedSources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  const timetableMillis = timetable?.freshUntil == null ? Number.POSITIVE_INFINITY : Date.parse(timetable.freshUntil);
+  const freshMillis = Math.min(network, timetableMillis, citedMillis);
+  const decidedBy = [
+    ...(network === freshMillis ? [{ kind: "network" }] : []),
+    ...(timetable?.sources ?? []).filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === freshMillis)
+      .map(({ sourceId, sourceSnapshotId }) => ({ kind: "timetable", sourceId, sourceSnapshotId })),
+    ...citedSources.filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === freshMillis)
+      .map(({ snapshotId, sourceClassId }) => ({ kind: "cited-source", sourceSnapshotId: snapshotId, sourceClassId })),
+  ];
+  return {
+    freshUntil: new Date(freshMillis).toISOString(),
+    networkFreshUntil: new Date(network).toISOString(),
+    citedSourceFreshUntil: new Date(citedMillis).toISOString(),
+    decidedBy,
+    timetableSources: structuredClone(timetable?.sources ?? []),
+  };
+}
+
+export function productionAccessibilityFreshUntil(
+  packs,
+  inventory,
+  sourceSnapshots,
+  now = candidateBuildNow(),
+  { admittedAccessibilityEvidence = new Map() } = {},
+) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError("production accessibility validation time is invalid");
+  }
+  if (!(admittedAccessibilityEvidence instanceof Map)) {
+    throw new TypeError("production accessibility evidence admissions are invalid");
+  }
+  const sources = new Map(inventory.sources.map((source) => [source.id, source]));
+  const snapshots = new Map(sourceSnapshots.map((snapshot) => [snapshot.sourceId, snapshot]));
+  const rows = packs.flatMap((pack) => [
+    ...(pack.facilities ?? []),
+    ...(pack.stationFacilityEvidence ?? []),
+    ...(pack.networkEdges ?? []).filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+  ]).filter(({ sourceId }) => sourceId);
+  const expires = rows.map((row) => {
+    if (row.sourceId === incheonAccessibilitySourceId) {
+      const admission = admittedAccessibilityEvidence.get(row.sourceId);
+      const source = sources.get(row.sourceId);
+      const registration = admission?.source?.registrationEvidence;
+      const projection = snapshots.get(row.sourceId);
+      if (admission?.source?.id !== row.sourceId
+        || !isDeepStrictEqual(admission.source, source)
+        || admission.source.requiredForProductionPack !== true
+        || admission.source.productionUseAllowed !== true
+        || admission.source.license?.redistributionAllowed !== true
+        || registration?.sourceId !== row.sourceId
+        || registration.snapshotId !== admission.snapshotId
+        || registration.snapshotId !== row.sourceSnapshotId
+        || registration.adminReviewRecordHash !== admission.source.admissionEvidence?.adminReviewRecordHash
+        || !/^[a-f0-9]{64}$/u.test(registration.normalizedSchemaFingerprint ?? "")
+        || !/^[a-f0-9]{64}$/u.test(registration.claimBindingsSha256 ?? "")
+        || admission.source.admissionEvidence?.sampleEvidenceHash !== row.evidenceHash
+        || projection?.sourceId !== row.sourceId
+        || projection.snapshotId !== admission.snapshotId
+        || projection.rawObjectUri !== registration.rawObjectUri
+        || projection.rawSha256 !== registration.rawObjectSha256
+        || projection.schemaFingerprint !== registration.normalizedSchemaFingerprint
+        || projection.adminReviewRecordHash !== registration.adminReviewRecordHash
+        || projection.licenseStatus !== "PASS"
+        || projection.redistributionAllowed !== true
+        || projection.credentialRedacted !== true
+        || projection.snapshotStatus !== "LOCKED"
+        || !Number.isFinite(Date.parse(projection.freshnessExpiresAt))) {
+        throw new Error(`production accessibility snapshot mismatch: ${row.sourceId}`);
+      }
+      if (Date.parse(projection.freshnessExpiresAt) <= now.getTime()) {
+        throw new Error(`production accessibility snapshot is stale: ${row.sourceId}`);
+      }
+      return Date.parse(projection.freshnessExpiresAt);
+    }
+    const evidence = sources.get(row.sourceId)?.accessibilityAdmissionEvidence;
+    if (!evidence || evidence.snapshotId !== row.sourceSnapshotId || !Number.isFinite(Date.parse(evidence.freshUntil))) {
+      throw new Error(`production accessibility evidence mismatch: ${row.sourceId}`);
+    }
+    const snapshot = snapshots.get(row.sourceId);
+    if (snapshot != null) {
+      if (snapshot.snapshotId !== row.sourceSnapshotId
+        || !Number.isFinite(Date.parse(snapshot.freshnessExpiresAt))) {
+        throw new Error(`production accessibility snapshot mismatch: ${row.sourceId}`);
+      }
+      if (Date.parse(snapshot.freshnessExpiresAt) <= now.getTime()) {
+        throw new Error(`production accessibility snapshot is stale: ${row.sourceId}`);
+      }
+      return Date.parse(snapshot.freshnessExpiresAt);
+    }
+    const admission = admittedAccessibilityEvidence.get(row.sourceId);
+    const matchesEvidenceHash = admission?.evidenceHashes instanceof Set
+      ? admission.evidenceHashes.has(row.evidenceHash)
+      : admission?.evidenceHash === row.evidenceHash;
+    if (admission?.source?.id !== row.sourceId
+      || !isDeepStrictEqual(admission.source, sources.get(row.sourceId))
+      || admission.source.requiredForProductionPack !== false
+      || admission.source.productionUseAllowed !== true
+      || admission.source.license?.redistributionAllowed !== true
+      || admission.snapshotId !== row.sourceSnapshotId
+      || !matchesEvidenceHash
+      || admission.freshUntil !== evidence.freshUntil
+      || !Number.isFinite(Date.parse(admission.freshUntil))) {
+      throw new Error(`production accessibility snapshot mismatch: ${row.sourceId}`);
+    }
+    if (Date.parse(admission.freshUntil) <= now.getTime()) {
+      throw new Error(`production accessibility snapshot is stale: ${row.sourceId}`);
+    }
+    return Date.parse(admission.freshUntil);
+  });
+  if (expires.length === 0) throw new Error("production accessibility evidence is missing");
+  return new Date(Math.min(...expires)).toISOString();
+}
+
+export function normalizeUnverifiedNetworkEdgeStates(pack) {
+  for (const edge of [...(pack.networkEdges ?? []), ...(pack.outOfStationTransferLinks ?? [])]) {
+    if (edge.verificationStatus !== "VERIFIED") {
+      if (!(isReviewedAccessibilityEdge(edge, pack) && edge.accessibilityStatus === "NO_OFFICIAL_FEED")) {
+        edge.accessibilityStatus = "UNKNOWN";
+      }
+      edge.stairAccessState = "UNKNOWN";
+    }
+  }
+}
+
+function materializeCapitalTopologySource(pack, topology, admissions) {
+  const lineIds = topology.lines.map(({ lineId }) => lineId).filter((lineId) => admissions.has(lineId));
+  const lineIdSet = new Set(lineIds);
+  const source = {
+    id: topology.sourceId,
+    owner: "국가철도공단·국토교통부",
+    url: topology.license?.evidenceUrl,
+    license: topology.license?.attribution,
+    licenseStatus: "redistributable",
+    redistributionAllowed: topology.license?.redistributionAllowed === true,
+    updateFrequency: "snapshot-on-change",
+    updatedAt: [...admissions.values()].map(({ verifiedAt }) => verifiedAt).sort(compareStrings).at(-1),
+    fields: [...topology.fieldsProvided],
+    coverageScope: {
+      regionIds: ["capital"],
+      operatorIds: [...new Set([
+        ...(pack.lines ?? [])
+          .filter(({ id }) => lineIdSet.has(id))
+          .map(({ operatorId }) => operatorId),
+        ...(pack.coverageLineOperatorScopes ?? [])
+          .filter(({ lineId }) => lineIdSet.has(lineId))
+          .map(({ operatorId }) => operatorId),
+      ])].sort(compareStrings),
+      lineIds,
+      sourceDomains: ["route_graph_topology"],
+    },
+  };
+  if (!Array.isArray(pack.sourceInventory)) {
+    throw new TypeError("network edge evidence requires pack.sourceInventory");
+  }
+  const existing = pack.sourceInventory.find(({ id }) => id === source.id);
+  if (existing == null) pack.sourceInventory.push(source);
+  else if (JSON.stringify(existing) !== JSON.stringify(source)) {
+    throw new Error("capital topology pack source inventory mismatch");
+  }
+}
+
+export function admittedCapitalLineEvidence(
+  sourceInventory,
+  topology,
+  snapshotId,
+  reviewedAt,
+  now = candidateBuildNow(),
+  requireFresh = true,
+) {
+  if (sourceInventory?.schemaVersion !== 1
+    || sourceInventory.artifactKind !== "production-source-inventory"
+    || !Array.isArray(sourceInventory.sources)) {
+    throw new Error("network edge source inventory identity is invalid");
+  }
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError("capital topology admission validation time is invalid");
+  }
+  const requiredReviewedAt = requiredUtcDateString(reviewedAt, "capital topology reviewedAt");
+  const topologyLines = new Set(topology.lines.map(({ lineId }) => lineId));
+  const admissions = new Map();
+  for (const source of sourceInventory.sources.filter(({ routeMapAdmissionEvidence }) =>
+    routeMapAdmissionEvidence?.topologySourceId === topology.sourceId)) {
+    const evidence = source.routeMapAdmissionEvidence;
+    const current = evidence.currentTopologyAdmission;
+    const admission = current ?? evidence;
+    if (current != null) {
+      assertExactKeys(current, [
+        "schemaVersion", "artifactKind", "issue", "status", "topologySnapshotId",
+        "topologyContentSha256", "positionSnapshotSha256", "reviewedAt", "freshUntil",
+        "topologyLineages",
+      ], `${source.id}.routeMapAdmissionEvidence.currentTopologyAdmission`);
+      if (current.schemaVersion !== 1
+        || current.artifactKind !== "capital-route-map-current-topology-admission"
+        || current.issue !== 2776
+        || current.status !== "ADMITTED"
+        || current.positionSnapshotSha256 !== sha256HexString(
+          evidence.currentLayoutAdmission?.snapshotSha256 ?? evidence.snapshotSha256,
+          `${source.id}.routeMapAdmissionEvidence.snapshotSha256`,
+        )
+        || current.reviewedAt !== requiredReviewedAt) {
+        throw new Error(`capital current topology admission identity mismatch: ${source.id}`);
+      }
+    }
+    if (admission.topologySnapshotId !== snapshotId
+      || admission.topologyContentSha256 !== topology.contentSha256
+      || !Array.isArray(admission.topologyLineages)
+      || admission.topologyLineages.length === 0) {
+      throw new Error(
+        `capital ${current == null ? "" : "current "}topology admission identity mismatch: ${source.id}`,
+      );
+    }
+    const capturedAt = requiredUtcDateString(
+      current?.reviewedAt ?? evidence.capturedAt,
+      `${source.id}.routeMapAdmissionEvidence.${current == null ? "capturedAt" : "currentTopologyAdmission.reviewedAt"}`,
+    );
+    const freshUntil = requiredUtcDateString(
+      admission.freshUntil,
+      `${source.id}.routeMapAdmissionEvidence.${current == null ? "freshUntil" : "currentTopologyAdmission.freshUntil"}`,
+    );
+    if (Date.parse(capturedAt) > Date.parse(requiredReviewedAt) || Date.parse(capturedAt) > now.getTime()) {
+      throw new Error(`capital topology admission is future-dated: ${source.id}`);
+    }
+    if (requireFresh && Date.parse(freshUntil) <= now.getTime()) {
+      throw new Error(`capital ${current == null ? "topology admission" : "current topology admission"} is stale: ${source.id}`);
+    }
+    for (const lineage of admission.topologyLineages) {
+      if (current != null) {
+        assertExactKeys(
+          lineage,
+          ["sourceId", "snapshotId", "contentSha256", "lineId"],
+          `${source.id}.routeMapAdmissionEvidence.currentTopologyAdmission.topologyLineages`,
+        );
+      }
+      const lineId = requiredCapitalLineAdmission(source, evidence, lineage, topology, snapshotId, topologyLines);
+      const previous = admissions.get(lineId);
+      if (previous == null || Date.parse(capturedAt) > Date.parse(previous.verifiedAt)) {
+        admissions.set(lineId, { verifiedAt: capturedAt, freshUntil });
+      }
+    }
+  }
+  if (admissions.size === 0) throw new Error("capital topology has no fresh admitted line evidence");
+  for (const [lineId, admission] of admissions) {
+    admissions.set(lineId, { ...admission, verifiedAt: requiredReviewedAt });
+  }
+  return admissions;
+}
+
+function requiredCapitalLineAdmission(source, evidence, lineage, topology, snapshotId, topologyLines) {
+  const lineId = requiredString(lineage.lineId, `${source.id}.routeMapAdmissionEvidence.topologyLineages.lineId`);
+  if (lineage.sourceId !== topology.sourceId
+    || lineage.snapshotId !== snapshotId
+    || lineage.contentSha256 !== topology.contentSha256
+    || !topologyLines.has(lineId)
+    || !evidence.lineIds?.includes(lineId)) {
+    throw new Error(`capital topology line admission mismatch: ${source.id}:${lineId}`);
+  }
+  return lineId;
+}
+
+const capitalStationAliases = Object.freeze({
+  능길: "신길온천",
+  김포공항역: "김포공항",
+  부천종합운동장역: "부천종합운동장",
+});
+
+function capitalStationName(value) {
+  const normalized = normalizeStationName(value);
+  return capitalStationAliases[normalized] ?? normalized;
+}
+
+function capitalStationIdsByLine(pack) {
+  const stations = new Map((pack.stations ?? []).map((station) => [station.id, station]));
+  const result = new Map();
+  for (const membership of pack.stationLines ?? []) {
+    const station = stations.get(membership.stationId);
+    if (station == null) throw new Error(`station_lines references missing station: ${membership.stationId}`);
+    const key = `${membership.lineId}\0${capitalStationName(station.nameKo)}`;
+    const ids = result.get(key) ?? [];
+    ids.push(station.id);
+    result.set(key, ids);
+  }
+  return result;
+}
+
+function requiredCapitalStationId(stationIds, lineId, stationName) {
+  const ids = stationIds.get(`${lineId}\0${capitalStationName(stationName)}`) ?? [];
+  if (ids.length !== 1) throw new Error(`capital topology station projection mismatch: ${lineId}:${stationName}`);
+  return ids[0];
+}
+
+function capitalTopologyCoreEdge(stationIds, lineId, sourceEdge) {
+  const fromStationId = requiredCapitalStationId(
+    stationIds,
+    lineId,
+    sourceEdge.fromStationName,
+  );
+  const toStationId = requiredCapitalStationId(
+    stationIds,
+    lineId,
+    sourceEdge.toStationName,
+  );
+  return {
+    id: `edge-${lineId}-${fromStationId}-${toStationId}`,
+    fromNodeId: `${fromStationId}:${lineId}`,
+    toNodeId: `${toStationId}:${lineId}`,
+    durationSeconds: sourceEdge.durationSeconds,
+    distanceMeters: sourceEdge.distanceMeters,
+    edgeType: "RIDE",
+    servicePattern: "LOCAL",
+    serviceClass: "SUBWAY",
+  };
+}
+
+export function projectCapitalTopologyIntoCanonicalFixture(
+  fixture,
+  topology,
+  topologySnapshotId,
+  admissions,
+) {
+  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  if (fixture?.manifest?.channel !== "production"
+    || packs.length !== 1
+    || packs[0].artifactKind !== "production"
+    || !Array.isArray(packs[0].networkEdges)
+    || !Array.isArray(packs[0].stations)
+    || !Array.isArray(packs[0].stationLines)
+    || !Array.isArray(topology?.lines)
+    || topology.sourceId !== "capital-route-topology"
+    || !isCapitalRouteTopologySnapshotId(topologySnapshotId)
+    || !(admissions instanceof Map)) {
+    throw new Error("capital topology canonical fixture is invalid");
+  }
+  const pack = packs[0];
+  const stationIds = capitalStationIdsByLine(pack);
+  const lineIds = new Set(topology.lines.map(({ lineId }) => lineId));
+  const projected = [];
+  const projectedIds = new Set();
+  for (const line of topology.lines) {
+    if (typeof line?.lineId !== "string" || line.lineId.length === 0
+      || !Array.isArray(line.edges) || line.edgeCount !== line.edges.length) {
+      throw new Error("capital topology canonical fixture projection is invalid");
+    }
+    const admission = admissions.get(line.lineId);
+    if (admission == null
+      || requiredUtcDateString(admission.verifiedAt, "capital topology edge lastVerifiedAt")
+        !== topology.capturedAt
+      || requiredUtcDateString(admission.freshUntil, "capital topology edge freshUntil")
+        !== topology.freshUntil) {
+      throw new Error(`capital topology line admission mismatch: ${line.lineId}`);
+    }
+    for (const sourceEdge of line.edges) {
+      const core = capitalTopologyCoreEdge(stationIds, line.lineId, sourceEdge);
+      if (projectedIds.has(core.id)) {
+        throw new Error(`capital topology duplicate fixture edge: ${core.id}`);
+      }
+      projectedIds.add(core.id);
+      projected.push({
+        ...core,
+        includesStairs: false,
+        stairAccessState: "UNKNOWN",
+        accessibilityStatus: "UNKNOWN",
+        reliabilityScore: 100,
+        facilityId: null,
+      });
+    }
+  }
+  if (admissions.size !== topology.lines.length) {
+    throw new Error("capital topology admission line set mismatch");
+  }
+  const retained = pack.networkEdges.filter((edge) => !(edge.edgeType === "RIDE"
+    && edge.servicePattern === "LOCAL"
+    && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+    && lineIdsForNodes([edge.fromNodeId, edge.toNodeId]).some((lineId) => lineIds.has(lineId))));
+  pack.networkEdges = [...retained, ...projected]
+    .sort((left, right) => compareStrings(left.id, right.id));
+  return { edgeCount: projected.length, contentSha256: topology.contentSha256 };
+}
+
+function applyCapitalNetworkEdgeEvidence(pack, topology, snapshotId, admissions) {
+  const stationIds = capitalStationIdsByLine(pack);
+  const edges = new Map((pack.networkEdges ?? []).map((edge) => [edge.id, edge]));
+  const admittedLineIds = new Set(topology.lines.map(({ lineId }) => lineId).filter((lineId) => admissions.has(lineId)));
+  const expectedEdgeIds = new Set();
+  for (const line of topology.lines.filter(({ lineId }) => admissions.has(lineId))) {
+    const admission = admissions.get(line.lineId);
+    if (line.edgeCount !== line.edges.length) throw new Error(`capital topology edge count mismatch: ${line.lineId}`);
+    for (const sourceEdge of line.edges) {
+      const expected = capitalTopologyCoreEdge(stationIds, line.lineId, sourceEdge);
+      expectedEdgeIds.add(expected.id);
+      const edge = edges.get(expected.id);
+      if (edge == null || Object.entries(expected).some(([key, value]) => edge[key] !== value)) {
+        throw new Error(`capital topology fixture projection mismatch: ${expected.id}`);
+      }
+      Object.assign(edge, {
+        sourceId: topology.sourceId,
+        sourceSnapshotId: snapshotId,
+        providerRecordHash: sha256(Buffer.from(canonicalJson({ lineId: line.lineId, ...sourceEdge }))),
+        provenanceKind: "OFFICIAL_SOURCE",
+        verificationStatus: "VERIFIED",
+        lastVerifiedAt: admission.verifiedAt,
+        evidenceHash: line.contentSha256,
+        fieldProvenance: {
+          ...edge.fieldProvenance,
+          ...(topology.fieldsProvided.includes("duration_seconds") ? {} : {
+            duration_seconds: { derivationKind: "GENERATED" },
+          }),
+          ...(sourceEdge.distanceMeters === 0 ? {
+            distance_meters: { derivationKind: "GENERATED" },
+          } : {}),
+        },
+      });
+    }
+  }
+  assertExactCapitalTopologyProjection(pack, admittedLineIds, expectedEdgeIds);
+}
+
+function assertExactCapitalTopologyProjection(pack, admittedLineIds, expectedEdgeIds) {
+  const actualEdgeIds = (pack.networkEdges ?? [])
+    .filter((edge) => edge.edgeType === "RIDE" && edge.servicePattern === "LOCAL" && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+      && lineIdsForNodes([edge.fromNodeId, edge.toNodeId]).some((lineId) => admittedLineIds.has(lineId)))
+    .map(({ id }) => id);
+  if (actualEdgeIds.length !== expectedEdgeIds.size || actualEdgeIds.some((id) => !expectedEdgeIds.has(id))) {
+    throw new Error("capital topology fixture projection is not exact");
+  }
+}
+
+export function projectedItxDirectionalPairs(stationSequences) {
+  const directionalPairs = [];
+  const pairHashes = new Map();
+  for (const sequence of stationSequences ?? []) {
+    for (let index = 0; index < (sequence.stops?.length ?? 0) - 1; index += 1) {
+      const fromStationId = requiredString(sequence.stops[index].stationId, "ITX network edge from stationId");
+      const toStationId = requiredString(sequence.stops[index + 1].stationId, "ITX network edge to stationId");
+      const tuple = [fromStationId, toStationId, "ITX_CHEONGCHUN"];
+      directionalPairs.push(tuple);
+      const record = { fromStationId, toStationId, serviceClass: "ITX_CHEONGCHUN" };
+      pairHashes.set(`${fromStationId}\0${toStationId}`, sha256(Buffer.from(canonicalJson(record))));
+    }
+  }
+  const admittedPairs = [...new Map(directionalPairs.map((tuple) => [JSON.stringify(tuple), tuple])).values()]
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right), "en"));
+  if (admittedPairs.length === 0 || pairHashes.size !== admittedPairs.length) {
+    throw new Error("ITX network edge admission has no exact directional pairs");
+  }
+  const stationIds = [...new Set(admittedPairs.flatMap(([fromStationId, toStationId]) =>
+    [fromStationId, toStationId]))].sort(compareStrings);
+  return { admittedPairs, pairHashes, stationIds };
+}
+
+function nextDayMidnightKst(value) {
+  if (!/^\d{8}$/u.test(value ?? "")) throw new Error("ITX current topology admission serviceDate must be YYYYMMDD");
+  const date = new Date(Date.UTC(
+    Number(value.slice(0, 4)),
+    Number(value.slice(4, 6)) - 1,
+    Number(value.slice(6, 8)),
+  ));
+  const actual = `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+  if (actual !== value) throw new Error("ITX current topology admission serviceDate is invalid");
+  date.setUTCDate(date.getUTCDate() + 1);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
+}
+
+export function validateItxCurrentTopologyAdmission(currentAdmission, {
+  previousArtifactSha256,
+  stationSequences,
+  now = candidateBuildNow(),
+  requireFresh = true,
+}) {
+  const keys = [
+    "schemaVersion",
+    "artifactKind",
+    "artifactId",
+    "serviceId",
+    "sourceIssue",
+    "status",
+    "scheduleAdmissionStatus",
+    "topologyMode",
+    "serviceDate",
+    "observedAt",
+    "freshUntil",
+    "collectionSha256",
+    "previousArtifactSha256",
+    "stationSetHash",
+    "odMatrixHash",
+    "operationEvidenceSha256",
+    "stationSequenceSha256",
+    "canonicalStationSetSha256",
+    "observedPairSetSha256",
+    "admittedPairSetSha256",
+    "observedPairChange",
+    "pairHashes",
+    "reconstructionSummary",
+    "credentialRedacted",
+    "evidenceHash",
+  ];
+  assertExactKeys(currentAdmission, keys, "networkEdgeEvidence.itxCurrentTopologyAdmission");
+  const { admittedPairs, pairHashes, stationIds } = projectedItxDirectionalPairs(stationSequences);
+  const { evidenceHash, ...withoutEvidenceHash } = currentAdmission;
+  const observedAt = requiredUtcDateString(
+    currentAdmission.observedAt,
+    "ITX current topology admission observedAt",
+  );
+  const freshUntil = requiredUtcDateString(
+    currentAdmission.freshUntil,
+    "ITX current topology admission freshUntil",
+  );
+  const expectedFreshUntil = nextDayMidnightKst(currentAdmission.serviceDate);
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError("ITX current topology admission validation time is invalid");
+  }
+  if (currentAdmission.schemaVersion !== 1
+    || currentAdmission.artifactKind !== "itx-current-network-edge-admission"
+    || currentAdmission.artifactId !== `itx-current-network-edge-admission-${currentAdmission.serviceDate}`
+    || currentAdmission.serviceId !== "ITX_CHEONGCHUN"
+    || currentAdmission.sourceIssue !== 2776
+    || currentAdmission.status !== "ADMITTED"
+    || currentAdmission.scheduleAdmissionStatus !== "MISSING"
+    || currentAdmission.topologyMode !== "UNCHANGED_AUTO_STATION_SET"
+    || !/^\d{8}$/u.test(currentAdmission.serviceDate ?? "")
+    || currentAdmission.previousArtifactSha256
+      !== sha256HexString(previousArtifactSha256, "ITX previous artifact sha256")
+    || currentAdmission.credentialRedacted !== true
+    || evidenceHash !== sha256(Buffer.from(JSON.stringify(withoutEvidenceHash)))
+    || currentAdmission.canonicalStationSetSha256 !== sha256(Buffer.from(JSON.stringify(stationIds)))
+    || currentAdmission.admittedPairSetSha256 !== sha256(Buffer.from(JSON.stringify(admittedPairs)))
+    || JSON.stringify(currentAdmission.pairHashes)
+      !== JSON.stringify(admittedPairs.map((tuple) => sha256(Buffer.from(JSON.stringify(tuple)))))) {
+    throw new Error("ITX current topology admission identity mismatch");
+  }
+  if (freshUntil !== expectedFreshUntil) {
+    throw new Error("ITX current topology admission freshUntil must equal serviceDate next-day midnight KST");
+  }
+  for (const [field, value] of Object.entries({
+    collectionSha256: currentAdmission.collectionSha256,
+    stationSetHash: currentAdmission.stationSetHash,
+    odMatrixHash: currentAdmission.odMatrixHash,
+    operationEvidenceSha256: currentAdmission.operationEvidenceSha256,
+    stationSequenceSha256: currentAdmission.stationSequenceSha256,
+    observedPairSetSha256: currentAdmission.observedPairSetSha256,
+    evidenceHash,
+  })) {
+    sha256HexString(value, `ITX current topology admission ${field}`);
+  }
+  assertExactKeys(
+    currentAdmission.observedPairChange,
+    ["addedCount", "removedCount", "addedSha256", "removedSha256"],
+    "ITX current topology admission observedPairChange",
+  );
+  requiredNonNegativeSafeInteger(
+    currentAdmission.observedPairChange.addedCount,
+    "ITX current topology admission addedCount",
+  );
+  requiredNonNegativeSafeInteger(
+    currentAdmission.observedPairChange.removedCount,
+    "ITX current topology admission removedCount",
+  );
+  sha256HexString(
+    currentAdmission.observedPairChange.addedSha256,
+    "ITX current topology admission addedSha256",
+  );
+  sha256HexString(
+    currentAdmission.observedPairChange.removedSha256,
+    "ITX current topology admission removedSha256",
+  );
+  assertExactKeys(
+    currentAdmission.reconstructionSummary,
+    ["trainCount", "stopCount", "conflictingTimestampCount", "missingPairCount", "duplicateOdCount"],
+    "ITX current topology admission reconstructionSummary",
+  );
+  requiredPositiveSafeInteger(
+    currentAdmission.reconstructionSummary.trainCount,
+    "ITX current topology admission trainCount",
+  );
+  requiredPositiveSafeInteger(
+    currentAdmission.reconstructionSummary.stopCount,
+    "ITX current topology admission stopCount",
+  );
+  for (const field of ["conflictingTimestampCount", "missingPairCount", "duplicateOdCount"]) {
+    if (requiredNonNegativeSafeInteger(
+      currentAdmission.reconstructionSummary[field],
+      `ITX current topology admission ${field}`,
+    ) !== 0) {
+      throw new Error(`ITX current topology admission ${field} must be zero`);
+    }
+  }
+  if (Date.parse(observedAt) > now.getTime()) {
+    throw new Error("ITX current topology admission is future-dated");
+  }
+  if (requireFresh && Date.parse(freshUntil) <= now.getTime()) {
+    throw new Error("ITX current topology admission is stale");
+  }
+  return {
+    sourceId: currentAdmission.artifactKind,
+    sourceSnapshotId: currentAdmission.artifactId,
+    evidenceHash,
+    verifiedAt: observedAt,
+    freshUntil,
+    pairHashes,
+  };
+}
+
+export async function admittedItxNetworkEdgeEvidence(
+  contract,
+  topologyAdmission,
+  currentAdmission = null,
+  repositoryRoot = root,
+  now = candidateBuildNow(),
+  requireFresh = true,
+) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError("ITX network edge validation time is invalid");
+  }
+  const reference = contract?.sourceTimetableArtifact;
+  if (contract?.schemaVersion !== 2
+    || contract.artifactKind !== "itx-cheongchun-coverage-contract"
+    || contract.serviceId !== "ITX_CHEONGCHUN"
+    || contract.coverageStates?.route_graph_topology !== "SUPPORTED"
+    || !contract.allowedConsumerIssues?.includes("#2649")
+    || reference?.schemaVersion !== 1
+    || reference?.status !== "ADMITTED"
+    || reference.admissionEligible !== true
+    || !isCurrentItxPromotionMode(reference.promotion?.mode)
+    || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== reference?.sha256) {
+    throw new Error("ITX network edge topology is not admitted for #2649");
+  }
+  validateCurrentItxApprovalIdentity(reference);
+  // 게이트 승격이면 커밋된 영수증을 정책·원천 파일에서 다시 계산해 대조한다(구조 검사만으로 받지 않는다).
+  verifyCurrentItxPromotion({ reference, repositoryRoot });
+  if (contract.coverageStates?.schedule_timetable !== "MISSING"
+    || contract.claimGate?.currentStatus !== "NO_GO"
+    || contract.claimGate?.supportClaimAllowed !== false) {
+    throw new Error("ITX network edge claim boundary is invalid");
+  }
+  const sourceBytes = await readFile(await resolveBuildInputPath(
+    reference.artifactPath,
+    "networkEdgeEvidence.itxCoverageContract.sourceTimetableArtifact.artifactPath",
+    repositoryRoot,
+  ));
+  const completenessBytes = await readFile(await resolveBuildInputPath(
+    reference.completenessEvidencePath,
+    "networkEdgeEvidence.itxCoverageContract.sourceTimetableArtifact.completenessEvidencePath",
+    repositoryRoot,
+  ));
+  if (sha256(sourceBytes) !== reference.sha256
+    || sha256(completenessBytes) !== reference.completenessEvidenceSha256) {
+    throw new Error("ITX network edge admission bytes mismatch");
+  }
+  const source = JSON.parse(sourceBytes);
+  const completeness = JSON.parse(completenessBytes);
+  const { evidenceHash: sourceEvidenceHash, ...sourceWithoutEvidenceHash } = source;
+  const { evidenceHash: completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
+  if (source?.schemaVersion !== 1
+    || source.artifactKind !== "itx-cheongchun-source-timetable"
+    || source.artifactId !== reference.artifactId
+    || source.serviceId !== "ITX_CHEONGCHUN"
+    || source.validationStatus !== "SUPPORTED"
+    || source.policyVersion !== reference.policyVersion
+    || source.freshUntil !== reference.freshUntil
+    || source.completenessEvidenceSha256 !== reference.completenessEvidenceSha256
+    || sourceEvidenceHash !== sha256(Buffer.from(JSON.stringify(sourceWithoutEvidenceHash)))
+    || completeness?.schemaVersion !== 2
+    || completeness.artifactKind !== "korail-itx-cheongchun-completeness-evidence"
+    || completeness.serviceId !== "ITX_CHEONGCHUN"
+    || completeness.validationMode !== "ADMISSION"
+    || completeness.validationStatus !== "SUPPORTED"
+    || completeness.admissionStatus !== source.promotionStatus
+    || completeness.materialization?.status !== "SUPPORTED"
+    || completeness.observedAt !== source.observedAt
+    || completeness.sourceTimetableArtifact?.status !== source.promotionStatus
+    || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
+      .includes(source.promotionStatus)
+    || completeness.sourceTimetableArtifact?.artifactId !== reference.artifactId
+    || completeness.sourceTimetableArtifact?.policyVersion !== source.policyVersion
+    || completeness.sourceTimetableArtifact?.freshUntil !== reference.freshUntil
+    || JSON.stringify(completeness.selectedServiceDates) !== JSON.stringify(source.selectedServiceDates)
+    || !completeness.allowedConsumerIssues?.includes("#1400")
+    || completeness.credentialRedacted !== true
+    || completenessEvidenceHash !== sha256(Buffer.from(JSON.stringify(completenessWithoutEvidenceHash)))) {
+    throw new Error("ITX network edge admission evidence mismatch");
+  }
+  try {
+    const schemaSource = currentAdmission != null
+      && source.stationCatalogPackIdentity == null
+      && source.canonicalPackIdentity != null
+      ? (() => {
+          const normalized = structuredClone(source);
+          delete normalized.canonicalPackIdentity;
+          normalized.stationCatalogPackIdentity = topologyAdmission.stationCatalogPackIdentity;
+          return normalized;
+        })()
+      : source;
+    validateSourceCandidateSchema(schemaSource);
+    const observedAt = new Date(source.observedAt);
+    if (observedAt.getTime() > now.getTime()) throw new Error("future-dated ITX observation");
+    validateItxServiceDates(source.selectedServiceDates, { now: observedAt });
+    validateSourceFreshness(source, source.selectedServiceDates, observedAt);
+  } catch (error) {
+    throw new Error("ITX network edge admission evidence mismatch", { cause: error });
+  }
+  const inheritedStationCatalogPackIdentity = topologyAdmission.stationCatalogPackIdentity;
+  const sourceStationCatalogPackIdentity = currentAdmission != null
+    && source.stationCatalogPackIdentity == null
+    ? inheritedStationCatalogPackIdentity
+    : requiredStationCatalogPackIdentity(
+        source.stationCatalogPackIdentity,
+        "ITX network edge source.stationCatalogPackIdentity",
+      );
+  const completenessAdmission = contract?.officialEvidence?.korailCompletenessAdmission;
+  const contractStationCatalogPackIdentity = currentAdmission != null
+    && completenessAdmission?.stationCatalogPackIdentity == null
+    ? inheritedStationCatalogPackIdentity
+    : requiredStationCatalogPackIdentity(
+        completenessAdmission?.stationCatalogPackIdentity,
+        "ITX coverage contract stationCatalogPackIdentity",
+      );
+  const contractTopologyInputPackIdentity = currentAdmission != null
+    && completenessAdmission?.topologyInputPackIdentity == null
+    ? topologyAdmission.topologyInputPackIdentity
+    : requiredTopologyInputPackIdentity(
+        completenessAdmission?.topologyInputPackIdentity,
+        "ITX coverage contract topologyInputPackIdentity",
+      );
+  const topologyEvidenceInputPackIdentity = topologyAdmission.topologyInputPackIdentity;
+  const topologyInputMatches = sameTopologyInputPackIdentity(
+    contractTopologyInputPackIdentity,
+    topologyEvidenceInputPackIdentity,
+  );
+  if (!topologyInputMatches) {
+    throw new Error("ITX topology input pack identity does not match coverage contract admission");
+  }
+  if (Object.hasOwn(completeness, "canonicalPackIdentity")
+    || Object.hasOwn(completeness, "readmissions")) {
+    throw new Error("ITX completeness legacy admission identity is forbidden");
+  }
+  const completenessStationCatalogPackIdentity = currentAdmission != null
+    && completeness.stationCatalogPackIdentity == null
+    ? inheritedStationCatalogPackIdentity
+    : requiredStationCatalogPackIdentity(
+        completeness.stationCatalogPackIdentity,
+        "ITX completeness stationCatalogPackIdentity",
+      );
+  if (!sameStationCatalogPackIdentity(
+    topologyAdmission.stationCatalogPackIdentity,
+    sourceStationCatalogPackIdentity,
+  ) || !sameStationCatalogPackIdentity(
+    contractStationCatalogPackIdentity,
+    sourceStationCatalogPackIdentity,
+  ) || !sameStationCatalogPackIdentity(
+    completenessStationCatalogPackIdentity,
+    sourceStationCatalogPackIdentity,
+  )) {
+    throw new Error("ITX topology, source, completeness, and contract station catalog identities must match exactly");
+  }
+  const observedAt = requiredUtcDateString(source.observedAt, "ITX network edge source observedAt");
+  const freshUntil = requiredUtcDateString(source.freshUntil, "ITX network edge source freshUntil");
+  if (requireFresh && currentAdmission == null && Date.parse(freshUntil) <= now.getTime()) {
+    throw new Error("ITX network edge admission is stale");
+  }
+  const legacyProjection = projectedItxDirectionalPairs(source.stationSequences);
+  const topology = topologyAdmission.evidence.topology;
+  if (topology.edgeCount !== legacyProjection.pairHashes.size
+    || JSON.stringify(topology.directions) !== JSON.stringify(["up", "down"])
+    || topology.connectedComponentCount !== 1
+    || topology.isolatedServedStationCount !== 0
+    || topology.durationSecondsEmbedded !== false
+    || topology.fareEmbedded !== false
+    || !/^[a-f0-9]{64}$/.test(topology.sha256 ?? "")) {
+    throw new Error("ITX topology evidence projection does not match admitted directional pairs");
+  }
+  const currentProjection = currentAdmission == null
+    ? {
+        sourceId: source.artifactKind,
+        sourceSnapshotId: source.artifactId,
+        evidenceHash: sourceEvidenceHash,
+        verifiedAt: observedAt,
+        freshUntil,
+        pairHashes: legacyProjection.pairHashes,
+      }
+    : validateItxCurrentTopologyAdmission(currentAdmission, {
+        previousArtifactSha256: reference.sha256,
+        stationSequences: source.stationSequences,
+        now,
+        requireFresh,
+      });
+  return {
+    ...currentProjection,
+    routeServiceArtifactEvidence: {
+      artifactEvidence: {
+        serviceClass: "ITX_CHEONGCHUN",
+        timetableArtifactId: source.artifactId,
+        timetableArtifactSha256: sha256(sourceBytes),
+        canonicalPackId: contractTopologyInputPackIdentity.id,
+        canonicalPackSha256: contractTopologyInputPackIdentity.sha256,
+        canonicalPackSqliteSha256: contractTopologyInputPackIdentity.sqliteSha256,
+        admissionStatus: "ADMITTED",
+        admissionEligible: true,
+        freshUntil: currentProjection.freshUntil,
+        sourceIssue: 2135,
+      },
+      stationCatalogEvidence: {
+        serviceClass: "ITX_CHEONGCHUN",
+        stationCatalogArtifactKind: sourceStationCatalogPackIdentity.artifactKind,
+        stationCatalogManifestVersion: sourceStationCatalogPackIdentity.manifestVersion,
+        stationCatalogPackId: sourceStationCatalogPackIdentity.catalogPackId,
+        stationCatalogStationSetSha256: sourceStationCatalogPackIdentity.stationSetSha256,
+        stationCatalogPayloadSha256: sourceStationCatalogPackIdentity.payloadSha256,
+        stationCatalogManifestSha256: sourceStationCatalogPackIdentity.manifestSha256,
+        admissionStatus: "ADMITTED",
+        admissionEligible: true,
+        freshUntil: currentProjection.freshUntil,
+        sourceIssue: 2649,
+      },
+    },
+  };
+}
+
+function validateCurrentItxApprovalIdentity(reference) {
+  if (!hasCurrentItxPromotionIdentity(reference)) {
+    throw new Error("ITX network edge approval identity is invalid");
+  }
+}
+
+function applyItxNetworkEdgeEvidence(pack, admission) {
+  const edges = (pack.networkEdges ?? []).filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN");
+  if (edges.length !== admission.pairHashes.size) throw new Error("ITX network edge fixture projection is partial");
+  const projectedPairIds = new Set();
+  const lineIds = [...new Set(edges.flatMap(({ fromNodeId, toNodeId }) =>
+    [fromNodeId, toNodeId].map((nodeId) => String(nodeId).split(":")[1])))].sort(compareStrings);
+  const lineIdSet = new Set(lineIds);
+  const source = {
+    id: admission.sourceId,
+    owner: "국토교통부·한국철도공사",
+    url: "https://www.data.go.kr/",
+    license: "공공데이터포털 이용허락범위 제한 없음",
+    licenseStatus: "redistributable",
+    redistributionAllowed: true,
+    updateFrequency: "weekly-snapshot",
+    updatedAt: admission.verifiedAt,
+    fields: ["network_edges"],
+    coverageScope: {
+      regionIds: ["capital"],
+      operatorIds: [...new Set((pack.lines ?? [])
+        .filter(({ id }) => lineIdSet.has(id))
+        .map(({ operatorId }) => operatorId))].sort(compareStrings),
+      lineIds,
+      sourceDomains: ["route_graph_topology"],
+    },
+  };
+  const existing = pack.sourceInventory.find(({ id }) => id === source.id);
+  if (existing == null) pack.sourceInventory.push(source);
+  else if (JSON.stringify(existing) !== JSON.stringify(source)) {
+    throw new Error("ITX network edge pack source inventory mismatch");
+  }
+  for (const edge of edges) {
+    const fromStationId = requiredString(edge.fromNodeId, "ITX network edge fromNodeId").split(":")[0];
+    const toStationId = requiredString(edge.toNodeId, "ITX network edge toNodeId").split(":")[0];
+    const pairId = `${fromStationId}\0${toStationId}`;
+    if (projectedPairIds.has(pairId)) {
+      throw new Error("ITX network edge fixture projection must contain each admitted directional pair exactly once");
+    }
+    projectedPairIds.add(pairId);
+    const providerRecordHash = admission.pairHashes.get(pairId);
+    if (providerRecordHash == null) throw new Error(`ITX network edge fixture projection mismatch: ${edge.id}`);
+    Object.assign(edge, {
+      sourceId: admission.sourceId,
+      sourceSnapshotId: admission.sourceSnapshotId,
+      providerRecordHash,
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastVerifiedAt: admission.verifiedAt,
+      evidenceHash: admission.evidenceHash,
+      fieldProvenance: {
+        ...edge.fieldProvenance,
+        duration_seconds: { derivationKind: "GENERATED" },
+        distance_meters: { derivationKind: "GENERATED" },
+      },
+    });
+  }
+}
+
+export async function validateTrackedItxTopologyEvidence(buildSpec, fixture, repositoryRoot = root) {
+  if (fixture.packs?.some((pack) => (pack.transitTrips ?? [])
+    .some(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN"))) {
+    throw new Error("production ITX timetable rows require explicit admission");
+  }
+  const packs = fixture.packs?.filter((pack) => [
+    ...(pack.transitTrips ?? []),
+    ...(pack.networkEdges ?? []),
+  ].some(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")) ?? [];
+  if (packs.length === 0) return null;
+  const evidencePath = await resolveBuildInputPath(
+    buildSpec.itxTopologyEvidencePath,
+    "buildSpec.itxTopologyEvidencePath",
+    repositoryRoot,
+  );
+  const evidenceBytes = await readFile(evidencePath);
+  if (sha256HexString(buildSpec.itxTopologyEvidenceSha256, "buildSpec.itxTopologyEvidenceSha256")
+    !== sha256(evidenceBytes)) {
+    throw new Error("buildSpec.itxTopologyEvidenceSha256 must match tracked evidence bytes");
+  }
+  const evidence = JSON.parse(evidenceBytes);
+  if (Object.hasOwn(evidence, "migration") || Object.hasOwn(evidence, "routeServiceEvidence")) {
+    throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
+  }
+  assertExactKeys(evidence, [
+    "schemaVersion", "artifactKind", "serviceId", "sourceIssue", "stationCatalogPackIdentity",
+    "sourceArtifact", "topology", "pack",
+  ], "ITX topology evidence");
+  if (evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence.serviceId !== "ITX_CHEONGCHUN"
+    || evidence.sourceIssue !== 2135) {
+    throw new Error("buildSpec ITX topology evidence must be the #2135 admission artifact");
+  }
+  const sourceArtifact = evidence.sourceArtifact;
+  if (!sourceArtifact || typeof sourceArtifact !== "object" || Array.isArray(sourceArtifact)) {
+    throw new Error("ITX topology evidence must contain its source artifact");
+  }
+  assertExactKeys(sourceArtifact, [
+    "id", "sha256", "completenessEvidenceSha256", "freshUntil", "stationCatalogPackIdentity",
+  ], "ITX topology evidence.sourceArtifact");
+  requiredString(sourceArtifact.id, "ITX topology evidence.sourceArtifact.id");
+  sha256HexString(sourceArtifact.sha256, "ITX topology evidence.sourceArtifact.sha256");
+  sha256HexString(
+    sourceArtifact.completenessEvidenceSha256,
+    "ITX topology evidence.sourceArtifact.completenessEvidenceSha256",
+  );
+  requiredUtcDateString(sourceArtifact.freshUntil, "ITX topology evidence.sourceArtifact.freshUntil");
+  assertExactKeys(evidence.topology, [
+    "stationMembershipCount", "servedStationCount", "edgeCount", "directions",
+    "connectedComponentCount", "isolatedServedStationCount", "sha256",
+    "durationSecondsEmbedded", "fareEmbedded",
+  ], "ITX topology evidence.topology");
+  assertExactKeys(evidence.pack, [
+    "id", "inputSha256", "inputSqliteSha256", "inputByteSize", "outputSha256",
+    "outputSqliteSha256", "byteSize", "byteSizeDelta",
+  ], "ITX topology evidence.pack");
+  const stationCatalogPackIdentity = requiredStationCatalogPackIdentity(
+    evidence.stationCatalogPackIdentity,
+    "ITX topology evidence.stationCatalogPackIdentity",
+  );
+  if (!sameStationCatalogPackIdentity(
+    stationCatalogPackIdentity,
+    requiredStationCatalogPackIdentity(
+      sourceArtifact.stationCatalogPackIdentity,
+      "ITX topology evidence.sourceArtifact.stationCatalogPackIdentity",
+    ),
+  )) {
+    throw new Error("ITX topology evidence station catalog identity mismatch");
+  }
+  const topologyInputPackIdentity = requiredTopologyInputPackIdentity({
+    id: evidence.pack.id, sha256: evidence.pack.inputSha256,
+    sqliteSha256: evidence.pack.inputSqliteSha256, byteSize: evidence.pack.inputByteSize,
+  }, "ITX topology evidence input pack identity");
+  for (const pack of packs) {
+    const edges = (pack.networkEdges ?? [])
+      .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
+      .map((row) => ({
+        id: row.id,
+        from_node_id: row.fromNodeId,
+        to_node_id: row.toNodeId,
+        duration_seconds: row.durationSeconds,
+        distance_meters: row.distanceMeters,
+        edge_type: row.edgeType,
+        service_pattern: row.servicePattern,
+        service_class: row.serviceClass,
+      }))
+      .sort((left, right) => codepointCompare(left.id, right.id));
+    if (edges.length === 0) throw new Error("ITX topology evidence has no ITX_CHEONGCHUN edges");
+  }
+  const pack = evidence.pack;
+  if (pack.id !== "capital"
+    || !/^[a-f0-9]{64}$/.test(pack.inputSha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(pack.inputSqliteSha256 ?? "")
+    || !Number.isSafeInteger(pack.inputByteSize) || pack.inputByteSize <= 0
+    || !/^[a-f0-9]{64}$/.test(pack.outputSha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(pack.outputSqliteSha256 ?? "")
+    || !Number.isSafeInteger(pack.byteSize) || pack.byteSize <= 0
+    || !Number.isSafeInteger(pack.byteSizeDelta)
+    || pack.byteSizeDelta !== pack.byteSize - pack.inputByteSize) {
+    throw new Error("ITX topology evidence pack identity is invalid");
+  }
+  return {
+    evidence,
+    stationCatalogPackIdentity,
+    topologyInputPackIdentity,
+  };
+}
+
+function requiredTopologyInputPackIdentity(identity, label) {
+  assertExactKeys(identity, ["id", "sha256", "sqliteSha256", "byteSize"], label);
+  return {
+    id: requiredString(identity.id, `${label}.id`),
+    sha256: sha256HexString(identity.sha256, `${label}.sha256`),
+    sqliteSha256: sha256HexString(identity.sqliteSha256, `${label}.sqliteSha256`),
+    byteSize: requiredPositiveSafeInteger(identity.byteSize, `${label}.byteSize`),
+  };
+}
+
+function sameTopologyInputPackIdentity(left, right) {
+  return left.id === right.id
+    && left.sha256 === right.sha256
+    && left.sqliteSha256 === right.sqliteSha256
+    && left.byteSize === right.byteSize;
+}
+
+function requiredStationCatalogPackIdentity(identity, label) {
+  assertExactKeys(identity, stationCatalogPackIdentityKeys, label);
+  if (identity.artifactKind !== "station-catalog-pack" || identity.manifestVersion !== 1) {
+    throw new Error(`${label} must identify a station-catalog-pack manifest v1`);
+  }
+  return {
+    artifactKind: identity.artifactKind,
+    manifestVersion: identity.manifestVersion,
+    catalogPackId: requiredString(identity.catalogPackId, `${label}.catalogPackId`),
+    stationSetSha256: sha256HexString(identity.stationSetSha256, `${label}.stationSetSha256`),
+    payloadSha256: sha256HexString(identity.payloadSha256, `${label}.payloadSha256`),
+    manifestSha256: sha256HexString(identity.manifestSha256, `${label}.manifestSha256`),
+  };
+}
+
+function sameStationCatalogPackIdentity(left, right) {
+  return stationCatalogPackIdentityKeys.every((key) => left?.[key] === right?.[key]);
+}
+
+function validateOfficialOdFareEvidence(evidence, fixture, admissions, admissionBytes) {
+  const allCandidateQuotes = fixture?.packs?.flatMap((pack) => pack.officialOdFareQuotes ?? []) ?? [];
+  const candidateQuotes = evidence == null
+    ? allCandidateQuotes
+    : allCandidateQuotes.filter((quote) => quote.sourceId === evidence.sourceId);
+  if (evidence == null && candidateQuotes.length === 0) return null;
+  const label = "officialOdFareEvidence";
+  const keys = ["sourceId", "snapshotId", "evidenceHash", "admissionHash", "quoteSetHash", "mappingLedgerHash", "quotes"];
+  assertExactKeys(evidence, keys, label);
+  const admission = admissions.get(requiredString(evidence.sourceId, `${label}.sourceId`));
+  if (admission?.decision !== "APPROVED") throw new Error(`${label} requires an approved admission`);
+  if (requiredString(evidence.snapshotId, `${label}.snapshotId`) !== admission.snapshotId) {
+    throw new Error(`${label}.snapshotId must match admission`);
+  }
+  if (sha256HexString(evidence.evidenceHash, `${label}.evidenceHash`) !== admission.evidenceHash) {
+    throw new Error(`${label}.evidenceHash must match admission`);
+  }
+  if (sha256HexString(evidence.admissionHash, `${label}.admissionHash`) !== sha256(admissionBytes)) {
+    throw new Error(`${label}.admissionHash must match tracked admission bytes`);
+  }
+  if (sha256HexString(evidence.quoteSetHash, `${label}.quoteSetHash`) !== admission.quoteSetHash) {
+    throw new Error(`${label}.quoteSetHash must match admission`);
+  }
+  if (sha256HexString(evidence.mappingLedgerHash, `${label}.mappingLedgerHash`) !== admission.fareStationLineMappingLedgerHash) {
+    throw new Error(`${label}.mappingLedgerHash must match admission`);
+  }
+  if (!Array.isArray(evidence.quotes) || evidence.quotes.length !== admission.quoteCount) {
+    throw new Error(`${label}.quotes count must match admission`);
+  }
+  for (const quote of evidence.quotes) officialOdFareQuoteValues(quote, admission);
+  if (officialOdFareQuoteSetHash(evidence.quotes) !== admission.quoteSetHash) {
+    throw new Error(`${label}.quotes must match admission quote set`);
+  }
+  if (officialOdFareQuoteSetHash(candidateQuotes) !== officialOdFareQuoteSetHash(evidence.quotes)) {
+    throw new Error(`${label}.quotes must match candidate fixture quote set`);
+  }
+  return evidence;
+}
+
+function requiredSourceSnapshotRawObjectUri(snapshot, label) {
+  const isRawSnapshotAdmission = Array.isArray(snapshot.admissionRecordSha256s)
+    && snapshot.admissionRecordSha256s.length > 0
+    && snapshot.admissionRecordSha256s.every((record) => record?.kind === "rawSnapshotAdmission");
+  if (isRawSnapshotAdmission && typeof snapshot.rawObjectUri === "string" && snapshot.rawObjectUri.startsWith("tools/datapack/sources/")) {
+    return requiredObjectKey(snapshot.rawObjectUri, label);
+  }
+  return requiredCredentialFreeObjectUri(snapshot.rawObjectUri, label);
+}
+
+function requiredSourceSnapshots(value, label, now = candidateBuildNow()) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${label} must be a non-empty array`);
+  }
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError(`${label} validation time is invalid`);
+  }
+  return value.map((snapshot, index) => {
+    const prefix = `${label}[${index}]`;
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      throw new Error(`${prefix} must be an object`);
+    }
+    const normalized = {
+      snapshotId: requiredString(snapshot.snapshotId, `${prefix}.snapshotId`),
+      sourceId: requiredString(snapshot.sourceId, `${prefix}.sourceId`),
+      rawObjectUri: requiredSourceSnapshotRawObjectUri(snapshot, `${prefix}.rawObjectUri`),
+      rawSha256: sha256HexString(snapshot.rawSha256, `${prefix}.rawSha256`),
+      redactedRequestFingerprint: sha256HexString(
+        snapshot.redactedRequestFingerprint,
+        `${prefix}.redactedRequestFingerprint`,
+      ),
+      schemaFingerprint: sha256HexString(snapshot.schemaFingerprint, `${prefix}.schemaFingerprint`),
+      licenseStatus: requiredString(snapshot.licenseStatus, `${prefix}.licenseStatus`),
+      redistributionAllowed: snapshot.redistributionAllowed,
+      snapshotStatus: requiredString(snapshot.snapshotStatus, `${prefix}.snapshotStatus`),
+      credentialRedacted: snapshot.credentialRedacted,
+      freshnessExpiresAt: requiredUtcDateString(snapshot.freshnessExpiresAt, `${prefix}.freshnessExpiresAt`),
+    };
+    if (snapshot.rawRetentionExpiresAt) {
+      normalized.rawRetentionExpiresAt = requiredUtcDateString(
+        snapshot.rawRetentionExpiresAt,
+        `${prefix}.rawRetentionExpiresAt`,
+      );
+    }
+    if (snapshot.governancePolicyVersion) {
+      normalized.governancePolicyVersion = requiredString(
+        snapshot.governancePolicyVersion,
+        `${prefix}.governancePolicyVersion`,
+      );
+    }
+    if (snapshot.governancePolicySha256) {
+      normalized.governancePolicySha256 = sha256HexString(
+        snapshot.governancePolicySha256,
+        `${prefix}.governancePolicySha256`,
+      );
+    }
+    const hasGeneric = Object.hasOwn(snapshot, "adminReviewRecordHash");
+    const hasNative = Object.hasOwn(snapshot, "admissionRecordSha256s");
+    if (hasGeneric === hasNative) {
+      throw new Error(`${prefix} must contain exactly one admission projection`);
+    }
+    if (hasGeneric) {
+      normalized.adminReviewRecordHash = sha256HexString(snapshot.adminReviewRecordHash, `${prefix}.adminReviewRecordHash`);
+    } else if (!Array.isArray(snapshot.admissionRecordSha256s) || snapshot.admissionRecordSha256s.length === 0
+      || snapshot.admissionRecordSha256s.some((record) => !NATIVE_ADMISSION_KINDS.includes(record?.kind)
+        || !/^[a-f0-9]{64}$/.test(record.sha256 ?? ""))) {
+      throw new Error(`${prefix}.admissionRecordSha256s is invalid`);
+    } else {
+      normalized.admissionRecordSha256s = structuredClone(snapshot.admissionRecordSha256s);
+    }
+    if (normalized.licenseStatus !== "PASS") {
+      throw new Error(`${prefix}.licenseStatus must be PASS`);
+    }
+    if (snapshot.redistributionAllowed !== true) {
+      throw new Error(`${prefix}.redistributionAllowed must be true`);
+    }
+    if (!sourceSnapshotStatuses.has(normalized.snapshotStatus)) {
+      throw new Error(`${prefix}.snapshotStatus must be LOCKED`);
+    }
+    if (snapshot.credentialRedacted !== true) {
+      throw new Error(`${prefix}.credentialRedacted must be true`);
+    }
+    if (Date.parse(normalized.freshnessExpiresAt) <= now.getTime()) {
+      throw new Error(`${prefix}.freshnessExpiresAt must be in the future`);
+    }
+    return normalized;
+  });
+}
+
+function assertSourceSnapshotSet(sourceSnapshotIds, sourceSnapshots) {
+  const ids = requiredStringArray(sourceSnapshotIds, "buildSpec.sourceSnapshotIds")
+    .sort((left, right) => codepointCompare(left, right));
+  const snapshotIds = sourceSnapshots
+    .map((snapshot) => snapshot.snapshotId)
+    .sort((left, right) => codepointCompare(left, right));
+  if (JSON.stringify(ids) !== JSON.stringify(snapshotIds)) {
+    throw new Error("buildSpec.sourceSnapshotIds must match buildSpec.sourceSnapshots[].snapshotId");
+  }
+}
+
+function candidateBuildNow() {
+  const value = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  return value ? new Date(requiredUtcDateString(value, "EASYSUBWAY_DATAPACK_BUILD_NOW")) : new Date();
+}
+
+async function resolveBuildInputPath(value, label, repositoryRoot = root) {
+  const resolved = path.resolve(repositoryRoot, requiredString(value, label));
+  const canonicalPath = await realpath(resolved);
+  if (!(await isWithinAllowedBuildInputRoot(canonicalPath, repositoryRoot))) {
+    throw new Error(`${label} must stay inside repository or temp directory`);
+  }
+  return canonicalPath;
+}
+
+async function isWithinAllowedBuildInputRoot(resolvedPath, repositoryRoot = root) {
+  const allowedRoots = await allowedBuildInputRoots(repositoryRoot);
+  return allowedRoots.some((allowedRoot) => {
+    const relative = path.relative(allowedRoot, resolvedPath);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  });
+}
+
+async function allowedBuildInputRoots(repositoryRoot = root) {
+  const candidateRoots = [repositoryRoot, tmpdir(), process.env.RUNNER_TEMP]
+    .filter((value) => typeof value === "string" && value.trim() !== "")
+    .map((value) => path.resolve(value));
+  const canonicalRoots = [];
+  for (const candidateRoot of candidateRoots) {
+    try {
+      canonicalRoots.push(await realpath(candidateRoot));
+    } catch {
+      // Optional CI temp roots may be absent in local runs.
+    }
+  }
+  return canonicalRoots;
+}
+
+function buildPackFieldProvenanceContext(pack, artifactKind) {
+  const sourceUpdatedAt = new Map((pack.sourceInventory ?? []).map((source) => [source.id, source.updatedAt]));
+  const sourceFields = new Map((pack.sourceInventory ?? []).map((source) => [source.id, new Set(source.fields ?? [])]));
+  const sourceScopes = sourceCoverageScopeMap(pack.sourceInventory ?? []);
+  const defaultSourceId = pack.sourceInventory?.length === 1 ? pack.sourceInventory[0].id : "";
+  const lineOperatorIds = new Map((pack.lines ?? []).map((line) => [line.id, line.operatorId]).filter(([, operatorId]) => operatorId));
+  const coverageOperatorIdsByLine = coverageOperatorIdsForLines(lineOperatorIds, pack.coverageLineOperatorScopes);
+  const stationLineOperatorIds = new Map();
+  const stationOperatorIds = new Map();
+  const stationLineIds = new Map();
+  for (const stationLine of pack.stationLines ?? []) {
+    const operatorId = lineOperatorIds.get(stationLine.lineId);
+    if (!operatorId) {
+      continue;
+    }
+    stationLineOperatorIds.set(`${stationLine.stationId}:${stationLine.lineId}`, operatorId);
+    const operators = stationOperatorIds.get(stationLine.stationId) ?? new Set();
+    operators.add(operatorId);
+    stationOperatorIds.set(stationLine.stationId, operators);
+    const lineIds = stationLineIds.get(stationLine.stationId) ?? new Set();
+    lineIds.add(stationLine.lineId);
+    stationLineIds.set(stationLine.stationId, lineIds);
+  }
+  const records = [];
+  const addRecord = (row, entityType, entityId, field, operatorIds = [], lineIds = []) => {
+    const fieldProvenance = row.fieldProvenance?.[field];
+    if (fieldProvenance !== undefined
+      && (!fieldProvenance || typeof fieldProvenance !== "object" || Array.isArray(fieldProvenance))) {
+      throw new Error(`${entityType}.${field} fieldProvenance must be an object`);
+    }
+    if (fieldProvenance?.sourceId !== undefined) {
+      requiredString(fieldProvenance.sourceId, `${entityType}.${field} fieldProvenance sourceId`);
+    }
+    const rowSourceId = row.sourceId ?? defaultSourceId;
+    if (fieldProvenance?.sourceId !== undefined && fieldProvenance.sourceId !== rowSourceId) {
+      for (const linkageField of ["sourceSnapshotId", "providerRecordHash", "evidenceHash", "verifiedAt"]) {
+        if (typeof fieldProvenance[linkageField] !== "string" || fieldProvenance[linkageField].trim() === "") {
+          throw new Error(`${entityType}.${field} fieldProvenance source change requires explicit ${linkageField}`);
+        }
+      }
+    }
+    const provenanceRow = fieldProvenance ? { ...row, ...fieldProvenance } : row;
+    const sourceId = provenanceRow.sourceId ?? defaultSourceId;
+    if (!sourceId) {
+      return;
+    }
+    if (fieldProvenance && !sourceScopes.has(sourceId)) {
+      throw new Error(`${entityType}.${field} fieldProvenance source is missing from sourceInventory: ${sourceId}`);
+    }
+    const recordDerivationKind =
+      entityType === "facility" && field === "status" && !sourceFields.get(sourceId)?.has("status")
+        ? "GENERATED"
+        : derivationKind(provenanceRow, artifactKind);
+    if (fieldProvenance && recordDerivationKind !== "GENERATED" && !sourceFields.get(sourceId)?.has(field)) {
+      throw new Error(`${entityType}.${field} fieldProvenance source does not provide ${field}: ${sourceId}`);
+    }
+    const coverageScopes = recordCoverageScopes(
+      sourceScopes.get(sourceId),
+      operatorIds,
+      lineIds,
+      coverageOperatorIdsByLine,
+    );
+    for (const coverageScope of coverageScopes) {
+      records.push({
+        entityType,
+        entityId,
+        field,
+        sourceId,
+        ...(provenanceRow.sourceSnapshotId ? { sourceSnapshotId: provenanceRow.sourceSnapshotId } : {}),
+        ...(provenanceRow.providerRecordHash ? { providerRecordHash: provenanceRow.providerRecordHash } : {}),
+        ...(provenanceRow.evidenceHash ? { evidenceHash: provenanceRow.evidenceHash } : {}),
+        ...(coverageScope ? { coverageScope } : {}),
+        derivationKind: recordDerivationKind,
+        verifiedAt: provenanceRow.verifiedAt ?? provenanceRow.lastVerifiedAt ?? provenanceRow.reviewedAt
+          ?? provenanceRow.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
+      });
+    }
+  };
+
+  return {
+    records,
+    addRecord,
+    lineOperatorIds,
+    stationLineOperatorIds,
+    stationOperatorIds,
+    stationLineIds,
+  };
+}
+
+function emitCoreAndTopologyProvenance(
+  pack,
+  { addRecord, stationOperatorIds, stationLineIds, lineOperatorIds, stationLineOperatorIds },
+) {
+  for (const station of pack.stations ?? []) {
+    addRecord(
+      station,
+      "station",
+      station.id,
+      "station_name",
+      [...(stationOperatorIds.get(station.id) ?? [])],
+      [...(stationLineIds.get(station.id) ?? [])],
+    );
+  }
+  for (const stationLine of pack.stationLines ?? []) {
+    const entityId = `${stationLine.stationId}:${stationLine.lineId}`;
+    const operatorIds = [lineOperatorIds.get(stationLine.lineId)].filter(Boolean);
+    addRecord(stationLine, "station_line", entityId, "line", operatorIds, [stationLine.lineId]);
+    addRecord(stationLine, "station_line", entityId, "station_code", operatorIds, [stationLine.lineId]);
+  }
+  for (const edge of routeGraphNetworkEdges(pack)) {
+    const operatorIds = operatorIdsForNodes([edge.fromNodeId, edge.toNodeId], stationLineOperatorIds);
+    const lineIds = lineIdsForNodes([edge.fromNodeId, edge.toNodeId]);
+    addRecord(edge, "network_edge", edge.id, "network_edges", operatorIds, lineIds);
+    addRecord(edge, "network_edge", edge.id, "duration_seconds", operatorIds, lineIds);
+    addRecord(edge, "network_edge", edge.id, "distance_meters", operatorIds, lineIds);
+  }
+  for (const position of pack.routeMapPositions ?? []) {
+    const entityId = `${position.stationId}:${position.lineId}:${position.region ?? ""}`;
+    const operatorIds = [lineOperatorIds.get(position.lineId)].filter(Boolean);
+    addRecord(position, "route_map_position", entityId, "route_map_position", operatorIds, [position.lineId]);
+    if (Array.isArray(position.labelPolygon) && position.labelPolygon.length > 0) {
+      addRecord(position, "route_map_position", entityId, "route_map_label_polygon", operatorIds, [position.lineId]);
+    }
+  }
+  for (const track of pack.routeMapLineTracks ?? []) {
+    const entityId = `${track.lineId}:${track.trackIndex}:${track.region ?? ""}`;
+    const operatorIds = [lineOperatorIds.get(track.lineId)].filter(Boolean);
+    addRecord(track, "route_map_line_track", entityId, "route_map_line_track", operatorIds, [track.lineId]);
+  }
+}
+
+function emitTransitScheduleProvenance(pack, { addRecord, lineOperatorIds }) {
+  const transitRouteLineIds = new Map((pack.transitRoutes ?? []).map((route) => [route.id, route.lineId]));
+  const transitRouteOperatorIds = new Map();
+  for (const route of pack.transitRoutes ?? []) {
+    const operatorIds = [lineOperatorIds.get(route.lineId)].filter(Boolean);
+    transitRouteOperatorIds.set(route.id, operatorIds);
+    addRecord(route, "transit_route", route.id, "route", operatorIds, [route.lineId]);
+  }
+  const serviceOperatorIds = new Map();
+  const serviceLineIds = new Map();
+  const tripOperatorIds = new Map();
+  const tripLineIds = new Map();
+  for (const trip of pack.transitTrips ?? []) {
+    const lineId = transitRouteLineIds.get(trip.routeId);
+    const operatorId = lineOperatorIds.get(lineId);
+    if (operatorId) {
+      tripOperatorIds.set(trip.id, [operatorId]);
+      tripLineIds.set(trip.id, [lineId]);
+      const operatorIds = serviceOperatorIds.get(trip.serviceId) ?? new Set();
+      operatorIds.add(operatorId);
+      serviceOperatorIds.set(trip.serviceId, operatorIds);
+      const lineIds = serviceLineIds.get(trip.serviceId) ?? new Set();
+      lineIds.add(lineId);
+      serviceLineIds.set(trip.serviceId, lineIds);
+    }
+  }
+  for (const calendar of pack.serviceCalendars ?? []) {
+    addRecord(
+      calendar,
+      "service_calendar",
+      calendar.serviceId,
+      "service_calendar",
+      [...(serviceOperatorIds.get(calendar.serviceId) ?? [])],
+      [...(serviceLineIds.get(calendar.serviceId) ?? [])],
+    );
+  }
+  for (const calendarDate of pack.serviceCalendarDates ?? []) {
+    addRecord(
+      calendarDate,
+      "service_calendar_date",
+      `${calendarDate.serviceId}:${calendarDate.date}`,
+      "calendar_date",
+      [...(serviceOperatorIds.get(calendarDate.serviceId) ?? [])],
+      [...(serviceLineIds.get(calendarDate.serviceId) ?? [])],
+    );
+  }
+  for (const trip of pack.transitTrips ?? []) {
+    addRecord(
+      trip,
+      "transit_trip",
+      trip.id,
+      "trip",
+      tripOperatorIds.get(trip.id) ?? [],
+      tripLineIds.get(trip.id) ?? [],
+    );
+  }
+  for (const stopTime of pack.transitStopTimes ?? []) {
+    const operatorIds = [lineOperatorIds.get(stopTime.lineId)].filter(Boolean);
+    addRecord(
+      stopTime,
+      "transit_stop_time",
+      `${stopTime.tripId}:${stopTime.stopSequence}`,
+      "stop_time",
+      operatorIds,
+      [stopTime.lineId],
+    );
+  }
+  for (const frequency of pack.transitFrequencies ?? []) {
+    addRecord(
+      frequency,
+      "transit_frequency",
+      `${frequency.tripId}:${frequency.startTimeSeconds}:${frequency.endTimeSeconds}`,
+      "frequency",
+      tripOperatorIds.get(frequency.tripId) ?? [],
+      tripLineIds.get(frequency.tripId) ?? [],
+    );
+  }
+  const scheduleOperatorIds = [...new Set([...transitRouteOperatorIds.values()].flat())].sort((left, right) =>
+    codepointCompare(left, right),
+  );
+  const scheduleLineIds = [...new Set(transitRouteLineIds.values())].sort((left, right) => codepointCompare(left, right));
+  for (const feedInfo of pack.transitFeedInfo ?? []) {
+    addRecord(feedInfo, "transit_feed_info", "feed_info", "feed_info", scheduleOperatorIds, scheduleLineIds);
+  }
+}
+
+function emitAccessibilityAndRealtimeProvenance(
+  pack,
+  { addRecord, stationOperatorIds, stationLineIds, lineOperatorIds },
+) {
+  for (const facility of pack.facilities ?? []) {
+    const operatorIds = [...(stationOperatorIds.get(facility.stationId) ?? [])];
+    const lineIds = facility.lineId ? [facility.lineId] : [...(stationLineIds.get(facility.stationId) ?? [])];
+    const field = facilityField(facility.type);
+    if (field) {
+      addRecord(facility, "facility", facility.id, field, operatorIds, lineIds);
+    }
+    addRecord(facility, "facility", facility.id, "status", operatorIds, lineIds);
+    if (facility.verifiedAt || facility.lastVerifiedAt) {
+      addRecord(facility, "facility", facility.id, "verified_at", operatorIds, lineIds);
+    }
+  }
+  for (const evidence of (pack.stationFacilityEvidence ?? [])
+    .filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS")) {
+    const operatorIds = [lineOperatorIds.get(evidence.lineId)].filter(Boolean);
+    const field = facilityField(evidence.facilityType);
+    if (field) {
+      const entityId = `${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}`;
+      addRecord(evidence, "station_facility_evidence", entityId, field, operatorIds, [evidence.lineId]);
+      addRecord(evidence, "station_facility_evidence", entityId, "verified_at", operatorIds, [evidence.lineId]);
+    }
+  }
+  for (const mapping of pack.realtimeProviderStationMappings ?? []) {
+    if (mapping.supportsArrivals === true) {
+      const operatorIds = [lineOperatorIds.get(mapping.lineId)].filter(Boolean);
+      addRecord(
+        mapping,
+        "realtime_provider_station_mapping",
+        `${mapping.providerId}:${mapping.providerStationId}`,
+        "realtime_arrival_reference",
+        operatorIds,
+        [mapping.lineId],
+      );
+    }
+  }
+}
+
+export function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
+  const ctx = buildPackFieldProvenanceContext(pack, artifactKind);
+  emitCoreAndTopologyProvenance(pack, ctx);
+  emitTransitScheduleProvenance(pack, ctx);
+  emitAccessibilityAndRealtimeProvenance(pack, ctx);
+
+  return {
+    id: pack.id,
+    version: pack.version,
+    artifactKind,
+    sqliteSha256,
+    normalizedSourceInventorySha256: sha256(Buffer.from(JSON.stringify(pack.sourceInventory ?? []))),
+    // #957: 원천 문장을 그대로 실은 파생 표의 원천 스냅샷 결속과 매핑 성공·실패 보고(개수와 제외 목록).
+    ...(pack.transferGuideReport ? { derivedTables: { transfer_guide_steps: pack.transferGuideReport } } : {}),
+    records: ctx.records.sort((left, right) =>
+      codepointCompare(`${left.entityType}:${left.entityId}:${left.field}:${left.sourceId}`, `${right.entityType}:${right.entityId}:${right.field}:${right.sourceId}`),
+    ),
+  };
+}
+
+function sourceCoverageScopeMap(sourceInventory) {
+  const scopes = new Map();
+  for (const source of sourceInventory) {
+    if (!source.coverageScope || typeof source.coverageScope !== "object" || Array.isArray(source.coverageScope)) {
+      continue;
+    }
+    scopes.set(source.id, {
+      regionIds: Array.isArray(source.coverageScope.regionIds) ? [...source.coverageScope.regionIds] : [],
+      operatorIds: Array.isArray(source.coverageScope.operatorIds) ? [...source.coverageScope.operatorIds] : [],
+      lineIds: Array.isArray(source.coverageScope.lineIds) ? [...source.coverageScope.lineIds] : [],
+      sourceDomains: Array.isArray(source.coverageScope.sourceDomains) ? [...source.coverageScope.sourceDomains] : [],
+    });
+  }
+  return scopes;
+}
+
+function coverageOperatorIdsForLines(lineOperatorIds, coverageLineOperatorScopes) {
+  const result = new Map();
+  for (const scope of coverageLineOperatorScopes ?? []) {
+    if (!lineOperatorIds.has(scope.lineId)) {
+      continue;
+    }
+    const operatorIds = result.get(scope.lineId) ?? new Set();
+    operatorIds.add(scope.operatorId);
+    result.set(scope.lineId, operatorIds);
+  }
+  for (const [lineId, operatorId] of lineOperatorIds.entries()) {
+    if (!result.has(lineId)) {
+      result.set(lineId, new Set([operatorId]));
+    }
+  }
+  return result;
+}
+
+function recordCoverageScopes(sourceScope, operatorIds, lineIds, coverageOperatorIdsByLine) {
+  if (!sourceScope) {
+    return [null];
+  }
+  const opIdSet = new Set(operatorIds);
+  const lineIdSet = new Set(lineIds);
+  const sourceScopeOpIdSet = new Set(sourceScope.operatorIds);
+  const scopedOperatorIds = sourceScope.operatorIds.filter((operatorId) => opIdSet.has(operatorId));
+  const scopedLineIds = (sourceScope.lineIds.length > 0
+    ? sourceScope.lineIds.filter((lineId) => lineIdSet.has(lineId))
+    : sourceScope.sourceDomains.includes("accessibility_facilities")
+      ? lineIds.filter((lineId) =>
+          [...(coverageOperatorIdsByLine.get(lineId) ?? [])].some((operatorId) =>
+            sourceScopeOpIdSet.has(operatorId),
+          ))
+      : []).sort();
+  if (sourceScope.lineIds.length > 0 && lineIds.length > 0 && scopedLineIds.length === 0) {
+    throw new Error("source coverageScope lineIds do not include record lineIds");
+  }
+  if (scopedLineIds.length === 0) {
+    return [{
+      regionIds: sourceScope.regionIds,
+      operatorIds: scopedOperatorIds.length > 0 ? scopedOperatorIds : sourceScope.operatorIds,
+      sourceDomains: sourceScope.sourceDomains,
+    }];
+  }
+  return scopedLineIds.flatMap((lineId) => {
+    const scopedLineOperatorIds = [...(coverageOperatorIdsByLine.get(lineId) ?? [])]
+      .filter((operatorId) => sourceScopeOpIdSet.has(operatorId))
+      .sort(compareStrings);
+    if (scopedLineOperatorIds.length === 0) {
+      throw new Error(`source coverageScope does not include operator for record line: ${lineId}`);
+    }
+    return scopedLineOperatorIds.map((operatorId) => ({
+      regionIds: sourceScope.regionIds,
+      operatorIds: [operatorId],
+      lineIds: [lineId],
+      sourceDomains: sourceScope.sourceDomains,
+    }));
+  });
+}
+
+function lineIdsForNodes(nodeIds) {
+  return [...new Set(nodeIds.map((nodeId) => String(nodeId).split(":")[1]).filter(Boolean))].sort(compareStrings);
+}
+
+function operatorIdsForNodes(nodeIds, stationLineOperatorIds) {
+  return [
+    ...new Set(
+      nodeIds.map((nodeId) => stationLineOperatorIds.get(canonicalStationLineNodeId(nodeId))).filter(Boolean),
+    ),
+  ].sort((left, right) => {
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+  });
+}
+
+function canonicalStationLineNodeId(nodeId) {
+  const parts = String(nodeId).split(":");
+  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : nodeId;
+}
+
+function derivationKind(row, artifactKind) {
+  if (["OFFICIAL", "FIELD_VERIFIED", "MANUAL_OVERRIDE", "GENERATED", "FIXTURE"].includes(row.derivationKind)) {
+    return row.derivationKind;
+  }
+  if (artifactKind === "fixture") {
+    return "FIXTURE";
+  }
+  if (row.provenanceKind === "OFFICIAL_SOURCE") {
+    return "OFFICIAL";
+  }
+  if (row.provenanceKind === "OPERATOR_CONFIRMED" || row.provenanceKind === "FIELD_SURVEY") {
+    return "FIELD_VERIFIED";
+  }
+  return "GENERATED";
+}
+
+function facilityField(type) {
+  return {
+    ELEVATOR: "elevator",
+    ESCALATOR: "escalator",
+    WHEELCHAIR_LIFT: "wheelchair_lift",
+  }[type];
+}
+
+function outputPathForPack(outputDir, packUrl, pack) {
+  if (/^https:\/\//.test(packUrl)) {
+    return path.join(outputDir, stagedPackPath(pack));
+  }
+  return path.join(outputDir, packUrl);
+}
+
+function packSignature(pack) {
+  if (pack.artifactKind === "production") {
+    const canonical = productionSignaturePayload(pack);
+    return {
+      algorithm: pack.manifestVersion === 2 ? "rsa-sha256-pack-manifest-v2" : "rsa-sha256-pack-manifest-v1",
+      value: rsaSha256Signature(signingPrivateKey(), canonical),
+    };
+  }
+  return {
+    algorithm: pack.manifestVersion === 2 ? "sha256-pack-manifest-v2" : "sha256-pack-manifest-v1",
+    value: sha256(Buffer.from(fixtureSignaturePayload(pack))),
+  };
+}
+
+function manifestSignature(manifest, packs) {
+  const hasProductionPack = packs.some((pack) => pack.artifactKind === "production");
+  const canonical = canonicalJson(withoutSignature(manifest));
+  if (hasProductionPack) {
+    return {
+      algorithm: "rsa-sha256-manifest-v2",
+      value: rsaSha256Signature(signingPrivateKey(), canonical),
+    };
+  }
+  return {
+    algorithm: "sha256-manifest-v2",
+    value: sha256(Buffer.from(canonical)),
+  };
+}
+
+function fixtureSignaturePayload(pack) {
+  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
+}
+
+function productionSignaturePayload(pack) {
+  return `${fixtureSignaturePayload(pack)}:${canonicalProductionPackUrl(pack.url)}`;
+}
+
+function representativeRouteRegressionSignature(pack) {
+  if (pack.artifactKind === "production") {
+    return {
+      algorithm: "rsa-sha256-route-regression-v1",
+      value: rsaSha256Signature(signingPrivateKey(), representativeRouteRegressionSignaturePayload(pack)),
+    };
+  }
+  return {
+    algorithm: "sha256-route-regression-v1",
+    value: sha256(Buffer.from(representativeRouteRegressionSignaturePayload(pack))),
+  };
+}
+
+function representativeRouteRegressionSignaturePayload(pack) {
+  const basePayload = `${fixtureSignaturePayload(pack)}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
+  if (pack.artifactKind === "production") {
+    return `${basePayload}:${canonicalProductionPackUrl(pack.url)}`;
+  }
+  return basePayload;
+}
+
+function representativeRouteRegressionPayload(routes) {
+  return JSON.stringify(canonicalRepresentativeRouteRegressions(routes));
+}
+
+function canonicalRepresentativeRouteRegressions(routes) {
+  return routes.map((route) => ({
+    id: requiredString(route.id, "representativeRouteRegressions.id"),
+    pattern: requiredString(route.pattern, "representativeRouteRegressions.pattern"),
+    fromNodeId: requiredString(route.fromNodeId, "representativeRouteRegressions.fromNodeId"),
+    toNodeId: requiredString(route.toNodeId, "representativeRouteRegressions.toNodeId"),
+    requiredEdgeIds: route.requiredEdgeIds.map((edgeId) =>
+      requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds"),
+    ),
+  }));
+}
+
+function canonicalRouteRegressionScope(scope) {
+  return {
+    mode: requiredString(scope.mode, "routeRegressionScope.mode"),
+    excludedPatterns: Array.isArray(scope.excludedPatterns)
+      ? scope.excludedPatterns.map((pattern) => requiredString(pattern, "routeRegressionScope.excludedPatterns"))
+      : [],
+    claim: requiredString(scope.claim, "routeRegressionScope.claim"),
+  };
+}
+
+function canonicalProductionPackUrl(packUrl) {
+  return new URL(packUrl).toString();
+}
+
+function regionalQualityMetrics(pack) {
+  const stationIds = new Set((pack.stations ?? []).map((station) => station.id));
+  const stationCount = stationIds.size;
+  const stationLineKeys = new Set((pack.stationLines ?? []).map((row) => `${row.stationId}:${row.lineId}`));
+  const coveredStationIds = new Set(
+    (pack.facilities ?? [])
+      .map((facility) => facility.stationId)
+      .filter((stationId) => stationIds.has(stationId)),
+  );
+  const facilityEvidence = pack.stationFacilityEvidence ?? [];
+  const facilityRows = pack.facilities ?? [];
+  const facilityTypes = new Set([
+    ...facilityEvidence.map((row) => row.facilityType),
+    ...facilityRows.map((row) => row.type),
+  ].filter(Boolean));
+  const facilityDenominator = stationLineKeys.size * facilityTypes.size;
+  const facilityEvidenceKeys = facilityEvidence.length > 0
+    ? new Set(facilityEvidence.map((row) => `${row.stationId}:${row.lineId}:${row.facilityType}`))
+    : facilityKeysFromRows(facilityRows, pack.stationLines ?? []);
+  const facilityFreshnessRows = facilityEvidence.length > 0 ? facilityEvidence : facilityRows;
+  const strictEligibleCount = facilityEvidence.filter((row) => row.strictRouteEligible === true).length;
+  const operationalKnownCount = facilityFreshnessRows.filter((row) =>
+    knownOperationalStatus(row.operationalStatus ?? row.status)
+  ).length;
+  const freshnessValidCount = facilityFreshnessRows.filter((row) => hasVerificationTimestamp(row)).length;
+  const pathwayEdges = pack.stationPathwayEdges ?? [];
+  const fieldVerifiedPathwayCount = pathwayEdges.filter((row) =>
+    ["FIELD_SURVEY", "OPERATOR_CONFIRMED"].includes(String(row.provenanceKind ?? "").toUpperCase())
+  ).length;
+  const networkEdges = routeGraphNetworkEdges(pack);
+  const edgeCount = networkEdges.length;
+  const unknownAccessibilityCount = networkEdges.filter(
+    (edge) => normalizedAccessibilityStatus(edge.accessibilityStatus, "networkEdges.accessibilityStatus") === "UNKNOWN",
+  ).length;
+  const unknownAccessibilityRatio = ratio(unknownAccessibilityCount, edgeCount);
+  return {
+    stationCount,
+    facilityCoverageRatio: ratio(coveredStationIds.size, stationCount),
+    requiredFacilityEvidenceCoverageRatio: ratio(facilityEvidenceKeys.size, facilityDenominator),
+    strictRouteEligibleFacilityRatio: ratio(strictEligibleCount, facilityEvidence.length),
+    operationalKnownRatio: ratio(operationalKnownCount, facilityFreshnessRows.length),
+    freshnessValidRatio: ratio(freshnessValidCount, facilityFreshnessRows.length),
+    fieldVerifiedPathwayRatio: ratio(fieldVerifiedPathwayCount, pathwayEdges.length),
+    edgeCount,
+    unknownAccessibilityRatio,
+    unknownEdgeRatioByProfile: {
+      wheelchair: unknownAccessibilityRatio,
+      stroller: unknownAccessibilityRatio,
+      lowMobility: unknownAccessibilityRatio,
+    },
+  };
+}
+
+function ratio(numerator, denominator) {
+  return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+}
+
+function facilityKeysFromRows(facilities, stationLines) {
+  const lineIdsByStationId = new Map();
+  for (const row of stationLines) {
+    const lineIds = lineIdsByStationId.get(row.stationId) ?? [];
+    lineIds.push(row.lineId);
+    lineIdsByStationId.set(row.stationId, lineIds);
+  }
+  const keys = new Set();
+  for (const facility of facilities) {
+    for (const lineId of lineIdsByStationId.get(facility.stationId) ?? []) {
+      keys.add(`${facility.stationId}:${lineId}:${facility.type}`);
+    }
+  }
+  return keys;
+}
+
+function knownOperationalStatus(value) {
+  const status = String(value ?? "").toUpperCase();
+  return status !== "" && status !== "UNKNOWN";
+}
+
+function hasVerificationTimestamp(row) {
+  return Boolean(row.verifiedAt ?? row.lastVerifiedAt ?? row.reviewedAt ?? row.updatedAt);
+}
+
+function routeGraphNetworkEdges(pack) {
+  return [
+    ...(pack.networkEdges ?? []),
+    ...outOfStationTransferNetworkEdges(pack),
+  ];
+}
+
+export function isAsymmetricTransferLink(link) {
+  const slopeLevel = Number(link.slopeLevel ?? link.slope_level ?? 1);
+  const elevationDiff = Number(link.elevationDifferenceMeters ?? link.elevation_difference_meters ?? 0);
+  const hasElevationDifference = Boolean(link.hasElevationDifference || elevationDiff !== 0);
+  return slopeLevel > 1 || hasElevationDifference;
+}
+
+export function outOfStationTransferNetworkEdges(pack) {
+  const edges = [];
+  for (const link of pack.outOfStationTransferLinks ?? []) {
+    const asymmetric = isAsymmetricTransferLink(link);
+    if (asymmetric && (link.bidirectional === true || link.bidirectional === 1)) {
+      throw new Error(
+        `asymmetric out-of-station transfer link must not be bidirectional: ${link.id} (slopeLevel: ${link.slopeLevel ?? link.slope_level ?? 1})`,
+      );
+    }
+    const bidirectional = !asymmetric && (link.bidirectional === true || link.bidirectional === 1);
+    edges.push(outOfStationTransferNetworkEdge({
+      ...link,
+      bidirectional,
+    }));
+    if (bidirectional) {
+      edges.push(
+        outOfStationTransferNetworkEdge({
+          ...link,
+          id: `${link.id}-reverse`,
+          fromStationId: link.toStationId,
+          fromLineId: link.toLineId,
+          toStationId: link.fromStationId,
+          toLineId: link.fromLineId,
+          fromExitId: link.toExitId,
+          toExitId: link.fromExitId,
+          bidirectional: true,
+        }),
+      );
+    }
+  }
+  return edges;
+}
+
+function outOfStationTransferNetworkEdge(link) {
+  return {
+    id: requiredString(link.id, "outOfStationTransferLinks.id"),
+    fromNodeId: `${requiredString(link.fromStationId, "outOfStationTransferLinks.fromStationId")}:${requiredString(
+      link.fromLineId,
+      "outOfStationTransferLinks.fromLineId",
+    )}`,
+    toNodeId: `${requiredString(link.toStationId, "outOfStationTransferLinks.toStationId")}:${requiredString(
+      link.toLineId,
+      "outOfStationTransferLinks.toLineId",
+    )}`,
+    durationSeconds: link.durationSeconds ?? 0,
+    distanceMeters: link.distanceMeters ?? 0,
+    edgeType: "OUT_OF_STATION_TRANSFER",
+    stairAccessState: link.stairAccessState ?? "UNKNOWN",
+    accessibilityStatus: link.accessibilityStatus ?? "UNKNOWN",
+    reliabilityScore: link.reliabilityScore ?? 100,
+    sourceId: link.sourceId ?? "",
+    sourceSnapshotId: link.sourceSnapshotId ?? "",
+    providerRecordHash: link.providerRecordHash ?? "",
+    provenanceKind: link.provenanceKind ?? "UNKNOWN",
+    verificationStatus: link.verificationStatus ?? "UNKNOWN",
+    lastVerifiedAt: link.lastFieldVerifiedAt ?? link.lastVerifiedAt,
+    evidenceHash: link.evidenceHash ?? "",
+  };
+}
+
+const CONGESTION_CANDIDATE_ID = "seoul-metro-congestion-statistics";
+const CONGESTION_PRODUCTION_USE_SCOPE = "SERVER_ROUTE_BUNDLE_STATION_CONGESTION";
+
+function assertCongestionProductionUseAdmission(repositoryRoot, snapshot, snapshotFile) {
+  const candidatesPath = path.join(repositoryRoot, "tools/datapack/source-candidates.json");
+  const notAdmitted = (reason) =>
+    new Error(`source is not admitted for station congestion: ${CONGESTION_CANDIDATE_ID} (${reason})`);
+  if (!existsSync(candidatesPath)) throw notAdmitted("source-candidates.json is missing");
+  const matches = (JSON.parse(readFileSync(candidatesPath, "utf8")).candidates ?? [])
+    .filter(({ id }) => id === CONGESTION_CANDIDATE_ID);
+  const admission = matches[0]?.evidence?.productionUseAdmission;
+  if (matches.length !== 1
+    || matches[0].capabilities?.congestion?.productionUseAllowed !== true
+    || admission?.decision !== "APPROVED"
+    || admission.productionUseAllowed !== true
+    || admission.scope !== CONGESTION_PRODUCTION_USE_SCOPE) {
+    throw notAdmitted("production use is not approved");
+  }
+  if (admission.rawSha256 !== snapshot.rawSha256 || admission.contentSha256 !== snapshot.contentSha256) {
+    throw notAdmitted(`approval does not cover snapshot ${snapshotFile}`);
+  }
+}
+
+function loadSeoulMetroCongestionForBuild(repositoryRoot, pack) {
+  const sourcesDir = path.join(repositoryRoot, "tools/datapack/sources");
+  if (!existsSync(sourcesDir)) {
+    throw new Error("missing Seoul Metro congestion snapshot in production build: sources directory does not exist");
+  }
+  const files = readdirSync(sourcesDir)
+    .filter((f) => /^seoul-metro-congestion-\d{8}T\d{6}Z\.json$/u.test(f))
+    .sort();
+  if (files.length === 0) {
+    throw new Error("missing Seoul Metro congestion snapshot in production build");
+  }
+  const latestFile = files[files.length - 1];
+  const snapshot = JSON.parse(readFileSync(path.join(sourcesDir, latestFile), "utf8"));
+  assertCongestionProductionUseAdmission(repositoryRoot, snapshot, latestFile);
+  if (!Array.isArray(snapshot.rows)) {
+    throw new Error(`${latestFile}: rows must be an array`);
+  }
+  const sha256Hex = (value) => createHash("sha256").update(value).digest("hex");
+  if (snapshot.rowCount !== snapshot.rows.length) {
+    throw new Error(`${latestFile}: rowCount ${snapshot.rowCount} does not match rows.length ${snapshot.rows.length}`);
+  }
+  if (sha256Hex(JSON.stringify(snapshot.rows)) !== snapshot.contentSha256) {
+    throw new Error(`${latestFile}: contentSha256 does not match the stored rows`);
+  }
+  const rawFile = latestFile.replace(/\.json$/u, ".raw.json");
+  const rawPath = path.join(sourcesDir, rawFile);
+  if (!existsSync(rawPath)) {
+    throw new Error(`${latestFile}: raw response archive ${rawFile} is missing`);
+  }
+  const rawBytes = readFileSync(rawPath);
+  if (sha256Hex(rawBytes) !== snapshot.rawSha256) {
+    throw new Error(`${latestFile}: rawSha256 does not match raw response archive ${rawFile}`);
+  }
+  if (sha256Hex(JSON.stringify(JSON.parse(rawBytes.toString("utf8")).data)) !== snapshot.contentSha256) {
+    throw new Error(`${latestFile}: raw response archive data does not match contentSha256`);
+  }
+
+  const membershipFiles = readdirSync(sourcesDir)
+    .filter((f) => /^seoul-station-code-membership-\d{8}T\d{6}Z\.json$/u.test(f))
+    .sort();
+  if (membershipFiles.length === 0) {
+    throw new Error("missing Seoul station code membership artifact for congestion normalization");
+  }
+  const membership = JSON.parse(readFileSync(path.join(sourcesDir, membershipFiles[membershipFiles.length - 1]), "utf8"));
+
+  return normalizeSeoulMetroCongestion({
+    snapshot,
+    stationBindings: buildStationBindings({ membership, pack }),
+  });
+}
+
+function assertCongestionRowsExistInPack(pack, stats) {
+  const stationIds = new Set((pack.stations ?? []).map(({ id }) => id));
+  const lineIds = new Set((pack.lines ?? []).map(({ id }) => id));
+  const memberships = new Set((pack.stationLines ?? []).map(({ stationId, lineId }) => `${stationId}|${lineId}`));
+  const missing = new Set();
+  for (const row of stats) {
+    const stationId = row.station_id ?? row.stationId;
+    const lineId = row.line_id ?? row.lineId;
+    if (!stationIds.has(stationId)) missing.add(`station ${stationId}`);
+    else if (!lineIds.has(lineId)) missing.add(`line ${lineId}`);
+    else if (!memberships.has(`${stationId}|${lineId}`)) missing.add(`station_lines ${stationId}|${lineId}`);
+  }
+  if (missing.size > 0) {
+    throw new Error(`station_congestion_stats references ids missing from the pack: ${[...missing].sort(codepointCompare).join(", ")}`);
+  }
+}
+
+function insertCoreCatalogAndGuideTables(database, pack) {
+  insertCatalogMetadata(database, pack);
+  insertRows(database, "operators", ["id", "name_ko", "name_en"], pack.operators, (row) => [
+    requiredString(row.id, "operators.id"),
+    requiredString(row.nameKo, "operators.nameKo"),
+    row.nameEn ?? "",
+  ]);
+  insertRows(database, "lines", ["id", "operator_id", "name_ko", "name_en", "color"], pack.lines, (row) => [
+    requiredString(row.id, "lines.id"),
+    requiredString(row.operatorId, "lines.operatorId"),
+    requiredString(row.nameKo, "lines.nameKo"),
+    row.nameEn ?? "",
+    row.color ?? "",
+  ]);
+  insertRows(
+    database,
+    "stations",
+    [
+      "id",
+      "name_ko",
+      "name_en",
+      "name_sub",
+      "normalized_name",
+      "region",
+      "latitude",
+      "longitude",
+      "data_quality_level",
+      "data_source_type",
+      "last_verified_at",
+    ],
+    pack.stations,
+    (row) => [
+      requiredString(row.id, "stations.id"),
+      requiredString(row.nameKo, "stations.nameKo"),
+      row.nameEn ?? "",
+      row.nameSub ?? "",
+      requiredString(row.normalizedName, "stations.normalizedName"),
+      row.region ?? "",
+      row.latitude ?? null,
+      row.longitude ?? null,
+      row.dataQualityLevel ?? "LEVEL_1",
+      row.dataSourceType ?? "OFFICIAL_FILE",
+      timestamp(row.lastVerifiedAt),
+    ],
+  );
+  insertRows(database, "station_aliases", ["station_id", "alias", "normalized_alias"], pack.stationAliases ?? [], (row) => [
+    requiredString(row.stationId, "stationAliases.stationId"),
+    requiredString(row.alias, "stationAliases.alias"),
+    requiredString(row.normalizedAlias, "stationAliases.normalizedAlias"),
+  ]);
+  insertRows(
+    database,
+    "station_lines",
+    ["station_id", "line_id", "station_code", "line_sequence", "platform_info"],
+    pack.stationLines,
+    (row) => [
+      requiredString(row.stationId, "stationLines.stationId"),
+      requiredString(row.lineId, "stationLines.lineId"),
+      row.stationCode ?? "",
+      requiredInteger(row.lineSequence, "stationLines.lineSequence"),
+      row.platformInfo ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_contacts",
+    ["station_id", "line_id", "phone", "phone_raw", "source_snapshot_id"],
+    pack.stationContacts ?? [],
+    (row) => [
+      requiredString(row.stationId ?? row.station_id, "stationContacts.stationId"),
+      requiredString(row.lineId ?? row.line_id, "stationContacts.lineId"),
+      requiredString(row.phone, "stationContacts.phone"),
+      requiredString(row.phoneRaw ?? row.phone_raw, "stationContacts.phoneRaw"),
+      requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "stationContacts.sourceSnapshotId"),
+    ],
+  );
+  insertRows(
+    database,
+    "transfer_guide_sources",
+    ["source_snapshot_id", "dataset_label", "attribution", "raw_sha256"],
+    pack.transferGuideSources ?? [],
+    (row) => [
+      requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "transferGuideSources.sourceSnapshotId"),
+      requiredString(row.datasetLabel ?? row.dataset_label, "transferGuideSources.datasetLabel"),
+      requiredString(row.attribution, "transferGuideSources.attribution"),
+      requiredString(row.rawSha256 ?? row.raw_sha256, "transferGuideSources.rawSha256"),
+    ],
+  );
+  insertRows(
+    database,
+    "transfer_guide_steps",
+    ["station_id", "from_line_id", "from_prev_station_id", "to_line_id", "to_next_station_id", "step_order", "detail", "source_snapshot_id"],
+    pack.transferGuideSteps ?? [],
+    (row) => [
+      requiredString(row.stationId ?? row.station_id, "transferGuideSteps.stationId"),
+      requiredString(row.fromLineId ?? row.from_line_id, "transferGuideSteps.fromLineId"),
+      requiredString(row.fromPrevStationId ?? row.from_prev_station_id, "transferGuideSteps.fromPrevStationId"),
+      requiredString(row.toLineId ?? row.to_line_id, "transferGuideSteps.toLineId"),
+      requiredString(row.toNextStationId ?? row.to_next_station_id, "transferGuideSteps.toNextStationId"),
+      requiredInteger(row.stepOrder ?? row.step_order, "transferGuideSteps.stepOrder"),
+      requiredString(row.detail, "transferGuideSteps.detail"),
+      requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "transferGuideSteps.sourceSnapshotId"),
+    ],
+  );
+}
+
+function insertFareTables(database, pack, officialOdFareAdmissions) {
+  insertRows(
+    database,
+    "fare_zones",
+    ["id", "name_ko", "region", "currency_code", "source_id"],
+    pack.fareZones ?? [],
+    (row) => [
+      requiredString(row.id, "fareZones.id"),
+      requiredString(row.nameKo, "fareZones.nameKo"),
+      requiredString(row.region, "fareZones.region"),
+      row.currencyCode ?? "KRW",
+      row.sourceId ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "fare_rules",
+    ["id", "zone_id", "base_card_fare", "base_cash_fare", "base_distance_meters", "additional_steps_json"],
+    pack.fareRules ?? [],
+    (row) => [
+      requiredString(row.id, "fareRules.id"),
+      requiredString(row.zoneId, "fareRules.zoneId"),
+      requiredNonNegativeInteger(row.baseCardFare, "fareRules.baseCardFare"),
+      requiredNonNegativeInteger(row.baseCashFare, "fareRules.baseCashFare"),
+      requiredNonNegativeInteger(row.baseDistanceMeters, "fareRules.baseDistanceMeters"),
+      canonicalFareAdditionalSteps(row.additionalSteps ?? [], "fareRules.additionalSteps"),
+    ],
+  );
+  insertRows(
+    database,
+    "fare_discounts",
+    ["id", "zone_id", "rider_type", "card_fare", "cash_fare", "free_ride", "description_ko"],
+    pack.fareDiscounts ?? [],
+    (row) => [
+      requiredString(row.id, "fareDiscounts.id"),
+      requiredString(row.zoneId, "fareDiscounts.zoneId"),
+      requiredString(row.riderType, "fareDiscounts.riderType"),
+      optionalNonNegativeInteger(row.cardFare, "fareDiscounts.cardFare"),
+      optionalNonNegativeInteger(row.cashFare, "fareDiscounts.cashFare"),
+      boolFlag(row.freeRide ?? false, "fareDiscounts.freeRide"),
+      row.descriptionKo ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_fare_zones",
+    ["station_id", "line_id", "zone_id"],
+    pack.stationFareZones ?? [],
+    (row) => [
+      requiredString(row.stationId, "stationFareZones.stationId"),
+      requiredString(row.lineId, "stationFareZones.lineId"),
+      requiredString(row.zoneId, "stationFareZones.zoneId"),
+    ],
+  );
+  const officialOdFareQuotes = (pack.officialOdFareQuotes ?? [])
+    .map((row) => {
+      const admission = officialOdFareAdmissions.get(row.sourceId);
+      return { admission, row, values: officialOdFareQuoteValues(row, admission) };
+    })
+    .sort((left, right) => codepointCompare(left.values[0], right.values[0])
+      || codepointCompare(left.values[1], right.values[1]));
+  for (const admission of new Set(officialOdFareQuotes.map(({ admission }) => admission))) {
+    const sourceQuotes = officialOdFareQuotes.filter(({ admission: rowAdmission }) => rowAdmission === admission);
+    if (sourceQuotes.length !== admission.quoteCount) {
+      throw new Error("officialOdFareQuotes count must match admission");
+    }
+    if (officialOdFareQuoteSetHash(sourceQuotes.map(({ row }) => row)) !== admission.quoteSetHash) {
+      throw new Error("officialOdFareQuotes quote set hash must match admission");
+    }
+  }
+  insertRows(
+    database,
+    "official_od_fare_quotes",
+    [
+      "origin_station_id",
+      "destination_station_id",
+      "source_id",
+      "snapshot_id",
+      "mapping_ledger_hash",
+      "gnrl_card_fare",
+      "gnrl_cash_fare",
+      "yung_card_fare",
+      "yung_cash_fare",
+      "child_card_fare",
+      "child_cash_fare",
+    ],
+    officialOdFareQuotes,
+    ({ values }) => values,
+  );
+}
+
+function insertTransitScheduleTables(database, pack) {
+  insertRows(
+    database,
+    "service_calendars",
+    [
+      "service_id",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+      "sunday",
+      "start_date",
+      "end_date",
+      "timezone",
+    ],
+    pack.serviceCalendars ?? [],
+    (row) => [
+      requiredString(row.serviceId, "serviceCalendars.serviceId"),
+      boolFlag(row.monday, "serviceCalendars.monday"),
+      boolFlag(row.tuesday, "serviceCalendars.tuesday"),
+      boolFlag(row.wednesday, "serviceCalendars.wednesday"),
+      boolFlag(row.thursday, "serviceCalendars.thursday"),
+      boolFlag(row.friday, "serviceCalendars.friday"),
+      boolFlag(row.saturday, "serviceCalendars.saturday"),
+      boolFlag(row.sunday, "serviceCalendars.sunday"),
+      serviceDate(row.startDate, "serviceCalendars.startDate"),
+      serviceDate(row.endDate, "serviceCalendars.endDate"),
+      row.timezone ?? "Asia/Seoul",
+    ],
+  );
+  insertRows(
+    database,
+    "service_calendar_dates",
+    ["service_id", "date", "exception_type"],
+    pack.serviceCalendarDates ?? [],
+    (row) => [
+      requiredString(row.serviceId, "serviceCalendarDates.serviceId"),
+      serviceDate(row.date, "serviceCalendarDates.date"),
+      requiredInteger(row.exceptionType, "serviceCalendarDates.exceptionType"),
+    ],
+  );
+  insertRows(
+    database,
+    "transit_routes",
+    ["id", "line_id", "route_short_name", "route_long_name", "direction_name", "timezone"],
+    pack.transitRoutes ?? [],
+    (row) => [
+      requiredString(row.id, "transitRoutes.id"),
+      requiredString(row.lineId, "transitRoutes.lineId"),
+      row.routeShortName ?? "",
+      row.routeLongName ?? "",
+      row.directionName ?? "",
+      row.timezone ?? "Asia/Seoul",
+    ],
+  );
+  insertRows(
+    database,
+    "transit_trips",
+    [
+      "id",
+      "route_id",
+      "service_id",
+      "trip_headsign",
+      "direction_id",
+      "service_pattern",
+      "service_class",
+      "service_day_start_seconds",
+    ],
+    pack.transitTrips ?? [],
+    (row) => [
+      requiredString(row.id, "transitTrips.id"),
+      requiredString(row.routeId, "transitTrips.routeId"),
+      requiredString(row.serviceId, "transitTrips.serviceId"),
+      row.tripHeadsign ?? "",
+      row.directionId ?? "",
+      row.servicePattern ?? "LOCAL",
+      row.serviceClass ?? "SUBWAY",
+      row.serviceDayStartSeconds ?? 0,
+    ],
+  );
+  insertRows(
+    database,
+    "transit_stop_times",
+    [
+      "trip_id",
+      "stop_sequence",
+      "station_id",
+      "line_id",
+      "arrival_seconds",
+      "departure_seconds",
+      "pickup_type",
+      "drop_off_type",
+    ],
+    // #918: 원천이 00:00~02:59로 적은 자정 이후 시각은 전날 운행일의 24시 이후 초로 싣는다(운행일 경계 03:00).
+    // 바꾼 뒤 trip 안 시각이 줄어들면(경계를 가로지르는 열차) validate-datapack의 순서 검사가 팩을 거부한다.
+    serviceDayStopTimes(pack.transitStopTimes ?? []),
+    (row) => [
+      requiredString(row.tripId, "transitStopTimes.tripId"),
+      requiredPositiveInteger(row.stopSequence, "transitStopTimes.stopSequence"),
+      requiredString(row.stationId, "transitStopTimes.stationId"),
+      requiredString(row.lineId, "transitStopTimes.lineId"),
+      requiredNonNegativeInteger(row.arrivalSeconds, "transitStopTimes.arrivalSeconds"),
+      requiredNonNegativeInteger(row.departureSeconds, "transitStopTimes.departureSeconds"),
+      row.pickupType ?? 0,
+      row.dropOffType ?? 0,
+    ],
+  );
+  insertRows(
+    database,
+    "transit_frequencies",
+    ["trip_id", "start_time_seconds", "end_time_seconds", "headway_seconds", "exact_times"],
+    pack.transitFrequencies ?? [],
+    (row) => [
+      requiredString(row.tripId, "transitFrequencies.tripId"),
+      requiredNonNegativeInteger(row.startTimeSeconds, "transitFrequencies.startTimeSeconds"),
+      requiredPositiveInteger(row.endTimeSeconds, "transitFrequencies.endTimeSeconds"),
+      requiredPositiveInteger(row.headwaySeconds, "transitFrequencies.headwaySeconds"),
+      boolFlag(row.exactTimes ?? false, "transitFrequencies.exactTimes"),
+    ],
+  );
+  insertRows(
+    database,
+    "transit_feed_info",
+    ["id", "feed_end_date"],
+    pack.transitFeedInfo ?? [],
+    (row) => [1, serviceDate(row.feedEndDate, "transitFeedInfo.feedEndDate")],
+  );
+  const routeServiceEvidence = validatedItxStationCatalogEvidence.get(pack);
+  if (routeServiceEvidence != null) {
+    const { artifactEvidence, stationCatalogEvidence } = routeServiceEvidence;
+    database.prepare("DELETE FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+    database.prepare("DELETE FROM route_service_station_catalog_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+    insertRows(
+      database,
+      "route_service_artifact_evidence",
+      [
+        "service_class",
+        "timetable_artifact_id",
+        "timetable_artifact_sha256",
+        "canonical_pack_id",
+        "canonical_pack_sha256",
+        "canonical_pack_sqlite_sha256",
+        "admission_status",
+        "admission_eligible",
+        "fresh_until",
+        "source_issue",
+      ],
+      [artifactEvidence],
+      (row) => [
+        requiredString(row.serviceClass, "routeServiceArtifactEvidence.artifactEvidence.serviceClass"),
+        requiredString(row.timetableArtifactId, "routeServiceArtifactEvidence.artifactEvidence.timetableArtifactId"),
+        requiredString(row.timetableArtifactSha256, "routeServiceArtifactEvidence.artifactEvidence.timetableArtifactSha256"),
+        requiredString(row.canonicalPackId, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackId"),
+        requiredString(row.canonicalPackSha256, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackSha256"),
+        requiredString(row.canonicalPackSqliteSha256, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackSqliteSha256"),
+        requiredString(row.admissionStatus, "routeServiceArtifactEvidence.artifactEvidence.admissionStatus"),
+        boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.artifactEvidence.admissionEligible"),
+        row.freshUntil ?? null,
+        requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.artifactEvidence.sourceIssue"),
+      ],
+    );
+    insertRows(
+      database,
+      "route_service_station_catalog_evidence",
+      [
+        "service_class",
+        "station_catalog_artifact_kind",
+        "station_catalog_manifest_version",
+        "station_catalog_pack_id",
+        "station_catalog_station_set_sha256",
+        "station_catalog_payload_sha256",
+        "station_catalog_manifest_sha256",
+        "admission_status",
+        "admission_eligible",
+        "fresh_until",
+        "source_issue",
+      ],
+      [stationCatalogEvidence],
+      (row) => [
+        requiredString(row.serviceClass, "routeServiceArtifactEvidence.stationCatalogEvidence.serviceClass"),
+        requiredString(row.stationCatalogArtifactKind, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogArtifactKind"),
+        requiredInteger(row.stationCatalogManifestVersion, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogManifestVersion"),
+        requiredString(row.stationCatalogPackId, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogPackId"),
+        requiredString(row.stationCatalogStationSetSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogStationSetSha256"),
+        requiredString(row.stationCatalogPayloadSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogPayloadSha256"),
+        requiredString(row.stationCatalogManifestSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogManifestSha256"),
+        requiredString(row.admissionStatus, "routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus"),
+        boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.stationCatalogEvidence.admissionEligible"),
+        row.freshUntil ?? null,
+        requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.stationCatalogEvidence.sourceIssue"),
+      ],
+    );
+  }
+}
+
+function insertRealtimeAndNetworkTables(database, pack, networkEdges) {
+  insertRows(
+    database,
+    "realtime_provider_line_mappings",
+    [
+      "provider_id",
+      "provider_line_id",
+      "line_id",
+      "source_id",
+      "supports_arrivals",
+      "supports_train_positions",
+      "mapping_confidence",
+      "updated_at",
+    ],
+    pack.realtimeProviderLineMappings ?? [],
+    (row) => [
+      requiredString(row.providerId, "realtimeProviderLineMappings.providerId"),
+      requiredString(row.providerLineId, "realtimeProviderLineMappings.providerLineId"),
+      requiredString(row.lineId, "realtimeProviderLineMappings.lineId"),
+      requiredString(row.sourceId, "realtimeProviderLineMappings.sourceId"),
+      boolFlag(row.supportsArrivals, "realtimeProviderLineMappings.supportsArrivals"),
+      boolFlag(row.supportsTrainPositions, "realtimeProviderLineMappings.supportsTrainPositions"),
+      row.mappingConfidence ?? "UNKNOWN",
+      timestamp(row.updatedAt),
+    ],
+  );
+  insertRows(
+    database,
+    "realtime_provider_station_mappings",
+    [
+      "provider_id",
+      "provider_line_id",
+      "provider_station_id",
+      "station_id",
+      "line_id",
+      "source_id",
+      "query_name",
+      "supports_arrivals",
+      "supports_train_positions",
+      "mapping_confidence",
+      "updated_at",
+    ],
+    pack.realtimeProviderStationMappings ?? [],
+    (row) => [
+      requiredString(row.providerId, "realtimeProviderStationMappings.providerId"),
+      requiredString(row.providerLineId, "realtimeProviderStationMappings.providerLineId"),
+      requiredString(row.providerStationId, "realtimeProviderStationMappings.providerStationId"),
+      requiredString(row.stationId, "realtimeProviderStationMappings.stationId"),
+      requiredString(row.lineId, "realtimeProviderStationMappings.lineId"),
+      requiredString(row.sourceId, "realtimeProviderStationMappings.sourceId"),
+      row.queryName ?? "",
+      boolFlag(row.supportsArrivals, "realtimeProviderStationMappings.supportsArrivals"),
+      boolFlag(row.supportsTrainPositions, "realtimeProviderStationMappings.supportsTrainPositions"),
+      row.mappingConfidence ?? "UNKNOWN",
+      timestamp(row.updatedAt),
+    ],
+  );
+  insertRows(
+    database,
+    "out_of_station_transfer_links",
+    [
+      "id",
+      "from_station_id",
+      "from_line_id",
+      "to_station_id",
+      "to_line_id",
+      "from_exit_id",
+      "to_exit_id",
+      "duration_seconds",
+      "distance_meters",
+      "bidirectional",
+      "requires_fare_exit",
+      "requires_reentry",
+      "covered_route",
+      "crossing_risk",
+      "slope_level",
+      "curb_cut_status",
+      "sidewalk_status",
+      "accessibility_status",
+      "stair_access_state",
+      "reliability_score",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "last_field_verified_at",
+      "evidence_hash",
+    ],
+    [...(pack.outOfStationTransferLinks ?? [])].sort(
+      (a, b) =>
+        (a.durationSeconds ?? 0) - (b.durationSeconds ?? 0) ||
+        codepointCompare(String(a.id), String(b.id)),
+    ),
+    (row) => [
+      requiredString(row.id, "outOfStationTransferLinks.id"),
+      requiredString(row.fromStationId, "outOfStationTransferLinks.fromStationId"),
+      requiredString(row.fromLineId, "outOfStationTransferLinks.fromLineId"),
+      requiredString(row.toStationId, "outOfStationTransferLinks.toStationId"),
+      requiredString(row.toLineId, "outOfStationTransferLinks.toLineId"),
+      row.fromExitId ?? null,
+      row.toExitId ?? null,
+      row.durationSeconds ?? 0,
+      row.distanceMeters ?? 0,
+      boolFlag(
+        isAsymmetricTransferLink(row) ? false : row.bidirectional,
+        "outOfStationTransferLinks.bidirectional",
+      ),
+      boolFlag(row.requiresFareExit ?? true, "outOfStationTransferLinks.requiresFareExit"),
+      boolFlag(row.requiresReentry ?? true, "outOfStationTransferLinks.requiresReentry"),
+      row.coveredRoute ?? "UNKNOWN",
+      row.crossingRisk ?? "UNKNOWN",
+      row.slopeLevel ?? 1,
+      row.curbCutStatus ?? "UNKNOWN",
+      row.sidewalkStatus ?? "UNKNOWN",
+      normalizedAccessibilityStatus(row.accessibilityStatus, "outOfStationTransferLinks.accessibilityStatus"),
+      row.stairAccessState ?? "UNKNOWN",
+      row.reliabilityScore ?? 100,
+      row.sourceId ?? "",
+      row.sourceSnapshotId ?? "",
+      row.providerRecordHash ?? "",
+      row.provenanceKind ?? "UNKNOWN",
+      row.verificationStatus ?? "UNKNOWN",
+      timestamp(row.lastFieldVerifiedAt ?? row.lastVerifiedAt),
+      row.evidenceHash ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "network_edges",
+    [
+      "id",
+      "from_node_id",
+      "to_node_id",
+      "duration_seconds",
+      "distance_meters",
+      "edge_type",
+      "service_pattern",
+      "service_class",
+      "includes_stairs",
+      "stair_access_state",
+      "accessibility_status",
+      "reliability_score",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "facility_id",
+      "last_verified_at",
+      "evidence_hash",
+    ],
+    networkEdges,
+    (row) => {
+      // AquilaXk/easysubway-backend#480: 서버 번들과 같은 계단 칸 규칙(상태 기준, 어긋나면 거부).
+      const { includesStairs, stairAccessState } = networkEdgeStairColumns(row, row.id);
+      const accessibilityStatus = normalizedAccessibilityStatus(
+        row.accessibilityStatus,
+        "networkEdges.accessibilityStatus",
+      );
+
+      return [
+        requiredString(row.id, "networkEdges.id"),
+        requiredString(row.fromNodeId, "networkEdges.fromNodeId"),
+        requiredString(row.toNodeId, "networkEdges.toNodeId"),
+        row.durationSeconds ?? 0,
+        row.distanceMeters ?? 0,
+        row.edgeType ?? "WALKWAY",
+        row.servicePattern ?? "",
+        row.serviceClass ?? "SUBWAY",
+        includesStairs,
+        stairAccessState,
+        accessibilityStatus,
+        row.reliabilityScore ?? 100,
+        row.sourceId ?? "",
+        row.sourceSnapshotId ?? "",
+        row.providerRecordHash ?? "",
+        row.provenanceKind ?? "UNKNOWN",
+        row.verificationStatus ?? "UNKNOWN",
+        row.facilityId ?? null,
+        timestamp(row.verifiedAt ?? row.lastVerifiedAt),
+        row.evidenceHash ?? "",
+      ];
+    },
+  );
+  insertRows(
+    database,
+    "route_map_positions",
+    [
+      "station_id",
+      "line_id",
+      "region",
+      "x",
+      "y",
+      "label_dx",
+      "label_dy",
+      "label_polygon",
+      "up_path",
+      "down_path",
+      "source_id",
+      "source_name",
+      "source_url",
+      "license",
+      "license_status",
+      "commercial_use_allowed",
+      "attribution_required",
+      "reviewed_at",
+      "updated_at",
+    ],
+    pack.routeMapPositions ?? [],
+    (row) => [
+      requiredString(row.stationId, "routeMapPositions.stationId"),
+      requiredString(row.lineId, "routeMapPositions.lineId"),
+      requiredString(row.region, "routeMapPositions.region"),
+      requiredNonNegativeFiniteNumber(row.x, "routeMapPositions.x"),
+      requiredNonNegativeFiniteNumber(row.y, "routeMapPositions.y"),
+      row.labelDx ?? 0,
+      row.labelDy ?? 0,
+      canonicalLabelPolygon(row.labelPolygon, "routeMapPositions.labelPolygon"),
+      row.upPath ?? "",
+      row.downPath ?? "",
+      requiredString(row.sourceId, "routeMapPositions.sourceId"),
+      requiredString(row.sourceName, "routeMapPositions.sourceName"),
+      requiredString(row.sourceUrl, "routeMapPositions.sourceUrl"),
+      requiredString(row.license, "routeMapPositions.license"),
+      requiredString(row.licenseStatus, "routeMapPositions.licenseStatus"),
+      boolFlag(row.commercialUseAllowed, "routeMapPositions.commercialUseAllowed"),
+      boolFlag(row.attributionRequired, "routeMapPositions.attributionRequired"),
+      timestamp(row.reviewedAt),
+      timestamp(row.updatedAt),
+    ],
+  );
+  insertRows(
+    database,
+    "route_map_line_tracks",
+    [
+      "region",
+      "line_id",
+      "track_index",
+      "path",
+      "svg_color",
+      "source_id",
+      "source_name",
+      "source_url",
+      "license",
+      "license_status",
+      "commercial_use_allowed",
+      "attribution_required",
+      "updated_at",
+    ],
+    pack.routeMapLineTracks ?? [],
+    (row) => [
+      requiredString(row.region, "routeMapLineTracks.region"),
+      requiredString(row.lineId, "routeMapLineTracks.lineId"),
+      requiredNonNegativeInteger(row.trackIndex, "routeMapLineTracks.trackIndex"),
+      requiredString(row.path, "routeMapLineTracks.path"),
+      row.svgColor ?? "",
+      requiredString(row.sourceId, "routeMapLineTracks.sourceId"),
+      requiredString(row.sourceName, "routeMapLineTracks.sourceName"),
+      requiredString(row.sourceUrl, "routeMapLineTracks.sourceUrl"),
+      requiredString(row.license, "routeMapLineTracks.license"),
+      requiredString(row.licenseStatus, "routeMapLineTracks.licenseStatus"),
+      boolFlag(row.commercialUseAllowed, "routeMapLineTracks.commercialUseAllowed"),
+      boolFlag(row.attributionRequired, "routeMapLineTracks.attributionRequired"),
+      timestamp(row.updatedAt),
+    ],
+  );
+}
+
+function insertAccessibilityAndPathwayTables(database, pack, isProductionPack) {
+  insertRows(
+    database,
+    "station_exits",
+    [
+      "id",
+      "station_id",
+      "exit_number",
+      "description",
+      "latitude",
+      "longitude",
+      "has_elevator_connection",
+      "source_id",
+      "source_snapshot_id",
+      "data_source_type",
+      "last_verified_at",
+    ],
+    pack.stationExits ?? [],
+    (row) => [
+      requiredString(row.id, "stationExits.id"),
+      requiredString(row.stationId, "stationExits.stationId"),
+      requiredString(row.exitNumber, "stationExits.exitNumber"),
+      row.description ?? "",
+      optionalLatitude(row.latitude, "stationExits.latitude"),
+      optionalLongitude(row.longitude, "stationExits.longitude"),
+      boolFlag(row.hasElevatorConnection, "stationExits.hasElevatorConnection"),
+      row.sourceId ?? "",
+      row.sourceSnapshotId ?? "",
+      row.dataSourceType ?? "OFFICIAL_FILE",
+      timestamp(row.lastVerifiedAt),
+    ],
+  );
+  insertRows(
+    database,
+    "facilities",
+    [
+      "id",
+      "station_id",
+      "exit_id",
+      "type",
+      "name",
+      "status",
+      "floor_from",
+      "floor_to",
+      "description",
+      "source_id",
+      "source_snapshot_id",
+      "provider_facility_ref",
+      "provider_record_hash",
+      "provenance_kind",
+      "verified_at",
+      "retrieved_at",
+      "evidence_hash",
+      "status_meaning",
+      "operational_status",
+      "installation_status",
+      "confidence",
+    ],
+    pack.facilities ?? [],
+    (row) => {
+      const id = requiredString(row.id, "facilities.id");
+      return [
+        id,
+        requiredString(row.stationId, "facilities.stationId"),
+        row.exitId ?? null,
+        requiredString(row.type, "facilities.type"),
+        requiredString(row.name, "facilities.name"),
+        row.status ?? "UNKNOWN",
+        row.floorFrom ?? "",
+        row.floorTo ?? "",
+        row.description ?? "",
+        productionFacilityString(row.sourceId, isProductionPack, "sourceId"),
+        productionFacilityString(row.sourceSnapshotId, isProductionPack, "sourceSnapshotId"),
+        productionFacilityString(row.providerFacilityRef, isProductionPack, "providerFacilityRef") || id,
+        productionFacilityString(row.providerRecordHash, isProductionPack, "providerRecordHash"),
+        productionFacilityString(row.provenanceKind, isProductionPack, "provenanceKind") || "UNKNOWN",
+        productionFacilityTimestamp(row.verifiedAt ?? row.lastVerifiedAt, isProductionPack, "verifiedAt") ?? 0,
+        productionFacilityTimestamp(row.retrievedAt, isProductionPack, "retrievedAt") ?? 0,
+        productionFacilityString(row.evidenceHash, isProductionPack, "evidenceHash"),
+        productionFacilityString(row.statusMeaning, isProductionPack, "statusMeaning"),
+        facilityOperationalStatus(row, isProductionPack),
+        facilityInstallationStatus(row, isProductionPack),
+        row.confidence ?? 0,
+      ];
+    },
+  );
+  insertRows(
+    database,
+    "station_facility_evidence",
+    [
+      "station_id",
+      "line_id",
+      "facility_type",
+      "evidence_kind",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "evidence_hash",
+      "provenance_kind",
+      "installation_status",
+      "operational_status",
+      "status_meaning",
+      "confidence",
+      "verified_at",
+      "retrieved_at",
+      "strict_route_eligible",
+      "strict_route_eligible_reason",
+    ],
+    pack.stationFacilityEvidence ?? [],
+    (row) => [
+      requiredString(row.stationId, "stationFacilityEvidence.stationId"),
+      requiredString(row.lineId, "stationFacilityEvidence.lineId"),
+      requiredString(row.facilityType, "stationFacilityEvidence.facilityType"),
+      requiredString(row.evidenceKind, "stationFacilityEvidence.evidenceKind"),
+      requiredString(row.sourceId, "stationFacilityEvidence.sourceId"),
+      requiredString(row.sourceSnapshotId, "stationFacilityEvidence.sourceSnapshotId"),
+      requiredString(row.providerRecordHash, "stationFacilityEvidence.providerRecordHash"),
+      requiredString(row.evidenceHash, "stationFacilityEvidence.evidenceHash"),
+      requiredString(row.provenanceKind, "stationFacilityEvidence.provenanceKind"),
+      row.installationStatus ?? "UNKNOWN",
+      row.operationalStatus ?? "UNKNOWN",
+      row.statusMeaning ?? "",
+      row.confidence ?? 0,
+      timestamp(row.verifiedAt) ?? 0,
+      timestamp(row.retrievedAt) ?? 0,
+      boolFlag(row.strictRouteEligible, "stationFacilityEvidence.strictRouteEligible"),
+      row.strictRouteEligibleReason ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_accessibility_summaries",
+    ["station_id", "summary", "warning"],
+    pack.stationAccessibilitySummaries ?? [],
+    (row) => [
+      requiredString(row.stationId, "stationAccessibilitySummaries.stationId"),
+      requiredString(row.summary, "stationAccessibilitySummaries.summary"),
+      row.warning ?? "",
+    ],
+  );
+  insertRows(database, "internal_route_nodes", ["id", "station_id", "label", "node_type"], pack.internalRouteNodes ?? [], (row) => [
+    requiredString(row.id, "internalRouteNodes.id"),
+    requiredString(row.stationId, "internalRouteNodes.stationId"),
+    requiredString(row.label, "internalRouteNodes.label"),
+    requiredString(row.nodeType, "internalRouteNodes.nodeType"),
+  ]);
+  insertRows(
+    database,
+    "internal_route_edges",
+    [
+      "id",
+      "from_node_id",
+      "to_node_id",
+      "edge_type",
+      "distance_meters",
+      "duration_seconds",
+      "includes_stairs",
+      "requires_elevator",
+      "requires_escalator",
+      "slope_level",
+      "width_level",
+      "reliability_score",
+      "accessibility_status",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "facility_id",
+      "last_verified_at",
+      "evidence_hash",
+      "instruction",
+    ],
+    pack.internalRouteEdges ?? [],
+    (row) => [
+      requiredString(row.id, "internalRouteEdges.id"),
+      requiredString(row.fromNodeId, "internalRouteEdges.fromNodeId"),
+      requiredString(row.toNodeId, "internalRouteEdges.toNodeId"),
+      row.edgeType ?? "WALK",
+      row.distanceMeters ?? 0,
+      row.durationSeconds ?? 0,
+      row.includesStairs ? 1 : 0,
+      row.requiresElevator ? 1 : 0,
+      row.requiresEscalator ? 1 : 0,
+      row.slopeLevel ?? 1,
+      row.widthLevel ?? 2,
+      row.reliabilityScore ?? 100,
+      normalizedAccessibilityStatus(row.accessibilityStatus, "internalRouteEdges.accessibilityStatus"),
+      row.sourceId ?? "",
+      row.sourceSnapshotId ?? "",
+      row.providerRecordHash ?? "",
+      row.provenanceKind ?? "UNKNOWN",
+      row.verificationStatus ?? "UNKNOWN",
+      row.facilityId ?? null,
+      timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
+      row.evidenceHash ?? "",
+      row.instruction ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_pathway_nodes",
+    ["id", "station_id", "line_id", "node_type", "label", "level", "legacy_internal_route_node_id"],
+    pack.stationPathwayNodes ?? [],
+    (row) => [
+      requiredString(row.id, "stationPathwayNodes.id"),
+      requiredString(row.stationId, "stationPathwayNodes.stationId"),
+      row.lineId ?? null,
+      requiredString(row.nodeType, "stationPathwayNodes.nodeType"),
+      requiredString(row.label, "stationPathwayNodes.label"),
+      row.level ?? "",
+      row.legacyInternalRouteNodeId ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "station_pathway_edges",
+    [
+      "id",
+      "from_node_id",
+      "to_node_id",
+      "edge_type",
+      "duration_seconds",
+      "distance_meters",
+      "bidirectional",
+      "includes_stairs",
+      "requires_elevator",
+      "requires_escalator",
+      "level_from",
+      "level_to",
+      "requires_facility_id",
+      "min_width_cm",
+      "slope_percent",
+      "vertical_meters",
+      "reliability_score",
+      "accessibility_status",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "last_verified_at",
+      "evidence_hash",
+      "instruction",
+      "legacy_internal_route_edge_id",
+    ],
+    pack.stationPathwayEdges ?? [],
+    (row) => [
+      requiredString(row.id, "stationPathwayEdges.id"),
+      requiredString(row.fromNodeId, "stationPathwayEdges.fromNodeId"),
+      requiredString(row.toNodeId, "stationPathwayEdges.toNodeId"),
+      row.edgeType ?? "WALK",
+      row.durationSeconds ?? 0,
+      row.distanceMeters ?? 0,
+      boolFlag(row.bidirectional, "stationPathwayEdges.bidirectional"),
+      boolFlag(row.includesStairs, "stationPathwayEdges.includesStairs"),
+      boolFlag(row.requiresElevator, "stationPathwayEdges.requiresElevator"),
+      boolFlag(row.requiresEscalator, "stationPathwayEdges.requiresEscalator"),
+      row.levelFrom ?? "",
+      row.levelTo ?? "",
+      row.requiresFacilityId ?? null,
+      row.minWidthCm ?? null,
+      row.slopePercent ?? null,
+      row.verticalMeters ?? null,
+      row.reliabilityScore ?? 100,
+      normalizedAccessibilityStatus(row.accessibilityStatus, "stationPathwayEdges.accessibilityStatus"),
+      row.sourceId ?? "",
+      row.sourceSnapshotId ?? "",
+      row.providerRecordHash ?? "",
+      row.provenanceKind ?? "UNKNOWN",
+      row.verificationStatus ?? "UNKNOWN",
+      timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
+      row.evidenceHash ?? "",
+      row.instruction ?? "",
+      row.legacyInternalRouteEdgeId ?? "",
+    ],
+  );
+  insertRows(
+    database,
+    "transfer_rules",
+    [
+      "id",
+      "from_station_id",
+      "from_line_id",
+      "to_station_id",
+      "to_line_id",
+      "transfer_type",
+      "min_transfer_seconds",
+      "pathway_edge_id",
+      "strict_step_free_pathway_edge_id",
+      "source_id",
+      "verification_status",
+    ],
+    [...(pack.transferRules ?? [])].sort(
+      (a, b) =>
+        (a.minTransferSeconds ?? 0) - (b.minTransferSeconds ?? 0) ||
+        codepointCompare(String(a.id), String(b.id)),
+    ),
+    (row) => [
+      requiredString(row.id, "transferRules.id"),
+      requiredString(row.fromStationId, "transferRules.fromStationId"),
+      requiredString(row.fromLineId, "transferRules.fromLineId"),
+      requiredString(row.toStationId, "transferRules.toStationId"),
+      requiredString(row.toLineId, "transferRules.toLineId"),
+      row.transferType ?? "IN_STATION",
+      row.minTransferSeconds ?? 0,
+      row.pathwayEdgeId ?? null,
+      row.strictStepFreePathwayEdgeId ?? null,
+      row.sourceId ?? "",
+      row.verificationStatus ?? "UNKNOWN",
+    ],
+  );
+  insertRows(
+    database,
+    "station_car_door_hints",
+    [
+      "id",
+      "station_id",
+      "line_id",
+      "direction",
+      "target_facility_type",
+      "car_number",
+      "door_number",
+      "source_id",
+      "source_snapshot_id",
+      "provider_record_hash",
+      "provenance_kind",
+      "verification_status",
+      "last_verified_at",
+      "evidence_hash",
+    ],
+    pack.stationCarDoorHints ?? [],
+    (row) => {
+      const provenanceKind =
+        row.provenanceKind == null
+          ? "UNKNOWN"
+          : requiredString(row.provenanceKind, "stationCarDoorHints.provenanceKind");
+      const isOfficial = provenanceKind === "OFFICIAL";
+      return [
+        requiredString(row.id, "stationCarDoorHints.id"),
+        requiredString(row.stationId, "stationCarDoorHints.stationId"),
+        requiredString(row.lineId, "stationCarDoorHints.lineId"),
+        row.direction ?? "",
+        requiredString(row.targetFacilityType, "stationCarDoorHints.targetFacilityType"),
+        requiredInteger(row.carNumber, "stationCarDoorHints.carNumber"),
+        requiredInteger(row.doorNumber, "stationCarDoorHints.doorNumber"),
+        isOfficial ? requiredString(row.sourceId, "stationCarDoorHints.sourceId") : row.sourceId ?? "",
+        isOfficial
+          ? requiredString(row.sourceSnapshotId, "stationCarDoorHints.sourceSnapshotId")
+          : row.sourceSnapshotId ?? "",
+        isOfficial
+          ? requiredString(row.providerRecordHash, "stationCarDoorHints.providerRecordHash")
+          : row.providerRecordHash ?? "",
+        provenanceKind,
+        row.verificationStatus ?? "UNKNOWN",
+        timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
+        row.evidenceHash ?? "",
+      ];
+    },
+  );
+  insertRows(
+    database,
+    "data_quality_records",
+    ["id", "target_type", "target_id", "quality_level", "checked_at"],
+    pack.dataQualityRecords ?? [],
+    (row) => [
+      requiredString(row.id, "dataQualityRecords.id"),
+      requiredString(row.targetType, "dataQualityRecords.targetType"),
+      requiredString(row.targetId, "dataQualityRecords.targetId"),
+      requiredString(row.qualityLevel, "dataQualityRecords.qualityLevel"),
+      timestamp(row.checkedAt),
+    ],
+  );
+}
+
+function insertCongestionTables(database, pack, isProductionPack, repositoryRoot) {
+  let congestionStats = pack.stationCongestionStats ?? [];
+  let congestionSources = pack.stationCongestionSources ?? [];
+
+  if (isProductionPack) {
+    const { stats, sources } = loadSeoulMetroCongestionForBuild(repositoryRoot, pack);
+    congestionStats = stats;
+    congestionSources = sources;
+  }
+
+  assertCongestionRowsExistInPack(pack, congestionStats);
+
+  insertRows(
+    database,
+    "station_congestion_sources",
+    ["source_snapshot_id", "dataset_label", "captured_at", "attribution"],
+    congestionSources,
+    (row) => [
+      requiredString(row.source_snapshot_id ?? row.sourceSnapshotId, "station_congestion_sources.source_snapshot_id"),
+      requiredString(row.dataset_label ?? row.datasetLabel, "station_congestion_sources.dataset_label"),
+      requiredString(row.captured_at ?? row.capturedAt, "station_congestion_sources.captured_at"),
+      requiredString(row.attribution, "station_congestion_sources.attribution"),
+    ],
+  );
+
+  insertRows(
+    database,
+    "station_congestion_stats",
+    [
+      "station_id",
+      "line_id",
+      "direction",
+      "day_type",
+      "slot_start_minute",
+      "congestion_permille",
+      "source_snapshot_id",
+    ],
+    congestionStats,
+    (row) => [
+      requiredString(row.station_id ?? row.stationId, "station_congestion_stats.station_id"),
+      requiredString(row.line_id ?? row.lineId, "station_congestion_stats.line_id"),
+      requiredString(row.direction, "station_congestion_stats.direction"),
+      requiredString(row.day_type ?? row.dayType, "station_congestion_stats.day_type"),
+      requiredInteger(row.slot_start_minute ?? row.slotStartMinute, "station_congestion_stats.slot_start_minute"),
+      requiredNonNegativeInteger(row.congestion_permille ?? row.congestionPermille, "station_congestion_stats.congestion_permille"),
+      requiredString(row.source_snapshot_id ?? row.sourceSnapshotId, "station_congestion_stats.source_snapshot_id"),
+    ],
+  );
+}
+
+export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions, { repositoryRoot = root } = {}) {
+  const database = new DatabaseSync(sqlitePath);
+  const isProductionPack = pack.artifactKind === "production";
+  const networkEdges = routeGraphNetworkEdges(pack);
+  try {
+    database.exec(schema);
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      insertCoreCatalogAndGuideTables(database, pack);
+      insertFareTables(database, pack, officialOdFareAdmissions);
+      insertTransitScheduleTables(database, pack);
+      insertRealtimeAndNetworkTables(database, pack, networkEdges);
+      insertAccessibilityAndPathwayTables(database, pack, isProductionPack);
+      insertCongestionTables(database, pack, isProductionPack, repositoryRoot);
+
+      database.exec("COMMIT");
+      // ponytail: ANALYZE/optimize statistics differ across SQLite builds; the release artifact must not embed them.
+      database.exec("VACUUM");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  } finally {
+    database.close();
+  }
+}
+
+function productionFacilityString(value, isProductionPack, field) {
+  if (!isProductionPack) {
+    return value ?? "";
+  }
+  return requiredString(value, `production facilities.${field}`);
+}
+
+function productionFacilityTimestamp(value, isProductionPack, field) {
+  if (!isProductionPack) {
+    return timestamp(value);
+  }
+  return timestamp(requiredString(value, `production facilities.${field}`));
+}
+
+function facilityOperationalStatus(row, isProductionPack) {
+  if (isProductionPack) {
+    return productionFacilityString(row.operationalStatus, isProductionPack, "operationalStatus");
+  }
+  if (row.operationalStatus) {
+    return row.operationalStatus;
+  }
+  const status = String(row.status ?? "").toUpperCase();
+  if (["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"].includes(status)) {
+    return "AVAILABLE";
+  }
+  if (["BROKEN", "UNDER_CONSTRUCTION", "CLOSED", "UNAVAILABLE", "OUT_OF_SERVICE"].includes(status)) {
+    return "UNAVAILABLE";
+  }
+  return "";
+}
+
+function facilityInstallationStatus(row, isProductionPack) {
+  if (isProductionPack) {
+    return productionFacilityString(row.installationStatus, isProductionPack, "installationStatus");
+  }
+  return row.installationStatus ?? "UNKNOWN";
+}
+
+function insertCatalogMetadata(database, pack) {
+  const rows = [
+    ["schemaVersion", pack.schemaVersion],
+    ...Object.entries(pack.metadata ?? {}),
+  ];
+  const statement = database.prepare("INSERT INTO catalog_metadata (key, value, updated_at) VALUES (?, ?, ?)");
+  const updatedAt = Date.UTC(2026, 5, 19) / 1000;
+  for (const [key, value] of rows) {
+    statement.run(key, String(value), updatedAt);
+  }
+}
+
+function insertRows(database, table, columns, rows, mapRow) {
+  const rowList = rows ?? [];
+  const total = rowList.length;
+  if (total === 0) return;
+
+  const colCount = columns.length;
+  const singlePlaceholder = `(${columns.map(() => "?").join(", ")})`;
+  const singleStmt = database.prepare(
+    `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${singlePlaceholder}`,
+  );
+
+  const handleSingleError = (values, error) => {
+    if (error instanceof Error && error.message.includes("FOREIGN KEY constraint failed")) {
+      const rowIdentity = sha256(Buffer.from(canonicalJson({
+        table,
+        values: Object.fromEntries(columns.map((column, index) => [column, values[index]])),
+      })));
+      throw new Error(`SQLite foreign-key insert failed: ${table} row_sha256=${rowIdentity}: ${error.message}`);
+    }
+    throw error;
+  };
+
+  // 파라미터 상한(999) 내에서 배치 크기 결정 (최대 250행)
+  const batchSize = Math.min(250, Math.floor(999 / colCount));
+
+  if (total < 2 || batchSize < 2) {
+    for (let i = 0; i < total; i += 1) {
+      const values = mapRow(rowList[i]);
+      try {
+        singleStmt.run(...values);
+      } catch (error) {
+        handleSingleError(values, error);
+      }
+    }
+    return;
+  }
+
+  const batchPlaceholders = Array(batchSize).fill(singlePlaceholder).join(", ");
+  const batchStmt = database.prepare(
+    `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${batchPlaceholders}`,
+  );
+
+  let i = 0;
+  const fullBatchesEnd = total - (total % batchSize);
+
+  for (; i < fullBatchesEnd; i += batchSize) {
+    const flatValues = [];
+    const mappedRows = [];
+    for (let j = 0; j < batchSize; j += 1) {
+      const values = mapRow(rowList[i + j]);
+      mappedRows.push(values);
+      for (let k = 0; k < colCount; k += 1) {
+        flatValues.push(values[k]);
+      }
+    }
+    try {
+      batchStmt.run(...flatValues);
+    } catch (batchError) {
+      for (let j = 0; j < batchSize; j += 1) {
+        const values = mappedRows[j];
+        try {
+          singleStmt.run(...values);
+        } catch (error) {
+          handleSingleError(values, error);
+        }
+      }
+      throw batchError;
+    }
+  }
+
+  for (; i < total; i += 1) {
+    const values = mapRow(rowList[i]);
+    try {
+      singleStmt.run(...values);
+    } catch (error) {
+      handleSingleError(values, error);
+    }
+  }
+}
+
+function validateFixture(fixture) {
+  if (!fixture || typeof fixture !== "object") {
+    throw new Error("fixture must be an object");
+  }
+  if (!fixture.manifest || typeof fixture.manifest !== "object" || Array.isArray(fixture.manifest)) {
+    throw new Error("fixture manifest must be an object");
+  }
+  if (
+    fixture.manifest.manifestVersion !== undefined &&
+    fixture.manifest.manifestVersion !== 1 &&
+    fixture.manifest.manifestVersion !== 2
+  ) {
+    throw new Error("manifest.manifestVersion must be 1 or 2");
+  }
+  if (!Number.isInteger(fixture.manifest?.ttlSeconds) || fixture.manifest.ttlSeconds <= 0) {
+    throw new Error("manifest ttlSeconds must be a positive integer");
+  }
+  if (!Array.isArray(fixture.packs) || fixture.packs.length === 0) {
+    throw new Error("fixture packs must be a non-empty array");
+  }
+  validateCoverageLineOperatorScopes(fixture.coverageLineOperatorScopes, fixture.packs);
+  for (const pack of fixture.packs) {
+    validateCoverageLineOperatorScopes(pack.coverageLineOperatorScopes, [pack]);
+  }
+  validateCoverageLineOperatorScopeAlignment(fixture);
+  const packIdentities = new Set(
+    fixture.packs.map((pack) => `${pack.id ?? ""}@${pack.version ?? ""}`),
+  );
+  if (fixture.manifest.activePack !== undefined) {
+    validatePackIdentity(fixture.manifest.activePack, "manifest.activePack");
+    const activePackIdentity = `${fixture.manifest.activePack.id}@${fixture.manifest.activePack.version}`;
+    if (!packIdentities.has(activePackIdentity)) {
+      throw new Error("manifest.activePack must match one of fixture packs");
+    }
+  }
+  if (fixture.manifest.emergencyOverride !== undefined) {
+    validatePackIdentity(fixture.manifest.emergencyOverride, "manifest.emergencyOverride");
+    requiredString(fixture.manifest.emergencyOverride.reason, "manifest.emergencyOverride.reason");
+  }
+  for (const pack of fixture.packs) {
+    validatePackIdentity(pack, "pack");
+    validateRouteServiceAdmission(pack);
+    const artifactKind = pack.artifactKind ?? "fixture";
+    if (artifactKind !== "fixture" && artifactKind !== "production") {
+      throw new Error("pack.artifactKind must be fixture or production");
+    }
+    schemaVersionNumber(pack.schemaVersion, "pack.schemaVersion");
+    const validatedPackUrl = pack.url ?? stagedPackPath(pack);
+    requiredString(validatedPackUrl, "pack.url");
+    validatePackUrl(validatedPackUrl, "pack.url");
+    validatePackUrlMatchesStagedPath(validatedPackUrl, pack, "pack.url");
+    if (artifactKind === "production" && !isAbsoluteHttpsWithHost(pack.url)) {
+      throw new Error("production pack url must be an absolute HTTPS URL");
+    }
+    if (artifactKind === "production" && usesLocalPlaceholderHost(pack.url)) {
+      throw new Error("production pack url must not use a local placeholder host");
+    }
+    validateSourceInventory(pack.sourceInventory, artifactKind);
+    if (pack.routeRegressionScope !== undefined) {
+      validateRouteRegressionScope(pack.routeRegressionScope);
+    }
+    validateRepresentativeRouteRegressions(pack.representativeRouteRegressions, pack.routeRegressionScope);
+    if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
+      throw new Error(`${pack.id} requiredTables must be a non-empty array`);
+    }
+    validateMinimumTableRows(pack, artifactKind);
+  }
+}
+
+function validateRouteServiceAdmission(pack) {
+  if ((pack.routeServiceArtifactEvidence ?? []).length !== 0) {
+    throw new Error("routeServiceArtifactEvidence input is legacy; build recreates it from the verified current station catalog identity");
+  }
+  const itxRowCount = [
+    ...(pack.transitTrips ?? []),
+    ...(pack.networkEdges ?? []),
+  ].filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length;
+  if (itxRowCount > 0 && !validatedItxStationCatalogEvidence.has(pack)) {
+    throw new Error("ITX_CHEONGCHUN rows require a verified current station catalog identity");
+  }
+}
+
+function validateCoverageLineOperatorScopes(scopes, packs) {
+  if (scopes === undefined) {
+    return;
+  }
+  if (!Array.isArray(scopes) || scopes.length === 0) {
+    throw new Error("coverageLineOperatorScopes must be a non-empty array");
+  }
+  const lineIds = new Set(packs.flatMap((pack) => (pack.lines ?? []).map((line) => line.id)));
+  const operatorIds = new Set(packs.flatMap((pack) => (pack.operators ?? []).map((operator) => operator.id)));
+  const keys = new Set();
+  for (const scope of scopes) {
+    if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+      throw new Error("coverageLineOperatorScopes[] must be an object");
+    }
+    const regionId = requiredString(scope.regionId, "coverageLineOperatorScopes[].regionId");
+    const operatorId = requiredString(scope.operatorId, "coverageLineOperatorScopes[].operatorId");
+    const lineId = requiredString(scope.lineId, "coverageLineOperatorScopes[].lineId");
+    if (!operatorIds.has(operatorId)) {
+      throw new Error(`coverageLineOperatorScopes contains undefined operator: ${operatorId}`);
+    }
+    if (!lineIds.has(lineId)) {
+      throw new Error(`coverageLineOperatorScopes contains undefined line: ${lineId}`);
+    }
+    const key = `${regionId}:${operatorId}:${lineId}`;
+    if (keys.has(key)) {
+      throw new Error(`duplicate coverageLineOperatorScope: ${key}`);
+    }
+    keys.add(key);
+  }
+}
+
+function validateCoverageLineOperatorScopeAlignment(fixture) {
+  if (fixture.coverageLineOperatorScopes === undefined) {
+    if (fixture.coverageLineOperatorScopeSemantics !== undefined) {
+      throw new Error("coverageLineOperatorScopeSemantics requires top-level coverageLineOperatorScopes");
+    }
+    return;
+  }
+  if (fixture.coverageLineOperatorScopeSemantics !== "UNION_OF_PACK_SCOPES") {
+    throw new Error("top-level coverageLineOperatorScopes must declare UNION_OF_PACK_SCOPES semantics");
+  }
+  const fixtureKeys = [...new Set(
+    fixture.coverageLineOperatorScopes
+      .map(({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`),
+  )].sort(compareStrings);
+  const packKeys = [...new Set(
+    fixture.packs
+      .flatMap((pack) => pack.coverageLineOperatorScopes ?? [])
+      .map(({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`),
+  )].sort(compareStrings);
+  if (JSON.stringify(fixtureKeys) !== JSON.stringify(packKeys)) {
+    throw new Error("fixture coverageLineOperatorScopes must equal the union of pack coverageLineOperatorScopes");
+  }
+}
+
+function validateMinimumTableRows(pack, artifactKind) {
+  if (pack.minimumTableRows !== undefined) {
+    if (!pack.minimumTableRows || typeof pack.minimumTableRows !== "object" || Array.isArray(pack.minimumTableRows)) {
+      throw new Error(`${pack.id} minimumTableRows must be an object`);
+    }
+    for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows)) {
+      validateTableName(tableName);
+      if (!Number.isInteger(minimumRows) || minimumRows < 0) {
+        throw new Error(`${pack.id} minimumTableRows entry must be a non-negative integer`);
+      }
+    }
+  }
+  if (artifactKind !== "production") {
+    return;
+  }
+  if (!hasProductionMinimumTableRows(pack.minimumTableRows)) {
+    throw new Error(
+      "production minimumTableRows must define positive stations, station_lines, network_edges, facilities, and station_facility_evidence",
+    );
+  }
+  const actualRowsByTable = {
+    stations: pack.stations?.length ?? 0,
+    station_lines: pack.stationLines?.length ?? 0,
+    network_edges: routeGraphNetworkEdges(pack).length,
+    facilities: pack.facilities?.length ?? 0,
+    station_facility_evidence: pack.stationFacilityEvidence?.length ?? 0,
+  };
+  for (const tableName of productionMinimumTableRowNames) {
+    if (actualRowsByTable[tableName] < pack.minimumTableRows[tableName]) {
+      throw new Error(
+        `production ${tableName} rows ${actualRowsByTable[tableName]} are below minimumTableRows ${pack.minimumTableRows[tableName]}`,
+      );
+    }
+  }
+}
+
+function hasProductionMinimumTableRows(minimumTableRows) {
+  return (
+    minimumTableRows &&
+    typeof minimumTableRows === "object" &&
+    !Array.isArray(minimumTableRows) &&
+    productionMinimumTableRowNames.every((tableName) => Number.isInteger(minimumTableRows[tableName]) && minimumTableRows[tableName] > 0)
+  );
+}
+
+function validateTableName(value) {
+  const tableName = requiredString(value, "tableName");
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tableName)) {
+    throw new Error(`invalid table name: ${tableName}`);
+  }
+}
+
+function validateRepresentativeRouteRegressions(routes, scope = null) {
+  const requiredPatterns =
+    !scope && Array.isArray(routes) && routes.length === 0
+      ? new Set()
+      : requiredRepresentativeRoutePatterns(scope);
+  if (!Array.isArray(routes) || (requiredPatterns.size > 0 && routes.length === 0)) {
+    throw new Error("pack.representativeRouteRegressions must be a non-empty array");
+  }
+  const seenPatterns = new Set();
+  for (const route of routes) {
+    requiredString(route.id, "representativeRouteRegressions.id");
+    const pattern = requiredString(route.pattern, "representativeRouteRegressions.pattern");
+    if (!requiredPatterns.has(pattern)) {
+      throw new Error("representativeRouteRegressions.pattern is invalid");
+    }
+    seenPatterns.add(pattern);
+    requiredString(route.fromNodeId, "representativeRouteRegressions.fromNodeId");
+    requiredString(route.toNodeId, "representativeRouteRegressions.toNodeId");
+    if (!Array.isArray(route.requiredEdgeIds) || route.requiredEdgeIds.length === 0) {
+      throw new Error("representativeRouteRegressions.requiredEdgeIds must be a non-empty array");
+    }
+    for (const edgeId of route.requiredEdgeIds) {
+      requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds");
+    }
+  }
+  for (const pattern of requiredPatterns) {
+    if (!seenPatterns.has(pattern)) {
+      throw new Error(`representativeRouteRegressions missing required pattern: ${pattern}`);
+    }
+  }
+}
+
+function validateRouteRegressionScope(scope) {
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+    throw new Error("routeRegressionScope must be an object");
+  }
+  const mode = requiredString(scope.mode, "routeRegressionScope.mode");
+  if (mode !== "DIRECT_ONLY") {
+    throw new Error("routeRegressionScope.mode is invalid");
+  }
+  if (!Array.isArray(scope.excludedPatterns)) {
+    throw new Error("routeRegressionScope.excludedPatterns must be an array");
+  }
+  for (const pattern of scope.excludedPatterns) {
+    requiredString(pattern, "routeRegressionScope.excludedPatterns");
+  }
+  requiredString(scope.claim, "routeRegressionScope.claim");
+}
+
+function requiredRepresentativeRoutePatterns(scope = null) {
+  if (scope?.mode === "DIRECT_ONLY") {
+    return new Set(["DIRECT"]);
+  }
+  return new Set(["DIRECT", "TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"]);
+}
+
+function validateSourceInventory(sourceInventory, artifactKind) {
+  if (!Array.isArray(sourceInventory) || sourceInventory.length === 0) {
+    throw new Error("pack.sourceInventory must be a non-empty array");
+  }
+  for (const source of sourceInventory) {
+    requiredString(source.id, "sourceInventory.id");
+    requiredString(source.owner, "sourceInventory.owner");
+    requiredString(source.url, "sourceInventory.url");
+    requiredString(source.license, "sourceInventory.license");
+    const licenseStatus = requiredString(source.licenseStatus, "sourceInventory.licenseStatus");
+    if (typeof source.redistributionAllowed !== "boolean") {
+      throw new Error("sourceInventory.redistributionAllowed must be a boolean");
+    }
+    requiredString(source.updateFrequency, "sourceInventory.updateFrequency");
+    requiredString(source.updatedAt, "sourceInventory.updatedAt");
+    if (!Array.isArray(source.fields) || source.fields.length === 0) {
+      throw new Error("sourceInventory.fields must be a non-empty array");
+    }
+    for (const field of source.fields) {
+      requiredString(field, "sourceInventory.fields");
+    }
+    if (artifactKind === "production" || source.coverageScope !== undefined) {
+      validateSourceInventoryCoverageScope(
+        source.coverageScope,
+        artifactKind === "production" ? "production sourceInventory.coverageScope" : "sourceInventory.coverageScope",
+      );
+    }
+    if (artifactKind === "production") {
+      if (licenseStatus !== "redistributable" || source.redistributionAllowed !== true) {
+        throw new Error("production sourceInventory must be redistributable");
+      }
+      if (!isAbsoluteHttpsWithHost(source.url)) {
+        throw new Error("production sourceInventory.url must be HTTPS");
+      }
+      if (usesLocalPlaceholderHost(source.url)) {
+        throw new Error("production sourceInventory.url must not use a local placeholder host");
+      }
+    }
+  }
+}
+
+function validateSourceInventoryCoverageScope(coverageScope, label) {
+  if (!coverageScope || typeof coverageScope !== "object" || Array.isArray(coverageScope)) {
+    throw new Error(`${label} must be an object`);
+  }
+  requiredStringArray(coverageScope.regionIds, `${label}.regionIds`);
+  requiredStringArray(coverageScope.operatorIds, `${label}.operatorIds`);
+  requiredStringArray(coverageScope.sourceDomains, `${label}.sourceDomains`);
+  if (coverageScope.lineIds !== undefined) {
+    const lineIds = requiredStringArray(coverageScope.lineIds, `${label}.lineIds`);
+    if (new Set(lineIds).size !== lineIds.length) {
+      throw new Error(`${label}.lineIds must not contain duplicates`);
+    }
+  }
+}
+
+function isAbsoluteHttpsWithHost(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname !== "";
+  } catch {
+    return false;
+  }
+}
+
+function parseArgs(argv) {
+  const args = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const key = argv[index];
+    const value = argv[index + 1];
+    if (!key?.startsWith("--") || value === undefined) {
+      throw new Error(`invalid argument: ${key ?? ""}`);
+    }
+    args[key.slice(2)] = value;
+  }
+  return args;
+}
+
+function requireArg(args, name) {
+  if (!args[name]) {
+    throw new Error(`--${name} is required`);
+  }
+  return args[name];
+}
+
+function requiredString(value, label) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function sha256HexString(value, label) {
+  const text = requiredString(value, label);
+  if (!/^[a-f0-9]{64}$/i.test(text)) {
+    throw new Error(`${label} must be a sha256 hex string`);
+  }
+  return text.toLowerCase();
+}
+
+function requiredUtcDateString(value, label) {
+  const rawValue = requiredString(value, label);
+  if (!/(Z|[+-]\d{2}:\d{2})$/.test(rawValue)) {
+    throw new Error(`${label} must include timezone offset`);
+  }
+  const parsed = new Date(rawValue);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${label} must be an ISO date-time`);
+  }
+  return rawValue;
+}
+
+function optionalUtcDateString(value, label) {
+  return value === undefined ? null : requiredUtcDateString(value, label);
+}
+
+function optionalPositiveInteger(value, label) {
+  return value === undefined ? null : requiredPositiveInteger(value, label);
+}
+
+function buildPublishedAt() {
+  return new Date().toISOString();
+}
+
+function buildExpiresAt(rawPublishedAt) {
+  const publishedAt = new Date(rawPublishedAt ?? buildPublishedAt());
+  return new Date(publishedAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function defaultReleaseSequence() {
+  const runNumber = Number(process.env.GITHUB_RUN_NUMBER);
+  return Number.isInteger(runNumber) && runNumber > 0 ? runNumber : 1;
+}
+
+function requiredStringArray(value, label) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${label} must be a non-empty string array`);
+  }
+  return value.map((entry) => requiredString(entry, `${label}[]`));
+}
+
+function normalizedAccessibilityStatus(value, label) {
+  return requiredString(value ?? "UNKNOWN", label).toUpperCase();
+}
+
+function requiredInteger(value, label) {
+  if (!Number.isInteger(value)) {
+    throw new Error(`${label} must be an integer`);
+  }
+  return value;
+}
+
+function requiredPositiveInteger(value, label) {
+  const integer = requiredInteger(value, label);
+  if (integer <= 0) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return integer;
+}
+
+function requiredNonNegativeInteger(value, label) {
+  const integer = requiredInteger(value, label);
+  if (integer < 0) {
+    throw new Error(`${label} must be a non-negative integer`);
+  }
+  return integer;
+}
+
+function officialOdFareQuoteValues(row, admission) {
+  const label = "officialOdFareQuotes";
+  const keys = [
+    "originStationId",
+    "destinationStationId",
+    "sourceId",
+    "snapshotId",
+    "mappingLedgerHash",
+    "gnrlCardFare",
+    "gnrlCashFare",
+    "yungCardFare",
+    "yungCashFare",
+    "childCardFare",
+    "childCashFare",
+  ];
+  assertExactKeys(row, keys, label);
+  if (admission?.decision !== "APPROVED") {
+    throw new Error(`${label} requires an approved admission`);
+  }
+  const originStationId = requiredString(row.originStationId, `${label}.originStationId`);
+  const destinationStationId = requiredString(row.destinationStationId, `${label}.destinationStationId`);
+  if (originStationId === destinationStationId) {
+    throw new Error(`${label} endpoints must be distinct`);
+  }
+  const sourceId = requiredString(row.sourceId, `${label}.sourceId`);
+  const snapshotId = requiredString(row.snapshotId, `${label}.snapshotId`);
+  const mappingLedgerHash = sha256HexString(row.mappingLedgerHash, `${label}.mappingLedgerHash`);
+  if (sourceId !== admission.sourceId) throw new Error(`${label}.sourceId must match admission`);
+  if (snapshotId !== admission.snapshotId) throw new Error(`${label}.snapshotId must match admission`);
+  if (mappingLedgerHash !== admission.fareStationLineMappingLedgerHash) {
+    throw new Error(`${label}.mappingLedgerHash must match admission`);
+  }
+  return [
+    originStationId,
+    destinationStationId,
+    sourceId,
+    snapshotId,
+    mappingLedgerHash,
+    requiredNonNegativeSafeInteger(row.gnrlCardFare, `${label}.gnrlCardFare`),
+    requiredNonNegativeSafeInteger(row.gnrlCashFare, `${label}.gnrlCashFare`),
+    requiredNonNegativeSafeInteger(row.yungCardFare, `${label}.yungCardFare`),
+    requiredNonNegativeSafeInteger(row.yungCashFare, `${label}.yungCashFare`),
+    requiredNonNegativeSafeInteger(row.childCardFare, `${label}.childCardFare`),
+    requiredNonNegativeSafeInteger(row.childCashFare, `${label}.childCashFare`),
+  ];
+}
+
+function requiredNonNegativeSafeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+function requiredPositiveSafeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+  return value;
+}
+
+function assertExactKeys(value, expectedKeys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  const expected = new Set(expectedKeys);
+  for (const key of Object.keys(value)) {
+    if (!expected.has(key)) throw new Error(`${label}.${key} is not allowed`);
+  }
+  for (const key of expected) {
+    if (!(key in value)) throw new Error(`${label}.${key} is required`);
+  }
+}
+
+function optionalNonNegativeInteger(value, label) {
+  return value === undefined || value === null ? null : requiredNonNegativeInteger(value, label);
+}
+
+function canonicalFareAdditionalSteps(value, label) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array`);
+  }
+  return JSON.stringify(
+    value.map((step, index) => {
+      if (!step || typeof step !== "object" || Array.isArray(step)) {
+        throw new Error(`${label}[${index}] must be an object`);
+      }
+      return {
+        distanceMeters: requiredPositiveInteger(step.distanceMeters, `${label}[${index}].distanceMeters`),
+        cardFare: requiredNonNegativeInteger(step.cardFare, `${label}[${index}].cardFare`),
+        cashFare: requiredNonNegativeInteger(step.cashFare, `${label}[${index}].cashFare`),
+      };
+    }),
+  );
+}
+
+function canonicalLabelPolygon(value, label) {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  if (!Array.isArray(value) || value.length < 3) {
+    throw new Error(`${label} must be a polygon with at least three points`);
+  }
+  const polygon = value.map((point, index) => {
+    if (!point || typeof point !== "object" || Array.isArray(point)) {
+      throw new Error(`${label}[${index}] must be an object point`);
+    }
+    return {
+      x: requiredNonNegativeFiniteNumber(point.x, `${label}[${index}].x`),
+      y: requiredNonNegativeFiniteNumber(point.y, `${label}[${index}].y`),
+    };
+  });
+  return JSON.stringify(polygon);
+}
+
+function requiredNonNegativeFiniteNumber(value, label) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number`);
+  }
+  if (value < 0) {
+    throw new Error(`${label} must be a non-negative number`);
+  }
+  return Math.round(value * 1000) / 1000;
+}
+
+function optionalLatitude(value, label) {
+  return optionalCoordinate(value, label, -90, 90);
+}
+
+function optionalLongitude(value, label) {
+  return optionalCoordinate(value, label, -180, 180);
+}
+
+function optionalCoordinate(value, label, min, max) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number`);
+  }
+  if (value < min || value > max) {
+    throw new Error(`${label} must be between ${min} and ${max}`);
+  }
+  return Math.round(value * 1000000) / 1000000;
+}
+
+function serviceDate(value, label) {
+  const text = requiredString(value, label);
+  if (!/^\d{8}$/.test(text)) {
+    throw new Error(`${label} must be YYYYMMDD`);
+  }
+  return text;
+}
+
+function schemaVersionNumber(value, label) {
+  const version = Number(requiredString(value, label));
+  if (!Number.isInteger(version) || version <= 0) {
+    throw new Error(`${label} must be a positive integer string`);
+  }
+  return version;
+}
+
+function boolFlag(value, label) {
+  if (value === undefined) {
+    return 0;
+  }
+  if (typeof value !== "boolean") {
+    throw new Error(`${label} must be a boolean`);
+  }
+  return value ? 1 : 0;
+}
+
+function timestamp(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const millis = Date.parse(value);
+  if (Number.isNaN(millis)) {
+    throw new Error(`invalid timestamp: ${value}`);
+  }
+  return Math.floor(millis / 1000);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}

@@ -1,0 +1,912 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { promisify } from "node:util";
+
+import {
+  buildCapitalTopologyReverificationEvidence,
+  collectCapitalRouteTopology,
+  collectMolitFullRouteCsv,
+  compareCapitalRouteTopologies,
+  repairCapitalTopologyBranchCoverage,
+  LINE_SOURCES,
+  mergeOfficialDistanceEvidence,
+  MOLIT_FULL_ROUTE_DETAIL_URL,
+  normalizeStationName,
+  parseGtxADistanceXlsx,
+  parseLineSource,
+  parseSeohaeMerged,
+  projectCapitalTopologyOwnership,
+  requireCurrentSourceSeparatedCapitalTopology,
+} from "./collect-capital-route-topology.mjs";
+import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
+
+const execFileAsync = promisify(execFile);
+
+// #1099·#1334: 일시 오류는 같은 요청을 full jitter(base 2초·cap 20초)로 최대 2번 다시 보낸다. 난수 0.5로 대기는 1·2초다. 재시도 대기와 예산은 테스트마다 격리한다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
+
+function topologyLine(lineId, scope, edges) {
+  return {
+    lineId,
+    scope,
+    edges,
+    contentSha256: createHash("sha256").update(JSON.stringify({ scope, edges })).digest("hex"),
+  };
+}
+
+function hashJson(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function refreshSnapshotIdentity(snapshot) {
+  for (const line of snapshot.lines) {
+    line.stationCount = line.scope.length;
+    line.edgeCount = line.edges.length;
+    line.scopeSha256 = hashJson(line.scope);
+    line.edgesSha256 = hashJson(line.edges);
+    line.contentSha256 = hashJson({ scope: line.scope, edges: line.edges });
+  }
+  snapshot.lineCount = snapshot.lines.length;
+  snapshot.totalEdgeCount = snapshot.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+  snapshot.contentSha256 = hashJson({
+    lines: snapshot.lines.map(({
+      lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId,
+    }) => ({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId })),
+    topologyGaps: snapshot.topologyGaps,
+  });
+  if (snapshot.admission != null) {
+    Object.assign(snapshot.admission, {
+      contentSha256: snapshot.contentSha256,
+      lineCount: snapshot.lineCount,
+      totalEdgeCount: snapshot.totalEdgeCount,
+      gapLineIds: snapshot.topologyGaps.map(({ lineId }) => lineId),
+    });
+  }
+  return snapshot;
+}
+
+test("MOLIT 전체노선 collector는 공개 FILE 링크의 CSV만 수집한다", async () => {
+  const calls = [];
+  const body = "권역,권역명,철도운영기관명,노선명,순번,역명\n01,수도권,운영사,신림선,1,샛강\n";
+  const csv = await collectMolitFullRouteCsv({
+    fetchImpl: createDataGoPortalFetch({ 15122916: body }, { calls }),
+  });
+
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), [
+    "/data/15122916/fileData.do",
+    "/tcs/dss/selectFileDataDownload.do",
+    "/cmm/cmm/fileDownload.do",
+  ]);
+  assert.equal(calls[0].init.headers["User-Agent"], "easysubway-datapack-collector/1.0");
+  assert.equal(calls[2].init.headers.Referer, "https://www.data.go.kr/data/15122916/fileData.do");
+  assert.deepEqual([...new URL(calls[2].url).searchParams], [
+    ["atchFileId", "FILE_000000015122916"], ["fileDetailSn", "1"], ["insertDataPrcus", "N"],
+  ]);
+  assert.equal(csv.toString("utf8"), body);
+});
+
+test("Capital topology rejected fetch exposes only closed source transport identity", async () => {
+  const secret = "provider-secret-must-not-escape";
+  const sourceUrl = LINE_SOURCES[0].downloadUrl;
+  const networkCause = Object.assign(
+    new Error(`getaddrinfo ENOTFOUND ${sourceUrl} ${secret}`),
+    { code: "ENOTFOUND" },
+  );
+  let calls = 0;
+
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [LINE_SOURCES[0]],
+      ...retryFast(),
+      fetchImpl: async (_url, init) => {
+        calls += 1;
+        assert.ok(init.signal instanceof AbortSignal);
+        assert.equal(init.signal.aborted, false);
+        throw new TypeError("fetch failed", { cause: networkCause });
+      },
+    }),
+    (error) => {
+      assert.equal(error.message, "capital topology transport NETWORK_DNS: line1/15041460");
+      assert.doesNotMatch(error.message, new RegExp(secret, "u"));
+      assert.doesNotMatch(error.message, /https?:|data\.go\.kr|ENOTFOUND|fetch failed/iu);
+      return true;
+    },
+  );
+  // ENOTFOUND는 고정된 공식 호스트의 DNS 일시 실패라 같은 요청을 첫 시도 + 2번 보낸 뒤에야 닫힌 식별자로 실패한다(#1099).
+  assert.equal(calls, 3);
+});
+
+test("Capital topology native HTTPS drains redirects with closed identity-encoded failures", async () => {
+  const calls = [];
+  const rawCause = "raw redirect socket detail must not escape";
+  const httpsRequestImpl = (url, options, onResponse) => {
+    const request = new EventEmitter();
+    request.end = () => {
+      calls.push({ url, options });
+      queueMicrotask(() => {
+        const response = new EventEmitter();
+        response.statusCode = 302;
+        response.headers = { location: "https://www.data.go.kr/redirected.csv" };
+        response.resume = () => queueMicrotask(() => response.emit(
+          "error",
+          Object.assign(new Error(rawCause), { code: "ECONNRESET" }),
+        ));
+        onResponse(response);
+      });
+    };
+    return request;
+  };
+
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [LINE_SOURCES[0]],
+      httpsRequestImpl,
+      ...retryFast(),
+    }),
+    (error) => {
+      assert.equal(error.message, "capital topology transport NETWORK_SOCKET: line1/15041460");
+      assert.doesNotMatch(error.message, new RegExp(rawCause, "u"));
+      assert.doesNotMatch(error.message, /https?:|data\.go\.kr|ECONNRESET/iu);
+      return true;
+    },
+  );
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].options.headers["Accept-Encoding"], "identity");
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+});
+
+test("Capital topology transport rejects any timeout other than the recorded 30000ms contract", async () => {
+  let calls = 0;
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [LINE_SOURCES[0]],
+      requestTimeoutMs: 29_999,
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response("unexpected");
+      },
+    }),
+    /requestTimeoutMs must be exactly 30000/,
+  );
+  assert.equal(calls, 0);
+});
+
+test("Capital topology secondary MOLIT fetch uses the same closed transport identity", async () => {
+  const source = LINE_SOURCES.find(({ kind }) => kind === "seohae-merged");
+  assert.ok(source);
+  let calls = 0;
+
+  await assert.rejects(
+    () => collectCapitalRouteTopology({
+      useLocalFiles: false,
+      sources: [source],
+      ...retryFast(),
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls === 1) return new Response("primary bytes");
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("private secondary provider text"), { code: "EAI_AGAIN" }),
+        });
+      },
+    }),
+    (error) => {
+      assert.equal(
+        error.message,
+        `capital topology transport NETWORK_DNS: ${source.slug}/${source.molitDatasetId}`,
+      );
+      assert.doesNotMatch(error.message, /private|fetch failed|EAI_AGAIN|https?:/iu);
+      return true;
+    },
+  );
+  assert.equal(calls, 4, "primary 1회 + secondary 첫 시도와 2번 재시도");
+});
+
+test("Capital topology는 HTTP 503·연결 timeout·본문 수신 오류 뒤 같은 요청이 성공하면 그 CSV로 수집한다(#1099)", async () => {
+  const outcomes = [
+    () => new Response("busy", { status: 503 }),
+    () => { throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
+    () => new Response(new ReadableStream({
+      start(controller) {
+        controller.error(Object.assign(new TypeError("terminated"), { cause: Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }) }));
+      },
+    }), { status: 200, headers: { "content-type": "application/octet-stream" } }),
+  ];
+  const csv = Buffer.from("노선,역\n1,a\n");
+  for (const failure of outcomes) {
+    const waits = [];
+    const calls = [];
+    let fileCalls = 0;
+    const portal = createDataGoPortalFetch({ 15122916: csv }, { calls });
+    const result = await collectMolitFullRouteCsv({
+      ...retryFast(waits),
+      fetchImpl: async (url, init) => {
+        if (new URL(url).pathname === "/cmm/cmm/fileDownload.do") {
+          fileCalls += 1;
+          if (fileCalls === 1) {
+            calls.push({ url: String(url), init });
+            return failure();
+          }
+        }
+        return portal(url, init);
+      },
+    });
+    assert.equal(result.toString("utf8"), csv.toString("utf8"));
+    assert.equal(calls.length, 4);
+    assert.deepEqual(waits, [1_000]);
+  }
+});
+
+test("Capital topology는 일시 오류가 한도(2번 재시도)를 넘으면 기존 HTTP 오류로 끝나고 인증·내용 오류는 재시도하지 않는다(#1099)", async () => {
+  const respondWith = (status) => {
+    const requests = { detail: 0, lookup: 0, file: 0 };
+    const portal = createDataGoPortalFetch({ 15122916: "노선,역\n1,a\n" });
+    return {
+      requests,
+      fetchImpl: async (url, init) => {
+        const pathname = new URL(url).pathname;
+        if (pathname.endsWith("/fileData.do")) { requests.detail += 1; return portal(url, init); }
+        if (pathname === "/tcs/dss/selectFileDataDownload.do") { requests.lookup += 1; return portal(url, init); }
+        requests.file += 1;
+        return new Response("body", { status });
+      },
+    };
+  };
+  const waits = [];
+  const exhausted = respondWith(503);
+  await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(waits), fetchImpl: exhausted.fetchImpl }), /data\.go\.kr 15122916 file HTTP 503/);
+  assert.equal(exhausted.requests.file, 3);
+  assert.deepEqual(waits, [1_000, 2_000]);
+  for (const status of [401, 403, 404, 501]) {
+    const denied = respondWith(status);
+    await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: denied.fetchImpl }), new RegExp(`data\\.go\\.kr 15122916 file HTTP ${status}`));
+    assert.equal(denied.requests.file, 1, String(status));
+  }
+  const rateLimited = respondWith(429);
+  await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: rateLimited.fetchImpl }), /data\.go\.kr 15122916 file HTTP 429/);
+  assert.equal(rateLimited.requests.file, 2, "힌트 없는 429는 한 번만 다시 요청한다");
+});
+
+test("Capital topology의 data.go.kr 상세→FILE 다운로드도 각 요청을 일시 오류에서 다시 보낸다(#1099)", async () => {
+  const source = LINE_SOURCES.find(({ resolveDownloadFromDetail }) => resolveDownloadFromDetail === true);
+  assert.ok(source, "상세 페이지에서 FILE을 풀어 받는 source가 있다");
+  const portal = createDataGoPortalFetch({ [source.datasetId]: "not a valid topology csv" });
+  const attempts = { detail: 0, lookup: 0, file: 0 };
+  const waits = [];
+  await assert.rejects(collectCapitalRouteTopology({
+    useLocalFiles: false, sources: [source], ...retryFast(waits),
+    fetchImpl: async (url, init) => {
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith("/fileData.do")) {
+        attempts.detail += 1;
+        return attempts.detail < 3 ? new Response("busy", { status: 502 }) : portal(url, init);
+      }
+      if (pathname === "/tcs/dss/selectFileDataDownload.do") {
+        attempts.lookup += 1;
+        return attempts.lookup < 2 ? new Response("{}", { status: 502 }) : portal(url, init);
+      }
+      attempts.file += 1;
+      return attempts.file < 3 ? new Response("busy", { status: 503 }) : portal(url, init);
+    },
+  }), (error) => !/transport/u.test(error.message));
+  assert.deepEqual(attempts, { detail: 3, lookup: 2, file: 3 });
+  assert.deepEqual(waits, [1_000, 2_000, 1_000, 1_000, 2_000]);
+});
+
+test("서해선 병합기는 코레일 전체 파일에서 서해선 행만 사용한다", () => {
+  const korail = Buffer.from([
+    "철도운영기관명,선명,역명,역간거리(km)",
+    "코레일,경춘선,상봉,1.7",
+    "코레일,경춘선,망우,2.1",
+    "코레일,서해선,일산,1.0",
+    "코레일,서해선,부천종합운동장,1.0",
+  ].join("\n"));
+  const molit = Buffer.from([
+    "권역,권역명,철도운영기관명,노선명,순번,역명",
+    "01,수도권,서해철도,서해선,10,소사",
+    "01,수도권,서해철도,서해선,11,원시",
+  ].join("\n"));
+
+  const parsed = parseSeohaeMerged(korail, molit, {
+    slug: "seohae",
+    molitRouteName: "서해선",
+    molitMinSequence: 10,
+  });
+
+  assert.deepEqual(parsed.branchNames, ["서해선"]);
+  assert.equal(parsed.rows.every(({ branchName, routeName }) => (branchName ?? routeName) === "서해선"), true);
+});
+
+test("capital topology 비교는 같은 edge에 변경을 보고하지 않는다", () => {
+  const edge = { fromStationName: "가", toStationName: "나", distanceMeters: 100 };
+  const comparison = compareCapitalRouteTopologies(
+    { contentSha256: "before", lines: [topologyLine("line-1", ["가", "나"], [edge])] },
+    { contentSha256: "after", lines: [topologyLine("line-1", ["가", "나"], [{ ...edge }])] },
+  );
+  assert.deepEqual(comparison.changes, []);
+});
+
+test("current capital topology ownership projection은 Incheon 1/2만 별도 source로 분리한다", async () => {
+  const inventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+  const admission = inventory.sources.find(
+    ({ id }) => id === "seoul-metro-route-map-positions",
+  )?.routeMapAdmissionEvidence?.currentTopologyAdmission;
+  assert.ok(admission);
+  const current = JSON.parse(await readFile(
+    `tools/datapack/sources/${admission.topologySnapshotId}.json`,
+    "utf8",
+  ));
+  const snapshot = structuredClone(current);
+  snapshot.lines.push(
+    topologyLine("line-42b5805f3b5a", ["인천가", "인천나"], [{ fromStationName: "인천가", toStationName: "인천나", distanceMeters: 1 }]),
+    topologyLine("line-98718184f016", ["인천다", "인천라"], [{ fromStationName: "인천다", toStationName: "인천라", distanceMeters: 1 }]),
+  );
+  refreshSnapshotIdentity(snapshot);
+  const projected = projectCapitalTopologyOwnership(snapshot);
+  const separated = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+
+  assert.equal(projected.lineCount, snapshot.lineCount - separated.size);
+  assert.equal(projected.lines.some(({ lineId }) => separated.has(lineId)), false);
+  assert.equal(
+    projected.totalEdgeCount,
+    projected.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0),
+  );
+  assert.notEqual(projected.contentSha256, snapshot.contentSha256);
+  assert.deepEqual(projected.admission, {
+    ...snapshot.admission,
+    contentSha256: projected.contentSha256,
+    lineCount: projected.lineCount,
+    totalEdgeCount: projected.totalEdgeCount,
+    gapLineIds: projected.topologyGaps.map(({ lineId }) => lineId),
+  });
+  assert.equal(snapshot.lines.some(({ lineId }) => separated.has(lineId)), true);
+
+  const reverification = buildCapitalTopologyReverificationEvidence(projected, current);
+  assert.deepEqual(reverification.comparison, {
+    changedLineCount: 0,
+    addedEdgeCount: 0,
+    removedEdgeCount: 0,
+    modifiedEdgeCount: 0,
+  });
+
+  const missing = structuredClone(snapshot);
+  missing.lines = missing.lines.filter(({ lineId }) => lineId !== "line-42b5805f3b5a");
+  assert.throws(() => projectCapitalTopologyOwnership(missing), /Incheon topology ownership input/);
+});
+
+test("current source-separated capital topology는 immutable admission identity를 그대로 요구한다", async () => {
+  const inventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+  const admission = inventory.sources.find(
+    ({ id }) => id === "seoul-metro-route-map-positions",
+  )?.routeMapAdmissionEvidence?.currentTopologyAdmission;
+  assert.ok(admission);
+  const current = JSON.parse(await readFile(`tools/datapack/sources/${admission.topologySnapshotId}.json`, "utf8"));
+
+  assert.strictEqual(requireCurrentSourceSeparatedCapitalTopology(current), current);
+
+  const combined = structuredClone(current);
+  combined.lines.push(topologyLine(
+    "line-42b5805f3b5a",
+    ["인천가", "인천나"],
+    [{ fromStationName: "인천가", toStationName: "인천나", distanceMeters: 1 }],
+  ));
+  refreshSnapshotIdentity(combined);
+  assert.throws(
+    () => requireCurrentSourceSeparatedCapitalTopology(combined),
+    /topology line ownership overlap/,
+  );
+});
+
+test("capital topology 비교는 유효한 line hash에서 edge 추가 삭제 수정을 감지한다", () => {
+  const baselineEdges = [
+    { fromStationName: "가", toStationName: "나", distanceMeters: 100 },
+    { fromStationName: "나", toStationName: "다", distanceMeters: 100 },
+    { fromStationName: "다", toStationName: "라", distanceMeters: 100 },
+  ];
+  const candidateEdges = [
+    { fromStationName: "가", toStationName: "나", distanceMeters: 200 },
+    { fromStationName: "다", toStationName: "라", distanceMeters: 100 },
+    { fromStationName: "라", toStationName: "마", distanceMeters: 100 },
+  ];
+  const baseline = { contentSha256: "before", lines: [topologyLine("line-1", ["가", "나", "다", "라"], baselineEdges)] };
+  const candidate = { contentSha256: "after", lines: [topologyLine("line-1", ["가", "나", "다", "라", "마"], candidateEdges)] };
+  const comparison = compareCapitalRouteTopologies(baseline, candidate);
+  assert.deepEqual(comparison.changes, [{
+    lineId: "line-1",
+    added: [candidateEdges[2]],
+    removed: [baselineEdges[1]],
+    modified: [{ before: baselineEdges[0], after: candidateEdges[0] }],
+  }]);
+  assert.throws(() => buildCapitalTopologyReverificationEvidence(baseline, candidate), /re-admission required/);
+});
+
+test("capital topology 비교는 scope 또는 edge의 stale stored hash를 거부한다", () => {
+  const scope = ["가", "나"];
+  const edges = [{ fromStationName: "가", toStationName: "나", distanceMeters: 100 }];
+  const valid = topologyLine("line-1", scope, edges);
+  assert.throws(() => compareCapitalRouteTopologies(
+    { lines: [valid] },
+    { lines: [{ ...valid, scope: [...scope, "다"] }] },
+  ), /contentSha256 mismatch/);
+  assert.throws(() => compareCapitalRouteTopologies(
+    { lines: [valid] },
+    { lines: [{ ...valid, edges: [{ ...edges[0], distanceMeters: 200 }] }] },
+  ), /contentSha256 mismatch/);
+});
+
+test("capital topology evidence는 candidate 최상위 contentSha256 변조를 거부한다", () => {
+  const line = {
+    ...topologyLine(
+      "line-1",
+      ["가", "나"],
+      [{ fromStationName: "가", toStationName: "나", distanceMeters: 100 }],
+    ),
+    datasetId: "dataset-1",
+    rawSha256: "a".repeat(64),
+    edgeCount: 1,
+    stationCount: 2,
+  };
+  const baseline = { contentSha256: "b".repeat(64), lines: [line] };
+  const candidate = {
+    contentSha256: "f".repeat(64),
+    capturedAt: "2026-08-04T17:30:34.901Z",
+    freshUntil: "2026-08-05T17:30:34.901Z",
+    lineCount: 1,
+    totalEdgeCount: 1,
+    topologyGaps: [],
+    lines: [line],
+  };
+
+  assert.throws(
+    () => buildCapitalTopologyReverificationEvidence(baseline, candidate),
+    /candidate contentSha256 mismatch/,
+  );
+});
+
+test("capital topology evidence는 topologyGaps 변경을 거부한다", () => {
+  const line = {
+    ...topologyLine(
+      "line-1",
+      ["가", "나"],
+      [{ fromStationName: "가", toStationName: "나", distanceMeters: 100 }],
+    ),
+    datasetId: "dataset-1",
+    rawSha256: "a".repeat(64),
+    edgeCount: 1,
+    stationCount: 2,
+  };
+  const baseline = { contentSha256: "b".repeat(64), topologyGaps: [], lines: [line] };
+  const candidate = {
+    capturedAt: "2026-08-04T17:30:34.901Z",
+    freshUntil: "2026-08-05T17:30:34.901Z",
+    lineCount: 1,
+    totalEdgeCount: 1,
+    topologyGaps: ["line-1"],
+    lines: [line],
+  };
+  candidate.contentSha256 = createHash("sha256").update(JSON.stringify({
+    lines: [{
+      lineId: line.lineId,
+      edgeCount: line.edgeCount,
+      stationCount: line.stationCount,
+      contentSha256: line.contentSha256,
+      rawSha256: line.rawSha256,
+      datasetId: line.datasetId,
+    }],
+    topologyGaps: candidate.topologyGaps,
+  })).digest("hex");
+
+  assert.throws(
+    () => buildCapitalTopologyReverificationEvidence(baseline, candidate),
+    /re-admission required/,
+  );
+});
+
+test("local CLI 기본 실행은 tracked baseline을 건드리지 않고 고정 freshness를 기록한다", async () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const baselinePath = path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json");
+  const baselineBytes = await readFile(baselinePath);
+  const outputDir = await mkdtemp(path.join(tmpdir(), "capital-topology-test-"));
+  const outputPath = path.join(outputDir, "snapshot.json");
+  try {
+    await execFileAsync(process.execPath, [
+      "tools/datapack/collect-capital-route-topology.mjs", "--output", outputPath,
+    ], { cwd: root });
+    const snapshot = JSON.parse(await readFile(outputPath, "utf8"));
+    assert.equal(snapshot.capturedAt, "2026-07-24T08:20:00.000Z");
+    assert.equal(snapshot.freshUntil, "2026-07-25T08:20:00.000Z");
+    assert.deepEqual(await readFile(baselinePath), baselineBytes);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("수도권 topology는 컷오버(2026-10-03T00:00Z) 이후 수집분에 P7D, 이전 수집분에 P1D freshUntil을 기록한다", async () => {
+  const day = 86_400_000;
+  const cutover = Date.parse("2026-10-03T00:00:00.000Z");
+  const current = await collectCapitalRouteTopology({ now: new Date(cutover) });
+  assert.equal(current.freshUntil, new Date(cutover + 7 * day).toISOString());
+  const legacy = await collectCapitalRouteTopology({ now: new Date(cutover - 1) });
+  assert.equal(legacy.freshUntil, new Date(cutover - 1 + day).toISOString());
+});
+
+test("data.go.kr 상세 페이지는 단일 fn_fileDataDown action만 허용한다", async () => {
+  const source = LINE_SOURCES.find(({ slug }) => slug === "gimpo");
+  for (const html of [
+    "<html>none</html>",
+    `
+      <button onclick="fileDetailObj.fn_fileDataDown('15122916', 'uddi:00000000-0000-4000-8000-000015122916', '','1', '1')">CSV</button>
+      <button onclick="fileDetailObj.fn_fileDataDown('15122916', 'uddi:00000000-0000-4000-8000-000015122916', '','2', '1')">CSV</button>
+    `,
+  ]) {
+    await assert.rejects(
+      () => collectCapitalRouteTopology({
+        useLocalFiles: false,
+        sources: [source],
+        fetchImpl: async () => new Response(html, { status: 200, headers: { "content-type": "text/html" } }),
+      }),
+      /exactly one download action/,
+    );
+  }
+});
+
+test("한 topology snapshot은 shared MOLIT bytes와 resolved URL을 한 번만 수집한다", async () => {
+  const sources = ["gimpo", "sillim", "seohae"]
+    .map((slug) => LINE_SOURCES.find((source) => source.slug === slug));
+  const seohae = sources.find(({ slug }) => slug === "seohae");
+  const sharedDownloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015122916&fileDetailSn=1&insertDataPrcus=N";
+  const molitCsv = `권역,권역명,철도운영기관명,노선명,순번,역명
+1,수도권,김포골드라인운영,김포골드라인,1,양촌
+1,수도권,김포골드라인운영,김포골드라인,2,구래
+1,수도권,남서울경전철,신림선,1,샛강
+1,수도권,남서울경전철,신림선,2,대방
+1,수도권,서해철도,서해선,10,소사
+1,수도권,서해철도,서해선,11,원시`;
+  const seohaeCsv = `철도운영기관명,선명,역명,역간거리(km)
+코레일,서해선,일산,1.9
+코레일,서해선,부천종합운동장역,1.4`;
+  const portal = createDataGoPortalFetch({ 15122916: molitCsv });
+  const requestCounts = new Map();
+
+  const snapshot = await collectCapitalRouteTopology({
+    useLocalFiles: false,
+    sources,
+    now: new Date("2026-08-09T12:04:20.479Z"),
+    fetchImpl: async (url, init) => {
+      const value = String(url);
+      requestCounts.set(value, (requestCounts.get(value) ?? 0) + 1);
+      if (value === seohae.downloadUrl) return new Response(seohaeCsv);
+      return portal(url, init);
+    },
+  });
+
+  assert.deepEqual([...requestCounts.values()], [1, 1, 1, 1]);
+  const bySlug = new Map(snapshot.lines.map((line) => [line.slug, line]));
+  assert.equal(bySlug.get("gimpo").rawSha256, bySlug.get("sillim").rawSha256);
+  assert.equal(
+    bySlug.get("gimpo").rawSha256,
+    bySlug.get("seohae").inputProvenance[1].rawSha256,
+  );
+  assert.equal(bySlug.get("gimpo").endpoint, sharedDownloadUrl);
+  assert.equal(bySlug.get("seohae").inputProvenance[1].downloadUrl, sharedDownloadUrl);
+});
+
+test("data.go.kr detail source는 실제 resolved download URL을 line provenance에 보존한다", async () => {
+  const source = LINE_SOURCES.find(({ slug }) => slug === "gimpo");
+  const downloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015122916&fileDetailSn=1&insertDataPrcus=N";
+  const csv = Buffer.from([
+    "권역,권역명,철도운영기관명,노선명,순번,역명",
+    "1,수도권,김포골드라인운영,김포골드라인,1,양촌",
+    "1,수도권,김포골드라인운영,김포골드라인,2,구래",
+  ].join("\n"));
+  const requests = [];
+  const portal = createDataGoPortalFetch({ [source.datasetId]: csv }, { calls: requests });
+  const fetchImpl = async (url, init) => {
+    assert.ok(init.signal instanceof AbortSignal);
+    assert.equal(init.signal.aborted, false);
+    return portal(url, init);
+  };
+
+  const snapshot = await collectCapitalRouteTopology({
+    fetchImpl,
+    now: new Date("2026-08-09T12:04:20.479Z"),
+    useLocalFiles: false,
+    sources: [source],
+  });
+
+  assert.equal(snapshot.lines[0].endpoint, downloadUrl);
+  assert.equal(requests.length, 3);
+});
+
+test("상충하는 official 거리는 선택하지 않고 conflict evidence를 보존한다", () => {
+  assert.deepEqual(
+    mergeOfficialDistanceEvidence({ distanceMeters: 1700 }, 2100),
+    { distanceMeters: 0, distanceConflictMeters: [1700, 2100] },
+  );
+  assert.deepEqual(
+    mergeOfficialDistanceEvidence({ distanceMeters: 0, distanceConflictMeters: [1700, 2100] }, 1700),
+    { distanceMeters: 0, distanceConflictMeters: [1700, 2100] },
+  );
+  assert.deepEqual(mergeOfficialDistanceEvidence({ distanceMeters: 0 }, 600), { distanceMeters: 600 });
+});
+
+test("official branch의 종착 거리 누락은 연결 자체를 버리지 않는다", () => {
+  const line = parseLineSource({
+    kind: "csv",
+    slug: "terminal-distance",
+    lineId: "line-terminal-distance",
+    datasetId: "dataset-terminal-distance",
+    detailUrl: "https://example.invalid/detail",
+    downloadUrl: "https://example.invalid/download",
+  }, Buffer.from([
+    "철도운영기관명,선명,역명,역간거리(km)",
+    "운영사,테스트선,가,0",
+    "운영사,테스트선,나,1.5",
+    "운영사,테스트선,다,",
+  ].join("\n")), {
+    capturedAt: new Date("2026-08-13T15:06:46.000Z"),
+  });
+
+  assert.equal(line.stationCount, 3);
+  assert.equal(line.edgeCount, 4);
+  assert.deepEqual(
+    line.edges.filter(({ fromStationName, toStationName }) => (
+      (fromStationName === "나" && toStationName === "다")
+      || (fromStationName === "다" && toStationName === "나")
+    )),
+    [
+      {
+        fromStationName: "나",
+        toStationName: "다",
+        distanceMeters: 0,
+        durationSeconds: 0,
+        branchNames: ["테스트선"],
+      },
+      {
+        fromStationName: "다",
+        toStationName: "나",
+        distanceMeters: 0,
+        durationSeconds: 0,
+        branchNames: ["테스트선"],
+      },
+    ],
+  );
+});
+
+test("current capital snapshot repair는 branch 종착 4구간만 결정적으로 복구한다", async () => {
+  const repaired = JSON.parse(await readFile(
+    "tools/datapack/sources/capital-route-topology-20260813.json",
+    "utf8",
+  ));
+  const repairedPairs = new Map([
+    ["line-30886152e4f8", { pair: "보문|신설동", missing: "신설동" }],
+    ["line-558d0bd8312d", { pair: "왕십리|청량리", missing: "청량리" }],
+    ["line-828f04afc588", { pair: "둔전|전대.에버랜드", missing: "전대.에버랜드" }],
+    ["seoul-4", { pair: "오이도|정왕", missing: "오이도" }],
+  ]);
+  const expectedPairs = new Set([...repairedPairs].map(([lineId, { pair }]) => `${lineId}|${pair}`));
+
+  assert.equal(repaired.totalEdgeCount, 1438);
+  for (const line of repaired.lines) {
+    const scope = new Set(line.scope.map(({ stationName }) => stationName));
+    const incident = new Set(line.edges.flatMap(({ fromStationName, toStationName }) => [
+      fromStationName,
+      toStationName,
+    ]));
+    for (const branch of line.branchSequences) {
+      for (const stationName of branch.stationNames) {
+        const normalized = normalizeStationName(stationName);
+        assert.equal(scope.has(normalized), true, `${line.lineId}:${normalized} scope`);
+        assert.equal(incident.has(normalized), true, `${line.lineId}:${normalized} edge`);
+      }
+    }
+    for (const edge of line.edges.filter(({ distanceMeters }) => distanceMeters === 0)) {
+      const pair = [edge.fromStationName, edge.toStationName].sort().join("|");
+      const key = `${line.lineId}|${pair}`;
+      if (expectedPairs.has(key)) expectedPairs.delete(key);
+    }
+  }
+  assert.deepEqual([...expectedPairs], []);
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
+  assert.deepEqual(repairCapitalTopologyBranchCoverage(repaired), repaired);
+
+  const stale = structuredClone(repaired);
+  for (const line of stale.lines) {
+    const target = repairedPairs.get(line.lineId);
+    if (target == null) continue;
+    line.edges = line.edges.filter(({ fromStationName, toStationName }) => (
+      [fromStationName, toStationName].sort().join("|") !== target.pair
+    ));
+    line.scope = line.scope
+      .filter(({ stationName }) => stationName !== target.missing)
+      .map(({ stationName }, index) => ({ stationName, sequence: index + 1 }));
+  }
+  refreshSnapshotIdentity(stale);
+  assert.equal(stale.totalEdgeCount, repaired.totalEdgeCount - 8);
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
+  assert.deepEqual(repairCapitalTopologyBranchCoverage(stale), repaired);
+});
+
+test("8호선 별내선 repair는 official station order와 canonical adjacency를 복구한다", async () => {
+  const input = JSON.parse(await readFile(
+    "tools/datapack/sources/capital-route-topology-20260813.json",
+    "utf8",
+  ));
+  const repaired = repairCapitalTopologyBranchCoverage(input);
+  const line = repaired.lines.find(({ lineId }) => lineId === "line-2b2d9eaa53d0");
+  assert.ok(line);
+  const branch = line.branchSequences.find(({ branchName }) => branchName === "8호선");
+  assert.deepEqual(branch?.stationNames.slice(0, 7), [
+    "별내", "다산", "동구릉", "구리", "장자호수공원", "암사역사공원", "암사",
+  ]);
+
+  const directedPairs = new Set(line.edges.map(
+    ({ fromStationName, toStationName }) => `${fromStationName}|${toStationName}`,
+  ));
+  for (const [left, right] of [
+    ["다산", "동구릉"],
+    ["장자호수공원", "암사역사공원"],
+  ]) {
+    for (const [from, to] of [[left, right], [right, left]]) {
+      const edge = line.edges.find(
+        ({ fromStationName, toStationName }) => fromStationName === from
+          && toStationName === to,
+      );
+      assert.equal(edge?.distanceMeters, 0);
+      assert.equal(edge?.durationSeconds, 0);
+    }
+  }
+  for (const key of [
+    "다산|암사역사공원", "암사역사공원|다산",
+    "별내|장자호수공원", "장자호수공원|별내",
+  ]) {
+    assert.equal(directedPairs.has(key), false, key);
+  }
+  assert.equal(repaired.totalEdgeCount, input.totalEdgeCount);
+});
+
+test("서해선 official file이 다른 노선을 함께 반환해도 서해선 branch만 수용한다", () => {
+  const source = LINE_SOURCES.find(({ slug }) => slug === "seohae");
+  const korailBytes = Buffer.from([
+    "철도운영기관명,선명,역명,역간거리(km)",
+    "코레일,1호선(경부선),가능,1.0",
+    "코레일,1호선(경부선),의정부,1.4",
+    "코레일,서해선,일산,1.9",
+    "코레일,서해선,풍산,1.7",
+    "코레일,서해선,백마,1.6",
+    "코레일,서해선,부천종합운동장역,1.4",
+  ].join("\n"));
+  const molitBytes = Buffer.from([
+    "권역,권역명,철도운영기관명,노선명,순번,역명",
+    "1,수도권,서해철도,서해선,10,소사",
+    "1,수도권,서해철도,서해선,11,소새울",
+  ].join("\n"));
+
+  const result = parseLineSource(source, korailBytes, {
+    capturedAt: new Date("2026-08-09T12:04:20.479Z"),
+    resolvedDownloadUrl: source.downloadUrl,
+    secondaryBytes: molitBytes,
+    secondaryProvenance: {
+      datasetId: "15122916",
+      detailUrl: source.molitDownloadUrl,
+      downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1",
+    },
+  });
+
+  assert.deepEqual(result.branchNames, ["서해선"]);
+  assert.equal(result.scope.some(({ stationName }) => stationName === "가능"), false);
+  assert.equal(result.scope.some(({ stationName }) => stationName === "일산"), true);
+  assert.deepEqual(result.inputProvenance.map(({ datasetId, detailUrl, downloadUrl }) => ({
+    datasetId,
+    detailUrl,
+    downloadUrl,
+  })), [
+    {
+      datasetId: source.datasetId,
+      detailUrl: source.detailUrl,
+      downloadUrl: source.downloadUrl,
+    },
+    {
+      datasetId: "15122916",
+      detailUrl: source.molitDownloadUrl,
+      downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1",
+    },
+  ]);
+  assert.equal(result.inputProvenance.every(({ rawSha256 }) => /^[a-f0-9]{64}$/.test(rawSha256)), true);
+});
+
+test("서해선 splice endpoint가 각 공식 입력에 없으면 거부한다", () => {
+  const source = LINE_SOURCES.find(({ slug }) => slug === "seohae");
+  const korailBytes = Buffer.from([
+    "철도운영기관명,선명,역명,역간거리(km)",
+    "코레일,서해선,일산,1.9",
+    "코레일,서해선,풍산,1.7",
+  ].join("\n"));
+  const molitBytes = Buffer.from([
+    "권역,권역명,철도운영기관명,노선명,순번,역명",
+    "1,수도권,서해철도,서해선,10,소사",
+    "1,수도권,서해철도,서해선,11,소새울",
+  ].join("\n"));
+
+  assert.throws(
+    () => parseLineSource(source, korailBytes, {
+      capturedAt: new Date("2026-08-09T12:04:20.479Z"),
+      resolvedDownloadUrl: source.downloadUrl,
+      secondaryBytes: molitBytes,
+      secondaryProvenance: {
+        datasetId: "15122916",
+        detailUrl: source.molitDownloadUrl,
+        downloadUrl: source.molitDownloadUrl,
+      },
+    }),
+    /서해선 splice endpoint missing: 부천종합운동장-소사/,
+  );
+});
+
+test("Capital topology는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  let calls = 0;
+  await assert.rejects(collectMolitFullRouteCsv({
+    sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
+    fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
+  }), /data\.go\.kr 15122916 detail HTTP 503/);
+  assert.equal(calls, 2);
+});
+
+defineSourceCollectionRetryTests({
+  name: "수도권 topology collector(MOLIT 전체노선 CSV)",
+  httpError: /data\.go\.kr 15122916 detail HTTP 403/,
+  delegate: createDataGoPortalFetch({ 15122916: "노선,역\n1,a\n" }),
+  headers: { "content-type": "text/html" },
+  run: async ({ fetchImpl, sleepImpl }) => (await collectMolitFullRouteCsv({ fetchImpl, sleepImpl, randomImpl: () => 0 })).toString("utf8"),
+});
+
+// 무압축(stored) zip: unzipXlsx는 local file header만 읽으므로 CRC·central directory 없이도 열린다.
+function storedZip(entries) {
+  return Buffer.concat(Object.entries(entries).map(([name, text]) => {
+    const nameBytes = Buffer.from(name);
+    const data = Buffer.from(text);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt32LE(data.length, 18);
+    header.writeUInt32LE(data.length, 22);
+    header.writeUInt16LE(nameBytes.length, 26);
+    return Buffer.concat([header, nameBytes, data]);
+  }));
+}
+
+test("GTX-A xlsx 파서는 Z 뒤의 열(AA)까지 한 행의 너비로 읽는다", () => {
+  const strings = ["노선명", "정거장명", "철도거리(역간)", "GTX-A", "수서", "성남"];
+  const cell = (ref, index) => `<c r="${ref}" t="s"><v>${index}</v></c>`;
+  const number = (ref, value) => `<c r="${ref}"><v>${value}</v></c>`;
+  const sheet = `<worksheet><sheetData>
+    <row r="1">${cell("A1", 0)}${cell("B1", 1)}${cell("AA1", 2)}</row>
+    <row r="2">${cell("A2", 3)}${cell("B2", 4)}${number("AA2", 0)}</row>
+    <row r="3">${cell("A3", 3)}${cell("B3", 5)}${number("AA3", 7.5)}</row>
+  </sheetData></worksheet>`;
+  const xlsx = storedZip({
+    "xl/sharedStrings.xml": `<sst>${strings.map((text) => `<si><t>${text}</t></si>`).join("")}</sst>`,
+    "xl/worksheets/sheet1.xml": sheet,
+  });
+  const parsed = parseGtxADistanceXlsx(xlsx);
+  assert.deepEqual(parsed.branchSequences, [{ branchName: "GTX-A", stationNames: ["수서", "성남"], operatorRunCount: 1 }]);
+});
+
+test("parseGtxADistanceXlsx는 zip-slip 경로와 deflate bomb을 압축 해제 전에 차단한다", () => {
+  const zipSlip = storedZip({
+    "../evil.xml": "<x/>",
+    "xl/sharedStrings.xml": "<sst/>",
+    "xl/worksheets/sheet1.xml": "<worksheet/>",
+  });
+  assert.throws(() => parseGtxADistanceXlsx(zipSlip), /unsafe zip entry path/i);
+});

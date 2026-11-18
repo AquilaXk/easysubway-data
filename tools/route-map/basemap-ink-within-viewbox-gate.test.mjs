@@ -1,0 +1,603 @@
+// #2603 캔버스 여백 게이트 — 잉크가 viewBox 안에 있는지 5권역 전수 검사한다.
+//
+// 배경: 오너 SVG의 viewBox를 잉크에 맞춰 조이면서 우·하단 여유가 39~147단위로
+// 줄었다. 여유가 이렇게 얇으면 오너가 가장자리에 요소를 하나 더 얹는 순간
+// 캔버스를 넘어서는데, 그걸 잡는 검사가 지금까지 없었다
+// (`compile-basemap-vec.test.mjs`는 manifest viewBox의 **길이(4)** 만 봤다).
+//
+// 넘어선 요소가 어떻게 되는지는 실측해 뒀다: 컴파일러는 viewBox 밖 도형을
+// 잘라내지 않고 `.vec`에 그대로 남긴다(viewBox 밖 원을 넣으면 산출물이 156→295
+// 바이트로 커진다). 즉 "무성 클립"은 아니다. 그래도 캔버스와 잉크가 어긋나면
+// 캔버스 크기를 기준으로 삼는 판단이 전부 틀어지고, 런타임·플랫폼에 따라 컬링될
+// 여지도 남는다. 그래서 어긋남 자체를 상시로 막는다.
+
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import {
+  EXCLUDED_DECOR_LAYER_ID_SET,
+  normalizeSvgForCompile,
+} from "./compile-basemap-vec.mjs";
+import { outlineBasemapText } from "./outline-basemap-text.mjs";
+import {
+  FULL_CANVAS_DECOR_IDS,
+  inkBBoxOf,
+  viewBoxOf,
+} from "./svg-ink-bbox.mjs";
+import {
+  buildRegionProvenance,
+  generateGeometryProvenanceManifest,
+  verifyGeometryProvenanceManifest,
+  verifySourceElementKeyRotation,
+} from "./generate-geometry-provenance-manifest.mjs";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const svgDir = path.join(here, "route-map-defs", "svg-sources");
+
+const REGIONS = [
+  { id: "seoul", svg: "easy-subway-sma-v4.svg" },
+  { id: "busan", svg: "easy-subway-busan-v3.svg" },
+  { id: "daegu", svg: "easy-subway-daegu-v3.svg" },
+  { id: "daejeon", svg: "easy-subway-daejeon-v3.svg" },
+  { id: "gwangju", svg: "easy-subway-gwangju-v3.svg" },
+];
+
+test("5권역 geometry provenance manifest가 current source·pack과 exact match다", () => {
+  const manifestPath = path.join(here, "geometry-provenance-manifest.json");
+  const expected = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const actual = generateGeometryProvenanceManifest();
+  verifyGeometryProvenanceManifest(expected, actual);
+
+  const digest = /^[a-f0-9]{64}$/;
+  assert.deepEqual(Object.keys(actual.regions), REGIONS.map(({ id }) => id));
+  for (const region of Object.values(actual.regions)) {
+    assert.deepEqual(Object.keys(region), [
+      "sourceSvgSha256",
+      "normalizedSvgSha256",
+      "sourceViewBox",
+      "fullInkBounds",
+      "extractorVersion",
+      "geometrySha256",
+      "sourceElementKeysBase64",
+      "sourceElementKeysSha256",
+      "routeMapPositionsSha256",
+      "labelSourceCount",
+      "stationNodeCount",
+      "generatorContractVersion",
+    ]);
+    for (const key of [
+      "sourceSvgSha256",
+      "normalizedSvgSha256",
+      "geometrySha256",
+      "sourceElementKeysSha256",
+      "routeMapPositionsSha256",
+    ]) {
+      assert.match(region[key], digest, key);
+    }
+    const sourceElementKeys = Buffer.from(region.sourceElementKeysBase64, "base64");
+    assert.equal(sourceElementKeys.toString("base64"), region.sourceElementKeysBase64);
+    assert.equal(sourceElementKeys.length % 32, 0);
+    assert.ok(sourceElementKeys.length > 0);
+    assert.equal(region.generatorContractVersion, 4);
+  }
+});
+
+test("geometry provenance digest는 browser metadata·JSON formatting과 무관하다", () => {
+  const svg = '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="1"/></svg>';
+  const sourceSvgSha256 = createHash("sha256").update(svg).digest("hex");
+  const geometry = {
+    schemaVersion: 1,
+    region: "fixture",
+    sourceSvgSha256,
+    extractorVersion: "fixture-v1",
+    browser: { product: "Chrome", version: "150.0.0.0" },
+    sourceViewBox: [0, 0, 10, 10],
+    labels: [{ classification: "STATION_LABEL", sourceElementKey: "a".repeat(64) }],
+    strokes: [],
+    stationNodes: [{ x: 5, y: 5, sourceElementKey: "b".repeat(64) }],
+  };
+  const rows = [{ station_id: "s1", line_id: "l1", region: "fixture", x: 5, y: 5 }];
+  const compact = buildRegionProvenance({
+    expectedRegion: "fixture",
+    svg,
+    geometryBytes: Buffer.from(JSON.stringify(geometry)),
+    routeMapPositionRows: rows,
+  });
+  const reformatted = structuredClone(geometry);
+  reformatted.browser.version = "151.0.0.0";
+  const pretty = buildRegionProvenance({
+    expectedRegion: "fixture",
+    svg,
+    geometryBytes: Buffer.from(`${JSON.stringify(reformatted, null, 2)}\n`),
+    routeMapPositionRows: rows,
+  });
+
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
+  assert.equal(pretty.geometrySha256, compact.geometrySha256);
+});
+
+test("geometry provenance verifier는 geometry content와 non-key position mutation을 fail-closed로 막는다", () => {
+  const svg = '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="1"/></svg>';
+  const sourceSvgSha256 = createHash("sha256").update(svg).digest("hex");
+  const geometry = {
+    schemaVersion: 1,
+    region: "fixture",
+    sourceSvgSha256,
+    extractorVersion: "fixture-v1",
+    browser: { product: "Chrome", version: "150.0.0.0" },
+    sourceViewBox: [0, 0, 10, 10],
+    labels: [{
+      classification: "STATION_LABEL",
+      polygon: [[5, 5]],
+      sourceElementKey: "a".repeat(64),
+    }],
+    strokes: [],
+    stationNodes: [{ x: 5, y: 5, sourceElementKey: "b".repeat(64) }],
+  };
+  const rows = [
+    { station_id: "s2", line_id: "l1", region: "fixture", x: 6, y: 5 },
+    { station_id: "s1", line_id: "l1", region: "fixture", x: 5, y: 5 },
+  ];
+  const expected = buildRegionProvenance({
+    expectedRegion: "fixture",
+    svg,
+    geometryBytes: Buffer.from(JSON.stringify(geometry)),
+    routeMapPositionRows: rows,
+  });
+
+  assert.throws(
+    () => buildRegionProvenance({
+      expectedRegion: "fixture",
+      svg: svg.replace('r="1"', 'r="2"'),
+      geometryBytes: Buffer.from(JSON.stringify(geometry)),
+      routeMapPositionRows: [],
+    }),
+    /sourceSvgSha256/,
+  );
+
+  const geometryMutation = structuredClone(geometry);
+  geometryMutation.stationNodes[0].x = 6;
+  const mutatedGeometry = buildRegionProvenance({
+    expectedRegion: "fixture",
+    svg,
+    geometryBytes: Buffer.from(JSON.stringify(geometryMutation)),
+    routeMapPositionRows: rows,
+  });
+  assert.notEqual(mutatedGeometry.geometrySha256, expected.geometrySha256);
+  assert.throws(
+    () => verifyGeometryProvenanceManifest(expected, mutatedGeometry),
+    /provenance drift/,
+  );
+
+  const positionsMutation = structuredClone(rows);
+  positionsMutation[0].x = 99;
+  const mutatedPositions = buildRegionProvenance({
+    expectedRegion: "fixture",
+    svg,
+    geometryBytes: Buffer.from(JSON.stringify(geometry)),
+    routeMapPositionRows: positionsMutation,
+  });
+  assert.notEqual(mutatedPositions.routeMapPositionsSha256, expected.routeMapPositionsSha256);
+  assert.throws(
+    () => verifyGeometryProvenanceManifest(expected, mutatedPositions),
+    /provenance drift/,
+  );
+
+  const reversedRows = buildRegionProvenance({
+    expectedRegion: "fixture",
+    svg,
+    geometryBytes: Buffer.from(JSON.stringify(geometry)),
+    routeMapPositionRows: rows.slice().reverse(),
+  });
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
+  assert.equal(reversedRows.routeMapPositionsSha256, expected.routeMapPositionsSha256);
+});
+
+test("geometry provenance manifest는 source hash 변경 시 element key rotation을 강제한다", () => {
+  const svg = '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="1"/></svg>';
+  const changedSvg = svg.replace('r="1"', 'r="2"');
+  const geometry = {
+    schemaVersion: 1,
+    region: "fixture",
+    sourceSvgSha256: createHash("sha256").update(svg).digest("hex"),
+    extractorVersion: "fixture-v1",
+    browser: { product: "Chrome", version: "150.0.0.0" },
+    sourceViewBox: [0, 0, 10, 10],
+    labels: [{ classification: "STATION_LABEL", sourceElementKey: "a".repeat(64) }],
+    strokes: [{ sourceElementKey: "b".repeat(64) }],
+    stationNodes: [{ sourceElementKey: "c".repeat(64) }],
+  };
+  const build = (source, value) => ({
+    schemaVersion: 1,
+    regions: {
+      fixture: buildRegionProvenance({
+        expectedRegion: "fixture",
+        svg: source,
+        geometryBytes: Buffer.from(JSON.stringify(value)),
+        routeMapPositionRows: [],
+      }),
+    },
+  });
+  const previous = build(svg, geometry);
+  verifySourceElementKeyRotation(previous, previous);
+
+  const stale = structuredClone(geometry);
+  stale.sourceSvgSha256 = createHash("sha256").update(changedSvg).digest("hex");
+  const staleManifest = build(changedSvg, stale);
+  assert.throws(
+    () => verifySourceElementKeyRotation(previous, staleManifest),
+    /sourceElementKey did not rotate/,
+  );
+
+  const malformed = structuredClone(staleManifest);
+  malformed.regions.fixture.sourceElementKeysBase64 = "not-base64";
+  assert.throws(
+    () => verifySourceElementKeyRotation(previous, malformed),
+    /sourceElementKey evidence invalid/,
+  );
+
+  stale.labels[0].sourceElementKey = "d".repeat(64);
+  assert.throws(
+    () => verifySourceElementKeyRotation(previous, build(changedSvg, stale)),
+    /sourceElementKey did not rotate/,
+  );
+
+  stale.strokes[0].sourceElementKey = "e".repeat(64);
+  stale.stationNodes[0].sourceElementKey = "f".repeat(64);
+  verifySourceElementKeyRotation(previous, build(changedSvg, stale));
+});
+
+test("geometry provenance는 configured region과 geometry metadata를 exact match한다", () => {
+  const svg = '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="1"/></svg>';
+  const geometry = {
+    schemaVersion: 1,
+    region: "wrong-region",
+    sourceSvgSha256: createHash("sha256").update(svg).digest("hex"),
+    extractorVersion: "fixture-v1",
+    browser: { product: "Chrome", version: "150.0.0.0" },
+    sourceViewBox: [0, 0, 10, 10],
+    labels: [{ sourceElementKey: "a".repeat(64) }],
+    strokes: [],
+    stationNodes: [],
+  };
+  assert.throws(
+    () => buildRegionProvenance({
+      expectedRegion: "fixture",
+      svg,
+      geometryBytes: Buffer.from(JSON.stringify(geometry)),
+      routeMapPositionRows: [],
+    }),
+    /geometry region mismatch/,
+  );
+});
+
+/**
+ * 크롭 결과 여유(단위: source px) 기준선.
+ *
+ * 우·하단은 #2603 크롭이 `max(잉크 짧은변 3%, 최대 라벨 1줄 높이)`로 정한 값이고,
+ * 좌·상단은 크롭하지 않아 원본 여백이 그대로 남은 값이다(후속 과제). 잉크는 라벨을
+ * 윤곽선 path로 구운 컴파일 입력에서 잰다. 이 표가 흔들리면 잉크나 캔버스 중 하나가 바뀐 것이므로 의도된 변경인지 확인해야 한다.
+ *
+ * 대구는 잉크가 원본 캔버스를 이미 x=4510까지 채우고 있어 목표 여유(75)를 넣지
+ * 못하고 원본 경계로 클램프했다 — 그래서 우측이 50이다.
+ */
+const EXPECTED_MARGINS = {
+  seoul: { left: 114.22, top: 311.88, right: 79.31, bottom: 82.27 },
+  busan: { left: 725.45, top: 976.83, right: 146.9, bottom: 153.5 },
+  daegu: { left: 34.55, top: 30.0, right: 50.0, bottom: 81.24 },
+  daejeon: { left: 513.0, top: 279.02, right: 42.82, bottom: 49.58 },
+  gwangju: { left: 443.0, top: 257.84, right: 40.23, bottom: 46.48 },
+};
+
+/** 기준선 허용 오차. 곡선 극값 계산의 미세 변동만 흡수한다. */
+const MARGIN_TOLERANCE = 1.0;
+
+function normalizedOf(region) {
+  return normalizeSvgForCompile(
+    readFileSync(path.join(svgDir, region.svg), "utf8"),
+  );
+}
+
+// 잉크는 `.vec`로 가는 컴파일 입력, 곧 라벨이 윤곽선 path가 된 SVG에서 잰다.
+function compileInputOf(region) {
+  return outlineBasemapText(normalizedOf(region)).svg;
+}
+
+function measure(region) {
+  const normalized = compileInputOf(region);
+  const viewBox = viewBoxOf(normalized);
+  const ink = inkBBoxOf(normalized, { excludeIds: FULL_CANVAS_DECOR_IDS });
+  const [vx, vy, vw, vh] = viewBox;
+  return {
+    viewBox,
+    ink,
+    margins: {
+      left: ink.minX - vx,
+      top: ink.minY - vy,
+      right: vx + vw - ink.maxX,
+      bottom: vy + vh - ink.maxY,
+    },
+  };
+}
+
+test("잉크가 viewBox 안에 있다 — 5권역 전수(#2603 캔버스 여백 게이트)", () => {
+  const failures = [];
+  for (const region of REGIONS) {
+    const { viewBox, ink, margins } = measure(region);
+    const [vx, vy, vw, vh] = viewBox;
+    for (const [side, value] of Object.entries(margins)) {
+      if (value < 0) {
+        const culprit = {
+          left: ink.edges.minX,
+          top: ink.edges.minY,
+          right: ink.edges.maxX,
+          bottom: ink.edges.maxY,
+        }[side];
+        failures.push(
+          `${region.id}: ${side} 여유 ${value.toFixed(2)} < 0 — ` +
+            `viewBox [${vx} ${vy} ${vw} ${vh}] 밖으로 ${(-value).toFixed(2)}단위 ` +
+            `넘친 요소 ${culprit}`,
+        );
+      }
+    }
+  }
+  assert.deepEqual(
+    failures,
+    [],
+    "오너 SVG의 잉크가 캔버스(viewBox)를 넘어섰습니다 — 캔버스를 넓히거나 " +
+      "요소를 안쪽으로 옮겨야 합니다:\n" + failures.join("\n"),
+  );
+});
+
+test("권역별 크롭 여유 기준선(#2603)", () => {
+  const actual = {};
+  for (const region of REGIONS) {
+    const { margins } = measure(region);
+    actual[region.id] = margins;
+  }
+  const drift = [];
+  for (const [id, expected] of Object.entries(EXPECTED_MARGINS)) {
+    for (const [side, value] of Object.entries(expected)) {
+      const measured = actual[id][side];
+      if (Math.abs(measured - value) > MARGIN_TOLERANCE) {
+        drift.push(
+          `${id}.${side}: 기준선 ${value} ↔ 실측 ${measured.toFixed(2)} ` +
+            `(Δ ${(measured - value).toFixed(2)}, 허용 ±${MARGIN_TOLERANCE})`,
+        );
+      }
+    }
+  }
+  assert.deepEqual(
+    drift,
+    [],
+    "크롭 여유가 기준선에서 벗어났습니다 — 잉크나 캔버스가 바뀐 것이니 " +
+      "의도된 변경이면 EXPECTED_MARGINS를 갱신하세요:\n" + drift.join("\n"),
+  );
+});
+
+test("viewBox 원점은 5권역 모두 0 0이다(#2603 .vec 앵커 이탈 방지)", () => {
+  // 원점이 0이 아니면 vector_graphics_compiler가 그 값을 지오메트리에 굽고,
+  // 앱(route_map_basemap_view)은 .vec 좌표 == 소스 좌표를 전제로 재생하므로
+  // 바탕층이 통째로 어긋난다. 게다가 이탈량이 요소마다 달라(transform 없는
+  // 배지는 1회, transform 붙은 역명은 y만 2회) 앱에서 되돌릴 수도 없다.
+  for (const region of REGIONS) {
+    const [x, y] = viewBoxOf(normalizedOf(region));
+    assert.equal(x, 0, `${region.id}: viewBox x 원점은 0이어야 합니다.`);
+    assert.equal(y, 0, `${region.id}: viewBox y 원점은 0이어야 합니다.`);
+  }
+});
+
+test("경계 밖 요소를 넣으면 게이트가 실패한다(게이트 실효성 실증)", () => {
+  const region = REGIONS.find((r) => r.id === "gwangju");
+  const normalized = compileInputOf(region);
+  const [vx, vy, vw, vh] = viewBoxOf(normalized);
+
+  // 현행은 통과한다.
+  const before = inkBBoxOf(normalized, { excludeIds: FULL_CANVAS_DECOR_IDS });
+  assert.ok(before.maxX <= vx + vw, "주입 전에는 잉크가 캔버스 안이어야 합니다.");
+
+  // 우측 경계 밖 20단위 지점에 요소를 하나 얹는다.
+  const intruder =
+    `<circle id="gate-probe-out-of-canvas" cx="${vx + vw + 20}" cy="100" r="5" fill="#000"/>`;
+  const injected = normalized.replace("</svg>", `${intruder}</svg>`);
+  const after = inkBBoxOf(injected, { excludeIds: FULL_CANVAS_DECOR_IDS });
+
+  assert.ok(
+    after.maxX > vx + vw,
+    "경계 밖 요소를 넣었는데 잉크 bbox가 캔버스를 넘지 않았습니다 — " +
+      "게이트가 잉크를 놓치고 있습니다.",
+  );
+  assert.equal(after.edges.maxX, '<circle id="gate-probe-out-of-canvas">');
+  assert.ok(
+    vy + vh - after.maxY >= 0,
+    "세로 여유는 주입과 무관하게 유지돼야 합니다.",
+  );
+});
+
+test("회전 도형은 변환된 네 모서리의 외곽으로 판정한다", () => {
+  const svg =
+    '<svg viewBox="0 0 10 10"><rect x="9" y="0" width="1" height="1" ' +
+    'transform="rotate(45 9.5 .5)"/></svg>';
+  assert.ok(
+    inkBBoxOf(svg).maxX > 10,
+    "회전된 사각형의 우측 모서리가 viewBox를 넘는 것을 잡아야 합니다.",
+  );
+});
+
+const LABEL_FONT = 'font-family="Pretendard" font-size="20" font-weight="400"';
+
+function labelInkOf(attributes, content = "HIT") {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><text id="label" x="300" y="50" ${LABEL_FONT} ${attributes}>${content}</text></svg>`;
+  return inkBBoxOf(outlineBasemapText(svg).svg);
+}
+
+test("굽기 전 <text>는 폭을 어림해야 하므로 재지 않고 던진다", () => {
+  assert.throws(
+    () => inkBBoxOf(`<svg viewBox="0 0 10 10"><text x="8" y="5" font-size="1">A</text></svg>`),
+    /<text>는 글자 폭을 어림해야 해서 재지 않습니다/,
+  );
+});
+
+// 글리프 윤곽선 path의 실제 좌표로 잰다. 폭을 어림하던 모델은 letter-spacing이 항상
+// 음수라 가정했지만 수도권 오너 SVG에는 양수 라벨이 있다(+0.32967px 9건, +0.15px 1건).
+test("게이트 실패 메시지는 넘친 글리프 path가 속한 라벨 id를 짚는다", () => {
+  const ink = labelInkOf("");
+  assert.equal(ink.edges.maxX, "<path> in #label");
+  assert.equal(ink.edges.minY, "<path> in #label");
+});
+
+test("양수 letter-spacing이 만드는 글리프 간격을 윤곽선 실측으로 잰다", () => {
+  const tight = labelInkOf("");
+  const spaced = labelInkOf('letter-spacing="6"');
+  assert.ok(
+    spaced.maxX - spaced.minX > tight.maxX - tight.minX + 2 * 6 - 1,
+    `HIT 세 글자의 잉크 폭이 6단위 간격 두 번만큼 늘어야 합니다(${tight.maxX - tight.minX} → ${spaced.maxX - spaced.minX}).`,
+  );
+});
+
+test("텍스트 stroke 외곽이 viewBox를 넘으면 게이트가 실패한다", () => {
+  const plain = labelInkOf("");
+  const haloed = labelInkOf('stroke="#fff" stroke-width="8"');
+  assert.ok(
+    Math.abs(haloed.maxX - (plain.maxX + 4)) < 0.01 &&
+      Math.abs(haloed.minY - (plain.minY - 4)) < 0.01,
+    "윤곽선 path가 g의 stroke를 물려받아 외곽이 반폭(4)만큼 부풀어야 합니다.",
+  );
+});
+
+test("윤곽선 잉크의 끝은 글리프 path 좌표의 최대값이다(직선 글리프로 독립 검산)", () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"><text x="300" y="50" ${LABEL_FONT} letter-spacing="3">HIT</text></svg>`;
+  const outlined = outlineBasemapText(svg).svg;
+  const numbers = [...outlined.matchAll(/ d="([^"]+)"/g)]
+    .flatMap(([, d]) => d.match(/-?\d+(?:\.\d+)?/g).map(Number));
+  const xs = numbers.filter((_, index) => index % 2 === 0);
+  const ys = numbers.filter((_, index) => index % 2 === 1);
+  const ink = inkBBoxOf(outlined);
+  assert.equal(ink.minX, Math.min(...xs));
+  assert.equal(ink.maxX, Math.max(...xs));
+  assert.equal(ink.minY, Math.min(...ys));
+  assert.equal(ink.maxY, Math.max(...ys));
+});
+
+test("crop-viewbox는 유한한 양수 width/height만 허용한다", () => {
+  const script = path.join(here, "svg-crop", "crop-viewbox.py");
+  for (const [width, height] of [
+    ["nan", "10"],
+    ["0", "10"],
+    ["10", "-1"],
+  ]) {
+    const result = spawnSync(
+      "python3",
+      [script, "gwangju", "0", "0", width, height, "--dry"],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(result.status, 0, `${width}×${height} viewBox가 거부돼야 합니다.`);
+    assert.match(result.stderr, /유한수|0보다 커야/);
+  }
+});
+
+test("장식 제외 집합 정합 — 헤더·범례는 정규화가 이미 걷어내고, 전면 배경만 잉크에서 뺀다", () => {
+  for (const region of REGIONS) {
+    const raw = readFileSync(path.join(svgDir, region.svg), "utf8");
+    const normalized = normalizedOf(region);
+
+    // 헤더·범례 레이어는 컴파일 입력 단계에서 이미 사라진다 → 잉크 계산이
+    // 따로 제외할 필요가 없다(제외 목록을 이중으로 들고 있으면 drift 난다).
+    for (const id of EXCLUDED_DECOR_LAYER_ID_SET) {
+      assert.ok(
+        !normalized.includes(`id="${id}"`),
+        `${region.id}: 장식 레이어 ${id}가 컴파일 입력에 남아 있습니다.`,
+      );
+    }
+    assert.ok(
+      raw.length > 0,
+      `${region.id}: 원본 SVG를 읽지 못했습니다.`,
+    );
+
+    // 전면 배경·그리드는 정규화가 남기므로 잉크 계산에서 빼야 한다. 남아 있는
+    // 권역에서는 실제로 캔버스 전체를 덮는지 확인한다 — 그래야 "제외해도
+    // 잉크를 잃지 않는다"가 성립한다.
+    const [, , vw, vh] = viewBoxOf(normalized);
+    for (const id of FULL_CANVAS_DECOR_IDS) {
+      if (!normalized.includes(`id="${id}"`)) continue;
+      const tag = normalized.match(
+        new RegExp(`<rect\\b[^>]*\\bid="${id}"[^>]*>`),
+      );
+      assert.ok(tag, `${region.id}: ${id}는 <rect>여야 합니다.`);
+      const width = Number(tag[0].match(/\bwidth="([^"]+)"/)?.[1]);
+      const height = Number(tag[0].match(/\bheight="([^"]+)"/)?.[1]);
+      assert.ok(
+        width >= vw && height >= vh,
+        `${region.id}: ${id}가 캔버스를 다 덮지 않습니다(${width}×${height} < ${vw}×${vh}) — ` +
+          "잉크에서 빼면 실제 잉크를 잃습니다.",
+      );
+    }
+  }
+});
+
+/** 해소된 drift가 되살아나거나 새 drift가 생기면 실패하는 명시 기준선. */
+const KNOWN_GEOMETRY_PROVENANCE_DRIFT = new Set();
+
+test("geometry.json provenance drift가 늘지 않는다(#2606 추적)", () => {
+  const drifted = [];
+  const fixed = [];
+  for (const region of REGIONS) {
+    const geometryPath = path.join(
+      here,
+      "route-map-defs",
+      `${region.svg.replace(/\.svg$/, "")}-geometry.json`,
+    );
+    const geometry = JSON.parse(readFileSync(geometryPath, "utf8"));
+    const actual = createHash("sha256")
+      .update(readFileSync(path.join(svgDir, region.svg)))
+      .digest("hex");
+    if (geometry.sourceSvgSha256 === actual) fixed.push(region.id);
+    else drifted.push(region.id);
+  }
+
+  const unexpected = drifted.filter(
+    (id) => !KNOWN_GEOMETRY_PROVENANCE_DRIFT.has(id),
+  );
+  assert.deepEqual(
+    unexpected,
+    [],
+    "geometry.json provenance가 새로 어긋났습니다 — SVG를 바꿨으면 #2606 절차대로 " +
+      `재추출하세요: ${unexpected.join(", ")}`,
+  );
+
+  const staleEntries = fixed.filter((id) =>
+    KNOWN_GEOMETRY_PROVENANCE_DRIFT.has(id),
+  );
+  assert.deepEqual(
+    staleEntries,
+    [],
+    "provenance가 맞춰졌는데 drift 목록에 남아 있습니다 — " +
+      `KNOWN_GEOMETRY_PROVENANCE_DRIFT에서 빼세요: ${staleEntries.join(", ")}`,
+  );
+});
+
+test("알 수 없는 그리기 태그를 만나면 fail-closed로 던진다", () => {
+  const svg =
+    '<svg viewBox="0 0 10 10"><foreignObject x="0" y="0" width="5" height="5"/></svg>';
+  assert.throws(
+    () => inkBBoxOf(svg),
+    /알 수 없는 태그 <foreignObject>/,
+    "미지원 태그를 조용히 건너뛰면 잉크를 놓친 채 green이 됩니다.",
+  );
+});
+
+test("곡선 외곽은 제어점이 아니라 실제 극값으로 잰다", () => {
+  // 제어점 껍질을 쓰면 x가 100까지 벌어지지만, 3차 베지어의 실제 최대 x는 75다.
+  const svg =
+    '<svg viewBox="0 0 200 200"><path d="M 0 0 C 100 0 100 100 0 100"/></svg>';
+  const ink = inkBBoxOf(svg);
+  assert.ok(
+    Math.abs(ink.maxX - 75) < 1e-6,
+    `곡선 최대 x는 75여야 하는데 ${ink.maxX}입니다(제어점 껍질이면 100).`,
+  );
+});

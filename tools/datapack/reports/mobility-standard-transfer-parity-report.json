@@ -1,0 +1,45 @@
+{
+  "artifactKind": "mobility-standard-transfer-parity-report",
+  "baselineSource": {
+    "admittedTransferRules": 3,
+    "artifactKind": "baseline-ingestion-gate-report",
+    "directionPairSource": "gateInternalConsistency.directionPairReport"
+  },
+  "description": "STANDARD 프리셋(speedFactor 1.0)이 공식 환승 소요시간 baseline과 ±10% 이내로 일치함을 고정하는 재현 가능 리포트. baseline 초는 baseline-ingestion-gate-report.json의 gateInternalConsistency.directionPairReport에서 읽는다.",
+  "directionPairs": [
+    {
+      "baselineTransferSeconds": 178,
+      "deviationPercent": 0,
+      "deviationSeconds": 0,
+      "fromLineId": "seoul-2",
+      "standardPresetSeconds": 178,
+      "stationId": "station-gangnam",
+      "toLineId": "shinbundang",
+      "withinTolerance": true
+    },
+    {
+      "baselineTransferSeconds": 62,
+      "deviationPercent": 0,
+      "deviationSeconds": 0,
+      "fromLineId": "seoul-2",
+      "standardPresetSeconds": 62,
+      "stationId": "station-sadang",
+      "toLineId": "seoul-4",
+      "withinTolerance": true
+    }
+  ],
+  "issue": 1702,
+  "schemaVersion": 1,
+  "standardPreset": {
+    "speedFactor": 1,
+    "speedFactorPercent": 100
+  },
+  "summary": {
+    "allWithinTolerance": true,
+    "maxAbsoluteDeviationPercent": 0,
+    "pairCount": 2
+  },
+  "toleranceProfile": {
+    "maxDeviationPercent": 10
+  }
+}

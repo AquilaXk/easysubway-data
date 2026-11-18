@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "issue": 969,
+  "allowContentChange": true,
+  "maxRowDeltaRatio": 0.05,
+  "allowCoverageDecrease": false,
+  "sourceOverrides": {
+    "capital-route-topology": { "maxRowDeltaRatio": 0.02 }
+  }
+}

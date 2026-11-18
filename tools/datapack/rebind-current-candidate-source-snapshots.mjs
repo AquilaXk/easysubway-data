@@ -1,0 +1,674 @@
+#!/usr/bin/env node
+import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, rename, rmdir, unlink } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { deriveFreshness, deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { approvedGovernanceBindingTransition, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import { requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
+import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
+import { readProductionScopeSourceIds, readProductionSourceSet } from "./validate-candidate-source-set.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const SOURCE_ID = "kric-station-convenience-standard";
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const CAPITAL_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
+  TRANSFER_SOURCE_ID,
+]);
+const CAPITAL_ACTIVE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", SOURCE_ID, "seoul-metro-official-od-fares",
+  TRANSFER_SOURCE_ID,
+]);
+const CAPITAL_RELEASE_HEAD_SOURCE_IDS = Object.freeze(CAPITAL_SOURCE_IDS.filter(
+  (sourceId) => sourceId !== "seoul-metro-official-od-fares",
+));
+const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
+  "stations", "stationLines", "stationExits", "stationCarDoorHints", "networkEdges",
+  "routeMapPositions", "routeMapLineTracks", "facilities", "stationFacilityEvidence",
+  "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips",
+  "transitStopTimes", "officialOdFareQuotes",
+]);
+const SHA256 = /^[0-9a-f]{64}$/u;
+const PROJECTION_KEYS = Object.freeze([
+  "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint",
+  "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash",
+  "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt",
+  "governancePolicyVersion", "governancePolicySha256",
+]);
+const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const PATHS = Object.freeze({
+  candidate: "tools/datapack/release/candidate-build-spec.json",
+  releaseRequest: "tools/datapack/release/release-request.json",
+  hashEvidence: "tools/datapack/release/hash-evidence.json",
+  inventory: "tools/datapack/source-inventory.json",
+  snapshots: "tools/datapack/release/source-snapshots.json",
+  pack: "tools/datapack/release/capital-production-canonical-pack.json",
+  governance: "tools/datapack/source-governance-policy.json",
+  freshness: "release/product-gates/datapack-freshness-sla.json",
+  scope: "release/product-gates/production-datapack-scope.json",
+  lock: "tools/datapack/.candidate-source-rebind.lock",
+  transaction: "tools/datapack/.candidate-source-rebind-transaction.json",
+});
+
+function parse(bytes, label) {
+  try { return JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); }
+}
+function requiredSha(value, label) {
+  if (!SHA256.test(value ?? "")) throw new Error(`${label} must be a SHA-256`);
+  return value;
+}
+function exactlyOne(rows, predicate, label) {
+  const matches = rows.filter(predicate);
+  if (matches.length !== 1) throw new Error(`${label} must have exactly one match`);
+  return matches[0];
+}
+function sameBytes(left, right) { return Buffer.isBuffer(left) && Buffer.isBuffer(right) && left.equals(right); }
+function identity(stat) { return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, mode: stat.mode }; }
+function sameIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino && left.size === right.size && left.mtimeMs === right.mtimeMs && left.mode === right.mode; }
+
+export function requireCurrentCanonicalSourceRoster(capital) {
+  const entries = capital?.sourceInventory;
+  const sourceIds = Array.isArray(entries) ? entries.map((entry) => entry?.id) : null;
+  const suffix = sourceIds?.slice(CAPITAL_SOURCE_IDS.length);
+  const provenanceRows = CANONICAL_PROVENANCE_PROPERTIES.flatMap((property) => capital?.[property] ?? []);
+  const rosterBackedProvenanceSourceIds = new Set(provenanceRows
+    .filter(({ sourceId, sourceSnapshotId, providerRecordHash, evidenceHash }) =>
+      typeof sourceId === "string" && sourceId.length > 0
+      && typeof sourceSnapshotId === "string" && sourceSnapshotId.length > 0
+      && SHA256.test(providerRecordHash ?? "") && SHA256.test(evidenceHash ?? ""))
+    .map(({ sourceId }) => sourceId));
+  if (!Array.isArray(sourceIds)
+    || JSON.stringify(sourceIds.slice(0, CAPITAL_SOURCE_IDS.length))
+      !== JSON.stringify(CAPITAL_SOURCE_IDS)
+    || sourceIds.some((sourceId) => typeof sourceId !== "string" || sourceId.length === 0)
+    || new Set(sourceIds).size !== sourceIds.length
+    || suffix.some((sourceId) => CAPITAL_SOURCE_IDS.includes(sourceId)
+      || !rosterBackedProvenanceSourceIds.has(sourceId))
+    || [...rosterBackedProvenanceSourceIds].some((sourceId) => !sourceIds.includes(sourceId))) {
+    throw new Error("capital canonical source identity drift");
+  }
+  return sourceIds;
+}
+
+export function rebindCandidateSourceSnapshots({
+  candidateBuildSpec, candidateBuildSpecBytes, releaseRequest, sourceInventory, sourceInventoryBytes, sourceSnapshots, canonicalPack, governancePolicy, governancePolicyBytes,
+  freshnessPolicy, kricSnapshotBytes, productionScopeBytes,
+  now = new Date(),
+}) {
+  const nowMillis = requiredUtcInstant(now.toISOString(), "now");
+  const authenticatedCandidate = parse(candidateBuildSpecBytes, "candidate");
+  const authenticatedInventory = parse(sourceInventoryBytes, "source inventory");
+  const authenticatedGovernance = parse(governancePolicyBytes, "source governance policy");
+  if (!isDeepStrictEqual(candidateBuildSpec, authenticatedCandidate)
+    || !isDeepStrictEqual(sourceInventory, authenticatedInventory)
+    || !isDeepStrictEqual(governancePolicy, authenticatedGovernance)) {
+    throw new Error("parsed source objects are not bound to their authenticated bytes");
+  }
+  candidateBuildSpec = authenticatedCandidate;
+  sourceInventory = authenticatedInventory;
+  governancePolicy = authenticatedGovernance;
+  const { requiredSourceIds } = readProductionSourceSet({ productionScopeBytes, sourceInventoryBytes });
+  validateCandidate(candidateBuildSpec);
+  if (!Buffer.isBuffer(candidateBuildSpecBytes) || releaseRequest?.buildSpecSha256 !== sha256(candidateBuildSpecBytes)) {
+    throw new Error("release request is not bound to original candidate bytes");
+  }
+  if (!Buffer.isBuffer(sourceInventoryBytes)
+    || candidateBuildSpec.networkEdgeEvidence?.sourceInventory?.path !== PATHS.inventory
+    || !SHA256.test(candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 ?? "")) {
+    throw new Error("candidate source inventory binding mismatch");
+  }
+  const canonicalStationLineKeys = validateCapitalPack(canonicalPack, sourceInventory, requiredSourceIds);
+  validateSourceGovernancePolicy({ policy: governancePolicy, inventory: sourceInventory, freshnessPolicy });
+  const candidate = structuredClone(candidateBuildSpec);
+  const projections = candidate.sourceSnapshots;
+  const ids = candidate.sourceSnapshotIds;
+  const sourceIds = projections.map(({ sourceId }) => sourceId);
+  if (new Set(ids).size !== ids.length || new Set(sourceIds).size !== sourceIds.length
+    || projections.some((projection, index) => projection?.snapshotId !== ids[index])
+    || sourceIds.length !== requiredSourceIds.length
+    || requiredSourceIds.some((sourceId) => !sourceIds.includes(sourceId))) {
+    throw new Error("candidate source identity is not one-to-one");
+  }
+  const bySnapshotId = new Map();
+  for (const snapshot of sourceSnapshots ?? []) {
+    if (bySnapshotId.has(snapshot?.snapshotId)) throw new Error("source snapshot ledger has duplicate snapshot ID");
+    bySnapshotId.set(snapshot?.snapshotId, snapshot);
+  }
+  const selected = ids.map((snapshotId) => {
+    const snapshot = bySnapshotId.get(snapshotId);
+    if (!snapshot) throw new Error("candidate snapshot is absent from source ledger");
+    return snapshot;
+  });
+  if (sha256(JSON.stringify(selectLedgerOrderedSnapshots(sourceSnapshots, ids))) !== candidate.sourceSnapshotSetHash) {
+    throw new Error("candidate source snapshot set hash mismatch");
+  }
+  const lineage = validateLineage(sourceSnapshots);
+  validateCapitalReleaseHeads(canonicalPack, lineage, sourceSnapshots, selected, requiredSourceIds, candidateBuildSpec);
+  const oldIndex = sourceIds.indexOf(SOURCE_ID);
+  if (oldIndex < 0) throw new Error("candidate KRIC source is missing");
+  const oldSnapshot = selected[oldIndex];
+  const nextSnapshotId = lineage.headsBySource[SOURCE_ID];
+  const next = bySnapshotId.get(nextSnapshotId);
+  if (!next || next.snapshotId === oldSnapshot.snapshotId || next.previousSnapshotId !== oldSnapshot.snapshotId) {
+    throw new Error("KRIC standard accessibility head must advance exactly once");
+  }
+  for (const [index, sourceId] of sourceIds.entries()) {
+    if (sourceId === SOURCE_ID) continue;
+    if (lineage.headsBySource[sourceId] !== selected[index].snapshotId) {
+      throw new Error("non-KRIC candidate source is not the active head");
+    }
+  }
+  for (const [index, snapshot] of selected.entries()) {
+    const expected = deriveReleaseProjection({
+      snapshot, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis,
+    });
+    assertProjectionEqual(projections[index], expected, "candidate projection");
+  }
+  validateNewKricHead({ next, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, kricSnapshotBytes, canonicalStationLineKeys, nowMillis });
+  const source = exactlyOne(sourceInventory.sources ?? [], ({ id }) => id === SOURCE_ID, "KRIC source inventory");
+  const evidence = source.accessibilityAdmissionEvidence;
+  if (source.requiredForProductionPack !== true || source.productionUseAllowed !== true
+    || source.capabilities?.facility?.productionUseAllowed !== true
+    || source.license?.redistributionAllowed !== true
+    || evidence?.snapshotId !== next.snapshotId || evidence.rawSha256 !== next.rawReceipt.snapshotRawSha256
+    || evidence.contentSha256 !== next.contentSha256 || evidence.schemaFingerprint !== next.schemaFingerprint
+    || source.admissionEvidence?.adminReviewRecordHash !== next.adminReviewRecordHash) {
+    throw new Error("KRIC inventory admission does not bind the new head");
+  }
+  const oldProjection = projections[oldIndex];
+  const nextProjection = deriveReleaseProjection({
+    snapshot: next, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis,
+  });
+  ids[oldIndex] = next.snapshotId;
+  projections[oldIndex] = nextProjection;
+  candidate.publishedAt = now.toISOString();
+  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(selectLedgerOrderedSnapshots(sourceSnapshots, ids)));
+  candidate.sourceInventorySha256 = sha256(JSON.stringify(sourceInventory));
+  candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(sourceInventoryBytes);
+  assertOnlyAllowedCandidateChanges(candidateBuildSpec, candidate, oldProjection, nextProjection);
+  return candidate;
+}
+
+function selectLedgerOrderedSnapshots(sourceSnapshots, snapshotIds) {
+  const selectedIds = new Set(snapshotIds);
+  const selected = sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  if (selectedIds.size !== snapshotIds.length || selected.length !== snapshotIds.length) {
+    throw new Error("candidate source snapshot set hash mismatch");
+  }
+  return selected;
+}
+
+function validateCandidate(candidate) {
+  if (candidate?.schemaVersion !== 1 || candidate.artifactKind !== "datapack-candidate-build-spec"
+    || !Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
+    || candidate.sourceSnapshotIds.length === 0 || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
+    || typeof candidate.candidateId !== "string" || candidate.candidateId === ""
+    || !requiredSha(candidate.sourceSnapshotSetHash, "candidate source snapshot set hash")
+    || !requiredSha(candidate.sourceInventorySha256, "candidate source inventory hash")) {
+    throw new Error("candidate build spec identity mismatch");
+  }
+}
+
+function validateCapitalPack(pack, sourceInventory, requiredSourceIds) {
+  const capital = pack?.packs?.length === 1 ? pack.packs[0] : null;
+  if (pack?.manifest?.channel !== "production" || pack.manifest?.activePack?.id !== "capital"
+    || capital?.id !== "capital" || capital.version !== "1") {
+    throw new Error("capital canonical pack identity mismatch");
+  }
+  const seoulMetroLines = new Set((capital.lines ?? [])
+    .filter(({ operatorId }) => operatorId === "seoul-metro").map(({ id }) => id));
+  const stationIds = new Set((capital.stations ?? []).map(({ id }) => id));
+  const lineIds = new Set((capital.lines ?? []).map(({ id }) => id));
+  const membership = (capital.stationLines ?? []).filter(({ lineId }) => seoulMetroLines.has(lineId));
+  const keys = new Set(membership.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  if (membership.length === 0 || keys.size !== membership.length
+    || membership.some(({ stationId, lineId }) => !stationIds.has(stationId) || !lineIds.has(lineId))
+  ) {
+    throw new Error("capital canonical station-line scope mismatch");
+  }
+  requireCurrentCanonicalSourceRoster(capital);
+  const inventoryIds = new Set((sourceInventory?.sources ?? []).map(({ id }) => id));
+  if (requiredSourceIds.some((sourceId) => !inventoryIds.has(sourceId))) {
+    throw new Error("current source inventory does not cover candidate sources");
+  }
+  return keys;
+}
+
+function isPinnedPreMaterializationTopology(sourceId, selected, candidate) {
+  if (sourceId !== "capital-route-topology") return false;
+  const rows = selected.filter((row) => row.sourceId === sourceId);
+  if (rows.length !== 1) return false;
+  const row = rows[0];
+  const admission = row.admissionEvidence;
+  const pin = candidate?.networkEdgeEvidence?.capitalTopologyCandidate;
+  return pin != null && Object.keys(pin).length === 3
+    && ["path", "sha256", "snapshotId"].every((key) => Object.hasOwn(pin, key))
+    && pin.snapshotId === row.snapshotId
+    && pin.path === `tools/datapack/sources/${row.snapshotId}.json`
+    && SHA256.test(pin.sha256 ?? "") && pin.sha256 === row.rawSha256
+    && admission?.artifactKind === "capital-topology-admission-evidence"
+    && admission.status === "APPROVED" && admission.sourceId === sourceId
+    && admission.snapshotId === row.snapshotId && admission.snapshotPath === pin.path
+    && admission.snapshotFileSha256 === pin.sha256;
+}
+
+export function validateCapitalReleaseHeads(pack, lineage, snapshots, selected, requiredSourceIds, candidate) {
+  if (!Array.isArray(requiredSourceIds) || requiredSourceIds.length === 0
+    || new Set(requiredSourceIds).size !== requiredSourceIds.length) {
+    throw new Error("capital active source head identity drift");
+  }
+  const capital = pack.packs[0];
+  const capitalSourceIds = requireCurrentCanonicalSourceRoster(capital);
+  const capitalIds = new Set(capitalSourceIds);
+  const byId = new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
+  // 후보 집합은 scope를 따른다. 빌드 전 pack roster와 동일하지 않으며,
+  // 추가 source의 물질화·provenance는 build-datapack의 admission 단계가 검증한다.
+  const releaseHeads = requiredSourceIds.map((sourceId) => byId.get(lineage.headsBySource[sourceId]));
+  const actualCapitalHeadIds = capitalSourceIds.slice(0, CAPITAL_SOURCE_IDS.length)
+    .filter((sourceId) => lineage.headsBySource[sourceId] != null);
+  if (CAPITAL_ACTIVE_SOURCE_IDS.some((sourceId) => !capitalIds.has(sourceId))
+    || JSON.stringify(actualCapitalHeadIds) !== JSON.stringify(CAPITAL_RELEASE_HEAD_SOURCE_IDS)
+    || requiredSourceIds.some((sourceId) => !capitalIds.has(sourceId)
+      && !isPinnedPreMaterializationTopology(sourceId, selected, candidate))
+    || releaseHeads.some((snapshot, index) => snapshot?.sourceId !== requiredSourceIds[index])
+    || selected.length !== requiredSourceIds.length
+    || requiredSourceIds.some((sourceId) => selected.filter((snapshot) => snapshot.sourceId === sourceId).length !== 1)) {
+    throw new Error("capital active source head identity drift");
+  }
+}
+
+function validateNewKricHead({ next, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, kricSnapshotBytes, canonicalStationLineKeys, nowMillis }) {
+  if (next?.sourceId !== SOURCE_ID || next.artifactKind !== "official-source-snapshot"
+    || next.schemaVersion !== 1 || next.snapshotStatus !== "LOCKED" || next.fetchStatus !== "SUCCESS"
+    || next.schemaStatus !== "PASS" || next.licenseStatus !== "PASS" || next.redistributionAllowed !== true
+    || next.credentialRedacted !== true || next.coverageCount !== canonicalStationLineKeys.size || !Number.isSafeInteger(next.rowCount) || next.rowCount < 0
+    || !requiredSha(next.rawSha256, "KRIC raw hash") || !requiredSha(next.schemaFingerprint, "KRIC schema fingerprint")
+    || !requiredSha(next.redactedRequestFingerprint, "KRIC request fingerprint")
+    || !requiredSha(next.governancePolicySha256, "KRIC governance hash")
+    || next.governancePolicyVersion !== governancePolicy.policyVersion
+    || next.governancePolicySha256 !== requiredSha(sha256(governancePolicyBytes), "governance policy bytes hash")) {
+    throw new Error("KRIC new head identity or canonical station-line scope mismatch");
+  }
+  const receipt = next.rawReceipt;
+  if (receipt?.sourceId !== SOURCE_ID || receipt.snapshotId !== next.snapshotId
+    || !SHA256.test(receipt.snapshotRawSha256 ?? "") || receipt.rawObjectSha256 !== next.rawSha256
+    || !SHA256.test(receipt.snapshotFileSha256 ?? "") || !Number.isSafeInteger(receipt.byteSize) || receipt.byteSize <= 0) {
+    throw new Error("KRIC immutable receipt mismatch");
+  }
+  let snapshot;
+  try { snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(kricSnapshotBytes?.toString("utf8"))); }
+  catch { throw new Error("KRIC snapshot evidence file is invalid"); }
+  const queryKeys = new Set((snapshot.queries ?? []).map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  if (snapshot.sourceId !== SOURCE_ID || snapshot.snapshotId !== next.snapshotId || snapshot.queryCount !== canonicalStationLineKeys.size
+    || snapshot.queries?.length !== canonicalStationLineKeys.size || queryKeys.size !== canonicalStationLineKeys.size
+    || [...canonicalStationLineKeys].some((key) => !queryKeys.has(key))
+    || snapshot.rowCount !== next.rowCount || snapshot.rawSha256 !== receipt.snapshotRawSha256
+    || snapshot.contentSha256 !== next.contentSha256 || snapshot.schemaFingerprint !== next.schemaFingerprint
+    || snapshot.redactedRequestFingerprint !== next.redactedRequestFingerprint
+    || snapshot.capturedAt !== next.retrievedAt || snapshot.observedAt !== next.sourceUpdatedAt
+    || requiredUtcInstant(snapshot.freshUntil, "KRIC snapshot freshness") !== requiredUtcInstant(snapshot.capturedAt, "KRIC snapshot capture") + 86_400_000) {
+    throw new Error("KRIC snapshot evidence/ledger binding mismatch");
+  }
+  if (!Buffer.isBuffer(kricSnapshotBytes) || typeof next.rawObjectUri !== "string" || next.rawObjectUri === "" || typeof next.adminReviewRecordHash !== "string"
+    || !SHA256.test(next.adminReviewRecordHash)) {
+    throw new Error("KRIC receipt or policy binding mismatch");
+  }
+  const policySource = governancePolicy.sources?.find(({ sourceId }) => sourceId === SOURCE_ID);
+  if (!policySource || policySource.sourceClassId == null) throw new Error("KRIC governance source is missing");
+  const freshness = deriveFreshness({
+    policy: freshnessPolicy,
+    sourceClassId: policySource.sourceClassId,
+    basisAt: next.retrievedAt,
+    storedExpiresAt: next.freshnessExpiresAt,
+    evaluationAt: new Date(nowMillis).toISOString(),
+  });
+  if (freshness.status !== "FRESH" || requiredUtcInstant(next.rawRetentionExpiresAt, "KRIC retention") <= nowMillis) {
+    throw new Error("KRIC new head is stale or retention-expired");
+  }
+  if (next.diffSummary == null || next.previousSnapshotId == null) {
+    throw new Error("KRIC head lineage is missing");
+  }
+  const inventory = exactlyOne(sourceInventory.sources ?? [], ({ id }) => id === SOURCE_ID, "KRIC source inventory");
+  const evidence = inventory.accessibilityAdmissionEvidence;
+  const review = policySource.licenseReview;
+  const reviewedAt = Date.parse(review?.reviewedAt);
+  const nextReviewAt = Date.parse(review?.nextReviewAt);
+  if (inventory.provider !== next.provider || inventory.admissionEvidence?.decision !== "APPROVED"
+    || inventory.admissionEvidence?.adminReviewRecordHash !== next.adminReviewRecordHash
+    || inventory.capabilities?.facility?.status !== "SUPPORTED" || inventory.capabilities.facility.productionUseAllowed !== true
+    || inventory.license?.commercialUseAllowed !== true || inventory.license?.derivativeWorkAllowed !== true
+    || inventory.license?.redistributionAllowed !== true
+    || review?.status !== "APPROVED" || review.termsHash !== inventory.admissionEvidence?.licenseEvidenceHash
+    || review.reviewedProvider !== inventory.provider || review.reviewedDatasetUrl !== inventory.datasetUrl
+    || review.approvedByRole !== policySource.approvalRole || !review.redistributionScopes?.includes("DERIVED_DATAPACK")
+    || !Number.isFinite(reviewedAt) || !Number.isFinite(nextReviewAt) || reviewedAt > nowMillis || nextReviewAt <= nowMillis
+    || evidence?.decision !== "APPROVED" || evidence.productionUseAllowed !== true || evidence.absenceEvidenceMode !== snapshot.absenceEvidenceMode
+    || evidence.snapshotId !== next.snapshotId || evidence.snapshotPath !== `tools/datapack/sources/${next.snapshotId}.json`
+    || evidence.rawSha256 !== receipt.snapshotRawSha256 || evidence.contentSha256 !== next.contentSha256
+    || evidence.schemaFingerprint !== next.schemaFingerprint || evidence.snapshotFileSha256 !== sha256(kricSnapshotBytes)
+    || receipt.snapshotFileSha256 !== sha256(kricSnapshotBytes)
+    || evidence.capturedAt !== snapshot.capturedAt || evidence.observedAt !== snapshot.observedAt || evidence.freshUntil !== snapshot.freshUntil
+    || requiredUtcInstant(evidence.freshUntil, "KRIC evidence freshness") <= nowMillis
+    || requiredUtcInstant(receipt.storedAt, "KRIC receipt storedAt") < requiredUtcInstant(evidence.capturedAt, "KRIC evidence capture")
+    || requiredUtcInstant(receipt.storedAt, "KRIC receipt storedAt") > nowMillis
+    || evidence.licenseEvidenceHash !== inventory.admissionEvidence?.licenseEvidenceHash || evidence.licenseEvidenceHash == null
+    || typeof inventory.license?.attribution !== "string" || inventory.license.attribution.trim() === ""
+    || receipt.capturedAt !== snapshot.capturedAt || receipt.capturedAt !== next.retrievedAt
+    || next.rawRetentionExpiresAt !== deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: SOURCE_ID, retrievedAt: next.retrievedAt })
+    || requiredUtcInstant(next.rawRetentionExpiresAt, "KRIC retention") <= requiredUtcInstant(receipt.storedAt, "KRIC receipt storedAt")) {
+    throw new Error("KRIC inventory provenance mismatch");
+  }
+  requiredCredentialFreeObjectUri(next.rawObjectUri, "KRIC raw object URI");
+}
+
+export function deriveReleaseProjection({ snapshot, sourceInventory, governancePolicy, governancePolicyBytes, freshnessPolicy, nowMillis }) {
+  const source = exactlyOne(sourceInventory?.sources ?? [], ({ id }) => id === snapshot.sourceId, `source inventory ${snapshot.sourceId}`);
+  const adminReviewRecordHash = requiredSha(source.admissionEvidence?.adminReviewRecordHash, `${snapshot.sourceId} admin review hash`);
+  const sourceClass = freshnessPolicy?.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(snapshot.sourceId));
+  if (!sourceClass) throw new Error(`freshness class missing: ${snapshot.sourceId}`);
+  const freshnessExpiresAt = deriveFreshnessExpiresAt({
+    policy: freshnessPolicy, sourceClassId: sourceClass.id, basisAt: snapshot[sourceClass.basisField],
+    providerValidUntil: sourceClass.providerValidityEndField ? snapshot[sourceClass.providerValidityEndField] : undefined,
+    evaluationAt: new Date(nowMillis).toISOString(),
+  });
+  const governanceSnapshot = snapshot.governancePolicyVersion == null && snapshot.governancePolicySha256 == null
+    ? { ...snapshot, ...approvedLegacyGovernanceBinding(snapshot) }
+    : snapshot;
+  const governanceBinding = approvedGovernanceBindingTransition({
+    snapshot: governanceSnapshot,
+    currentPolicyVersion: governancePolicy.policyVersion,
+    currentPolicySha256: sha256(governancePolicyBytes),
+    currentPolicyBytes: governancePolicyBytes,
+  });
+  return {
+    snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri,
+    rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
+    schemaFingerprint: snapshot.schemaFingerprint, licenseStatus: snapshot.licenseStatus,
+    redistributionAllowed: snapshot.redistributionAllowed, adminReviewRecordHash, snapshotStatus: snapshot.snapshotStatus,
+    credentialRedacted: snapshot.credentialRedacted, freshnessExpiresAt,
+    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: snapshot.sourceId, retrievedAt: snapshot.retrievedAt }),
+    ...governanceBinding,
+  };
+}
+
+export function assertProjectionEqual(projection, expected, label) {
+  if (!projection || typeof projection !== "object" || Array.isArray(projection)) throw new Error(`${label} is invalid`);
+  const keys = Object.keys(projection).sort((left, right) => left.localeCompare(right, "en"));
+  if (keys.length !== PROJECTION_KEYS.length || keys.some((key, index) => key !== [...PROJECTION_KEYS].sort((left, right) => left.localeCompare(right, "en"))[index])
+    || PROJECTION_KEYS.some((key) => projection[key] !== expected[key])) {
+    throw new Error(`${label} fields are not closed`);
+  }
+}
+
+// scope에서 TRANSFER만 제외한 predecessor를 보존하고 마지막 위치에 한 번만 추가한다.
+export function appendTransferCandidateSourceSnapshot({ candidateBuildSpec, transferSnapshot, transferProjection, productionScopeBytes }) {
+  const requiredSourceIds = readProductionScopeSourceIds(productionScopeBytes);
+  const predecessorSourceIds = requiredSourceIds.filter((sourceId) => sourceId !== TRANSFER_SOURCE_ID);
+  const ids = candidateBuildSpec?.sourceSnapshotIds;
+  const projections = candidateBuildSpec?.sourceSnapshots;
+  const sourceIds = projections?.map((projection) => projection?.sourceId);
+  if (!Array.isArray(ids) || !Array.isArray(projections)
+    || predecessorSourceIds.length === 0 || !requiredSourceIds.includes(TRANSFER_SOURCE_ID)
+    || ids.length !== predecessorSourceIds.length || projections.length !== ids.length
+    || new Set(ids).size !== ids.length || new Set(sourceIds).size !== sourceIds.length
+    || predecessorSourceIds.some((sourceId) => !sourceIds.includes(sourceId))
+    || projections.some((row, index) => row.snapshotId !== ids[index])
+    || transferSnapshot?.sourceId !== TRANSFER_SOURCE_ID || typeof transferSnapshot.snapshotId !== "string"
+    || transferSnapshot.snapshotId.length === 0 || ids.includes(transferSnapshot.snapshotId)
+    || transferProjection?.sourceId !== TRANSFER_SOURCE_ID || transferProjection.snapshotId !== transferSnapshot.snapshotId) {
+    throw new Error("candidate transfer append identity mismatch");
+  }
+  const candidate = structuredClone(candidateBuildSpec);
+  candidate.sourceSnapshotIds.push(transferSnapshot.snapshotId);
+  candidate.sourceSnapshots.push(structuredClone(transferProjection));
+  if (JSON.stringify(candidate.sourceSnapshots.slice(0, -1)) !== JSON.stringify(projections)
+    || candidate.sourceSnapshots.at(-1).sourceId !== TRANSFER_SOURCE_ID
+    || candidate.sourceSnapshotIds.length !== requiredSourceIds.length) {
+    throw new Error("candidate transfer append projection drift");
+  }
+  return candidate;
+}
+
+function assertOnlyAllowedCandidateChanges(before, after, oldProjection, nextProjection) {
+  const allowed = new Set(["publishedAt", "sourceSnapshotIds", "sourceSnapshots", "sourceSnapshotSetHash", "sourceInventorySha256", "networkEdgeEvidence"]);
+  const beforeKeys = Object.keys(before);
+  if (beforeKeys.length !== Object.keys(after).length || beforeKeys.some((key) => !(key in after))) {
+    throw new Error("candidate top-level shape changed");
+  }
+  for (const key of beforeKeys) {
+    if (!allowed.has(key) && JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      throw new Error(`candidate field changed outside rebind allowlist: ${key}`);
+    }
+  }
+  const edgeBefore = structuredClone(before.networkEdgeEvidence);
+  const edgeAfter = structuredClone(after.networkEdgeEvidence);
+  edgeBefore.sourceInventory = undefined;
+  edgeAfter.sourceInventory = undefined;
+  if (JSON.stringify(edgeBefore) !== JSON.stringify(edgeAfter)
+    || JSON.stringify(before.networkEdgeEvidence?.sourceInventory?.path) !== JSON.stringify(after.networkEdgeEvidence?.sourceInventory?.path)) {
+    throw new Error("candidate network edge evidence changed outside allowlist");
+  }
+  if (oldProjection.sourceId !== SOURCE_ID || nextProjection.sourceId !== SOURCE_ID) {
+    throw new Error("candidate KRIC source projection mismatch");
+  }
+}
+
+export async function readStableRegularFile(target, label, { openImpl = open } = {}) {
+  if (!Number.isInteger(constants.O_NOFOLLOW)) throw new Error(`${label} cannot enforce O_NOFOLLOW`);
+  let handle;
+  try { handle = await openImpl(target, constants.O_RDONLY | constants.O_NOFOLLOW); }
+  catch (error) { throw new Error(`${label} must be a regular non-symlink file`, { cause: error }); }
+  try {
+    const before = await handle.stat();
+    if (!before.isFile()) throw new Error(`${label} must be a regular non-symlink file`);
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (!sameIdentity(identity(before), identity(after)) || bytes.length !== after.size) throw new Error(`${label} changed during read`);
+    return { target, label, bytes, identity: identity(after) };
+  } finally { await handle.close(); }
+}
+
+async function assertStable(snapshot) {
+  const current = await lstat(snapshot.target);
+  if (!current.isFile() || current.isSymbolicLink() || !sameIdentity(snapshot.identity, identity(current))) {
+    throw new Error(`${snapshot.label} changed during rebind`);
+  }
+  const reread = await readStableRegularFile(snapshot.target, snapshot.label);
+  if (!sameBytes(snapshot.bytes, reread.bytes)) throw new Error(`${snapshot.label} bytes changed during rebind`);
+}
+
+export async function atomicReplace(target, bytes, { openImpl = open, original } = {}) {
+  const parent = path.dirname(target);
+  const parentStat = await lstat(parent);
+  if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) throw new Error("candidate target parent is unsafe");
+  const authenticated = original ?? await readStableRegularFile(target, "candidate target");
+  if (authenticated.target !== target) throw new Error("candidate target identity is invalid");
+  const temporary = path.join(parent, `.${path.basename(target)}.${randomUUID()}.tmp`);
+  let cleanupTemporary = false;
+  try {
+    const handle = await openImpl(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    cleanupTemporary = true;
+    try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+    await assertStable(authenticated);
+    await rename(temporary, target);
+    cleanupTemporary = false;
+    const directory = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try { await directory.sync(); } finally { await directory.close(); }
+  } finally {
+    if (cleanupTemporary) await unlink(temporary).catch(() => {});
+  }
+}
+
+async function acquireLock(root) {
+  const lock = path.join(root, PATHS.lock);
+  try { await mkdir(lock); } catch (error) {
+    if (error?.code === "EEXIST") throw new Error("candidate source rebind lock residue exists");
+    throw error;
+  }
+  return async () => { await rmdir(lock); };
+}
+
+function jsonBytes(value) { return Buffer.from(`${JSON.stringify(value, null, 2)}\n`); }
+function selectedLedgerSnapshots(sourceSnapshots, candidate) {
+  const ids = new Set(candidate.sourceSnapshotIds);
+  const selected = sourceSnapshots.filter(({ snapshotId }) => ids.has(snapshotId));
+  if (ids.size !== candidate.sourceSnapshotIds.length || selected.length !== candidate.sourceSnapshotIds.length
+    || selected.some((snapshot) => !candidate.sourceSnapshots.some(({ snapshotId, sourceId }) => snapshotId === snapshot.snapshotId && sourceId === snapshot.sourceId))) {
+    throw new Error("candidate source snapshot selection is invalid");
+  }
+  return selected;
+}
+
+function deriveBoundReleaseArtifacts({ candidate, candidateBytes, releaseRequest, hashEvidence, sourceSnapshots, sourceInventory }) {
+  const request = structuredClone(releaseRequest);
+  if (request.candidateId !== candidate.candidateId || request.scopeId !== candidate.productionScopeId
+    || typeof request.approvalId !== "string" || request.approvalId === ""
+    || typeof request.requestedBy !== "string" || request.requestedBy === ""
+    || typeof request.approvedBy !== "string" || request.approvedBy === "" || request.requestedBy === request.approvedBy) {
+    throw new Error("release authorization identity is invalid");
+  }
+  request.buildSpecSha256 = sha256(candidateBytes);
+  request.sourceSnapshotSetHash = candidate.sourceSnapshotSetHash;
+  const selected = selectedLedgerSnapshots(sourceSnapshots, candidate);
+  const evidence = structuredClone(hashEvidence);
+  if (evidence?.artifactKind !== "datapack-build-spec-hash-evidence"
+    || evidence.productionScopeId !== candidate.productionScopeId
+    || evidence.identifiers?.candidateId?.value !== candidate.candidateId
+    || evidence.identifiers?.approvalId?.value !== request.approvalId
+    || evidence.ledgerHashes?.approvedAliasLedgerHash?.value !== candidate.approvedAliasLedgerHash) {
+    throw new Error("hash evidence authorization identity is invalid");
+  }
+  evidence.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
+  evidence.sourceInventorySha256.value = candidate.sourceInventorySha256;
+  evidence.perSourceEvidence = selected.map((snapshot) => ({
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    rawSha256: snapshot.rawSha256,
+    adminReviewRecordHash: exactlyOne(sourceInventory.sources ?? [], ({ id }) => id === snapshot.sourceId, "release source").admissionEvidence.adminReviewRecordHash,
+    perSourceSnapshotSetHash: sha256(JSON.stringify([snapshot])),
+  }));
+  const requestBytes = jsonBytes(request);
+  if (releaseRequestBindingViolations({ buildSpec: candidate, buildSpecSha256: sha256(candidateBytes), releaseRequest: request }).length !== 0) {
+    throw new Error("release request rebinding verification failed");
+  }
+  return { requestBytes, hashEvidenceBytes: jsonBytes(evidence) };
+}
+
+function transactionRecord(relative, before, after) {
+  return { path: relative, before: before.toString("base64"), after: after.toString("base64"), beforeSha256: sha256(before), afterSha256: sha256(after) };
+}
+function parseTransaction(bytes) {
+  const value = parse(bytes, "candidate rebind transaction");
+  if (value?.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(value.state) || !Array.isArray(value.records) || value.records.length !== 3
+    || new Set(value.records.map(({ path: relative }) => relative)).size !== 3
+    || value.records.some((record) => ![PATHS.candidate, PATHS.releaseRequest, PATHS.hashEvidence].includes(record.path) || !SHA256.test(record.beforeSha256 ?? "") || !SHA256.test(record.afterSha256 ?? "") || typeof record.before !== "string" || typeof record.after !== "string")) {
+    throw new Error("candidate rebind transaction is invalid");
+  }
+  return value;
+}
+async function existingTransaction(target) {
+  try { return await readStableRegularFile(target, "candidate rebind transaction"); }
+  catch (error) { if (error?.code === "ENOENT" || error?.cause?.code === "ENOENT") return null; throw error; }
+}
+async function recoverTransaction(root, atomicReplaceImpl) {
+  const journalPath = path.join(root, PATHS.transaction);
+  const existing = await existingTransaction(journalPath);
+  if (existing == null) return;
+  const journal = parseTransaction(existing.bytes);
+  for (const record of journal.records) {
+    const before = Buffer.from(record.before, "base64"), after = Buffer.from(record.after, "base64");
+    if (sha256(before) !== record.beforeSha256 || sha256(after) !== record.afterSha256) throw new Error("candidate rebind transaction hashes are invalid");
+    const current = await readStableRegularFile(path.join(root, record.path), record.path);
+    if (journal.state === "PREPARED" && current.bytes.equals(after)) await atomicReplaceImpl(current.target, before, { original: current });
+    else if (journal.state === "COMMITTED" && current.bytes.equals(before)) await atomicReplaceImpl(current.target, after, { original: current });
+    else if (!(journal.state === "PREPARED" ? current.bytes.equals(before) : current.bytes.equals(after))) throw new Error("candidate rebind preserves foreign replacement");
+  }
+  await unlink(journalPath);
+}
+async function syncTransaction(target, value) {
+  const parent = path.dirname(target); const temporary = path.join(parent, `.${path.basename(target)}.${randomUUID()}.tmp`);
+  let published = false;
+  try {
+    const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try { await handle.writeFile(jsonBytes(value)); await handle.sync(); } finally { await handle.close(); }
+    const original = await existingTransaction(target);
+    if (original != null) {
+      await atomicReplace(target, jsonBytes(value), { original });
+      await unlink(temporary);
+    } else await rename(temporary, target);
+    published = true;
+    const directory = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await directory.sync(); } finally { await directory.close(); }
+  } finally { if (!published) await unlink(temporary).catch(() => {}); }
+}
+
+export async function rebindCurrentCandidateSourceSnapshots({
+  repositoryRoot = ROOT, now = new Date(), atomicReplaceImpl = atomicReplace, beforeReplace = async () => {},
+} = {}) {
+  const root = path.resolve(repositoryRoot);
+  const release = await acquireLock(root);
+  try {
+    await recoverTransaction(root, atomicReplaceImpl);
+    const entries = await Promise.all(Object.entries(PATHS).filter(([key]) => !["lock", "transaction"].includes(key)).map(async ([key, relative]) => {
+      const target = path.join(root, relative);
+      return [key, await readStableRegularFile(target, key)];
+    }));
+    const input = Object.fromEntries(entries);
+    const sourceInventory = parse(input.inventory.bytes, "source inventory");
+    const kricEvidence = exactlyOne(sourceInventory.sources ?? [], ({ id }) => id === SOURCE_ID, "KRIC source inventory")
+      .accessibilityAdmissionEvidence;
+    const relativeSnapshotPath = kricEvidence?.snapshotPath;
+    if (typeof relativeSnapshotPath !== "string" || path.isAbsolute(relativeSnapshotPath)
+      || path.resolve(root, relativeSnapshotPath) !== path.join(root, "tools/datapack/sources", `${kricEvidence?.snapshotId}.json`)) {
+      throw new Error("KRIC snapshot evidence path is invalid");
+    }
+    input.kricSnapshot = await readStableRegularFile(path.resolve(root, relativeSnapshotPath), "KRIC snapshot evidence file");
+    const currentCandidate = parse(input.candidate.bytes, "candidate");
+    const currentKric = currentCandidate.sourceSnapshots?.find(({ sourceId }) => sourceId === SOURCE_ID)?.snapshotId;
+    const result = currentKric === kricEvidence.snapshotId ? currentCandidate : rebindCandidateSourceSnapshots({
+      productionScopeBytes: input.scope.bytes,
+      candidateBuildSpec: currentCandidate, candidateBuildSpecBytes: input.candidate.bytes, releaseRequest: parse(input.releaseRequest.bytes, "release request"), sourceInventory, sourceInventoryBytes: input.inventory.bytes,
+      sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"), canonicalPack: parse(input.pack.bytes, "capital canonical pack"), governancePolicy: parse(input.governance.bytes, "source governance policy"), governancePolicyBytes: input.governance.bytes, freshnessPolicy: parse(input.freshness.bytes, "freshness SLA"), now, kricSnapshotBytes: input.kricSnapshot.bytes,
+    });
+    const bytes = jsonBytes(result);
+    const bound = deriveBoundReleaseArtifacts({ candidate: result, candidateBytes: bytes, releaseRequest: parse(input.releaseRequest.bytes, "release request"), hashEvidence: parse(input.hashEvidence.bytes, "hash evidence"), sourceSnapshots: parse(input.snapshots.bytes, "source snapshot ledger"), sourceInventory });
+    await beforeReplace({ root, input, bytes });
+    for (const snapshot of Object.values(input)) await assertStable(snapshot);
+    const outputs = [
+      { input: input.candidate, bytes }, { input: input.releaseRequest, bytes: bound.requestBytes }, { input: input.hashEvidence, bytes: bound.hashEvidenceBytes },
+    ];
+    const records = outputs.map(({ input: original, bytes: after }) => transactionRecord(path.relative(root, original.target), original.bytes, after));
+    const journalPath = path.join(root, PATHS.transaction);
+    await syncTransaction(journalPath, { schemaVersion: 1, state: "PREPARED", records });
+    for (const output of outputs) if (!output.input.bytes.equals(output.bytes)) await atomicReplaceImpl(output.input.target, output.bytes, { original: output.input });
+    await syncTransaction(journalPath, { schemaVersion: 1, state: "COMMITTED", records });
+    for (const output of outputs) {
+      const final = await readStableRegularFile(output.input.target, output.input.label);
+      if (!sameBytes(final.bytes, output.bytes)) throw new Error("candidate rebind output verification failed");
+    }
+    await unlink(journalPath);
+    return { target: input.candidate.target, bytes, candidate: result };
+  } finally { await release(); }
+}
+
+function parseArgs(argv) {
+  if (argv.length !== 0) throw new Error("candidate source rebind takes no arguments");
+}
+
+async function main(argv) {
+  parseArgs(argv);
+  const result = await rebindCurrentCandidateSourceSnapshots();
+  process.stdout.write(`${JSON.stringify({ status: "PASS", candidateId: result.candidate.candidateId, sourceSnapshotSetHash: result.candidate.sourceSnapshotSetHash })}\n`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv.slice(2)).catch((error) => { console.error(error.message); process.exitCode = 1; });
+}

@@ -1,0 +1,2187 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  applyStylesheet,
+  baselineShiftRatio,
+  decorLayerBoundsOf,
+  expandDominantBaseline,
+  extractOwnerLabels,
+  flattenTextScale,
+  matchFontWeight,
+  resolveFontWeightValue,
+  readOpenTypeMetrics,
+  resolveGlyphCoordinateLists,
+  TEXT_FONT_FILE,
+  TEXT_FONT_METRICS,
+  extractRailTransferChipObstacles,
+  extractServiceTagObstacles,
+  markLineTerminalBadgeEntries,
+  matchingGroupEnd,
+  normalizeSvgForCompile,
+  parseStylesheet,
+  parseSvgNumbers,
+  stripHiddenElements,
+} from "./compile-basemap-vec.mjs";
+import { basemapVectorFileName, BASEMAP_VARIANTS } from "./basemap-variants.mjs";
+import { viewBoxOf } from "./svg-ink-bbox.mjs";
+
+// 평탄화되어야 하는 입력이 던지면 예외가 아니라 단언 실패로 드러나게 한다. 문법을 좁히는
+// 변이가 던진 예외로 죽지 않고 단언으로 죽어야 어떤 입력을 읽어야 하는지 테스트가 말해 준다.
+function flattened(svg) {
+  let result;
+  assert.doesNotThrow(() => {
+    result = flattenTextScale(svg);
+  });
+  return result;
+}
+
+// #2068 오너 v3 반입 회귀: 빈 레이어를 자기폐쇄 태그로 마감한 SVG(busan v3의
+// service-tags-layer)에서 extractGroup의 depth 카운터가 다음 형제 레이어를 삼켜
+// allow-list 밖 레이어(역명 라벨)가 바탕층에 딸려 들어갔다.
+test("extractOwnerLabels: x/y 속성형 위치를 main-map-scaled-layer 변환(×scale+translate)해 뽑는다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <g id="main-map-scaled-layer" transform="translate(70 138) scale(0.455)">
+        <text data-station="시청" data-label-role="transfer"
+              font-size="28.571px" x="2196.2356" y="1493.1528"
+              ><tspan x="2196.2356" y="1493.1528">시청</tspan></text>
+      </g>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  const [entry] = entries;
+  assert.equal(entry.station, "시청");
+  assert.equal(entry.role, "transfer");
+  assert.equal(entry.anchor, "start"); // 미지정 → 기본값.
+  // x = 70 + 2196.2356*0.455, y = 138 + 1493.1528*0.455.
+  assert.equal(entry.x, Number((70 + 2196.2356 * 0.455).toFixed(4)));
+  assert.equal(entry.y, Number((138 + 1493.1528 * 0.455).toFixed(4)));
+  assert.equal(entry.fontSizePx, Number((28.571 * 0.455).toFixed(4)));
+});
+
+test("extractOwnerLabels: transform=translate + tspan x=0/y=0 위치형(뚝섬형)도 뽑는다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <g id="main-map-scaled-layer" transform="translate(70 138) scale(0.455)">
+        <text data-station="뚝섬" data-label-role="ordinary"
+              transform="translate(3100.2 1650.8)" font-size="26.374"
+              ><tspan x="0" y="0">뚝섬</tspan></text>
+      </g>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  const [entry] = entries;
+  assert.equal(entry.station, "뚝섬");
+  assert.equal(entry.x, Number((70 + 3100.2 * 0.455).toFixed(4)));
+  assert.equal(entry.y, Number((138 + 1650.8 * 0.455).toFixed(4)));
+});
+
+test("extractOwnerLabels: scale 없는 권역(main-map-scaled-layer 부재)은 좌표를 그대로 쓴다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="가야" data-label-role="ordinary" text-anchor="middle"
+            font-size="12.5" x="1958" y="1430"><tspan x="1958" y="1430" dy="0">가야</tspan></text>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].x, 1958);
+  assert.equal(entries[0].y, 1430);
+  assert.equal(entries[0].anchor, "middle");
+  assert.equal(entries[0].fontSizePx, 12.5);
+});
+
+test("extractOwnerLabels: 동명이역(같은 렌더 텍스트, 다른 위치)은 두 엔트리로 모두 보존한다(#2068 부산 좌천·동래 소실 회귀)", () => {
+  // 부산 1호선 좌천·동해선 좌천은 물리적으로 다른 역이나 렌더 텍스트가 같다.
+  // 추출은 텍스트를 키로 잡되 두 엔트리를 위치로 구분해 전부 남겨야 한다
+  // (하나가 소실되면 실기기에서 1호선 좌천 노드가 무명으로 보임).
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station-key="좌천_1" data-label-role="ordinary" text-anchor="middle"
+            font-size="12.5" x="1900" y="1400"><tspan x="1900" y="1400">좌천</tspan></text>
+      <text data-station-key="좌천_DH" data-label-role="ordinary" text-anchor="middle"
+            font-size="12.5" x="3400" y="800"><tspan x="3400" y="800">좌천</tspan></text>
+    </svg>
+  `);
+  const jwacheon = entries.filter((entry) => entry.station === "좌천");
+  assert.equal(jwacheon.length, 2, "동명 라벨 2건이 모두 보존돼야 한다");
+  const xs = jwacheon.map((entry) => entry.x).sort((a, b) => a - b);
+  assert.deepEqual(xs, [1900, 3400], "두 좌천 라벨은 위치로 구분돼 남는다");
+});
+
+test("extractOwnerLabels: text-anchor가 속성 없이 style 선언 안에만 있으면(Inkscape 수작업) 그 값을 읽는다(#2068 수도권 게이트 회귀 — 신검단중앙 사례)", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="신검단중앙" data-label-role="ordinary"
+            font-size="26.374px" x="913.08093" y="1191.6017"
+            style="text-align:center;text-anchor:middle"
+            ><tspan x="879.59833" y="1191.6017">신검단</tspan></text>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  assert.equal(
+    entries[0].anchor,
+    "middle",
+    "style형 text-anchor를 못 읽으면 start로 오판(좌측 쏠림 → 이웃 라벨과 겹침)",
+  );
+});
+
+test("extractOwnerLabels: 첫 tspan이 부모 <text>와 다른 x/y를 선언하면(여러 줄 라벨) tspan 값을 우선한다(#2068 수도권 게이트 회귀 — 신검단중앙 사례)", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="신검단중앙" data-label-role="ordinary"
+            font-size="26.374px" x="913.08093" y="1191.6017"
+            style="text-align:center;text-anchor:middle"
+            ><tspan x="879.59833" y="1191.6017">신검단</tspan><tspan
+             x="879.59833" y="1220.4017">중앙</tspan></text>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  assert.equal(
+    entries[0].x,
+    879.5983,
+    'tspan x(실제 앵커 기준)가 아니라 부모 <text> x(913.08)를 쓰면 앵커가 오른쪽으로 밀려 이웃 라벨과 오탐 겹침이 난다',
+  );
+  assert.equal(entries[0].y, 1191.6017);
+});
+
+test("extractOwnerLabels: tspan에 x/y가 없으면(daegu 다음 줄 tspan 관례) 부모 <text>의 x/y를 그대로 쓴다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="동대구" data-label-role="ordinary"
+            font-size="13" x="100" y="200"
+            ><tspan>동대구</tspan></text>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].x, 100);
+  assert.equal(entries[0].y, 200);
+});
+
+test("extractOwnerLabels: 절대 y가 다른 2 tspan(2줄 라벨)은 lines에 두 줄을 담는다(#2068 다줄 라벨 렌더 — 검단사거리 사례)", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <g id="main-map-scaled-layer" transform="translate(0 0) scale(1)">
+        <text data-station="검단사거리" data-label-role="ordinary"
+              transform="translate(541 1253.4)" font-size="26.374"
+              ><tspan x="0" y="0">검단</tspan><tspan x="-11" y="28.8">사거리</tspan></text>
+      </g>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  const [entry] = entries;
+  assert.equal(entry.station, "검단사거리"); // 매치 키는 여전히 전체 연결 텍스트.
+  assert.equal(entry.lines.length, 2);
+  assert.equal(entry.lines[0].text, "검단");
+  assert.equal(entry.lines[0].x, 541);
+  assert.equal(entry.lines[0].y, 1253.4);
+  assert.equal(entry.lines[1].text, "사거리");
+  assert.equal(entry.lines[1].x, 530); // 541 + (-11).
+  assert.equal(entry.lines[1].y, 1282.2); // 1253.4 + 28.8.
+});
+
+test("extractOwnerLabels: 절대 y 없이 dy만 있는 다음 줄(daegu/busan/daejeon 관례)도 커서 누적으로 lines에 담는다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="오정한남대" data-label-role="ordinary"
+            font-size="26" x="1980" y="900"
+            ><tspan x="1980" dy="0">오정</tspan><tspan x="1980" dy="10.8">한남대</tspan></text>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  const [entry] = entries;
+  assert.equal(entry.lines.length, 2);
+  assert.equal(entry.lines[0].y, 900); // dy=0 → 부모 y 그대로.
+  assert.equal(entry.lines[1].y, 910.8); // 900 + 10.8.
+});
+
+test("extractOwnerLabels: class=station-sub(daejeon 부기 캡션)는 lines에서 제외돼 단일 줄로 남는다 — lines 필드 자체가 없다(#2068 대동 사례)", () => {
+  const entries = extractOwnerLabels(
+    `
+    <svg>
+      <text data-label-role="transfer" font-size="58" x="572" y="740"
+            data-full-official-name="1호선 대동 | 2호선 208 대동(하늘공원)"
+            ><tspan class="station-main" x="572" dy="0">대동</tspan><tspan
+             class="station-sub" x="572" dy="44.11" font-size="37.58px">하늘공원</tspan></text>
+    </svg>
+  `,
+    "daejeon",
+  );
+  assert.equal(entries.length, 1);
+  const [entry] = entries;
+  assert.equal(entry.station, "대동"); // canonical 매치 키 불변.
+  assert.deepEqual(entry.lines, []); // station-sub 제외 → 1줄만 남아 lines 미부착.
+});
+
+test("extractOwnerLabels: 단일 줄 라벨은 lines가 빈 배열이다(스키마 최소화)", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="시청" data-label-role="transfer"
+            font-size="28.571px" x="100" y="200"
+            ><tspan x="100" y="200">시청</tspan></text>
+    </svg>
+  `);
+  assert.deepEqual(entries[0].lines, []);
+});
+
+test("extractOwnerLabels: <g data-label-role> 감싸인 gwangju형 다줄 라벨도 g의 transform을 lines 각 줄에 더한다(#2068 학동증심사입구 사례)", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <g id="station-label-group-1" data-station-name="학동"
+         data-label-role="ordinary" transform="translate(10,20)">
+        <text font-size="26"><tspan x="1942" y="889">학동</tspan><tspan
+              x="1942" y="944">증심사입구</tspan></text>
+      </g>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  const [entry] = entries;
+  assert.equal(entry.lines.length, 2);
+  assert.equal(entry.lines[0].x, 1952); // 1942 + groupTranslate.dx(10).
+  assert.equal(entry.lines[0].y, 909); // 889 + groupTranslate.dy(20).
+  assert.equal(entry.lines[1].y, 964); // 944 + 20.
+});
+
+// #2068 벡스코 오배치(2026-07-26 실측 확정): SVG/CSS 명세상 style 선언이 동명
+// presentation attribute를 이긴다. 종전 구현이 반대로 읽어 부산 벡스코 등 7건의
+// 앵커가 뒤집혔고, 앱이 라벨을 폭만큼 반대쪽으로 그렸다.
+test("extractOwnerLabels: style형 text-anchor가 속성형보다 우선한다(SVG 명세)", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="가야" data-label-role="ordinary" text-anchor="end"
+            font-size="12.5" x="1958" y="1430" style="text-anchor:middle"
+            >가야</text>
+    </svg>
+  `);
+  assert.equal(entries[0].anchor, "middle");
+});
+
+test("extractOwnerLabels: style에 text-anchor가 없으면 속성형을 쓴다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="가야" data-label-role="ordinary" text-anchor="end"
+            font-size="12.5" x="1958" y="1430" style="text-align:end"
+            >가야</text>
+    </svg>
+  `);
+  assert.equal(entries[0].anchor, "end");
+});
+
+// #2068 벡스코 실측: 첫 줄 tspan이 wrapper(자기 텍스트 없음)이고 그 안 leaf
+// tspan이 글리프별 dy 리스트를 가지면, 종전 구현은 (1) wrapper 매치가 다음 `<`를
+// 소비해 leaf 줄을 통째로 잃고 (2) Number("0 0 … 59.27")=NaN으로 그 줄을 버려
+// 다줄 라벨이 통째로 빈 배열이 됐다.
+test("extractOwnerLabels: wrapper tspan + 글리프별 dy 리스트여도 두 줄을 모두 뽑는다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="벡스코" data-label-role="transfer" font-size="54.6"
+            x="9646" y="2928" text-anchor="start"
+            style="text-align:end;text-anchor:end"><tspan
+        sodipodi:role="line" x="9301.377" y="2928.2429"><tspan
+        x="9301.377" dy="0 0 0 59.27">벡스코</tspan></tspan><tspan
+        sodipodi:role="line" x="9299.9766" y="3000.8716">(시립미술관)</tspan></text>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].anchor, "end");
+  assert.deepEqual(
+    entries[0].lines.map((line) => line.text),
+    ["벡스코", "(시립미술관)"],
+  );
+  assert.equal(entries[0].lines[0].x, 9301.377);
+  assert.equal(entries[0].lines[0].y, 2928.2429);
+  assert.equal(entries[0].lines[1].y, 3000.8716);
+});
+
+test("extractOwnerLabels: <g data-label-role>에 감싸인 gwangju형은 g의 transform도 더하고 CSS class font-size로 폴백한다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <style>
+        .station-label-terminal { fill:#111111; font-size:15px; font-weight:700; }
+      </style>
+      <g id="station-label-group-119" data-station="119" data-station-name="평동"
+         data-label-role="terminal" transform="translate(3.0637434,55.147382)">
+        <text x="110" y="918" class="station-label station-label-terminal"
+              text-anchor="middle">평동</text>
+      </g>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  const [entry] = entries;
+  assert.equal(entry.station, "평동"); // data-station(코드 "119")이 아니라 텍스트 내용.
+  assert.equal(entry.role, "terminal");
+  assert.equal(entry.x, Number((110 + 3.0637434).toFixed(4)));
+  assert.equal(entry.y, Number((918 + 55.147382).toFixed(4)));
+  assert.equal(entry.fontSizePx, 15); // 인라인 font-size 없음 → CSS class 폴백.
+});
+
+test("extractOwnerLabels: code role과 construction/planned 상태는 제외한다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-label-role="code" font-size="10" x="0" y="0">312</text>
+      <text data-label-role="ordinary" data-status="construction" font-size="13"
+            x="10" y="10">가수원네거리</text>
+      <text data-label-role="planned" font-size="13" x="20" y="20">용두광역철도</text>
+      <text data-label-role="regional" data-status="construction" font-size="13"
+            x="30" y="30">흑석리</text>
+      <g data-label-role="ordinary" data-state="planned">
+        <text x="40" y="40">미개통역</text>
+      </g>
+      <text data-label-role="ordinary" font-size="13" x="50" y="50">정상역</text>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].station, "정상역");
+});
+
+test("extractOwnerLabels: daejeon 환승 복합 표기는 data-full-official-name의 canonical 1호선 역명을 station 키로 쓴다(#2068 실기기 확정 — 텍스트 flatten 대신)", () => {
+  const entries = extractOwnerLabels(
+    `
+    <svg>
+      <text data-label-role="transfer" font-size="14.2" x="0" y="0"
+            data-full-official-name="1호선 대동 | 2호선 208 대동(하늘공원)"
+            ><tspan x="0" dy="0">대동</tspan><tspan x="0" dy="10.8">하늘공원</tspan></text>
+      <text data-label-role="transfer" font-size="14.2" x="0" y="0"
+            data-full-official-name="1호선 대전역 | 2호선 206 대전역(중앙시장)"
+            >대전역</text>
+      <text data-label-role="ordinary" font-size="13.2" x="0" y="0"
+            data-full-official-name="구암">구암</text>
+    </svg>
+  `,
+    "daejeon",
+  );
+  const byStation = Object.fromEntries(entries.map((e) => [e.station, e]));
+  assert.ok(byStation["대동"], "복합 표기 flatten(대동하늘공원) 대신 canonical 키(대동)여야 한다");
+  assert.ok(!byStation["대동하늘공원"]);
+  assert.ok(byStation["대전"], "역 접미 정규화(대전역→대전)까지 적용돼야 한다");
+  assert.ok(!byStation["대전역"]);
+  assert.ok(byStation["구암"], "data-full-official-name이 단순 역명이면 그대로 유지");
+});
+
+// #2068 대전·광주 v3: 오너가 두 권역 라벨 신원 속성을 data-full-official-name
+// 하나로 통일했다. 이 분기가 DAEJEON.canonicalRules에 고정돼 있으면 광주 라벨이
+// 대전 규칙(역 접미 제거·가운뎃점 보존)으로 뽑혀 카탈로그 표기와 어긋난다
+// (광주송정역→광주송정, 학동·증심사입구 그대로) — 그 두 역만 폴백 미니 크기로
+// 회귀한다(#2068 광주송정역 사례와 동형). 권역 규칙으로 뽑아야 한다.
+test("extractOwnerLabels: gwangju data-full-official-name 라벨 키는 GWANGJU.canonicalRules로 뽑는다(DAEJEON 규칙 고정 금지)", () => {
+  const svgText = `
+    <svg>
+      <g id="station-name-labels-layer">
+        <text data-label-role="ordinary" font-size="34" x="0" y="0"
+              data-full-official-name="광주송정역">광주송정역 </text>
+        <text data-label-role="ordinary" font-size="34" x="0" y="10"
+              data-full-official-name="학동·증심사입구">학동·증심사입구</text>
+        <text data-label-role="ordinary" font-size="34" x="0" y="20"
+              data-full-official-name="김대중컨벤션센터(마륵)">김대중컨벤션센터</text>
+      </g>
+    </svg>
+  `;
+  assert.deepEqual(
+    new Set(extractOwnerLabels(svgText, "gwangju").map((e) => e.station)),
+    new Set(["광주송정역", "학동증심사입구", "김대중컨벤션센터"]),
+  );
+  // 같은 마크업이라도 대전 규칙으로 뽑으면 두 역이 카탈로그와 어긋난다(회귀 대조).
+  assert.deepEqual(
+    new Set(extractOwnerLabels(svgText, "daejeon").map((e) => e.station)),
+    new Set(["광주송정", "학동·증심사입구", "김대중컨벤션센터"]),
+  );
+});
+
+// #2068 대전 v3: 오너가 상단 안내 영역과의 겹침을 피하려고 지도 본문을
+// <g id="map-content-positioned-layer" transform="translate(0 88)">로 감쌌다.
+// seoul의 main-map-scaled-layer와 같은 "지도 본문 래퍼"인데 id가 달라 흡수되지
+// 않으면 ① .vec가 88px 위에 그려지고 ② 오너 라벨 sidecar 좌표도 88px 어긋나
+// 바탕↔인터랙션 정합(<5px 하드 게이트)이 통째로 깨진다.
+// ── 텍스트 위치 선언 완결화(#2068 대전 라벨 이중 이동, 2026-07-26) ───────────
+// vector_graphics_compiler 1.2.6은 x·y(또는 dx·dy)가 **둘 다** 선언된 텍스트 위치
+// 노드에서만 조상 transform을 좌표로 흡수한다. 오너 라벨의
+// `<text x y><tspan x dy="0">`은 부모만 흡수하고 자식은 transform을 .vec에 실어,
+// 런타임이 같은 변환을 한 번 더 적용했다(대전 +88px·부산 최대 +968px).
+test("transform이 걸린 <text> 안의 부분 선언 tspan을 절대 x·y로 완결한다(#2068 이중 적용 차단)", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="1608.404" y="607.727"
+                  data-full-official-name="월드컵경기장"><tspan class="station-main"
+                  x="1608.404" dy="0">월드컵경기장</tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const tspan = normalized.match(/<tspan\b[^>]*>/)[0];
+  assert.match(tspan, /\sx="1608\.404"/);
+  assert.match(tspan, /\sy="607\.727"/);
+  assert.doesNotMatch(tspan, /\sdy=/, "dy는 절대 y로 접혀 사라져야 한다");
+});
+
+test("여러 줄 라벨의 dy는 누적 절대 y로 접힌다(줄 간격 보존)", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                  data-full-official-name="두줄"><tspan x="100" dy="0">첫째</tspan><tspan
+                  x="100" dy="40">둘째</tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const tspans = [...normalized.matchAll(/<tspan\b[^>]*>/g)].map((m) => m[0]);
+  assert.match(tspans[0], /\sy="200"/);
+  assert.match(tspans[1], /\sy="240"/);
+});
+
+// 오너 소스의 실제 형태(수도권 총신대입구·부산 벡스코·광주 광주송정역)는 중첩
+// tspan이다 — 바깥 껍데기 tspan이 줄(x·y)을 잡고 안쪽 tspan이 글자를 담는다.
+// 안쪽 tspan은 x만 선언하므로 완결화 대상이고, 그 y는 바깥 껍데기가 옮겨 놓은
+// 펜 위치에서 와야 한다(부모 <text>의 y가 아니다).
+test("중첩 tspan(껍데기 줄 + 안쪽 글자)도 바깥이 옮긴 펜 y를 상속해 완결된다", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="transfer" font-size="34" x="9646.0859" y="2928.2429"
+                  data-full-official-name="벡스코"><tspan id="line1" x="9301.377"
+                  y="2928.2429"><tspan id="glyph1" x="9301.377" dy="0">벡스코</tspan></tspan><tspan
+                  id="line2" x="9299.9766" y="3000.8716">(시립미술관)</tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const openTagOf = (id) =>
+    normalized.match(new RegExp(`<tspan\\b[^>]*\\bid="${id}"[^>]*>`))[0];
+  // 껍데기 줄은 이미 완전 선언이라 불변.
+  assert.match(openTagOf("line1"), /\sy="2928\.2429"/);
+  assert.doesNotMatch(openTagOf("line1"), /\sdy=/);
+  // 안쪽 글자는 부모 <text>의 y가 아니라 껍데기가 옮긴 펜 y를 상속한다.
+  assert.match(openTagOf("glyph1"), /\sx="9301\.377"/);
+  assert.match(openTagOf("glyph1"), /\sy="2928\.2429"/);
+  assert.doesNotMatch(openTagOf("glyph1"), /\sdy=/);
+  // 중첩에서 빠져나온 다음 형제 줄은 자기 절대 y를 그대로 유지한다.
+  assert.match(openTagOf("line2"), /\sy="3000\.8716"/);
+});
+
+test("중첩 tspan의 dy는 바깥 줄 y에서 누적된다(펜이 <text> y로 되돌아가지 않는다)", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                  data-full-official-name="중첩"><tspan id="outer" x="100"
+                  y="300"><tspan id="inner" x="100" dy="40">중첩</tspan></tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const inner = normalized.match(/<tspan\b[^>]*\bid="inner"[^>]*>/)[0];
+  assert.match(inner, /\sy="340"/); // 300(바깥 줄) + 40(dy) — 200(부모 text)이 아니다.
+  assert.doesNotMatch(inner, /\sdy=/);
+});
+
+test("조상 transform이 항등이면 tspan 선언을 건드리지 않는다(정합 권역 산출 불변)", () => {
+  const tspan = normalizeSvgForCompile(`
+    <svg>
+      <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+      <g id="station-name-labels-layer">
+        <text data-label-role="ordinary" font-size="34" x="100" y="200"
+              data-full-official-name="항등"><tspan x="100" dy="0">항등</tspan></text>
+      </g>
+    </svg>
+  `).match(/<tspan\b[^>]*>/)[0];
+  assert.match(tspan, /\sdy="0"/, "항등 변환에서는 흡수 판정이 갈리지 않아 원문 그대로다");
+  assert.doesNotMatch(tspan, /\sy="/);
+});
+
+test("transform이 걸린 <text> 안에서 x를 선언하지 않은 tspan은 조용히 넘기지 않고 실패한다", () => {
+  assert.throws(
+    () =>
+      normalizeSvgForCompile(`
+        <svg>
+          <g id="map-card-clipped-content-layer">
+            <g id="map-content-positioned-layer" transform="translate(0 88)">
+              <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+              <g id="station-name-labels-layer">
+                <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                      id="station-label-x-less"><tspan dy="0">x없음</tspan></text>
+              </g>
+            </g>
+          </g>
+        </svg>
+      `),
+    /x를 선언하지 않은 <tspan>/,
+  );
+});
+
+// #2068 대전·광주 v3: KTX·SRT 마크가 rail-transfer-layer(v1에선 빈 레이어)에서
+// station-name-labels-layer 안 역 앵커 그룹(class="rail-service-marks")으로
+// 옮겨졌다. 그 레이어는 바탕층 allow-list 밖이라 손대지 않으면 ① 마크가 .vec에서
+// 통째로 사라지고 ② 라벨 회피 obstacle도 0건이 된다.
+test("extractOwnerLabels: 5권역 실 SVG에서 ordinary/transfer/terminal 개수가 실측과 일치한다", () => {
+  const sources = path.join(import.meta.dirname, "route-map-defs/svg-sources");
+  const expected = {
+    // #2068 오너 v3(최종 디자인) 통합(2026-07-20): 오너가 처음부터 새로 그린
+    // 확정본으로 수도권 소스 자체가 교체됐다 — 이 수는 실측치라 새 소스의 실제
+    // 라벨 구성을 그대로 반영한다(ordinary 502→501, v3 자체 라벨 구성 차이.
+    // transfer는 불변. terminal 30은 이식한 종점 마크 30개와 정확히 일치 —
+    // 형상 비침습 기계 이식, 위치는 v3 역 좌표 기준 재계산).
+    // #2068 v4 반입(2026-07-25): 세 role 개수 모두 v2와 동일(501/124/30) —
+    // v4의 변경은 라벨 개수가 아니라 표기 정규화(신촌·양평 콜론 제거 등)와
+    // 좌표 재배치라는 실측 근거.
+    "easy-subway-sma-v4.svg": { ordinary: 501, transfer: 124, terminal: 30 },
+    // #2068 벡스코 병합: 2호선·동해선을 단일 환승 station_id로 합치면서, 동해선
+    // 노드용 중복 ordinary 라벨(벡스코_DH)을 제거했다(단일 환승 캡슐이 전사 라벨을
+    // 이미 가지므로 중복 표기 불필요) → ordinary 129→128.
+    "easy-subway-busan-v3.svg": { ordinary: 128, transfer: 12, terminal: 7 },
+    "easy-subway-daegu-v3.svg": { ordinary: 84, transfer: 5, terminal: 8 },
+    // #2068 대전·광주 v3 반입(2026-07-25): 오너가 두 도식을 전면 재제작하며
+    // 카탈로그 밖 노선(대전 2호선 트램·충청권 광역철도, 광주 2호선)을 도식에서
+    // 통째로 걷어냈다 — 라벨이 카탈로그 실역만 남는다(대전 22 = 운영 22역,
+    // 광주 20 = 운영 20역). v1의 25(15/8/2)·62(53/7/2)에는 미개통 노선 라벨과
+    // 환승 role 표기가 섞여 있었다. 두 권역 모두 활성 환승역이 0이라 transfer
+    // role은 0이고, 종점 2역(대전 판암·반석, 광주 평동·녹동)만 terminal이다.
+    "easy-subway-daejeon-v3.svg": { ordinary: 20, transfer: 0, terminal: 2 },
+    "easy-subway-gwangju-v3.svg": { ordinary: 18, transfer: 0, terminal: 2 },
+  };
+  for (const [file, counts] of Object.entries(expected)) {
+    const entries = extractOwnerLabels(
+      readFileSync(path.join(sources, file), "utf8"),
+    );
+    const byRole = { ordinary: 0, transfer: 0, terminal: 0 };
+    for (const entry of entries) byRole[entry.role] += 1;
+    assert.deepEqual(byRole, counts, file);
+    for (const entry of entries) {
+      assert.ok(entry.station.length > 0, `${file}: 빈 station 키`);
+      assert.ok(Number.isFinite(entry.x) && Number.isFinite(entry.y), file);
+      assert.ok(entry.fontSizePx > 0, file);
+      assert.ok(["start", "middle", "end"].includes(entry.anchor), file);
+    }
+  }
+});
+
+// #2068 대전·광주 v3 반입 회귀 가드 — 컴파일러를 손댈 때(권역별 canonicalRules
+// 확장·지도 본문 래퍼 흡수·rail-service-marks 반입) 산출물이 정말 그대로인지
+// 커밋된 파일과 직접 대조한다. 라벨 sidecar와 정규화 SVG(=.vec 입력) 양쪽을
+// 본다 — 둘 다 같으면 .vec 바이트도 같다(결정적 컴파일).
+//
+// **5권역 전부**를 돈다. 미변경 3권역(seoul·busan·daegu)은 "건드리지 않았음"을,
+// 변경 2권역(daejeon·gwangju)은 "의도한 값으로 고정됐음"을 각각 고정한다 —
+// 이 PR이 새로 도입한 두 축이 정확히 sidecar의 station 키(권역별
+// OWNER_LABEL_CANONICAL_RULES)와 x/y(MAP_WRAPPER_LAYER_IDS의 대전
+// translate(0 88) 흡수)를 결정하므로, 두 권역을 빼면 그 두 축의 회귀를
+// node 층에서 아무도 못 잡는다(개수·부가 필드만 보던 상태).
+test("5권역 오너 라벨 sidecar·정규화 SVG가 커밋된 산출물과 완전히 동일하다", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const manifest = JSON.parse(
+    readFileSync(
+      path.join(import.meta.dirname, "basemap-build-manifest.json"),
+      "utf8",
+    ),
+  );
+  const sidecar = JSON.parse(
+    readFileSync(
+      path.join(
+        root,
+        "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
+      ),
+      "utf8",
+    ),
+  );
+  for (const id of ["seoul", "busan", "daegu", "daejeon", "gwangju"]) {
+    const map = manifest.maps.find((entry) => entry.id === id);
+    assert.ok(map, `${id}: build manifest 항목 없음`);
+    const source = readFileSync(path.join(root, map.source), "utf8");
+    assert.deepEqual(
+      markLineTerminalBadgeEntries(extractOwnerLabels(source, id), source),
+      sidecar.regions[id],
+      `${id}: 오너 라벨 sidecar가 달라졌습니다(station 키·x/y 포함)`,
+    );
+    assert.equal(
+      createHash("sha256")
+        .update(normalizeSvgForCompile(source))
+        .digest("hex"),
+      map.normalizedSvgSha256,
+      `${id}: 컴파일 입력(정규화 SVG)이 달라졌습니다`,
+    );
+  }
+});
+
+// #2068 대전·광주 v3: canonicalRules 변환이 걸린 4건이 **카탈로그 표기**로
+// 떨어지는지 직접 못 박는다. 위 sidecar deepEqual이 값 전체를 고정하지만, 그
+// 고정값이 왜 그 문자열이어야 하는지(=카탈로그와 매칭되어야 앱이 오너 라벨로
+// 렌더한다)는 드러나지 않는다 — 변환 전 마크업 원문이 키로 남으면 그 역만
+// 조용히 폴백 미니 크기가 되는 #2068 광주송정역 사례라, 원문 표기가 키에
+// 없다는 것까지 함께 고정한다.
+test("대전·광주 sidecar 키는 마크업 원문이 아니라 카탈로그 표기다(canonicalRules 변환 4건)", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const sidecar = JSON.parse(
+    readFileSync(
+      path.join(
+        root,
+        "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
+      ),
+      "utf8",
+    ),
+  );
+  // [권역, 마크업 data-full-official-name, 카탈로그 표기]
+  const conversions = [
+    ["daejeon", "대전역", "대전"],
+    ["gwangju", "김대중컨벤션센터(마륵)", "김대중컨벤션센터"],
+    ["gwangju", "문화전당(구도청)", "문화전당"],
+    ["gwangju", "학동·증심사입구", "학동증심사입구"],
+  ];
+  for (const [id, markup, catalog] of conversions) {
+    const keys = new Set(sidecar.regions[id].map((entry) => entry.station));
+    assert.ok(keys.has(catalog), `${id}: 카탈로그 표기 '${catalog}' 키가 없다`);
+    assert.ok(
+      !keys.has(markup),
+      `${id}: 마크업 원문 '${markup}'이 키로 남았다(권역 규칙 미적용 회귀)`,
+    );
+  }
+  // 나머지 키는 변환 없이 마크업 표기 그대로다(대전 21 / 광주 17).
+  assert.equal(sidecar.regions.daejeon.length, 22);
+  assert.equal(sidecar.regions.gwangju.length, 20);
+});
+
+test("불투명도 0인 요소는 서브트리째 컴파일 입력에서 빠지고, 0이 아닌 불투명도는 남는다", () => {
+  const stripped = stripHiddenElements(
+    '<svg><rect id="grid" opacity="0" fill="url(#p)"/><g id="group" opacity="0.0"><path id="inner" d="M0 0L1 1"/></g>' +
+      '<rect id="faint" opacity="0.52"/><rect id="fill-only" fill-opacity="0"/><rect id="dense" opacity="0.05"/></svg>',
+  );
+  for (const id of ["grid", "group", "inner"]) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+  for (const id of ["faint", "fill-only", "dense"]) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+});
+
+function stripWithoutThrowing(markup) {
+  let stripped;
+  assert.doesNotThrow(() => {
+    stripped = stripHiddenElements(markup);
+  });
+  return stripped;
+}
+
+function assertStripped(markup, { removed = [], kept = [] }) {
+  const stripped = stripWithoutThrowing(markup);
+  for (const id of removed) assert.ok(!stripped.includes(`id="${id}"`), `${id}가 남았다`);
+  for (const id of kept) assert.ok(stripped.includes(`id="${id}"`), `${id}가 빠졌다`);
+  return stripped;
+}
+
+test("style 속성의 opacity:0도 서브트리째 빠지고, 0이 아닌 값과 fill-opacity·stroke-opacity는 남는다", () => {
+  assertStripped(
+    '<svg><rect id="only" style="opacity:0"/><rect id="spaced" style="fill:red; opacity : 0.0 ;stroke:none"/>' +
+      '<g id="group" style="stroke:red;opacity:0 !important"><path id="inner" d="M0 0L1 1"/></g>' +
+      '<rect id="faint" style="opacity:0.3"/><rect id="dense" style="opacity:0.05"/>' +
+      '<rect id="fill-only" style="fill-opacity:0"/><rect id="stroke-only" style="stroke-opacity:0;opacity:.5"/></svg>',
+    { removed: ["only", "spaced", "group", "inner"], kept: ["faint", "dense", "fill-only", "stroke-only"] },
+  );
+});
+
+test("clipPath와 그 자식의 불투명도는 SVG가 무시하므로 지우지 않지만, display:none은 지우고 clipPath 밖의 불투명도 0은 지운다", () => {
+  assertStripped(
+    '<svg><clipPath id="attr" opacity="0"><rect id="attr-child" opacity="0" width="9" height="9"/></clipPath>' +
+      '<clipPath id="styled"><rect id="styled-child" style="opacity:0" width="9" height="9"/>' +
+      '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath>' +
+      '<rect id="outside" opacity="0"/><g id="clipped" clip-path="url(#attr)" style="opacity:0"/></svg>',
+    { removed: ["hidden-child", "outside", "clipped"], kept: ["attr", "attr-child", "styled", "styled-child"] },
+  );
+});
+
+test("style 속성의 display:none도 서브트리째 빠지고, display의 다른 값과 이름이 겹치는 선언은 남는다", () => {
+  assertStripped(
+    '<svg><rect id="only" style="display:none"/><rect id="spaced" style="fill:red; display : none ;stroke:none"/>' +
+      '<g id="group" style="stroke:red;display:none !important"><path id="inner" d="M0 0L1 1"/></g>' +
+      '<rect id="inline" style="display:inline"/><rect id="similar" style="font-display:none"/>' +
+      '<rect id="longer" style="display:nonexistent"/><rect id="attr-value" style="fill:none"/></svg>',
+    { removed: ["only", "spaced", "group", "inner"], kept: ["inline", "similar", "longer", "attr-value"] },
+  );
+});
+
+test("숨겨진 조상 안의 clipPath는 SVG에서 계속 참조할 수 있으므로 정의를 남기고 나머지만 지운다", () => {
+  const stripped = assertStripped(
+    '<svg><defs opacity="0"><clipPath id="in-defs"><rect id="in-defs-child" width="9" height="9"/></clipPath>' +
+      '<rect id="junk-in-defs" width="1" height="1"/></defs>' +
+      '<g id="faded" style="opacity:0"><rect id="junk-in-group" width="1" height="1"/>' +
+      '<g id="deep"><clipPath id="in-group"><path id="in-group-child" d="M0 0L9 9"/></clipPath></g>' +
+      '<clipPath id="second"><rect id="second-child" width="2" height="2"/></clipPath></g>' +
+      '<g id="gone" display="none"><clipPath id="in-display"><rect id="in-display-child" width="3" height="3"/></clipPath></g>' +
+      '<rect id="user" clip-path="url(#in-defs)" width="9" height="9"/></svg>',
+    {
+      removed: ["junk-in-defs", "junk-in-group", "faded", "deep", "gone"],
+      kept: ["in-defs", "in-defs-child", "in-group", "in-group-child", "second", "second-child", "in-display", "in-display-child", "user"],
+    },
+  );
+  assert.ok(stripped.indexOf('id="in-group"') < stripped.indexOf('id="second"'), "clipPath 정의의 문서 순서가 바뀌었다");
+});
+
+test("display:none인 clipPath 정의도 참조할 수 있으므로 자기 display 선언을 벗겨 남기고, 그 자식의 display:none은 오려내기에 기여하지 않아 지운다", () => {
+  const stripped = assertStripped(
+    '<svg><clipPath id="hidden-def" display="none"><rect id="kept-child" width="9" height="9"/>' +
+      '<rect id="hidden-child" display="none" width="9" height="9"/></clipPath></svg>',
+    { removed: ["hidden-child"], kept: ["hidden-def", "kept-child"] },
+  );
+  assert.equal(
+    stripped,
+    '<svg><clipPath id="hidden-def"><rect id="kept-child" width="9" height="9"/></clipPath></svg>',
+  );
+});
+
+test("바깥 clipPath 자식 중 display:none인 요소 안의 중첩 clipPath는 바깥 clipPath에 합쳐지지 않도록 제거되고 컴파일 입력에도 반영된다", () => {
+  const inputSvg =
+    '<svg viewBox="0 0 100 100">' +
+    '<clipPath id="outer">' +
+    '<g display="none"><clipPath id="inner"><rect id="leaked" x="50" y="50" width="20" height="20"/></clipPath></g>' +
+    '<rect id="kept" x="0" y="0" width="10" height="10"/>' +
+    "</clipPath>" +
+    '<rect id="target" clip-path="url(#outer)" width="100" height="100" fill="#ff0000"/>' +
+    "</svg>";
+  const expectedSvg =
+    '<svg viewBox="0 0 100 100">' +
+    '<clipPath id="outer"><rect id="kept" x="0" y="0" width="10" height="10"/></clipPath>' +
+    '<rect id="target" clip-path="url(#outer)" width="100" height="100" fill="#ff0000"/>' +
+    "</svg>";
+  const stripped = assertStripped(inputSvg, {
+    removed: ["inner", "leaked"],
+    kept: ["outer", "kept", "target"],
+  });
+  assert.equal(stripped, expectedSvg);
+  assert.equal(normalizeSvgForCompile(inputSvg), normalizeSvgForCompile(expectedSvg));
+  assert.doesNotThrow(() =>
+    expandAndStrip(
+      '<clipPath id="outer"><g display="none"><clipPath id="inner"><rect id="leaked" class="r" width="10" height="10"/></clipPath></g><rect id="kept" width="10" height="10"/></clipPath>',
+    ),
+  );
+  assert.throws(
+    () =>
+      expandAndStrip(
+        '<clipPath id="outer"><g display="none"><clipPath id="inner"><rect id="leaked" width="10" height="10"/></clipPath></g><rect id="kept" class="r" width="10" height="10"/></clipPath>',
+      ),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("닫는 태그가 없는 숨김 요소는 조용히 넘기지 않고 실패한다", () => {
+  assert.throws(() => stripHiddenElements('<svg><g id="open" opacity="0"><rect/></svg>'), /g의 닫는 태그를 찾지 못했습니다/);
+});
+
+test("짝이 없는 닫는 태그와 닫히지 않은 보이는 요소는 건드리지 않고, 위쪽이 닫히면 함께 닫힌다", () => {
+  assert.equal(stripWithoutThrowing('<svg><rect id="a"/></g><rect id="b"></svg>'), '<svg><rect id="a"/></g><rect id="b"></svg>');
+  assert.equal(stripWithoutThrowing('<svg><g id="a"></g></g></svg>'), '<svg><g id="a"></g></g></svg>');
+  assert.equal(
+    stripWithoutThrowing('<svg><clipPath id="c"><g id="inner"></g><rect id="kept" opacity="0"/></clipPath></svg>'),
+    '<svg><clipPath id="c"><g id="inner"></g><rect id="kept" opacity="0"/></clipPath></svg>',
+  );
+  const stripped = stripWithoutThrowing('<svg><g id="faded" opacity="0"><rect id="inner"></g><rect id="after"/></svg>');
+  assert.equal(stripped, '<svg><rect id="after"/></svg>');
+});
+
+test("자기폐쇄 clipPath도 숨겨진 조상 안에서 남고, 숨겨진 요소의 글자와 자식 요소는 남지 않는다", () => {
+  const stripped = stripWithoutThrowing(
+    '<svg><g opacity="0">글자<clipPath id="empty"/><rect id="gone"/></g>뒤<rect id="shown"/></svg>',
+  );
+  assert.equal(stripped, '<svg><clipPath id="empty"/>뒤<rect id="shown"/></svg>');
+});
+
+// 참조할 수 있는 정의 일곱 가지(SVG 1.1 5.5 symbol, 11.6.2 marker, 13.2.2 linearGradient,
+// 13.2.3 radialGradient, 13.3 pattern, 14.3.5 clipPath, 14.4 mask). 사양은 이 요소들에 'display'가
+// 적용되지 않으며 자신이나 어떤 조상이 display:none이어도 참조할 수 있다고 적는다.
+const REFERENCEABLE_DEFINITIONS = [
+  { name: "clipPath", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "mask", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "pattern", child: '<rect class="r" width="9" height="9"/>' },
+  { name: "marker", child: '<path class="r" d="M0 0L1 1"/>' },
+  { name: "symbol", child: '<path class="r" d="M0 0L1 1"/>' },
+  { name: "linearGradient", child: '<stop class="r" offset="0"/>' },
+  { name: "radialGradient", child: '<stop class="r" offset="0"/>' },
+];
+const UNCLASSIFIED_DECLARATION = /분류되지 않은 CSS 선언/;
+
+// 컴파일 입력이 되는 순서(스타일 전개 뒤 숨김 제거) 그대로 지나간다. 던지거나 선언을 버리는 쪽이
+// 어디서 갈리는지는 두 단계의 합이 정하므로 한 단계씩이 아니라 합을 본다.
+const expandAndStrip = (body, rule = ".r { clip-rule:evenodd; }") =>
+  stripHiddenElements(applyStylesheet(cssSvg(body, rule)));
+
+for (const { name, child } of REFERENCEABLE_DEFINITIONS) {
+  test(`숨겨진 조상 안에서 남은 ${name}의 자식도 분류되지 않은 CSS 선언을 조용히 버리지 않는다`, () => {
+    const hiders = [
+      ['<g display="none">', "</g>"],
+      ['<g style="opacity:0">', "</g>"],
+      ['<defs display="none">', "</defs>"],
+    ];
+    for (const [opening, closing] of hiders) {
+      const body = `${opening}<${name} id="def">${child}</${name}>${closing}`;
+      assert.throws(() => expandAndStrip(body), UNCLASSIFIED_DECLARATION, opening);
+    }
+  });
+
+  test(`숨겨진 조상 안에서 ${name} 정의는 남고 그 밖의 분류되지 않은 선언은 요소째 지워져 던지지 않는다`, () => {
+    const cleanChild = child.replace(' class="r"', "");
+    const out = expandAndStrip(
+      `<g display="none"><${name} id="def">${cleanChild}</${name}>` +
+        '<path id="junk" class="r" d="M0 0L1 1"/></g>',
+    );
+    assert.equal(out, `<svg id="root" viewBox="0 0 100 100"><${name} id="def">${cleanChild}</${name}></svg>`);
+  });
+}
+
+test("보이는 clipPath 자식의 분류되지 않은 CSS 선언은 던진다(숨김 판정 이전의 기준선)", () => {
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><rect class="r" width="9" height="9"/></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("display:none 이름이 겹치는 font-display:none 요소는 남으므로 분류되지 않은 선언이 던진다", () => {
+  assert.throws(
+    () => expandAndStrip('<path class="r" style="font-display:none" d="M0 0L1 1"/>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () => expandAndStrip('<g style="fill:red;font-display:none"><path class="r" d="M0 0L1 1"/></g>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("지워질 요소의 분류되지 않은 CSS 선언은 던지지 않고, 요소와 자손이 함께 빠진다", () => {
+  const hiddenForms = [
+    '<path id="gone" class="r" display="none" d="M0 0L1 1"/>',
+    '<path id="gone" class="r" style="display : none !important" d="M0 0L1 1"/>',
+    '<path id="gone" class="r" opacity="0" d="M0 0L1 1"/>',
+    '<g display="none"><path id="gone" class="r" d="M0 0L1 1"/></g>',
+    '<g style="opacity:0"><g><path id="gone" class="r" d="M0 0L1 1"/></g></g>',
+    '<g display="none"><clipPath id="c"><g display="none"><path id="gone" class="r" d="M0 0L1 1"/></g></clipPath></g>',
+  ];
+  for (const body of hiddenForms) {
+    let out;
+    assert.doesNotThrow(() => {
+      out = expandAndStrip(body);
+    }, body);
+    assert.ok(!out.includes('id="gone"'), `${body} 요소가 남았다`);
+  }
+});
+
+test("clipPath 안에서는 불투명도 0 요소가 남으므로(깊이와 무관) 분류되지 않은 선언이 던지고, 밖에서는 지워져 던지지 않는다", () => {
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><path class="r" opacity="0" d="M0 0L1 1"/></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () => expandAndStrip('<clipPath id="c"><g><path class="r" style="opacity:0" d="M0 0L1 1"/></g></clipPath>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.doesNotThrow(() => expandAndStrip('<g><path class="r" opacity="0" d="M0 0L1 1"/></g>'));
+});
+
+test("클래스가 준 display:none은 그 요소에서 선언을 버려도 던지지 않고, 인라인 display가 이기면 던진다", () => {
+  assert.doesNotThrow(() =>
+    expandAndStrip('<path class="h" d="M0 0L1 1"/>', ".h { display:none; clip-rule:evenodd; }"),
+  );
+  assert.throws(
+    () => expandAndStrip('<path class="h" style="display:inline" d="M0 0L1 1"/>', ".h { display:none; clip-rule:evenodd; }"),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("분류되지 않은 CSS 선언이 인라인 동명 style에 지면 던지지 않고, !important로 인라인 style을 이기면 던진다", () => {
+  const inlineOverridden = expandAndStrip(
+    '<path id="kept" class="r" style="clip-rule:nonzero" d="M0 0L1 1"/>',
+    ".r { clip-rule:evenodd; fill:#123456; }",
+  );
+  assert.equal(
+    inlineOverridden,
+    '<svg id="root" viewBox="0 0 100 100"><path id="kept" class="r" style="clip-rule:nonzero" d="M0 0L1 1" fill="#123456" /></svg>',
+  );
+  assert.throws(
+    () =>
+      expandAndStrip(
+        '<path id="kept" class="r" style="clip-rule:nonzero" d="M0 0L1 1"/>',
+        ".r { clip-rule:evenodd !important; }",
+      ),
+    UNCLASSIFIED_DECLARATION,
+  );
+});
+
+test("인라인 style과 스타일시트 선언은 프레젠테이션 속성 display=none·opacity=0보다 우선한다", () => {
+  const inlineWins = assertStripped(
+    '<svg>' +
+      '<rect id="attr-display-inline-style" display="none" style="display:inline" width="1" height="1"/>' +
+      '<rect id="attr-opacity-inline-style" opacity="0" style="opacity:1" width="1" height="1"/>' +
+      '<rect id="attr-both-inline-style" display="none" opacity="0" style="opacity:0.5;display:block" width="1" height="1"/>' +
+      '<rect id="attr-visible-style-display-none" display="inline" style="display:none" width="1" height="1"/>' +
+      '<rect id="attr-visible-style-opacity-zero" opacity="1" style="opacity:0" width="1" height="1"/>' +
+      "</svg>",
+    {
+      kept: ["attr-display-inline-style", "attr-opacity-inline-style", "attr-both-inline-style"],
+      removed: ["attr-visible-style-display-none", "attr-visible-style-opacity-zero"],
+    },
+  );
+  assert.ok(inlineWins.includes('id="attr-both-inline-style"'));
+
+  // 살아남는 요소는 분류되지 않은 CSS 선언에서도 지워지지 않는 것으로 판정되어야 한다.
+  assert.throws(
+    () => expandAndStrip('<path class="r" display="none" style="display:inline" d="M0 0L1 1"/>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () => expandAndStrip('<path class="r" opacity="0" style="opacity:1" d="M0 0L1 1"/>'),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.throws(
+    () =>
+      expandAndStrip(
+        '<path class="r" display="none" opacity="0" d="M0 0L1 1"/>',
+        ".r { display:inline !important; opacity:1 !important; clip-rule:evenodd; }",
+      ),
+    UNCLASSIFIED_DECLARATION,
+  );
+  assert.doesNotThrow(() =>
+    expandAndStrip('<path class="r" display="inline" style="display:none" d="M0 0L1 1"/>'),
+  );
+  assert.doesNotThrow(() =>
+    expandAndStrip('<path class="r" opacity="1" style="opacity:0" d="M0 0L1 1"/>'),
+  );
+});
+
+test("정의 일곱 가지는 보이는 자리와 숨겨진 조상 아래 모두에서 자기 display:none을 벗겨 컴파일 입력에 남긴다", () => {
+  const wrappers = [
+    ["보이는 루트", "", ""],
+    ["숨긴 defs", '<defs display="none">', "</defs>"],
+    ["숨긴 그룹(display)", '<g display="none">', "</g>"],
+    ["숨긴 그룹(opacity)", '<g style="opacity:0">', "</g>"],
+  ];
+  for (const { name } of REFERENCEABLE_DEFINITIONS) {
+    const expected = normalizeSvgForCompile(
+      `<svg viewBox="0 0 10 10"><${name} id="def"><rect id="inner" width="1" height="1"/></${name}>` +
+        '<rect id="use-site" clip-path="url(#def)" width="2" height="2"/></svg>',
+    );
+    for (const [label, openWrap, closeWrap] of wrappers) {
+      for (const defAttr of [
+        'display="none"',
+        'style="display:none"',
+        'display="none" style="display : none !important"',
+        'class="off"',
+        'class="off-important"',
+      ]) {
+        const actual = normalizeSvgForCompile(
+          `<svg viewBox="0 0 10 10"><style>.off { display:none; } .off-important { display:none !important; }</style>` +
+            `${openWrap}<${name} id="def" ${defAttr}><rect id="inner" width="1" height="1"/></${name}>` +
+            `<rect id="sibling-hidden" display="none" width="1" height="1"/>${closeWrap}` +
+            '<rect id="use-site" clip-path="url(#def)" width="2" height="2"/></svg>',
+        );
+        const normalizedActual = actual.replace(/\sclass="off(?:-important)?"/, "");
+        assert.equal(normalizedActual, expected, `${name} (${label}, ${defAttr})`);
+        assert.doesNotMatch(actual, /display/, `${name} (${label}, ${defAttr})에 display 선언이 남았다`);
+      }
+    }
+    const mixedStyle = stripHiddenElements(
+      `<svg><${name} id="def" display="none" style="fill:red; display : none !important; font-display:none"/></svg>`,
+    );
+    assert.equal(
+      mixedStyle,
+      `<svg><${name} id="def" style="fill:red;font-display:none"/></svg>`,
+      `${name}: display 선언만 제거하고 다른 style 선언은 보존해야 한다`,
+    );
+  }
+});
+
+test("정의 자신의 opacity 0은 컨테이너 요소(pattern·marker·symbol)만 지우고 mask·gradient·clipPath는 사양상 적용되지 않아 남는다", () => {
+  for (const name of ["clipPath", "mask", "linearGradient", "radialGradient"]) {
+    assertStripped(`<svg><${name} id="def" opacity="0"/><${name} id="styled" style="opacity:0"></${name}></svg>`, {
+      kept: ["def", "styled"],
+    });
+  }
+  for (const name of ["pattern", "marker", "symbol"]) {
+    assertStripped(`<svg><${name} id="def" opacity="0"/><${name} id="styled" style="opacity:0"></${name}></svg>`, {
+      removed: ["def", "styled"],
+    });
+  }
+});
+
+test("clipPath 밖의 정의는 자식의 불투명도 0과 display:none을 일반 요소처럼 지운다", () => {
+  for (const name of ["mask", "pattern", "marker", "symbol"]) {
+    assertStripped(
+      `<svg><g display="none"><${name} id="def"><rect id="faint" opacity="0"/><rect id="off" display="none"/>` +
+        `<rect id="shown"/></${name}></g></svg>`,
+      { removed: ["faint", "off"], kept: ["def", "shown"] },
+    );
+  }
+});
+
+test("중첩 defs·symbol·clipPath와 숨김 요소 전반에서 applyStylesheet의 scope와 stripHiddenElements의 제거 판정이 일치한다", () => {
+  const treeBody = [
+    '<defs id="n1" display="none">',
+    '  <rect id="n2" width="1" height="1"/>',
+    '  <symbol id="n3">',
+    '    <path id="n4" d="M0 0L1 1"/>',
+    '    <path id="n5" opacity="0" d="M0 0L1 1"/>',
+    '    <path id="n6" display="none" d="M0 0L1 1"/>',
+    '    <clipPath id="n7" display="none">',
+    '      <rect id="n8" opacity="0" width="1" height="1"/>',
+    '      <rect id="n9" display="none" width="1" height="1"/>',
+    '      <g id="n10" display="none">',
+    '        <path id="n11" opacity="0" d="M0 0L1 1"/>',
+    '        <symbol id="n12">',
+    '          <path id="n13" opacity="0" d="M0 0L1 1"/>',
+    '        </symbol>',
+    '      </g>',
+    '    </clipPath>',
+    '  </symbol>',
+    '  <symbol id="n14" opacity="0">',
+    '    <path id="n15" d="M0 0L1 1"/>',
+    '    <clipPath id="n16" opacity="0">',
+    '      <rect id="n17" opacity="0" width="1" height="1"/>',
+    '    </clipPath>',
+    '  </symbol>',
+    '</defs>',
+    '<g id="n18" opacity="0" style="opacity:1">',
+    '  <rect id="n19" display="none" style="display:inline" width="1" height="1"/>',
+    '  <rect id="n20" display="inline" style="display:none" width="1" height="1"/>',
+    '</g>',
+  ].join("");
+
+  const stripped = expandAndStrip(treeBody, "");
+  const ids = [...treeBody.matchAll(/\bid="(n\d+)"/g)].map((match) => match[1]);
+  assert.equal(ids.length, 20);
+  for (const id of ids) {
+    const keptByStripper = stripped.includes(`id="${id}"`);
+    const probedBody = treeBody.replace(`id="${id}"`, `id="${id}" class="probe"`);
+    let keptByStylesheetScope = false;
+    try {
+      applyStylesheet(cssSvg(probedBody, ".probe { clip-rule:evenodd; }"));
+    } catch (error) {
+      assert.match(String(error), UNCLASSIFIED_DECLARATION);
+      keptByStylesheetScope = true;
+    }
+    assert.equal(
+      keptByStylesheetScope,
+      keptByStripper,
+      `${id}: applyStylesheet scope(${keptByStylesheetScope}) !== stripHiddenElements(${keptByStripper})`,
+    );
+  }
+});
+
+test("장식 영역 판정도 같은 display:none 판정을 쓴다: 숨긴 레이어는 영역에서 빼고 인라인 style 우선순위와 font-display:none을 지킨다", () => {
+  const boundsOf = (attributes) =>
+    decorLayerBoundsOf(
+      `<svg viewBox="0 0 100 100"><g id="legend-layer" ${attributes}><rect x="1" y="2" width="30" height="40"/></g></svg>`,
+    );
+  const box = { minX: 1, minY: 2, maxX: 31, maxY: 42 };
+  assert.deepEqual(boundsOf(""), [box]);
+  assert.deepEqual(boundsOf('style="font-display:none"'), [box]);
+  assert.deepEqual(boundsOf('display="none" style="display:inline"'), [box]);
+  assert.deepEqual(boundsOf('display="none"'), []);
+  assert.deepEqual(boundsOf('display="inline" style="fill:red; display : none !important"'), []);
+});
+
+test("숨김 요소 제거는 입력 크기에 선형인 시간에 끝난다(이차 시간 회귀 방지)", () => {
+  const pairs = 20000;
+  const clips = 2000;
+  let markup = "<svg>";
+  for (let index = 0; index < clips; index += 1) {
+    markup += `<clipPath id="c${index}"><rect width="9" height="9"/></clipPath>`;
+  }
+  for (let index = 0; index < pairs; index += 1) {
+    markup +=
+      `<path id="h${index}" display="none" d="M0 0L1 1"/>` +
+      `<rect id="o${index}" opacity="0" width="1" height="1"/><rect id="v${index}" width="1" height="1"/>`;
+  }
+  markup += "</svg>";
+  const started = performance.now();
+  const stripped = stripWithoutThrowing(markup);
+  const elapsedMs = performance.now() - started;
+  assert.equal(stripped.split('id="v').length - 1, pairs, "보이는 요소는 모두 남아야 한다");
+  assert.equal(stripped.split("<clipPath").length - 1, clips, "clipPath 정의는 모두 남아야 한다");
+  assert.ok(!stripped.includes('id="h') && !stripped.includes('id="o'), "숨김 요소가 남았다");
+  // 선형이면 수십 ms, 이차이면 같은 입력에서 10초를 넘는다(실측). 느린 CI도 넘지 않을 상한이다.
+  assert.ok(elapsedMs < 3000, `${elapsedMs.toFixed(0)}ms`);
+});
+
+test("<style> 추출과 제거는 긴 공백 입력에서도 선형 시간에 끝나고 여는 태그 끝 공백 형태를 보존한다", () => {
+  const longSpace = " ".repeat(120000);
+  const svg =
+    `<svg viewBox="0 0 10 10">${longSpace}<style type="text/css">.c { fill:#999999 !important; }</style>` +
+    `${longSpace}<rect id="self" class="c" width="1" height="1"   />` +
+    `<g id="open" class="c"   ><rect width="1" height="1"/></g></svg>`;
+  const started = performance.now();
+  const rules = parseStylesheet(svg);
+  const out = applyStylesheet(svg);
+  const elapsedMs = performance.now() - started;
+  assert.equal(rules.length, 1);
+  assert.ok(!out.includes("<style"), "<style> 블록이 남았다");
+  assert.match(out, /<rect id="self" class="c" width="1" height="1" style="fill:#999999" \/>/);
+  assert.match(out, /<g id="open" class="c" style="fill:#999999">/);
+  assert.ok(elapsedMs < 1000, `${elapsedMs.toFixed(0)}ms`);
+});
+
+test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const manifest = JSON.parse(
+    readFileSync(
+      path.join(import.meta.dirname, "basemap-build-manifest.json"),
+      "utf8",
+    ),
+  );
+  // #2068 리뷰 M2: compiler.version은 pubspec.lock에 잠긴 **패키지 버전**이어야
+  // 한다(하드코딩 상수와 lock 양쪽을 대조해 드리프트를 막는다). 산출 의미의 개정은
+  // 별도 pipelineRevision이 기록한다.
+  assert.equal(manifest.compiler.version, "1.3.0");
+  const lockedCompilerVersion = readFileSync(
+    path.join(root, "apps/mobile/pubspec.lock"),
+    "utf8",
+  ).match(/vector_graphics_compiler:[\s\S]*?version: "([^"]+)"/)?.[1];
+  assert.equal(
+    manifest.compiler.version,
+    lockedCompilerVersion,
+    "manifest.compiler.version은 pubspec.lock의 vector_graphics_compiler 버전과 같아야 합니다.",
+  );
+  assert.equal(manifest.pipelineRevision, 8);
+  assert.deepEqual(manifest.content, {
+    svgLayer: "owner-svg-map-body-layers",
+    stationSymbols: "owner-svg",
+    labels: { outlined: "outlined-into-vec", text: "text-into-vec" },
+    decoration: "excluded",
+    interaction: "route_map_positions",
+    lineOverlays: "per-line-vec-over-faded-basemap",
+  });
+  assert.equal(manifest.maps.length, 5);
+
+  for (const map of manifest.maps) {
+    const source = readFileSync(path.join(root, map.source));
+    const normalized = normalizeSvgForCompile(source.toString("utf8"));
+    const hash = (value) => createHash("sha256").update(value).digest("hex");
+    assert.equal(map.sourceSvgSha256, hash(source));
+    assert.equal(map.normalizedSvgSha256, hash(normalized));
+    assert.deepEqual(Object.keys(map.variants), BASEMAP_VARIANTS.map(({ id }) => id));
+    for (const [variantId, variant] of Object.entries(map.variants)) {
+      assert.equal(
+        variant.compiledVector,
+        `apps/mobile/assets/datapacks/metro_map_pack/basemap/${basemapVectorFileName(variantId, map.id)}`,
+      );
+      assert.equal(variant.compiledVectorSha256, hash(readFileSync(path.join(root, variant.compiledVector))), `${map.id}/${variantId}`);
+    }
+    // manifest viewBox는 원본 SVG의 viewBox와 **값까지** 같아야 한다. 길이(4)만
+    // 보면 크롭·캔버스 변경 뒤 값이 낡아도 그대로 통과한다(#2603).
+    assert.deepEqual(
+      map.viewBox,
+      viewBoxOf(source.toString("utf8")),
+      `${map.id}: manifest viewBox가 원본 SVG viewBox와 다릅니다.`,
+    );
+    // 원점이 0이 아니면 컴파일러가 그 값을 지오메트리에 굽고 .vec 앵커가
+    // 소스 좌표에서 이탈한다(#2603) — 원점 고정을 계약으로 박는다.
+    assert.deepEqual(
+      map.viewBox.slice(0, 2),
+      [0, 0],
+      `${map.id}: viewBox 원점은 0 0이어야 합니다.`,
+    );
+    // #2068: 프로덕션 경로(main())가 extractOwnerLabels(sourceText, region.id)로
+    // 권역 규칙을 태우므로 계약 테스트도 같은 인자를 넘겨야 한다. regionId를
+    // 빼면 daejeon·gwangju는 data-full-official-name 원문이 키가 돼(대전역·
+    // 학동·증심사입구·문화전당(구도청)·김대중컨벤션센터(마륵)) 프로덕션과 다른
+    // 코드 경로를 검증하게 된다 — 개수만 비교해 통과하던 사각지대.
+    const ownerLabels = extractOwnerLabels(source.toString("utf8"), map.id);
+    assert.equal(map.ownerLabelCount, ownerLabels.length);
+  }
+
+  const sidecarPath = path.join(root, manifest.ownerLabelsSidecar.path);
+  const sidecar = readFileSync(sidecarPath, "utf8");
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  assert.equal(manifest.ownerLabelsSidecar.sha256, hash(sidecar));
+  const parsedSidecar = JSON.parse(sidecar);
+  assert.equal(parsedSidecar.artifactKind, "route-map-basemap-owner-labels");
+  assert.deepEqual(
+    Object.keys(parsedSidecar.regions).sort(),
+    ["busan", "daegu", "daejeon", "gwangju", "seoul"],
+  );
+  for (const map of manifest.maps) {
+    assert.equal(
+      parsedSidecar.regions[map.id].length,
+      map.ownerLabelCount,
+      map.id,
+    );
+  }
+});
+
+test("markLineTerminalBadgeEntries: line-terminal-badge가 없으면 원본을 그대로 반환한다", () => {
+  const entries = [
+    { station: "평동", role: "terminal", x: 0, y: 0, anchor: "start", fontSizePx: 10 },
+  ];
+  const result = markLineTerminalBadgeEntries(entries, "<svg></svg>");
+  assert.equal(result, entries); // .map 없이 원본 참조 그대로.
+});
+
+test("markLineTerminalBadgeEntries: 있으면 terminal role 엔트리에만 표시하고 나머지는 불변", () => {
+  const entries = [
+    { station: "평동", role: "terminal", x: 0, y: 0, anchor: "start", fontSizePx: 10 },
+    { station: "녹동", role: "terminal", x: 1, y: 1, anchor: "start", fontSizePx: 10 },
+    { station: "도산", role: "ordinary", x: 2, y: 2, anchor: "start", fontSizePx: 10 },
+  ];
+  const svgText = '<g data-role="line-terminal-badge"><circle /></g>';
+  const result = markLineTerminalBadgeEntries(entries, svgText);
+  assert.equal(result[0].hasLineTerminalBadge, true);
+  assert.equal(result[1].hasLineTerminalBadge, true);
+  assert.equal(result[2].hasLineTerminalBadge, undefined);
+  // 원본 배열/객체는 변경하지 않는다(순수 함수).
+  assert.equal(entries[0].hasLineTerminalBadge, undefined);
+});
+
+test("labels.json sidecar: 5권역 모두 terminal 엔트리에 hasLineTerminalBadge, 비-terminal은 플래그 없음", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const sidecarPath = path.join(
+    root,
+    "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
+  );
+  const sidecar = JSON.parse(readFileSync(sidecarPath, "utf8"));
+  // 부산(#2068): 6개 노선의 비환승 종점 7곳에 line-terminal-badge를 그려
+  // 앱 배지 억제를 켠다. markLineTerminalBadgeEntries는 권역 단위 감지라 terminal
+  // role 엔트리 전부에 플래그가 붙고, 부산 terminal 라벨 7건은 모두 그 종점이다.
+  // 대구(#2068): 1·2·3호선(원+숫자)·대경선(캡슐+대경) 종점 8곳에 동일 배지를 그려
+  // 같은 억제를 켠다 — terminal 라벨 8건 전부에 플래그가 붙는다.
+  // 수도권(#2068): 24개 노선의 비환승 종점 30곳(대전 스타일 원+숫자/캡슐 배지)에
+  // line-terminal-badge를 그려 같은 억제를 켠다 — terminal 라벨 30건 전부에 플래그가
+  // 붙는다. 환승 종점은 기존 환승 캡슐이 노선을 표시하므로 배지를 두지 않는다.
+  for (const regionId of ["gwangju", "daejeon", "busan", "daegu", "seoul"]) {
+    const terminals = sidecar.regions[regionId].filter(
+      (entry) => entry.role === "terminal",
+    );
+    assert.ok(terminals.length > 0, regionId);
+    for (const entry of terminals) {
+      assert.equal(entry.hasLineTerminalBadge, true, `${regionId}:${entry.station}`);
+    }
+    // 비-terminal(ordinary/transfer) 엔트리에는 플래그가 붙지 않는다.
+    for (const entry of sidecar.regions[regionId]) {
+      if (entry.role !== "terminal") {
+        assert.equal(
+          entry.hasLineTerminalBadge,
+          undefined,
+          `${regionId}:${entry.station}`,
+        );
+      }
+    }
+  }
+});
+
+// #2068 대전·광주 마감: 재설계된 두 권역 SVG는 부산·대구형 service-tag 마크업
+// (class="service-tag"·data-station) 대신 rail-transfer-layer 안 rail chip
+// (data-services·data-station-name)으로 KTX·SRT 표장을 담는다. 전용 인식기가
+// chip <g>만(내부 로고 서브그룹 제외) 잡아 절대 좌표 bbox 장애물을 낸다.
+test("extractRailTransferChipObstacles: rail-transfer-layer chip을 transform 합성으로 잡는다", () => {
+  const svg = `<svg viewBox="0 0 2400 1800">
+    <g id="rail-transfer-layer">
+      <g id="chip-a" data-station-name="대전역(혁신도시)" data-services="KTX,SRT"
+         transform="translate(-10,-20)">
+        <title>207 대전역 KTX·SRT 환승</title>
+        <g transform="matrix(0.05,0,0,0.05,1000,600)" data-logo="KTX">
+          <path d="M 0 0 L 100 0 L 100 200 L 0 200 Z" />
+        </g>
+      </g>
+      <rect x="500" y="500" width="58" height="20" />
+      <text x="520" y="510">경전선</text>
+    </g>
+  </svg>`;
+  const obstacles = extractRailTransferChipObstacles(svg);
+  assert.equal(obstacles.length, 1); // rect·text 캡션과 로고 서브그룹은 chip 아님.
+  const [chip] = obstacles;
+  assert.equal(chip.station, "대전역(혁신도시)");
+  // 로컬 path [0,0]-[100,200]에 matrix(0.05) → [0,0]-[5,10], +translate(1000,600)
+  // → [1000,600]-[1005,610], chip translate(-10,-20) → [990,580]-[995,590].
+  assert.equal(chip.x, 992.5);
+  assert.equal(chip.y, 585);
+  assert.equal(chip.halfWidth, 2.5);
+  assert.equal(chip.halfHeight, 5);
+});
+
+test("extractRailTransferChipObstacles: rail-transfer-layer가 없으면 빈 배열", () => {
+  assert.deepEqual(
+    extractRailTransferChipObstacles('<svg><g id="route-lines-layer"></g></svg>'),
+    [],
+  );
+});
+
+// #2068 ITX-청춘 chip 반입 대비 파서 강화(정본). 기존 `/-?\d+\.?\d*/g`(정수부
+// 우선)는 벡터 최적화 export가 흔히 내는 "선행 0 생략 + 연접 소수"(예:
+// ".191.132" = 0.191과 0.132 두 숫자)를 "191.132" 하나로 오병합했다 —
+// extract-svg-geometry.mjs의 pathEndpointVertices가 이미 쓰는 순서(부호 →
+// 선택 정수부 → 선택 소수부 → 필수 최소 1자리)로 교체해 정확히 분리한다.
+test("SVG_NUMBER_TOKEN_RE(parseSvgNumbers): 선행 0 생략·연접 소수를 개별 숫자로 정확히 나눈다", () => {
+  assert.deepEqual(parseSvgNumbers(".191.132"), [0.191, 0.132]);
+  assert.deepEqual(parseSvgNumbers("12.34.56"), [12.34, 0.56]);
+  assert.deepEqual(parseSvgNumbers("-.58.58"), [-0.58, 0.58]);
+  assert.deepEqual(parseSvgNumbers("123 -45.6 .78"), [123, -45.6, 0.78]);
+});
+
+// collectShapeBounds(내부)는 커맨드 인식 파서(visitPathCoordinates)로 절대좌표를
+// 정확히 추적한다 — A(호, rx ry x축회전 large-arc sweep x y 7개 인자 중 마지막
+// 2개만 좌표)의 비좌표 인자를 좌표로 오인하지 않고, 상대좌표(소문자) 명령의
+// 누적도 정확히 처리해야 한다(ITX-청춘 로고가 이 두 특성을 모두 씀 — 실측:
+// 나이브 파서로는 로고 자체 bbox가 viewBox 300 대비 590으로 부풀었다).
+test("extractServiceTagObstacles: A(호)·상대좌표 혼용 path도 정확한 bbox를 낸다(커맨드 인식 파서)", () => {
+  const svg = `<svg viewBox="0 0 2400 1800">
+    <g id="service-tags-layer" class="render-layer service-tag-layer">
+      <g id="service-tag-a" class="service-tag" data-station="테스트역" data-services="ITX">
+        <title>테스트역 · ITX</title>
+        <g transform="matrix(1,0,0,1,0,0)" data-logo="ITX">
+          <path d="M10 10 l 10 0 a 5 5 0 0 1 5 5 l 0 10 h -5 v -5 z" />
+        </g>
+      </g>
+    </g>
+  </svg>`;
+  const [obstacle] = extractServiceTagObstacles(svg);
+  // 수동 절대좌표 추적: M(10,10) L(20,10) A..→(25,15) L(25,25) H(20,25) V(20,20) Z.
+  // bbox: x[10,25] y[10,25] (제어점 없는 A/L/H/V만 있어 endpoint == bbox 극값).
+  assert.equal(obstacle.x, (10 + 25) / 2);
+  assert.equal(obstacle.y, (10 + 25) / 2);
+  assert.equal(obstacle.halfWidth, (25 - 10) / 2);
+  assert.equal(obstacle.halfHeight, (25 - 10) / 2);
+});
+
+// #2068 수도권 표장 마감: obstacle 좌표계 정합. main-map-scaled-layer(seoul형
+// scale(k)+translate)가 있으면 service-tag·rail-transfer chip이 그 안에 로컬
+// (pre-scale) 좌표로 쓰이므로, extractOwnerLabels와 같은 공식(로컬×mapScale+
+// mapTranslate)으로 최종 좌표계로 변환돼야 라벨 sidecar·route_map_positions와
+// 정합한다(오버레이 게이트가 그 좌표계로 obstacle을 비교하기 때문).
+test("extractServiceTagObstacles: main-map-scaled-layer 안 chip은 mapScale·mapTranslate를 적용해 최종 좌표로 낸다", () => {
+  const svg = `<svg viewBox="0 0 2400 1800">
+    <g id="main-map-scaled-layer" transform="translate(70 138) scale(0.455)">
+      <g id="service-tags-layer" class="render-layer service-tag-layer">
+        <g id="service-tag-a" class="service-tag" data-station="서울역" data-services="KTX"
+           transform="translate(1000,600)">
+          <title>서울역 · KTX</title>
+          <g transform="matrix(1,0,0,1,0,0)" data-logo="KTX">
+            <path d="M 0 0 L 100 0 L 100 200 L 0 200 Z" />
+          </g>
+        </g>
+      </g>
+    </g>
+  </svg>`;
+  const [obstacle] = extractServiceTagObstacles(svg);
+  // 로컬 bbox center=(1050,700), halfW=50, halfH=100.
+  // 최종 = translate(70,138) + scale(0.455)*로컬.
+  assert.equal(obstacle.x, 70 + 1050 * 0.455);
+  assert.equal(obstacle.y, 138 + 700 * 0.455);
+  assert.equal(obstacle.halfWidth, 50 * 0.455);
+  assert.equal(obstacle.halfHeight, 100 * 0.455);
+});
+
+test("extractServiceTagObstacles: 표장 레이어 자신의 transform도 체인에 합성한다", () => {
+  // 레이어 <g>와 표장 <g>가 각자 transform을 가지면 SVG 렌더는 둘을 합성한다
+  // (레이어가 바깥). 레이어 transform을 빠뜨리면 obstacle이 실제 렌더 위치에서
+  // 어긋난다(#2068 대구 동대구역 KTX·SRT 유령 겹침의 원인).
+  const svgText = `
+    <svg>
+      <g id="service-tags-layer" transform="matrix(2,0,0,3,100,200)">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"
+           transform="translate(10 20)">
+          <rect x="0" y="0" width="5" height="7" />
+        </g>
+      </g>
+    </svg>`;
+  const [obstacle] = extractServiceTagObstacles(svgText);
+  // 로컬 rect [0,5]×[0,7] → tag translate → 레이어 matrix.
+  // x: 2*(0+10)+100 = 120 … 2*(5+10)+100 = 130 → center 125 halfWidth 5
+  // y: 3*(0+20)+200 = 260 … 3*(7+20)+200 = 281 → center 270.5 halfHeight 10.5
+  assert.equal(obstacle.station, "테스트역");
+  assert.equal(obstacle.x, 125);
+  assert.equal(obstacle.y, 270.5);
+  assert.equal(obstacle.halfWidth, 5);
+  assert.equal(obstacle.halfHeight, 10.5);
+});
+
+// #2068 리뷰 지적(2026-07-25): 자기폐쇄 `<g …/>`를 depth로 세던 결함이 표장
+// 추출기 두 곳에 남아 있었다 — 균형이 깨지면 조용히 빈 배열이 되어 표장 회피가
+// 통째로 사라져도 게이트가 green이었다. 아래 4건이 그 시나리오를 고정한다.
+test("extractServiceTagObstacles: 앞선 자기폐쇄 빈 레이어가 표장 레이어 인식을 깨뜨리지 않는다", () => {
+  const svgText = `
+    <svg>
+      <g id="terminal-route-badges-layer" class="render-layer" />
+      <g id="service-tags-layer">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  const obstacles = extractServiceTagObstacles(svgText);
+  assert.equal(obstacles.length, 1);
+  assert.equal(obstacles[0].station, "테스트역");
+  assert.equal(obstacles[0].halfWidth, 5);
+  assert.equal(obstacles[0].halfHeight, 2);
+});
+
+test("extractServiceTagObstacles·extractRailTransferChipObstacles: 레이어 안의 자기폐쇄 <g/>가 표장을 잃게 하지 않는다", () => {
+  const serviceSvg = `
+    <svg>
+      <g id="service-tags-layer">
+        <g id="spacer" data-note="빈 자리표시" />
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+      <g id="station-name-labels-layer"><text>테스트역</text></g>
+    </svg>`;
+  const serviceObstacles = extractServiceTagObstacles(serviceSvg);
+  assert.equal(serviceObstacles.length, 1);
+  assert.equal(serviceObstacles[0].station, "테스트역");
+
+  const railSvg = `
+    <svg>
+      <g id="rail-transfer-layer">
+        <g id="spacer" data-note="빈 자리표시" />
+        <g id="chip-1" data-services="KTX" data-station-name="테스트역">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  const railObstacles = extractRailTransferChipObstacles(railSvg);
+  assert.equal(railObstacles.length, 1);
+  assert.equal(railObstacles[0].station, "테스트역");
+});
+
+// #2068 리뷰 후속: 레이어 한 단계 아래 "블록 스캐너"(service-tag 블록·rail chip
+// 블록·collectShapeBoundsRecursive의 중첩 <g>)에도 같은 규칙을 적용했다. 후속
+// PR이 반입할 수도권 SVG에 자기폐쇄 <g/>가 다수라 실제로 밟히는 경로다.
+test("표장 블록 안의 자기폐쇄 <g/>가 obstacle을 버리거나 bbox를 부풀리지 않는다", () => {
+  const serviceSvg = `
+    <svg>
+      <g id="service-tags-layer">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
+          <g id="spacer" data-note="빈 자리표시" />
+          <g id="logo" transform="translate(100 200)">
+            <rect x="0" y="0" width="10" height="4" />
+          </g>
+        </g>
+        <g id="service-tag-ktx-2" class="service-tag" data-station="다음역">
+          <rect x="500" y="500" width="10" height="10" />
+        </g>
+      </g>
+    </svg>`;
+  const obstacles = extractServiceTagObstacles(serviceSvg);
+  // 자기폐쇄 <g/>를 depth로 세면 첫 블록이 다음 형제까지 삼켜 bbox가 부풀거나
+  // 균형을 못 찾아 통째로 버려진다. 두 표장이 각자 정확한 bbox로 나와야 한다.
+  assert.equal(obstacles.length, 2);
+  assert.deepEqual(obstacles[0], {
+    station: "테스트역",
+    x: 105,
+    y: 202,
+    halfWidth: 5,
+    halfHeight: 2,
+  });
+  assert.deepEqual(obstacles[1], {
+    station: "다음역",
+    x: 505,
+    y: 505,
+    halfWidth: 5,
+    halfHeight: 5,
+  });
+
+  const railSvg = `
+    <svg>
+      <g id="rail-transfer-layer">
+        <g id="chip-1" data-services="KTX" data-station-name="테스트역">
+          <g id="spacer" data-note="빈 자리표시" />
+          <g id="logo" transform="translate(100 200)">
+            <rect x="0" y="0" width="10" height="4" />
+          </g>
+        </g>
+      </g>
+    </svg>`;
+  const railObstacles = extractRailTransferChipObstacles(railSvg);
+  assert.equal(railObstacles.length, 1);
+  assert.deepEqual(railObstacles[0], {
+    station: "테스트역",
+    x: 105,
+    y: 202,
+    halfWidth: 5,
+    halfHeight: 2,
+  });
+});
+
+// 블록·중첩 층위의 fail-closed 가드는 공개 진입점으로 도달할 수 없다 — 레이어
+// 슬라이스가 균형을 이루면 그 안은 well-nested가 보장돼, 블록이 닫히지 않은
+// 입력은 레이어 스캔이 먼저 잡는다. 아래 첫 테스트가 그 사실을 실측으로 고정하고
+// (어떤 배치든 예외가 레이어 층위에서 난다), 둘째 테스트가 블록·중첩 층위 가드를
+// matchingGroupEnd 직접 호출로 덮는다.
+test("블록 미종료 입력은 어떤 배치든 레이어 층위 fail-closed가 먼저 잡는다", () => {
+  const layerMessage = /service-tags-layer의 닫는 태그를 찾지 못했습니다/;
+  // 블록만 닫히지 않은 형태(레이어 닫는 태그를 블록이 흡수한다).
+  assert.throws(
+    () =>
+      extractServiceTagObstacles(
+        '<svg><g id="service-tags-layer"><g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"><rect x="0" y="0" width="10" height="4" /></g>',
+      ),
+    layerMessage,
+  );
+  // 블록 안 중첩 <g> 2개가 닫히지 않은 형태.
+  assert.throws(
+    () =>
+      extractServiceTagObstacles(
+        '<svg><g id="service-tags-layer"><g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"><g id="a"><g id="b"></g></g></g></svg>',
+      ),
+    layerMessage,
+  );
+  // 잉여 </g>가 블록 앞에 온 형태 — 레이어 슬라이스가 블록 전에 끝나 표장 0건.
+  assert.deepEqual(
+    extractServiceTagObstacles(
+      '<svg><g id="service-tags-layer"></g><g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"><rect x="0" y="0" width="10" height="4" /></g></svg>',
+    ),
+    [],
+  );
+});
+
+test("matchingGroupEnd: 블록·중첩 층위 가드 — 자기폐쇄는 태그 끝, 미종료는 실패한다", () => {
+  // 자기폐쇄 여는 태그는 그 태그 하나가 곧 빈 그룹이다.
+  const selfClosing = '<g id="spacer" data-note="빈 자리표시" /><rect />';
+  assert.equal(
+    matchingGroupEnd(selfClosing, 0, "블록"),
+    '<g id="spacer" data-note="빈 자리표시" />'.length,
+  );
+
+  // 내부 자기폐쇄 <g/>는 depth를 올리지 않는다 — 형제까지 삼키지 않는다.
+  const withInnerSelfClosing =
+    '<g id="a"><g id="spacer" /><rect /></g><g id="b"></g>';
+  assert.equal(
+    matchingGroupEnd(withInnerSelfClosing, 0, "블록"),
+    withInnerSelfClosing.indexOf("</g>") + "</g>".length,
+  );
+
+  // 닫는 태그가 없으면 부분 슬라이스로 넘기지 않고 실패한다(fail-closed).
+  assert.throws(
+    () =>
+      matchingGroupEnd(
+        '<g id="service-tag-ktx-1"><rect />',
+        0,
+        "service-tag 블록(테스트역)",
+      ),
+    /service-tag 블록\(테스트역\)의 닫는 태그를 찾지 못했습니다/,
+  );
+  // 중첩이 하나 더 열려 균형이 모자란 경우도 동일하다.
+  assert.throws(
+    () => matchingGroupEnd('<g id="a"><g id="b"></g>', 0, "중첩 <g>(a)"),
+    /중첩 <g>\(a\)의 닫는 태그를 찾지 못했습니다/,
+  );
+  // 여는 <g> 태그로 시작하지 않으면 해석 실패로 알린다.
+  assert.throws(
+    () => matchingGroupEnd("<rect />", 0, "블록"),
+    /블록의 여는 <g> 태그를 해석하지 못했습니다/,
+  );
+});
+
+test("extractServiceTagObstacles: service-tag <g>의 id가 첫 속성이 아니어도 인식한다(속성 순서 무관)", () => {
+  const svgText = `
+    <svg>
+      <g id="service-tags-layer">
+        <g class="service-tag" transform="translate(10 20)" data-station="테스트역" id="service-tag-ktx-9">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  const obstacles = extractServiceTagObstacles(svgText);
+  assert.equal(obstacles.length, 1);
+  assert.equal(obstacles[0].station, "테스트역");
+  assert.deepEqual(obstacles[0], {
+    station: "테스트역",
+    x: 15,
+    y: 22,
+    halfWidth: 5,
+    halfHeight: 2,
+  });
+});
+
+// #2068 SVG 충실도(2026-07-26): rotate는 "미지원 → throw"가 아니라 정확한 회전
+// 행렬로 지원한다 — 오너 부산 v3 재수정본이 환승 심벌·종점 배지에 rotate(±90,cx,cy)를
+// 쓰기 때문이다. skew 등 나머지는 여전히 fail-closed(조용한 항등 무시 금지).
+test("parseTransformChain: rotate(a,cx,cy)를 정확히 합성한다(항등 무시도 실패도 아님)", () => {
+  const rotatedLayer = `
+    <svg>
+      <g id="service-tags-layer" transform="rotate(-90,100,200)">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
+          <rect x="100" y="200" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  // 회전 중심 (100,200) 기준 -90°: 로컬 [100,110]×[200,204] →
+  // (x,y) → (cx + (y-cy), cy - (x-cx)) = [100,104]×[190,200].
+  const [rotated] = extractServiceTagObstacles(rotatedLayer);
+  assert.equal(rotated.station, "테스트역");
+  assert.ok(Math.abs(rotated.x - 102) < 1e-6, `x=${rotated.x}`);
+  assert.ok(Math.abs(rotated.y - 195) < 1e-6, `y=${rotated.y}`);
+  assert.ok(Math.abs(rotated.halfWidth - 2) < 1e-6);
+  assert.ok(Math.abs(rotated.halfHeight - 5) < 1e-6);
+});
+
+test("parseTransformChain: 여전히 미지원인 transform(skew)은 항등 무시가 아니라 실패한다", () => {
+  const skewedChip = `
+    <svg>
+      <g id="rail-transfer-layer">
+        <g id="chip-1" data-services="KTX" data-station-name="테스트역" transform="skewX(10)">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  assert.throws(
+    () => extractRailTransferChipObstacles(skewedChip),
+    /지원하지 않는 transform 함수 skewX\(\.\.\.\)/,
+  );
+
+  // 지원 함수 조합은 그대로 통과한다(회귀 가드).
+  const supported = `
+    <svg>
+      <g id="service-tags-layer" transform="matrix(2,0,0,3,100,200)">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역" transform="translate(10 20) scale(2)">
+          <rect x="0" y="0" width="5" height="1" />
+        </g>
+      </g>
+    </svg>`;
+  const [obstacle] = extractServiceTagObstacles(supported);
+  assert.equal(obstacle.station, "테스트역");
+  assert.equal(obstacle.halfWidth, 10); // 5 × scale 2 × matrix a 2 → 폭 20.
+  assert.equal(obstacle.halfHeight, 3); // 1 × 2 × 3 → 높이 6.
+});
+
+test("extractServiceTagObstacles·extractRailTransferChipObstacles: 닫히지 않은 표장 레이어는 빈 배열이 아니라 실패한다(fail-closed)", () => {
+  const serviceSvg =
+    '<svg><g id="service-tags-layer"><g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"><rect x="0" y="0" width="10" height="4" /></g></svg>';
+  assert.throws(
+    () => extractServiceTagObstacles(serviceSvg),
+    /service-tags-layer의 닫는 태그를 찾지 못했습니다/,
+  );
+  const railSvg =
+    '<svg><g id="rail-transfer-layer"><g id="chip-1" data-services="KTX"><rect x="0" y="0" width="10" height="4" /></g></svg>';
+  assert.throws(
+    () => extractRailTransferChipObstacles(railSvg),
+    /rail-transfer-layer의 닫는 태그를 찾지 못했습니다/,
+  );
+});
+
+test("extractServiceTagObstacles: 자기폐쇄로 마감된 빈 표장 레이어는 빈 목록이다(부산 v3 실 SVG)", () => {
+  const svgText = readFileSync(
+    path.join(
+      import.meta.dirname,
+      "route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+    ),
+    "utf8",
+  );
+  assert.match(svgText, /<g\b[^>]*\bid="service-tags-layer"[^>]*?\/>/);
+  assert.deepEqual(extractServiceTagObstacles(svgText), []);
+});
+
+test("extractServiceTagObstacles: 대구 동대구역 KTX·SRT 표장 bbox가 Chrome 실측과 일치한다", () => {
+  // Chrome(headless, getBBox/getScreenCTM) 실측 — root viewBox 사용자 좌표.
+  // 이 값은 오너 도식이 실제로 렌더하는 위치이며, 동대구역 환승 라벨 실측
+  // bbox(minX=2344.771)와 4.19px 떨어져 있어 겹치지 않는다.
+  const svgText = readFileSync(
+    path.join(
+      import.meta.dirname,
+      "route-map-defs/svg-sources/easy-subway-daegu-v3.svg",
+    ),
+    "utf8",
+  );
+  const [obstacle] = extractServiceTagObstacles(svgText);
+  assert.equal(obstacle.station, "동대구역");
+  const measured = {
+    minX: 2277.7148,
+    minY: 839.9228,
+    maxX: 2340.5828,
+    maxY: 866.0353,
+  };
+  const actual = {
+    minX: obstacle.x - obstacle.halfWidth,
+    minY: obstacle.y - obstacle.halfHeight,
+    maxX: obstacle.x + obstacle.halfWidth,
+    maxY: obstacle.y + obstacle.halfHeight,
+  };
+  for (const edge of ["minX", "minY", "maxX", "maxY"]) {
+    assert.ok(
+      Math.abs(actual[edge] - measured[edge]) < 0.01,
+      `${edge}: 산정 ${actual[edge]} vs Chrome 실측 ${measured[edge]}`,
+    );
+  }
+  // 표장 오른쪽 끝이 라벨 왼쪽 끝(실측 2344.771)보다 왼쪽 — 겹침 없음.
+  assert.ok(actual.maxX < 2344.771);
+});
+
+test("extractServiceTagObstacles·extractRailTransferChipObstacles: 비수도권 4권역 obstacle 좌표가 커밋된 sidecar와 일치한다(회귀 가드)", () => {
+  const svgSourceDir = path.join(
+    import.meta.dirname,
+    "route-map-defs/svg-sources",
+  );
+  for (const [id, file] of [
+    ["busan", "easy-subway-busan-v3.svg"],
+    ["daegu", "easy-subway-daegu-v3.svg"],
+    ["daejeon", "easy-subway-daejeon-v3.svg"],
+    ["gwangju", "easy-subway-gwangju-v3.svg"],
+  ]) {
+    const svgText = readFileSync(path.join(svgSourceDir, file), "utf8");
+    assert.doesNotMatch(
+      svgText,
+      /<g\b[^>]*\bid="main-map-scaled-layer"[^>]*\btransform=/,
+      `${id}: main-map-scaled-layer 부재 가정이 깨졌습니다(mapScale=1 전제 무효화)`,
+    );
+    const obstacles = [
+      ...extractServiceTagObstacles(svgText),
+      ...extractRailTransferChipObstacles(svgText),
+    ];
+    const sidecar = JSON.parse(
+      readFileSync(
+        path.join(
+          import.meta.dirname,
+          "../../apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
+        ),
+        "utf8",
+      ),
+    );
+    assert.deepEqual(
+      obstacles,
+      sidecar.serviceTagObstacles[id],
+      `${id}: mapScale 리팩토링 전후 obstacle 좌표가 달라졌습니다`,
+    );
+  }
+});
+
+// #2068 오너 v4 회귀 가드 — 종점 칩 글자 크기 이중 스케일.
+//
+// 렌더러가 칩 텍스트에 적용하는 실효 배율은 (칩 그룹 스케일 s × 맵 레이어 스케일
+// k)다. 따라서 .vec에 적히는 font-size는 로컬 원값 L이어야 최종 렌더 em이 오너
+// 의도값 L×s×k가 된다. v2는 s×k≈1(2.198×0.455)이라 어떤 계수를 써도 티가 안
+// 났지만, v4(matrix 2.7475, s×k=1.25)에서 `×s` 계수가 칩 숫자를 1.25배 키우고
+// 캡슐 중심 위로 띄웠다(badge center 게이트 실측 ratio -0.19).
+// #2068 리뷰 A6: 칩 폰트 면제 표식이 <text>에만 붙으면, 소비 측
+// scaleStyleFontSize가 <text|tspan> 양쪽을 대상으로 잡으므로 칩 내부 tspan의
+// style font-size만 ×k돼 한 칩 안에 두 배율이 섞인다(v4 실측 해당 tspan 0건 —
+// 잠복 결함). 표식이 tspan에도 붙어 로컬 원값이 유지되는지 고정한다.
+
+// ── 동치 변환 계약(#2068 오너 최종 지시 "100% 동일하게", 2026-07-26) ───────────
+//
+// 전량 반입 계약에서 파이프라인에 남는 단계는 **컴파일러가 직접 해석하지 못하는
+// SVG 의미를 마크업에 펼치는 동치 변환**뿐이다. 아래 테스트는 각 단계가 실제로
+// 의미를 보존하는지(그리고 보존할 수 없으면 조용히 넘기지 않고 던지는지) 고정한다.
+
+const cssSvg = (body, style) =>
+  `<svg id="root" viewBox="0 0 100 100"><style type="text/css">${style}</style>${body}</svg>`;
+
+test("CSS 캐스케이드: 자손 결합자·id·속성 선택자 규칙이 요소에 전개된다", () => {
+  const out = applyStylesheet(
+    cssSvg(
+      '<g id="labels"><text x="1" y="2" data-role="a">가</text></g>',
+      "#labels text { fill:#111111; } text[data-role=&quot;a&quot;] { font-weight:700; }",
+    ),
+  );
+  assert.match(out, /<text[^>]*fill="#111111"/);
+  assert.match(out, /<text[^>]*font-weight="700"/);
+});
+
+test("CSS 캐스케이드: 특이도가 높은 규칙이 이긴다(소스 순서보다 우선)", () => {
+  const out = applyStylesheet(
+    cssSvg('<text class="c" id="t" x="0" y="0">가</text>', "#t { fill:#AAAAAA; } .c { fill:#BBBBBB; }"),
+  );
+  assert.match(out, /<text[^>]*fill="#AAAAAA"/);
+});
+
+test("CSS 캐스케이드: 같은 특이도면 뒤에 선언된 규칙이 이긴다", () => {
+  const out = applyStylesheet(
+    cssSvg('<text class="c" x="0" y="0">가</text>', ".c { fill:#AAAAAA; } .c { fill:#BBBBBB; }"),
+  );
+  assert.match(out, /<text[^>]*fill="#BBBBBB"/);
+});
+
+test("CSS 캐스케이드: CSS는 presentation attribute를 이기고, 인라인 style은 CSS를 이긴다", () => {
+  const out = applyStylesheet(
+    cssSvg(
+      '<text class="c" fill="#111111" x="0" y="0">가</text>' +
+        '<text class="c" style="fill:#222222" x="0" y="0">나</text>',
+      ".c { fill:#999999; }",
+    ),
+  );
+  // presentation attribute는 CSS에 진다.
+  assert.match(out, /<text class="c" fill="#999999"/);
+  // 인라인 style은 일반 CSS를 이긴다 → 속성이 붙지 않는다.
+  assert.doesNotMatch(out, /<text class="c" style="fill:#222222"[^>]*fill="#999999"/);
+});
+
+test("CSS 캐스케이드: !important는 인라인 style도 이긴다", () => {
+  const out = applyStylesheet(
+    cssSvg('<text class="c" style="fill:#222222" x="0" y="0">가</text>', ".c { fill:#999999 !important; }"),
+  );
+  assert.match(out, /style="fill:#999999"/);
+});
+
+test("CSS 캐스케이드: :not()과 자식 결합자를 사양대로 해석한다", () => {
+  const out = applyStylesheet(
+    cssSvg(
+      '<g id="w"><circle class="keep" r="1" /><circle class="skip" r="1" /></g>',
+      "#w > circle:not(.skip) { fill:#123456; }",
+    ),
+  );
+  assert.match(out, /<circle class="keep"[^>]*fill="#123456"/);
+  assert.doesNotMatch(out, /<circle class="skip"[^>]*fill="#123456"/);
+});
+
+test("CSS 캐스케이드: 지원하지 않는 선택자는 조용히 버리지 않고 던진다", () => {
+  assert.throws(
+    () => applyStylesheet(cssSvg('<text x="0" y="0">가</text>', "text + tspan { fill:#000000; }")),
+    /형제 결합자/,
+  );
+});
+
+test("CSS 캐스케이드: @media는 대상 매체(screen)로 평가한다(print 블록은 적용 안 됨)", () => {
+  const out = applyStylesheet(
+    cssSvg(
+      '<rect id="bg" width="1" height="1" />',
+      "@media print { #bg { fill:#000000; } } @media screen { #bg { fill:#FFFFFF; } }",
+    ),
+  );
+  assert.match(out, /<rect id="bg"[^>]*fill="#FFFFFF"/);
+  assert.doesNotMatch(out, /fill="#000000"/);
+});
+
+test("CSS 캐스케이드: var()는 정의 값으로 치환하고, 정의가 없으면 던진다", () => {
+  const out = applyStylesheet(
+    cssSvg('<rect id="bg" width="1" height="1" />', ":root { --c: #ABCDEF; } #bg { fill: var(--c); }"),
+  );
+  assert.match(out, /<rect id="bg"[^>]*fill="#ABCDEF"/);
+  assert.throws(
+    () => applyStylesheet(cssSvg('<rect id="bg" width="1" height="1" />', "#bg { fill: var(--missing); }")),
+    /정의되지 않은 CSS 사용자 정의 속성/,
+  );
+});
+
+test("font-weight: CSS Fonts 4 매칭으로 참조 페이스를 고른다(반올림 아님)", () => {
+  // 720은 "가장 가까운 100배수"면 700이지만, 사양은 목표 이상을 오름차순 우선한다.
+  assert.equal(matchFontWeight(720), 800);
+  assert.equal(matchFontWeight(650), 700);
+  assert.equal(matchFontWeight(850), 900);
+  assert.equal(matchFontWeight(760), 800);
+  assert.equal(matchFontWeight(300), 400);
+  assert.equal(resolveFontWeightValue("bold"), "700");
+  assert.throws(() => resolveFontWeightValue("bolder"), /지원하지 않는 font-weight/);
+});
+
+test("per-glyph 좌표 리스트: 적용 범위 안 값이 전부 0이면 단일 값으로 접는다", () => {
+  const out = resolveGlyphCoordinateLists('<svg><text x="1" y="2" dy="0 0 0 9">가나</text></svg>');
+  assert.match(out, /dy="0"/);
+});
+
+test("per-glyph 좌표 리스트: 접을 수 없으면 조용히 자르지 않고 던진다", () => {
+  assert.throws(
+    () => resolveGlyphCoordinateLists('<svg><text x="1" y="2" dy="0 5">가나</text></svg>'),
+    /단일 값으로 접을 수 없습니다/,
+  );
+  assert.throws(
+    () => resolveGlyphCoordinateLists('<svg><text x="1 20" y="2">가나</text></svg>'),
+    /단일 값으로 접을 수 없습니다/,
+  );
+});
+
+test("dominant-baseline: 참조 서체 메트릭에서 유도한 비율로 y를 전개한다", () => {
+  const metrics = TEXT_FONT_METRICS;
+  const central = (metrics.ascender + metrics.descender) / 2 / metrics.unitsPerEm;
+  assert.ok(Math.abs(baselineShiftRatio("central") - central) < 1e-12);
+  assert.equal(baselineShiftRatio("alphabetic"), 0);
+  assert.throws(() => baselineShiftRatio("hanging"), /지원하지 않는 dominant-baseline/);
+
+  const out = expandDominantBaseline(
+    '<svg><text x="10" y="100" font-size="20" dominant-baseline="central">1</text></svg>',
+  );
+  assert.match(out, new RegExp(`y="${(100 + central * 20).toFixed(4).replace(/0+$/, "").replace(/\\.$/, "")}"`));
+  assert.doesNotMatch(out, /dominant-baseline/);
+});
+
+test("텍스트 스케일 평탄화: 좌표·font-size·stroke-width를 s배하고 잔여 transform에는 스케일이 없다", () => {
+  const out = flattened(
+    '<svg><g transform="scale(0.5)"><text x="10" y="20" font-size="12" stroke-width="2">가</text></g></svg>',
+  );
+  assert.match(out, /x="5"/);
+  assert.match(out, /y="10"/);
+  assert.match(out, /font-size="6"/);
+  assert.match(out, /stroke-width="1"/);
+  // 잔여 transform은 조상 스케일을 상쇄한다(유효 행렬 = 평행이동·회전만).
+  const transform = out.match(/<text[^>]*transform="([^"]*)"/)[1];
+  assert.match(transform, /scale\(2\)/);
+});
+
+test("텍스트 스케일 평탄화: 스케일이 1이면 마크업을 건드리지 않는다(산출 불변)", () => {
+  const input = '<svg><g transform="translate(3 4)"><text x="10" y="20" font-size="12">가</text></g></svg>';
+  assert.equal(flattened(input), input);
+});
+
+test("텍스트 스케일 평탄화: 비균일·기울임 transform은 조용히 넘기지 않고 던진다", () => {
+  assert.throws(
+    () =>
+      flattenTextScale(
+        '<svg><g transform="matrix(2,0,0,3,0,0)"><text x="1" y="1" font-size="10">가</text></g></svg>',
+      ),
+    /균일 스케일이 아닌 transform/,
+  );
+});
+
+test("좌표 리스트: 자식 tspan 안의 글자까지 세어 조용한 절단을 막는다(#2593 리뷰)", () => {
+  // 종전에는 직접 문자 데이터만 세어 글리프 수가 0이 되고 무조건 접혔다.
+  assert.throws(
+    () =>
+      resolveGlyphCoordinateLists(
+        '<svg><text x="1 20 30" y="2"><tspan>가나다</tspan></text></svg>',
+      ),
+    /단일 값으로 접을 수 없습니다/,
+  );
+  assert.throws(
+    () =>
+      resolveGlyphCoordinateLists('<svg><text x="1 20"><tspan>가</tspan>나</text></svg>'),
+    /단일 값으로 접을 수 없습니다/,
+  );
+});
+
+test("텍스트 스케일 평탄화: 상속 font-size·stroke-width도 s배해 요소에 명시한다(#2593 리뷰)", () => {
+  const out = flattened(
+    '<svg><g transform="scale(0.5)" font-size="12" stroke="#FFFFFF" stroke-width="4">' +
+      '<text x="10" y="20">가</text></g></svg>',
+  );
+  // 원본 렌더 크기 12 × 0.5 = 6. 상속을 놓치면 12로 그려진다(2배).
+  assert.match(out, /<text[^>]*font-size="6"/);
+  assert.match(out, /<text[^>]*stroke-width="2"/);
+});
+
+// letter-spacing은 텍스트 좌표계의 길이다. 스케일을 좌표·font-size로 흡수하면 글자
+// 간격도 같이 s배해야 윤곽선이 오너 도식과 같은 간격을 낸다(#1488).
+test("텍스트 스케일 평탄화: 선언·상속 letter-spacing도 s배한다", () => {
+  const out = flattened(
+    '<svg><g transform="scale(0.5)" letter-spacing="4px"><text x="10" y="20" font-size="12">가' +
+      '<tspan style="letter-spacing:-2px">나</tspan></text></g></svg>',
+  );
+  assert.match(out, /<text[^>]*letter-spacing="2px"/);
+  assert.match(out, /<tspan[^>]*letter-spacing:-1px/);
+});
+
+// 길이 문법은 윤곽선 굽기(parseSvgLength)와 같다. 지수 표기와 대문자 단위도 읽고,
+// 숫자가 아닌 값은 조용히 넘기지 않고 던진다.
+test("텍스트 스케일 평탄화: 선언·상속 길이를 윤곽선 굽기와 같은 문법으로 s배한다", () => {
+  const out = flattened(
+    '<svg><g transform="scale(0.5)" letter-spacing="1E1PX" stroke="#FFF" stroke-width="2e1">' +
+      '<text x="10" y="20" font-size="1.2e1">가</text>' +
+      '<text x="10" y="40" font-size="12" letter-spacing=".5px">나</text>' +
+      '<text x="10" y="60" style="font-size:1.2e1;letter-spacing:1e1PX">다</text></g></svg>',
+  );
+  assert.match(out, /<text[^>]*style="font-size:6;letter-spacing:5PX"/);
+  assert.match(out, /<text[^>]*font-size="6"[^>]*letter-spacing="5px"/);
+  assert.match(out, /<text[^>]*stroke-width="10"/);
+  assert.match(out, /<text[^>]*font-size="6"[^>]*letter-spacing="0.25px"/);
+  for (const [property, declaration] of [
+    ["letter-spacing", 'letter-spacing="1.2.3"'],
+    ["stroke-width", 'stroke="#FFF" stroke-width="1.2.3"'],
+  ]) {
+    assert.throws(
+      () =>
+        flattenTextScale(
+          `<svg><g transform="scale(0.5)" font-size="12" ${declaration}><text x="1" y="1">가</text></g></svg>`,
+        ),
+      new RegExp(`${property} "1\\.2\\.3"를 해석하지 못했습니다`),
+      property,
+    );
+  }
+});
+
+// 문법을 어긴 선언은 요소가 직접 쓴 것이든 style 안에 있든 조상에서 온 것이든 같은 파서로
+// 걸러 던진다. 앞쪽만 읽고 `.3`을 남기거나 아예 건너뛰어 스케일 없는 값이 남아서는 안 된다.
+test("텍스트 스케일 평탄화: 요소가 직접 선언한 길이도 문법에 맞지 않으면 던진다", () => {
+  for (const property of ["font-size", "stroke-width", "letter-spacing"]) {
+    const others = `${property === "font-size" ? "" : 'font-size="12" '}${
+      property === "stroke-width" ? 'stroke="#FFF" ' : ""
+    }`;
+    for (const written of ["1.2.3", "1pt", "abc", ""]) {
+      const message = new RegExp(`${property} "${written}"를 해석하지 못했습니다`);
+      for (const [where, markup] of [
+        ["속성", `<text x="1" y="1" ${others}${property}="${written}">가</text>`],
+        ["style", `<text x="1" y="1" ${others}style="${property}:${written}">가</text>`],
+        ["tspan", `<text x="1" y="1" ${others}><tspan ${property}="${written}">가</tspan></text>`],
+      ]) {
+        assert.throws(
+          () => flattenTextScale(`<svg><g transform="scale(0.5)" font-size="12">${markup}</g></svg>`),
+          message,
+          `${property} ${where} ${JSON.stringify(written)}`,
+        );
+      }
+    }
+  }
+});
+
+// 문법에 맞아도 Number()가 Infinity로 넘치는 값은 길이가 아니다. 그대로 s배해 쓰면
+// `letter-spacing="Infinity"` 같은 선언이 컴파일러에 넘어간다.
+test("텍스트 스케일 평탄화: 유한하지 않은 길이는 선언·style·상속 어디서든 던진다", () => {
+  const overflows = ["1e999", "-1e999", "9".repeat(400), `${"9".repeat(400)}px`];
+  for (const property of ["font-size", "stroke-width", "letter-spacing"]) {
+    const stroke = property === "stroke-width" ? 'stroke="#FFF" ' : "";
+    const fontSize = property === "font-size" ? "" : 'font-size="12" ';
+    for (const written of overflows) {
+      const message = new RegExp(`${property} ".*"를 해석하지 못했습니다`);
+      for (const [where, markup] of [
+        ["속성", `<g transform="scale(0.5)" font-size="12"><text x="1" y="1" ${stroke}${property}="${written}">가</text></g>`],
+        ["style", `<g transform="scale(0.5)" font-size="12"><text x="1" y="1" ${stroke}style="${property}:${written}">가</text></g>`],
+        ["tspan", `<g transform="scale(0.5)" font-size="12"><text x="1" y="1" ${stroke}><tspan ${property}="${written}">가</tspan></text></g>`],
+        ["상속", `<g transform="scale(0.5)" ${fontSize}${stroke}${property}="${written}"><text x="1" y="1">가</text></g>`],
+      ]) {
+        assert.throws(
+          () => flattenTextScale(`<svg>${markup}</svg>`),
+          message,
+          `${property} ${where} ${written.slice(0, 8)}`,
+        );
+      }
+    }
+  }
+});
+
+// `normal`은 간격 없음이라 명시할 값이 없다. letter-spacing 선언이 아예 없는 텍스트도
+// 같다. 둘 다 던지거나 letter-spacing을 만들어 내면 안 된다.
+test("텍스트 스케일 평탄화: letter-spacing이 normal이거나 없으면 그대로 두고 던지지 않는다", () => {
+  for (const spacing of ['letter-spacing="normal"', ""]) {
+    const out = flattened(
+      `<svg><g transform="scale(0.5)" ${spacing}><text x="10" y="20" font-size="12">가</text></g></svg>`,
+    );
+    assert.match(out, /<text[^>]*font-size="6"/, spacing);
+    assert.doesNotMatch(out.match(/<text[^>]*>/)[0], /letter-spacing/, spacing);
+  }
+});
+
+test("텍스트 스케일 평탄화: 상속 font-size조차 없으면 조용히 넘기지 않고 던진다", () => {
+  assert.throws(
+    () => flattenTextScale('<svg><g transform="scale(0.5)"><text x="1" y="1">가</text></g></svg>'),
+    /font-size 선언을 요소에서도 조상에서도 찾지 못해/,
+  );
+});
+
+// baseline 이동량은 유효 font-size에 비례한다. 선언된 font-size를 읽지 못하면 다른 조상의
+// 값으로 조용히 갈아 끼우지 않고 던진다.
+test("dominant-baseline: 읽지 못하는 font-size는 조상 값으로 대체하지 않고 던진다", () => {
+  const message = /font-size ".*"를 해석하지 못했습니다/;
+  for (const written of ["1e999", "-1e999", "9".repeat(400), "1.2.3"]) {
+    for (const [where, markup] of [
+      ["자기 선언", `<g font-size="12"><text x="5" font-size="${written}" dominant-baseline="central">1</text></g>`],
+      ["자기 선언, 조상 없음", `<text x="5" font-size="${written}" dominant-baseline="central">1</text>`],
+      ["조상 선언", `<g font-size="${written}"><text x="5" dominant-baseline="central">1</text></g>`],
+      [
+        "tspan 선언",
+        `<text x="5" font-size="12" dominant-baseline="central"><tspan font-size="${written}">1</tspan></text>`,
+      ],
+    ]) {
+      assert.throws(
+        () => expandDominantBaseline(`<svg>${markup}</svg>`),
+        message,
+        `${where} ${written.slice(0, 8)}`,
+      );
+    }
+  }
+  // 요소가 자기 font-size를 선언하면 조상의 선언은 쓰이지 않으므로 읽지 못해도 던지지 않는다.
+  let out;
+  assert.doesNotThrow(() => {
+    out = expandDominantBaseline(
+      '<svg><g font-size="1.2.3"><text x="5" font-size="20" dominant-baseline="alphabetic">1</text></g></svg>',
+    );
+  });
+  assert.doesNotMatch(out, /dominant-baseline/);
+});
+
+test("dominant-baseline: y 미선언 <text>에도 명시적 y를 붙인다(#2593 리뷰)", () => {
+  const ratio = baselineShiftRatio("central");
+  const out = expandDominantBaseline(
+    '<svg><text x="5" font-size="20" dominant-baseline="central">1</text></svg>',
+  );
+  // 종전에는 속성만 지워져 0.355469×20 = 7.11px 이동이 통째로 사라졌다.
+  assert.match(out, new RegExp(`y="${(ratio * 20).toFixed(4).replace(/0+$/, "")}"`));
+});
+
+test("dominant-baseline: <tspan>이 baseline을 선언하면 조용히 무시하지 않고 던진다", () => {
+  assert.throws(
+    () =>
+      expandDominantBaseline(
+        '<svg><text x="5" y="10" font-size="20">' +
+          '<tspan y="10" dominant-baseline="central">1</tspan></text></svg>',
+      ),
+    /이 전개는 부모 <text> 선언만 해석하므로/,
+  );
+});
+
+test("non-scaling-stroke: 상속 stroke-width를 해석하고 컨테이너 선언은 no-op이다(#2593 리뷰)", () => {
+  const inherited = normalizeSvgForCompile(
+    '<svg viewBox="0 0 10 10"><g transform="scale(0.5)" stroke-width="2">' +
+      '<path vector-effect="non-scaling-stroke" stroke="#000000" d="M0 0 L1 1" /></g></svg>',
+  );
+  // 상속값 2를 스케일 0.5의 역수로 나눠 4로 명시한다(컴파일러가 다시 0.5를 곱한다).
+  assert.match(inherited, /<path[^>]*stroke-width="4"/);
+  // `<g>`의 vector-effect는 SVG 2에서 상속되지 않아 렌더 no-op — 던지지 않는다.
+  const container = normalizeSvgForCompile(
+    '<svg viewBox="0 0 10 10"><g vector-effect="non-scaling-stroke">' +
+      '<path stroke="#000000" stroke-width="2" d="M0 0 L1 1" /></g></svg>',
+  );
+  assert.match(container, /<path[^>]*stroke-width="2"/);
+});
+
+// 상속값이든 요소가 직접 쓴 값이든 길이 문법에 맞고 유한할 때만 스케일의 역수로 나눈다.
+// 아니면 `stroke-width="NaN"`·`"Infinity"`가 컴파일러에 넘어가므로 던진다.
+test("non-scaling-stroke: 읽지 못하거나 넘치는 stroke-width는 NaN·Infinity로 내지 않고 던진다", () => {
+  const message = /stroke-width ".*"를 해석하지 못했습니다/;
+  for (const written of ["1e999", "9".repeat(400), "1.2.3", "2pt"]) {
+    for (const [where, markup] of [
+      [
+        "상속",
+        `<g transform="scale(0.5)" stroke-width="${written}"><path vector-effect="non-scaling-stroke" stroke="#000000" d="M0 0 L1 1" /></g>`,
+      ],
+      [
+        "속성",
+        `<g transform="scale(0.5)"><path vector-effect="non-scaling-stroke" stroke="#000000" stroke-width="${written}" d="M0 0 L1 1" /></g>`,
+      ],
+    ]) {
+      assert.throws(
+        () => normalizeSvgForCompile(`<svg viewBox="0 0 10 10">${markup}</svg>`),
+        message,
+        `${where} ${written.slice(0, 8)}`,
+      );
+    }
+  }
+  let out;
+  assert.doesNotThrow(() => {
+    out = normalizeSvgForCompile(
+      '<svg viewBox="0 0 10 10"><g transform="scale(0.5)" stroke-width="2PX">' +
+        '<path vector-effect="non-scaling-stroke" stroke="#000000" d="M0 0 L1 1" /></g></svg>',
+    );
+  });
+  assert.match(out, /<path[^>]*stroke-width="4"/);
+});
+
+test("matchFontWeight: 400~500 구간은 사양대로 500 이하를 먼저 본다(450 경계 없음)", () => {
+  assert.equal(matchFontWeight(430, [300, 500, 600]), 500);
+  assert.equal(matchFontWeight(460, [300, 500, 600]), 500);
+  assert.equal(matchFontWeight(430, [300, 600]), 300);
+});
+
+test("matchFontWeight: 가벼운 후보가 여럿이면 목표에 가까운 쪽부터 고른다", () => {
+  // 가벼운 후보가 둘 이상일 때 내림차순 정렬이 깨지면(가장 가벼운 것이 먼저 오면) 달라진다.
+  assert.equal(matchFontWeight(350, [100, 200, 300]), 300);
+  assert.equal(matchFontWeight(650, [100, 300, 500]), 500);
+  assert.equal(matchFontWeight(450, [100, 200, 300]), 300);
+});
+
+test("참조 서체 읽기: 바이트가 고정 digest와 다르면 메트릭을 내지 않고 던진다", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "reference-font-test-"));
+  try {
+    assert.deepEqual(readOpenTypeMetrics(TEXT_FONT_FILE), TEXT_FONT_METRICS);
+    const bytes = readFileSync(TEXT_FONT_FILE);
+    bytes[bytes.length - 1] ^= 0x01;
+    const tampered = path.join(dir, "Pretendard-Regular.otf");
+    writeFileSync(tampered, bytes);
+    assert.throws(() => readOpenTypeMetrics(tampered), /참조 서체 바이트가 고정 digest와 다릅니다/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

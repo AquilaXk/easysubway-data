@@ -1,0 +1,4496 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   version="1.1"
+   width="4560"
+   height="2268"
+   viewBox="0 0 4560 2268"
+   role="img"
+   aria-labelledby="map-title map-description"
+   preserveAspectRatio="xMidYMid meet"
+   id="daegu-metro-kakao-full-accurate-v1"
+   style="font-family: Pretendard;"
+   data-design-family="easy-subway-sma-v4"
+   data-design-family-version="sma-v4-size-matched-daegu-v1"
+   data-base-unit-u="8px"
+   data-line-width="1u"
+   data-grid="3u"
+   data-corner-radius="2.5u"
+   data-parallel-gap="0.25u"
+   data-octolinear="softened-octolinear"
+   data-font-policy="Pretendard-only"
+   data-state-policy="class-toggle-not-delete"
+   data-source-geometry="kakao-daegu-full-network-reference"
+   data-current-as-of="2026-07-12"
+   data-line3-tail-layout="soft-u-turn-horizontal-labels"
+   data-station-count-metro="94"
+   data-station-count-daegyeong="8"
+   data-data-check="official-current-data-checked-2026-07-12"
+   data-curve-style="sma-v1-soft-continuous"
+   data-curve-policy="all-route-bends-softened"
+   data-line1-curve-layout="soft-cubic-all-bends"
+   data-line3-curve-layout="soft-u-plus-soft-cubic-all-bends"
+   data-daegyeong-curve-layout="soft-cubic-all-bends"
+   sodipodi:docname="easy-subway-daegu-v3.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   data-node-spacing-policy="segment-uniform-transfer-anchored-all-lines"
+   data-reflow-date="2026-07-20"
+   data-size-reference="easy_subway_sma_v4-readable-profile"
+   data-size-match-date="2026-07-25"
+   data-position-policy="route-geometry-node-centers-label-anchors-preserved"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview28"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.20834506"
+     inkscape:cx="2195.8764"
+     inkscape:cy="1043.9412"
+     inkscape:window-width="1920"
+     inkscape:window-height="1022"
+     inkscape:window-x="0"
+     inkscape:window-y="30"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="station-name-labels-layer" />
+  <!-- Full Kakao-reference reflow: Line 1, Line 2, Line 3, and Daegyeong Line. -->
+  <defs
+     id="sma-v1-family-definitions">
+    <clipPath
+       id="rounded-map-card-clip-area">
+      <rect
+         x="76.0000"
+         y="163.8000"
+         width="4408.0000"
+         height="2119.0000"
+         rx="34"
+         ry="34"
+         id="rect1" />
+    </clipPath>
+    <style
+       id="sma-v1-family-style"
+       type="text/css">
+#daegu-metro-sma-v1-family { font-family: Pretendard; }
+#daegu-metro-sma-v1-family text,
+#daegu-metro-sma-v1-family tspan { font-family: Pretendard; }
+.ui-title { fill:#FFFFFF; font-size:32px; font-weight:900; letter-spacing:-1px; }
+.ui-chip text { font-weight:900; text-anchor:middle; dominant-baseline:central; }
+.legend-title { fill:#344258; font-size:15px; font-weight:900; }
+.legend-name { fill:#344258; font-size:12.5px; font-weight:760; }
+.legend-desc, .ui-note { fill:#6E7F8B; font-size:10.5px; font-weight:600; letter-spacing:-0.2px; }
+.route-line { fill:none; stroke-width:18px; stroke-linecap:round; stroke-linejoin:round; stroke-miterlimit:1; shape-rendering:geometricPrecision; }
+.station-symbol circle { shape-rendering:geometricPrecision; }
+.station-name { fill:#14293D; font-size:34px; font-weight:700; letter-spacing:-0.7px; paint-order:stroke fill; stroke:#FFFFFF; stroke-width:5px; stroke-linejoin:round; }
+.station-name.is-long { font-size:34px; }
+.station-name.is-terminal { fill:#344258; font-size:34px; font-weight:700; }
+.station-code { fill:#8B98A5; font-size:8.2px; font-weight:600; letter-spacing:0; paint-order:stroke fill; stroke:#FFFFFF; stroke-width:2.4px; stroke-linejoin:round; }
+.transfer-name { fill:#344258; font-size:38px; font-weight:800; letter-spacing:-0.8px; paint-order:stroke fill; stroke:#FFFFFF; stroke-width:5px; stroke-linejoin:round; }
+.transfer-code { fill:#6E7F8B; font-size:8.6px; font-weight:650; paint-order:stroke fill; stroke:#FFFFFF; stroke-width:2.4px; stroke-linejoin:round; }
+.label-leader { stroke:#C4D0D8; stroke-width:0.9px; stroke-linecap:round; }
+.optional-label-layer { display:none; }
+.ourclass-transfer-shell-outline, .ourclass-transfer-shell-fill { stroke-linecap:round; stroke-linejoin:round; stroke-miterlimit:1; shape-rendering:geometricPrecision; }
+.ourclass-transfer-badge-label { text-rendering:geometricPrecision; pointer-events:none; }
+.service-tag rect { fill:#F6F9FB; stroke:#D7E5EE; stroke-width:1px; }
+.service-tag text { fill:#6E7F8B; font-size:9px; font-weight:700; }
+[data-state=&quot;inactive&quot;], .is-inactive { opacity:0.28; }
+.map-single-line-mode [data-line]:not(.is-active-line) { opacity:0.28; }
+</style>
+  </defs>
+  <g
+     id="route-lines-layer"
+     class="render-layer route-layer">
+    <path
+       id="route-line-daegyeong"
+       class="route-line line-daegyeong"
+       data-line="daegyeong"
+       data-line-name="대경선"
+       data-line-label="대경"
+       data-line-color="#0066B3"
+       stroke="#0066b3"
+       fill="none"
+       stroke-width="18"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       d="M 348.10977,488.32384 550,700 l 516.6783,516.6783 c 41.4592,39.8633 42.4688,42.2991 99.0299,43.3217 H 2142 l 360,-360 h 261.5317 c 35.1926,0.92768 35.8778,2.07058 59.3997,22.93138 l 250.2935,250.29352 c 27.4849,24.2957 29.6495,25.8986 72.3909,26.7956 l 951.5147,0.428"
+       data-geometry="kakao-full-nw-daegu-dongdaegu-gyeongsan-v1"
+       data-curve-policy="soft-cubic-at-every-direction-change"
+       data-straight-segments="preserved-between-curves"
+       sodipodi:nodetypes="ccccccccccc" />
+    <path
+       id="route-line-3"
+       class="route-line line-line3"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-label="3"
+       data-line-color="#FFC513"
+       stroke="#ffc513"
+       fill="none"
+       stroke-width="18"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       data-geometry="kakao-full-nw-central-se-v1"
+       data-soft-turn="line3-northwest-tail"
+       d="m 1050,60 v 691.23398 c 0,30 12.2226,47.83962 43.0868,49.1981 l 636.933,1.15012 c 49.9624,0.83792 67.2482,9.18444 67.9273,41.29581 0.6899,32.62255 2.2655,382.96399 2.0529,417.12199 l 1.0318,336.9906 c 0.034,11.1473 5.591,22.3193 25.417,22.3215 l 1134.3809,0.124 c 23.593,0 39.1703,15.7968 39.1703,33.3742 v 301.9113 c -0.039,16.5157 10.2547,25.4258 28.838,25.2382 l 423.7355,1.2942"
+       data-curve-policy="soft-cubic-at-every-direction-change"
+       data-straight-segments="preserved-between-curves"
+       sodipodi:nodetypes="csccscssssccc" />
+    <polyline
+       id="route-line-2"
+       points="100,1500 4480,1500"
+       class="route-line line-line2"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-label="2"
+       data-line-color="#00B794"
+       stroke="#00B794"
+       fill="none"
+       stroke-width="18"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       data-geometry="kakao-full-straight-ew-v1"
+       data-curve-policy="not-applicable-no-direction-change" />
+    <path
+       id="route-line-1"
+       class="route-line line-line1"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-label="1"
+       data-line-color="#EE265B"
+       stroke="#ee265b"
+       fill="none"
+       stroke-width="18"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       d="M 77.593287,2100.355 340,2100 H 2050.8506 C 2094.206,2100 2100,2084.517 2100,2046.6117 V 1260 l 480,-480 h 1302.571 c 24.62,-0.0208 29.504,-14.4168 28.9878,-33.12241 l -0.2752,-436.19147"
+       data-geometry="kakao-full-sw-horizontal-central-spine-ne-east-v1"
+       data-curve-policy="soft-cubic-at-every-direction-change"
+       data-straight-segments="preserved-between-curves"
+       sodipodi:nodetypes="ccssccccc" />
+  </g>
+  <g
+     id="station-symbols-layer"
+     class="render-layer station-layer">
+    <g
+       id="line1-115"
+       class="station-symbol terminal-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="115"
+       data-station="설화명곡"
+       data-station-name="설화명곡"
+       data-node-role="terminal"
+       transform="translate(-40.533197,1425.9063)">
+      <title
+         id="title30">설화명곡 · 115</title>
+      <circle
+         cx="209"
+         cy="676"
+         r="10.8"
+         fill="#ffffff"
+         stroke="#ee265b"
+         stroke-width="2.7"
+         id="circle30" />
+    </g>
+    <g
+       id="line1-116"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="116"
+       data-station="화원"
+       data-station-name="화원"
+       data-node-role="ordinary"
+       transform="translate(-16.47589,1424.8553)">
+      <title
+         id="title31">화원 · 116</title>
+      <circle
+         cx="323"
+         cy="676"
+         r="9"
+         fill="#ffffff"
+         stroke="#ee265b"
+         stroke-width="2.25"
+         id="circle31" />
+    </g>
+    <g
+       id="line1-117"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="117"
+       data-station="대곡"
+       data-station-name="대곡"
+       data-node-role="ordinary"
+       transform="translate(23 1424)">
+      <title
+         id="title32">대곡 · 117</title>
+      <circle
+         cx="437.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle32" />
+    </g>
+    <g
+       id="line1-118"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="118"
+       data-station="진천"
+       data-station-name="진천"
+       data-node-role="ordinary"
+       transform="translate(84 1424)">
+      <title
+         id="title33">진천 · 118</title>
+      <circle
+         cx="551.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle33" />
+    </g>
+    <g
+       id="line1-119"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="119"
+       data-station="월배"
+       data-station-name="월배"
+       data-node-role="ordinary"
+       transform="translate(145 1424)">
+      <title
+         id="title34">월배 · 119</title>
+      <circle
+         cx="665.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle34" />
+    </g>
+    <g
+       id="line1-120"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="120"
+       data-station="상인"
+       data-station-name="상인"
+       data-node-role="ordinary"
+       transform="translate(206 1424)">
+      <title
+         id="title35">상인 · 120</title>
+      <circle
+         cx="779.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle35" />
+    </g>
+    <g
+       id="line1-121"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="121"
+       data-station="월촌"
+       data-station-name="월촌"
+       data-node-role="ordinary"
+       transform="translate(267 1424)">
+      <title
+         id="title36">월촌 · 121</title>
+      <circle
+         cx="893.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle36" />
+    </g>
+    <g
+       id="line1-122"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="122"
+       data-station="송현"
+       data-station-name="송현"
+       data-node-role="ordinary"
+       transform="translate(328 1424)">
+      <title
+         id="title37">송현 · 122</title>
+      <circle
+         cx="1007.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle37" />
+    </g>
+    <g
+       id="line1-123"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="123"
+       data-station="서부정류장"
+       data-station-name="서부정류장"
+       data-node-role="ordinary"
+       transform="translate(389 1424)">
+      <title
+         id="title38">서부정류장 · 123</title>
+      <circle
+         cx="1121.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle38" />
+    </g>
+    <g
+       id="line1-124"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="124"
+       data-station="대명"
+       data-station-name="대명"
+       data-node-role="ordinary"
+       transform="translate(450 1424)">
+      <title
+         id="title39">대명 · 124</title>
+      <circle
+         cx="1235.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle39" />
+    </g>
+    <g
+       id="line1-125"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="125"
+       data-station="안지랑"
+       data-station-name="안지랑"
+       data-node-role="ordinary"
+       transform="translate(511 1424)">
+      <title
+         id="title40">안지랑 · 125</title>
+      <circle
+         cx="1349.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle40" />
+    </g>
+    <g
+       id="line1-126"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="126"
+       data-station="현충로"
+       data-station-name="현충로"
+       data-node-role="ordinary"
+       transform="translate(637 1304)">
+      <title
+         id="title41">현충로 · 126</title>
+      <circle
+         cx="1463.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle41" />
+    </g>
+    <g
+       id="line1-127"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="127"
+       data-station="영대병원"
+       data-station-name="영대병원"
+       data-node-role="ordinary"
+       transform="translate(523 1184)">
+      <title
+         id="title42">영대병원 · 127</title>
+      <circle
+         cx="1577.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle42" />
+    </g>
+    <g
+       id="line1-128"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="128"
+       data-station="교대"
+       data-station-name="교대"
+       data-node-role="ordinary"
+       transform="translate(409 1064)">
+      <title
+         id="title43">교대 · 128</title>
+      <circle
+         cx="1691.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle43" />
+    </g>
+    <g
+       id="line1-131"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="131"
+       data-station="중앙로"
+       data-station-name="중앙로"
+       data-node-role="ordinary"
+       transform="translate(-161 223)">
+      <title
+         id="title44">중앙로 · 131</title>
+      <circle
+         cx="2261.0000"
+         cy="1157.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle44" />
+    </g>
+    <g
+       id="line1-133"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="133"
+       data-station="칠성시장"
+       data-station-name="칠성시장"
+       data-node-role="ordinary"
+       transform="translate(-395.293 -576)">
+      <title
+         id="title45">칠성시장 · 133</title>
+      <circle
+         cx="2615.2930"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle45" />
+    </g>
+    <g
+       id="line1-134"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="134"
+       data-station="신천"
+       data-station-name="신천"
+       data-node-role="ordinary"
+       transform="translate(-382.586 -696)">
+      <title
+         id="title46">신천 · 134</title>
+      <circle
+         cx="2722.5860"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle46" />
+    </g>
+    <g
+       id="line1-136"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="136"
+       data-station="동구청"
+       data-station-name="동구청"
+       data-node-role="ordinary"
+       transform="translate(-357.172 -936)">
+      <title
+         id="title47">동구청 · 136</title>
+      <circle
+         cx="2937.1720"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle47" />
+    </g>
+    <g
+       id="line1-137"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="137"
+       data-station="아양교"
+       data-station-name="아양교"
+       data-node-role="ordinary"
+       transform="translate(-324.465 -936)">
+      <title
+         id="title48">아양교 · 137</title>
+      <circle
+         cx="3044.4650"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle48" />
+    </g>
+    <g
+       id="line1-138"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="138"
+       data-station="동촌"
+       data-station-name="동촌"
+       data-node-role="ordinary"
+       transform="translate(-291.758 -936)">
+      <title
+         id="title49">동촌 · 138</title>
+      <circle
+         cx="3151.7580"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle49" />
+    </g>
+    <g
+       id="line1-139"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="139"
+       data-station="해안"
+       data-station-name="해안"
+       data-node-role="ordinary"
+       transform="translate(-259.051 -936)">
+      <title
+         id="title50">해안 · 139</title>
+      <circle
+         cx="3259.0510"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle50" />
+    </g>
+    <g
+       id="line1-140"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="140"
+       data-station="방촌"
+       data-station-name="방촌"
+       data-node-role="ordinary"
+       transform="translate(-226.344 -936)">
+      <title
+         id="title51">방촌 · 140</title>
+      <circle
+         cx="3366.3440"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle51" />
+    </g>
+    <g
+       id="line1-141"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="141"
+       data-station="용계"
+       data-station-name="용계"
+       data-node-role="ordinary"
+       transform="translate(-193.656 -936)">
+      <title
+         id="title52">용계 · 141</title>
+      <circle
+         cx="3473.6560"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle52" />
+    </g>
+    <g
+       id="line1-142"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="142"
+       data-station="율하"
+       data-station-name="율하"
+       data-node-role="ordinary"
+       transform="translate(-160.949 -936)">
+      <title
+         id="title53">율하 · 142</title>
+      <circle
+         cx="3580.9490"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle53" />
+    </g>
+    <g
+       id="line1-143"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="143"
+       data-station="신기"
+       data-station-name="신기"
+       data-node-role="ordinary"
+       transform="translate(-128.242 -936)">
+      <title
+         id="title54">신기 · 143</title>
+      <circle
+         cx="3688.2420"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle54" />
+    </g>
+    <g
+       id="line1-144"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="144"
+       data-station="반야월"
+       data-station-name="반야월"
+       data-node-role="ordinary"
+       transform="translate(-95.535 -936)">
+      <title
+         id="title55">반야월 · 144</title>
+      <circle
+         cx="3795.5350"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle55" />
+    </g>
+    <g
+       id="line1-145"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="145"
+       data-station="각산"
+       data-station-name="각산"
+       data-node-role="ordinary"
+       transform="translate(-62.828 -936)">
+      <title
+         id="title56">각산 · 145</title>
+      <circle
+         cx="3902.8280"
+         cy="1716.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#EE265B"
+         stroke-width="2.25"
+         id="circle56" />
+    </g>
+    <g
+       id="line1-146"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="146"
+       data-station="안심"
+       data-station-name="안심"
+       data-node-role="ordinary"
+       transform="translate(-99.044671,-1021.0059)">
+      <title
+         id="title57">안심 · 146</title>
+      <circle
+         cx="4010.1211"
+         cy="1716"
+         r="9"
+         fill="#ffffff"
+         stroke="#ee265b"
+         stroke-width="2.25"
+         id="circle57" />
+    </g>
+    <g
+       id="line1-147"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="147"
+       data-station="대구한의대병원"
+       data-station-name="대구한의대병원"
+       data-node-role="ordinary"
+       transform="translate(-204.95083,-1137.4103)">
+      <title
+         id="title58">대구한의대병원 · 147</title>
+      <circle
+         cx="4117.4141"
+         cy="1716"
+         r="9"
+         fill="#ffffff"
+         stroke="#ee265b"
+         stroke-width="2.25"
+         id="circle58" />
+    </g>
+    <g
+       id="line1-148"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="148"
+       data-station="부호(경일대·호산대)"
+       data-station-name="부호(경일대·호산대)"
+       data-node-role="ordinary"
+       transform="translate(-313.48898,-1249.0095)">
+      <title
+         id="title59">부호(경일대·호산대) · 148</title>
+      <circle
+         cx="4224.707"
+         cy="1716"
+         r="9"
+         fill="#ffffff"
+         stroke="#ee265b"
+         stroke-width="2.25"
+         id="circle59" />
+    </g>
+    <g
+       id="line1-149"
+       class="station-symbol terminal-station-symbol"
+       data-line="line1"
+       data-line-name="1호선"
+       data-line-color="#EE265B"
+       data-code="149"
+       data-station="하양(대구가톨릭대)"
+       data-station-name="하양(대구가톨릭대)"
+       data-node-role="terminal"
+       transform="translate(-420.29477,-1355.4327)">
+      <title
+         id="title60">하양(대구가톨릭대) · 149</title>
+      <circle
+         cx="4332"
+         cy="1716"
+         r="10.8"
+         fill="#ffffff"
+         stroke="#ee265b"
+         stroke-width="2.7"
+         id="circle60" />
+    </g>
+    <g
+       id="line2-216"
+       class="station-symbol terminal-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="216"
+       data-station="문양"
+       data-station-name="문양"
+       data-node-role="terminal"
+       transform="translate(-29 434)">
+      <title
+         id="title61">문양 · 216</title>
+      <circle
+         cx="209.0000"
+         cy="1066.0000"
+         r="10.8"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.7"
+         id="circle61" />
+    </g>
+    <g
+       id="line2-217"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="217"
+       data-station="다사"
+       data-station-name="다사"
+       data-node-role="ordinary"
+       transform="translate(-42 434)">
+      <title
+         id="title62">다사 · 217</title>
+      <circle
+         cx="342.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle62" />
+    </g>
+    <g
+       id="line2-218"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="218"
+       data-station="대실"
+       data-station-name="대실"
+       data-node-role="ordinary"
+       transform="translate(-55 434)">
+      <title
+         id="title63">대실 · 218</title>
+      <circle
+         cx="475.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle63" />
+    </g>
+    <g
+       id="line2-219"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="219"
+       data-station="강창"
+       data-station-name="강창"
+       data-node-role="ordinary"
+       transform="translate(-68 434)">
+      <title
+         id="title64">강창 · 219</title>
+      <circle
+         cx="608.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle64" />
+    </g>
+    <g
+       id="line2-220"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="220"
+       data-station="계명대"
+       data-station-name="계명대"
+       data-node-role="ordinary"
+       transform="translate(-81 434)">
+      <title
+         id="title65">계명대 · 220</title>
+      <circle
+         cx="741.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle65" />
+    </g>
+    <g
+       id="line2-221"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="221"
+       data-station="성서산업단지"
+       data-station-name="성서산업단지"
+       data-node-role="ordinary"
+       transform="translate(-94 434)">
+      <title
+         id="title66">성서산업단지 · 221</title>
+      <circle
+         cx="874.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle66" />
+    </g>
+    <g
+       id="line2-222"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="222"
+       data-station="이곡"
+       data-station-name="이곡"
+       data-node-role="ordinary"
+       transform="translate(-107 434)">
+      <title
+         id="title67">이곡 · 222</title>
+      <circle
+         cx="1007.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle67" />
+    </g>
+    <g
+       id="line2-223"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="223"
+       data-station="용산"
+       data-station-name="용산"
+       data-node-role="ordinary"
+       transform="translate(-120 434)">
+      <title
+         id="title68">용산 · 223</title>
+      <circle
+         cx="1140.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle68" />
+    </g>
+    <g
+       id="line2-224"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="224"
+       data-station="죽전"
+       data-station-name="죽전"
+       data-node-role="ordinary"
+       transform="translate(-133 434)">
+      <title
+         id="title69">죽전 · 224</title>
+      <circle
+         cx="1273.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle69" />
+    </g>
+    <g
+       id="line2-225"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="225"
+       data-station="감삼"
+       data-station-name="감삼"
+       data-node-role="ordinary"
+       transform="translate(-146 434)">
+      <title
+         id="title70">감삼 · 225</title>
+      <circle
+         cx="1406.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle70" />
+    </g>
+    <g
+       id="line2-226"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="226"
+       data-station="두류"
+       data-station-name="두류"
+       data-node-role="ordinary"
+       transform="translate(-159 434)">
+      <title
+         id="title71">두류 · 226</title>
+      <circle
+         cx="1539.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle71" />
+    </g>
+    <g
+       id="line2-227"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="227"
+       data-station="내당"
+       data-station-name="내당"
+       data-node-role="ordinary"
+       transform="translate(-172 434)">
+      <title
+         id="title72">내당 · 227</title>
+      <circle
+         cx="1672.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle72" />
+    </g>
+    <g
+       id="line2-228"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="228"
+       data-station="반고개"
+       data-station-name="반고개"
+       data-node-role="ordinary"
+       transform="translate(-185 434)">
+      <title
+         id="title73">반고개 · 228</title>
+      <circle
+         cx="1805.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle73" />
+    </g>
+    <g
+       id="line2-231"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="231"
+       data-station="경대병원"
+       data-station-name="경대병원"
+       data-node-role="ordinary"
+       transform="translate(40 434)">
+      <title
+         id="title74">경대병원 · 231</title>
+      <circle
+         cx="2280.0000"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle74" />
+    </g>
+    <g
+       id="line2-232"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="232"
+       data-station="대구은행"
+       data-station-name="대구은행"
+       data-node-role="ordinary"
+       transform="translate(32.148 434)">
+      <title
+         id="title75">대구은행 · 232</title>
+      <circle
+         cx="2437.8520"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle75" />
+    </g>
+    <g
+       id="line2-233"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="233"
+       data-station="범어"
+       data-station-name="범어"
+       data-node-role="ordinary"
+       transform="translate(24.315 434)">
+      <title
+         id="title76">범어 · 233</title>
+      <circle
+         cx="2595.6850"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle76" />
+    </g>
+    <g
+       id="line2-234"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="234"
+       data-station="수성구청"
+       data-station-name="수성구청"
+       data-node-role="ordinary"
+       transform="translate(16.463 434)">
+      <title
+         id="title77">수성구청 · 234</title>
+      <circle
+         cx="2753.5370"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle77" />
+    </g>
+    <g
+       id="line2-235"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="235"
+       data-station="만촌"
+       data-station-name="만촌"
+       data-node-role="ordinary"
+       transform="translate(8.611 434)">
+      <title
+         id="title78">만촌 · 235</title>
+      <circle
+         cx="2911.3890"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle78" />
+    </g>
+    <g
+       id="line2-236"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="236"
+       data-station="담티"
+       data-station-name="담티"
+       data-node-role="ordinary"
+       transform="translate(0.778 434)">
+      <title
+         id="title79">담티 · 236</title>
+      <circle
+         cx="3069.2220"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle79" />
+    </g>
+    <g
+       id="line2-237"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="237"
+       data-station="연호"
+       data-station-name="연호"
+       data-node-role="ordinary"
+       transform="translate(-7.074 434)">
+      <title
+         id="title80">연호 · 237</title>
+      <circle
+         cx="3227.0740"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle80" />
+    </g>
+    <g
+       id="line2-238"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="238"
+       data-station="수성알파시티"
+       data-station-name="수성알파시티"
+       data-node-role="ordinary"
+       transform="translate(-14.926 434)">
+      <title
+         id="title81">수성알파시티 · 238</title>
+      <circle
+         cx="3384.9260"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle81" />
+    </g>
+    <g
+       id="line2-239"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="239"
+       data-station="고산"
+       data-station-name="고산"
+       data-node-role="ordinary"
+       transform="translate(-22.778 434)">
+      <title
+         id="title82">고산 · 239</title>
+      <circle
+         cx="3542.7780"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle82" />
+    </g>
+    <g
+       id="line2-240"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="240"
+       data-station="신매"
+       data-station-name="신매"
+       data-node-role="ordinary"
+       transform="translate(-30.611 434)">
+      <title
+         id="title83">신매 · 240</title>
+      <circle
+         cx="3700.6110"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle83" />
+    </g>
+    <g
+       id="line2-241"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="241"
+       data-station="사월"
+       data-station-name="사월"
+       data-node-role="ordinary"
+       transform="translate(-38.463 434)">
+      <title
+         id="title84">사월 · 241</title>
+      <circle
+         cx="3858.4630"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle84" />
+    </g>
+    <g
+       id="line2-242"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="242"
+       data-station="정평"
+       data-station-name="정평"
+       data-node-role="ordinary"
+       transform="translate(-46.315 434)">
+      <title
+         id="title85">정평 · 242</title>
+      <circle
+         cx="4016.3150"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle85" />
+    </g>
+    <g
+       id="line2-243"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="243"
+       data-station="임당"
+       data-station-name="임당"
+       data-node-role="ordinary"
+       transform="translate(-54.148 434)">
+      <title
+         id="title86">임당 · 243</title>
+      <circle
+         cx="4174.1480"
+         cy="1066.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.25"
+         id="circle86" />
+    </g>
+    <g
+       id="line2-244"
+       class="station-symbol terminal-station-symbol"
+       data-line="line2"
+       data-line-name="2호선"
+       data-line-color="#00B794"
+       data-code="244"
+       data-station="영남대"
+       data-station-name="영남대"
+       data-node-role="terminal"
+       transform="translate(-62 434)">
+      <title
+         id="title87">영남대 · 244</title>
+      <circle
+         cx="4332.0000"
+         cy="1066.0000"
+         r="10.8"
+         fill="#FFFFFF"
+         stroke="#00B794"
+         stroke-width="2.7"
+         id="circle87" />
+    </g>
+    <g
+       id="line3-312"
+       class="station-symbol terminal-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="312"
+       data-station="칠곡경대병원"
+       data-station-name="칠곡경대병원"
+       data-node-role="terminal"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(-527,-1790.4416)">
+      <title
+         id="title88">칠곡경대병원 · 312</title>
+      <circle
+         cx="1577.8665"
+         cy="1927.4547"
+         r="10.8"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.7"
+         id="circle88" />
+    </g>
+    <g
+       id="line3-313"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="313"
+       data-station="학정"
+       data-station-name="학정"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(-317.3929,-1660.7782)">
+      <title
+         id="title89">학정 · 313</title>
+      <circle
+         cx="1368"
+         cy="1885"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle89" />
+    </g>
+    <g
+       id="line3-314"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="314"
+       data-station="팔거"
+       data-station-name="팔거"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(-108.3929,-1581.6851)">
+      <title
+         id="title90">팔거 · 314</title>
+      <circle
+         cx="1159"
+         cy="1885"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle90" />
+    </g>
+    <g
+       id="line3-315"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="315"
+       data-station="동천"
+       data-station-name="동천"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(101.51403,-1506.2198)">
+      <title
+         id="title91">동천 · 315</title>
+      <circle
+         cx="950"
+         cy="1885"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle91" />
+    </g>
+    <g
+       id="line3-316"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="316"
+       data-station="칠곡운암"
+       data-station-name="칠곡운암"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(309.6071,-1428.0336)">
+      <title
+         id="title92">칠곡운암 · 316</title>
+      <circle
+         cx="741"
+         cy="1885"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle92" />
+    </g>
+    <g
+       id="line3-317"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="317"
+       data-station="구암"
+       data-station-name="구암"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(518.6071,-1348.0336)">
+      <title
+         id="title93">구암 · 317</title>
+      <circle
+         cx="532"
+         cy="1885"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle93" />
+    </g>
+    <g
+       id="line3-318"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="318"
+       data-station="태전"
+       data-station-name="태전"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(728.51403,-1253.5228)">
+      <title
+         id="title94">태전 · 318</title>
+      <circle
+         cx="322.09308"
+         cy="1874.1168"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle94" />
+    </g>
+    <g
+       id="line3-319"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="319"
+       data-station="매천"
+       data-station-name="매천"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(728.51403,-887.52282)">
+      <title
+         id="title95">매천 · 319</title>
+      <circle
+         cx="322.09308"
+         cy="1598.093"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle95" />
+    </g>
+    <g
+       id="line3-320"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="320"
+       data-station="매천시장"
+       data-station-name="매천시장"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(694.22868,-798.90057)">
+      <title
+         id="title96">매천시장 · 320</title>
+      <circle
+         cx="494"
+         cy="1599"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle96" />
+    </g>
+    <g
+       id="line3-321"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="321"
+       data-station="팔달"
+       data-station-name="팔달"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(687.68111,-797.72058)">
+      <title
+         id="title97">팔달 · 321</title>
+      <circle
+         cx="665"
+         cy="1599"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle97" />
+    </g>
+    <g
+       id="line3-322"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="322"
+       data-station="공단"
+       data-station-name="공단"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(686.99002,-798.32382)">
+      <title
+         id="title98">공단 · 322</title>
+      <circle
+         cx="836"
+         cy="1599"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle98" />
+    </g>
+    <g
+       id="line3-323"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="323"
+       data-station="만평"
+       data-station-name="만평"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(680.66321,-797.64765)">
+      <title
+         id="title99">만평 · 323</title>
+      <circle
+         cx="1007"
+         cy="1599"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle99" />
+    </g>
+    <g
+       id="line3-324"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="324"
+       data-station="팔달시장"
+       data-station-name="팔달시장"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(619.89854,-698.4564)">
+      <title
+         id="title100">팔달시장 · 324</title>
+      <circle
+         cx="1178"
+         cy="1599"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle100" />
+    </g>
+    <g
+       id="line3-325"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="325"
+       data-station="원대"
+       data-station-name="원대"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(450.38347,-557.04441)">
+      <title
+         id="title101">원대 · 325</title>
+      <circle
+         cx="1349"
+         cy="1599"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle101" />
+    </g>
+    <g
+       id="line3-326"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="326"
+       data-station="북구청"
+       data-station-name="북구청"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(279.58898,-427.14716)">
+      <title
+         id="title102">북구청 · 326</title>
+      <circle
+         cx="1520"
+         cy="1599"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle102" />
+    </g>
+    <g
+       id="line3-327"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="327"
+       data-station="달성공원"
+       data-station-name="달성공원"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(184.2903,-222.86754)">
+      <title
+         id="title103">달성공원 · 327</title>
+      <circle
+         cx="1615"
+         cy="1534"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle103" />
+    </g>
+    <g
+       id="line3-328"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="328"
+       data-station="서문시장"
+       data-station-name="서문시장"
+       data-node-role="ordinary"
+       data-layout-zone="line3-soft-u-tail"
+       transform="translate(90,-56.674935)">
+      <title
+         id="title104">서문시장 · 328</title>
+      <circle
+         cx="1710"
+         cy="1469"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle104" />
+    </g>
+    <g
+       id="line3-330"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="330"
+       data-station="남산"
+       data-station-name="남산"
+       data-node-role="ordinary"
+       transform="translate(145 645)">
+      <title
+         id="title105">남산 · 330</title>
+      <circle
+         cx="1805.0000"
+         cy="975.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#FFC513"
+         stroke-width="2.25"
+         id="circle105" />
+    </g>
+    <g
+       id="line3-332"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="332"
+       data-station="건들바위"
+       data-station-name="건들바위"
+       data-node-role="ordinary"
+       transform="translate(270 944)">
+      <title
+         id="title106">건들바위 · 332</title>
+      <circle
+         cx="2090.0000"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#FFC513"
+         stroke-width="2.25"
+         id="circle106" />
+    </g>
+    <g
+       id="line3-333"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="333"
+       data-station="대봉교"
+       data-station-name="대봉교"
+       data-node-role="ordinary"
+       transform="translate(240.891 944)">
+      <title
+         id="title107">대봉교 · 333</title>
+      <circle
+         cx="2339.1090"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#FFC513"
+         stroke-width="2.25"
+         id="circle107" />
+    </g>
+    <g
+       id="line3-334"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="334"
+       data-station="수성시장"
+       data-station-name="수성시장"
+       data-node-role="ordinary"
+       transform="translate(211.782 944)">
+      <title
+         id="title108">수성시장 · 334</title>
+      <circle
+         cx="2588.2180"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#FFC513"
+         stroke-width="2.25"
+         id="circle108" />
+    </g>
+    <g
+       id="line3-335"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="335"
+       data-station="수성구민운동장"
+       data-station-name="수성구민운동장"
+       data-node-role="ordinary"
+       transform="translate(162.673 1034)">
+      <title
+         id="title109">수성구민운동장 · 335</title>
+      <circle
+         cx="2837.3270"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#FFC513"
+         stroke-width="2.25"
+         id="circle109" />
+    </g>
+    <g
+       id="line3-336"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="336"
+       data-station="어린이세상"
+       data-station-name="어린이세상"
+       data-node-role="ordinary"
+       transform="translate(-86.436 1124)">
+      <title
+         id="title110">어린이세상 · 336</title>
+      <circle
+         cx="3086.4360"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#FFC513"
+         stroke-width="2.25"
+         id="circle110" />
+    </g>
+    <g
+       id="line3-337"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="337"
+       data-station="황금"
+       data-station-name="황금"
+       data-node-role="ordinary"
+       transform="translate(-335.564 1214)">
+      <title
+         id="title111">황금 · 337</title>
+      <circle
+         cx="3335.5640"
+         cy="676.0000"
+         r="9"
+         fill="#FFFFFF"
+         stroke="#FFC513"
+         stroke-width="2.25"
+         id="circle111" />
+    </g>
+    <g
+       id="line3-338"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="338"
+       data-station="수성못"
+       data-station-name="수성못"
+       data-node-role="ordinary"
+       transform="translate(-518.82748,1304.1085)">
+      <title
+         id="title112">수성못 · 338</title>
+      <circle
+         cx="3584.6731"
+         cy="676"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle112" />
+    </g>
+    <g
+       id="line3-339"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="339"
+       data-station="지산"
+       data-station-name="지산"
+       data-node-role="ordinary"
+       transform="translate(-657.10308,1304.2532)">
+      <title
+         id="title113">지산 · 339</title>
+      <circle
+         cx="3833.782"
+         cy="676"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle113" />
+    </g>
+    <g
+       id="line3-340"
+       class="station-symbol ordinary-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="340"
+       data-station="범물"
+       data-station-name="범물"
+       data-node-role="ordinary"
+       transform="translate(-788.79324,1305.3353)">
+      <title
+         id="title114">범물 · 340</title>
+      <circle
+         cx="4082.8911"
+         cy="676"
+         r="9"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.25"
+         id="circle114" />
+    </g>
+    <g
+       id="line3-341"
+       class="station-symbol terminal-station-symbol"
+       data-line="line3"
+       data-line-name="3호선"
+       data-line-color="#FFC513"
+       data-code="341"
+       data-station="용지"
+       data-station-name="용지"
+       data-node-role="terminal"
+       transform="translate(-944.16052,1304.4591)">
+      <title
+         id="title115">용지 · 341</title>
+      <circle
+         cx="4332"
+         cy="676"
+         r="10.8"
+         fill="#ffffff"
+         stroke="#ffc513"
+         stroke-width="2.7"
+         id="circle115" />
+    </g>
+    <g
+       id="daegyeong-구미"
+       class="station-symbol terminal-station-symbol"
+       data-line="daegyeong"
+       data-line-name="대경선"
+       data-line-color="#0066B3"
+       data-station="구미"
+       data-station-name="구미"
+       data-node-role="terminal"
+       transform="translate(133.19252,-791.78123)">
+      <title
+         id="title116">구미</title>
+      <circle
+         cx="285"
+         cy="1352"
+         r="10.8"
+         fill="#ffffff"
+         stroke="#0066b3"
+         stroke-width="2.7"
+         id="circle116" />
+    </g>
+    <g
+       id="daegyeong-사곡"
+       class="station-symbol ordinary-station-symbol"
+       data-line="daegyeong"
+       data-line-name="대경선"
+       data-line-color="#0066B3"
+       data-station="사곡"
+       data-station-name="사곡"
+       data-node-role="ordinary"
+       transform="translate(-189.6439,-670.53586)">
+      <title
+         id="title117">사곡</title>
+      <circle
+         cx="722"
+         cy="1352"
+         r="9"
+         fill="#ffffff"
+         stroke="#0066b3"
+         stroke-width="2.25"
+         id="circle117" />
+    </g>
+    <g
+       id="daegyeong-북삼"
+       class="station-symbol ordinary-station-symbol"
+       data-line="daegyeong"
+       data-line-name="대경선"
+       data-line-color="#0066B3"
+       data-station="북삼"
+       data-station-name="북삼"
+       data-node-role="ordinary"
+       transform="translate(-474.16517,-554.61678)">
+      <title
+         id="title118">북삼</title>
+      <circle
+         cx="1121"
+         cy="1352"
+         r="9"
+         fill="#ffffff"
+         stroke="#0066b3"
+         stroke-width="2.25"
+         id="circle118" />
+    </g>
+    <g
+       id="daegyeong-왜관"
+       class="station-symbol ordinary-station-symbol"
+       data-line="daegyeong"
+       data-line-name="대경선"
+       data-line-color="#0066B3"
+       data-station="왜관"
+       data-station-name="왜관"
+       data-node-role="ordinary"
+       transform="translate(-724.1742,-405.92862)">
+      <title
+         id="title119">왜관</title>
+      <circle
+         cx="1520"
+         cy="1352"
+         r="9"
+         fill="#ffffff"
+         stroke="#0066b3"
+         stroke-width="2.25"
+         id="circle119" />
+    </g>
+    <g
+       id="daegyeong-서대구"
+       class="station-symbol ordinary-station-symbol"
+       data-line="daegyeong"
+       data-line-name="대경선"
+       data-line-color="#0066B3"
+       data-station="서대구"
+       data-station-name="서대구"
+       data-node-role="ordinary"
+       transform="translate(-1037.9278,-262.68387)">
+      <title
+         id="title120">서대구</title>
+      <circle
+         cx="1976"
+         cy="1352"
+         r="9"
+         fill="#ffffff"
+         stroke="#0066b3"
+         stroke-width="2.25"
+         id="circle120" />
+    </g>
+    <g
+       id="daegyeong-경산"
+       class="station-symbol terminal-station-symbol"
+       data-line="daegyeong"
+       data-line-name="대경선"
+       data-line-color="#0066B3"
+       data-station="경산"
+       data-station-name="경산"
+       data-node-role="terminal"
+       transform="translate(-532 898)">
+      <title
+         id="title121">경산</title>
+      <circle
+         cx="4467.1582"
+         cy="302.0755"
+         r="10.8"
+         fill="#ffffff"
+         stroke="#0066b3"
+         stroke-width="2.7"
+         id="circle121" />
+    </g>
+  </g>
+  <g
+     id="transfer-station-symbols-layer"
+     class="render-layer transfer-layer">
+    <g
+       id="transfer-station-symbol-명덕"
+       class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+       data-station="명덕"
+       data-station-name="명덕"
+       data-node-role="transfer"
+       data-transfer-line-count="2"
+       data-transfer-lines="line1 line3"
+       data-capsule-geometry="straight-8dir-only"
+       data-capsule-axis-deg="0"
+       data-slot-size="3u"
+       data-base-unit-u="8px"
+       transform="translate(1.3625533,0.49520473)">
+      <title
+         id="title122">명덕 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
+      <g
+         class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
+         id="g2">
+        <line
+           x1="2100"
+           y1="1620"
+           x2="2142"
+           y2="1620"
+           class="ourclass-transfer-shell-outline"
+           stroke="#3f4a5c"
+           stroke-width="55.318"
+           id="line1" />
+        <line
+           x1="2100"
+           y1="1620"
+           x2="2142"
+           y2="1620"
+           class="ourclass-transfer-shell-fill"
+           stroke="#ffffff"
+           stroke-width="43.903"
+           id="line2" />
+      </g>
+      <g
+         class="ourclass-transfer-route-badges"
+         id="g5">
+        <g
+           class="ourclass-transfer-badge"
+           data-line="line1"
+           data-line-color="#EE265B"
+           data-slot-index="1"
+           id="g3">
+          <circle
+             cx="2100"
+             cy="1620"
+             r="16.683001"
+             fill="#ee265b"
+             class="ourclass-transfer-badge-circle"
+             id="circle2" />
+          <text
+             x="2100"
+             y="1620"
+             class="ourclass-transfer-badge-label"
+             fill="#ffffff"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text2"
+             style="font-size:23.833px">1</text>
+        </g>
+        <g
+           class="ourclass-transfer-badge"
+           data-line="line3"
+           data-line-color="#FFC513"
+           data-slot-index="2"
+           id="g4">
+          <circle
+             cx="2142"
+             cy="1620"
+             r="16.683001"
+             fill="#ffc513"
+             class="ourclass-transfer-badge-circle"
+             id="circle3" />
+          <text
+             x="2142"
+             y="1620"
+             class="ourclass-transfer-badge-label"
+             fill="#344258"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text3"
+             style="font-size:23.833px">3</text>
+        </g>
+      </g>
+    </g>
+    <g
+       id="transfer-station-symbol-청라언덕"
+       class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+       data-station="청라언덕"
+       data-station-name="청라언덕"
+       data-node-role="transfer"
+       data-transfer-line-count="2"
+       data-transfer-lines="line2 line3"
+       data-capsule-geometry="straight-8dir-only"
+       data-capsule-axis-deg="0"
+       data-slot-size="3u"
+       data-base-unit-u="8px"
+       transform="rotate(180,1811.3677,1500.3915)">
+      <title
+         id="title126">청라언덕 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
+      <g
+         class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
+         id="g6"
+         transform="translate(-20.750467,0.39151824)">
+        <line
+           x1="1800"
+           y1="1500"
+           x2="1842"
+           y2="1500"
+           class="ourclass-transfer-shell-outline"
+           stroke="#3f4a5c"
+           stroke-width="55.318"
+           id="line5" />
+        <line
+           x1="1800"
+           y1="1500"
+           x2="1842"
+           y2="1500"
+           class="ourclass-transfer-shell-fill"
+           stroke="#ffffff"
+           stroke-width="43.903"
+           id="line6" />
+      </g>
+      <g
+         class="ourclass-transfer-route-badges"
+         id="g9"
+         transform="rotate(180,1810.6248,1500.1957)">
+        <g
+           class="ourclass-transfer-badge"
+           data-line="line3"
+           data-line-color="#FFC513"
+           data-slot-index="1"
+           id="g7">
+          <circle
+             cx="1800"
+             cy="1500"
+             r="16.683001"
+             fill="#ffc513"
+             class="ourclass-transfer-badge-circle"
+             id="circle6" />
+          <text
+             x="1800"
+             y="1500"
+             class="ourclass-transfer-badge-label"
+             fill="#344258"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text6"
+             style="font-size:23.833px">3</text>
+        </g>
+        <g
+           class="ourclass-transfer-badge"
+           data-line="line2"
+           data-line-color="#00B794"
+           data-slot-index="2"
+           id="g8">
+          <circle
+             cx="1842"
+             cy="1500"
+             r="16.683001"
+             fill="#00b794"
+             class="ourclass-transfer-badge-circle"
+             id="circle7" />
+          <text
+             x="1842"
+             y="1500"
+             class="ourclass-transfer-badge-label"
+             fill="#ffffff"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text7"
+             style="font-size:23.833px">2</text>
+        </g>
+      </g>
+    </g>
+    <g
+       id="transfer-station-symbol-반월당"
+       class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+       data-station="반월당"
+       data-station-name="반월당"
+       data-node-role="transfer"
+       data-transfer-line-count="2"
+       data-transfer-lines="line2 line1"
+       data-capsule-geometry="straight-8dir-only"
+       data-capsule-axis-deg="0"
+       data-slot-size="3u"
+       data-base-unit-u="8px"
+       transform="translate(1.9513921,0.60407299)">
+      <title
+         id="title130">반월당 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
+      <g
+         class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
+         id="g10">
+        <line
+           x1="2100"
+           y1="1500"
+           x2="2142"
+           y2="1500"
+           class="ourclass-transfer-shell-outline"
+           stroke="#3f4a5c"
+           stroke-width="55.318"
+           id="line9" />
+        <line
+           x1="2100"
+           y1="1500"
+           x2="2142"
+           y2="1500"
+           class="ourclass-transfer-shell-fill"
+           stroke="#ffffff"
+           stroke-width="43.903"
+           id="line10" />
+      </g>
+      <g
+         class="ourclass-transfer-route-badges"
+         id="g13">
+        <g
+           class="ourclass-transfer-badge"
+           data-line="line1"
+           data-line-color="#EE265B"
+           data-slot-index="1"
+           id="g11">
+          <circle
+             cx="2100"
+             cy="1500"
+             r="16.683001"
+             fill="#ee265b"
+             class="ourclass-transfer-badge-circle"
+             id="circle10" />
+          <text
+             x="2100"
+             y="1500"
+             class="ourclass-transfer-badge-label"
+             fill="#ffffff"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text10"
+             style="font-size:23.833px">1</text>
+        </g>
+        <g
+           class="ourclass-transfer-badge"
+           data-line="line2"
+           data-line-color="#00B794"
+           data-slot-index="2"
+           id="g12">
+          <circle
+             cx="2142"
+             cy="1500"
+             r="16.683001"
+             fill="#00b794"
+             class="ourclass-transfer-badge-circle"
+             id="circle11" />
+          <text
+             x="2142"
+             y="1500"
+             class="ourclass-transfer-badge-label"
+             fill="#ffffff"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text11"
+             style="font-size:23.833px">2</text>
+        </g>
+      </g>
+    </g>
+    <g
+       id="transfer-station-symbol-대구역"
+       class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+       data-station="대구역"
+       data-station-name="대구역"
+       data-node-role="transfer"
+       data-transfer-line-count="2"
+       data-transfer-lines="line1 daegyeong"
+       data-capsule-geometry="straight-8dir-only"
+       data-capsule-axis-deg="0"
+       data-slot-size="3u"
+       data-base-unit-u="8px">
+      <title
+         id="title134">대구역 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
+      <g
+         class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
+         id="g14">
+        <line
+           x1="2100"
+           y1="1260"
+           x2="2142"
+           y2="1260"
+           class="ourclass-transfer-shell-outline"
+           stroke="#3F4A5C"
+           stroke-width="55.318"
+           id="line13" />
+        <line
+           x1="2100"
+           y1="1260"
+           x2="2142"
+           y2="1260"
+           class="ourclass-transfer-shell-fill"
+           stroke="#FFFFFF"
+           stroke-width="43.903"
+           id="line14" />
+      </g>
+      <g
+         class="ourclass-transfer-route-badges"
+         id="g17">
+        <g
+           class="ourclass-transfer-badge"
+           data-line="line1"
+           data-line-color="#EE265B"
+           data-slot-index="1"
+           id="g15">
+          <circle
+             cx="2100"
+             cy="1260"
+             r="16.683"
+             fill="#EE265B"
+             class="ourclass-transfer-badge-circle"
+             id="circle14" />
+          <text
+             x="2100"
+             y="1260"
+             class="ourclass-transfer-badge-label"
+             fill="#ffffff"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text14"
+             style="font-size:23.833px">1</text>
+        </g>
+        <g
+           class="ourclass-transfer-badge"
+           data-line="daegyeong"
+           data-line-color="#0066B3"
+           data-slot-index="2"
+           id="g16">
+          <circle
+             cx="2142"
+             cy="1260"
+             r="16.683"
+             fill="#0066B3"
+             class="ourclass-transfer-badge-circle"
+             id="circle15" />
+          <text
+             x="2142"
+             y="1260"
+             class="ourclass-transfer-badge-label"
+             fill="#ffffff"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text15"
+             style="font-size:14.300px">대경</text>
+        </g>
+      </g>
+    </g>
+    <g
+       id="transfer-station-symbol-동대구역"
+       class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+       data-station="동대구역"
+       data-station-name="동대구역"
+       data-node-role="transfer"
+       data-transfer-line-count="2"
+       data-transfer-lines="line1 daegyeong"
+       data-capsule-geometry="straight-8dir-only"
+       data-capsule-axis-deg="0"
+       data-slot-size="3u"
+       data-base-unit-u="8px">
+      <title
+         id="title138">동대구역 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
+      <g
+         class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
+         id="g18">
+        <line
+           x1="2460"
+           y1="900"
+           x2="2502"
+           y2="900"
+           class="ourclass-transfer-shell-outline"
+           stroke="#3F4A5C"
+           stroke-width="55.318"
+           id="line17" />
+        <line
+           x1="2460"
+           y1="900"
+           x2="2502"
+           y2="900"
+           class="ourclass-transfer-shell-fill"
+           stroke="#FFFFFF"
+           stroke-width="43.903"
+           id="line18" />
+      </g>
+      <g
+         class="ourclass-transfer-route-badges"
+         id="g21">
+        <g
+           class="ourclass-transfer-badge"
+           data-line="line1"
+           data-line-color="#EE265B"
+           data-slot-index="1"
+           id="g19">
+          <circle
+             cx="2460"
+             cy="900"
+             r="16.683"
+             fill="#EE265B"
+             class="ourclass-transfer-badge-circle"
+             id="circle18" />
+          <text
+             x="2460"
+             y="900"
+             class="ourclass-transfer-badge-label"
+             fill="#ffffff"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text18"
+             style="font-size:14.300px">1</text>
+        </g>
+        <g
+           class="ourclass-transfer-badge"
+           data-line="daegyeong"
+           data-line-color="#0066B3"
+           data-slot-index="2"
+           id="g20">
+          <circle
+             cx="2502"
+             cy="900"
+             r="16.683"
+             fill="#0066B3"
+             class="ourclass-transfer-badge-circle"
+             id="circle19" />
+          <text
+             x="2502"
+             y="900"
+             class="ourclass-transfer-badge-label"
+             fill="#ffffff"
+             font-size="12px"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             id="text19"
+             style="font-size:14.300px">대경</text>
+        </g>
+      </g>
+    </g>
+  </g>
+  <g
+     id="line-terminal-badges-layer"
+     data-name="종점 호선 마크"
+     class="render-layer line-terminal-badge-layer">
+    <g
+       class="line-terminal-badge"
+       data-role="line-terminal-badge"
+       data-line="line1"
+       id="line-terminal-badge-line1-129-676"
+       transform="translate(-64.654933,1422.1803)">
+      <circle
+         cx="129.2"
+         cy="676"
+         r="30"
+         fill="#ee265b"
+         data-role="line-terminal-badge"
+         id="circle21" />
+      <text
+         x="129.2"
+         y="676"
+         fill="#ffffff"
+         font-size="34px"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         data-role="line-terminal-badge"
+         id="text21">1</text>
+    </g>
+    <g
+       class="line-terminal-badge"
+       data-role="line-terminal-badge"
+       data-line="line1"
+       id="line-terminal-badge-line1-4407-1716"
+       transform="translate(-495.88292,-1435.0265)">
+      <circle
+         cx="4407.1001"
+         cy="1716"
+         r="30"
+         fill="#ee265b"
+         data-role="line-terminal-badge"
+         id="circle22" />
+      <text
+         x="4407.1001"
+         y="1716"
+         fill="#ffffff"
+         font-size="34px"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         data-role="line-terminal-badge"
+         id="text22">1</text>
+    </g>
+    <g
+       class="line-terminal-badge"
+       data-role="line-terminal-badge"
+       data-line="line2"
+       id="line-terminal-badge-line2-116-1066"
+       transform="translate(-15.9 434)">
+      <circle
+         cx="115.90"
+         cy="1066.00"
+         r="30"
+         fill="#00B794"
+         data-role="line-terminal-badge"
+         id="circle23" />
+      <text
+         x="115.90"
+         y="1066.00"
+         fill="#FFFFFF"
+         font-size="34"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         data-role="line-terminal-badge"
+         id="text23">2</text>
+    </g>
+    <g
+       class="line-terminal-badge"
+       data-role="line-terminal-badge"
+       data-line="line2"
+       id="line-terminal-badge-line2-4443-1066"
+       transform="translate(37.5 434)">
+      <circle
+         cx="4442.50"
+         cy="1066.00"
+         r="30"
+         fill="#00B794"
+         data-role="line-terminal-badge"
+         id="circle24" />
+      <text
+         x="4442.50"
+         y="1066.00"
+         fill="#FFFFFF"
+         font-size="34"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         data-role="line-terminal-badge"
+         id="text24">2</text>
+    </g>
+    <g
+       class="line-terminal-badge"
+       data-role="line-terminal-badge"
+       data-line="line3"
+       id="line-terminal-badge-line3-1723-1885"
+       transform="translate(-673.3 -1825)">
+      <circle
+         cx="1723.30"
+         cy="1885.00"
+         r="30"
+         fill="#FFC513"
+         data-role="line-terminal-badge"
+         id="circle25" />
+      <text
+         x="1723.30"
+         y="1885.00"
+         fill="#344258"
+         font-size="34"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         data-role="line-terminal-badge"
+         id="text25">3</text>
+    </g>
+    <g
+       class="line-terminal-badge"
+       data-role="line-terminal-badge"
+       data-line="line3"
+       id="line-terminal-badge-line3-4506-676"
+       transform="translate(-1033.8276,1306.4418)">
+      <circle
+         cx="4506.3999"
+         cy="676"
+         r="30"
+         fill="#ffc513"
+         data-role="line-terminal-badge"
+         id="circle26" />
+      <text
+         x="4506.3999"
+         y="676"
+         fill="#344258"
+         font-size="34px"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         data-role="line-terminal-badge"
+         id="text26">3</text>
+    </g>
+    <g
+       class="line-terminal-badge"
+       data-role="line-terminal-badge"
+       data-line="daegyeong"
+       id="line-terminal-badge-daegyeong-175-1352"
+       transform="translate(162.66745,-888.24033)">
+      <rect
+         x="127"
+         y="1324"
+         width="96"
+         height="56"
+         rx="28"
+         ry="28"
+         fill="#0066b3"
+         data-role="line-terminal-badge"
+         id="rect26" />
+      <text
+         x="175"
+         y="1352"
+         fill="#ffffff"
+         font-size="34px"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         data-role="line-terminal-badge"
+         id="text27">대경</text>
+    </g>
+    <g
+       class="line-terminal-badge"
+       data-role="line-terminal-badge"
+       data-line="daegyeong"
+       id="line-terminal-badge-daegyeong-4442-1352"
+       transform="translate(-312.91918,-150.68894)">
+      <rect
+         x="4394"
+         y="1324"
+         width="96"
+         height="56"
+         rx="28"
+         ry="28"
+         fill="#0066b3"
+         data-role="line-terminal-badge"
+         id="rect27" />
+      <text
+         x="4442"
+         y="1352"
+         fill="#ffffff"
+         font-size="34px"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         data-role="line-terminal-badge"
+         id="text28">대경</text>
+    </g>
+  </g>
+  <g
+     id="service-tags-layer"
+     class="render-layer service-tag-layer"
+     transform="matrix(1.2543717,0,0,1.1621081,-619.36561,-141.97865)"
+     style="stroke-width:0.828254">
+    <g
+       id="service-tag-ktx-srt-8"
+       class="service-tag"
+       data-station="동대구역"
+       data-services="KTX,SRT"
+       data-logo-mode="inline-svg-paths"
+       data-logo-source-file="gwangju_metro_map_sma_v1_family_transfer_v5.svg"
+       transform="matrix(1.1692671,0,0,1.3277367,584.17148,-772.17995)"
+       style="font-family:Pretendard;stroke-width:0.828254">
+      <title
+         id="service-tag-ktx-srt-title-6">동대구역 KTX·SRT 환승</title>
+      <g
+         id="logo-ktx-inline-vector-9"
+         transform="matrix(0.02352832,0,0,0.02360809,1475.6757,1225.2016)"
+         aria-label="KTX"
+         style="stroke-width:0.828254">
+        <path
+           d="m 1254,227.5 -68.4,48.1 -53.2,41.6 60.8,92.3 h 176.7 z m -991.8,-52 1.9,-1.3 1.9,1.3 -1.9,1.3 z M 0,409.5 h 176.7 l 28.5,-65 v -3.9 l 5.7,-9.1 3.8,-13 5.7,-9.1 7.6,-22.1 3.8,-3.9 20.9,-9.1 3.8,1.3 39.9,75.4 34.2,58.5 h 174.8 l -3.8,-10.4 -3.8,-3.9 -1.9,-6.5 -3.8,-3.9 -1.9,-6.5 -3.8,-3.9 -1.9,-6.5 -19,-31.2 -1.9,-6.5 -3.8,-3.9 -1.9,-6.5 -3.8,-3.9 -57,-105.3 144.4,-63.7 h 138.7 l 1.9,1.3 -13.3,27.3 -7.6,22.1 -5.7,9.1 -11.4,31.2 -5.7,9.1 -7.6,22.1 -5.7,9.1 -11.4,31.2 -5.7,9.1 v 3.9 l -38,87.1 h 176.7 l 17.1,-37.7 v -3.9 l 5.7,-9.1 7.6,-22.1 5.7,-9.1 7.6,-22.1 5.7,-9.1 11.4,-31.2 5.7,-9.1 7.6,-22.1 5.7,-9.1 7.6,-22.1 5.7,-9.1 11.4,-31.2 5.7,-9.1 v -3.9 l 3.8,-2.6 h 161.5 l 7.6,7.8 45.6,72.8 47.5,-29.9 43.7,-24.7 11.4,-11.7 17.1,-13 3.8,-6.5 -45.6,-71.5 H 484.5 L 266,175.5 264.1,172.9 285,156 321.1,70.2 H 144.4 Z"
+           fill="#000055"
+           fill-rule="evenodd"
+           id="logo-ktx-blue-path-5"
+           style="stroke-width:0.828254" />
+        <path
+           d="m 1820.2,0 h -17.1 l -1.9,1.3 -28.5,1.3 -1.9,1.3 -72.2,6.5 -47.5,6.5 -17.1,3.9 h -7.6 l -76,14.3 -81.7,19.5 -68.4,19.5 -74.1,24.7 -36.1,14.3 -57,26 -53.2,27.3 -95,55.9 -131.1,89.7 -87.4,66.3 -38,31.2 h 193.8 l 104.5,-89.7 87.4,-66.3 115.9,-76.7 87.4,-49.4 47.5,-23.4 53.2,-23.4 91.2,-32.5 79.8,-22.1 h 5.7 l 11.4,-3.9 41.8,-9.1 z"
+           fill="#e00024"
+           fill-rule="evenodd"
+           id="logo-ktx-red-path-9"
+           style="stroke-width:0.828254" />
+      </g>
+      <g
+         id="logo-srt-inline-vector-6"
+         transform="matrix(0.02352832,0,0,0.02360809,1475.5935,1217.9457)"
+         aria-label="SRT"
+         style="stroke-width:0.828254">
+        <path
+           d="M 898.7,106.6 H 769.5 l -115.9,221 H 780.9 Z M 1.9,327.6 h 355.3 l 1.9,-1.3 h 17.1 l 1.9,-1.3 22.8,-1.3 32.3,-5.2 22.8,-5.2 34.2,-13 26.6,-18.2 11.4,-11.7 11.4,-16.9 5.7,-16.9 v -27.3 l -1.9,-1.3 -1.9,-13 -13.3,-24.7 -24.7,-33.8 -11.4,-26 V 91 l 9.5,-14.3 17.1,-10.4 24.7,-6.5 34.2,-1.3 1.9,-1.3 425.6,1.3 13.3,2.6 17.1,6.5 9.5,6.5 11.4,15.6 1.9,10.4 -1.9,1.3 -1.9,13 -15.2,19.5 -22.8,15.6 -28.5,13 -66.5,19.5 -39.9,9.1 H 874 l 9.5,16.9 74.1,104 11.4,7.8 13.3,5.2 13.3,2.6 h 378.1 l 7.6,1.3 1.9,-1.3 24.7,-1.3 17.1,-3.9 30.4,-11.7 22.8,-15.6 11.4,-11.7 15.2,-23.4 5.7,-14.3 3.8,-3.9 5.7,-14.3 3.8,-3.9 3.8,-10.4 3.8,-3.9 3.8,-10.4 3.8,-3.9 5.7,-14.3 3.8,-3.9 60.8,-117 1.9,-1.3 h 148.2 l 11.4,-2.6 13.3,-9.1 38,-46.8 h -395.2 l -1.9,1.3 -38,2.6 -34.2,6.5 -28.5,9.1 -24.7,11.7 -20.9,14.3 -13.3,13 -15.2,24.7 h 70.3 l 20.9,-13 15.2,-5.2 26.6,-5.2 h 19 l 1.9,-1.3 h 74.1 l 1.9,1.3 -115.9,219.7 -9.5,6.5 -22.8,5.2 h -258.4 l -13.3,-16.9 v -2.6 l -11.4,-14.3 v -2.6 l -11.4,-14.3 -24.7,-39 7.6,-3.9 19,-3.9 47.5,-15.6 45.6,-19.5 19,-10.4 20.9,-14.3 13.3,-11.7 11.4,-14.3 5.7,-11.7 1.9,-26 -9.5,-20.8 -17.1,-16.9 -11.4,-6.5 -22.8,-9.1 -30.4,-7.8 -22.8,-3.9 -32.3,-2.6 -1.9,-1.3 h -20.9 L 1033.6,0 H 533.9 l -1.9,1.3 -30.4,1.3 -34.2,5.2 -26.6,6.5 -22.8,7.8 -24.7,13 -15.2,13 -9.5,13 -5.7,15.6 v 28.6 l 7.6,23.4 15.2,27.3 20.9,28.6 9.5,23.4 v 22.1 l -3.8,7.8 -9.5,10.4 -17.1,10.4 -19,6.5 -19,3.9 -22.8,1.3 -1.9,1.3 H 62.7 l -15.2,3.9 -11.4,7.8 z"
+           fill="#4c2f48"
+           fill-rule="evenodd"
+           id="logo-srt-path-8"
+           style="stroke-width:0.828254" />
+      </g>
+    </g>
+  </g>
+  <g
+     id="station-name-labels-layer"
+     class="render-layer label-layer">
+    <text
+       x="167.45569"
+       y="2152.1899"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-terminal"
+       data-label-role="terminal"
+       id="text142"><tspan
+         x="167.45569"
+         dy="0"
+         id="tspan142">설화명곡</tspan></text>
+    <text
+       x="283.14807"
+       y="2149.2751"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text143"><tspan
+         x="283.14807"
+         dy="0"
+         id="tspan143">화원</tspan></text>
+    <text
+       x="457.74557"
+       y="2148.2126"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text144"><tspan
+         x="457.74557"
+         dy="0"
+         id="tspan144">대곡</tspan></text>
+    <text
+       x="635"
+       y="2149.219"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text145"><tspan
+         x="635"
+         dy="0"
+         id="tspan145">진천</tspan></text>
+    <text
+       x="811.12726"
+       y="2148.2126"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text146"><tspan
+         x="811.12726"
+         dy="0"
+         id="tspan146">월배</tspan></text>
+    <text
+       x="985"
+       y="2146.9646"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text147"><tspan
+         x="985"
+         dy="0"
+         id="tspan147">상인</tspan></text>
+    <text
+       x="1160"
+       y="2145.9583"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text148"><tspan
+         x="1160"
+         dy="0"
+         id="tspan148">월촌</tspan></text>
+    <text
+       x="1335"
+       y="2144.7102"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text149"><tspan
+         x="1335"
+         dy="0"
+         id="tspan149">송현</tspan></text>
+    <text
+       x="1512.2544"
+       y="2147.0291"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text151"><tspan
+         x="1512.2544"
+         dy="0"
+         id="tspan150">서부</tspan><tspan
+         x="1512.2544"
+         dy="34.139999"
+         id="tspan151">정류장</tspan></text>
+    <text
+       x="1687.2544"
+       y="2144.7102"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text152"><tspan
+         x="1687.2544"
+         dy="0"
+         id="tspan152">대명</tspan></text>
+    <text
+       x="1863.3816"
+       y="2145.9583"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text153"><tspan
+         x="1863.3816"
+         dy="0"
+         id="tspan153">안지랑</tspan></text>
+    <text
+       x="2122.2915"
+       y="1989.0331"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text154"><tspan
+         x="2122.2915"
+         dy="0"
+         id="tspan154">현충로</tspan></text>
+    <text
+       x="2122.2915"
+       y="1870"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text155"><tspan
+         x="2122.2915"
+         dy="0"
+         id="tspan155">영대병원</tspan></text>
+    <text
+       x="2125.1921"
+       y="1750"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text156"><tspan
+         x="2125.1921"
+         dy="0"
+         id="tspan156">교대</tspan></text>
+    <text
+       x="2110.0234"
+       y="1586.1064"
+       text-anchor="start"
+       font-size="38"
+       font-weight="850"
+       fill="#14293D"
+       class="transfer-name"
+       data-label-role="transfer"
+       id="text157">명덕</text>
+    <text
+       x="2111.9932"
+       y="1463.8087"
+       text-anchor="start"
+       font-size="38"
+       font-weight="850"
+       fill="#14293D"
+       class="transfer-name"
+       data-label-role="transfer"
+       id="text158">반월당</text>
+    <text
+       x="1996.9691"
+       y="1392.906"
+       text-anchor="start"
+       font-size="34"
+       font-weight="750"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text159">중앙로</text>
+    <text
+       x="2218.897"
+       y="1122.5632"
+       text-anchor="end"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text160"><tspan
+         x="2218.897"
+         dy="0"
+         id="tspan159">칠성시장</tspan></text>
+    <text
+       x="2336.7358"
+       y="1002.5633"
+       text-anchor="end"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text161"><tspan
+         x="2336.7358"
+         dy="0"
+         id="tspan160">신천</tspan></text>
+    <text
+       x="2575.437"
+       y="757.64551"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text162"><tspan
+         x="2575.437"
+         dy="0"
+         id="tspan161">동구청</tspan></text>
+    <text
+       x="2716.5776"
+       y="757.16052"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text163"><tspan
+         x="2716.5776"
+         dy="0"
+         id="tspan162">아양교</tspan></text>
+    <text
+       x="2855.437"
+       y="757.64551"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text164"><tspan
+         x="2855.437"
+         dy="0"
+         id="tspan163">동촌</tspan></text>
+    <text
+       x="2996.5776"
+       y="757.16052"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text165"><tspan
+         x="2996.5776"
+         dy="0"
+         id="tspan164">해안</tspan></text>
+    <text
+       x="3135.437"
+       y="757.64551"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text166"><tspan
+         x="3135.437"
+         dy="0"
+         id="tspan165">방촌</tspan></text>
+    <text
+       x="3276.5776"
+       y="757.16052"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text167"><tspan
+         x="3276.5776"
+         dy="0"
+         id="tspan166">용계</tspan></text>
+    <text
+       x="3415.437"
+       y="757.64551"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text168"><tspan
+         x="3415.437"
+         dy="0"
+         id="tspan167">율하</tspan></text>
+    <text
+       x="3556.5776"
+       y="757.16052"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text169"><tspan
+         x="3556.5776"
+         dy="0"
+         id="tspan168">신기</tspan></text>
+    <text
+       x="3695.437"
+       y="757.64551"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text170"><tspan
+         x="3695.437"
+         dy="0"
+         id="tspan169">반야월</tspan></text>
+    <text
+       x="3836.5776"
+       y="757.16052"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text171"><tspan
+         x="3836.5776"
+         dy="0"
+         id="tspan170">각산</tspan></text>
+    <text
+       x="3955.4939"
+       y="703.91779"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text172"><tspan
+         x="3955.4939"
+         dy="0"
+         id="tspan171">안심</tspan></text>
+    <text
+       x="3930.8428"
+       y="573.8559"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary is-long"
+       data-label-role="ordinary"
+       id="text173"
+       style="text-align:start;text-anchor:start"><tspan
+         x="3930.8428"
+         dy="0"
+         id="tspan172">대구한의대</tspan><tspan
+         x="3930.8428"
+         dy="31.040001"
+         id="tspan173">병원</tspan></text>
+    <text
+       x="3931.7871"
+       y="460.32419"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary is-long"
+       data-label-role="ordinary"
+       id="text175"
+       style="text-align:start;text-anchor:start"><tspan
+         x="3931.7871"
+         dy="0"
+         id="tspan174">부호</tspan><tspan
+         x="3931.7871"
+         dy="31.040001"
+         id="tspan175">(경일대·호산대)</tspan></text>
+    <text
+       x="3933.1687"
+       y="357.43698"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-terminal is-long"
+       data-label-role="terminal"
+       id="text177"
+       style="text-align:start;text-anchor:start"><tspan
+         x="3933.1687"
+         dy="0"
+         id="tspan176">하양</tspan><tspan
+         x="3933.1687"
+         dy="34.139999"
+         id="tspan177">(대구가톨릭대)</tspan></text>
+    <text
+       x="2114.9619"
+       y="1222.3811"
+       text-anchor="end"
+       font-size="38"
+       font-weight="850"
+       fill="#14293D"
+       class="transfer-name"
+       data-label-role="transfer"
+       id="text178">대구역</text>
+    <text
+       x="2472.9429"
+       y="864.59546"
+       text-anchor="end"
+       font-size="38"
+       font-weight="850"
+       fill="#14293D"
+       class="transfer-name"
+       data-label-role="transfer"
+       id="text179">동대구역</text>
+    <text
+       x="181.4493"
+       y="1469.7832"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-terminal"
+       data-label-role="terminal"
+       id="text180"><tspan
+         x="181.4493"
+         dy="0"
+         id="tspan179">문양</tspan></text>
+    <text
+       x="301.44931"
+       y="1469.8566"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text181"><tspan
+         x="301.44931"
+         dy="0"
+         id="tspan180">다사</tspan></text>
+    <text
+       x="420"
+       y="1469.6471"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text182"><tspan
+         x="420"
+         dy="0"
+         id="tspan181">대실</tspan></text>
+    <text
+       x="541.8728"
+       y="1466.1497"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text183"><tspan
+         x="541.8728"
+         dy="0"
+         id="tspan182">강창</tspan></text>
+    <text
+       x="660.9364"
+       y="1465.9015"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text184"><tspan
+         x="660.9364"
+         dy="0"
+         id="tspan183">계명대</tspan></text>
+    <text
+       x="780.9364"
+       y="1435.8491"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text185"><tspan
+         x="780.9364"
+         dy="0"
+         id="tspan184">성서산업</tspan><tspan
+         x="780.9364"
+         dy="34.139999"
+         id="tspan185">단지</tspan></text>
+    <text
+       x="897.1908"
+       y="1469.6471"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text186"><tspan
+         x="897.1908"
+         dy="0"
+         id="tspan186">이곡</tspan></text>
+    <text
+       x="1018.1272"
+       y="1468.9589"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text187"><tspan
+         x="1018.1272"
+         dy="0"
+         id="tspan187">용산</tspan></text>
+    <text
+       x="1140"
+       y="1465.9015"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text188"><tspan
+         x="1140"
+         dy="0"
+         id="tspan188">죽전</tspan></text>
+    <text
+       x="1258.1272"
+       y="1467.0861"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text189"><tspan
+         x="1258.1272"
+         dy="0"
+         id="tspan189">감삼</tspan></text>
+    <text
+       x="1378.1272"
+       y="1466.8379"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text190"><tspan
+         x="1378.1272"
+         dy="0"
+         id="tspan190">두류</tspan></text>
+    <text
+       x="1501.7194"
+       y="1468.5482"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text191"><tspan
+         x="1501.7194"
+         dy="0"
+         id="tspan191">내당</tspan></text>
+    <text
+       x="1617.4209"
+       y="1469.3877"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text192"><tspan
+         x="1617.4209"
+         dy="0"
+         id="tspan192">반고개</tspan></text>
+    <text
+       x="2320.7385"
+       y="1476.3612"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text193"><tspan
+         x="2320.7385"
+         dy="0"
+         id="tspan193">경대병원</tspan></text>
+    <text
+       x="2470"
+       y="1474.5399"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text194"><tspan
+         x="2470"
+         dy="0"
+         id="tspan194">대구은행</tspan></text>
+    <text
+       x="2618.5227"
+       y="1474.1454"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text195"><tspan
+         x="2618.5227"
+         dy="0"
+         id="tspan195">범어</tspan></text>
+    <text
+       x="2768.5227"
+       y="1474.5399"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text196"><tspan
+         x="2768.5227"
+         dy="0"
+         id="tspan196">수성구청</tspan></text>
+    <text
+       x="2918.5227"
+       y="1474.884"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text197"><tspan
+         x="2918.5227"
+         dy="0"
+         id="tspan197">만촌</tspan></text>
+    <text
+       x="3070.7385"
+       y="1474.5399"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text198"><tspan
+         x="3070.7385"
+         dy="0"
+         id="tspan198">담티</tspan></text>
+    <text
+       x="3217.0457"
+       y="1475.6226"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text199"><tspan
+         x="3217.0457"
+         dy="0"
+         id="tspan199">연호</tspan></text>
+    <text
+       x="3368.5227"
+       y="1441.2452"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text201"><tspan
+         x="3368.5227"
+         dy="0"
+         id="tspan200">수성알파</tspan><tspan
+         x="3368.5227"
+         dy="34.139999"
+         id="tspan201">시티</tspan></text>
+    <text
+       x="3520"
+       y="1476.3612"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text202"><tspan
+         x="3520"
+         dy="0"
+         id="tspan202">고산</tspan></text>
+    <text
+       x="3669.2615"
+       y="1476.7556"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text203"><tspan
+         x="3669.2615"
+         dy="0"
+         id="tspan203">신매</tspan></text>
+    <text
+       x="3819.2615"
+       y="1478.577"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text204"><tspan
+         x="3819.2615"
+         dy="0"
+         id="tspan204">사월</tspan></text>
+    <text
+       x="3969.2615"
+       y="1476.0171"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text205"><tspan
+         x="3969.2615"
+         dy="0"
+         id="tspan205">정평</tspan></text>
+    <text
+       x="4119.2612"
+       y="1474.884"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text206"><tspan
+         x="4119.2612"
+         dy="0"
+         id="tspan206">임당</tspan></text>
+    <text
+       x="4270"
+       y="1474.5399"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-terminal"
+       data-label-role="terminal"
+       id="text207"><tspan
+         x="4270"
+         dy="0"
+         id="tspan207">영남대</tspan></text>
+    <text
+       x="1941.4565"
+       y="1465.5112"
+       text-anchor="end"
+       font-size="38"
+       font-weight="850"
+       fill="#14293D"
+       class="transfer-name"
+       data-label-role="transfer"
+       id="text208">청라언덕</text>
+    <text
+       x="1950"
+       y="1660.1072"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="750"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text209">남산</text>
+    <text
+       x="2363.7329"
+       y="1663.5748"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text210"><tspan
+         x="2363.7329"
+         dy="0"
+         id="tspan209">건들바위</tspan></text>
+    <text
+       x="2582.9863"
+       y="1662.2841"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text211"><tspan
+         x="2582.9863"
+         dy="0"
+         id="tspan210">대봉교</tspan></text>
+    <text
+       x="2802.9863"
+       y="1661.3351"
+       text-anchor="middle"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text212"><tspan
+         x="2802.9863"
+         dy="0"
+         id="tspan211">수성시장</tspan></text>
+    <text
+       x="3017.3313"
+       y="1703.7738"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary is-long"
+       data-label-role="ordinary"
+       id="text213"><tspan
+         x="3017.3313"
+         dy="0"
+         id="tspan212">수성구민</tspan><tspan
+         x="3017.3313"
+         dy="31.040001"
+         id="tspan213">운동장</tspan></text>
+    <text
+       x="3020.3362"
+       y="1811.8029"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text214"><tspan
+         x="3020.3362"
+         dy="0"
+         id="tspan214">어린이세상</tspan></text>
+    <text
+       x="3021.5381"
+       y="1901.8029"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text215"><tspan
+         x="3021.5381"
+         dy="0"
+         id="tspan215">황금</tspan></text>
+    <text
+       x="3030.8555"
+       y="2023.9202"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text216"><tspan
+         x="3030.8555"
+         dy="0"
+         id="tspan216">수성못</tspan></text>
+    <text
+       x="3155.1799"
+       y="2024.1985"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text217"><tspan
+         x="3155.1799"
+         dy="0"
+         id="tspan217">지산</tspan></text>
+    <text
+       x="3272.1475"
+       y="2023.515"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text218"><tspan
+         x="3272.1475"
+         dy="0"
+         id="tspan218">범물</tspan></text>
+    <text
+       x="3364.179"
+       y="2024.1195"
+       text-anchor="start"
+       font-size="34"
+       font-weight="700"
+       fill="#14293D"
+       class="station-name is-terminal"
+       data-label-role="terminal"
+       id="text219"><tspan
+         x="3364.179"
+         dy="0"
+         id="tspan219">용지</tspan></text>
+    <text
+       x="418.29013"
+       y="598.9549"
+       text-anchor="end"
+       font-size="34"
+       font-weight="780"
+       fill="#14293D"
+       class="station-name is-terminal"
+       data-label-role="terminal"
+       id="text220">구미</text>
+    <text
+       x="532.45374"
+       y="716.65936"
+       text-anchor="end"
+       font-size="34"
+       font-weight="780"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text221">사곡</text>
+    <text
+       x="646.61731"
+       y="834.36383"
+       text-anchor="end"
+       font-size="34"
+       font-weight="780"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text222">북삼</text>
+    <text
+       x="796.18982"
+       y="983.93634"
+       text-anchor="end"
+       font-size="34"
+       font-weight="780"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text223">왜관</text>
+    <text
+       x="939.12073"
+       y="1125.3158"
+       text-anchor="end"
+       font-size="34"
+       font-weight="780"
+       fill="#14293D"
+       class="station-name is-ordinary"
+       data-label-role="ordinary"
+       id="text224">서대구</text>
+    <text
+       x="3961.3462"
+       y="1241.8811"
+       text-anchor="end"
+       font-size="34"
+       font-weight="780"
+       fill="#14293D"
+       class="station-name is-terminal"
+       data-label-role="terminal"
+       id="text225">경산</text>
+    <g
+       id="line3-312-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="312"
+       data-station="칠곡경대병원"
+       data-label-orientation="horizontal"
+       data-label-side="below"
+       transform="translate(-36.277098,38.997881)">
+      <text
+         x="1110"
+         y="110"
+         text-anchor="start"
+         font-size="34"
+         font-weight="800"
+         fill="#14293D"
+         class="station-name is-terminal"
+         data-label-role="terminal"
+         id="text226">칠곡경대병원</text>
+      <text
+         x="1110"
+         y="130"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text227">312</text>
+    </g>
+    <g
+       id="line3-313-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="313"
+       data-station="학정"
+       data-label-orientation="horizontal"
+       data-label-side="below"
+       transform="translate(-34.463243,47.160228)">
+      <text
+         x="1110"
+         y="190"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text228">학정</text>
+      <text
+         x="1110"
+         y="210"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text229">313</text>
+    </g>
+    <g
+       id="line3-314-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="314"
+       data-station="팔거"
+       data-label-orientation="horizontal"
+       data-label-side="below"
+       transform="translate(-36.277098,43.532518)">
+      <text
+         x="1110"
+         y="270"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text230">팔거</text>
+      <text
+         x="1110"
+         y="290"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text231">314</text>
+    </g>
+    <g
+       id="line3-315-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="315"
+       data-station="동천"
+       data-label-orientation="horizontal"
+       data-label-side="below"
+       transform="translate(-35.370171,38.090953)">
+      <text
+         x="1110"
+         y="350"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text232">동천</text>
+      <text
+         x="1110"
+         y="370"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text233">315</text>
+    </g>
+    <g
+       id="line3-316-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="316"
+       data-station="칠곡운암"
+       data-label-orientation="horizontal"
+       data-label-side="below"
+       transform="translate(-38.146167,39.088048)">
+      <text
+         x="1110"
+         y="430"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text234">칠곡운암</text>
+      <text
+         x="1110"
+         y="450"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text235">316</text>
+    </g>
+    <g
+       id="line3-317-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="317"
+       data-station="구암"
+       data-label-orientation="horizontal"
+       data-label-side="below"
+       transform="translate(-35.791466,39.088048)">
+      <text
+         x="1110"
+         y="510"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text236">구암</text>
+      <text
+         x="1110"
+         y="530"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text237">317</text>
+    </g>
+    <g
+       id="line3-318-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="318"
+       data-station="태전"
+       data-label-orientation="horizontal"
+       data-label-side="below"
+       transform="translate(-35.320525,39.558988)">
+      <text
+         x="1110"
+         y="590"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text238">태전</text>
+      <text
+         x="1110"
+         y="610"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text239">318</text>
+    </g>
+    <g
+       id="line3-319-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="319"
+       data-station="매천"
+       data-label-orientation="horizontal"
+       data-label-side="above"
+       transform="translate(-37.675227,51.332497)">
+      <text
+         x="1110"
+         y="670"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text240">매천</text>
+      <text
+         x="1110"
+         y="690"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text241">319</text>
+    </g>
+    <g
+       id="line3-320-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="320"
+       data-station="매천시장"
+       data-label-orientation="horizontal"
+       data-label-side="above"
+       transform="translate(1.5024856,-24.03977)">
+      <text
+         x="1141.5522"
+         y="871.70135"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text242">매천시장</text>
+      <text
+         x="1110"
+         y="770"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text243">320</text>
+    </g>
+    <g
+       id="line3-321-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="321"
+       data-station="팔달"
+       data-label-orientation="horizontal"
+       data-label-side="above"
+       transform="translate(194.49716,62.69141)">
+      <text
+         x="1140"
+         y="785"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text244">팔달</text>
+      <text
+         x="1140"
+         y="805"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text245">321</text>
+    </g>
+    <g
+       id="line3-322-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="322"
+       data-station="공단"
+       data-label-orientation="horizontal"
+       data-label-side="above"
+       transform="translate(262.63437,-16.186277)">
+      <text
+         x="1240"
+         y="865"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text246">공단</text>
+      <text
+         x="1240"
+         y="885"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text247">322</text>
+    </g>
+    <g
+       id="line3-323-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="323"
+       data-station="만평"
+       data-label-orientation="horizontal"
+       data-label-side="above"
+       transform="translate(327.53063,-98.515072)">
+      <text
+         x="1340"
+         y="945"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text248">만평</text>
+      <text
+         x="1340"
+         y="965"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text249">323</text>
+    </g>
+    <g
+       id="line3-324-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="324"
+       data-station="팔달시장"
+       data-label-orientation="horizontal"
+       data-label-side="above"
+       transform="translate(385.10437,-113.86807)">
+      <text
+         x="1440"
+         y="1025"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text250">팔달시장</text>
+      <text
+         x="1440"
+         y="1045"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text251">324</text>
+    </g>
+    <g
+       id="line3-325-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="325"
+       data-station="원대"
+       data-label-orientation="horizontal"
+       data-label-side="above"
+       transform="translate(278.9128,-52.456078)">
+      <text
+         x="1540"
+         y="1105"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text252">원대</text>
+      <text
+         x="1540"
+         y="1125"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text253">325</text>
+    </g>
+    <g
+       id="line3-326-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="326"
+       data-station="북구청"
+       data-label-orientation="horizontal"
+       data-label-side="above"
+       transform="translate(181.67715,-2.5588331)">
+      <text
+         x="1640"
+         y="1185"
+         text-anchor="start"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text254">북구청</text>
+      <text
+         x="1640"
+         y="1205"
+         text-anchor="start"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text255">326</text>
+    </g>
+    <g
+       id="line3-327-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="327"
+       data-station="달성공원"
+       data-label-orientation="horizontal"
+       data-label-side="connector"
+       transform="translate(34.857046,73.826383)">
+      <text
+         x="1750"
+         y="1250"
+         text-anchor="end"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text256">달성공원</text>
+      <text
+         x="1750"
+         y="1270"
+         text-anchor="end"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text257">327</text>
+    </g>
+    <g
+       id="line3-328-horizontal-label"
+       class="horizontal-station-label-group"
+       data-line="line3"
+       data-code="328"
+       data-station="서문시장"
+       data-label-orientation="horizontal"
+       data-label-side="connector"
+       transform="translate(182.98482,34.21702)">
+      <text
+         x="1601.7286"
+         y="1389.0959"
+         text-anchor="end"
+         font-size="34"
+         font-weight="720"
+         fill="#14293D"
+         class="station-name is-ordinary"
+         data-label-role="ordinary"
+         id="text258">서문시장</text>
+      <text
+         x="1750"
+         y="1410"
+         text-anchor="end"
+         font-size="9"
+         font-weight="650"
+         fill="#607386"
+         class="station-code"
+         data-label-role="code"
+         display="none"
+         id="text259">328</text>
+    </g>
+  </g>
+</svg>

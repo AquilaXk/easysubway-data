@@ -1,0 +1,525 @@
+// #22: 카탈로그 endpoint·detailUrl 실재 계약. 네트워크 호출 없이 형식과 provider host 규약만 검사한다.
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
+
+import { resolveProviderCallIntegrity } from "./lib/provider-call-integrity.mjs";
+import { isTransientKricResultCode } from "./lib/source-collection-retry.mjs";
+import { LINE_SOURCES } from "./collect-capital-route-topology.mjs";
+import { listOperations, validateOperation } from "./source-operation.mjs";
+
+const CANDIDATES_PATH = path.join(import.meta.dirname, "source-candidates.json");
+const DATAPACK_DIRECTORY = import.meta.dirname;
+const KRIC_OPENAPI_HOST = "openapi.kric.go.kr";
+const KRIC_PORTAL_DETAIL_URL = "https://data.kric.go.kr/rips/M_01_02/detail.do";
+const KRIC_OPENAPI_PATH = /^\/openapi\/([A-Za-z][A-Za-z0-9]*)\/([A-Za-z][A-Za-z0-9]*)$/;
+
+// 2026-08-02 포털 실측으로 확인한 정본 detail 페이지 id. 잘못된 data.go.kr LINK 페이지가 다시 들어오지 못하게 고정한다.
+const KRIC_PORTAL_DETAIL_IDS = Object.freeze({
+  "kric-station-convenience-standard": "430",
+  "kric-station-disabled-toilet": "432",
+  "kric-station-escalator-detailed": "190",
+  "kric-station-info": "183",
+  "kric-station-movement-detailed": "306",
+  "kric-station-movement-standard": "429",
+  "kric-station-platform": "433",
+  "kric-station-timetable": "182",
+  "kric-station-toilet": "186",
+  "kric-station-transfer-info": "181",
+  "kric-subway-route-info": "431",
+  "kric-subway-timetable": "162",
+  "kric-subway-timetable-station-lines": "162",
+  "kric-subway-timetable-exp": "434",
+  "kric-train-operation-organ": "266",
+  "kric-transfer-movement-detailed": "307",
+  "kric-transfer-movement-standard": "428",
+});
+
+const URL_FIELDS = Object.freeze([
+  ["detailUrl", (candidate) => candidate.detailUrl],
+  ["requestUrl", (candidate) => candidate.requestUrl],
+  ["evidence.endpoint", (candidate) => candidate.evidence?.endpoint],
+  ["evidence.detailPageUrl", (candidate) => candidate.evidence?.detailPageUrl],
+  ["evidence.sampleUrl", (candidate) => candidate.evidence?.sampleUrl],
+  ["operation.endpoint", (candidate) => candidate.operation?.endpoint],
+  ["operation.sampleUrl", (candidate) => candidate.operation?.sampleUrl],
+]);
+
+const DATA_GO_FOCUSED_TESTS = Object.freeze({
+  "tools/datapack/collect-busan-accessibility.mjs": "tools/datapack/collect-busan-accessibility.test.mjs",
+  "tools/datapack/collect-busan-route-topology.mjs": "tools/datapack/collect-busan-route-topology.test.mjs",
+  "tools/datapack/collect-busan-timetable.mjs": "tools/datapack/collect-busan-timetable.test.mjs",
+  "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.mjs": "tools/datapack/collect-current-seoul-transfer-distance-duration-snapshot.test.mjs",
+  "tools/datapack/collect-public-static-network-v2.mjs": "tools/datapack/collect-public-static-network-v2.test.mjs",
+  "tools/datapack/collect-daejeon-route-topology.mjs": "tools/datapack/collect-daejeon-route-topology.test.mjs",
+  "tools/datapack/collect-datago-source-candidate-evidence.mjs": "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
+  "tools/datapack/collect-gwangju-timetable.mjs": "tools/datapack/collect-gwangju-timetable.test.mjs",
+  "tools/datapack/collect-korail-itx-cheongchun-timetable.mjs": "tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs",
+  "tools/datapack/collect-nationwide-public-api-coverage.mjs": "tools/datapack/collect-nationwide-public-api-coverage.test.mjs",
+  "tools/datapack/collect-seoul-accessibility-evidence.mjs": "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
+  "tools/datapack/collect-seoul-metro-congestion.mjs": "tools/datapack/seoul-metro-congestion.test.mjs",
+  "tools/datapack/collect-tago-itx-cheongchun-od.mjs": "tools/datapack/collect-tago-itx-cheongchun-od.test.mjs",
+  "tools/datapack/fetch-kasi-public-holiday-calendar.mjs": "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
+  "tools/datapack/probe-daejeon-coverage-api.mjs": "tools/datapack/probe-daejeon-coverage-api.test.mjs",
+  "tools/datapack/probe-korail-train-operation-api.mjs": "tools/datapack/probe-korail-train-operation-api.test.mjs",
+  "tools/datapack/probe-seoul-fare-api.mjs": "tools/datapack/probe-seoul-fare-api.test.mjs",
+  "tools/datapack/probe-tago-train-date-semantics.mjs": "tools/datapack/probe-tago-train-date-semantics.test.mjs",
+  "tools/datapack/revalidate-current-molit-transfer-source.mjs": "tools/datapack/revalidate-current-molit-transfer-source.test.mjs",
+  "tools/datapack/run-current-itx-collection.mjs": "tools/datapack/run-current-itx-collection.test.mjs",
+  "tools/datapack/run-current-seoul-accessibility-registration.mjs": "tools/datapack/run-current-seoul-accessibility-registration.test.mjs",
+  "tools/datapack/run-public-static-network-v2-operation.mjs": "tools/datapack/run-public-static-network-v2-operation.test.mjs",
+  "tools/datapack/run-retained-gwangju-timetable-refresh.mjs": "tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs",
+  "tools/datapack/validate-tago-schedule-sample.mjs": "tools/datapack/plan-tago-schedule-collection.test.mjs",
+});
+
+const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+
+test("KASI monthly operation registers the retained collector without admission", async () => {
+  const candidate = document.candidates.find(({ id }) => id === "kasi-public-holiday-calendar");
+  assert.ok(candidate);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  const operation = validateOperation(candidate);
+  assert.equal(operation.runner.command, "node tools/datapack/fetch-kasi-public-holiday-calendar.mjs");
+  const collector = await import("./fetch-kasi-public-holiday-calendar.mjs");
+  assert.equal(typeof collector.collectKasiHolidayCalendarFiles, "function");
+  assert.equal(candidate.evidence.licenseEvidenceUrl, candidate.detailUrl);
+});
+
+test("retained Korail timetable candidate does not claim a provider runner or admission", async () => {
+  const candidate = document.candidates.find(({ id }) => id === "korail-metropolitan-timetable-file");
+  assert.ok(candidate);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  assert.equal(candidate.mobileEmbeddingAllowed, false);
+  assert.equal(candidate.detailUrl, "https://www.data.go.kr/data/15052169/fileData.do");
+  assert.equal(candidate.requestUrl, "https://www.korail.com/ticket/reserve/train-timeTable");
+  assert.equal(candidate.operation, undefined);
+  assert.equal(validateOperation(candidate, { allowMissing: true }), null);
+  const [file, exportedName] = candidate.evidence.retainedReader.split("#");
+  const reader = await import(new URL(`../../${file}`, import.meta.url));
+  assert.equal(typeof reader[exportedName], "function");
+  const collection = candidate.evidence.collectionContract;
+  const [collectorFile, collectorName] = collection.collector.split("#");
+  const collector = await import(new URL(`../../${collectorFile}`, import.meta.url));
+  assert.equal(typeof collector[collectorName], "function");
+  assert.equal(collection.requestTimeoutMs, collector.REQUEST_TIMEOUT_MS);
+  assert.equal(collection.maximumBytes, collector.MAXIMUM_BYTES);
+  assert.equal(candidate.evidence.licenseEvidenceUrl, candidate.detailUrl);
+  assert.equal(candidate.evidence.license, "unrestricted");
+});
+
+test("Seoul 노선별 지하철역 operation은 blank placeholders와 4호선 request token을 쓴다", () => {
+  const candidate = document.candidates.find(({ id }) => id === "seoulmetro-station-line-info");
+  assert.ok(candidate);
+  assert.equal(candidate.evidence.sampleUrl,
+    "http://openapi.seoul.go.kr:8088/[서비스키값]/json/SearchSTNBySubwayLineInfo/1/5/%20/%20/4호선");
+});
+
+test("public static-network v2는 cataloged official positions와 MOLIT만 한 one-shot runner로 수집한다", () => {
+  const positions = document.candidates.find(({ id }) => id === "seoul-metro-route-map-positions");
+  const molit = document.candidates.find(({ id }) => id === "molit-urban-rail-full-route");
+  assert.equal(positions?.operation?.runner?.command, "node tools/datapack/run-public-static-network-v2-operation.mjs");
+  assert.equal(positions?.operation?.endpoint, positions?.requestUrl);
+  assert.equal(molit?.requestUrl, molit?.evidence?.endpoint);
+  assert.doesNotMatch(JSON.stringify({ positions, molit }), /cyberstation|\.js(?:\b|$)|s3:\/\//iu);
+});
+
+test("Incheon accessibility catalog keeps the current deterministic collector boundary", () => {
+  const candidate = document.candidates.find(({ id }) => id === "incheon-transit-accessibility");
+  const runner = candidate?.operation?.runner;
+  assert.deepEqual(runner, {
+    command: "node tools/datapack/collect-incheon-accessibility.mjs",
+    arguments: [
+      "--elevator-input", "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv",
+      "--escalator-input", "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15010199.csv",
+      "--wheelchair-input", "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv",
+      "--topology-snapshot", "tools/datapack/sources/incheon-transit-station-info-20260828.json",
+      "--observation-output", "<absolute-operation-owned-observation-directory>",
+    ],
+    requiredEnv: [],
+  });
+  assert.doesNotMatch(JSON.stringify(runner), /s3:|\/tmp\/|captured-at|2026-07/u);
+});
+
+test("Incheon timetable catalog runs the credential-free official data.go.kr download mode", () => {
+  for (const id of ["incheon-line1-train-timetable", "incheon-line2-train-timetable"]) {
+    const candidate = document.candidates.find((entry) => entry.id === id);
+    const runner = candidate?.operation?.runner;
+    assert.equal(runner?.command, "node tools/datapack/collect-incheon-timetable.mjs");
+    assert.ok(runner?.arguments?.includes("--download"));
+    assert.ok(!runner?.arguments?.includes("--input-dir"));
+    assert.ok(!runner?.arguments?.includes("--captured-at"));
+    assert.doesNotMatch(JSON.stringify(runner), /current-provider-capture-iso/);
+    assert.doesNotMatch(JSON.stringify(runner), /fixtures|\/tmp\/|2026-07/);
+    assert.deepEqual(runner?.requiredEnv, []);
+  }
+});
+
+test("Capital topology catalog binds the exact credential-free 24-source operation", () => {
+  const candidate = document.candidates.find(({ id }) => id === "capital-route-topology");
+  assert.ok(candidate);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  assert.equal(candidate.operation?.kind, "AGGREGATE_SOURCE_SET");
+  assert.equal(candidate.operation?.method, "GET");
+  assert.equal(candidate.operation?.responseEnvelope, "capital-route-topology-snapshot");
+  assert.equal(validateOperation(candidate), candidate.operation);
+  assert.equal(listOperations(document).find(({ id }) => id === candidate.id)?.operationValidationError, null);
+  assert.deepEqual(candidate.operation?.runner, {
+    command: "node tools/datapack/collect-capital-route-topology.mjs",
+    arguments: ["--download", "--output", "[absent-task-owned-absolute-file.json]"],
+    requiredEnv: [],
+  });
+  assert.deepEqual(candidate.operation?.auth, { placement: "none" });
+  assert.deepEqual(candidate.operation?.retryPolicy, { maxRetries: 0 });
+
+  const excludedFields = new Set(["localCsv", "localMolitCsv", "note"]);
+  const projection = LINE_SOURCES.map((source) => Object.fromEntries(
+    Object.entries(source).filter(([key]) => !excludedFields.has(key)),
+  ));
+  const sourceSetSha256 = createHash("sha256").update(JSON.stringify(projection)).digest("hex");
+  assert.deepEqual(candidate.operation?.sourceDefinition, {
+    module: "tools/datapack/collect-capital-route-topology.mjs",
+    exportName: "LINE_SOURCES",
+    sourceCount: 24,
+    datasetCount: 23,
+    excludedFields: ["localCsv", "localMolitCsv", "note"],
+    sourceSetSha256,
+  });
+  assert.equal(sourceSetSha256, "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534");
+  assert.deepEqual([...new Set(projection.flatMap(Object.keys))].sort(), [
+    "acceptedBranchNames",
+    "chainAcrossOperators",
+    "closeCycleOnFirstSegmentOnly",
+    "datasetId",
+    "detailUrl",
+    "downloadUrl",
+    "kind",
+    "lineId",
+    "molitDatasetId",
+    "molitDownloadUrl",
+    "molitMinSequence",
+    "molitRouteName",
+    "resolveDownloadFromDetail",
+    "restartOnFirstStation",
+    "slug",
+    "splices",
+  ]);
+  assert.equal(new Set(projection.map(({ slug }) => slug)).size, 24);
+  assert.equal(new Set(projection.map(({ lineId }) => lineId)).size, 24);
+  assert.equal(new Set(projection.map(({ datasetId }) => datasetId)).size, 23);
+
+  for (const source of projection) {
+    const detailUrl = new URL(source.detailUrl);
+    const downloadUrl = new URL(source.downloadUrl);
+    assert.equal(detailUrl.protocol, "https:");
+    assert.equal(detailUrl.hostname, "www.data.go.kr");
+    assert.match(detailUrl.pathname, /^\/data\/[0-9]+\/fileData\.do$/u);
+    assert.equal(downloadUrl.protocol, "https:");
+    assert.equal(downloadUrl.hostname, "www.data.go.kr");
+    if (source.resolveDownloadFromDetail) {
+      assert.match(downloadUrl.pathname, /^\/data\/[0-9]+\/fileData\.do$/u);
+    } else {
+      assert.equal(downloadUrl.pathname, "/cmm/cmm/fileDownload.do");
+      assert.match(downloadUrl.searchParams.get("atchFileId") ?? "", /^FILE_[0-9]+$/u);
+      assert.match(downloadUrl.searchParams.get("fileDetailSn") ?? "", /^[1-9][0-9]*$/u);
+    }
+  }
+  assert.doesNotMatch(JSON.stringify(candidate), /s3:|aws|fallback/iu);
+});
+
+function kricOpenApiCandidates() {
+  return document.candidates.filter((candidate) => {
+    if (typeof candidate.requestUrl !== "string") return false;
+    const url = URL.parse(candidate.requestUrl);
+    return url?.host === KRIC_OPENAPI_HOST && url.pathname.startsWith("/openapi/");
+  });
+}
+
+test("카탈로그의 endpoint·detail URL은 형식적으로 유효하고 credential-free다", () => {
+  for (const candidate of document.candidates) {
+    for (const [field, read] of URL_FIELDS) {
+      const value = read(candidate);
+      if (value == null) continue;
+      const label = `${candidate.id}.${field}`;
+      assert.equal(typeof value, "string", `${label} must be a string`);
+      const url = URL.parse(value);
+      assert.ok(url, `${label} must be a valid URL: ${value}`);
+      assert.ok(["http:", "https:"].includes(url.protocol), `${label} must use HTTP(S): ${value}`);
+      assert.ok(url.hostname, `${label} must have a host: ${value}`);
+      assert.equal(url.username, "", `${label} must not embed credentials`);
+      assert.equal(url.password, "", `${label} must not embed credentials`);
+      assert.equal(url.hash, "", `${label} must not carry a fragment`);
+    }
+  }
+});
+
+test("MOLIT 도시철도 전체노선은 official public 20251211 CSV artifact만 쓴다", async () => {
+  const candidate = document.candidates.find(({ id }) => id === "molit-urban-rail-full-route");
+  assert.ok(candidate);
+  const expected = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N";
+  assert.equal(candidate.requestUrl, expected);
+  assert.equal(candidate.evidence.endpoint, expected);
+  assert.equal(candidate.serviceKeyHandling, "not_required");
+  assert.deepEqual(candidate.evidence.formats, ["CSV"]);
+  assert.doesNotMatch(JSON.stringify(candidate), /api\.odcloud|uddi:|Authorization/u);
+  const runner = await readFile(path.join(
+    DATAPACK_DIRECTORY,
+    "revalidate-current-static-network-sources.mjs",
+  ), "utf8");
+  assert.doesNotMatch(runner, /DATA_GO_KR_SERVICE_KEY|normalizeDataGoKrServiceKey|api\.odcloud|Authorization|serviceKey/u);
+});
+
+test("서울 1~8호선 위치는 공식 public API operation과 secret-redacted runner를 쓴다", () => {
+  const candidate = document.candidates.find(({ id }) => id === "seoul-metro-route-map-positions");
+  assert.ok(candidate);
+  const endpoint = "https://api.odcloud.kr/api/15099316/v1/uddi:bc51de47-d3ea-4aa1-8ac2-d70f2b5e701e";
+  assert.equal(candidate.detailUrl, "https://www.data.go.kr/data/15099316/fileData.do");
+  assert.equal(candidate.requestUrl, endpoint);
+  assert.equal(candidate.evidence.endpoint, endpoint);
+  assert.equal(candidate.operation.endpoint, endpoint);
+  assert.equal(candidate.operation.method, "GET");
+  assert.deepEqual(candidate.operation.auth, {
+    env: "DATA_GO_KR_SERVICE_KEY",
+    placement: "query",
+    parameter: "serviceKey",
+    valueEncoding: "url-search-params-once",
+    loadPolicy: "process-env-no-shell-parsing",
+  });
+  // returnType은 fixedParameters가 고정한다. 검증기는 required·fixed·optional 이름이 겹치지 않아야 한다(#850).
+  assert.deepEqual(candidate.operation.requiredParameters, ["serviceKey", "page", "perPage"]);
+  assert.deepEqual(candidate.operation.fixedParameters, { returnType: "JSON" });
+  assert.equal(candidate.operation.responseEnvelope, "data + currentCount + matchCount + page + perPage + totalCount");
+  assert.equal(candidate.operation.runner.command, "node tools/datapack/run-public-static-network-v2-operation.mjs");
+  assert.deepEqual(candidate.operation.runner.requiredEnv, ["DATA_GO_KR_SERVICE_KEY", "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
+  assert.deepEqual(candidate.operation.runner.arguments, ["<absolute-operation-root>"]);
+  assert.equal(candidate.operation.secretPolicy, "env-only-redacted-output");
+  assert.equal(candidate.serviceKeyHandling, "offline_collector_secret_only");
+  assert.doesNotMatch(JSON.stringify(candidate), /Authorization|serviceKey=[^\[]/u);
+});
+
+test("evidence.endpoint는 requestUrl과 같은 provider host를 가리킨다", () => {
+  const foreignHosts = document.candidates
+    .filter((candidate) => candidate.evidence?.endpoint != null && candidate.requestUrl != null)
+    .filter((candidate) => URL.parse(candidate.evidence.endpoint)?.host !== URL.parse(candidate.requestUrl)?.host)
+    .map((candidate) => `${candidate.id}: ${candidate.evidence.endpoint}`);
+  assert.deepEqual(foreignHosts, []);
+
+  const organizationCodedEndpoints = document.candidates
+    .filter((candidate) => URL_FIELDS.some(([, read]) => String(read(candidate) ?? "").includes("apis.data.go.kr/B551181")))
+    .map((candidate) => candidate.id);
+  assert.deepEqual(organizationCodedEndpoints, []);
+});
+
+test("KRIC OpenAPI candidate는 endpoint 3중 일치와 포털 정본 detail 페이지를 쓴다", () => {
+  const candidates = kricOpenApiCandidates();
+  assert.ok(!candidates.some(({ id }) => id === "kric-provider-code-catalog"),
+    "the official FILE attachment is not an OpenAPI operation");
+
+  for (const candidate of candidates) {
+    const requestUrl = new URL(candidate.requestUrl);
+    const operationPath = KRIC_OPENAPI_PATH.exec(requestUrl.pathname);
+    assert.ok(operationPath, `${candidate.id}.requestUrl must be /openapi/<service>/<operation>`);
+    const [, service, operation] = operationPath;
+
+    for (const field of ["evidence.endpoint", "operation.endpoint"]) {
+      const value = field === "evidence.endpoint" ? candidate.evidence?.endpoint : candidate.operation?.endpoint;
+      if (value == null) continue;
+      assert.equal(value, candidate.requestUrl, `${candidate.id}.${field} must match requestUrl`);
+    }
+
+    const detailUrl = new URL(candidate.detailUrl);
+    assert.equal(
+      `${detailUrl.origin}${detailUrl.pathname}`,
+      KRIC_PORTAL_DETAIL_URL,
+      `${candidate.id}.detailUrl must be the KRIC portal detail page`,
+    );
+    assert.equal(detailUrl.searchParams.get("service"), service, `${candidate.id}.detailUrl service must match the operation path`);
+    assert.equal(detailUrl.searchParams.get("operation"), operation, `${candidate.id}.detailUrl operation must match the operation path`);
+    assert.equal(
+      detailUrl.searchParams.get("id"),
+      KRIC_PORTAL_DETAIL_IDS[candidate.id],
+      `${candidate.id}.detailUrl id must match the verified portal dataset id`,
+    );
+    if (candidate.evidence?.detailPageUrl != null) {
+      assert.equal(candidate.evidence.detailPageUrl, candidate.detailUrl, `${candidate.id}.evidence.detailPageUrl must match detailUrl`);
+    }
+  }
+
+  assert.deepEqual(candidates.map(({ id }) => id).sort(), Object.keys(KRIC_PORTAL_DETAIL_IDS).sort());
+});
+
+test("KRIC provider는 키 형상 계약과 검증된 대조군 operation을 카탈로그에 명시한다", () => {
+  const integrity = resolveProviderCallIntegrity(document, "kric");
+  assert.equal(integrity.credential.env, "KRIC_SERVICE_KEY");
+
+  const control = document.candidates.find(({ id }) => id === integrity.controlOperation.candidateId);
+  assert.ok(control, "control operation candidate must exist in the catalog");
+  assert.equal(integrity.controlOperation.endpoint, control.requestUrl);
+  assert.equal(
+    integrity.controlOperation.sampleUrl,
+    control.operation?.sampleUrl ?? control.evidence.sampleUrl,
+    "control operation sampleUrl must match the tracked candidate sample",
+  );
+  assert.equal(new URL(control.requestUrl).pathname, "/openapi/handicapped/stationCnvFacl");
+
+  // 기대 성공 형태는 창작이 아니라 대조군 candidate가 카탈로그에 기록한 provider 출력 필드에서만 나온다.
+  const documentedFields = new Set(control.operation?.responseFields ?? control.evidence.outputFields);
+  const undocumented = integrity.controlOperation.expectedSuccess.requiredFields
+    .filter((field) => !documentedFields.has(field));
+  assert.deepEqual(undocumented, [], "expectedSuccess.requiredFields must be documented provider output fields");
+  assert.ok(integrity.controlOperation.expectedSuccess.minimumRowCount >= 1);
+
+  // credential 신호 코드도 창작이 아니다. KRIC 키는 operation별 활용신청이 필수이고 미신청이면 30(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)이
+  // 돌아온다. 근거 위치: lib/source-collection-retry.mjs의 resultCode 분류표와 그 주석의 실측 기록 포인터.
+  // 재시도로 풀리지 않는 코드만 credential 신호가 될 수 있다.
+  assert.deepEqual(integrity.credentialSignalResultCodes, ["30"]);
+  assert.deepEqual(integrity.credentialSignalResultCodes.filter(isTransientKricResultCode), []);
+});
+
+test("DATA_GO_KR_SERVICE_KEY runner는 공통 deterministic credential-validation 계약을 구현한다", async () => {
+  const coverage = document.credentialBearingProviderCoverage;
+  assert.ok(Array.isArray(coverage), "credentialBearingProviderCoverage must be an array");
+  assert.equal(coverage.length, 1, "DATA_GO_KR_SERVICE_KEY coverage must have one provider entry");
+
+  const [dataGoKr] = coverage;
+  assert.deepEqual(Object.keys(dataGoKr).sort(), [
+    "credentialEnv",
+    "implementationStatus",
+    "providerId",
+    "reason",
+    "requiredClassification",
+    "runners",
+  ]);
+  assert.equal(dataGoKr.providerId, "data-go-kr");
+  assert.equal(dataGoKr.credentialEnv, "DATA_GO_KR_SERVICE_KEY");
+  assert.equal(dataGoKr.requiredClassification, "DETERMINISTIC_CREDENTIAL_VALIDATION_ONLY");
+  assert.equal(dataGoKr.implementationStatus, "IMPLEMENTED");
+  assert.equal(
+    dataGoKr.reason,
+    "all current runners validate DATA_GO_KR_SERVICE_KEY through the shared deterministic boundary before provider calls",
+  );
+
+  const files = await readdir(DATAPACK_DIRECTORY, { recursive: true });
+  const expectedRunners = [];
+  for (const file of files) {
+    if (!file.endsWith(".mjs") || file.endsWith(".test.mjs")) continue;
+    const runner = path.posix.join("tools/datapack", file.split(path.sep).join(path.posix.sep));
+    const source = await readFile(path.join(DATAPACK_DIRECTORY, file), "utf8");
+    if (!source.includes("DATA_GO_KR_SERVICE_KEY")) continue;
+    assert.match(source, /import\s*\{[^}]*\bnormalizeDataGoKrServiceKey\b[^}]*\}\s*from\s*["']\.\/lib\/provider-call-integrity\.mjs["']/s, `${runner} must import the shared normalizer`);
+    assert.match(source, /(?<!function\s)normalizeDataGoKrServiceKey\s*\(/, `${runner} must call the shared normalizer`);
+    expectedRunners.push(runner);
+  }
+  expectedRunners.sort();
+
+  assert.deepEqual(dataGoKr.runners, expectedRunners);
+  assert.equal(new Set(dataGoKr.runners).size, dataGoKr.runners.length, "runners must be unique");
+  assert.deepEqual(dataGoKr.runners, [...dataGoKr.runners].sort(), "runners must be path-sorted");
+});
+
+test("모든 DATA_GO runner는 정확히 대응하는 focused test에서 malformed credential의 provider 호출 0회를 증명한다", async () => {
+  const [dataGoKr] = document.credentialBearingProviderCoverage;
+  const files = await readdir(DATAPACK_DIRECTORY, { recursive: true });
+  const discoveredRunners = [];
+  for (const file of files) {
+    if (!file.endsWith(".mjs") || file.endsWith(".test.mjs")) continue;
+    const runner = path.posix.join("tools/datapack", file.split(path.sep).join(path.posix.sep));
+    const source = await readFile(path.join(DATAPACK_DIRECTORY, file), "utf8");
+    if (source.includes("DATA_GO_KR_SERVICE_KEY")) discoveredRunners.push(runner);
+  }
+  discoveredRunners.sort();
+
+  assert.deepEqual(Object.keys(DATA_GO_FOCUSED_TESTS).sort(), discoveredRunners);
+  assert.deepEqual(Object.keys(DATA_GO_FOCUSED_TESTS).sort(), dataGoKr.runners);
+  for (const [runner, focusedTest] of Object.entries(DATA_GO_FOCUSED_TESTS)) {
+    const testSource = await readFile(path.join(DATAPACK_DIRECTORY, path.basename(focusedTest)), "utf8");
+    assert.match(testSource, /invalid%ZZ/, `${focusedTest} must cover malformed DATA_GO_KR_SERVICE_KEY for ${runner}`);
+    assert.match(testSource, /assert\.equal\(calls, 0\)/, `${focusedTest} must prove provider/delegate calls stay at zero for ${runner}`);
+  }
+});
+
+test("4개 DATA_GO runner는 malformed credential을 URL·cache·fetch·delegate보다 먼저 preflight하고 matching focused test가 calls=0을 증명한다", async () => {
+  const orderingContracts = [
+    {
+      runner: "tools/datapack/collect-datago-source-candidate-evidence.mjs",
+      test: "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
+      functionName: "collectDatagoSourceCandidateEvidence",
+      before: ["readFile(CANDIDATES_PATH", "resolveDatagoCandidateRequest(", "collectSourceCandidateEvidence("],
+    },
+    {
+      runner: "tools/datapack/collect-seoul-accessibility-evidence.mjs",
+      test: "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
+      functionName: "collectSeoulAccessibility",
+      before: ["new URL(endpoint)", "fetchSeoulPage("],
+    },
+    {
+      runner: "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
+      test: "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
+      functionName: "fetchKasiPublicHolidayCalendarObservation",
+      before: ["new URL(ENDPOINT)", "fetchImpl("],
+    },
+    {
+      runner: "tools/datapack/collect-nationwide-public-api-coverage.mjs",
+      test: "tools/datapack/collect-nationwide-public-api-coverage.test.mjs",
+      functionName: "collectNationwidePublicApiCoverage",
+      before: ["validatePlan(searchPlan)", "new Map()", "runQuery("],
+    },
+  ];
+  assert.deepEqual(
+    orderingContracts.map(({ runner }) => runner),
+    [
+      "tools/datapack/collect-datago-source-candidate-evidence.mjs",
+      "tools/datapack/collect-seoul-accessibility-evidence.mjs",
+      "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
+      "tools/datapack/collect-nationwide-public-api-coverage.mjs",
+    ],
+  );
+
+  for (const contract of orderingContracts) {
+    const [runnerSource, testSource] = await Promise.all([
+      readFile(path.join(DATAPACK_DIRECTORY, path.basename(contract.runner)), "utf8"),
+      readFile(path.join(DATAPACK_DIRECTORY, path.basename(contract.test)), "utf8"),
+    ]);
+    const functionStart = runnerSource.indexOf(`export async function ${contract.functionName}`);
+    assert.ok(functionStart >= 0, `${contract.runner} must export ${contract.functionName}`);
+    const functionEnd = runnerSource.indexOf("\n}\n", functionStart);
+    const body = runnerSource.slice(functionStart, functionEnd);
+    const normalizerIndex = body.indexOf("normalizeDataGoKrServiceKey(");
+    assert.ok(normalizerIndex >= 0, `${contract.runner} must preflight DATA_GO_KR_SERVICE_KEY`);
+    for (const operation of contract.before) {
+      const operationIndex = body.indexOf(operation);
+      assert.ok(operationIndex >= 0, `${contract.runner} must contain ${operation}`);
+      assert.ok(normalizerIndex < operationIndex, `${contract.runner} must preflight before ${operation}`);
+    }
+    assert.match(testSource, /invalid%ZZ/, `${contract.test} must exercise malformed percent encoding`);
+    assert.match(testSource, /assert\.equal\(calls, 0\)/, `${contract.test} must prove provider calls stay at zero`);
+  }
+});
+
+test("대구 1~3호선 topology·timetable 카탈로그는 credential-free 공식 data.go.kr 다운로드 operation을 등록한다", () => {
+  const daeguIds = [
+    "daegu-line1-route-topology",
+    "daegu-line1-train-timetable",
+    "daegu-line2-route-topology",
+    "daegu-line2-train-timetable",
+    "daegu-line3-route-topology",
+    "daegu-line3-train-timetable",
+  ];
+  for (const id of daeguIds) {
+    const candidate = document.candidates.find((entry) => entry.id === id);
+    assert.ok(candidate, `${id} must exist in source-candidates.json`);
+    assert.equal(candidate.admissionStatus, "production_materialized");
+    assert.equal(candidate.requestUrl, candidate.detailUrl);
+    assert.equal(candidate.evidence.endpoint, candidate.detailUrl);
+    const operation = validateOperation(candidate);
+    assert.equal(operation.endpoint, candidate.detailUrl);
+    assert.deepEqual(operation.auth, { placement: "none" });
+    assert.deepEqual(operation.runner, {
+      command: "node tools/datapack/collect-daegu-datapack-sources.mjs",
+      arguments: ["--download", "--output-dir", "<absolute-operation-owned-output-directory>"],
+      requiredEnv: [],
+    });
+    assert.equal(operation.secretPolicy, "credential-free-output");
+  }
+});

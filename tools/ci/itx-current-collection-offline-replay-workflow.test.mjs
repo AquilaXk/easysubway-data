@@ -1,0 +1,115 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import test from "node:test";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const workflowPath = path.join(root, ".github/workflows/itx-current-collection-offline-replay.yml");
+const ciPath = path.join(root, ".github/workflows/ci.yml");
+const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
+
+function workflow() {
+  assert.ok(existsSync(workflowPath), "ITX offline replay workflow를 찾지 못함");
+  return readFileSync(workflowPath, "utf8");
+}
+
+function step(source, name) {
+  const match = source.match(new RegExp(`- name: ${name}[\\s\\S]*?(?=\\n\\s+- name:|\\n\\s*$)`));
+  assert.ok(match, `${name} 스텝을 찾지 못함`);
+  return match[0];
+}
+
+test("offline replay는 source_run_id 입력을 검증하고 해당 continuation artifact를 다운로드한다", () => {
+  const yml = workflow();
+  assert.match(yml, /^on:\n\s+workflow_dispatch:\n\s+inputs:\n\s+source_run_id:\n\s+description:[^\n]+\n\s+required:\s*true\n\s+type:\s*string/m);
+  assert.doesNotMatch(yml, /^\s+(?:push|pull_request|schedule):/m);
+  assert.match(yml, /^permissions:\n\s+actions: read\n\s+contents: read\s*$/m);
+  assert.match(yml, /runs-on: macos-15/);
+  assert.match(yml, /replay:\n\s+if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
+  assert.match(yml, /timeout-minutes:\s*60/);
+  assert.match(yml, /cancel-in-progress:\s*false/);
+  assert.match(yml, /persist-credentials:\s*false/);
+  assert.match(yml, /node-version:\s*["']24\.19\.0["']/);
+  assert.doesNotMatch(yml, /(?:^env:|environment:|secrets\.|DATA_GO_KR_SERVICE_KEY)/m);
+
+  const checkout = step(yml, "ITX offline replay / Checkout repository");
+  assert.match(checkout, /ref:\s*main/);
+
+  const actionRefs = [...yml.matchAll(/^\s+uses:\s*([^\s]+)\s*$/gm)].map((match) => match[1]);
+  assert.ok(actionRefs.length > 0);
+  for (const actionRef of actionRefs) assert.match(actionRef, /@[0-9a-f]{40}$/);
+
+  const validate = step(yml, "ITX offline replay / Validate inputs");
+  assert.match(validate, /inputs\.source_run_id/);
+  assert.match(validate, /\^\[1-9\]\[0-9\]\*\$/);
+
+  const download = step(yml, "ITX offline replay / Download retained extended capture");
+  assert.match(download, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
+  assert.match(download, /repository:\s*AquilaXk\/easysubway-data/);
+  assert.match(download, /run-id:\s*\$\{\{\s*inputs\.source_run_id\s*\}\}/);
+  assert.match(download, /name:\s*itx-current-collection-continuation-\$\{\{\s*inputs\.source_run_id\s*\}\}/);
+  assert.match(download, /github-token:\s*\$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(download, /31620004435/);
+});
+
+test("current-main station catalog과 extended capture로 replay CLI를 한 번만 실행한다", () => {
+  const yml = workflow();
+  const catalog = step(yml, "ITX offline replay / Emit station catalog pack");
+  assert.match(catalog, /emit-station-catalog-pack\.mjs/);
+  assert.match(catalog, /--catalog-pack-id "itx-current-station-catalog-v1"/);
+
+  const run = step(yml, "ITX offline replay / Replay retained capture");
+  assert.equal((run.match(/replay-current-itx-collection\.mjs/g) ?? []).length, 1);
+  assert.match(run, /--capture "\$\{\{ runner\.temp \}\}\/itx-offline-replay-input\/provider-response-extended-capture\.json"/);
+  assert.match(run, /--output "\$\{\{ runner\.temp \}\}\/itx-offline-replay-output\/itx-replay\.json"/);
+  assert.match(run, /--station-catalog-pack "\$\{\{ runner\.temp \}\}\/itx-offline-replay-output\/station-catalog-pack"/);
+  assert.doesNotMatch(run, /run-current-itx-collection|continue-current-itx-collection|provider-response-capture|promote-candidate|previous-admitted/);
+});
+
+test("sanitized replay output 하나만 14일 보존한다", () => {
+  const yml = workflow();
+  const upload = step(yml, "ITX offline replay / Upload sanitized replay evidence");
+  assert.match(upload, /if:\s*\$\{\{ always\(\) \}\}/);
+  assert.match(upload, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
+  assert.match(upload, /path:\s*\$\{\{ runner\.temp \}\}\/itx-offline-replay-output\/itx-replay\.json/);
+  assert.match(upload, /if-no-files-found:\s*error/);
+  assert.match(upload, /retention-days:\s*14/);
+  assert.doesNotMatch(upload, /provider-response|station-catalog-pack|itx-result|itx-completeness|freshness/);
+  assert.doesNotMatch(yml, /(?:git (?:add|commit|push)|gh |promotion|publish|fallback|alternate provider)/i);
+});
+
+test("Data contracts가 offline replay workflow와 functional replay contract를 실행한다", () => {
+  const ci = readFileSync(ciPath, "utf8");
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+  for (const ownedPath of [
+    "tools/ci/itx-current-collection-offline-replay-workflow.test.mjs",
+    "tools/datapack/replay-current-itx-collection.test.mjs",
+  ]) {
+    const entries = ownership.tests.filter(({ path: testPath }) => testPath === ownedPath);
+    assert.equal(entries.length, 1, `${ownedPath} ownership entry는 정확히 하나여야 함`);
+    assert.ok(entries[0].classes.includes("required-pr"));
+  }
+});
+
+test("run 블록은 workflow_dispatch 입력을 셸에 직접 펼치지 않고 env로만 받는다(#853 리뷰 F1)", () => {
+  const lines = workflow().split("\n");
+  const runBodies = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = /^(\s*)(?:- )?run: [|>]/u.exec(lines[index]);
+    if (!header) continue;
+    const indent = header[1].length;
+    const body = [];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const line = lines[next];
+      if (line.trim() !== "" && line.length - line.trimStart().length <= indent) break;
+      body.push(line);
+    }
+    runBodies.push(body.join("\n"));
+  }
+  assert.ok(runBodies.length > 0, "검사할 run 블록이 있어야 한다");
+  for (const body of runBodies) {
+    assert.doesNotMatch(body, /\$\{\{\s*(?:inputs|github\.event\.inputs)\./u);
+  }
+});

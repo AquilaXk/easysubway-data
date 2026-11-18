@@ -1,0 +1,199 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { gzipSync, gunzipSync } from "node:zlib";
+
+import {
+  buildMolitRailwayTransferMovementSnapshot,
+  molitRailwayTransferMovementEditionDate,
+  runMolitRailwayTransferMovementCollector,
+  parseCsv,
+  CSV_MAX_BYTES,
+  CSV_MAX_ROWS,
+  CSV_MAX_COLUMNS,
+} from "./collect-molit-railway-transfer-movement.mjs";
+
+const POLICY = JSON.parse(await readFile(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url), "utf8"));
+const OFFICIAL_FILE_NAME = "국토교통부_철도역 환승 이동경로 정보_20250811.csv";
+
+const HEADER = "철도운영기관코드,선명,역명,환승이동순서,이동내용상세,환승이동내용";
+const ROWS = [
+  "S1,1호선,가,1,계단,1호선 승강장 이동",
+  "S1,1호선,가,2,,",
+];
+
+function csv(rows = ROWS, header = HEADER) {
+  return Buffer.from(`${header}\r\n${rows.join("\r\n")}\r\n`, "utf8");
+}
+function options(bytes = csv()) { return { capturedAt: "2026-07-29T00:00:00.000Z", editionDate: "20250811", freshnessPolicy: POLICY, expectedRowCount: 2, expectedRawSha256: createHash("sha256").update(bytes).digest("hex") }; }
+
+// #862: 판 날짜·행 수·sha를 상수가 아니라 공식 파일명과 파일에서 유도한다(2026 판 수용).
+test("MOLIT transfer movement collector derives the edition from the official file name and freshness from policy (#862)", () => {
+  assert.equal(molitRailwayTransferMovementEditionDate("국토교통부_철도역 환승 이동경로 정보_20260811.csv"), "20260811");
+  assert.throws(() => molitRailwayTransferMovementEditionDate("official.csv"), /edition date/);
+  assert.throws(() => molitRailwayTransferMovementEditionDate("국토교통부_철도역 환승 이동경로 정보_20261341.csv"), /edition date/);
+  const bytes = csv([...ROWS, "S1,2호선,나,1,엘리베이터,2호선 승강장 이동"]);
+  const snapshot = buildMolitRailwayTransferMovementSnapshot({ bytes, capturedAt: "2026-10-01T00:00:00.000Z", editionDate: "20260811", freshnessPolicy: POLICY });
+  assert.equal(snapshot.snapshotId, "molit-railway-transfer-movement-20260811");
+  assert.equal(snapshot.observedAt, "2026-08-11T00:00:00.000Z");
+  assert.equal(snapshot.freshUntil, "2027-08-11T00:00:00.000Z");
+  assert.equal(snapshot.rowCount, 3);
+  assert.equal(snapshot.rawSha256, createHash("sha256").update(bytes).digest("hex"));
+  assert.throws(() => buildMolitRailwayTransferMovementSnapshot({ bytes, capturedAt: "2026-10-01T00:00:00.000Z", editionDate: "20260811", freshnessPolicy: POLICY, expectedRowCount: 2 }), /row count mismatch/);
+  assert.throws(() => buildMolitRailwayTransferMovementSnapshot({ bytes, capturedAt: "2026-08-10T00:00:00.000Z", editionDate: "20260811", freshnessPolicy: POLICY }), /between observedAt and now/);
+});
+
+test("MOLIT transfer movement collector는 exact schema·순서와 공란을 보존한 deterministic gzip snapshot을 만든다", () => {
+  const snapshot = buildMolitRailwayTransferMovementSnapshot({
+    bytes: csv(),
+    ...options(csv()),
+  });
+
+  assert.equal(snapshot.sourceId, "molit-railway-transfer-movement");
+  assert.equal(snapshot.snapshotId, "molit-railway-transfer-movement-20250811");
+  assert.equal(snapshot.rowCount, 2);
+  assert.deepEqual(snapshot.observedRailOperatorCodes, ["S1"]);
+  assert.deepEqual(snapshot.columns, HEADER.split(",").map((value) => ({
+    철도운영기관코드: "RAIL_OPR_ISTT_CD",
+    선명: "LN_NM",
+    역명: "STIN_NM",
+    환승이동순서: "CHTN_MV_TP_ORDR",
+    이동내용상세: "MV_CONT_DTL",
+    환승이동내용: "CHTN_MV_CONT",
+  })[value]));
+  assert.equal(snapshot.rows[1].MV_CONT_DTL, "");
+  assert.equal(snapshot.rows[1].CHTN_MV_CONT, "");
+  assert.equal(snapshot.credentialRedacted, true);
+  assert.equal(snapshot.licenseText, "이용허락범위 제한 없음");
+  assert.match(snapshot.rawSha256, /^[0-9a-f]{64}$/);
+  assert.match(snapshot.gzipSha256, /^[0-9a-f]{64}$/);
+  assert.match(snapshot.sortedContentSha256, /^[0-9a-f]{64}$/);
+  assert.equal(gunzipSync(snapshot.gzipBytes).equals(csv()), true);
+});
+
+test("MOLIT transfer movement collector는 provider step 순서를 verbatim 보존하고 양의 정수 형식만 검증한다", () => {
+  const fixtureOptions = options();
+  assert.throws(() => buildMolitRailwayTransferMovementSnapshot({ ...fixtureOptions, bytes: csv(), capturedAt: "2026-07-29" }), /RFC 3339 UTC timestamp/);
+  assert.throws(() => buildMolitRailwayTransferMovementSnapshot({ ...fixtureOptions, bytes: csv(), capturedAt: "2025-08-10T23:59:59.999Z" }), /between observedAt and now/);
+  assert.throws(() => buildMolitRailwayTransferMovementSnapshot({ ...fixtureOptions, bytes: csv(), capturedAt: "9999-01-01T00:00:00.000Z" }), /between observedAt and now/);
+  for (const [bytes, pattern] of [[csv(ROWS, "a,b,c"), /header mismatch/], [csv([ROWS[0]]), /row count mismatch/], [csv([",1호선,가,1,계단,이동", ROWS[1]]), /identity blank/], [csv([ROWS[0], "S1,1호선,가,0,,"]), /invalid step/], [csv([ROWS[0], "S1,1호선,가,one,,"]), /invalid step/]]) assert.throws(() => buildMolitRailwayTransferMovementSnapshot({ ...fixtureOptions, bytes, expectedRawSha256: createHash("sha256").update(bytes).digest("hex") }), pattern);
+});
+
+test("MOLIT transfer movement collector CLI는 output gzip과 metadata hash 변조를 거부한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-molit-transfer-"));
+  try {
+    const input = path.join(directory, "official.csv");
+    const output = path.join(directory, "molit-railway-transfer-movement-20250811.csv.gz");
+    await writeFile(input, csv());
+    const fixture = { expectedRowCount: 2, expectedRawSha256: createHash("sha256").update(csv()).digest("hex") };
+    await assert.rejects(() => runMolitRailwayTransferMovementCollector([
+      "--input", input, "--official-file-name", OFFICIAL_FILE_NAME, "--output", path.join(directory, "snapshot.csv.gz"), "--captured-at", "2026-07-29T00:00:00.000Z",
+    ], fixture), /canonical snapshot filename/);
+    const generated = await runMolitRailwayTransferMovementCollector([
+      "--input", input,
+      "--official-file-name", OFFICIAL_FILE_NAME,
+      "--output", output,
+      "--captured-at", "2026-07-29T00:00:00.000Z",
+    ], fixture);
+    const metadata = JSON.parse(await readFile(`${output}.json`, "utf8"));
+    assert.deepEqual(generated, metadata);
+    assert.equal(metadata.gzipPath, path.basename(output));
+    await rm(input);
+    await assert.rejects(() => runMolitRailwayTransferMovementCollector([
+      "--input", input, "--output", output, "--captured-at", "2026-07-29T00:00:00.000Z", "--verify-existing", "ture",
+    ], fixture), /--verify-existing must be true/);
+    assert.deepEqual(await runMolitRailwayTransferMovementCollector([
+      "--input", input, "--output", output, "--captured-at", "2026-07-29T00:00:00.000Z", "--verify-existing", "true",
+    ], fixture), metadata);
+    const alternateGzip = gzipSync(gunzipSync(await readFile(output)), { level: 1, mtime: 0 });
+    const alternateMetadata = {
+      ...metadata,
+      gzipSha256: createHash("sha256").update(alternateGzip).digest("hex"),
+    };
+    assert.notEqual(alternateMetadata.gzipSha256, metadata.gzipSha256);
+    await writeFile(output, alternateGzip);
+    await writeFile(`${output}.json`, JSON.stringify(alternateMetadata));
+    assert.deepEqual(await runMolitRailwayTransferMovementCollector([
+      "--input", input, "--output", output, "--captured-at", "2026-07-29T00:00:00.000Z", "--verify-existing", "true",
+    ], fixture), alternateMetadata);
+    await writeFile(`${output}.json`, JSON.stringify({ ...alternateMetadata, rowCount: 3 }));
+    await assert.rejects(() => runMolitRailwayTransferMovementCollector([
+      "--input", input, "--output", output, "--captured-at", "2026-07-29T00:00:00.000Z", "--verify-existing", "true",
+    ], fixture), /metadata mismatch/);
+    await writeFile(`${output}.json`, JSON.stringify(alternateMetadata));
+    await writeFile(output, Buffer.from("mutated"));
+    await assert.rejects(() => runMolitRailwayTransferMovementCollector([
+      "--input", input,
+      "--output", output,
+      "--captured-at", "2026-07-29T00:00:00.000Z",
+      "--verify-existing", "true",
+    ], fixture), /gzip hash mismatch/);
+    const mutatedBytes = csv([ROWS[0], "S1,1호선,가,2,경사로,"]);
+    const mutatedGzip = gzipSync(mutatedBytes, { mtime: 0 });
+    await writeFile(output, mutatedGzip);
+    await writeFile(`${output}.json`, JSON.stringify({
+      ...metadata,
+      rawSha256: createHash("sha256").update(mutatedBytes).digest("hex"),
+      gzipSha256: createHash("sha256").update(mutatedGzip).digest("hex"),
+    }));
+    await assert.rejects(() => runMolitRailwayTransferMovementCollector([
+      "--input", input,
+      "--output", output,
+      "--captured-at", "2026-07-29T00:00:00.000Z",
+      "--verify-existing", "true",
+    ], fixture), /raw hash mismatch/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// #862: 2026 판 수용 — 환승 admission 도구는 판 날짜·행 수·바이트 수·raw sha를 상수로 고정하지 않는다.
+test("MOLIT transfer consumers do not pin an edition literal (#862)", async () => {
+  for (const tool of [
+    "collect-molit-railway-transfer-movement.mjs",
+    "build-current-transfer-source-admission.mjs",
+    "evaluate-current-molit-transfer-freshness.mjs",
+    "revalidate-current-molit-transfer-source.mjs",
+    "build-transfer-topology-admission.mjs",
+    "validate-source-inventory.mjs",
+    "build-accessibility-source-coverage-report.mjs",
+  ]) {
+    const source = await readFile(new URL(`./${tool}`, import.meta.url), "utf8");
+    for (const literal of [/2025-?08-?11/u, /\b8_?054\b/u, /\b598_?455\b/u, /3a45dc1d82f8/u, /94e712d32860/u, /2026-08-11/u]) {
+      assert.doesNotMatch(source, literal, `${tool} pins ${literal}`);
+    }
+  }
+});
+
+test("PapaParse 패턴 기반 고속 CSV 파서는 슬라이스 추출과 이스케이프를 올바르게 처리한다", () => {
+  const sampleCsv = 'colA,colB,colC\r\n"hello, world","quote ""inner""",123\r\n"multiline\r\nline2",val,\r\n';
+  const parsed = parseCsv(sampleCsv);
+  assert.equal(parsed.length, 3);
+  assert.deepEqual(parsed[0], ["colA", "colB", "colC"]);
+  assert.deepEqual(parsed[1], ["hello, world", 'quote "inner"', "123"]);
+  assert.deepEqual(parsed[2], ["multiline\r\nline2", "val", ""]);
+
+  // 마지막 개행 없는 경우
+  const trailingNoNewline = "a,b\r\nc,d";
+  assert.deepEqual(parseCsv(trailingNoNewline), [["a", "b"], ["c", "d"]]);
+});
+
+test("CSV 파서는 maxBytes·maxRows·maxColumns 및 악의적 입력 초과 시 Fail-Closed로 거부한다", () => {
+  // 열리지 않은/닫히지 않은 따옴표 Fail-Closed
+  assert.throws(() => parseCsv('col1,col2\r\n"unterminated,123'), /unterminated CSV quote/);
+
+  // maxBytes 초과
+  const text = "a,b,c\r\n1,2,3\r\n";
+  assert.throws(() => parseCsv(text, { maxBytes: 5 }), /CSV input size exceeds limit/);
+
+  // maxRows 초과
+  const multiRows = "a,b\r\n1,2\r\n3,4\r\n5,6\r\n";
+  assert.throws(() => parseCsv(multiRows, { maxRows: 2 }), /CSV row count exceeds limit/);
+
+  // maxColumns 초과
+  const wideRow = "1,2,3,4,5,6,7,8,9,10\r\n";
+  assert.throws(() => parseCsv(wideRow, { maxColumns: 5 }), /CSV column count exceeds limit/);
+});

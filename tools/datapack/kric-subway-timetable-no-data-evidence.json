@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "kric-subway-timetable-no-data-evidence",
+  "sourceIssue": 28,
+  "sourceId": "kric-subway-timetable",
+  "officialDocumentationUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=434&service=trainUseInfo&operation=subwayTimetableExp",
+  "operation": "subwayTimetableExp",
+  "probe": {
+    "requestKey": "subwayTimetableExp|S1|433|7",
+    "rawSha256": "826aedce696396835866fce27ff5f4770ef2a24e9aab1247556a7952972cde14",
+    "resultCode": "03",
+    "resultMsg": "데이터가 없습니다.",
+    "bodyRowCount": 0
+  },
+  "classification": {
+    "state": "EXPECTED_NO_DATA_SATURDAY",
+    "expectedDayCd": "7",
+    "expectedRequestCount": 51,
+    "calendarServiceId": "holiday-kric",
+    "productionCoverageClaim": false
+  }
+}

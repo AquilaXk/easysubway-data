@@ -1,0 +1,51 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { isCapitalRouteTopologySnapshotId } from "../lib/capital-route-topology-snapshot-id.mjs";
+
+export async function currentTopologyAdmissionClock(repositoryRoot) {
+  const [inventory, candidate, snapshots] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const admissions = inventory.sources
+    .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
+    .filter(({ topologySnapshotId } = {}) => isCapitalRouteTopologySnapshotId(topologySnapshotId));
+  const admission = admissions[0];
+  const incheonAdmissions = inventory.sources
+    .filter(({ id }) => id === "incheon-transit-station-info")
+    .map(({ topologyAdmissionEvidence }) => topologyAdmissionEvidence);
+  const incheonAdmission = incheonAdmissions[0];
+  if (admission == null
+    || incheonAdmission == null
+    || incheonAdmissions.length !== 1
+    || admissions.some(({ topologySnapshotId, reviewedAt, freshUntil }) => topologySnapshotId !== admission.topologySnapshotId
+      || reviewedAt !== admission.reviewedAt || freshUntil !== admission.freshUntil)) {
+    throw new Error("current topology admission clock fixture is invalid");
+  }
+  const topologyCapturedAt = Date.parse(admission.reviewedAt);
+  const incheonCapturedAt = Date.parse(incheonAdmission.capturedAt);
+  const freshUntil = Math.min(
+    Date.parse(admission.freshUntil),
+    Date.parse(incheonAdmission.freshUntil),
+  );
+  const staticSources = snapshots.filter(({ snapshotId, sourceId }) => candidate.sourceSnapshotIds?.includes(snapshotId)
+    && ["molit-urban-rail-full-route", "seoul-metro-route-map-positions"].includes(sourceId));
+  const staticSourceBasisAt = Math.max(...staticSources.flatMap(({ retrievedAt, sourceUpdatedAt }) => [retrievedAt, sourceUpdatedAt])
+    .filter((value) => typeof value === "string")
+    .map((value) => Date.parse(value)));
+  if (staticSources.length !== 2 || !Number.isFinite(staticSourceBasisAt)) {
+    throw new Error("current static source clock fixture is invalid");
+  }
+  const inWindowAt = Math.max(topologyCapturedAt, incheonCapturedAt, staticSourceBasisAt) + 1_000;
+  if (![topologyCapturedAt, incheonCapturedAt, freshUntil].every(Number.isFinite)
+    || inWindowAt >= freshUntil) {
+    throw new Error("current topology admission clock fixture is invalid");
+  }
+  return {
+    inWindow: new Date(inWindowAt),
+    expiredAt: new Date(freshUntil),
+    // #862: capital topology는 Incheon 입력과 따로 재수집될 수 있으므로 자기 신선 경계를 따로 준다.
+    capitalTopologyExpiredAt: new Date(Date.parse(admission.freshUntil)),
+  };
+}

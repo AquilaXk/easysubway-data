@@ -1,0 +1,1169 @@
+{
+  "note": "수도권 topology 등록의 실제 기록(seq127 #940, seq128 #976). git show로 읽은 base·head의 원장(capital-route-topology 행 일부)과 inventory 항목(head 전체와 바뀐 필드의 base 값), 변경 파일 목록이다. 소유 밖 inventory 항목은 두 판본에서 같은 stub(id만)이다. gateSources는 같은 입력을 전체 원장으로 돌린 원장 게이트의 결과와 일치함을 확인해 기록했다.",
+  "commits": [
+    {
+      "label": "seq127",
+      "commit": "6741d1b8961f36600c8cd3ea6d56e963ae14b917",
+      "parent": "8965dc6e08ee777d15687be62b26b617914eea2e",
+      "subject": "[Data] 수도권 topology 20261004 원본 OCI 게시와 원장 등록",
+      "files": [
+        {
+          "filename": "tools/datapack/release/source-snapshots.json",
+          "status": "modified"
+        },
+        {
+          "filename": "tools/datapack/source-inventory.json",
+          "status": "modified"
+        }
+      ],
+      "inventory": {
+        "top": {
+          "schemaVersion": 1,
+          "region": "nationwide",
+          "artifactKind": "production-source-inventory",
+          "retrievedAt": "2026-06-22"
+        },
+        "unownedEntryIds": [
+          "busan-transportation-accessibility",
+          "busan-transportation-official-od-fares",
+          "busan-transportation-route-topology"
+        ],
+        "ownedEntryAfter": {
+          "id": "capital-route-topology",
+          "displayName": "수도권 도시철도 노선별 역간거리 FILE source set",
+          "owner": "국가철도공단·국토교통부",
+          "provider": "data.go.kr official FILE",
+          "providerDepartment": "복수 공식 제공부서",
+          "sourceSystem": "공공데이터포털",
+          "datasetUrl": "https://www.data.go.kr/",
+          "datasetKind": "official-file-source-set",
+          "coverage": "24 ordered Capital topology source definitions",
+          "coverageScope": {
+            "regionIds": [
+              "capital"
+            ],
+            "operatorIds": [
+              "seoul-metro"
+            ],
+            "lineIds": [
+              "line-472a81add377",
+              "seoul-2",
+              "line-41a8c75ec9d8",
+              "seoul-4",
+              "line-80fc4d5350d4",
+              "line-3f41718e0833",
+              "line-15b3b8a93259",
+              "line-2b2d9eaa53d0"
+            ],
+            "sourceDomains": [
+              "route_graph_topology"
+            ]
+          },
+          "requiredForProductionPack": true,
+          "productionUseAllowed": true,
+          "updateFrequency": "P7D",
+          "observedDataUpdatedAt": "2026-10-04",
+          "retrievedAt": "2026-10-04",
+          "license": {
+            "type": "KOGL-1",
+            "name": "공공누리 제1유형",
+            "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+            "commercialUseAllowed": true,
+            "derivativeWorkAllowed": true,
+            "redistributionAllowed": true,
+            "evidenceUrl": "https://www.data.go.kr/"
+          },
+          "admissionEvidence": {
+            "licenseEvidenceHash": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54"
+          },
+          "fieldsProvided": [
+            "network_edges",
+            "distance_meters",
+            "line",
+            "station_name",
+            "branch_name"
+          ],
+          "capabilities": {
+            "schedule": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source does not provide scheduled timetable data"
+            },
+            "realtime": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "liveEtaEligible": false,
+              "rateLimitStatus": "NOT_APPLICABLE",
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source provides static route topology, not realtime arrivals"
+            },
+            "facility": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source does not provide accessibility facility records"
+            }
+          },
+          "capitalTopologyAdmissionEvidence": {
+            "schemaVersion": 1,
+            "artifactKind": "capital-topology-admission-evidence",
+            "status": "APPROVED",
+            "issue": 456,
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261004",
+            "snapshotPath": "tools/datapack/sources/capital-route-topology-20261004.json",
+            "snapshotFileSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "snapshotRawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineIds": [
+              "line-472a81add377",
+              "seoul-2",
+              "line-41a8c75ec9d8",
+              "seoul-4",
+              "line-80fc4d5350d4",
+              "line-3f41718e0833",
+              "line-15b3b8a93259",
+              "line-2b2d9eaa53d0"
+            ],
+            "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+            "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+            "rawReceiptSha256": "4696d7bd00d3400e7a697a20a03c2a13c9e4d1a45307793e5303da47f5e4c241",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261004/579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86.json",
+            "rawObjectSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "byteSize": 260470,
+            "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+            "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+            "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+            "evaluatedAt": "2026-10-04T14:35:36.446Z",
+            "predecessorSnapshotIds": [
+              "capital-route-topology-20261003"
+            ]
+          }
+        },
+        "changedFieldsBefore": {
+          "capitalTopologyAdmissionEvidence": {
+            "schemaVersion": 1,
+            "artifactKind": "capital-topology-admission-evidence",
+            "status": "APPROVED",
+            "issue": 456,
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261003",
+            "snapshotPath": "tools/datapack/sources/capital-route-topology-20261003.json",
+            "snapshotFileSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "snapshotRawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineIds": [
+              "line-472a81add377",
+              "seoul-2",
+              "line-41a8c75ec9d8",
+              "seoul-4",
+              "line-80fc4d5350d4",
+              "line-3f41718e0833",
+              "line-15b3b8a93259",
+              "line-2b2d9eaa53d0"
+            ],
+            "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+            "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+            "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+            "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "byteSize": 260470,
+            "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+            "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+            "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+            "evaluatedAt": "2026-10-03T00:33:32.757Z",
+            "predecessorSnapshotIds": [
+              "capital-route-topology-20261002T060336888Z"
+            ]
+          },
+          "observedDataUpdatedAt": "2026-10-03",
+          "retrievedAt": "2026-10-03"
+        }
+      },
+      "ledger": {
+        "base": [
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261002T060336888Z",
+            "previousSnapshotId": "capital-route-topology-20261001T073136043Z",
+            "capturedAt": "2026-10-02T06:03:36.888Z",
+            "retrievedAt": "2026-10-02T06:03:36.888Z",
+            "sourceUpdatedAt": "2026-10-02T06:03:36.888Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261002/b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9.json",
+            "rawObjectSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+            "rawReceiptSha256": "91deef175a77268ca1b2d4126f2328ee6fe30f10974a7180159cb8c11bd81bbc",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-03T06:03:36.888Z",
+            "freshnessExpiresAt": "2026-10-03T06:03:36.888Z",
+            "rawRetentionExpiresAt": "2026-12-31T06:03:36.888Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "676cb23100221e1e2f97e03203af4efada8312b72e79c1987e7536eddff831e0",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261002T060336888Z",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261002T060336888Z.json",
+              "snapshotFileSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+              "snapshotRawSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "91deef175a77268ca1b2d4126f2328ee6fe30f10974a7180159cb8c11bd81bbc",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261002/b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9.json",
+              "rawObjectSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "f62b2344b7339d7c97fc26092b4093f8260a1ba2b3643c14ed7c6c2e762ef5eb",
+              "evaluatedAt": "2026-10-02T06:04:39.244Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261001T073136043Z"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          },
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261003",
+            "previousSnapshotId": "capital-route-topology-20261002T060336888Z",
+            "capturedAt": "2026-10-03T00:31:56.311Z",
+            "retrievedAt": "2026-10-03T00:31:56.311Z",
+            "sourceUpdatedAt": "2026-10-03T00:31:56.311Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+            "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-10T00:31:56.311Z",
+            "freshnessExpiresAt": "2026-10-10T00:31:56.311Z",
+            "rawRetentionExpiresAt": "2027-01-01T00:31:56.311Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261003",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261003.json",
+              "snapshotFileSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "snapshotRawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+              "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+              "evaluatedAt": "2026-10-03T00:33:32.757Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261002T060336888Z"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          }
+        ],
+        "head": [
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261002T060336888Z",
+            "previousSnapshotId": "capital-route-topology-20261001T073136043Z",
+            "capturedAt": "2026-10-02T06:03:36.888Z",
+            "retrievedAt": "2026-10-02T06:03:36.888Z",
+            "sourceUpdatedAt": "2026-10-02T06:03:36.888Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261002/b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9.json",
+            "rawObjectSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+            "rawReceiptSha256": "91deef175a77268ca1b2d4126f2328ee6fe30f10974a7180159cb8c11bd81bbc",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-03T06:03:36.888Z",
+            "freshnessExpiresAt": "2026-10-03T06:03:36.888Z",
+            "rawRetentionExpiresAt": "2026-12-31T06:03:36.888Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "676cb23100221e1e2f97e03203af4efada8312b72e79c1987e7536eddff831e0",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261002T060336888Z",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261002T060336888Z.json",
+              "snapshotFileSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+              "snapshotRawSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "91deef175a77268ca1b2d4126f2328ee6fe30f10974a7180159cb8c11bd81bbc",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261002/b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9.json",
+              "rawObjectSha256": "b4645090eac1d312cc5c8285721b84f948e6f8e70f1f338c40b3507470157ea9",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "f62b2344b7339d7c97fc26092b4093f8260a1ba2b3643c14ed7c6c2e762ef5eb",
+              "evaluatedAt": "2026-10-02T06:04:39.244Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261001T073136043Z"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          },
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261003",
+            "previousSnapshotId": "capital-route-topology-20261002T060336888Z",
+            "capturedAt": "2026-10-03T00:31:56.311Z",
+            "retrievedAt": "2026-10-03T00:31:56.311Z",
+            "sourceUpdatedAt": "2026-10-03T00:31:56.311Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+            "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-10T00:31:56.311Z",
+            "freshnessExpiresAt": "2026-10-10T00:31:56.311Z",
+            "rawRetentionExpiresAt": "2027-01-01T00:31:56.311Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261003",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261003.json",
+              "snapshotFileSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "snapshotRawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+              "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+              "evaluatedAt": "2026-10-03T00:33:32.757Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261002T060336888Z"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          },
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261004",
+            "previousSnapshotId": "capital-route-topology-20261003",
+            "capturedAt": "2026-10-04T14:24:37.459Z",
+            "retrievedAt": "2026-10-04T14:24:37.459Z",
+            "sourceUpdatedAt": "2026-10-04T14:24:37.459Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261004/579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86.json",
+            "rawObjectSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "rawReceiptSha256": "4696d7bd00d3400e7a697a20a03c2a13c9e4d1a45307793e5303da47f5e4c241",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-11T14:24:37.459Z",
+            "freshnessExpiresAt": "2026-10-11T14:24:37.459Z",
+            "rawRetentionExpiresAt": "2027-01-02T14:24:37.459Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261004",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261004.json",
+              "snapshotFileSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "snapshotRawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "4696d7bd00d3400e7a697a20a03c2a13c9e4d1a45307793e5303da47f5e4c241",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261004/579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86.json",
+              "rawObjectSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+              "evaluatedAt": "2026-10-04T14:35:36.446Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261003"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          }
+        ]
+      },
+      "gateSources": [
+        {
+          "sourceId": "capital-route-topology",
+          "snapshotId": "capital-route-topology-20261004",
+          "previousSnapshotId": "capital-route-topology-20261003",
+          "rawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+          "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+          "rowDelta": 0,
+          "coverageDelta": 0,
+          "diffStatus": "CHANGED"
+        }
+      ]
+    },
+    {
+      "label": "seq128",
+      "commit": "8a7b4c1ba17c60e42aa5d001775072dcde46a8a8",
+      "parent": "460461767c1afdb3c77feeaf11fed211ceceb6e8",
+      "subject": "[Data] 수도권 topology 20261005 원본 OCI 게시와 원장 등록",
+      "files": [
+        {
+          "filename": "tools/datapack/release/source-snapshots.json",
+          "status": "modified"
+        },
+        {
+          "filename": "tools/datapack/source-inventory.json",
+          "status": "modified"
+        }
+      ],
+      "inventory": {
+        "top": {
+          "schemaVersion": 1,
+          "region": "nationwide",
+          "artifactKind": "production-source-inventory",
+          "retrievedAt": "2026-06-22"
+        },
+        "unownedEntryIds": [
+          "busan-transportation-accessibility",
+          "busan-transportation-official-od-fares",
+          "busan-transportation-route-topology"
+        ],
+        "ownedEntryAfter": {
+          "id": "capital-route-topology",
+          "displayName": "수도권 도시철도 노선별 역간거리 FILE source set",
+          "owner": "국가철도공단·국토교통부",
+          "provider": "data.go.kr official FILE",
+          "providerDepartment": "복수 공식 제공부서",
+          "sourceSystem": "공공데이터포털",
+          "datasetUrl": "https://www.data.go.kr/",
+          "datasetKind": "official-file-source-set",
+          "coverage": "24 ordered Capital topology source definitions",
+          "coverageScope": {
+            "regionIds": [
+              "capital"
+            ],
+            "operatorIds": [
+              "seoul-metro"
+            ],
+            "lineIds": [
+              "line-472a81add377",
+              "seoul-2",
+              "line-41a8c75ec9d8",
+              "seoul-4",
+              "line-80fc4d5350d4",
+              "line-3f41718e0833",
+              "line-15b3b8a93259",
+              "line-2b2d9eaa53d0"
+            ],
+            "sourceDomains": [
+              "route_graph_topology"
+            ]
+          },
+          "requiredForProductionPack": true,
+          "productionUseAllowed": true,
+          "updateFrequency": "P7D",
+          "observedDataUpdatedAt": "2026-10-05",
+          "retrievedAt": "2026-10-05",
+          "license": {
+            "type": "KOGL-1",
+            "name": "공공누리 제1유형",
+            "attribution": "국가철도공단, 국토교통부(MOLIT 도시철도 전체노선), 공공누리 제1유형(출처표시)",
+            "commercialUseAllowed": true,
+            "derivativeWorkAllowed": true,
+            "redistributionAllowed": true,
+            "evidenceUrl": "https://www.data.go.kr/"
+          },
+          "admissionEvidence": {
+            "licenseEvidenceHash": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54"
+          },
+          "fieldsProvided": [
+            "network_edges",
+            "distance_meters",
+            "line",
+            "station_name",
+            "branch_name"
+          ],
+          "capabilities": {
+            "schedule": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source does not provide scheduled timetable data"
+            },
+            "realtime": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "liveEtaEligible": false,
+              "rateLimitStatus": "NOT_APPLICABLE",
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source provides static route topology, not realtime arrivals"
+            },
+            "facility": {
+              "status": "UNSUPPORTED",
+              "productionUseAllowed": false,
+              "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+              "updateFrequency": "P1D",
+              "unsupportedNotes": "source does not provide accessibility facility records"
+            }
+          },
+          "capitalTopologyAdmissionEvidence": {
+            "schemaVersion": 1,
+            "artifactKind": "capital-topology-admission-evidence",
+            "status": "APPROVED",
+            "issue": 456,
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261005",
+            "snapshotPath": "tools/datapack/sources/capital-route-topology-20261005.json",
+            "snapshotFileSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+            "snapshotRawSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineIds": [
+              "line-472a81add377",
+              "seoul-2",
+              "line-41a8c75ec9d8",
+              "seoul-4",
+              "line-80fc4d5350d4",
+              "line-3f41718e0833",
+              "line-15b3b8a93259",
+              "line-2b2d9eaa53d0"
+            ],
+            "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+            "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+            "rawReceiptSha256": "c1f1f41be58a8834aae0928d41ef29627d586aaf493f333fe16ee2d31081e697",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261005/bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf.json",
+            "rawObjectSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+            "byteSize": 260470,
+            "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+            "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+            "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+            "evaluatedAt": "2026-10-06T00:42:37.336Z",
+            "predecessorSnapshotIds": [
+              "capital-route-topology-20261004"
+            ]
+          }
+        },
+        "changedFieldsBefore": {
+          "capitalTopologyAdmissionEvidence": {
+            "schemaVersion": 1,
+            "artifactKind": "capital-topology-admission-evidence",
+            "status": "APPROVED",
+            "issue": 456,
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261004",
+            "snapshotPath": "tools/datapack/sources/capital-route-topology-20261004.json",
+            "snapshotFileSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "snapshotRawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineIds": [
+              "line-472a81add377",
+              "seoul-2",
+              "line-41a8c75ec9d8",
+              "seoul-4",
+              "line-80fc4d5350d4",
+              "line-3f41718e0833",
+              "line-15b3b8a93259",
+              "line-2b2d9eaa53d0"
+            ],
+            "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+            "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+            "rawReceiptSha256": "4696d7bd00d3400e7a697a20a03c2a13c9e4d1a45307793e5303da47f5e4c241",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261004/579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86.json",
+            "rawObjectSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "byteSize": 260470,
+            "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+            "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+            "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+            "evaluatedAt": "2026-10-04T14:35:36.446Z",
+            "predecessorSnapshotIds": [
+              "capital-route-topology-20261003"
+            ]
+          },
+          "observedDataUpdatedAt": "2026-10-04",
+          "retrievedAt": "2026-10-04"
+        }
+      },
+      "ledger": {
+        "base": [
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261003",
+            "previousSnapshotId": "capital-route-topology-20261002T060336888Z",
+            "capturedAt": "2026-10-03T00:31:56.311Z",
+            "retrievedAt": "2026-10-03T00:31:56.311Z",
+            "sourceUpdatedAt": "2026-10-03T00:31:56.311Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+            "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-10T00:31:56.311Z",
+            "freshnessExpiresAt": "2026-10-10T00:31:56.311Z",
+            "rawRetentionExpiresAt": "2027-01-01T00:31:56.311Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261003",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261003.json",
+              "snapshotFileSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "snapshotRawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+              "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+              "evaluatedAt": "2026-10-03T00:33:32.757Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261002T060336888Z"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          },
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261004",
+            "previousSnapshotId": "capital-route-topology-20261003",
+            "capturedAt": "2026-10-04T14:24:37.459Z",
+            "retrievedAt": "2026-10-04T14:24:37.459Z",
+            "sourceUpdatedAt": "2026-10-04T14:24:37.459Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261004/579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86.json",
+            "rawObjectSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "rawReceiptSha256": "4696d7bd00d3400e7a697a20a03c2a13c9e4d1a45307793e5303da47f5e4c241",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-11T14:24:37.459Z",
+            "freshnessExpiresAt": "2026-10-11T14:24:37.459Z",
+            "rawRetentionExpiresAt": "2027-01-02T14:24:37.459Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261004",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261004.json",
+              "snapshotFileSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "snapshotRawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "4696d7bd00d3400e7a697a20a03c2a13c9e4d1a45307793e5303da47f5e4c241",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261004/579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86.json",
+              "rawObjectSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+              "evaluatedAt": "2026-10-04T14:35:36.446Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261003"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          }
+        ],
+        "head": [
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261003",
+            "previousSnapshotId": "capital-route-topology-20261002T060336888Z",
+            "capturedAt": "2026-10-03T00:31:56.311Z",
+            "retrievedAt": "2026-10-03T00:31:56.311Z",
+            "sourceUpdatedAt": "2026-10-03T00:31:56.311Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+            "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+            "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-10T00:31:56.311Z",
+            "freshnessExpiresAt": "2026-10-10T00:31:56.311Z",
+            "rawRetentionExpiresAt": "2027-01-01T00:31:56.311Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261003",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261003.json",
+              "snapshotFileSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "snapshotRawSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "a483ab1532600a51c91786495edd7b9c7311b0df149075b3337c1e3e1d20020b",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261003/fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f.json",
+              "rawObjectSha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+              "evaluatedAt": "2026-10-03T00:33:32.757Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261002T060336888Z"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          },
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261004",
+            "previousSnapshotId": "capital-route-topology-20261003",
+            "capturedAt": "2026-10-04T14:24:37.459Z",
+            "retrievedAt": "2026-10-04T14:24:37.459Z",
+            "sourceUpdatedAt": "2026-10-04T14:24:37.459Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261004/579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86.json",
+            "rawObjectSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+            "rawReceiptSha256": "4696d7bd00d3400e7a697a20a03c2a13c9e4d1a45307793e5303da47f5e4c241",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-11T14:24:37.459Z",
+            "freshnessExpiresAt": "2026-10-11T14:24:37.459Z",
+            "rawRetentionExpiresAt": "2027-01-02T14:24:37.459Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261004",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261004.json",
+              "snapshotFileSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "snapshotRawSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "4696d7bd00d3400e7a697a20a03c2a13c9e4d1a45307793e5303da47f5e4c241",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261004/579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86.json",
+              "rawObjectSha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+              "evaluatedAt": "2026-10-04T14:35:36.446Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261003"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          },
+          {
+            "schemaVersion": 1,
+            "artifactKind": "official-source-snapshot",
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20261005",
+            "previousSnapshotId": "capital-route-topology-20261004",
+            "capturedAt": "2026-10-05T23:53:33.456Z",
+            "retrievedAt": "2026-10-05T23:53:33.456Z",
+            "sourceUpdatedAt": "2026-10-05T23:53:33.456Z",
+            "provider": "data.go.kr official FILE",
+            "rowCount": 8,
+            "coverageCount": 8,
+            "rawSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261005/bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf.json",
+            "rawObjectSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+            "rawReceiptSha256": "c1f1f41be58a8834aae0928d41ef29627d586aaf493f333fe16ee2d31081e697",
+            "byteSize": 260470,
+            "freshUntil": "2026-10-12T23:53:33.456Z",
+            "freshnessExpiresAt": "2026-10-12T23:53:33.456Z",
+            "rawRetentionExpiresAt": "2027-01-03T23:53:33.456Z",
+            "governancePolicyVersion": "2026-08-29",
+            "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+            "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+            "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+            "snapshotStatus": "LOCKED",
+            "schemaStatus": "PASS",
+            "licenseStatus": "PASS",
+            "fetchStatus": "SUCCESS",
+            "redistributionAllowed": true,
+            "credentialRedacted": true,
+            "admissionEvidence": {
+              "schemaVersion": 1,
+              "artifactKind": "capital-topology-admission-evidence",
+              "status": "APPROVED",
+              "issue": 456,
+              "sourceId": "capital-route-topology",
+              "snapshotId": "capital-route-topology-20261005",
+              "snapshotPath": "tools/datapack/sources/capital-route-topology-20261005.json",
+              "snapshotFileSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+              "snapshotRawSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+              "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+              "lineIds": [
+                "line-472a81add377",
+                "seoul-2",
+                "line-41a8c75ec9d8",
+                "seoul-4",
+                "line-80fc4d5350d4",
+                "line-3f41718e0833",
+                "line-15b3b8a93259",
+                "line-2b2d9eaa53d0"
+              ],
+              "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+              "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+              "rawReceiptSha256": "c1f1f41be58a8834aae0928d41ef29627d586aaf493f333fe16ee2d31081e697",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261005/bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf.json",
+              "rawObjectSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+              "byteSize": 260470,
+              "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+              "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+              "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+              "evaluatedAt": "2026-10-06T00:42:37.336Z",
+              "predecessorSnapshotIds": [
+                "capital-route-topology-20261004"
+              ]
+            },
+            "diffSummary": {
+              "status": "CHANGED",
+              "rawHashChanged": true,
+              "schemaHashChanged": false,
+              "requestHashChanged": false,
+              "sourceUpdatedAtChanged": true,
+              "rowDelta": 0,
+              "coverageDelta": 0
+            }
+          }
+        ]
+      },
+      "gateSources": [
+        {
+          "sourceId": "capital-route-topology",
+          "snapshotId": "capital-route-topology-20261005",
+          "previousSnapshotId": "capital-route-topology-20261004",
+          "rawSha256": "bbc5acc2901326b3ebfff7cd80c9f8711790553a2806fb06bf3031c38a9ce9cf",
+          "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+          "rowDelta": 0,
+          "coverageDelta": 0,
+          "diffStatus": "CHANGED"
+        }
+      ]
+    }
+  ]
+}

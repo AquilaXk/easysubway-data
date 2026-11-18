@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "static-network-source-raw-object-receipt",
+  "sourceId": "seoul-metro-transfer-car-door-duration",
+  "snapshotId": "seoul-metro-transfer-car-door-duration-296daef16e19656b8b9271131b19540f672e804da5588f2c564552704608b32d",
+  "capturedAt": "2026-10-01T16:33:24.036Z",
+  "ociNamespace": "axvym6vk8g7i",
+  "bucket": "easysubway-datapacks",
+  "objectKey": "source-raw/seoul-metro-transfer-car-door-duration/20261001/296daef16e19656b8b9271131b19540f672e804da5588f2c564552704608b32d.json",
+  "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-transfer-car-door-duration/20261001/296daef16e19656b8b9271131b19540f672e804da5588f2c564552704608b32d.json",
+  "rawObjectSha256": "296daef16e19656b8b9271131b19540f672e804da5588f2c564552704608b32d",
+  "byteSize": 416921,
+  "storedAt": "2026-10-01T22:47:24.547Z",
+  "rawRetentionExpiresAt": "2026-12-30T16:33:24.036Z",
+  "contentType": "application/json"
+}

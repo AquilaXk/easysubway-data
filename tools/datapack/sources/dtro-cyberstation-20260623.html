@@ -1,0 +1,978 @@
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=3, minimum-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+
+
+
+			<meta name="robots" content="index,follow">
+			<meta property="og:type" content="website" id="mtype">
+			<meta property="og:title" content="" id="mtitle">
+			<meta property="og:description" content=" | 대구교통공사" id="mdescription">
+			<meta property="og:image" content="https://dtro.or.kr/cmsh/dtro.or.kr/images/common/logo_header.png">
+			<meta property="og:url" content="http://www.dtro.or.kr/index.do?menu_id=&menu_link==" id="murls">
+
+
+	<meta name="description" content="대구교통공사">
+	<meta name="keywords" content="대구교통공사">
+	<title>대구교통공사 사이버스테이션</title>
+	<link rel="stylesheet" href="/cmsh/dtro.or.kr/css/base.css?ver=">
+	<link rel="stylesheet" href="/cmsh/dtro.or.kr/css/slick.css">
+	<link rel="stylesheet" href="/cmsh/dtro.or.kr/css/jquery.datetimepicker.css">
+	<link rel="stylesheet" href="/cmsh/dtro.or.kr/css/common.css?ver=">
+	<link rel="stylesheet" href="/cmsh/dtro.or.kr/cyberstation/css/cyberstation.css?ver=">
+	<link rel="stylesheet" href="/cmsh/dtro.or.kr/cyberstation/css/print.css?ver=">
+	<script src="/cmsh/dtro.or.kr/js/jquery.min.js"></script>
+	<script src="/cmsh/dtro.or.kr/js/slick.js"></script>
+	<script src="/cmsh/dtro.or.kr/js/jquery.rwdImageMaps.min.js"></script>
+	<script src="/cmsh/dtro.or.kr/cyberstation/js/common.js?ver="></script>
+	<!-- 메뉴 CSS -->
+
+	<!-- // 메뉴 CSS -->
+	<!-- 메뉴 JS -->
+
+	<!-- // 메뉴 JS -->
+
+	<script type="text/javascript">
+		$(document).ready(function()
+		{
+			if(false) {
+				document.querySelector('#depart').value = '';
+				document.querySelector('#btn_station_depart').innerHTML = $("#").attr("alt");
+				document.querySelector('#arrive').value = '';
+				document.querySelector('#btn_station_arrive').innerHTML = $("#").attr("alt");
+				if($("#depart").val() && $("#arrive").val()) {
+					isStartAndStopValueCheck();
+				}
+			}
+
+			/* 역 클릭 이벤트 */
+			addEVent();
+
+			/* 출발  버튼 이벤트 */
+			btn_depart();
+
+			/* 도착 버튼 이벤트 */
+			btn_arrive();
+
+			/* 출발역 & 도착역 버튼 이벤트 */
+			fn_sltStation();
+
+			// 핀제거 시 id 제거
+			$(".start_pin").click(function () {
+				document.getElementById('depart').value = '';
+				document.getElementById('btn_station_depart').innerHTML = '출발역 선택';
+			});
+
+			$(".end_pin").click(function () {
+				document.getElementById('arrive').value = '';
+				document.getElementById('btn_station_arrive').innerHTML = '도착역 선택';
+			})
+		});
+
+		/*
+			1호선, 2호선, 3호선의 클릭 이벤트 기능 추가
+		*/
+			function addEVent()
+			{
+				var cyberStation = document.querySelectorAll('.cyberStation');
+				var cyberStation_length = cyberStation.length;
+
+				/* 클릭이벤트 기능 추가 */
+				for(var i=0; i < cyberStation_length; i++)
+				{
+					/* 클릭한 역의 ID값과 부모 class 명을 가져온다.(부모 클래스 명 === 몇호선인지, ID === 현재 찍은 역을 알기위한 값 ) */
+					cyberStation[i].addEventListener('click', function ()
+															  {
+																if(this.getAttribute('isTran') != 'Y') {
+																	var thisLine = this.getAttribute('parent_line');
+																	var thisStation = this.id;
+																	fn_station_info(thisStation, thisLine);
+																}
+															  });
+				}
+
+			}
+
+		/* 역정보 불러오기 */
+		function fn_station_info(stt_id,stt_num) {
+			$.ajax({
+				type     : 'post',
+				url      : "/front/cyberStationBuild/cyberStationBuildClickEvent.do?language=ko",
+				data     :  { 'stt_cd'  : stt_id ,'stt_num' : stt_num},
+				dataType : 'json',
+				success: function (result) {
+
+					//역정보목록
+					var data = result.resultList;
+					var updata = result.upScheduleList;
+					var downdata = result.downScheduleList;
+
+					if(data)
+					{
+
+						/* 하행첫차 */
+						if(updata[0] != null ) {
+							document.querySelector('#first_desc').innerHTML = updata[0].schedule_hour+':'+  (updata[0].schedule_time).substr(0, 2);
+						} else {
+							document.querySelector('#first_desc').innerHTML = '-';
+						}
+						/*하행막차 */
+						if(updata[1] != null) {
+							document.querySelector('#last_desc').innerHTML = updata[1].schedule_hour+':'+ (updata[1].schedule_time).substr(0, 2);
+						}else {
+							document.querySelector('#last_desc').innerHTML = '-';
+						}
+						/*if(updata[0] != null ) {
+							document.querySelector('#first_desc').innerHTML = updata[0].schedule_hour+':'+updata[0].schedule_time;
+						} else {
+							document.querySelector('#first_desc').innerHTML = '-';
+						}
+						/!*하행막차 *!/
+						if(updata[1] != null) {
+							document.querySelector('#last_desc').innerHTML = updata[1].schedule_hour+':'+updata[1].schedule_time;
+						}else {
+							document.querySelector('#last_desc').innerHTML = '-';
+						}*/
+
+						/* 하행 첫차 역 */
+						document.querySelector('#fd_stt_nm').innerHTML = data[0].stt_nm;
+						/* 하행 막차 역 */
+						document.querySelector('#ld_stt_nm').innerHTML = data[0].stt_nm;
+						/* 상행 첫차 역 */
+						document.querySelector('#fa_stt_nm').innerHTML = data[1].stt_nm;
+						/* 상행 막차 역 */
+						document.querySelector('#la_stt_nm').innerHTML = data[1].stt_nm;
+
+						/* 상행첫차 */
+						if(downdata[0] != null) {
+							document.querySelector('#first_asc').innerHTML = downdata[0].schedule_hour+':'+ (downdata[0].schedule_time).substr(0, 2);
+						}else {
+							document.querySelector('#first_asc').innerHTML = '-';
+						}
+						/* 상행막차 */
+						if(downdata[1] != null ) {
+							document.querySelector('#last_asc').innerHTML = downdata[1].schedule_hour+':'+ (downdata[1].schedule_time).substr(0, 2);
+						}else {
+							document.querySelector('#last_asc').innerHTML = '-';
+						}
+						/*if(downdata[0] != null) {
+							document.querySelector('#first_asc').innerHTML = downdata[0].schedule_hour+':'+downdata[0].schedule_time;
+						}else {
+							document.querySelector('#first_asc').innerHTML = '-';
+						}
+						/!* 상행막차 *!/
+						if(downdata[1] != null ) {
+							document.querySelector('#last_asc').innerHTML = downdata[1].schedule_hour+':'+downdata[1].schedule_time;
+						}else {
+							document.querySelector('#last_asc').innerHTML = '-';
+						}*/
+
+
+
+
+
+
+
+
+
+						/* 호선 */
+						document.querySelector('#stt_num').innerHTML   = data[2].stt_num;
+						/* 호선 class 변경 */
+						$("#stt_num").removeClass();
+						$("#stt_num").addClass("line line0"+data[2].stt_num);
+						$(".ly_box").attr("data-line-type",data[2].stt_num+"호선");
+						/* 역 명 */
+						document.querySelector('#stt_nm').innerHTML    = data[2].stt_nm;
+						/* 역 코드(히든 값 저장) */
+						// 출발 버튼을 누르냐 도착버튼을 누르냐에 따라서 동적으로 사용 값은 동일
+						document.querySelector('#stt_cd').value = data[2].stt_cd;
+						$(".ly_box").show();
+						$(".ly_close").focus();
+						$(".ly_box.transfer").hide();
+					}
+					else {
+						alert("통신 중 문제가 발생했습니다. 새로고침 후 다시 시도해주세요.");
+						return false;
+					}
+				}
+			});
+		}
+
+		/* 출발 버튼 이벤트 */
+		function btn_depart()
+		{
+			/*
+			*
+			* 출발 버튼을 누를경우 출발 역의 ID 값을 가져온다.
+			* 만약 도착 버튼의 값도 있다면 출발지의 값이 갱신됐다는 뜻
+			* 그러므로 다시 isStartAndStopValue 함수를 호출해서 갱신된 ID의 값들로 새로 뿌려준다.
+			*
+			* */
+			document.querySelector("#start").addEventListener("click", function ()
+			{
+				/* 출발 역 ID값 */
+				var depart = document.getElementById("depart");
+				    depart.value = document.getElementById("stt_cd").value;
+
+				/* 도착 역 ID값 */
+				var arrive = document.getElementById('arrive').value;
+
+				if(depart && arrive)
+				{
+					isStartAndStopValue(depart.value, arrive);
+				}
+
+			});
+		}
+
+		/* 도착 버튼 이벤트 */
+		function btn_arrive()
+		{
+			/*
+			*
+			* 도착 버튼을 누를경우 도착 역의 ID 값을 가져온다.
+			* 출발 버튼의 값이 있다면 isStartAndStopValue() 함수 호출
+			* 만약 출발 버튼의 값이 없다면 도착지점을 먼저 찍었으므로 함수 호출 X
+			*
+			* */
+			document.querySelector("#stop").addEventListener("click", function ()
+			{
+				var arrive = document.getElementById("arrive");
+				arrive.value = document.getElementById("stt_cd").value;
+
+				var depart = document.getElementById('depart').value;
+
+				if(arrive && depart)
+				{
+					isStartAndStopValue(depart, arrive.value);
+				}
+			});
+		}
+
+		/* 노선 검색을 이용할 경우 체크 후 isStartAndStopValue() 함수 호출  */
+		function isStartAndStopValueCheck()
+		{
+			document.getElementById('stt_cd').value = '';
+			var depart = document.getElementById('depart').value;
+			var arrive = document.getElementById('arrive').value;
+
+			if(!depart || !arrive)
+			{
+				alert('출발역과 도착역을 확인해 주세요.');
+				return false;
+			}
+
+			if((depart && arrive) && (depart === arrive))
+			{
+				alert('출발역과 도착역이 같습니다.');
+				return false;
+			}
+
+
+			// 출발점 도착점 핀 활성
+			var pos =  $("map[name=station_map]").find("#"+depart).attr("coords").split(",");
+			var pos2 = $("map[name=station_map]").find("#"+arrive).attr("coords").split(",");
+			var posX = pos[0];
+			var posY = pos[1];
+			var pos2X = pos2[0];
+			var pos2Y = pos2[1];
+			$(".sm_layer_container .ly_box").hide();
+			$(".pin_box .pin.depart").css({"left":posX+"px","top":posY+"px"}).show();
+			$(".pin_box .pin.arrive").css({"left":pos2X+"px","top":pos2Y+"px"}).show();
+			// 레이어 그림자(모바일)
+			$("body").removeClass("fixed_ly_box");
+
+			/* 아래의 경로 계산 메서드 호출 */
+			isStartAndStopValue(depart, arrive);
+			/* 노선결과 레이어 오픈~ */
+			$("#cyberstation_wrap .srch_rs_area").addClass("open");
+			$(".sr_close").focus();
+		}
+
+		/* 경로 계산 메서드 호출 */
+		function isStartAndStopValue(s_cd, e_cd) {
+			if(s_cd && e_cd) {
+				$.ajax({
+					type: 'post',
+					url: "/front/cyberStationSearch/cyberStationSearchPath.do",
+					data: {
+						's_cd': s_cd
+						, 'e_cd': e_cd
+					},
+					dataType: 'html',
+					success: function (data) {
+						$(".srch_rs_area").html(data);
+						$("#cyberstation_wrap .srch_rs_area").addClass("open");
+						$(".sr_close").focus();
+					}
+				});
+			}else {
+				alert("출발역과 도착역을 모두 선택해주세요");
+			}
+		}
+
+		/* 환승역 호선 호출 */
+		function fn_sel_transfer(stt_id) {
+
+			$.ajax({
+				type: 'post',
+				url: "/front/cyberStationBuild/cyberStationTranSelect.do",
+				data: {
+					'stt_id': stt_id
+				},
+				dataType: 'html',
+				success: function (data) {
+					document.getElementById('stt_cd').value = stt_id;
+					$(".transfer").html(data);
+					$(".ly_close").focus();
+				}
+			});
+		}
+		///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		/* 대구 도시철도 검색 스크립트 */
+		function fn_sltStation()
+		{
+			/* ㄱ ~ ㅎ 까지 버튼 리스트 */
+			var btnList    = document.querySelector(".nav_button").children;
+			var btnLength  = btnList.length;
+
+			/* 검색 초성 */
+			var searchValue;
+			/* 검색 조건 */
+			var searchCondition;
+
+			for(var i=0; i < btnLength; i++)
+			{
+				btnList[i].addEventListener("click", function()
+													{
+														/*this.textContent === ㄱ,ㄴ,ㄷ,ㄹ,ㅁ,ㅂ,ㅇ,ㅅ,ㅈ,ㅊ,ㅋ,ㅌ,ㅍ,ㅎ 중에 하나 */
+														searchValue = this.textContent;
+
+														/* 버튼 클래스 색깔 초기화 */
+														for(i=0; i < btnLength; i++)
+														{
+															btnList[i].removeAttribute("class");
+															btnList[i].removeAttribute("title");
+														}
+
+														/*선택된 버튼 색깔 넣어주는 클래스 */
+														this.className = 'active';
+														this.setAttribute('title','선택됨');
+
+														switch(searchValue)
+														{
+															case "ㄱ" : searchCondition = "^[가-깋]"; break;
+															case "ㄴ" : searchCondition = "^[나-닣]"; break;
+															case "ㄷ" : searchCondition = "^[다-딯]"; break;
+															case "ㄹ" : searchCondition = "^[라-맇]"; break;
+															case "ㅁ" : searchCondition = "^[마-밓]"; break;
+															case "ㅂ" : searchCondition = "^[바-빟]"; break;
+															case "ㅅ" : searchCondition = "^[사-싷]"; break;
+															case "ㅇ" : searchCondition = "^[아-잏]"; break;
+															case "ㅈ" : searchCondition = "^[자-짛]"; break;
+															case "ㅊ" : searchCondition = "^[차-칳]"; break;
+															case "ㅋ" : searchCondition = "^[카-킿]"; break;
+															case "ㅌ" : searchCondition = "^[타-팋]"; break;
+															case "ㅍ" : searchCondition = "^[파-핗]"; break;
+															case "ㅎ" : searchCondition = "^[하-힣]"; break;
+
+															default : searchCondition = "^[가-깋]"; break;
+														}
+
+														$.ajax({
+															type     : 'post',
+															url      : "/front/cyberStationBuild/cyberStationSltStationList.do?language=ko",
+															data     :  { 'searchCondition'  : searchCondition },
+															dataType : 'json',
+
+															success: function (data)
+															{
+																if(data)
+																{
+																	var resultList = data.resultList;
+																	var length     = resultList.length;
+																	var tbody      = document.querySelector('.tac > tbody');
+
+																	/* 테이블 초기화 작업 */
+																	while( tbody.hasChildNodes() )
+																	{
+																		tbody.removeChild(tbody.firstChild);
+																	}
+
+																		if(length < 1)
+																		{
+																			var td   = document.createElement('td');
+																			var tr   = document.createElement('tr');
+																			var text = document.createTextNode('등록된 역이 없습니다.');
+																			td.setAttribute("colspan", "3");
+																			td.setAttribute("class", "common-nodata-msg");
+																			td.appendChild(text);
+																			tr.appendChild(td);
+																			tbody.appendChild(tr);
+																		}
+																		else {
+
+
+																			for(var i=0; i < length; i++)
+																			{
+																				var newTr    = document.createElement('tr');
+																				var newTd    = document.createElement('td');
+																				var newTd2   = document.createElement('td');
+																				var newTd3   = document.createElement('td');
+																				var newBtn   = document.createElement('button');
+
+
+																				var stt_nm   = document.createTextNode(resultList[i].stt_nm);
+																				var stt_cd   = document.createTextNode(resultList[i].stt_cd);
+																				var stt_num  = document.createTextNode(resultList[i].stt_num + " 호선");
+																				var btnText  = document.createTextNode('선택');
+																				var btnId    = resultList[i].stt_cd;
+																				var btnName  = resultList[i].stt_nm;
+
+																				newTd.appendChild(stt_nm);
+																				newTd2.appendChild(stt_num);
+
+																				newBtn.setAttribute("class", "button sm darkgray btn_sel");
+																				newBtn.setAttribute("id", btnId);
+																				newBtn.setAttribute("name", btnName);
+
+																				newBtn.appendChild(btnText);
+																				newTd3.appendChild(newBtn);
+
+																				newTr.appendChild(newTd);
+																				newTr.appendChild(newTd2);
+																				newTr.appendChild(newTd3);
+
+
+
+																				tbody.appendChild(newTr);
+
+																				/* 테이블이 전부 생성됐다면 선택 버튼 click 이벤트 추가 */
+																				setButtonAttribute();
+																			}
+																		}
+																}
+																else {
+																	alert("통신 중 문제가 발생했습니다. 새로고침 후 다시 시도해주세요.");
+																	return false;
+																}
+															}
+														});
+													});
+			}
+		}
+
+		/* 완성된 table 태그의 버튼에 이벤트 넣기 */
+		function setButtonAttribute()
+		{
+			var btnTagEvent  = document.querySelector('.tac > tbody').getElementsByTagName('button');
+			var btnTagLength = btnTagEvent.length;
+
+
+			for(var i=0; i < btnTagLength; i ++)
+			{
+				btnTagEvent[i].addEventListener('click', function(event)
+													{
+														var flag = document.getElementById('departFlag').value;
+														if(flag === 'btn_station_depart')
+														{
+															document.querySelector('#depart').value = this.id;
+															document.querySelector('#'+flag).innerHTML = this.name;
+															event.preventDefault();
+															$(".pop_station").removeClass("open");
+															$("body").removeClass("fixed_lp");
+															document.getElementById('btn_station_depart').focus();
+														}
+														else if(flag === 'btn_station_arrive')
+														{
+															document.querySelector('#arrive').value = this.id;
+															document.querySelector('#'+flag).innerHTML = this.name;
+															event.preventDefault();
+															$(".pop_station").removeClass("open");
+															$("body").removeClass("fixed_lp");
+															document.getElementById('btn_station_arrive').focus();
+														}
+													});
+			}
+		}
+
+		function stationPop()
+		{
+			var stt_cd = document.querySelector('#stt_cd').value;
+			window.open('/front/dtro/cyberstation/station/stationInfo.do?stt_cd='+stt_cd, 'pop_info', 'width=1040,height=900,top=100,left=100,scrollbars=yes');
+		}
+	</script>
+</head>
+<body class="c" data-menu-type="">
+<input type="hidden" id="stt_cd" name="stt_cd" />
+<input type="hidden" id="depart" name="depart" />
+<input type="hidden" id="arrive" name="arrive" />
+<input type="hidden" id="departFlag"/>
+
+	<div id="cyberstation_wrap">
+		<div id="header">
+			<div class="logo_area">
+				<div class="logo"><img src="/cmsh/dtro.or.kr/cyberstation/images/logo_header.png" alt="DTRO 대구교통공사 사이버스테이션"></div>
+			</div>
+			<!-- 노선검색 -->
+			<div class="srch_area">
+				<button type="button" class="btn_station depart" id="btn_station_depart" title="출발역 선택">출발역 선택</button>
+				<span class="rarr"></span>
+				<button type="button" class="btn_station arrive" id="btn_station_arrive" title="도착역 선택">도착역 선택</button>
+				<button type="button" class="srch" onclick="isStartAndStopValueCheck();">노선검색</button>
+				<div class="pop_station">
+					<div class="inr">
+						<button type="button" class="close">닫기</button>
+						<h2 class="pop_tit">대구도시철도 역검색</h2>
+						<div class="area_scroll">
+							<div class="head">다음 결과 중 해당하는 역명을 선택하시면, 역명이 자동으로 입력됩니다.</div>
+							<div class="nav_button">
+
+								<button type="button">ㄱ</button>
+								<button type="button">ㄴ</button>
+								<button type="button">ㄷ</button>
+								<button type="button">ㄹ</button>
+								<button type="button">ㅁ</button>
+								<button type="button">ㅂ</button>
+								<button type="button">ㅅ</button>
+								<button type="button">ㅇ</button>
+								<button type="button">ㅈ</button>
+								<button type="button">ㅊ</button>
+								<button type="button">ㅋ</button>
+								<button type="button">ㅌ</button>
+								<button type="button">ㅍ</button>
+								<button type="button">ㅎ</button>
+							</div>
+							<table class="tac">
+								<caption>역명,호선,선택</caption>
+								<thead>
+									<tr>
+										<th scope="col">역명</th>
+										<th scope="col">호선</th>
+										<th scope="col">선택</th>
+									</tr>
+								</thead>
+								<tbody>
+
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+			<!-- // 노선검색 -->
+		</div>
+		<div id="container">
+			<!-- 노선도 -->
+			<div class="subway_map">
+				<div class="sm_area">
+					<div class="inr">
+						<img src="/cmsh/dtro.or.kr/cyberstation/images/cyberstation_map2.png?" width="1264" height="1205" class="img_map" alt="대구지하철 1,2,3호선 노선도" usemap="#station_map">
+						<map name="station_map">
+							<!-- 1호선 -->
+                            <area alt="설화명곡" href="#s115" id="115" class="cyberStation" parent_line="cyberStation1"  coords="91,67,10" shape="circle">
+                            <area alt="화원" href="#s116" id="116" class="cyberStation" parent_line="cyberStation1"    coords="89,108,10" shape="circle">
+                            <area alt="대곡" href="#s117" id="117" class="cyberStation" parent_line="cyberStation1"    coords="88,151,10" shape="circle">
+                            <area alt="진천" href="#s118" id="118" class="cyberStation" parent_line="cyberStation1"    coords="89,193,10" shape="circle">
+                            <area alt="월배" href="#s119" id="119" class="cyberStation" parent_line="cyberStation1"    coords="93,234,10" shape="circle">
+                            <area alt="상인" href="#s120" id="120" class="cyberStation" parent_line="cyberStation1"    coords="106,281,10" shape="circle">
+                            <area alt="월촌" href="#s121" id="121" class="cyberStation" parent_line="cyberStation1"    coords="136,318,10" shape="circle">
+                            <area alt="송현" href="#s122" id="122" class="cyberStation" parent_line="cyberStation1"    coords="173,347,10" shape="circle">
+                            <area alt="서부정류장" href="#s123" id="123" class="cyberStation" parent_line="cyberStation1"    coords="222,358,10" shape="circle">
+                            <area alt="대명" href="#s124" id="124" class="cyberStation" parent_line="cyberStation1"    coords="287,360,10" shape="circle">
+                            <area alt="안지랑" href="#s125" id="125" class="cyberStation" parent_line="cyberStation1"    coords="358,357,10" shape="circle">
+                            <area alt="현충로" href="#s126" id="126" class="cyberStation" parent_line="cyberStation1"    coords="431,360,10" shape="circle">
+                            <area alt="영대병원" href="#s127" id="127" class="cyberStation" parent_line="cyberStation1"    coords="502,359,10" shape="circle">
+                            <area alt="교대" href="#s128" id="128" class="cyberStation" parent_line="cyberStation1"    coords="580,359,10" shape="circle">
+								<area alt="명덕(1호선, 3호선 환승역)" href="#s129" id="129" class="cyberStation" parent_line="cyberStation1" isTran="Y" onclick="fn_sel_transfer('129');return false;"    coords="655,386,10" shape="circle">
+								<area alt="반월당(1호선, 2호선 환승역)" href="#s130"id="130" class="cyberStation" parent_line="cyberStation1" isTran="Y"  onclick="fn_sel_transfer('130');return false;"    coords="713,559,10" shape="circle">
+                            <area alt="중앙로" href="#s131" id="131" class="cyberStation" parent_line="cyberStation1"    coords="713,618,10" shape="circle">
+                            <area alt="대구역" href="#s132" id="132" class="cyberStation" parent_line="cyberStation1"    coords="714,670,10" shape="circle">
+                            <area alt="칠성시장" href="#s133" id="133" class="cyberStation" parent_line="cyberStation1"    coords="716,723,10" shape="circle">
+                            <area alt="신천" href="#s134" id="134" class="cyberStation" parent_line="cyberStation1"    coords="725,769,10" shape="circle">
+                            <area alt="동대구역" href="#s135" id="135" class="cyberStation" parent_line="cyberStation1"    coords="751,814,10" shape="circle">
+                            <area alt="동구청" href="#s136" id="136" class="cyberStation" parent_line="cyberStation1"    coords="789,840,10" shape="circle">
+                            <area alt="아양교" href="#s137" id="137" class="cyberStation" parent_line="cyberStation1"    coords="851,858,10" shape="circle">
+                            <area alt="동촌" href="#s138" id="138" class="cyberStation" parent_line="cyberStation1"    coords="925,860,10" shape="circle">
+                            <area alt="해안" href="#s139" id="139" class="cyberStation" parent_line="cyberStation1"    coords="977,858,10" shape="circle">
+                            <area alt="방촌" href="#s140" id="140" class="cyberStation" parent_line="cyberStation1"    coords="1030,860,10" shape="circle">
+                            <area alt="용계" href="#s141" id="141" class="cyberStation" parent_line="cyberStation1"    coords="1085,859,10" shape="circle">
+                            <area alt="율하" href="#s142" id="142" class="cyberStation" parent_line="cyberStation1"    coords="1141,875,10" shape="circle">
+                            <area alt="신기" href="#s143" id="143" class="cyberStation" parent_line="cyberStation1"    coords="1178,904,10" shape="circle">
+                            <area alt="반야월" href="#s144" id="144" class="cyberStation" parent_line="cyberStation1"    coords="1206,947,10" shape="circle">
+                                <area alt="각산" href="#s145" id="145" class="cyberStation" parent_line="cyberStation1"    coords="1216,989,10" shape="circle">
+                                <area alt="안심" href="#s146" id="146" class="cyberStation" parent_line="cyberStation1"    coords="1217,1026,10" shape="circle">
+                                <area alt="하양" href="#s149" id="149" class="cyberStation" parent_line="cyberStation1"    coords="1218,1142,10" shape="circle">
+                                <area alt="부호" href="#s148" id="148" class="cyberStation" parent_line="cyberStation1"    coords="1217,1104,10" shape="circle">
+                                <area alt="대구한의대병원" href="#s147" id="147" class="cyberStation" parent_line="cyberStation1"    coords="1215,1064,10" shape="circle">
+							<!-- 2호선 -->
+							<area alt="문양" href="#s216" id="216" class="cyberStation" parent_line="cyberStation2"   coords="89,418,10" shape="circle">
+							<area alt="다사" href="#s217" id="217" class="cyberStation" parent_line="cyberStation2"    coords="89,462,10" shape="circle">
+							<area alt="대실" href="#s218" id="218" class="cyberStation" parent_line="cyberStation2"    coords="91,507,10" shape="circle">
+							<area alt="강창" href="#s219" id="219" class="cyberStation" parent_line="cyberStation2"    coords="103,540,10" shape="circle">
+							<area alt="계명대" href="#s220" id="220" class="cyberStation" parent_line="cyberStation2"    coords="136,548,10" shape="circle">
+							<area alt="성서산업단지" href="#s221" id="221" class="cyberStation" parent_line="cyberStation2"    coords="182,548,10" shape="circle">
+							<area alt="이곡" href="#s222" id="222" class="cyberStation" parent_line="cyberStation2"    coords="231,548,10" shape="circle">
+							<area alt="용산" href="#s223" id="223" class="cyberStation" parent_line="cyberStation2"    coords="285,547,10" shape="circle">
+							<area alt="죽전" href="#s224" id="224" class="cyberStation" parent_line="cyberStation2"    coords="346,549,10" shape="circle">
+							<area alt="감삼" href="#s225" id="225" class="cyberStation" parent_line="cyberStation2"    coords="396,548,10" shape="circle">
+							<area alt="두류" href="#s226" id="226" class="cyberStation" parent_line="cyberStation2"    coords="454,548,10" shape="circle">
+							<area alt="내당" href="#s227" id="227" class="cyberStation" parent_line="cyberStation2"  coords="507,546,10" shape="circle">
+							<area alt="반고개" href="#s228" id="228" class="cyberStation" parent_line="cyberStation2"  coords="554,548,10" shape="circle">
+								<area alt="청라언덕(2호선, 3호선 환승역)" id="229" class="cyberStation" parent_line="cyberStation2"  href="#s229" isTran="Y" onclick="fn_sel_transfer('229');return false;" coords="594,561,10" shape="circle">
+								<area alt="반월당(1호선, 2호선 환승역)" href="#s130" id="230" class="cyberStation" parent_line="cyberStation2" isTran="Y" onclick="fn_sel_transfer('230');return false;"  coords="714,547,10" shape="circle">
+							<area alt="경대병원" href="#s231" id="231" class="cyberStation" parent_line="cyberStation2"  coords="813,546,10" shape="circle">
+							<area alt="대구은행" href="#s232" id="232" class="cyberStation" parent_line="cyberStation2"  coords="873,546,10" shape="circle">
+							<area alt="범어" href="#s233" id="233" class="cyberStation" parent_line="cyberStation2"  coords="933,546,10" shape="circle">
+							<area alt="수성구청" href="#s234" id="234" class="cyberStation" parent_line="cyberStation2"  coords="988,547,10" shape="circle">
+							<area alt="만촌" href="#s235" id="235" class="cyberStation" parent_line="cyberStation2"  coords="1048,547,10" shape="circle">
+							<area alt="담티" href="#s236" id="236" class="cyberStation" parent_line="cyberStation2"  coords="1106,545,10" shape="circle">
+							<area alt="연호" href="#s237" id="237" class="cyberStation" parent_line="cyberStation2"  coords="1163,547,10" shape="circle">
+							<area alt="대공원" href="#s238" id="238" class="cyberStation" parent_line="cyberStation2"  coords="1221,585,10" shape="circle">
+							<area alt="고산" href="#s239" id="239" class="cyberStation" parent_line="cyberStation2"  coords="1224,626,10" shape="circle">
+							<area alt="신매" href="#s240" id="240" class="cyberStation" parent_line="cyberStation2"  coords="1223,666,10" shape="circle">
+							<area alt="사월" href="#s241" id="241" class="cyberStation" parent_line="cyberStation2"  coords="1222,706,10" shape="circle">
+							<area alt="정평" href="#s242" id="242" class="cyberStation" parent_line="cyberStation2"  coords="1223,747,10" shape="circle">
+							<area alt="임당" href="#s243" id="243" class="cyberStation" parent_line="cyberStation2"  coords="1224,788,10" shape="circle">
+							<area alt="영남대" href="#s244" id="244" class="cyberStation" parent_line="cyberStation2"  coords="1223,828,10" shape="circle">
+							<!-- 3호선 -->
+							<area alt="칠곡경대병원" href="#s312" id="312" class="cyberStation" parent_line="cyberStation3"  coords="91,1143,10" shape="circle">
+							<area alt="학정" href="#s313" id="313" class="cyberStation" parent_line="cyberStation3"  coords="91,1104,10" shape="circle">
+							<area alt="팔거" href="#s314" id="314" class="cyberStation" parent_line="cyberStation3"  coords="91,1057,10" shape="circle">
+							<area alt="동천" href="#s315" id="315" class="cyberStation" parent_line="cyberStation3"  coords="91,1008,10" shape="circle">
+							<area alt="칠곡운암" href="#s316" id="316" class="cyberStation" parent_line="cyberStation3"  coords="98,954,10" shape="circle">
+							<area alt="구암" href="#s317" id="317" class="cyberStation" parent_line="cyberStation3"  coords="140,892,10" shape="circle">
+							<area alt="태전" href="#s318" id="318" class="cyberStation" parent_line="cyberStation3"  coords="216,860,10" shape="circle">
+							<area alt="매천" href="#s319" id="319" class="cyberStation" parent_line="cyberStation3"  coords="267,858,10" shape="circle">
+							<area alt="매천시장" href="#s320" id="320" class="cyberStation" parent_line="cyberStation3"  coords="319,858,10" shape="circle">
+							<area alt="팔달" href="#s321" id="321" class="cyberStation" parent_line="cyberStation3"  coords="370,857,10" shape="circle">
+							<area alt="공단" href="#s322" id="322" class="cyberStation" parent_line="cyberStation3"  coords="421,860,10" shape="circle">
+							<area alt="만평" href="#s323" id="323" class="cyberStation" parent_line="cyberStation3"  coords="472,858,10" shape="circle">
+							<area alt="팔달시장" href="#s324" id="324" class="cyberStation" parent_line="cyberStation3"  coords="524,835,10" shape="circle">
+							<area alt="원대" href="#s325" id="325" class="cyberStation" parent_line="cyberStation3"  coords="563,801,10" shape="circle">
+							<area alt="북구청" href="#s326" id="326" class="cyberStation" parent_line="cyberStation3"  coords="588,758,10" shape="circle">
+							<area alt="달성공원" href="#s327" id="327" class="cyberStation" parent_line="cyberStation3"  coords="595,699,10" shape="circle">
+							<area alt="서문시장" href="#s328" id="328" class="cyberStation" parent_line="cyberStation3"  coords="595,620,10" shape="circle">
+								<area alt="청라언덕(2호선, 3호선 환승역)" class="cyberStation" parent_line="cyberStation3"  href="#s229" isTran="Y" id="329" onclick="fn_sel_transfer('329');return false;" coords="594,551,10" shape="circle">
+							<area alt="남산" href="#s330" id="330" class="cyberStation" parent_line="cyberStation3"  coords="601,463,10" shape="circle">
+								<area alt="명덕(1호선, 3호선 환승역)" href="#s129" id="331" class="cyberStation" parent_line="cyberStation3" isTran="Y" onclick="fn_sel_transfer('331');return false;" coords="645,395,10" shape="circle">
+							<area alt="건들바위" href="#s332" id="332" class="cyberStation" parent_line="cyberStation3"  coords="730,359,10" shape="circle">
+							<area alt="대봉교" href="#s333" id="333" class="cyberStation" parent_line="cyberStation3"  coords="848,359,10" shape="circle">
+							<area alt="수성시장" href="#s334" id="334" class="cyberStation" parent_line="cyberStation3"  coords="968,359,10" shape="circle">
+							<area alt="수성구민운동장" href="#s335" id="335" class="cyberStation" parent_line="cyberStation3"  coords="1087,356,10" shape="circle">
+							<area alt="어린이세상" href="#s336" id="336" class="cyberStation" parent_line="cyberStation3"  coords="1150,333,10" shape="circle">
+							<area alt="황금" href="#s337" id="337" class="cyberStation" parent_line="cyberStation3"  coords="1193,291,10" shape="circle">
+							<area alt="수성못" href="#s338" id="338" class="cyberStation" parent_line="cyberStation3"  coords="1216,223,10" shape="circle">
+							<area alt="지산" href="#s339" id="339" class="cyberStation" parent_line="cyberStation3"  coords="1216,171,10" shape="circle">
+							<area alt="범물" href="#s340" id="340" class="cyberStation" parent_line="cyberStation3"  coords="1217,114,10" shape="circle">
+							<area alt="용지" href="#s341" id="341" class="cyberStation" parent_line="cyberStation3"  coords="1215,66,10" shape="circle">
+						</map>
+						<!-- 아이콘 정보 -->
+						<ul class="lst_legendary">
+							<li data-info-type="갈아타는곳" class="s129">명덕 - 1호선, 3호선 갈아타는곳</li>
+							<li data-info-type="갈아타는곳" class="s130">반월당 - 1호선, 2호선 갈아타는곳</li>
+							<li data-info-type="갈아타는곳" class="s229">청라언덕 - 2호선, 3호선 갈아타는곳</li>
+							<li data-info-type="유실물센터" class="s130">유실물센터(반월당역)</li>
+							<li data-info-type="무료자전거대여" class="s117">대곡역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s118">진천역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s119">월배역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s121">월촌역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s123">서부정류장역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s126">현충로역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s127">영대병원역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s129">명덕역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s133">칠성시장역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s134">신천역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s135">동대구역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s136">동구청역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s137">아양교역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s138">동촌역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s139">해안역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s142">율하역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s143">신기역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s144">반야월역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s216">문양역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s218">대실역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s219">강창역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s220">계명대역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s221">성서산업단지역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s222">이곡역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s223">용산역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s225">감삼역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s226">두류역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s231">경대병원역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s232">대구은행역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s233">범어역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s235">만촌역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s237">연호역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s240">신매역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s241">사월역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s242">정평역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s243">임당역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s330">남산역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s145">각산역 무료자전거대여</li>
+							<li data-info-type="무료자전거대여" class="s239">고산역 무료자전거대여</li>
+
+
+
+
+							<li data-info-type="휠체어리프트" class="s131">중앙로 휠체어리프트</li>
+							<li data-info-type="역세권주차장" class="s118">진천역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s120">상인역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s130">반월당역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s131">중앙로역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s132">대구역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s133">칠성시장역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s137">아양교역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s139">해안역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s216">문양역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s223">용산역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s226">두류역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s228">반고개역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s229">청라언덕역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s233">범어역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s240">신매역 역세권주차장</li>
+							<li data-info-type="역세권주차장" class="s332">건들바위역 역세권주차장</li>
+							<li data-info-type="모유수유실" class="s115">설화명곡역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s116">화원역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s130">반월당역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s226">두류역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s242">정평역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s243">임당역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s244">영남대역 모유수유실</li>
+
+							<li data-info-type="모유수유실" class="s135">동대구역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s147">대구한의대병원역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s148">부호역 모유수유실</li>
+							<li data-info-type="모유수유실" class="s149">하양역 모유수유실</li>
+
+
+
+							<li data-info-type="공항" class="s137">아양교 공항</li>
+							<li data-info-type="기차역" class="s132">대구역 기차역</li>
+							<li data-info-type="기차역" class="s135">동대구역 기차역</li>
+							<li data-info-type="기차역" class="s149">하양역 기차역</li>
+
+							<li data-info-type="버스터미널" class="s123">서부정류장역 버스터미널</li>
+							<li data-info-type="버스터미널" class="s135">동대구역 버스터미널</li>
+							<li data-info-type="버스터미널" class="s323">만평역 버스터미널</li>
+							<li data-info-type="엘리베이터" class="s115">설화명곡역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s116">화원역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s117">대곡역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s118">진천역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s119">월배역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s120">상인역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s121">월촌역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s122">송현역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s123">서부정류장역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s124">대명역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s125">안지랑역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s126">현충로역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s127">영대병원역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s128">교대역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s129">명덕역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s130">반월당역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s131">중앙로역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s132">대구역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s133">칠성시장역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s134">신천역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s135">동대구역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s136">동구청역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s137">아양교역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s138">동촌역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s139">해안역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s140">방촌역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s141">용계역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s142">율하역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s143">신기역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s144">반야월역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s145">각산역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s146">안심역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s216">문양역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s217">다사역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s218">대실역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s219">강창역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s220">계명대역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s221">성서산업단지역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s222">이곡역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s223">용산역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s224">죽전역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s225">감삼역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s226">두류역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s227">내당역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s228">반고개역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s231">경대병원역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s232">대구은행역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s233">범어역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s234">수성구청역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s235">만촌역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s236">담티역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s237">연호역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s238">수성알파시티역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s239">고산역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s240">신매역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s241">사월역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s242">정평역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s243">임당역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s244">영남대역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s312">칠곡경대병원역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s313">학정역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s314">팔거역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s315">동천역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s316">칠곡운암역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s317">구암역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s318">태전역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s319">매천역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s320">매천시장역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s321">팔달역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s322">공단역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s323">만평역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s324">팔달시장역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s325">원대역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s326">북구청역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s327">달성공원역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s328">서문시장역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s330">남산역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s332">건들바위역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s333">대봉교역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s334">수성시장역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s335">수성구민운동장역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s336">어린이세상역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s337">황금역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s338">수성못역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s339">지산역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s340">범물역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s341">용지역 엘리베이터</li>
+
+							<li data-info-type="엘리베이터" class="s147">대구한의대병원역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s148">부호역 엘리베이터</li>
+							<li data-info-type="엘리베이터" class="s149">하양역 엘리베이터</li>
+
+							<li data-info-type="DRT" class="s341">용지역 DRT</li>
+							<li data-info-type="DRT" class="s340">범물역 DRT</li>
+							<li data-info-type="DRT" class="s338">수성못역 DRT</li>
+							<li data-info-type="DRT" class="s135">동대구역 DRT</li>
+							<li data-info-type="DRT" class="s137">아양교역 DRT</li>
+							<li data-info-type="DRT" class="s237">연호역 DRT</li>
+							<li data-info-type="DRT" class="s238">수성알파시티역 DRT</li>
+							<li data-info-type="DRT" class="s142">율하역 DRT</li>
+							<li data-info-type="DRT" class="s146">안심역 DRT</li>
+						</ul>
+						<!-- // 아이콘 정보 -->
+						<!-- 역선택 레이어 -->
+						<div class="sm_layer_container">
+							<!-- 환승역 선택 -->
+							<div class="ly_box transfer">
+							</div>
+							<!-- 일반역 -->
+							<div class="ly_box">
+								<button class="ly_close"><span>닫기</span></button>
+								<div class="title_box"><span class="line line02" id="stt_num"></span><span id="stt_nm"></span></div>
+								<div class="schedule_box">
+									<ul class="lst_station_schedule left">
+
+										<li><span class="schedule_name" id="fd_stt_nm"></span><span class="schedule_duration" id="first_desc"></span></li>
+
+										<li><span class="schedule_name" id="ld_stt_nm"></span><span class="schedule_duration" id="last_desc"></span></li>
+									</ul>
+									<ul class="lst_station_schedule right">
+
+										<li><span class="schedule_name" id="fa_stt_nm"></span><span class="schedule_duration" id="first_asc"></span></li>
+
+										<li><span class="schedule_name" id="la_stt_nm"></span><span class="schedule_duration" id="last_asc"></span></li>
+									</ul>
+								</div>
+								<div class="search_box">
+									<a href="#" class="btn_srch depart" id="start"><span>출발역</span></a>
+									<a href="#" class="btn_srch arrive" id="stop"><span>도착역</span></a>
+								</div>
+								<div class="info_box"><a href="#none" class="btn_info" title="새창" onclick="stationPop();"><span>열차시각&middot;역정보</span></a></div>
+							</div>
+						</div>
+						<!-- // 역선택 레이어 -->
+						<!-- 출발,도착 -->
+						<div class="pin_box">
+							<div class="pin depart" ><span>출발</span><button class="close_pin start_pin">닫기</button></div>
+							<div class="pin arrive" ><span>도착</span><button class="close_pin end_pin">닫기</button></div>
+						</div>
+						<!-- // 출발,도착 -->
+					</div>
+				</div>
+			</div>
+			<!-- // 노선도 -->
+			<!-- 노선검색 결과 -->
+			<div class="srch_rs_area" style="z-index: 10;">
+			</div>
+			<!-- // 노선검색 결과 -->
+			<!-- 범례 -->
+			<div class="legendary_area">
+				<ul class="lst_legendary">
+    <li class="i01"><a href="#" data-info-type="갈아타는곳"><span>갈아타는곳</span></a>
+     <span class="hidden">
+            환승역: 명덕, 청라언덕, 반월당
+     </span></li>
+    <li class="i02"><a href="#" data-info-type="유실물센터"><span>유실물센터<br>(반월당역)</span></a>
+     <span class="hidden">
+            설치역: 반월당
+     </span></li>
+    <li class="i03"><a href="#" data-info-type="무료자전거대여"><span>무료자전거<br>대여</span></a>
+     <span class="hidden">
+            설치역: 대곡, 진천, 월배, 월촌, 서부정류장, 현충로, 영대병원, 명덕, 칠성시장, 신천, 동대구역, 동구청, 아양교, 동촌, 해안, 율하, 신기, 반야월, 각산, 문양, 대실, 강창, 계명대, 성서산업단지, 이곡, 용산, 감삼, 두류, 경대병원, 대구은행, 범어, 만촌, 연호, 고산, 신매, 사월, 정평, 임당, 남산
+     </span></li>
+    <li class="i04"><a href="#" data-info-type="휠체어리프트"><span>휠체어리프트</span></a></a>
+     <span class="hidden">
+            설치역: 중앙
+     </span></li>
+    <li class="i05"><a href="#" data-info-type="역세권주차장"><span>역세권주차장</span></a></a>
+     <span class="hidden">
+            설치역: 진천, 상인, 반월당, 중앙로, 대구역, 칠성시장, 아양교, 해안, 문양, 용산, 두류, 반고개,  범어, 신매, 건들바위, 청라언덕,
+     </span></li>
+    <li class="i06"><a href="#" data-info-type="모유수유실"><span>모유수유실</span></a></a>
+     <span class="hidden">
+            설치역: 설화명곡, 화원, 반월당, 동대구역, 대구한의대병원, 부호, 하양, 두류, 정평, 임당, 영남대
+     </span></li>
+    <li class="i07"><a href="#" data-info-type="공항"><span>공항</span></a></a>
+     <span class="hidden">
+            설치역: 아양교
+     </span></li>
+    <li class="i08"><a href="#" data-info-type="기차역"><span>기차역</span></a></a>
+     <span class="hidden">
+            설치역: 대구역, 동대구역
+     </span></li>
+    <li class="i09"><a href="#" data-info-type="버스터미널"><span>버스터미널</span></a></a>
+     <span class="hidden">
+            설치역: 서부정류장, 동대구역, 만평,
+     </span></li>
+    <li class="i10"><a href="#" data-info-type="엘리베이터"><span>엘리베이터</span></a></a>
+     <span class="hidden">
+            설치역: 설화명곡, 화원, 대곡, 진천, 월배, 상인, 월촌, 송현, 서부정류장, 대명, 안지랑, 현충로, 영대병원, 교대, 명덕, 반월당, 중앙로, 대구역, 칠성시장, 신천, 동대구역, 동구청, 아양교, 동촌, 해안, 방촌, 용계, 율하, 신기, 반야월, 각산, 안심, 대구한의대병원, 부호, 하양, 문양, 다사, 대실, 강창, 계명대, 성서산업단지, 이곡, 용산, 죽전, 감삼, 두류, 내당, 반고개, 경대병원, 대구은행, 범어, 수성구청, 만촌, 담티, 연호, 수성알파시티, 고산, 신매, 사월, 정평, 임당, 영남대, 용지, 범물, 지산, 수성못, 황금, 어린이세상, 수성구민운동장, 수성시장, 대봉교, 건들바위, 남산, 서문시장, 달성공원, 복구청, 원대, 팔달시장, 만평, 공단, 팔달, 매천시장, 태전, 구암, 칠곡운암, 동천, 팔거, 학정, 칠곡경대병원
+     </span></li>
+    <li class="i11"><a href="#" data-info-type="DRT"><span>DRT</span></a></a>
+     <span class="hidden">
+            설치역: 동대구역, 아양교, 율하, 안심, 연호, 수성알파시티, 용지, 범물, 수성못,
+     </span></li>
+</ul>
+
+				<div class="txt">※ 각 명을 클릭하시면 지도에서 해당 정보를 볼 수 있습니다.</div>
+			</div>
+			<!-- // 범례 -->
+		</div>
+	</div>
+</body>
+</html>

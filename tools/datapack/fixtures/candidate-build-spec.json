@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "datapack-candidate-build-spec",
+  "candidateId": "capital-pilot-candidate-fixture",
+  "productionScopeId": "capital_pilot_android_v1",
+  "publishedAt": "2026-08-14T15:34:07.000Z",
+  "releaseSequence": 1,
+  "fixturePath": "tools/datapack/fixtures/catalog-fixture.json",
+  "productionScopePolicy": {
+    "path": "tools/datapack/nationwide-coverage-targets.json",
+    "sha256": "925847f9b45844edd573c7e695a92c28b22729c05a592bb48b821e5e707f1641"
+  },
+  "sourceSnapshotIds": [
+    "snapshot-molit-urban-rail-full-route-fixture",
+    "snapshot-seoulmetro-station-line-info-fixture"
+  ],
+  "sourceSnapshots": [
+    {
+      "snapshotId": "snapshot-molit-urban-rail-full-route-fixture",
+      "sourceId": "molit-urban-rail-full-route",
+      "rawObjectUri": "s3://easysubway-datapack-sources/molit-urban-rail-full-route/snapshot-fixture.json",
+      "rawSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "redactedRequestFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "schemaFingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "7777777777777777777777777777777777777777777777777777777777777777",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2099-07-07T03:00:00Z"
+    },
+    {
+      "snapshotId": "snapshot-seoulmetro-station-line-info-fixture",
+      "sourceId": "seoulmetro-station-line-info",
+      "rawObjectUri": "s3://easysubway-datapack-sources/seoulmetro-station-line-info/snapshot-fixture.json",
+      "rawSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "redactedRequestFingerprint": "5555555555555555555555555555555555555555555555555555555555555555",
+      "schemaFingerprint": "6666666666666666666666666666666666666666666666666666666666666666",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "8888888888888888888888888888888888888888888888888888888888888888",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2099-07-07T03:00:00Z"
+    }
+  ],
+  "sourceSnapshotSetHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approvedAliasLedgerHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "facilityEvidenceLedgerHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "routeEvidenceLedgerHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "approvedOverrideSetHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "sourceInventorySha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "builderGitSha": "0123456789abcdef0123456789abcdef01234567",
+  "builderVersion": "build-datapack.mjs@1",
+  "officialOdFareEvidence": {
+    "sourceId": "seoul-metro-official-od-fares",
+    "snapshotId": "seoul-metro-official-od-fares-20260712",
+    "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
+      "admissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
+    "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
+    "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+    "quotes": [
+      { "originStationId": "station-sangnoksu", "destinationStationId": "station-sadang", "sourceId": "seoul-metro-official-od-fares", "snapshotId": "seoul-metro-official-od-fares-20260712", "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a", "gnrlCardFare": 1950, "gnrlCashFare": 2050, "yungCardFare": 1220, "yungCashFare": 2050, "childCardFare": 750, "childCashFare": 750 },
+      { "originStationId": "station-sadang", "destinationStationId": "station-sangnoksu", "sourceId": "seoul-metro-official-od-fares", "snapshotId": "seoul-metro-official-od-fares-20260712", "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a", "gnrlCardFare": 1950, "gnrlCashFare": 2050, "yungCardFare": 1220, "yungCashFare": 2050, "childCardFare": 750, "childCashFare": 750 }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "mobility-profile-policy",
+  "anchorWalkSpeedMps": 1.2,
+  "presets": {
+    "STANDARD": { "speedFactor": 1.0, "facilityConstraint": "NONE" },
+    "SLOW": { "speedFactor": 1.35, "facilityConstraint": "NONE" },
+    "NO_STAIRS": { "speedFactor": 1.2, "facilityConstraint": "NO_STAIRS" },
+    "STEP_FREE": { "speedFactor": 1.0, "facilityConstraint": "ELEVATOR_ONLY", "elevatorWaitSeconds": 60 }
+  },
+  "mobilityTypeMapping": {
+    "SENIOR": "SLOW",
+    "PREGNANT": "SLOW",
+    "TEMPORARY_INJURY": "SLOW",
+    "LUGGAGE": "NO_STAIRS",
+    "STROLLER": "STEP_FREE",
+    "WHEELCHAIR": "STEP_FREE"
+  }
+}

@@ -1,0 +1,1577 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { createHash, createSign, generateKeyPairSync } from "node:crypto";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import test from "node:test";
+import {
+  buildLaunchDenominatorReport,
+  canonicalScopeHash,
+} from "./build-launch-denominator-report.mjs";
+import {
+  bindAuthoritativeLaunchEvidence,
+  buildLaunchCandidateBinding,
+} from "./launch-candidate-binding.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { buildServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
+import { launchScope } from "./test-fixtures/launch-scope.mjs";
+import { validateRouteGraphTopologyIntegrity } from "./validate-release-evidence-bundle.mjs";
+
+test("release topology cannot defer violations", () => {
+  assert.throws(() => validateRouteGraphTopologyIntegrity({
+    routeGraphTopologyStatus: "DEFERRED", routeGraphTopologyViolationCount: 1,
+  }), /routeGraphTopologyStatus must be a release gate status/);
+  assert.throws(() => validateRouteGraphTopologyIntegrity({
+    routeGraphTopologyStatus: "PASS", routeGraphTopologyViolationCount: 1,
+  }), /PASS requires routeGraphTopologyViolationCount 0/);
+  assert.doesNotThrow(() => validateRouteGraphTopologyIntegrity({
+    routeGraphTopologyStatus: "FAIL", routeGraphTopologyViolationCount: 1,
+  }));
+  assert.doesNotThrow(() => validateRouteGraphTopologyIntegrity({
+    routeGraphTopologyStatus: "PASS", routeGraphTopologyViolationCount: 0,
+  }));
+});
+
+const execFileAsync = promisify(execFile);
+const root = path.resolve(import.meta.dirname, "../..");
+test("release validator requires an explicit launch report", async () => {
+  await assert.rejects(execFileAsync(process.execPath, [
+    path.join(import.meta.dirname, "validate-release-evidence-bundle.mjs"),
+    "--bundle", "missing-fixture-bundle.json",
+  ], { cwd: root }), /--launch-report is required/);
+});
+const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" });
+const publicKeyPem = publicKey.export({ type: "spki", format: "pem" });
+const previousPublicKey = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = publicKeyPem;
+
+test.after(() => {
+  if (previousPublicKey === undefined) delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+  else process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = previousPublicKey;
+});
+
+test("candidate server route evidence는 stage·inventory·component digest를 함께 묶어 검증한다", async (t) => {
+  const outputDir = path.join(tmpdir(), `easysubway-candidate-route-evidence-${Date.now()}`);
+  const candidateRoot = path.join(outputDir, "stage");
+  const evidenceRoot = path.join(candidateRoot, "server-route-bundle-evidence");
+  const routeRoot = path.join(candidateRoot, "server-route-bundle");
+  t.after(() => rm(outputDir, { recursive: true, force: true }));
+  await Promise.all([
+    mkdir(evidenceRoot, { recursive: true }),
+    mkdir(path.join(routeRoot, "payload"), { recursive: true }),
+  ]);
+  const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const fixedHash = "a".repeat(64);
+  const sourceSnapshotSetHash = "b".repeat(64);
+  const buildSpecSha256 = "c".repeat(64);
+  const manifestSha256 = "d".repeat(64);
+  const payloads = Object.fromEntries(["accessibility", "fare", "timetable", "topology"]
+    .map((component) => [component, Buffer.from(`${component}-bytes`)]));
+  const componentEntries = Object.entries(payloads).map(([component, bytes]) => ({
+    path: `payload/${component}.sqlite.zst`,
+    sizeBytes: bytes.length,
+    sha256: hash(bytes),
+  })).sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+  const componentInventorySha256 = hash(Buffer.from(canonicalJson(componentEntries)));
+  const provenanceBytes = Buffer.from(canonicalJson({ sourceSnapshotSetHash }));
+  const compatibilityBytes = Buffer.from(canonicalJson({ schemaVersion: 1 }));
+  const signingInput = {
+    manifestVersion: 1,
+    artifactKind: "server-route-bundle",
+    bundleId: "capital-route-bundle-1",
+    releaseSequence: 1,
+    stationSetSha256: fixedHash,
+    payloadSha256: componentInventorySha256,
+    ...Object.fromEntries(Object.entries(payloads).map(([component, bytes]) => [`${component}Sha256`, hash(bytes)])),
+    provenanceSha256: hash(provenanceBytes),
+    compatibilitySha256: hash(compatibilityBytes),
+    serviceTimezone: "Asia/Seoul",
+    activeFrom: "2026-08-25T00:00:00.000+09:00",
+    freshUntil: "2026-08-26T00:00:00.000+09:00",
+    schemaCompatibility: { backendMin: 3, backendMax: 3 },
+    keyId: "production-v1",
+  };
+  const signingInputBytes = Buffer.from(canonicalJson(signingInput));
+  const signedManifestBytes = Buffer.from(canonicalJson({
+    ...signingInput,
+    signature: { algorithm: "rsa-sha256-server-route-bundle-v1", value: sign(signingInputBytes) },
+  }));
+  await Promise.all([
+    ...Object.entries(payloads).map(([component, bytes]) =>
+      writeFile(path.join(routeRoot, `payload/${component}.sqlite.zst`), bytes)),
+    writeFile(path.join(routeRoot, "compatibility.json"), compatibilityBytes),
+    writeFile(path.join(routeRoot, "manifest.json"), signedManifestBytes),
+    writeFile(path.join(routeRoot, "manifest.signing-input.json"), signingInputBytes),
+    writeFile(path.join(routeRoot, "provenance.json"), provenanceBytes),
+  ]);
+  const candidate = {
+    repository: "AquilaXk/easysubway-data",
+    gitSha: "e".repeat(40),
+    bundleId: signingInput.bundleId,
+    releaseSequence: 1,
+    stationSetSha256: fixedHash,
+    sourceSnapshotSetHash,
+    signingInputSha256: hash(signingInputBytes),
+    signedManifestRawSha256: hash(signedManifestBytes),
+    payloadRootSha256: componentInventorySha256,
+    componentInventorySha256,
+    componentDigests: Object.fromEntries(Object.entries(payloads).map(([component, bytes]) => [component, hash(bytes)])),
+    activeFrom: signingInput.activeFrom,
+    freshUntil: signingInput.freshUntil,
+    keyId: signingInput.keyId,
+  };
+  const eligibilityPayload = {
+    schemaVersion: 1,
+    artifactKind: "route-accessibility-eligibility",
+    decision: "ELIGIBLE",
+    candidate,
+    stationLineAccessibility: { rowCount: 1 },
+    routeEdgeEvaluation: { edgeCount: 1 },
+    blockers: [],
+  };
+  const eligibility = {
+    ...eligibilityPayload,
+    eligibilitySha256: hash(Buffer.from(canonicalJson(eligibilityPayload))),
+  };
+  const eligibilityBytes = Buffer.from(canonicalJson(eligibility));
+  const final = buildServerRouteBundleFinal({
+    candidate,
+    gates: Object.fromEntries([
+      "sourceFreshness", "stationLineAccessibility", "routeEdgeEvaluation", "artifactInventory",
+      "signature", "publication", "promotionAuthorization",
+    ].map((name) => [name, { state: "PASS", evidenceSha256: fixedHash }]).concat([
+      ["routeAccessibilityEligibility", { state: "PASS", evidenceSha256: hash(eligibilityBytes) }],
+    ])),
+  });
+  const finalBytes = Buffer.from(canonicalJson(final));
+  const eligibilityPath = "server-route-bundle-evidence/route-accessibility-eligibility.json";
+  const finalPath = "server-route-bundle-evidence/server-route-bundle-final.json";
+  await Promise.all([
+    writeFile(path.join(candidateRoot, eligibilityPath), eligibilityBytes),
+    writeFile(path.join(candidateRoot, finalPath), finalBytes),
+  ]);
+  const stagedBytes = new Map([
+    ["server-route-bundle/compatibility.json", compatibilityBytes],
+    ["server-route-bundle/manifest.json", signedManifestBytes],
+    ["server-route-bundle/manifest.signing-input.json", signingInputBytes],
+    ...Object.entries(payloads).map(([component, bytes]) => [`server-route-bundle/payload/${component}.sqlite.zst`, bytes]),
+    ["server-route-bundle/provenance.json", provenanceBytes],
+    [eligibilityPath, eligibilityBytes],
+    [finalPath, finalBytes],
+  ]);
+  const bundle = {
+    schemaVersion: 1,
+    artifactKind: "datapack-release-evidence-bundle",
+    releaseMode: "production-publish",
+    buildCandidateId: "candidate-a",
+    sourceSnapshotSetHash,
+    buildSpecSha256,
+    manifestSha256,
+    candidateServerRouteEvidence: {
+      candidateId: "candidate-a",
+      sourceSnapshotSetHash,
+      buildSpecSha256,
+      manifestSha256,
+      eligibility: { path: eligibilityPath, sha256: hash(eligibilityBytes) },
+      final: { path: finalPath, sha256: hash(finalBytes) },
+    },
+  };
+  const bundlePath = path.join(outputDir, "bundle.json");
+  const inventoryPath = path.join(candidateRoot, "data-artifact-inventory.json");
+  const componentPath = path.join(candidateRoot, "data-component-manifest.json");
+  const inventory = {
+    schemaVersion: 1,
+    artifactKind: "datapack-candidate-inventory",
+    entries: [...stagedBytes.entries()]
+      .map(([path, bytes]) => ({ path, sizeBytes: bytes.length, sha256: hash(bytes) }))
+      .sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path))),
+  };
+  let componentGitSha = candidate.gitSha;
+  let componentReleaseSequence = candidate.releaseSequence;
+  const writeBound = async () => {
+    const inventoryBytes = Buffer.from(`${JSON.stringify(inventory, null, 2)}\n`);
+    await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+    await writeFile(inventoryPath, inventoryBytes);
+    await writeFile(componentPath, `${JSON.stringify({
+      schemaVersion: 1,
+      component: "data",
+      repository: "AquilaXk/easysubway-data",
+      gitSha: componentGitSha,
+      workflowRunId: "1",
+      dataVersion: "1",
+      releaseSequence: componentReleaseSequence,
+      manifestSha256,
+      provenance: { sourceSnapshotSetHash },
+      artifactInventorySha256: hash(inventoryBytes),
+      contractVersion: "datapack-contract-v3",
+      issueRef: "AquilaXk/easysubway-data#530",
+    }, null, 2)}\n`);
+  };
+  const command = () => execFileAsync(process.execPath, [
+    "tools/datapack/validate-release-evidence-bundle.mjs",
+    "--candidate-server-route-only",
+    "--bundle", bundlePath,
+    "--candidate-server-route-root", candidateRoot,
+    "--candidate-artifact-inventory", inventoryPath,
+    "--candidate-component-manifest", componentPath,
+  ], { cwd: root });
+  await writeBound();
+  await command();
+
+  for (const field of ["candidateId", "sourceSnapshotSetHash", "buildSpecSha256", "manifestSha256"]) {
+    const previous = bundle.candidateServerRouteEvidence[field];
+    bundle.candidateServerRouteEvidence[field] = field === "candidateId" ? "other-candidate" : "f".repeat(64);
+    await writeBound();
+    await assert.rejects(command(), /candidate identity mismatch/);
+    bundle.candidateServerRouteEvidence[field] = previous;
+  }
+
+  for (const invalidCandidateId of [null, 7, ""]) {
+    bundle.buildCandidateId = invalidCandidateId;
+    bundle.candidateServerRouteEvidence.candidateId = invalidCandidateId;
+    await writeBound();
+    await assert.rejects(command(), /candidate ID must be a non-empty string/);
+  }
+  bundle.buildCandidateId = "candidate-a";
+  bundle.candidateServerRouteEvidence.candidateId = "candidate-a";
+
+  componentGitSha = "f".repeat(40);
+  await writeBound();
+  await assert.rejects(command(), /candidate server route component identity mismatch/);
+  componentGitSha = candidate.gitSha;
+
+  componentReleaseSequence += 1;
+  await writeBound();
+  await assert.rejects(command(), /candidate server route component identity mismatch/);
+  componentReleaseSequence = candidate.releaseSequence;
+
+  const topologyPath = path.join(routeRoot, "payload/topology.sqlite.zst");
+  const topologyBytes = await readFile(topologyPath);
+  await writeFile(topologyPath, "altered");
+  await writeBound();
+  await assert.rejects(command(), /component inventory mismatch|topology digest mismatch/);
+  await writeFile(topologyPath, topologyBytes);
+
+  inventory.entries.reverse();
+  await writeBound();
+  await assert.rejects(command(), /inventory entries must be unique and ordered/);
+  inventory.entries.reverse();
+
+  inventory.entries.push({ ...inventory.entries[0] });
+  await writeBound();
+  await assert.rejects(command(), /inventory entries must be unique and ordered/);
+  inventory.entries.pop();
+
+  const compatibilityEntry = inventory.entries.find((entry) => entry.path === "server-route-bundle/compatibility.json");
+  compatibilityEntry.sizeBytes += 1;
+  await writeBound();
+  await assert.rejects(command(), /candidate artifact inventory file binding mismatch/);
+  compatibilityEntry.sizeBytes -= 1;
+
+  await writeFile(path.join(candidateRoot, "unexpected.bin"), "unexpected");
+  await writeBound();
+  await assert.rejects(command(), /candidate artifact inventory paths mismatch/);
+  await rm(path.join(candidateRoot, "unexpected.bin"));
+
+  bundle.candidateServerRouteEvidence.final.path = "../server-route-bundle-final.json";
+  await writeBound();
+  await assert.rejects(command(), /candidate server route evidence final binding mismatch/);
+  bundle.candidateServerRouteEvidence.final.path = finalPath;
+
+  await writeFile(path.join(evidenceRoot, "unexpected.json"), "unexpected");
+  await writeBound();
+  await assert.rejects(command(), /candidate server route evidence paths mismatch/);
+  await rm(path.join(evidenceRoot, "unexpected.json"));
+
+  const component = JSON.parse(await readFile(componentPath, "utf8"));
+  component.artifactInventorySha256 = fixedHash;
+  await writeFile(componentPath, `${JSON.stringify(component, null, 2)}\n`);
+  await assert.rejects(command(), /component artifactInventorySha256 mismatch/);
+  await writeBound();
+
+  // ELIGIBLE는 blocker가 전혀 없다는 producer 계약까지 포함한다. eligibility/final/inventory
+  // binding을 모두 재계산해도 통과해서는 안 된다.
+  const assertEligibilityBlockersRejected = async (blockers) => {
+    const blockedEligibilityPayload = { ...eligibilityPayload, blockers };
+    const blockedEligibilityBytes = Buffer.from(canonicalJson({
+      ...blockedEligibilityPayload,
+      eligibilitySha256: hash(Buffer.from(canonicalJson(blockedEligibilityPayload))),
+    }));
+    const blockedGates = structuredClone(final.gates);
+    blockedGates.routeAccessibilityEligibility.evidenceSha256 = hash(blockedEligibilityBytes);
+    const blockedFinalBytes = Buffer.from(canonicalJson(buildServerRouteBundleFinal({
+      candidate,
+      gates: blockedGates,
+    })));
+    await Promise.all([
+      writeFile(path.join(candidateRoot, eligibilityPath), blockedEligibilityBytes),
+      writeFile(path.join(candidateRoot, finalPath), blockedFinalBytes),
+    ]);
+    for (const [relative, bytes] of [
+      [eligibilityPath, blockedEligibilityBytes],
+      [finalPath, blockedFinalBytes],
+    ]) {
+      const entry = inventory.entries.find((item) => item.path === relative);
+      entry.sizeBytes = bytes.length;
+      entry.sha256 = hash(bytes);
+    }
+    bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(blockedEligibilityBytes);
+    bundle.candidateServerRouteEvidence.final.sha256 = hash(blockedFinalBytes);
+    await writeBound();
+    await assert.rejects(command(), /candidate server route evidence artifact binding mismatch/);
+  };
+  await assertEligibilityBlockersRejected(["synthetic-blocker"]);
+  await assertEligibilityBlockersRejected("synthetic-blocker");
+
+  await Promise.all([
+    writeFile(path.join(candidateRoot, eligibilityPath), eligibilityBytes),
+    writeFile(path.join(candidateRoot, finalPath), finalBytes),
+  ]);
+  for (const [relative, bytes] of [
+    [eligibilityPath, eligibilityBytes],
+    [finalPath, finalBytes],
+  ]) {
+    const entry = inventory.entries.find((item) => item.path === relative);
+    entry.sizeBytes = bytes.length;
+    entry.sha256 = hash(bytes);
+  }
+  bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(eligibilityBytes);
+  bundle.candidateServerRouteEvidence.final.sha256 = hash(finalBytes);
+  await writeBound();
+
+  const linkedRoot = path.join(outputDir, "stage-link");
+  await symlink(candidateRoot, linkedRoot);
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/validate-release-evidence-bundle.mjs",
+    "--candidate-server-route-only",
+    "--bundle", bundlePath,
+    "--candidate-server-route-root", linkedRoot,
+    "--candidate-artifact-inventory", inventoryPath,
+    "--candidate-component-manifest", componentPath,
+  ], { cwd: root }), /candidate server route root must be a real directory/);
+
+  const invalidManifestBytes = Buffer.from(canonicalJson({
+    ...signingInput,
+    signature: { algorithm: "rsa-sha256-server-route-bundle-v1", value: "AA" },
+  }));
+  candidate.signedManifestRawSha256 = hash(invalidManifestBytes);
+  const invalidEligibilityPayload = { ...eligibilityPayload, candidate };
+  const invalidEligibilityBytes = Buffer.from(canonicalJson({
+    ...invalidEligibilityPayload,
+    eligibilitySha256: hash(Buffer.from(canonicalJson(invalidEligibilityPayload))),
+  }));
+  const invalidGates = structuredClone(final.gates);
+  invalidGates.routeAccessibilityEligibility.evidenceSha256 = hash(invalidEligibilityBytes);
+  const invalidFinalBytes = Buffer.from(canonicalJson(buildServerRouteBundleFinal({ candidate, gates: invalidGates })));
+  await Promise.all([
+    writeFile(path.join(routeRoot, "manifest.json"), invalidManifestBytes),
+    writeFile(path.join(candidateRoot, eligibilityPath), invalidEligibilityBytes),
+    writeFile(path.join(candidateRoot, finalPath), invalidFinalBytes),
+  ]);
+  for (const [relative, bytes] of [
+    ["server-route-bundle/manifest.json", invalidManifestBytes],
+    [eligibilityPath, invalidEligibilityBytes],
+    [finalPath, invalidFinalBytes],
+  ]) {
+    const entry = inventory.entries.find((item) => item.path === relative);
+    entry.sizeBytes = bytes.length;
+    entry.sha256 = hash(bytes);
+  }
+  bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(invalidEligibilityBytes);
+  bundle.candidateServerRouteEvidence.final.sha256 = hash(invalidFinalBytes);
+  await writeBound();
+  await assert.rejects(command(), /candidate signed route signature mismatch/);
+
+  // next 서명 공개키 설정 시 회전된 keyId로 서명된 route bundle은 수용하고, 교차 키 서명 및 미등록 keyId는 거부한다
+  const { privateKey: nextPrivateKey, publicKey: nextPublicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const nextPrivateKeyPem = nextPrivateKey.export({ type: "pkcs8", format: "pem" });
+  const nextPublicKeyPem = nextPublicKey.export({ type: "spki", format: "pem" });
+  const signWithNext = (value) => createSign("RSA-SHA256").update(value).sign(nextPrivateKeyPem).toString("base64url");
+
+  const rebindRouteBundle = async (customKeyId, customSigner) => {
+    const rotatedSigningInput = {
+      ...signingInput,
+      keyId: customKeyId,
+    };
+    const rotatedSigningInputBytes = Buffer.from(canonicalJson(rotatedSigningInput));
+    const rotatedManifestBytes = Buffer.from(canonicalJson({
+      ...rotatedSigningInput,
+      signature: {
+        algorithm: "rsa-sha256-server-route-bundle-v1",
+        value: customSigner(rotatedSigningInputBytes),
+      },
+    }));
+    const rotatedCandidate = {
+      ...candidate,
+      keyId: customKeyId,
+      signingInputSha256: hash(rotatedSigningInputBytes),
+      signedManifestRawSha256: hash(rotatedManifestBytes),
+    };
+    const rotatedEligibilityPayload = { ...eligibilityPayload, candidate: rotatedCandidate };
+    const rotatedEligibilityBytes = Buffer.from(canonicalJson({
+      ...rotatedEligibilityPayload,
+      eligibilitySha256: hash(Buffer.from(canonicalJson(rotatedEligibilityPayload))),
+    }));
+    const rotatedGates = structuredClone(final.gates);
+    rotatedGates.routeAccessibilityEligibility.evidenceSha256 = hash(rotatedEligibilityBytes);
+    const rotatedFinalBytes = Buffer.from(canonicalJson(buildServerRouteBundleFinal({
+      candidate: rotatedCandidate,
+      gates: rotatedGates,
+    })));
+    await Promise.all([
+      writeFile(path.join(routeRoot, "manifest.signing-input.json"), rotatedSigningInputBytes),
+      writeFile(path.join(routeRoot, "manifest.json"), rotatedManifestBytes),
+      writeFile(path.join(candidateRoot, eligibilityPath), rotatedEligibilityBytes),
+      writeFile(path.join(candidateRoot, finalPath), rotatedFinalBytes),
+    ]);
+    for (const [relative, bytes] of [
+      ["server-route-bundle/manifest.signing-input.json", rotatedSigningInputBytes],
+      ["server-route-bundle/manifest.json", rotatedManifestBytes],
+      [eligibilityPath, rotatedEligibilityBytes],
+      [finalPath, rotatedFinalBytes],
+    ]) {
+      const entry = inventory.entries.find((item) => item.path === relative);
+      entry.sizeBytes = bytes.length;
+      entry.sha256 = hash(bytes);
+    }
+    bundle.candidateServerRouteEvidence.eligibility.sha256 = hash(rotatedEligibilityBytes);
+    bundle.candidateServerRouteEvidence.final.sha256 = hash(rotatedFinalBytes);
+    await writeBound();
+  };
+
+  const rotationCommand = () => execFileAsync(process.execPath, [
+    "tools/datapack/validate-release-evidence-bundle.mjs",
+    "--candidate-server-route-only",
+    "--bundle", bundlePath,
+    "--candidate-server-route-root", candidateRoot,
+    "--candidate-artifact-inventory", inventoryPath,
+    "--candidate-component-manifest", componentPath,
+  ], {
+    cwd: root,
+    env: {
+      ...process.env,
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+      EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKeyPem,
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID: "production-v2",
+      EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM: nextPublicKeyPem,
+    },
+  });
+
+  await rebindRouteBundle("production-v2", signWithNext);
+  await rotationCommand();
+
+  await rebindRouteBundle("production-v2", sign);
+  await assert.rejects(rotationCommand(), /candidate signed route signature mismatch/);
+
+  await rebindRouteBundle("unknown-v9", signWithNext);
+  await assert.rejects(rotationCommand(), /candidate signed route signature mismatch/);
+});
+
+test("release evidence bundle validator는 publish gate status와 deferred headway 예외를 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-release-evidence-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const bundlePath = path.join(outputDir, "release-evidence-bundle.json");
+  const hash = "a".repeat(64);
+  const sha256 = (raw) => createHash("sha256").update(raw).digest("hex");
+  const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
+  const targetsPath = path.join(outputDir, "nationwide-targets.json");
+  const nationwideTargetsRaw = Buffer.from("{\"fixture\":true}\n");
+  await writeFile(targetsPath, nationwideTargetsRaw);
+  const scope = launchScope({ targets: targetsPath });
+  const scopeRaw = json(scope);
+  const scopePath = path.join(outputDir, "launch-scope.json");
+  await writeFile(scopePath, scopeRaw);
+  const scopeArgs = ["--scope", scopePath];
+  const launchReportPath = path.join(outputDir, "launch-denominator-go.json");
+  const accessibilityReportPath = path.join(outputDir, "accessibility-source-coverage.json");
+  const accessibilityReportRaw = `${JSON.stringify({ decision: "GO" }, null, 2)}\n`;
+  await writeFile(accessibilityReportPath, accessibilityReportRaw);
+  const identity = {
+    canonicalStationVersion: "station-catalog-v18",
+    corridorId: "capital-gyeongchun-v1",
+    serviceId: "ITX_CHEONGCHUN",
+    lineageId: "launch-lineage-v1",
+    schemaVersion: 1,
+  };
+  const admittedStationIds = [
+    ...scope.routingLaunchScope.baseRoutingStationIds,
+    ...scope.routingLaunchScope.requiredTransferStationIds,
+  ];
+  const sourceDerivedConnectionEdgeIds = ["source-edge-a"];
+  const buildSpecRaw = json({
+    candidateId: "candidate-a",
+    builderGitSha: "abcdef1",
+    sourceSnapshots: [{ freshnessExpiresAt: "2099-08-01T00:00:00Z" }],
+  });
+  const manifestRaw = json({ releaseSequence: 1, packs: [{ id: "capital", version: "1" }] });
+  const candidateIdentity = {
+    candidateId: "candidate-a",
+    buildSpecSha256: sha256(buildSpecRaw),
+    manifestSha256: sha256(manifestRaw),
+  };
+  const sourceEvidenceRaw = json({
+    manifestSha256: candidateIdentity.manifestSha256,
+    candidateBuild: {
+      ...candidateIdentity,
+      builderGitSha: "abcdef1",
+      sourceSnapshots: [{ freshnessExpiresAt: "2099-08-01T00:00:00Z" }],
+    },
+    launchDenominatorEvidence: {
+      pilot: {
+        coveredRowIds: scope.verifiedAccessibilityScope.includedStationIds.flatMap((stationId) =>
+          scope.verifiedAccessibilityScope.requiredFacilityTypes.map((facilityType) =>
+            `${stationId}|${scope.verifiedAccessibilityScope.includedLineIds[0]}|${facilityType}`)),
+      },
+      routing: {
+        regionIds: [...scope.routingLaunchScope.regionIds],
+        operatorIds: [...scope.routingLaunchScope.operatorIds],
+        lineIds: [...scope.routingLaunchScope.lineIds],
+        baseStationIds: [...scope.routingLaunchScope.baseRoutingStationIds],
+        admittedStationIds,
+        materializedStationIds: [...admittedStationIds],
+        transferStationIds: [...scope.routingLaunchScope.requiredTransferStationIds],
+        baseEdgeIds: [...scope.routingLaunchScope.requiredBaseEdgeIds],
+        transferEdgeIds: [...scope.routingLaunchScope.requiredTransferEdgeIds],
+        sourceDerivedConnectionEdgeIds: { status: "ADMITTED", ids: sourceDerivedConnectionEdgeIds },
+        serviceIds: [...scope.routingLaunchScope.serviceIds],
+      },
+      source: {
+        status: "ADMITTED",
+        freshness: "FRESH",
+        routingScopeHash: canonicalScopeHash(scope.routingLaunchScope),
+        admittedStationIds,
+        sourceDerivedConnectionEdgeIds,
+        identity,
+      },
+      safety: { signatureValid: true, rollbackVerified: true, freshness: "FRESH", lineage: "VERIFIED" },
+      claims: {
+        accessibilityScopeId: scope.verifiedAccessibilityScope.id,
+        routingScopeId: scope.routingLaunchScope.id,
+        serviceIds: [...scope.routingLaunchScope.serviceIds],
+      },
+      forbiddenEvidence: [],
+      forbiddenEvidenceStatus: "VERIFIED",
+      nationwide: { missingCount: 0 },
+    },
+  });
+  const serverEvidenceRaw = json({
+    candidateBinding: candidateIdentity,
+    freshnessExpiresAt: "2099-08-01T00:00:00Z",
+    launchDenominatorEvidence: {
+      server: { status: "ACTIVE", routingReady: true, identity },
+    },
+  });
+  const mobileEvidenceRaw = json({
+    candidateBinding: candidateIdentity,
+    freshnessExpiresAt: "2099-08-01T00:00:00Z",
+    launchDenominatorEvidence: {
+      mobile: { status: "READY", topologyReady: true, identity },
+    },
+  });
+  const artifactPaths = {
+    buildSpec: path.join(outputDir, "build-spec.json"),
+    manifest: path.join(outputDir, "manifest.json"),
+    source: path.join(outputDir, "source-evidence.json"),
+    server: path.join(outputDir, "server-evidence.json"),
+    mobile: path.join(outputDir, "mobile-evidence.json"),
+  };
+  await Promise.all([
+    writeFile(artifactPaths.buildSpec, buildSpecRaw),
+    writeFile(artifactPaths.manifest, manifestRaw),
+    writeFile(artifactPaths.source, sourceEvidenceRaw),
+    writeFile(artifactPaths.server, serverEvidenceRaw),
+    writeFile(artifactPaths.mobile, mobileEvidenceRaw),
+  ]);
+  const candidateBinding = {
+    status: "BOUND",
+    buildCandidateId: "candidate-a",
+    packCandidateId: "capital@1",
+    candidateBuilderGitSha: "abcdef1",
+    buildSpecSha256: candidateIdentity.buildSpecSha256,
+    manifestSha256: candidateIdentity.manifestSha256,
+    sourceEvidence: { status: "FRESH", sha256: sha256(sourceEvidenceRaw), freshUntil: "2099-08-01T00:00:00Z" },
+    serverEvidence: { status: "FRESH", sha256: sha256(serverEvidenceRaw), freshUntil: "2099-08-01T00:00:00Z" },
+    mobileEvidence: { status: "FRESH", sha256: sha256(mobileEvidenceRaw), freshUntil: "2099-08-01T00:00:00Z" },
+  };
+  const goReport = buildLaunchDenominatorReport(scope, {
+    pilot: {
+      coveredRowIds: scope.verifiedAccessibilityScope.includedStationIds.flatMap((stationId) =>
+        scope.verifiedAccessibilityScope.requiredFacilityTypes.map((facilityType) =>
+          `${stationId}|${scope.verifiedAccessibilityScope.includedLineIds[0]}|${facilityType}`)),
+    },
+    routing: {
+      regionIds: [...scope.routingLaunchScope.regionIds],
+      operatorIds: [...scope.routingLaunchScope.operatorIds],
+      lineIds: [...scope.routingLaunchScope.lineIds],
+      baseStationIds: [...scope.routingLaunchScope.baseRoutingStationIds],
+      admittedStationIds,
+      materializedStationIds: [...admittedStationIds],
+      transferStationIds: [...scope.routingLaunchScope.requiredTransferStationIds],
+      baseEdgeIds: [...scope.routingLaunchScope.requiredBaseEdgeIds],
+      transferEdgeIds: [...scope.routingLaunchScope.requiredTransferEdgeIds],
+      sourceDerivedConnectionEdgeIds: { status: "ADMITTED", ids: sourceDerivedConnectionEdgeIds },
+      serviceIds: [...scope.routingLaunchScope.serviceIds],
+    },
+    source: {
+      status: "ADMITTED",
+      freshness: "FRESH",
+      routingScopeHash: canonicalScopeHash(scope.routingLaunchScope),
+      admittedStationIds,
+      sourceDerivedConnectionEdgeIds,
+      artifactHash: candidateBinding.sourceEvidence.sha256,
+      identity,
+    },
+    server: { status: "ACTIVE", routingReady: true, artifactHash: candidateBinding.serverEvidence.sha256, identity },
+    mobile: { status: "READY", topologyReady: true, artifactHash: candidateBinding.mobileEvidence.sha256, identity },
+    safety: { signatureValid: true, rollbackVerified: true, freshness: "FRESH", lineage: "VERIFIED" },
+    claims: {
+      accessibilityScopeId: scope.verifiedAccessibilityScope.id,
+      routingScopeId: scope.routingLaunchScope.id,
+      serviceIds: [...scope.routingLaunchScope.serviceIds],
+    },
+    forbiddenEvidence: [],
+    forbiddenEvidenceStatus: "VERIFIED",
+    nationwide: { missingCount: 0 },
+    candidateBinding,
+  });
+  assert.equal(goReport.decision, "GO");
+  const goReportRaw = `${JSON.stringify(goReport, null, 2)}\n`;
+  await writeFile(launchReportPath, goReportRaw);
+  const reportArgs = ["--launch-report", launchReportPath];
+  const accessibilityReportArgs = ["--accessibility-source-coverage", accessibilityReportPath];
+  const candidateArgs = [
+    "--build-spec", artifactPaths.buildSpec,
+    "--manifest", artifactPaths.manifest,
+    "--source-evidence", artifactPaths.source,
+    "--server-evidence", artifactPaths.server,
+    "--mobile-evidence", artifactPaths.mobile,
+  ];
+  const validatorCommand = [
+    "tools/datapack/validate-release-evidence-bundle.mjs",
+    ...scopeArgs,
+    "--bundle",
+    bundlePath,
+    ...reportArgs,
+    ...accessibilityReportArgs,
+    ...candidateArgs,
+  ];
+  const bindLaunchReport = (target, report, raw) => Object.assign(target, {
+    scopeId: report.scopes.verifiedAccessibilityScope.id,
+    verifiedAccessibilityScopeId: report.scopes.verifiedAccessibilityScope.id,
+    verifiedAccessibilityScopeSha256: report.scopes.verifiedAccessibilityScope.sha256,
+    launchScopeId: report.scopes.routingLaunchScope.id,
+    launchScopeSha256: report.scopes.routingLaunchScope.sha256,
+    nationwideRoadmapScopeId: report.scopes.nationwideRoadmapScope.id,
+    nationwideRoadmapScopeSha256: report.scopes.nationwideRoadmapScope.sha256,
+    nationwideTargetsSha256: sha256(nationwideTargetsRaw),
+    identityLinkageMatrixSha256: report.identityLinkage.matrixSha256,
+    launchDenominatorDecision: report.decision,
+    launchDenominatorReportSha256: createHash("sha256").update(raw).digest("hex"),
+  });
+  const bundle = {
+    schemaVersion: 1,
+    artifactKind: "datapack-release-evidence-bundle",
+    releaseSequence: 1,
+    candidateId: "capital@1",
+    buildCandidateId: "candidate-a",
+    candidateBuilderGitSha: "abcdef1",
+    scopeId: "capital_pilot_android_v1",
+    releaseRequestId: "release-request-1",
+    builderGitSha: "abcdef1",
+    buildSpecSha256: candidateBinding.buildSpecSha256,
+    supportedDenominatorSha256: sha256(scopeRaw),
+    sourceSnapshotSetHash: hash,
+    approvedAliasLedgerHash: hash,
+    facilityEvidenceLedgerHash: hash,
+    routeEvidenceLedgerHash: hash,
+    approvedOverrideSetHash: hash,
+    normalizedSourceInventorySha256: candidateBinding.sourceEvidence.sha256,
+    sqliteSha256: hash,
+    gzipSha256: hash,
+    manifestSha256: candidateBinding.manifestSha256,
+    coverageSummarySha256: hash,
+    accessibilitySourceCoverageSha256: sha256(accessibilityReportRaw),
+    accessibilitySourceCoverageDecision: "GO",
+    itxCheongchunCoverageSha256: hash,
+    routeMapPositionCoverageSha256: hash,
+    routeGraphTopologySha256: hash,
+    headwayReportSha256: hash,
+    strictRouteRegressionSha256: candidateBinding.serverEvidence.sha256,
+    androidEvidenceSha256: candidateBinding.mobileEvidence.sha256,
+    validatorStatus: "PASS",
+    coverageStatus: "PASS",
+    routeMapPositionCoverageStatus: "PASS",
+    routeGraphTopologyStatus: "PASS",
+    routeGraphTopologyViolationCount: 0,
+    headwayReportStatus: "PASS",
+    strictRouteRegressionStatus: "PASS",
+    manifestSignatureStatus: "PASS",
+    androidEvidenceStatus: "PASS",
+    createdAt: "2026-06-30T00:00:00.000Z",
+    workflowRunUrl: "https://github.com/AquilaXk/easysubway/actions/runs/1",
+  };
+  bindLaunchReport(bundle, goReport, goReportRaw);
+
+  const schema = JSON.parse(await readFile(path.join(root, "tools/datapack/schema/release-evidence-bundle.schema.json"), "utf8"));
+  const releaseCandidateRule = schema.allOf.find((rule) => rule.if?.properties?.releaseMode?.const === "release-candidate");
+  assert.deepEqual(releaseCandidateRule?.then?.required, ["candidateServerRouteEvidence"]);
+  bundle.releaseMode = "release-candidate";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, validatorCommand, { cwd: root }),
+    /release-candidate requires candidate server route evidence/,
+  );
+  bundle.releaseMode = "production-publish";
+
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  bundle.nationwideTargetsSha256 = "f".repeat(64);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle", bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+      ...accessibilityReportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ], { cwd: root }),
+    /nationwide targets sha256 must match canonical targets bytes/,
+  );
+  bundle.nationwideTargetsSha256 = sha256(nationwideTargetsRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+      ...accessibilityReportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ],
+    { cwd: root },
+  );
+  bundle.releaseSequence = 2;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+      ...accessibilityReportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ], { cwd: root }),
+    /releaseSequence must match current candidate manifest/,
+  );
+  bundle.releaseSequence = 1;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle", bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ], { cwd: root }),
+    /publish validation requires accessibility source coverage evidence/,
+  );
+
+  bundle.accessibilitySourceCoverageSha256 = hash;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /accessibility source coverage sha256 mismatch/,
+  );
+  bundle.accessibilitySourceCoverageSha256 = sha256(accessibilityReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+
+  const noGoAccessibilityReportRaw = `${JSON.stringify({ decision: "NO_GO" }, null, 2)}\n`;
+  await writeFile(accessibilityReportPath, noGoAccessibilityReportRaw);
+  bundle.accessibilitySourceCoverageSha256 = sha256(noGoAccessibilityReportRaw);
+  bundle.accessibilitySourceCoverageDecision = "NO_GO";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /accessibility source coverage decision must be GO for publish/,
+  );
+  await writeFile(accessibilityReportPath, accessibilityReportRaw);
+  bundle.accessibilitySourceCoverageSha256 = sha256(accessibilityReportRaw);
+  bundle.accessibilitySourceCoverageDecision = "GO";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+
+  // Candidate preparation scope (NO_GO + RELEASE_EVIDENCE_PENDING) admits NO_GO decision and FAIL topology under --require-pass
+  const prepScope = JSON.parse(JSON.stringify(scope));
+  prepScope.decision = {
+    currentLaunchDecision: "NO_GO",
+    supportScope: prepScope.verifiedAccessibilityScope.id,
+    blocker: "RELEASE_EVIDENCE_PENDING",
+  };
+  prepScope.routingLaunchScope.baseRoutingStationIds.push("missing-station-id");
+  const prepScopeRaw = `${JSON.stringify(prepScope, null, 2)}\n`;
+  await writeFile(scopePath, prepScopeRaw);
+
+  const prepReport = buildLaunchDenominatorReport(prepScope, goReport.evaluatorInput);
+  assert.equal(prepReport.decision, "NO_GO");
+  const prepReportRaw = `${JSON.stringify(prepReport, null, 2)}\n`;
+  await writeFile(launchReportPath, prepReportRaw);
+
+  bundle.supportedDenominatorSha256 = sha256(prepScopeRaw);
+  bindLaunchReport(bundle, prepReport, prepReportRaw);
+  bundle.routeGraphTopologyStatus = "FAIL";
+  bundle.routeGraphTopologyViolationCount = 538164;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [...validatorCommand, "--require-pass"],
+    { cwd: root },
+  );
+
+  // If report.decision is unexpectedly GO during candidate preparation, fail closed
+  const prepGoScope = JSON.parse(JSON.stringify(scope));
+  prepGoScope.decision = {
+    currentLaunchDecision: "NO_GO",
+    supportScope: prepGoScope.verifiedAccessibilityScope.id,
+    blocker: "RELEASE_EVIDENCE_PENDING",
+  };
+  const prepGoScopeRaw = `${JSON.stringify(prepGoScope, null, 2)}\n`;
+  await writeFile(scopePath, prepGoScopeRaw);
+  bundle.supportedDenominatorSha256 = sha256(prepGoScopeRaw);
+  const prepGoReport = buildLaunchDenominatorReport(prepGoScope, goReport.evaluatorInput);
+  assert.equal(prepGoReport.decision, "GO");
+  const prepGoReportRaw = `${JSON.stringify(prepGoReport, null, 2)}\n`;
+  await writeFile(launchReportPath, prepGoReportRaw);
+  bindLaunchReport(bundle, prepGoReport, prepGoReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /launch denominator decision must be NO_GO for candidate preparation publish/,
+  );
+
+  // Non-candidate preparation scope must reject NO_GO decision under --require-pass
+  const nonPrepScope = JSON.parse(JSON.stringify(prepScope));
+  nonPrepScope.decision = { currentLaunchDecision: "GO", supportScope: nonPrepScope.verifiedAccessibilityScope.id, blocker: "NONE" };
+  const nonPrepScopeRaw = `${JSON.stringify(nonPrepScope, null, 2)}\n`;
+  await writeFile(scopePath, nonPrepScopeRaw);
+  bundle.supportedDenominatorSha256 = sha256(nonPrepScopeRaw);
+  const nonPrepReport = buildLaunchDenominatorReport(nonPrepScope, goReport.evaluatorInput);
+  assert.equal(nonPrepReport.decision, "NO_GO");
+  const nonPrepReportRaw = `${JSON.stringify(nonPrepReport, null, 2)}\n`;
+  await writeFile(launchReportPath, nonPrepReportRaw);
+  bindLaunchReport(bundle, nonPrepReport, nonPrepReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /launch denominator decision must be GO for publish/,
+  );
+
+  // Non-candidate preparation scope must reject FAIL topology under --require-pass
+  await writeFile(scopePath, scopeRaw);
+  bundle.supportedDenominatorSha256 = sha256(scopeRaw);
+  await writeFile(launchReportPath, goReportRaw);
+  bindLaunchReport(bundle, goReport, goReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /routeGraphTopologyStatus must be PASS for publish/,
+  );
+
+  // Restore valid GO state
+  bundle.routeGraphTopologyStatus = "PASS";
+  bundle.routeGraphTopologyViolationCount = 0;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+
+  bundle.rollbackRescue = {
+    evidenceSha256: hash,
+    releaseRequestId: bundle.releaseRequestId,
+    rollbackApprovalEventId: "release-channel-event-1",
+    rcCandidateId: bundle.candidateId,
+    rcManifestSha256: bundle.manifestSha256,
+    currentReleaseSequence: 115,
+    failedReleaseSequence: 115,
+    knownGoodReleaseSequence: 114,
+    rescueReleaseSequence: 116,
+    knownGoodPackSha256: hash,
+    knownGoodSqliteSha256: hash,
+    rescueManifestSha256: hash,
+    recoveryDurationSeconds: 42,
+    validatorStatus: "PASS",
+    manifestLastStatus: "PASS",
+    executionEnvironment: "LOCAL_FIXTURE",
+    productionExecuted: false,
+  };
+  const rollbackEvidencePath = path.join(outputDir, "rollback-evidence.json");
+  const rollbackEvidence = {
+    schemaVersion: 1,
+    artifactKind: "datapack-rollback-rescue-evidence",
+    rollbackApprovalEventId: bundle.rollbackRescue.rollbackApprovalEventId,
+    approvedByRole: "admin.datapack.rollback",
+    approvedAt: "2026-07-15T00:30:00.000Z",
+    reasonCode: "ADMIN_APPROVED_ROLLBACK",
+    from: { releaseSequence: 115, manifestSha256: bundle.manifestSha256 },
+    failed: { releaseSequence: 115, manifestSha256: bundle.manifestSha256 },
+    knownGood: {
+      releaseSequence: 114,
+      manifestSha256: hash,
+      packs: [{ id: "capital", version: "1", sha256: hash, sqliteSha256: hash }],
+    },
+    rescue: { releaseSequence: 116, manifestSha256: hash },
+    status: "PASS",
+    validatorStatus: "PASS",
+    manifestLastStatus: "PASS",
+    recoveryDurationSeconds: 42,
+    executionEnvironment: "LOCAL_FIXTURE",
+    productionExecuted: false,
+  };
+  const rollbackManifestPath = path.join(outputDir, "rollback-manifest.json");
+  const rollbackManifestRaw = json(signedRescueManifest({
+    releaseSequence: 116,
+    failedManifestSha256: bundle.manifestSha256,
+    knownGoodManifestSha256: hash,
+    rollbackApprovalEventId: bundle.rollbackRescue.rollbackApprovalEventId,
+    packSha256: hash,
+    sqliteSha256: hash,
+  }));
+  bundle.rollbackRescue.rescueManifestSha256 = sha256(rollbackManifestRaw);
+  rollbackEvidence.rescue.manifestSha256 = bundle.rollbackRescue.rescueManifestSha256;
+  const boundRollbackEvidenceRaw = json(rollbackEvidence);
+  bundle.rollbackRescue.evidenceSha256 = sha256(boundRollbackEvidenceRaw);
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  await writeFile(rollbackManifestPath, rollbackManifestRaw);
+  await writeFile(bundlePath, json(bundle));
+  const rollbackValidatorCommand = [
+    ...validatorCommand,
+    "--rollback-evidence", rollbackEvidencePath,
+    "--rollback-manifest", rollbackManifestPath,
+  ];
+  await execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root });
+
+  for (const [field, tampered] of [
+    ["approvedByRole", "admin.datapack.other"],
+    ["approvedAt", "2026-07-15T00:31:00.000Z"],
+    ["reasonCode", "OTHER_REASON"],
+  ]) {
+    const original = rollbackEvidence[field];
+    rollbackEvidence[field] = tampered;
+    const tamperedEvidenceRaw = json(rollbackEvidence);
+    bundle.rollbackRescue.evidenceSha256 = sha256(tamperedEvidenceRaw);
+    await writeFile(rollbackEvidencePath, tamperedEvidenceRaw);
+    await writeFile(bundlePath, json(bundle));
+    await assert.rejects(
+      execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+      new RegExp(`rollbackProvenance ${field} mismatch`),
+    );
+    rollbackEvidence[field] = original;
+  }
+  bundle.rollbackRescue.evidenceSha256 = sha256(boundRollbackEvidenceRaw);
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+
+  const unsignedManifest = JSON.parse(rollbackManifestRaw);
+  delete unsignedManifest.signature;
+  const unsignedManifestRaw = json(unsignedManifest);
+  bundle.rollbackRescue.rescueManifestSha256 = sha256(unsignedManifestRaw);
+  rollbackEvidence.rescue.manifestSha256 = bundle.rollbackRescue.rescueManifestSha256;
+  const unsignedEvidenceRaw = json(rollbackEvidence);
+  bundle.rollbackRescue.evidenceSha256 = sha256(unsignedEvidenceRaw);
+  await writeFile(rollbackManifestPath, unsignedManifestRaw);
+  await writeFile(rollbackEvidencePath, unsignedEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+  await assert.rejects(
+    execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+    /manifest/,
+  );
+  bundle.rollbackRescue.rescueManifestSha256 = sha256(rollbackManifestRaw);
+  rollbackEvidence.rescue.manifestSha256 = bundle.rollbackRescue.rescueManifestSha256;
+  bundle.rollbackRescue.evidenceSha256 = sha256(boundRollbackEvidenceRaw);
+  await writeFile(rollbackManifestPath, rollbackManifestRaw);
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+
+  const tamperedProvenance = JSON.parse(rollbackManifestRaw);
+  tamperedProvenance.rollbackProvenance.failedManifestSha256 = "f".repeat(64);
+  resignManifest(tamperedProvenance);
+  const tamperedProvenanceRaw = json(tamperedProvenance);
+  bundle.rollbackRescue.rescueManifestSha256 = sha256(tamperedProvenanceRaw);
+  rollbackEvidence.rescue.manifestSha256 = bundle.rollbackRescue.rescueManifestSha256;
+  const tamperedProvenanceEvidenceRaw = json(rollbackEvidence);
+  bundle.rollbackRescue.evidenceSha256 = sha256(tamperedProvenanceEvidenceRaw);
+  await writeFile(rollbackManifestPath, tamperedProvenanceRaw);
+  await writeFile(rollbackEvidencePath, tamperedProvenanceEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+  await assert.rejects(
+    execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+    /rollbackProvenance failedManifestSha256 mismatch/,
+  );
+  bundle.rollbackRescue.rescueManifestSha256 = sha256(rollbackManifestRaw);
+  rollbackEvidence.rescue.manifestSha256 = bundle.rollbackRescue.rescueManifestSha256;
+  bundle.rollbackRescue.evidenceSha256 = sha256(boundRollbackEvidenceRaw);
+  await writeFile(rollbackManifestPath, rollbackManifestRaw);
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+
+  const tamperedPack = JSON.parse(rollbackManifestRaw);
+  tamperedPack.packs[0].sha256 = "f".repeat(64);
+  resignManifest(tamperedPack);
+  const tamperedPackRaw = json(tamperedPack);
+  bundle.rollbackRescue.rescueManifestSha256 = sha256(tamperedPackRaw);
+  rollbackEvidence.rescue.manifestSha256 = bundle.rollbackRescue.rescueManifestSha256;
+  const tamperedPackEvidenceRaw = json(rollbackEvidence);
+  bundle.rollbackRescue.evidenceSha256 = sha256(tamperedPackEvidenceRaw);
+  await writeFile(rollbackManifestPath, tamperedPackRaw);
+  await writeFile(rollbackEvidencePath, tamperedPackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+  await assert.rejects(
+    execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+    /manifest known-good pack identity mismatch/,
+  );
+  bundle.rollbackRescue.rescueManifestSha256 = sha256(rollbackManifestRaw);
+  rollbackEvidence.rescue.manifestSha256 = bundle.rollbackRescue.rescueManifestSha256;
+  bundle.rollbackRescue.evidenceSha256 = sha256(boundRollbackEvidenceRaw);
+  await writeFile(rollbackManifestPath, rollbackManifestRaw);
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+
+  rollbackEvidence.failed.manifestSha256 = "f".repeat(64);
+  const tamperedFailedEvidenceRaw = json(rollbackEvidence);
+  bundle.rollbackRescue.evidenceSha256 = sha256(tamperedFailedEvidenceRaw);
+  await writeFile(rollbackEvidencePath, tamperedFailedEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+  await assert.rejects(
+    execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+    /failed manifest evidence mismatch/,
+  );
+  rollbackEvidence.failed.manifestSha256 = bundle.manifestSha256;
+  bundle.rollbackRescue.evidenceSha256 = sha256(boundRollbackEvidenceRaw);
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+
+  bundle.rollbackRescue.executionEnvironment = "DRY_RUN";
+  rollbackEvidence.executionEnvironment = "DRY_RUN";
+  const dryRunEvidenceRaw = json(rollbackEvidence);
+  bundle.rollbackRescue.evidenceSha256 = sha256(dryRunEvidenceRaw);
+  await writeFile(rollbackEvidencePath, dryRunEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+  await execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root });
+  bundle.rollbackRescue.executionEnvironment = "LOCAL_FIXTURE";
+  rollbackEvidence.executionEnvironment = "LOCAL_FIXTURE";
+  bundle.rollbackRescue.evidenceSha256 = sha256(boundRollbackEvidenceRaw);
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+
+  for (const [field, value, expected] of [
+    ["rescueReleaseSequence", 115, /knownGood < failed = current < rescue/],
+    ["rcManifestSha256", "f".repeat(64), /rollbackRescue rcManifestSha256 must match bundle manifestSha256/],
+    ["manifestLastStatus", "FAIL", /rollbackRescue manifestLastStatus evidence mismatch/],
+  ]) {
+    const original = bundle.rollbackRescue[field];
+    bundle.rollbackRescue[field] = value;
+    await writeFile(bundlePath, json(bundle));
+    await assert.rejects(
+      execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+      expected,
+    );
+    bundle.rollbackRescue[field] = original;
+  }
+  await writeFile(bundlePath, json(bundle));
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /rollbackRescue requires --rollback-evidence/,
+  );
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--rollback-evidence", rollbackEvidencePath, "--require-pass"], { cwd: root }),
+    /rollbackRescue requires --rollback-manifest/,
+  );
+
+  await writeFile(rollbackManifestPath, json({ manifestVersion: 2, releaseSequence: 117, marker: "tampered" }));
+  await assert.rejects(
+    execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+    /rollbackRescue manifest sha256 mismatch/,
+  );
+  await writeFile(rollbackManifestPath, rollbackManifestRaw);
+
+  rollbackEvidence.knownGood.packs[0].sha256 = "f".repeat(64);
+  const tamperedRollbackEvidenceRaw = json(rollbackEvidence);
+  await writeFile(rollbackEvidencePath, tamperedRollbackEvidenceRaw);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+    /rollbackRescue evidence sha256 mismatch/,
+  );
+  bundle.rollbackRescue.evidenceSha256 = sha256(tamperedRollbackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
+  await assert.rejects(
+    execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+    /rollbackRescue known-good pack evidence mismatch/,
+  );
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  rollbackEvidence.knownGood.packs[0].sha256 = hash;
+  delete bundle.rollbackRescue;
+  await writeFile(bundlePath, json(bundle));
+
+  bundle.supportedDenominatorSha256 = "f".repeat(64);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand]),
+    /supportedDenominatorSha256 must match raw production scope bytes/,
+  );
+  bundle.supportedDenominatorSha256 = sha256(scopeRaw);
+
+  const replayedBuildSpecPath = path.join(outputDir, "replayed-build-spec.json");
+  await writeFile(replayedBuildSpecPath, json({
+    candidateId: "candidate-b",
+    builderGitSha: "abcdef2",
+    sourceSnapshots: [{ freshnessExpiresAt: "2099-08-01T00:00:00Z" }],
+  }));
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle", bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+      ...accessibilityReportArgs,
+      "--build-spec", replayedBuildSpecPath,
+      "--manifest", artifactPaths.manifest,
+      "--source-evidence", artifactPaths.source,
+      "--server-evidence", artifactPaths.server,
+      "--mobile-evidence", artifactPaths.mobile,
+      "--require-pass",
+    ], { cwd: root }),
+    /launch denominator candidate binding must match current artifacts/,
+  );
+
+  const emptyServerRaw = json({
+    candidateBinding: candidateIdentity,
+    freshnessExpiresAt: "2099-08-01T00:00:00Z",
+  });
+  const emptyServerPath = path.join(outputDir, "empty-server-evidence.json");
+  await writeFile(emptyServerPath, emptyServerRaw);
+  const emptySource = JSON.parse(sourceEvidenceRaw);
+  delete emptySource.launchDenominatorEvidence;
+  const emptyMobile = JSON.parse(mobileEvidenceRaw);
+  delete emptyMobile.launchDenominatorEvidence;
+  const emptySourceRaw = json(emptySource);
+  const emptyMobileRaw = json(emptyMobile);
+  const emptyPayloadBinding = buildLaunchCandidateBinding({
+    buildSpecRaw,
+    manifestRaw,
+    sourceEvidenceRaw: emptySourceRaw,
+    serverEvidenceRaw: emptyServerRaw,
+    mobileEvidenceRaw: emptyMobileRaw,
+    now: new Date("2026-07-15T00:00:00Z"),
+  });
+  assert.equal(emptyPayloadBinding.status, "BOUND", "candidate bytes alone remain bound");
+  const emptyPayloadInput = bindAuthoritativeLaunchEvidence({
+    sourceEvidenceRaw: emptySourceRaw,
+    serverEvidenceRaw: emptyServerRaw,
+    mobileEvidenceRaw: emptyMobileRaw,
+    candidateBinding: emptyPayloadBinding,
+  });
+  const emptyPayloadReport = buildLaunchDenominatorReport(scope, emptyPayloadInput);
+  assert.equal(emptyPayloadReport.decision, "NO_GO");
+  for (const blocker of ["PILOT_ROW_GAP", "SOURCE_NOT_ADMITTED", "SIGNATURE_INVALID", "FORBIDDEN_EVIDENCE_UNVERIFIED"]) {
+    assert.ok(emptyPayloadReport.blockers.includes(blocker), `${blocker} must fail closed without launch payload`);
+  }
+  const emptyServerBinding = buildLaunchCandidateBinding({
+    buildSpecRaw,
+    manifestRaw,
+    sourceEvidenceRaw,
+    serverEvidenceRaw: emptyServerRaw,
+    mobileEvidenceRaw,
+    now: new Date("2026-07-15T00:00:00Z"),
+  });
+  const forgedTemplateInput = structuredClone(goReport.evaluatorInput);
+  forgedTemplateInput.candidateBinding = emptyServerBinding;
+  forgedTemplateInput.server.artifactHash = emptyServerBinding.serverEvidence.sha256;
+  const forgedTemplateReport = buildLaunchDenominatorReport(scope, forgedTemplateInput);
+  assert.equal(forgedTemplateReport.decision, "GO", "forged template is internally canonical without raw evidence check");
+  const forgedTemplateRaw = json(forgedTemplateReport);
+  const forgedTemplatePath = path.join(outputDir, "forged-template-go.json");
+  await writeFile(forgedTemplatePath, forgedTemplateRaw);
+  bindLaunchReport(bundle, forgedTemplateReport, forgedTemplateRaw);
+  bundle.strictRouteRegressionSha256 = emptyServerBinding.serverEvidence.sha256;
+  await writeFile(bundlePath, json(bundle));
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle", bundlePath,
+      ...scopeArgs,
+      "--launch-report", forgedTemplatePath,
+      ...accessibilityReportArgs,
+      "--build-spec", artifactPaths.buildSpec,
+      "--manifest", artifactPaths.manifest,
+      "--source-evidence", artifactPaths.source,
+      "--server-evidence", emptyServerPath,
+      "--mobile-evidence", artifactPaths.mobile,
+      "--require-pass",
+    ], { cwd: root }),
+    /launch denominator evaluator input must match current authoritative evidence/,
+  );
+  bindLaunchReport(bundle, goReport, goReportRaw);
+  bundle.strictRouteRegressionSha256 = candidateBinding.serverEvidence.sha256;
+
+  const currentLaunchReportPath = path.join(outputDir, "launch-denominator-no-go.json");
+  const currentLaunchReport = buildLaunchDenominatorReport(scope, {});
+  const currentLaunchReportRaw = json(currentLaunchReport);
+  await writeFile(currentLaunchReportPath, currentLaunchReportRaw);
+  bindLaunchReport(bundle, currentLaunchReport, currentLaunchReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await execFileAsync(process.execPath, [
+    "tools/datapack/validate-release-evidence-bundle.mjs",
+    "--bundle",
+    bundlePath,
+    ...scopeArgs,
+    "--launch-report",
+    currentLaunchReportPath,
+  ], { cwd: root });
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      "--launch-report",
+      currentLaunchReportPath,
+      "--require-pass",
+    ], { cwd: root }),
+    /publish validation requires current build spec, manifest, and source evidence/,
+  );
+
+  bundle.launchDenominatorDecision = "GO";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      "--launch-report",
+      currentLaunchReportPath,
+    ], { cwd: root }),
+    /launch denominator report decision must match bundle/,
+  );
+
+  bindLaunchReport(bundle, currentLaunchReport, currentLaunchReportRaw);
+  bundle.launchDenominatorReportSha256 = "f".repeat(64);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      "--launch-report",
+      currentLaunchReportPath,
+    ], { cwd: root }),
+    /launch denominator report sha256 mismatch/,
+  );
+
+  const forgedGoReport = structuredClone(currentLaunchReport);
+  forgedGoReport.decision = "GO";
+  forgedGoReport.blockers = [];
+  const forgedGoReportRaw = `${JSON.stringify(forgedGoReport, null, 2)}\n`;
+  const forgedGoReportPath = path.join(outputDir, "launch-denominator-forged-go.json");
+  await writeFile(forgedGoReportPath, forgedGoReportRaw);
+  bindLaunchReport(bundle, forgedGoReport, forgedGoReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      "--launch-report",
+      forgedGoReportPath,
+      ...accessibilityReportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ], { cwd: root }),
+    /launch denominator report must match canonical evaluator output/,
+  );
+
+  const forgedEmptyIdentityReport = structuredClone(goReport);
+  for (const consumer of ["source", "server", "mobile"]) {
+    for (const field of ["canonicalStationVersion", "corridorId", "serviceId", "lineageId", "schemaVersion"]) {
+      forgedEmptyIdentityReport.evaluatorInput[consumer].identity[field] = "";
+    }
+  }
+  for (const field of ["canonicalStationVersion", "corridorId", "serviceId", "lineageId", "schemaVersion"]) {
+    forgedEmptyIdentityReport.identityLinkage.shared[field] = "";
+  }
+  const forgedEmptyIdentityRaw = `${JSON.stringify(forgedEmptyIdentityReport, null, 2)}\n`;
+  const forgedEmptyIdentityPath = path.join(outputDir, "launch-denominator-forged-empty-identity.json");
+  await writeFile(forgedEmptyIdentityPath, forgedEmptyIdentityRaw);
+  bindLaunchReport(bundle, forgedEmptyIdentityReport, forgedEmptyIdentityRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      "--launch-report",
+      forgedEmptyIdentityPath,
+      ...accessibilityReportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ], { cwd: root }),
+    /launch denominator report must match canonical evaluator output/,
+  );
+
+  const mismatchedReport = structuredClone(currentLaunchReport);
+  mismatchedReport.scopes.routingLaunchScope.sha256 = "f".repeat(64);
+  const mismatchedReportRaw = `${JSON.stringify(mismatchedReport, null, 2)}\n`;
+  const mismatchedReportPath = path.join(outputDir, "launch-denominator-mismatched.json");
+  await writeFile(mismatchedReportPath, mismatchedReportRaw);
+  bindLaunchReport(bundle, mismatchedReport, mismatchedReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      "--launch-report",
+      mismatchedReportPath,
+    ], { cwd: root }),
+    /launch denominator report routing scope identity mismatch/,
+  );
+
+  bindLaunchReport(bundle, goReport, goReportRaw);
+
+  bundle.launchScopeSha256 = "f".repeat(64);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle",
+      bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+    ], { cwd: root }),
+    /launch denominator report routing scope binding mismatch/,
+  );
+  bundle.launchScopeSha256 = goReport.scopes.routingLaunchScope.sha256;
+
+  bundle.androidEvidenceStatus = "FAIL";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [...validatorCommand, "--require-pass"],
+      { cwd: root },
+    ),
+    /androidEvidenceStatus must be PASS for publish/,
+  );
+
+  bundle.androidEvidenceStatus = "PASS";
+  bundle.headwayReportStatus = "DEFERRED";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [...validatorCommand, "--require-pass"],
+    { cwd: root },
+  );
+
+  bundle.headwayReportStatus = "PASS";
+  // topology 위반은 게시에서 DEFERRED로 미룰 수 없다.
+  bundle.routeGraphTopologyStatus = "DEFERRED";
+  bundle.routeGraphTopologyViolationCount = 4;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /routeGraphTopologyStatus must be a release gate status/,
+  );
+
+  // deferred가 아닌 다른 게이트(예: routeMapPositionCoverageStatus)는 DEFERRED를 허용하지 않는다.
+  bundle.routeGraphTopologyStatus = "PASS";
+  bundle.routeGraphTopologyViolationCount = 0;
+  bundle.routeMapPositionCoverageStatus = "DEFERRED";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [...validatorCommand, "--require-pass"],
+      { cwd: root },
+    ),
+    /routeMapPositionCoverageStatus must be a release gate status/,
+  );
+
+  bundle.routeMapPositionCoverageStatus = "PASS";
+  bundle.validatorStatus = "DEFERRED";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, validatorCommand, {
+      cwd: root,
+    }),
+    /validatorStatus must be a release gate status/,
+  );
+
+  // topology status와 위반 수치의 정합을 런타임에서 강제한다.
+  bundle.validatorStatus = "PASS";
+  // DEFERRED는 위반 수치와 무관하게 거부.
+  bundle.routeGraphTopologyStatus = "DEFERRED";
+  bundle.routeGraphTopologyViolationCount = 0;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [...validatorCommand, "--require-pass"],
+      { cwd: root },
+    ),
+    /routeGraphTopologyStatus must be a release gate status/,
+  );
+
+  // PASS인데 위반 수치가 0이 아님 → 모순, 거부.
+  bundle.routeGraphTopologyStatus = "PASS";
+  bundle.routeGraphTopologyViolationCount = 4;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [...validatorCommand, "--require-pass"],
+      { cwd: root },
+    ),
+    /routeGraphTopologyStatus PASS requires routeGraphTopologyViolationCount 0/,
+  );
+
+  // 음수 위반 수치 거부.
+  bundle.routeGraphTopologyStatus = "PASS";
+  bundle.routeGraphTopologyViolationCount = -1;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [...validatorCommand, "--require-pass"],
+      { cwd: root },
+    ),
+    /routeGraphTopologyViolationCount must be a non-negative integer/,
+  );
+
+  // 위반 수치 누락 거부.
+  bundle.routeGraphTopologyViolationCount = 0;
+  delete bundle.routeGraphTopologyViolationCount;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [...validatorCommand, "--require-pass"],
+      { cwd: root },
+    ),
+    /release evidence bundle missing routeGraphTopologyViolationCount/,
+  );
+
+  // DEFERRED와 위반 4도 거부한다.
+  bundle.routeGraphTopologyStatus = "DEFERRED";
+  bundle.routeGraphTopologyViolationCount = 4;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /routeGraphTopologyStatus must be a release gate status/,
+  );
+});
+
+function signedRescueManifest({
+  releaseSequence,
+  failedManifestSha256,
+  knownGoodManifestSha256,
+  rollbackApprovalEventId,
+  packSha256,
+  sqliteSha256,
+}) {
+  const pack = {
+    id: "capital",
+    version: "1",
+    artifactKind: "production",
+    url: "https://cdn.example.com/catalog/capital-v1.sqlite.gz",
+    sha256: packSha256,
+    sqliteSha256,
+    sizeBytes: 1,
+    signature: { algorithm: "rsa-sha256-pack-manifest-v2", value: sign("pack") },
+    schemaVersion: "1",
+    sourceInventory: [{
+      id: "source",
+      owner: "owner",
+      url: "https://data.example.com/source",
+      license: "CC-BY-4.0",
+      licenseStatus: "redistributable",
+      redistributionAllowed: true,
+      updateFrequency: "daily",
+      updatedAt: "2026-07-14T00:00:00.000Z",
+      fields: ["stations"],
+      coverageScope: { regionIds: ["seoul"], operatorIds: ["metro"], sourceDomains: ["stations"] },
+    }],
+    regionalQualityMetrics: {
+      stationCount: 1,
+      facilityCoverageRatio: 1,
+      requiredFacilityEvidenceCoverageRatio: 1,
+      strictRouteEligibleFacilityRatio: 1,
+      operationalKnownRatio: 1,
+      freshnessValidRatio: 1,
+      fieldVerifiedPathwayRatio: 1,
+      edgeCount: 1,
+      unknownAccessibilityRatio: 0,
+      unknownEdgeRatioByProfile: { wheelchair: 0, stroller: 0, lowMobility: 0 },
+    },
+    representativeRouteRegressions: [],
+    representativeRouteRegressionSignature: {
+      algorithm: "rsa-sha256-route-regression-v1",
+      value: sign("routes"),
+    },
+    requiredTables: ["stations"],
+    minimumTableRows: {
+      stations: 1,
+      station_lines: 1,
+      network_edges: 1,
+      facilities: 1,
+      station_facility_evidence: 1,
+    },
+  };
+  const unsigned = {
+    manifestVersion: 2,
+    channel: "production",
+    releaseSequence,
+    publishedAt: "2026-07-15T01:00:00.000Z",
+    expiresAt: "2026-07-16T01:00:00.000Z",
+    keyId: "production-v1",
+    ttlSeconds: 3600,
+    packs: [pack],
+    rollbackProvenance: {
+      kind: "MONOTONIC_RESCUE",
+      currentReleaseSequence: 115,
+      failedReleaseSequence: 115,
+      failedManifestSha256,
+      knownGoodReleaseSequence: 114,
+      knownGoodManifestSha256,
+      rollbackApprovalEventId,
+      approvedByRole: "admin.datapack.rollback",
+      approvedAt: "2026-07-15T00:30:00.000Z",
+      reasonCode: "ADMIN_APPROVED_ROLLBACK",
+    },
+  };
+  return {
+    ...unsigned,
+    signature: { algorithm: "rsa-sha256-manifest-v2", value: sign(canonicalJson(unsigned)) },
+  };
+}
+
+function sign(value) {
+  return createSign("RSA-SHA256").update(value).sign(privateKeyPem).toString("base64url");
+}
+
+function resignManifest(value) {
+  const { signature: _signature, ...unsigned } = value;
+  value.signature = { algorithm: "rsa-sha256-manifest-v2", value: sign(canonicalJson(unsigned)) };
+}

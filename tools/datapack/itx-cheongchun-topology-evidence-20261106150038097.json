@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "itx-cheongchun-mobile-topology-evidence",
+  "serviceId": "ITX_CHEONGCHUN",
+  "sourceIssue": 2135,
+  "stationCatalogPackIdentity": {
+    "artifactKind": "station-catalog-pack",
+    "manifestVersion": 1,
+    "catalogPackId": "itx-current-station-catalog-v1",
+    "stationSetSha256": "bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c",
+    "payloadSha256": "37e8fb4bd6c0946cb52b8ffdac43457b5e8b51436b49617d28ea2c8fcd4204a1",
+    "manifestSha256": "5328c25ffaf78085707a3e296993228f3cc3453706420a163ef4b539cb0973b9"
+  },
+  "sourceArtifact": {
+    "id": "itx-cheongchun-source-timetable-20261106150038097",
+    "sha256": "86d1c9a4d5e48a45ea0dad69cf73b4cdc7f9803b21f2eeda9ac4f6cefb3a67a5",
+    "completenessEvidenceSha256": "b611a9829d24565a0ac41680f6ee148a40f329224045d6891276fbc2a9680f9c",
+    "freshUntil": "2026-11-10T00:00:00+09:00",
+    "stationCatalogPackIdentity": {
+      "artifactKind": "station-catalog-pack",
+      "manifestVersion": 1,
+      "catalogPackId": "itx-current-station-catalog-v1",
+      "stationSetSha256": "bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c",
+      "payloadSha256": "37e8fb4bd6c0946cb52b8ffdac43457b5e8b51436b49617d28ea2c8fcd4204a1",
+      "manifestSha256": "5328c25ffaf78085707a3e296993228f3cc3453706420a163ef4b539cb0973b9"
+    }
+  },
+  "topology": {
+    "stationMembershipCount": 18,
+    "servedStationCount": 14,
+    "edgeCount": 48,
+    "directions": [
+      "up",
+      "down"
+    ],
+    "connectedComponentCount": 1,
+    "isolatedServedStationCount": 0,
+    "sha256": "d9afca0a844a5967ca19768b8b13fe2ccf83947a7d18c9cb8406ccb7aa4babff",
+    "durationSecondsEmbedded": false,
+    "fareEmbedded": false
+  },
+  "pack": {
+    "id": "capital",
+    "inputSha256": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+    "inputSqliteSha256": "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
+    "inputByteSize": 388623,
+    "outputSha256": "72358b43ed7e2c146bf6d2657e165ceab856d88b1b73c066310bd3565190eed0",
+    "outputSqliteSha256": "7254374484a1c508e050cd98dc13cf76380a0e894aaee036c7d646d1466360fe",
+    "byteSize": 390491,
+    "byteSizeDelta": 1868
+  }
+}

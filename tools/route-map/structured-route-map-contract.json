@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "structured-route-map-contract",
+  "goal": "전국 도시철도 노선도를 PDF/SVG 전체 확대가 아니라 구조화 데이터와 클라이언트 렌더링으로 표시한다.",
+  "regions": ["수도권", "부산", "대구", "광주", "대전"],
+  "layers": [
+    {
+      "id": "line_geometry",
+      "source": ["route_map_line_tracks"],
+      "requiredFields": ["region", "line_id", "track_index", "path"],
+      "deriveRule": "노선 track polyline을 노선 단위로 저장된 path 그대로 그린다. 역별 up_path/down_path 조립은 line_geometry의 source가 아니다(#1638 track 직접 렌더 전환). track은 공식 SVG stroke(색↔노선 매칭) 또는 SVG가 fill 렌더라 추출 불가한 region의 실측 down_path 변환(pack-down-path)에서 온다.",
+      "lod": [
+        { "minZoom": 0, "visible": true, "labelPolicy": "hide_station_labels" },
+        { "minZoom": 1, "visible": true, "labelPolicy": "major_transfer_labels" },
+        { "minZoom": 2, "visible": true, "labelPolicy": "collision_checked_station_labels" }
+      ],
+      "linearParameter": {
+        "field": "t",
+        "range": [0, 1],
+        "basis": "schematic polyline 누적 거리 정규화 (GTFS shape_dist_traveled 방식)",
+        "directions": ["up", "down"],
+        "deriveRule": "방향별 polyline(up_path/down_path)의 시작점 t=0, 끝점 t=1로 두고, 각 정점까지의 누적 거리를 전체 길이로 나눠 t를 계산한다. 렌더러는 t만으로 polyline 위 좌표를 보간한다."
+      }
+    },
+    {
+      "id": "station_nodes",
+      "source": ["route_map_positions", "station_lines", "stations", "lines"],
+      "requiredFields": ["station_id", "line_id", "region", "x", "y"],
+      "featureId": "{region}:{station_id}:{line_id}",
+      "nodeKinds": ["regular", "transfer"]
+    },
+    {
+      "id": "transfer_groups",
+      "source": ["stations", "station_lines", "route_map_positions"],
+      "featureId": "{region}:{station_id}",
+      "deriveRule": "같은 station_id에 여러 line_id가 있으면 환승 그룹으로 묶고, 표시 좌표는 해당 station_id의 route_map_positions 중심값을 쓴다."
+    },
+    {
+      "id": "station_labels",
+      "source": ["stations", "route_map_positions.label_dx", "route_map_positions.label_dy", "route_map_positions.label_polygon"],
+      "requiredFields": ["station_id", "line_id", "region", "label_dx", "label_dy"],
+      "priority": ["transfer", "major", "regular"],
+      "majorRule": "환승역이 아니어도 지역별 공식 노선도에서 주요 거점으로 별도 검수된 역을 major로 둔다. 별도 검수값이 없으면 regular다.",
+      "collisionField": "label_polygon",
+      "renderRule": "데이터에는 역명을 보관하되 화면에는 zoom과 collision 결과로 필요한 라벨만 그린다."
+    }
+  ],
+  "packSourceOfTruth": {
+    "routeMapRegionPack": "지역별 datapack의 route_map_positions를 우선한다.",
+    "corePack": "core pack은 앱 부팅용 최소 데이터만 보유하고, 지역 노선도 좌표의 source of truth가 아니다."
+  },
+  "routeMapPositionsColumns": [
+    "station_id",
+    "line_id",
+    "region",
+    "x",
+    "y",
+    "label_dx",
+    "label_dy",
+    "label_polygon",
+    "up_path",
+    "down_path",
+    "source_id",
+    "source_name",
+    "source_url",
+    "license",
+    "license_status",
+    "commercial_use_allowed",
+    "attribution_required",
+    "reviewed_at",
+    "updated_at"
+  ],
+  "routeMapLineTracksColumns": [
+    "region",
+    "line_id",
+    "track_index",
+    "path",
+    "svg_color",
+    "source_id",
+    "source_name",
+    "source_url",
+    "license",
+    "license_status",
+    "commercial_use_allowed",
+    "attribution_required",
+    "updated_at"
+  ],
+  "lineStationProgression": {
+    "id": "line_station_progression",
+    "source": ["route_map_positions.up_path", "route_map_positions.down_path", "station_lines"],
+    "featureId": "{region}:{line_id}:{direction}:{station_id}",
+    "requiredFields": ["region", "line_id", "station_id", "direction", "t"],
+    "tRule": "역이 line_geometry polyline 위에서 차지하는 위치를 linearParameter.t(0..1)로 둔다. 방향별(up/down)로 t는 단조 증가한다.",
+    "rendererContract": "열차 overlay는 line path 선형 파라미터만으로 좌표 계산 가능: #1649 렌더러는 line_geometry geometry와 역별 t만으로 노선도 좌표를 계산하며, 별도 좌표 조회 없이 t 보간으로 열차 위치를 그린다."
+  },
+  "realtimeOverlayHook": {
+    "purpose": "실시간 열차 위치 overlay(#1649)를 정적 노선도 위에 온라인 전용 layer로 그린다.",
+    "joinPath": {
+      "line": "realtime_provider_line_mappings(provider_id, provider_line_id) ↔ line_id",
+      "station": "realtime_provider_station_mappings(provider_id, provider_station_id) ↔ (station_id, line_id)"
+    },
+    "coordinateRule": "provider payload 위치를 line_station_progression.t 또는 인접 두 역 사이 t 보간으로 노선도 좌표에 매핑한다. 열차 overlay는 line path 선형 파라미터만으로 좌표 계산이 가능하다.",
+    "payloadLocation": "datapack 밖. pack은 정적 geometry/mapping 계약만 보유하고 실시간 payload 자체는 온라인 provider에서 받는다.",
+    "separationPrinciple": "#1416 분리 원칙: 정적 노선도(pack)와 실시간 overlay(online)를 분리한다."
+  },
+  "releaseGate": {
+    "allRegionsRequired": true,
+    "officialOrReviewedSourceRequired": true,
+    "commercialUseMustBeResolvedBeforeProduction": true,
+    "wholePdfOrSvgZoomRendererAllowed": false
+  }
+}

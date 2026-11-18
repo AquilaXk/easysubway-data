@@ -1,0 +1,1196 @@
+#!/usr/bin/env node
+// 수도권 경전철 잔여 5개 노선 route_map_positions를 공식 FILE 위경도 + schematic canvas로
+// 결정론적 snapshot으로 수집한다. API key·포털 활용신청 없이 FILE만 사용한다.
+//
+// A. data.go.kr 전용 역위치 CSV (신분당·에버라인; CP949 LF fixture)
+// B. data.go.kr 우이신설 XLSX 정규화 CSV(위경도 없음) + KRIC id=1294 overlay
+// C. KRIC 공식 역사정보(id=1294) 필터 CSV (신림선·김포골드라인)
+// D. 신분당 상현 빈 위경도 → 같은 공식 KRIC id=1294 overlay
+//
+// 하이브리드 정렬:
+// - 공식 FILE 위경도는 provenance(latitude/longitude)로만 유지한다.
+// - admitted route_map_positions x/y/label*는 owner-self-drawn-sma-schematic canvas
+//   좌표 fixture에서 역명(정규화) join으로 결속한다.
+// - stationCode = pack station_code (canvas fixture). 위경도 투영(projectLatLon) 금지.
+// - topology·official FILE·owner geometry의 역 집합은 양방향으로 정확히 결속한다.
+// - FILE 역명 alias(에버라인 운동장·송담대→용인중앙시장)는 공식 rename join만 허용한다.
+// - KRIC 공식 lat/lon 컬럼 스왑 오류 정규화(발명 아님):
+//   if lon∈[33,43] and lat∈[124,132]: swap. 그 외 한반도 범위 밖이면 fail/quarantine.
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const ARTIFACT_KIND = "capital-light-rail-route-map-positions-snapshot";
+const TOPOLOGY_SOURCE_ID = "capital-route-topology";
+const SCHEMATIC_CANVAS_SOURCE_ID = "owner-self-drawn-sma-schematic";
+const FIELDS_PROVIDED = Object.freeze(["route_map_position", "route_map_label_polygon"]);
+const SUCCESSOR_SNAPSHOT_FIELDS = Object.freeze([
+  "stationCount",
+  "rawStationCount",
+  "quarantinedCount",
+  "rawSha256",
+  "positionsSha256",
+  "schematicGeometrySha256",
+  "lineIds",
+  "lineStationCounts",
+  "topologySourceId",
+  "topologySnapshotId",
+  "topologyContentSha256",
+  "topologyLineages",
+]);
+const SUCCESSOR_COVERAGE = "Official route-map position data joined to approved schematic geometry; geographic projection is not used.";
+const SUCCESSOR_COVERAGE_LIMITATIONS = Object.freeze([
+  "Official route-map position data is limited to the admitted line and approved schematic geometry.",
+]);
+const OFFICIAL_MISSING_LATLON = "OFFICIAL_MISSING_LATLON";
+const OFFICIAL_MISSING_FILE_ROW = "OFFICIAL_MISSING_FILE_ROW";
+const ISSUE = 2505;
+const KRIC_1294_DATASET_ID = "1294";
+const KRIC_1294_DETAIL_URL = "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294";
+const KRIC_1294_DOWNLOAD_URL =
+  "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1";
+const KRIC_1294_OVERLAY_FIXTURE =
+  "tools/datapack/fixtures/capital-light-rail-route-map-positions-raw/shared/kric-1294-overlay-shinbundang-ui.csv";
+// 공식 FILE에 간혹 오류 좌표가 있어도(수인분당 수서 lon=127.676 등) finite면 provenance로 admit한다.
+// 주소 문자열·빈칸만 quarantine. null-island(0,0) 수준의 명백한 비좌표는 거부한다.
+const CAPITAL_GEO = Object.freeze({
+  latMin: 33.0,
+  latMax: 39.0,
+  lonMin: 124.0,
+  lonMax: 132.0,
+});
+const LAT_LON_SWAP_LON_AS_LAT = Object.freeze({ min: 33, max: 43 });
+const LAT_LON_SWAP_LAT_AS_LON = Object.freeze({ min: 124, max: 132 });
+
+// 광역철도 카탈로그와 같은 축이다. additionalCoverageOperators는 admission 정본이 dual coverage로 등재한
+// 두 번째 운영기관을 저장소 정본으로 적는 자리이며, materializer가 [operatorId, ...additional]을 정본과
+// 전량 대조한다 — 카탈로그·정본 어느 한쪽 편집만으로는 운영기관 범위를 넓힐 수 없다.
+//
+// lineageOnlyOperatorIds는 그 등재 집합 안에서 "정본 대조에는 쓰되 pack coverage scope로는 내지 않는"
+// 항목을 가른다. FILE admission 당시 표기가 노선 운영기관과 다른 노선에서 두 표기를 그대로 scope 행으로
+// 내면 #2138 activeLineScopes에 대응이 없는 (운영기관, 노선) 결속이 datapack 조립까지 흘러간다.
+const LINE_DEFINITIONS = Object.freeze([
+  {
+    key: "shinbundang",
+    sourceId: "kric-shinbundang-route-map-positions",
+    lineId: "shinbundang",
+    slug: "shinbundang",
+    operatorId: "seoul-metro",
+    operatorNameKo: "서울교통공사",
+    // operatorId(서울교통공사)는 FILE admission 당시 표기를 유지하는 계보 항목이라 #2138 activeLineScopes에
+    // 대응 scope가 없다. requirement에 매칭되는 것은 노선 운영기관인 네오트랜스다(admission 정본 서술) —
+    // 그래서 정본 대조에는 두 표기를 함께 쓰고 pack scope로는 네오트랜스만 낸다.
+    additionalCoverageOperators: Object.freeze([
+      Object.freeze({ operatorId: "operator-28e01fb8509d", nameKo: "네오트랜스" }),
+    ]),
+    lineageOnlyOperatorIds: Object.freeze(["seoul-metro"]),
+    lineNameKo: "수도권 신분당",
+    lineNameEn: "Shinbundang Line",
+    lineColor: "#d4003b",
+    lineNameToken: "신분당선",
+    operatorNameToken: "네오트랜스주식회사",
+    datasetId: "15041337",
+    datasetIds: ["15041337", "1294"],
+    detailUrl: "https://www.data.go.kr/data/15041337/fileData.do",
+    downloadUrl:
+      "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000002715018&fileDetailSn=1&insertDataPrcus=N",
+    observedDataUpdatedAt: "2024-10-15",
+    inputKind: "csv",
+    fixtureFile: "data-go-15041337.csv",
+    allowMissingFileRows: false,
+    overlayLineToken: "신분당선",
+    canvas: { xMin: 1800, xMax: 2600, yMin: 1600, yMax: 2500 },
+    geo: CAPITAL_GEO,
+    licenseAttribution:
+      "국가철도공단 · 네오트랜스주식회사 · 공공데이터포털 이용허락범위 제한 없음 · 상현 빈 위경도는 KRIC 전국 도시광역철도 역사정보 id=1294 신분당선 행 overlay",
+  },
+  {
+    key: "everline",
+    sourceId: "kric-everline-route-map-positions",
+    lineId: "line-828f04afc588",
+    slug: "everline",
+    geometryLine: "everline",
+    operatorId: "operator-b2d80436b438",
+    operatorNameKo: "용인경량전철주식회사",
+    lineNameKo: "수도권 에버라인",
+    lineNameEn: "Everline",
+    lineColor: "#509f22",
+    lineNameToken: "용인에버라인",
+    operatorNameToken: "용인경량전철주식회사",
+    datasetId: "15041326",
+    detailUrl: "https://www.data.go.kr/data/15041326/fileData.do",
+    downloadUrl:
+      "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000002643415&fileDetailSn=1&insertDataPrcus=N",
+    observedDataUpdatedAt: "2024-10-15",
+    inputKind: "csv",
+    fixtureFile: "data-go-15041326.csv",
+    allowMissingFileRows: false,
+    fileStationNameAliases: Object.freeze({
+      "운동장·송담대": "용인중앙시장",
+      "운동장.송담대": "용인중앙시장",
+    }),
+    canvas: { xMin: 2000, xMax: 3400, yMin: 2300, yMax: 2700 },
+    geo: CAPITAL_GEO,
+    licenseAttribution: "국가철도공단 · 용인경량전철주식회사 · 공공데이터포털 이용허락범위 제한 없음",
+  },
+  {
+    key: "ui",
+    sourceId: "kric-ui-sinseol-route-map-positions",
+    lineId: "line-30886152e4f8",
+    slug: "ui",
+    geometryLine: "ui-sinseol",
+    operatorId: "operator-3c623bf1a427",
+    operatorNameKo: "우이신설경전철주식회사",
+    lineNameKo: "수도권 우이신설",
+    lineNameEn: "Ui-Sinseol LRT",
+    lineColor: "#b0ce18",
+    lineNameToken: "우이신설",
+    operatorNameToken: "우이신설경전철주식회사",
+    datasetId: "15041324",
+    datasetIds: ["15041324", "1294"],
+    detailUrl: "https://www.data.go.kr/data/15041324/fileData.do",
+    downloadUrl:
+      "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003545227&fileDetailSn=1&insertDataPrcus=N",
+    observedDataUpdatedAt: "2024-10-15",
+    inputKind: "csv",
+    fixtureFile: "data-go-15041324-stations.csv",
+    primaryFileArtifact: "data-go-15041324.xlsx",
+    allowMissingFileRows: false,
+    overlayLineToken: "우이신설선",
+    canvas: { xMin: 1900, xMax: 2600, yMin: 600, yMax: 1100 },
+    geo: CAPITAL_GEO,
+    licenseAttribution:
+      "국가철도공단 · 우이신설경전철주식회사 · 공공데이터포털 이용허락범위 제한 없음 · 위경도는 KRIC 전국 도시광역철도 역사정보 id=1294 우이신설선 행 overlay",
+  },
+  {
+    key: "sillim",
+    sourceId: "kric-sillim-route-map-positions",
+    lineId: "line-aefa08ccc0a9",
+    slug: "sillim",
+    operatorId: "operator-10d7cf275a80",
+    operatorNameKo: "남서울경전철주식회사",
+    lineNameKo: "수도권 신림선",
+    lineNameEn: "Sillim Line",
+    lineColor: "#0781fa",
+    lineNameToken: "신림선",
+    operatorNameToken: null,
+    datasetId: KRIC_1294_DATASET_ID,
+    datasetIds: [KRIC_1294_DATASET_ID],
+    detailUrl: KRIC_1294_DETAIL_URL,
+    downloadUrl: KRIC_1294_DOWNLOAD_URL,
+    observedDataUpdatedAt: "2026-07-01",
+    inputKind: "filtered-csv",
+    fixtureFile: "kric-sillim-filtered-stations.csv",
+    allowMissingFileRows: false,
+    canvas: { xMin: 1400, xMax: 1900, yMin: 1600, yMax: 2200 },
+    geo: CAPITAL_GEO,
+    licenseAttribution:
+      "국가철도공단 · 남서울경전철주식회사 · KRIC 전국 도시광역철도 역사정보 id=1294 신림선 필터 · 공공데이터포털 이용허락범위 제한 없음",
+  },
+  {
+    key: "gimpo",
+    sourceId: "kric-gimpo-goldline-route-map-positions",
+    lineId: "line-5500c1600f71",
+    slug: "gimpo",
+    operatorId: "operator-2e23276dfa94",
+    operatorNameKo: "김포골드라인운영주식회사",
+    lineNameKo: "수도권 김포골드라인",
+    lineNameEn: "Gimpo Goldline",
+    lineColor: "#a17800",
+    lineNameToken: "김포골드라인",
+    operatorNameToken: null,
+    datasetId: KRIC_1294_DATASET_ID,
+    datasetIds: [KRIC_1294_DATASET_ID],
+    detailUrl: KRIC_1294_DETAIL_URL,
+    downloadUrl: KRIC_1294_DOWNLOAD_URL,
+    observedDataUpdatedAt: "2026-07-01",
+    inputKind: "filtered-csv",
+    fixtureFile: "kric-gimpo-goldline-filtered-stations.csv",
+    allowMissingFileRows: false,
+    canvas: { xMin: 150, xMax: 850, yMin: 700, yMax: 1200 },
+    geo: CAPITAL_GEO,
+    licenseAttribution:
+      "국가철도공단 · 김포골드라인운영주식회사 · KRIC 전국 도시광역철도 역사정보 id=1294 김포골드라인 필터 · 공공데이터포털 이용허락범위 제한 없음",
+  },
+]);
+
+const LINE_BY_SOURCE_ID = Object.freeze(new Map(LINE_DEFINITIONS.map((line) => [line.sourceId, line])));
+const LINE_BY_KEY = Object.freeze(new Map(LINE_DEFINITIONS.map((line) => [line.key, line])));
+
+export function listCapitalLightRailRouteMapPositionLines() {
+  return LINE_DEFINITIONS.map((line) => structuredClone(line));
+}
+
+export function getCapitalLightRailRouteMapPositionLine(sourceIdOrKey) {
+  return LINE_BY_SOURCE_ID.get(sourceIdOrKey) ?? LINE_BY_KEY.get(sourceIdOrKey) ?? null;
+}
+
+export function normalizeOfficialLatLon(latitudeRaw, longitudeRaw, { applySwap = false } = {}) {
+  let latitude = Number(String(latitudeRaw ?? "").trim());
+  let longitude = Number(String(longitudeRaw ?? "").trim());
+  let swapped = false;
+  if (applySwap
+    && Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && longitude >= LAT_LON_SWAP_LON_AS_LAT.min
+    && longitude <= LAT_LON_SWAP_LON_AS_LAT.max
+    && latitude >= LAT_LON_SWAP_LAT_AS_LON.min
+    && latitude <= LAT_LON_SWAP_LAT_AS_LON.max) {
+    const nextLatitude = longitude;
+    const nextLongitude = latitude;
+    latitude = nextLatitude;
+    longitude = nextLongitude;
+    swapped = true;
+  }
+  return { latitude, longitude, swapped };
+}
+
+export function parseKric1294OverlayCsv(overlayCsvBytes, overlayLineToken) {
+  if (!(overlayCsvBytes instanceof Uint8Array) || overlayCsvBytes.byteLength === 0) {
+    throw new Error("KRIC 1294 overlay CSV bytes are required");
+  }
+  if (typeof overlayLineToken !== "string" || overlayLineToken.length === 0) {
+    throw new Error("KRIC 1294 overlay line token is required");
+  }
+  const rows = parseCsv(decodeOfficialCsv(overlayCsvBytes));
+  if (rows.length < 2) throw new Error("KRIC 1294 overlay CSV has no data rows");
+  const header = rows[0];
+  const indexes = {
+    lineName: header.indexOf("운영노선"),
+    stationName: header.indexOf("역명"),
+    longitude: header.indexOf("경도"),
+    latitude: header.indexOf("위도"),
+  };
+  for (const [field, index] of Object.entries(indexes)) {
+    if (index < 0) throw new Error(`KRIC 1294 overlay CSV missing column: ${field}`);
+  }
+  const byNorm = new Map();
+  for (const [rowIndex, row] of rows.slice(1).entries()) {
+    if (row.length !== header.length) {
+      throw new Error(`KRIC 1294 overlay CSV column count mismatch at row ${rowIndex + 2}`);
+    }
+    if (String(row[indexes.lineName] ?? "").trim() !== overlayLineToken) continue;
+    const csvStationName = String(row[indexes.stationName] ?? "").trim();
+    if (csvStationName.length === 0) continue;
+    const normalizedName = normalizeStationName(csvStationName);
+    if (byNorm.has(normalizedName)) continue;
+    byNorm.set(normalizedName, {
+      csvStationName,
+      latitudeRaw: String(row[indexes.latitude] ?? "").trim(),
+      longitudeRaw: String(row[indexes.longitude] ?? "").trim(),
+      sourceDatasetId: KRIC_1294_DATASET_ID,
+    });
+  }
+  return byNorm;
+}
+
+export function parseCapitalLightRailRouteMapPositionsCsv({
+  lineKey,
+  sourceId,
+  csvBytes,
+  overlayCsvBytes = null,
+  topologySnapshot,
+  topologySnapshotId,
+  schematicCanvas,
+  previousSnapshot = null,
+  canonicalStationIdentities = null,
+} = {}) {
+  const line = resolveLine(lineKey, sourceId);
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error(`${line.sourceId} route map positions CSV bytes are required`);
+  }
+  const topologyLine = validateTopologySnapshot(topologySnapshot, line);
+  const topologyNames = topologyStationNames(topologyLine);
+  const canvasByName = indexSchematicCanvas(
+    schematicCanvas,
+    line,
+    topologyLine,
+    previousSnapshot,
+    canonicalStationIdentities,
+  );
+  const packStations = [...canvasByName.values()];
+  if (!sameStationSets(topologyNames, canvasByName.keys())) {
+    throw new Error(`${line.sourceId} topology and schematic canvas station sets differ`);
+  }
+
+  const overlayByNorm = line.overlayLineToken
+    ? parseKric1294OverlayCsv(overlayCsvBytes, line.overlayLineToken)
+    : new Map();
+  if (line.overlayLineToken && overlayByNorm.size === 0) {
+    throw new Error(`${line.sourceId} KRIC 1294 overlay rows missing for ${line.overlayLineToken}`);
+  }
+
+  const rows = parseCsv(decodeOfficialCsv(csvBytes));
+  if (rows.length < 2) throw new Error(`${line.sourceId} route map positions CSV has no data rows`);
+  const header = rows[0];
+  const indexes = resolveCsvIndexes(header, line);
+
+  const fileByNorm = new Map();
+  for (const [rowIndex, row] of rows.slice(1).entries()) {
+    if (row.length !== header.length) {
+      throw new Error(`${line.sourceId} CSV column count mismatch at row ${rowIndex + 2}`);
+    }
+    if (indexes.operator >= 0 && line.operatorNameToken) {
+      const operatorToken = String(row[indexes.operator] ?? "").trim();
+      if (operatorToken !== line.operatorNameToken) {
+        throw new Error(`${line.sourceId} unexpected operator at row ${rowIndex + 2}`);
+      }
+    }
+    if (indexes.lineName >= 0 && line.lineNameToken) {
+      const lineNameToken = String(row[indexes.lineName] ?? "").trim();
+      if (lineNameToken !== line.lineNameToken) {
+        throw new Error(`${line.sourceId} unexpected line at row ${rowIndex + 2}`);
+      }
+    }
+    const rawCsvStationName = String(row[indexes.stationName] ?? "").trim();
+    if (rawCsvStationName.length === 0) {
+      throw new Error(`${line.sourceId} invalid station identity at row ${rowIndex + 2}`);
+    }
+    const aliasedName = line.fileStationNameAliases?.[rawCsvStationName]
+      ?? line.fileStationNameAliases?.[rawCsvStationName.replaceAll("·", ".")]
+      ?? rawCsvStationName;
+    const csvStationName = aliasedName;
+    const normalizedName = normalizeStationName(csvStationName);
+    if (fileByNorm.has(normalizedName)) continue;
+    const latitudeRaw = String(row[indexes.latitude] ?? "").trim();
+    const longitudeRaw = String(row[indexes.longitude] ?? "").trim();
+    fileByNorm.set(normalizedName, {
+      csvStationName,
+      latitudeRaw,
+      longitudeRaw,
+      sourceDatasetId: line.datasetId,
+    });
+  }
+
+  const positions = [];
+  const quarantinedPositions = [];
+  const seenStationIds = new Set();
+  const overlayStationNames = [];
+  let swappedCoordinateCount = 0;
+
+  for (const canvas of packStations) {
+    const normalizedName = normalizeStationName(canvas.stationName);
+    const fileRow = fileByNorm.get(normalizedName);
+    const x = Math.round(Number(canvas.x));
+    const y = Math.round(Number(canvas.y));
+    if (!isSchematicCanvasCoordinate(x, y, line, schematicCanvas)) {
+      throw new Error(`${line.sourceId} schematic canvas out of bounds: ${canvas.stationName}`);
+    }
+    if (seenStationIds.has(canvas.stationId)) {
+      throw new Error(`${line.sourceId} duplicate schematic stationId: ${canvas.stationId}`);
+    }
+    seenStationIds.add(canvas.stationId);
+
+    if (!fileRow) {
+      if (!line.allowMissingFileRows) {
+        throw new Error(`${line.sourceId} official FILE row missing: ${canvas.stationName}`);
+      }
+      quarantinedPositions.push({
+        lineId: line.lineId,
+        line: line.slug,
+        stationCode: String(canvas.stationCode),
+        stationName: canvas.stationName,
+        stationId: canvas.stationId,
+        x,
+        y,
+        reasonCode: OFFICIAL_MISSING_FILE_ROW,
+      });
+      continue;
+    }
+
+    let coordSource = fileRow;
+    let usedOverlay = false;
+    let { latitude, longitude, swapped } = normalizeOfficialLatLon(
+      coordSource.latitudeRaw,
+      coordSource.longitudeRaw,
+      { applySwap: line.applyLatLonSwap === true },
+    );
+    let coordsValid = Number.isFinite(latitude) && Number.isFinite(longitude)
+      && latitude >= line.geo.latMin && latitude <= line.geo.latMax
+      && longitude >= line.geo.lonMin && longitude <= line.geo.lonMax;
+
+    if (!coordsValid && line.overlayLineToken) {
+      const overlayRow = overlayByNorm.get(normalizedName);
+      if (overlayRow) {
+        const overlayCoords = normalizeOfficialLatLon(
+          overlayRow.latitudeRaw,
+          overlayRow.longitudeRaw,
+          { applySwap: true },
+        );
+        if (Number.isFinite(overlayCoords.latitude) && Number.isFinite(overlayCoords.longitude)
+          && overlayCoords.latitude >= line.geo.latMin && overlayCoords.latitude <= line.geo.latMax
+          && overlayCoords.longitude >= line.geo.lonMin && overlayCoords.longitude <= line.geo.lonMax) {
+          latitude = overlayCoords.latitude;
+          longitude = overlayCoords.longitude;
+          swapped = overlayCoords.swapped;
+          coordsValid = true;
+          usedOverlay = true;
+          coordSource = overlayRow;
+          overlayStationNames.push(canvas.stationName);
+        }
+      }
+    }
+
+    if (!coordsValid) {
+      quarantinedPositions.push({
+        lineId: line.lineId,
+        line: line.slug,
+        stationCode: String(canvas.stationCode),
+        stationName: canvas.stationName,
+        stationId: canvas.stationId,
+        latitude: Number.isFinite(latitude) ? latitude : null,
+        longitude: Number.isFinite(longitude) ? longitude : null,
+        x,
+        y,
+        reasonCode: OFFICIAL_MISSING_LATLON,
+      });
+      continue;
+    }
+    if (swapped) swappedCoordinateCount += 1;
+
+    positions.push({
+      lineId: line.lineId,
+      line: line.slug,
+      stationCode: String(canvas.stationCode),
+      stationName: canvas.stationName,
+      stationId: canvas.stationId,
+      latitude,
+      longitude,
+      x,
+      y,
+      labelDx: canvas.labelDx,
+      labelDy: canvas.labelDy,
+      labelPolygon: structuredClone(canvas.labelPolygon),
+      ...(usedOverlay ? { coordinateSourceDatasetId: KRIC_1294_DATASET_ID } : {}),
+      ...(swapped ? { officialLatLonSwapped: true } : {}),
+    });
+  }
+
+  if (!sameStationSets(fileByNorm.keys(), canvasByName.keys())) {
+    throw new Error(`${line.sourceId} official FILE and schematic station sets differ`);
+  }
+
+  positions.sort(comparePositions);
+  quarantinedPositions.sort(comparePositions);
+  if (positions.length + quarantinedPositions.length !== packStations.length) {
+    throw new Error(`${line.sourceId} pack coverage mismatch`);
+  }
+  return {
+    line,
+    positions,
+    quarantinedPositions,
+    rawStationCount: fileByNorm.size,
+    overlayStationNames: overlayStationNames.sort((left, right) => left.localeCompare(right, "en")),
+    swappedCoordinateCount,
+    overlayRawSha256: overlayCsvBytes ? sha256(Buffer.from(overlayCsvBytes)) : null,
+  };
+}
+
+export function collectCapitalLightRailRouteMapPositions({
+  lineKey,
+  sourceId,
+  csvBytes,
+  overlayCsvBytes = null,
+  topologySnapshot,
+  topologySnapshotId,
+  schematicCanvas,
+  previousSnapshot = null,
+  canonicalStationIdentities = null,
+  now = new Date(),
+} = {}) {
+  const capturedAt = validDate(previousSnapshot?.capturedAt ?? now, "capturedAt");
+  const {
+    line,
+    positions,
+    quarantinedPositions,
+    rawStationCount,
+    overlayStationNames,
+    swappedCoordinateCount,
+    overlayRawSha256,
+  } = parseCapitalLightRailRouteMapPositionsCsv({
+    lineKey,
+    sourceId,
+    csvBytes,
+    overlayCsvBytes,
+    topologySnapshot,
+    schematicCanvas,
+    previousSnapshot,
+    canonicalStationIdentities,
+  });
+  const resolvedTopologySnapshotId = requiredTopologySnapshotId(topologySnapshotId);
+  const topologyLineages = [{
+    sourceId: topologySnapshot.sourceId,
+    snapshotId: resolvedTopologySnapshotId,
+    contentSha256: topologySnapshot.contentSha256,
+    lineId: line.lineId,
+  }];
+  const scope = projectScopeEntries([...positions, ...quarantinedPositions]);
+  const datasetIds = line.datasetIds ?? [line.datasetId];
+  const snapshot = {
+    schemaVersion: 1,
+    artifactKind: ARTIFACT_KIND,
+    sourceId: line.sourceId,
+    detailUrl: line.detailUrl,
+    datasetId: line.datasetId,
+    datasetIds: [...datasetIds],
+    datasetUrl: line.detailUrl,
+    endpoint: line.detailUrl,
+    downloadUrl: line.downloadUrl,
+    capturedAt: capturedAt.toISOString(),
+    observedDataUpdatedAt: line.observedDataUpdatedAt,
+    official: true,
+    fixture: false,
+    credentialRequired: false,
+    credentialRedacted: true,
+    rawStationCount,
+    stationCount: positions.length,
+    quarantinedCount: quarantinedPositions.length,
+    lineIds: [line.lineId],
+    lineStationCounts: { [line.slug]: positions.length },
+    fieldsProvided: [...FIELDS_PROVIDED],
+    license: {
+      type: "PUBLIC_DATA_FREE_USE",
+      attribution: line.licenseAttribution,
+      redistributionAllowed: true,
+      evidenceUrl: line.detailUrl,
+    },
+    topologySourceId: TOPOLOGY_SOURCE_ID,
+    topologySnapshotId: resolvedTopologySnapshotId,
+    topologyContentSha256: topologySnapshot.contentSha256,
+    topologyLineages,
+    schematicCanvasSourceId: SCHEMATIC_CANVAS_SOURCE_ID,
+    ...(schematicCanvas?.stationNodes ? { schematicGeometrySha256: sha256(JSON.stringify(schematicCanvas)) } : {}),
+    scope,
+    scopeSha256: sha256(JSON.stringify(scope)),
+    rawSha256: sha256(Buffer.from(csvBytes)),
+    positionsSha256: sha256(JSON.stringify(positions)),
+    positions,
+    quarantinedPositions,
+    ...(line.overlayLineToken ? {
+      overlayDatasetId: KRIC_1294_DATASET_ID,
+      overlayDetailUrl: KRIC_1294_DETAIL_URL,
+      overlayDownloadUrl: KRIC_1294_DOWNLOAD_URL,
+      overlayFixturePath: KRIC_1294_OVERLAY_FIXTURE,
+      overlayLineToken: line.overlayLineToken,
+      overlayStationNames,
+      overlayRawSha256,
+    } : {}),
+    ...(line.applyLatLonSwap ? {
+      officialLatLonSwapRule: "if lon∈[33,43] and lat∈[124,132]: swap",
+      swappedCoordinateCount,
+    } : {}),
+  };
+  return validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, {
+    schematicCanvas: schematicCanvas?.stationNodes ? schematicCanvas : null,
+  });
+}
+
+export function buildCapitalLightRailRouteMapSuccessor({
+  source,
+  candidate,
+  previousSnapshotBytes,
+  csvBytes,
+  overlayCsvBytes = null,
+  topologySnapshot,
+  topologySnapshotId,
+  schematicCanvas,
+  canonicalStationIdentities,
+} = {}) {
+  const sourceId = source?.id;
+  const line = LINE_BY_SOURCE_ID.get(sourceId);
+  if (!line?.geometryLine) {
+    throw new Error("capital light-rail successor requires a cataloged owner geometry line");
+  }
+  if (candidate?.id !== sourceId) {
+    throw new Error("capital light-rail successor source and candidate identities must match");
+  }
+  if (!(previousSnapshotBytes instanceof Uint8Array) || previousSnapshotBytes.byteLength === 0) {
+    throw new Error(`${sourceId} retained admitted snapshot bytes are required`);
+  }
+  const evidence = source.routeMapAdmissionEvidence;
+  if (sha256(Buffer.from(previousSnapshotBytes)) !== evidence?.snapshotSha256) {
+    throw new Error(`${sourceId} retained admitted snapshot byte identity mismatch`);
+  }
+  let previousSnapshot;
+  try {
+    previousSnapshot = JSON.parse(Buffer.from(previousSnapshotBytes).toString("utf8"));
+  } catch {
+    throw new Error(`${sourceId} retained admitted snapshot JSON is invalid`);
+  }
+  if (previousSnapshot?.sourceId !== sourceId) {
+    throw new Error(`${sourceId} retained admitted snapshot source identity mismatch`);
+  }
+  const currentTopology = evidence?.currentTopologyAdmission;
+  if (currentTopology?.topologySnapshotId !== topologySnapshotId
+    || currentTopology?.topologyContentSha256 !== topologySnapshot?.contentSha256
+    || currentTopology?.positionSnapshotSha256 !== evidence?.snapshotSha256) {
+    throw new Error(`${sourceId} current topology admission binding mismatch`);
+  }
+  const snapshot = collectCapitalLightRailRouteMapPositions({
+    sourceId,
+    csvBytes,
+    overlayCsvBytes,
+    topologySnapshot,
+    topologySnapshotId,
+    schematicCanvas,
+    previousSnapshot,
+    canonicalStationIdentities,
+  });
+  for (const field of ["rawSha256", "overlayRawSha256", "observedDataUpdatedAt", "capturedAt"]) {
+    if (snapshot[field] !== previousSnapshot[field]) {
+      throw new Error(`${sourceId} retained admitted snapshot ${field} drift`);
+    }
+  }
+  if (JSON.stringify(snapshot.license) !== JSON.stringify(previousSnapshot.license)) {
+    throw new Error(`${sourceId} retained admitted snapshot license drift`);
+  }
+  const bytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const snapshotSha256 = sha256(bytes);
+  const snapshotId = `${sourceId}-${snapshotSha256}`;
+  const snapshotPath = `tools/datapack/sources/${snapshotId}.json`;
+  const successorSource = structuredClone(source);
+  const successorCandidate = structuredClone(candidate);
+  const sourceEvidence = successorSource.routeMapAdmissionEvidence;
+  for (const field of SUCCESSOR_SNAPSHOT_FIELDS) sourceEvidence[field] = structuredClone(snapshot[field]);
+  Object.assign(sourceEvidence, { snapshotId, snapshotPath, snapshotSha256 });
+  sourceEvidence.currentTopologyAdmission.positionSnapshotSha256 = snapshotSha256;
+  successorSource.coverage = SUCCESSOR_COVERAGE;
+  const candidateEvidence = successorCandidate.evidence;
+  for (const field of SUCCESSOR_SNAPSHOT_FIELDS) candidateEvidence[field] = structuredClone(snapshot[field]);
+  Object.assign(candidateEvidence, { evidenceArtifact: snapshotPath });
+  candidateEvidence.coverageLimitations = [...SUCCESSOR_COVERAGE_LIMITATIONS];
+  return {
+    snapshot: structuredClone(snapshot),
+    bytes,
+    snapshotId,
+    snapshotPath,
+    source: successorSource,
+    candidate: successorCandidate,
+  };
+}
+
+export function validateCapitalLightRailRouteMapPositionsSnapshot(snapshot, { schematicCanvas = null } = {}) {
+  const line = LINE_BY_SOURCE_ID.get(snapshot?.sourceId);
+  if (!line) throw new Error("unknown capital-light rail route map positions sourceId");
+  const topologySnapshotId = requiredTopologySnapshotId(snapshot?.topologySnapshotId);
+  const usesOwnerGeometry = snapshot?.schematicGeometrySha256 != null;
+  if (usesOwnerGeometry && (
+    !Array.isArray(schematicCanvas?.stationNodes)
+    || snapshot.schematicGeometrySha256 !== sha256(JSON.stringify(schematicCanvas))
+  )) {
+    throw new Error(`${line.sourceId} owner geometry byte identity mismatch`);
+  }
+  const positions = snapshot?.positions;
+  const quarantinedPositions = snapshot?.quarantinedPositions;
+  const keys = new Set();
+  const canvasOwners = new Map();
+  const validPositions = Array.isArray(positions)
+    && positions.every((position) => {
+      const key = `${position.lineId}:${position.stationId}`;
+      const owner = position.stationId;
+      const canvasKey = `${position.x},${position.y}`;
+      const canvasOwner = canvasOwners.get(canvasKey);
+      const uniqueCanvas = canvasOwner == null || canvasOwner === owner;
+      const valid = position.lineId === line.lineId
+        && position.line === line.slug
+        && typeof position.stationCode === "string" && position.stationCode.length > 0
+        && typeof position.stationName === "string" && position.stationName.length > 0
+        && typeof position.stationId === "string" && position.stationId.startsWith("station-")
+        && Number.isInteger(position.x) && Number.isInteger(position.y)
+        && isSchematicCanvasCoordinate(position.x, position.y, line, usesOwnerGeometry ? schematicCanvas : null)
+        && Number.isInteger(position.labelDx) && Number.isInteger(position.labelDy)
+        && Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
+        && position.latitude >= line.geo.latMin && position.latitude <= line.geo.latMax
+        && position.longitude >= line.geo.lonMin && position.longitude <= line.geo.lonMax
+        && Array.isArray(position.labelPolygon) && position.labelPolygon.length === 4
+        && position.labelPolygon.every(({ x, y }) => (
+          Number.isInteger(x) && Number.isInteger(y)
+          && (usesOwnerGeometry
+            ? isSchematicCanvasCoordinate(x, y, line, schematicCanvas)
+            : x >= 0 && y >= 0)
+        ))
+        && !keys.has(key)
+        && uniqueCanvas;
+      keys.add(key);
+      canvasOwners.set(canvasKey, owner);
+      return valid;
+    });
+  const quarantinedKeys = new Set();
+  const validQuarantine = Array.isArray(quarantinedPositions)
+    && quarantinedPositions.every((entry) => {
+      const key = `${entry.lineId}:${entry.stationId}`;
+      const reasonOk = entry.reasonCode === OFFICIAL_MISSING_LATLON
+        || entry.reasonCode === OFFICIAL_MISSING_FILE_ROW;
+      const coordsOk = entry.reasonCode === OFFICIAL_MISSING_FILE_ROW
+        || entry.latitude == null || entry.longitude == null
+        || (Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude));
+      const valid = entry.lineId === line.lineId
+        && entry.line === line.slug
+        && typeof entry.stationCode === "string" && entry.stationCode.length > 0
+        && typeof entry.stationName === "string" && entry.stationName.length > 0
+        && typeof entry.stationId === "string" && entry.stationId.startsWith("station-")
+        && Number.isInteger(entry.x) && Number.isInteger(entry.y)
+        && isSchematicCanvasCoordinate(entry.x, entry.y, line, usesOwnerGeometry ? schematicCanvas : null)
+        && reasonOk
+        && coordsOk
+        && !quarantinedKeys.has(key)
+        && !keys.has(key);
+      quarantinedKeys.add(key);
+      return valid;
+    });
+  const projectedScope = validPositions && validQuarantine
+    ? projectScopeEntries([...positions, ...quarantinedPositions])
+    : null;
+  const datasetIds = line.datasetIds ?? [line.datasetId];
+  if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== ARTIFACT_KIND
+    || snapshot.sourceId !== line.sourceId || snapshot.official !== true || snapshot.fixture !== false
+    || snapshot.credentialRequired !== false || snapshot.credentialRedacted !== true
+    || snapshot.datasetId !== line.datasetId || snapshot.detailUrl !== line.detailUrl
+    || snapshot.datasetUrl !== line.detailUrl || snapshot.endpoint !== line.detailUrl
+    || snapshot.downloadUrl !== line.downloadUrl
+    || JSON.stringify(snapshot.datasetIds) !== JSON.stringify(datasetIds)
+    || Number.isNaN(Date.parse(snapshot.capturedAt))
+    || snapshot.observedDataUpdatedAt !== line.observedDataUpdatedAt
+    || snapshot.rawStationCount !== snapshot.stationCount + snapshot.quarantinedCount
+    || snapshot.stationCount !== positions?.length
+    || snapshot.quarantinedCount !== quarantinedPositions?.length
+    || snapshot.rawStationCount !== snapshot.stationCount + snapshot.quarantinedCount
+    || JSON.stringify(snapshot.lineIds) !== JSON.stringify([line.lineId])
+    || JSON.stringify(snapshot.lineStationCounts) !== JSON.stringify({ [line.slug]: snapshot.stationCount })
+    || JSON.stringify(snapshot.fieldsProvided) !== JSON.stringify(FIELDS_PROVIDED)
+    || snapshot.topologySourceId !== TOPOLOGY_SOURCE_ID
+    || snapshot.schematicCanvasSourceId !== SCHEMATIC_CANVAS_SOURCE_ID
+    || !/^[a-f0-9]{64}$/.test(snapshot.topologyContentSha256 ?? "")
+    || !Array.isArray(snapshot.topologyLineages) || snapshot.topologyLineages.length !== 1
+    || snapshot.topologyLineages[0]?.sourceId !== TOPOLOGY_SOURCE_ID
+    || snapshot.topologyLineages[0]?.snapshotId !== topologySnapshotId
+    || snapshot.topologyLineages[0]?.contentSha256 !== snapshot.topologyContentSha256
+    || snapshot.topologyLineages[0]?.lineId !== line.lineId
+    || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(snapshot.scopeSha256 ?? "")
+    || !Array.isArray(snapshot.scope)
+    || JSON.stringify(snapshot.scope) !== JSON.stringify(projectedScope)
+    || snapshot.scopeSha256 !== sha256(JSON.stringify(snapshot.scope))
+    || !validPositions
+    || !validQuarantine
+    || JSON.stringify([...positions].sort(comparePositions)) !== JSON.stringify(positions)
+    || JSON.stringify([...quarantinedPositions].sort(comparePositions)) !== JSON.stringify(quarantinedPositions)
+    || snapshot.positionsSha256 !== sha256(JSON.stringify(positions))) {
+    throw new Error(`invalid ${line.sourceId} route map positions snapshot`);
+  }
+  return snapshot;
+}
+
+function resolveLine(lineKey, sourceId) {
+  const line = getCapitalLightRailRouteMapPositionLine(sourceId ?? lineKey);
+  if (!line) throw new Error(`unknown capital-light rail line: ${sourceId ?? lineKey}`);
+  return line;
+}
+
+function resolveCsvIndexes(header, line) {
+  const stationName = header.findIndex((value) => ["역명", "역사명"].includes(value));
+  const longitude = header.findIndex((value) => ["경도", "역경도", "역 위치(경도)"].includes(value));
+  const latitude = header.findIndex((value) => ["위도", "역위도", "역 위치(위도)"].includes(value));
+  const lineName = header.findIndex((value) => ["선명", "노선명", "운영노선"].includes(value));
+  const operator = header.findIndex((value) => ["철도운영기관", "철도운영기관명", "운영기관명"].includes(value));
+  if (stationName < 0 || longitude < 0 || latitude < 0) {
+    throw new Error(`${line.sourceId} CSV missing lat/lon/name columns`);
+  }
+  if (line.inputKind !== "filtered-csv" && lineName < 0) {
+    throw new Error(`${line.sourceId} CSV missing line column`);
+  }
+  return { stationName, longitude, latitude, lineName, operator };
+}
+
+function indexSchematicCanvas(schematicCanvas, line, topologyLine, previousSnapshot, canonicalStationIdentities) {
+  const resolved = resolveSchematicCanvas(
+    schematicCanvas,
+    line,
+    topologyLine,
+    previousSnapshot,
+    canonicalStationIdentities,
+  );
+  const byName = new Map();
+  for (const entry of resolved.stations) {
+    if (typeof entry.stationName !== "string" || entry.stationName.length === 0) {
+      throw new Error(`${line.sourceId} schematic canvas stationName is required`);
+    }
+    if (typeof entry.stationId !== "string" || !entry.stationId.startsWith("station-")) {
+      throw new Error(`${line.sourceId} schematic canvas stationId is required: ${entry.stationName}`);
+    }
+    if (entry.stationCode == null || String(entry.stationCode).length === 0) {
+      throw new Error(`${line.sourceId} schematic canvas stationCode is required: ${entry.stationName}`);
+    }
+    if (!isSchematicCanvasCoordinate(entry.x, entry.y, line, schematicCanvas)
+      || !Number.isInteger(entry.labelDx) || !Number.isInteger(entry.labelDy)
+      || !Array.isArray(entry.labelPolygon) || entry.labelPolygon.length !== 4
+      || !entry.labelPolygon.every(({ x, y }) => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0)) {
+      throw new Error(`${line.sourceId} schematic canvas invalid geometry: ${entry.stationName}`);
+    }
+    const key = normalizeStationName(entry.stationName);
+    if (byName.has(key)) {
+      throw new Error(`${line.sourceId} schematic canvas duplicate station name: ${key}`);
+    }
+    byName.set(key, {
+      stationCode: String(entry.stationCode),
+      stationName: entry.stationName,
+      stationId: entry.stationId,
+      x: entry.x,
+      y: entry.y,
+      labelDx: entry.labelDx,
+      labelDy: entry.labelDy,
+      labelPolygon: entry.labelPolygon,
+    });
+  }
+  return byName;
+}
+
+function resolveSchematicCanvas(schematicCanvas, line, topologyLine, previousSnapshot, canonicalStationIdentities) {
+  if (Array.isArray(schematicCanvas?.stationNodes)) {
+    return geometryCanvas(
+      schematicCanvas,
+      line,
+      topologyLine,
+      previousSnapshot,
+      canonicalStationIdentities,
+    );
+  }
+  if (Array.isArray(schematicCanvas)) {
+    if (schematicCanvas.some((entry) => entry?.canvasSourceId !== SCHEMATIC_CANVAS_SOURCE_ID)) {
+      throw new Error(`${line.sourceId} schematic canvasSourceId mismatch`);
+    }
+    return { sourceId: SCHEMATIC_CANVAS_SOURCE_ID, stations: schematicCanvas };
+  }
+  if (schematicCanvas?.sourceId !== SCHEMATIC_CANVAS_SOURCE_ID
+    || schematicCanvas.lineId !== line.lineId
+    || !Array.isArray(schematicCanvas.stations)) {
+    throw new Error(`${line.sourceId} schematic canvas fixture station count mismatch`);
+  }
+  return schematicCanvas;
+}
+
+function geometryCanvas(geometry, line, topologyLine, previousSnapshot, canonicalStationIdentities) {
+  if (!line.geometryLine || !Array.isArray(geometry.labels)) {
+    throw new Error(`${line.sourceId} owner geometry is unavailable`);
+  }
+  const geometryBounds = sourceViewBoxBounds(geometry, line);
+  const orderedNames = orderedTopologyStationNames(topologyLine);
+  const previousByName = admittedStationIdentityByName(previousSnapshot, line);
+  const canonicalByName = canonicalStationIdentityByName(canonicalStationIdentities, line);
+  const nodesByName = new Map();
+  for (const node of geometry.stationNodes) {
+    const lines = new Set([
+      node?.dataLine,
+      ...String(node?.transferLines ?? "").split(/\s+/),
+    ]);
+    if (!lines.has(line.geometryLine)) continue;
+    const name = normalizeStationName(node.dataStation);
+    if (nodesByName.has(name)) throw new Error(`${line.sourceId} owner geometry station is ambiguous: ${node.dataStation}`);
+    nodesByName.set(name, node);
+  }
+  if (!sameStationSets(nodesByName.keys(), orderedNames.map(normalizeStationName))) {
+    throw new Error(`${line.sourceId} owner geometry station set differs from topology`);
+  }
+  const labelsByName = new Map();
+  for (const label of geometry.labels) {
+    if (label?.classification !== "STATION_LABEL") continue;
+    const name = normalizeStationName(label.normalizedText ?? label.sourceText);
+    const entries = labelsByName.get(name) ?? [];
+    entries.push(label);
+    labelsByName.set(name, entries);
+  }
+  return {
+    sourceId: SCHEMATIC_CANVAS_SOURCE_ID,
+    lineId: line.lineId,
+    stations: orderedNames.map((stationName, index) => {
+      const name = normalizeStationName(stationName);
+      const node = nodesByName.get(name);
+      const labels = labelsByName.get(name) ?? [];
+      if (!node || labels.length !== 1) {
+        throw new Error(`${line.sourceId} owner geometry is incomplete or ambiguous: ${stationName}`);
+      }
+      const label = labels[0];
+      const x = Math.round(node.x);
+      const y = Math.round(node.y);
+      const polygon = label.polygon?.map(({ x: labelX, y: labelY }) => ({
+        x: Math.round(labelX), y: Math.round(labelY),
+      }));
+      if (!Array.isArray(polygon) || polygon.length !== 4) {
+        throw new Error(`${line.sourceId} owner label geometry is invalid: ${stationName}`);
+      }
+      if (!pointWithinBounds(x, y, geometryBounds)
+        || polygon.some((point) => !pointWithinBounds(point.x, point.y, geometryBounds))) {
+        throw new Error(`${line.sourceId} owner geometry is outside its source viewBox: ${stationName}`);
+      }
+      const centerX = polygon.reduce((sum, point) => sum + point.x, 0) / polygon.length;
+      const centerY = polygon.reduce((sum, point) => sum + point.y, 0) / polygon.length;
+      const previous = previousByName.get(name);
+      const canonical = canonicalByName.get(name);
+      if (!previous && !canonical) {
+        throw new Error(`${line.sourceId} canonical station identity is missing: ${stationName}`);
+      }
+      const stationId = previous?.stationId ?? canonical.stationId;
+      const stationCode = previous?.stationCode ?? String(index + 1);
+      return {
+        stationCode,
+        stationName: name,
+        stationId,
+        x,
+        y,
+        labelDx: Math.round(centerX - x),
+        labelDy: Math.round(centerY - y),
+        labelPolygon: polygon,
+      };
+    }),
+  };
+}
+
+function admittedStationIdentityByName(previousSnapshot, line) {
+  if (previousSnapshot?.sourceId !== line.sourceId || !Array.isArray(previousSnapshot.positions)) {
+    throw new Error(`${line.sourceId} retained admitted snapshot is required`);
+  }
+  const byName = new Map();
+  for (const position of previousSnapshot.positions) {
+    const name = normalizeStationName(position.stationName);
+    if (!name || byName.has(name)
+      || typeof position.stationId !== "string" || !position.stationId.startsWith("station-")
+      || typeof position.stationCode !== "string" || position.stationCode.length === 0) {
+      throw new Error(`${line.sourceId} retained admitted station identity is invalid`);
+    }
+    byName.set(name, { stationId: position.stationId, stationCode: position.stationCode });
+  }
+  return byName;
+}
+
+function canonicalStationIdentityByName(canonicalStationIdentities, line) {
+  if (!Array.isArray(canonicalStationIdentities?.entries)) {
+    throw new Error(`${line.sourceId} canonical station identity mapping is required`);
+  }
+  const byName = new Map();
+  for (const entry of canonicalStationIdentities.entries) {
+    if (entry?.lineId !== line.lineId) continue;
+    const name = normalizeStationName(entry.name);
+    if (!name || byName.has(name)
+      || typeof entry.stationId !== "string" || !entry.stationId.startsWith("station-")) {
+      throw new Error(`${line.sourceId} canonical station identity mapping is invalid`);
+    }
+    byName.set(name, { stationId: entry.stationId });
+  }
+  return byName;
+}
+
+function topologyStationNames(topologyLine) {
+  const names = new Set();
+  for (const entry of topologyLine.scope ?? []) names.add(normalizeStationName(entry.stationName));
+  for (const branch of topologyLine.branchSequences ?? []) {
+    for (const stationName of branch.stationNames ?? []) names.add(normalizeStationName(stationName));
+  }
+  if (names.size === 0) throw new Error("capital topology line has no stations");
+  return names;
+}
+
+function orderedTopologyStationNames(topologyLine) {
+  const sequences = topologyLine.branchSequences ?? [];
+  if (sequences.length !== 1 || !Array.isArray(sequences[0].stationNames)) {
+    throw new Error("capital light-rail topology must have one ordered branch");
+  }
+  const names = sequences[0].stationNames;
+  const normalized = names.map(normalizeStationName);
+  if (new Set(normalized).size !== normalized.length || !sameStationSets(normalized, topologyStationNames(topologyLine))) {
+    throw new Error("capital light-rail topology station order is incomplete or ambiguous");
+  }
+  return names;
+}
+
+function sameStationSets(left, right) {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return leftSet.size === rightSet.size && [...leftSet].every((name) => rightSet.has(name));
+}
+
+function sourceViewBoxBounds(geometry, line) {
+  const [x, y, width, height] = geometry?.sourceViewBox ?? [];
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    throw new Error(`${line.sourceId} owner geometry sourceViewBox is invalid`);
+  }
+  return { xMin: x, xMax: x + width, yMin: y, yMax: y + height };
+}
+
+function pointWithinBounds(x, y, bounds) {
+  return Number.isFinite(x) && Number.isFinite(y)
+    && x >= bounds.xMin && x <= bounds.xMax
+    && y >= bounds.yMin && y <= bounds.yMax;
+}
+
+function isSchematicCanvasCoordinate(x, y, line, schematicCanvas) {
+  if (Array.isArray(schematicCanvas?.stationNodes)) {
+    return pointWithinBounds(x, y, sourceViewBoxBounds(schematicCanvas, line));
+  }
+  return Number.isFinite(x) && Number.isFinite(y)
+    && x >= line.canvas.xMin && x <= line.canvas.xMax
+    && y >= line.canvas.yMin && y <= line.canvas.yMax;
+}
+
+function validateTopologySnapshot(topologySnapshot, line) {
+  if (topologySnapshot?.sourceId !== TOPOLOGY_SOURCE_ID
+    || !/^[a-f0-9]{64}$/.test(topologySnapshot.contentSha256 ?? "")
+    || !Array.isArray(topologySnapshot.lines)) {
+    throw new Error(`${line.sourceId} topology snapshot is invalid`);
+  }
+  const topologyLine = topologySnapshot.lines.find(({ lineId }) => lineId === line.lineId);
+  if (!topologyLine || !Array.isArray(topologyLine.scope)) {
+    throw new Error(`${line.sourceId} topology line scope is invalid`);
+  }
+  const expectedLineHash = sha256(JSON.stringify({
+    scope: topologyLine.scope,
+    edges: topologyLine.edges,
+  }));
+  if (topologyLine.contentSha256 !== expectedLineHash) {
+    throw new Error(`${line.sourceId} topology line contentSha256 mismatch`);
+  }
+  return topologyLine;
+}
+
+export function normalizeCapitalLightStationName(value) {
+  return normalizeStationName(value);
+}
+
+function normalizeStationName(value) {
+  return String(value).normalize("NFKC")
+    .replace(/\s+/g, "")
+    .replace(/[·ㆍ]/g, ".")
+    .replace(/\([^()]*\)$/, "")
+    .replace(/역$/, "");
+}
+
+function parseCsv(text) {
+  const rows = text.split(/\r?\n/).filter((line) => line.length > 0).map((line) => line.split(","));
+  const [header, ...body] = rows;
+  if (header) {
+    for (const [index, row] of body.entries()) {
+      if (row.length !== header.length) {
+        throw new Error(`CSV column count mismatch at row ${index + 2}: expected ${header.length}, got ${row.length}`);
+      }
+    }
+  }
+  return rows;
+}
+
+function comparePositions(left, right) {
+  const leftCode = Number(left.stationCode);
+  const rightCode = Number(right.stationCode);
+  if (Number.isFinite(leftCode) && Number.isFinite(rightCode) && leftCode !== rightCode) {
+    return leftCode - rightCode;
+  }
+  return String(left.stationCode).localeCompare(String(right.stationCode), "en")
+    || String(left.stationId ?? "").localeCompare(String(right.stationId ?? ""), "en")
+    || String(left.stationName ?? "").localeCompare(String(right.stationName ?? ""), "en");
+}
+
+function projectScopeEntries(entries) {
+  return entries
+    .map(({ lineId, stationCode, stationName, stationId }) => ({
+      lineId,
+      stationCode,
+      stationName,
+      stationId,
+    }))
+    .sort(comparePositions);
+}
+
+function validDate(value, label) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
+  return date;
+}
+
+function requiredTopologySnapshotId(value) {
+  if (typeof value !== "string" || !isCapitalRouteTopologySnapshotId(value)) {
+    throw new Error("capital light-rail topology snapshotId is required");
+  }
+  return value;
+}
+
+function parseArgs(argv) {
+  const args = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    if (!argv[index]?.startsWith("--")) {
+      throw new Error("usage: collect-kric-capital-light-rail-route-map-positions.mjs --line <key|sourceId> --input <csv> --topology <json> --schematic <json> --output <absolute.json> [--overlay <csv>] [--previous-snapshot <json> --station-identities <json>] [--captured-at <iso>]");
+    }
+    args[argv[index].slice(2)] = argv[index + 1];
+  }
+  if (!args.line || !args.input || !args.topology || !args.schematic || !args.output || !path.isAbsolute(args.output)) {
+    throw new Error("usage: collect-kric-capital-light-rail-route-map-positions.mjs --line <key|sourceId> --input <csv> --topology <json> --schematic <json> --output <absolute.json> [--overlay <csv>] [--previous-snapshot <json> --station-identities <json>] [--captured-at <iso>]");
+  }
+  return args;
+}
+
+export async function runCapitalLightRailRouteMapPositionsCollector(argv) {
+  const args = parseArgs(argv);
+  const line = resolveLine(args.line);
+  const reads = [
+    readFile(args.input),
+    readFile(args.topology, "utf8").then(JSON.parse),
+    readFile(args.schematic, "utf8").then(JSON.parse),
+  ];
+  if (line.overlayLineToken) {
+    const overlayPath = args.overlay
+      ?? path.resolve(import.meta.dirname, "../..", KRIC_1294_OVERLAY_FIXTURE);
+    reads.push(readFile(overlayPath));
+  }
+  if (line.geometryLine) {
+    if (!args["previous-snapshot"] || !args["station-identities"]) {
+      throw new Error(`${line.sourceId} requires --previous-snapshot and --station-identities`);
+    }
+    reads.push(readFile(args["previous-snapshot"], "utf8").then(JSON.parse));
+    reads.push(readFile(args["station-identities"], "utf8").then(JSON.parse));
+  }
+  const values = await Promise.all(reads);
+  const [csvBytes, topologySnapshot, schematicCanvas] = values;
+  const offset = 3;
+  const overlayCsvBytes = line.overlayLineToken ? values[offset] : null;
+  const previousSnapshot = line.geometryLine ? values[offset + (line.overlayLineToken ? 1 : 0)] : null;
+  const canonicalStationIdentities = line.geometryLine
+    ? values[offset + (line.overlayLineToken ? 2 : 1)]
+    : null;
+  const snapshot = collectCapitalLightRailRouteMapPositions({
+    lineKey: args.line,
+    csvBytes,
+    overlayCsvBytes,
+    topologySnapshot,
+    topologySnapshotId: path.basename(args.topology, ".json"),
+    schematicCanvas,
+    previousSnapshot,
+    canonicalStationIdentities,
+    now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
+  });
+  await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
+  console.log(`${snapshot.sourceId} ready: admitted=${snapshot.stationCount} quarantined=${snapshot.quarantinedCount}`);
+  return snapshot;
+}
+
+export {
+  ARTIFACT_KIND,
+  ISSUE,
+  KRIC_1294_DATASET_ID,
+  KRIC_1294_DETAIL_URL,
+  KRIC_1294_DOWNLOAD_URL,
+  KRIC_1294_OVERLAY_FIXTURE,
+  OFFICIAL_MISSING_FILE_ROW,
+  OFFICIAL_MISSING_LATLON,
+  SCHEMATIC_CANVAS_SOURCE_ID,
+  TOPOLOGY_SOURCE_ID,
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {
+    await runCapitalLightRailRouteMapPositionsCollector(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "capital-light rail route map position collection failed");
+    process.exitCode = 1;
+  }
+}

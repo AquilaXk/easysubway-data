@@ -1,0 +1,108 @@
+name: Source Derivative Rebinding
+
+# 파생 산출물 재결속(#969 P4): 원장 head나 수도권 정본 팩이 main에서 바뀌면(또는 정기 실행으로)
+# controller가 4개 파생 단계를 순서대로 다시 실행하고 바뀐 것이 있을 때만 main에 직접 push한다.
+# - push·정기 실행은 저장소 변수 DATAPACK_SCHEDULED_SOURCE_REBINDING이 true일 때만 돈다. 사람 dispatch는 항상 돈다.
+# - controller 실패·원장 게이트 실패는 job 실패로 남고 실행 요약으로 드러낸다. 이전 값·추정치로 덮지 않는다.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/datapack/release/source-snapshots.json
+      - tools/datapack/release/capital-production-canonical-pack.json
+  schedule:
+    - cron: "41 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: source-derivative-rebinding-main
+  cancel-in-progress: false
+
+jobs:
+  rebind:
+    name: Derivative rebinding
+    # 사람(sender.type이 User) dispatch만 변수와 무관하게 돈다. 행위자 이름(actor·triggering_actor)은 모방할 수 있어 신뢰 근거로 쓰지 않고, GitHub가 이벤트 payload에 채우는 sender.type으로 가른다(Sonar githubactions:S8232).
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User') || vars.DATAPACK_SCHEDULED_SOURCE_REBINDING == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    environment: datapack-release-check
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Decide whether derivative rebinding may run
+        id: decision
+        run: |
+          set -euo pipefail
+          decision_root="${RUNNER_TEMP}/derivative-rebinding-decision/${GITHUB_RUN_ID}"
+          mkdir -p "${decision_root}"
+          printf '[]\n' > "${decision_root}/prs.json"
+          : > "${decision_root}/branches.txt"
+          : > "${decision_root}/automation-branches.txt"
+          node tools/ci/decide-derivative-rebinding.mjs --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+      - name: Rebind derivative artifacts from the current ledger heads
+        id: rebind
+        if: ${{ steps.decision.outputs.state == 'RUN' }}
+        env:
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          base_sha="$(git rev-parse HEAD)"
+          operation="${RUNNER_TEMP}/derivative-rebinding/${GITHUB_RUN_ID}"
+          mkdir -p "${operation}"
+          node tools/datapack/run-derivative-rebinding.mjs --operation-root "${operation}/operation" > "${operation}/result.json"
+          printf 'REBINDING_BASE_SHA=%s\nREBINDING_RESULT=%s\n' "${base_sha}" "${operation}/result.json" >> "${GITHUB_ENV}"
+          if [[ "$(git rev-list --count "${base_sha}..HEAD")" == "0" ]]; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            # #975 리뷰 F5: controller의 커밋 전체가 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)를 통과해야 push한다.
+            node tools/ci/source-ledger-gate.mjs --base-sha "${base_sha}" --output "${operation}/gate.json"
+            printf 'REBINDING_HEAD_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Note derivative bindings are already current
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'false' }}
+        run: |
+          echo "::notice title=Derivative rebinding::every derivative artifact is already bound to the current ledger heads; no commit is needed."
+      - name: Verify the rebinding is based on the current main and push to main
+        id: push
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          summary="${RUNNER_TEMP}/derivative-rebinding/${GITHUB_RUN_ID}/commit-summary.md"
+          node tools/ci/automation-pr-evidence.mjs derivative-rebinding-body --gate "${RUNNER_TEMP}/derivative-rebinding/${GITHUB_RUN_ID}/gate.json" --result "${REBINDING_RESULT}" --base-sha "${REBINDING_BASE_SHA}" --head-sha "${REBINDING_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --output "${summary}"
+          cat "${summary}" >> "${GITHUB_STEP_SUMMARY}"
+          # 재결속은 읽은 main 기준이다. main이 움직였으면 올리지 않고 끝내며 새 push·정기 실행이 다시 만든다.
+          gh auth setup-git
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse origin/main)" != "${REBINDING_BASE_SHA}" ]]; then
+            echo "::notice title=Derivative rebinding::main moved from ${REBINDING_BASE_SHA} while the derivative rebinding was running; nothing was pushed and a newer run decides on the new main."
+            echo "pushed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          git push origin HEAD:main
+          echo "pushed=true" >> "${GITHUB_OUTPUT}"
+      - name: Note rebinding superseded by a newer main
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.push.outputs.pushed == 'false' }}
+        run: |
+          echo "::notice title=Derivative rebinding::the rebinding was built on an older main and was dropped; the next run rebuilds it."
+      - name: Report refresh failure summary
+        if: ${{ failure() || cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow source-derivative-rebinding.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

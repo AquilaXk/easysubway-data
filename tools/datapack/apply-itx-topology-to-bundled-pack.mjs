@@ -1,0 +1,1299 @@
+#!/usr/bin/env node
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { pathToFileURL } from "node:url";
+import { gzipSync } from "node:zlib";
+import { gunzipWithLimit } from "./lib/bounded-zlib.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import {
+  projectedItxDirectionalPairs,
+  validateItxCurrentTopologyAdmission,
+} from "./build-datapack.mjs";
+import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const root = path.resolve(import.meta.dirname, "../..");
+// 출력 팩 바이트는 SQLite 엔진 버전에 묶인다(패치 버전이 달라도 파일 크기와 해시가 달라진다). emit-station-catalog-pack과 같은 런타임만 쓴다.
+const PACK_NODE_VERSION = "24.19.0";
+const PACK_SQLITE_VERSION = "3.53.3";
+const GZIP_HEADER_OS_BYTE_OFFSET = 9;
+const GZIP_HEADER_OS_BYTE = 19;
+const CATALOG_VERSION = 19;
+const MAX_GZIP_DELTA_BYTES = 64 * 1024;
+const CURRENT_VERIFICATION_MODE = "current";
+const IMMUTABLE_INTEGRITY_VERIFICATION_MODE = "immutable-integrity";
+const ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMNS = `
+  service_class TEXT NOT NULL PRIMARY KEY,
+  timetable_artifact_id TEXT NOT NULL,
+  timetable_artifact_sha256 TEXT NOT NULL,
+  canonical_pack_id TEXT NOT NULL,
+  canonical_pack_sha256 TEXT NOT NULL,
+  canonical_pack_sqlite_sha256 TEXT NOT NULL,
+  admission_status TEXT NOT NULL,
+  admission_eligible INTEGER NOT NULL,
+  fresh_until TEXT,
+  source_issue INTEGER NOT NULL,
+  CHECK (service_class = 'ITX_CHEONGCHUN'),
+  CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(canonical_pack_id) > 0),
+  CHECK (length(canonical_pack_sha256) = 64 AND canonical_pack_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(canonical_pack_sqlite_sha256) = 64 AND canonical_pack_sqlite_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (admission_status = 'ADMITTED'),
+  CHECK (admission_eligible = 1),
+  CHECK (fresh_until IS NOT NULL),
+  CHECK (source_issue IN (2116, 2135))
+`;
+const ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_COLUMNS = `
+  service_class TEXT NOT NULL PRIMARY KEY,
+  station_catalog_artifact_kind TEXT NOT NULL,
+  station_catalog_manifest_version INTEGER NOT NULL,
+  station_catalog_pack_id TEXT NOT NULL,
+  station_catalog_station_set_sha256 TEXT NOT NULL,
+  station_catalog_payload_sha256 TEXT NOT NULL,
+  station_catalog_manifest_sha256 TEXT NOT NULL,
+  admission_status TEXT NOT NULL,
+  admission_eligible INTEGER NOT NULL,
+  fresh_until TEXT NOT NULL,
+  source_issue INTEGER NOT NULL,
+  CHECK (service_class = 'ITX_CHEONGCHUN'),
+  CHECK (station_catalog_artifact_kind = 'station-catalog-pack'),
+  CHECK (station_catalog_manifest_version = 1),
+  CHECK (length(station_catalog_pack_id) > 0),
+  CHECK (length(station_catalog_station_set_sha256) = 64 AND station_catalog_station_set_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(station_catalog_payload_sha256) = 64 AND station_catalog_payload_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(station_catalog_manifest_sha256) = 64 AND station_catalog_manifest_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (admission_status = 'ADMITTED'),
+  CHECK (admission_eligible = 1),
+  CHECK (fresh_until IS NOT NULL),
+  CHECK (source_issue = 2649)
+`;
+const ROUTE_SERVICE_ARTIFACT_EVIDENCE_LAYOUT = Object.freeze([
+  ["service_class", "TEXT", 1, 1], ["timetable_artifact_id", "TEXT", 1, 0],
+  ["timetable_artifact_sha256", "TEXT", 1, 0], ["canonical_pack_id", "TEXT", 1, 0],
+  ["canonical_pack_sha256", "TEXT", 1, 0], ["canonical_pack_sqlite_sha256", "TEXT", 1, 0],
+  ["admission_status", "TEXT", 1, 0], ["admission_eligible", "INTEGER", 1, 0],
+  ["fresh_until", "TEXT", 0, 0], ["source_issue", "INTEGER", 1, 0],
+]);
+const ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_LAYOUT = Object.freeze([
+  ["service_class", "TEXT", 1, 1], ["station_catalog_artifact_kind", "TEXT", 1, 0],
+  ["station_catalog_manifest_version", "INTEGER", 1, 0], ["station_catalog_pack_id", "TEXT", 1, 0],
+  ["station_catalog_station_set_sha256", "TEXT", 1, 0], ["station_catalog_payload_sha256", "TEXT", 1, 0],
+  ["station_catalog_manifest_sha256", "TEXT", 1, 0], ["admission_status", "TEXT", 1, 0],
+  ["admission_eligible", "INTEGER", 1, 0], ["fresh_until", "TEXT", 1, 0],
+  ["source_issue", "INTEGER", 1, 0],
+]);
+const ROUTE_SERVICE_V18_MIXED_EVIDENCE_LAYOUT = Object.freeze([
+  ["service_class", "TEXT", 1, 1], ["timetable_artifact_id", "TEXT", 1, 0],
+  ["timetable_artifact_sha256", "TEXT", 1, 0], ["station_catalog_artifact_kind", "TEXT", 1, 0],
+  ["station_catalog_manifest_version", "INTEGER", 1, 0], ["station_catalog_pack_id", "TEXT", 1, 0],
+  ["station_catalog_station_set_sha256", "TEXT", 1, 0], ["station_catalog_payload_sha256", "TEXT", 1, 0],
+  ["station_catalog_manifest_sha256", "TEXT", 1, 0], ["admission_status", "TEXT", 1, 0],
+  ["admission_eligible", "INTEGER", 1, 0], ["fresh_until", "TEXT", 0, 0],
+  ["source_issue", "INTEGER", 1, 0],
+]);
+
+function option(name, fallback) {
+  const index = process.argv.indexOf(name);
+  return index < 0 ? fallback : process.argv[index + 1];
+}
+
+function repositoryPath(value, repositoryRoot = root) {
+  return path.resolve(repositoryRoot, value);
+}
+
+function candidateBuildNow() {
+  const value = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  const buildNow = value == null ? new Date() : new Date(value);
+  if (Number.isNaN(buildNow.getTime()) || (value != null && !value.endsWith("Z"))) {
+    throw new Error("EASYSUBWAY_DATAPACK_BUILD_NOW must be UTC ISO-8601");
+  }
+  return buildNow;
+}
+
+function verificationMode(value) {
+  if (value === CURRENT_VERIFICATION_MODE || value === IMMUTABLE_INTEGRITY_VERIFICATION_MODE) {
+    return value;
+  }
+  throw new Error(`unknown ITX topology verification mode: ${value}`);
+}
+
+async function admittedSource(contractPath, {
+  repositoryRoot = root,
+  verificationMode: requestedVerificationMode = CURRENT_VERIFICATION_MODE,
+  buildNow,
+  currentAdmissionPath = null,
+  requireFresh = true,
+} = {}) {
+  const mode = verificationMode(requestedVerificationMode);
+  if (mode === IMMUTABLE_INTEGRITY_VERIFICATION_MODE && currentAdmissionPath != null) {
+    throw new Error("immutable integrity verification does not accept current admission input");
+  }
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  const reference = contract?.sourceTimetableArtifact;
+  validateAdmittedSourceReference(contract, reference);
+  verifyCurrentItxPromotion({ reference, repositoryRoot });
+  const currentAdmission = currentAdmissionPath == null
+    ? null
+    : JSON.parse(await readFile(currentAdmissionPath, "utf8"));
+  const sourceBytes = await readFile(repositoryPath(reference.artifactPath, repositoryRoot));
+  const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath, repositoryRoot));
+  const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
+    reference,
+    sourceBytes,
+    completenessBytes,
+  );
+  const currentProjection = validateAdmittedSourceDocuments(
+    contract,
+    reference,
+    source,
+    completeness,
+    sha256(sourceBytes),
+    sha256(completenessBytes),
+    mode === IMMUTABLE_INTEGRITY_VERIFICATION_MODE
+      ? { verificationMode: mode }
+      : { verificationMode: mode, buildNow, currentAdmission, requireFresh },
+  );
+  return { contract, reference, source, sourceBytes, currentAdmission, currentProjection };
+}
+
+function deriveAdmittedItxRideEdgeSetSha256(source) {
+  const rides = deriveTopology(source).edges.map((edge) => ({
+    edgeId: edge.id,
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId,
+    edgeType: edge.edgeType,
+    servicePattern: edge.servicePattern,
+    serviceClass: edge.serviceClass,
+    durationSeconds: edge.durationSeconds,
+    distanceMeters: edge.distanceMeters,
+  }));
+  return canonicalRideEdgeSetSha256(rides);
+}
+
+export async function readImmutableItxRideEdgeSetSha256(repositoryRoot = root) {
+  const resolvedRoot = path.resolve(repositoryRoot);
+  const { source } = await admittedSource(
+    path.join(resolvedRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    { repositoryRoot: resolvedRoot, verificationMode: IMMUTABLE_INTEGRITY_VERIFICATION_MODE },
+  );
+  return deriveAdmittedItxRideEdgeSetSha256(source);
+}
+
+export async function readAdmittedItxRideEdgeSetSha256(
+  repositoryRoot = root,
+  { buildNow = candidateBuildNow() } = {},
+) {
+  const resolvedRoot = path.resolve(repositoryRoot);
+  const { source } = await admittedSource(
+    path.join(resolvedRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+    { repositoryRoot: resolvedRoot, buildNow },
+  );
+  return deriveAdmittedItxRideEdgeSetSha256(source);
+}
+
+function validateAdmittedSourceReference(contract, reference) {
+  const artifactId = reference?.artifactId;
+  const sourcePath = `tools/datapack/sources/${artifactId}.json`;
+  const completenessPath = `tools/datapack/sources/${artifactId}-completeness-evidence.json`;
+  if (contract?.schemaVersion !== 2
+    || contract?.artifactKind !== "itx-cheongchun-coverage-contract"
+    || contract?.serviceId !== "ITX_CHEONGCHUN"
+    || reference?.schemaVersion !== 1
+    || reference?.status !== "ADMITTED" || reference?.admissionEligible !== true
+    || !/^itx-cheongchun-source-timetable-\d+$/.test(artifactId ?? "")
+    || reference.artifactPath !== sourcePath
+    || reference.completenessEvidencePath !== completenessPath
+    || !/^[a-f0-9]{64}$/.test(reference.sha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(reference.completenessEvidenceSha256 ?? "")) {
+    throw new Error("ITX topology requires #2135 ADMITTED source contract");
+  }
+  validateCurrentApprovalIdentity(reference);
+}
+
+function validateCurrentApprovalIdentity(reference) {
+  if (!hasCurrentItxPromotionIdentity(reference)) {
+    throw new Error("ITX topology approval identity is invalid");
+  }
+}
+
+export function parseAuthenticatedAdmittedSourceDocuments(reference, sourceBytes, completenessBytes) {
+  if (sha256(sourceBytes) !== reference.sha256
+    || sha256(completenessBytes) !== reference.completenessEvidenceSha256) {
+    throw new Error("ITX topology source bytes do not match the coverage contract");
+  }
+  return { source: JSON.parse(sourceBytes), completeness: JSON.parse(completenessBytes) };
+}
+
+function assertAdmittedSourceAndCompletenessSchema(reference, source, completeness) {
+  if (source?.schemaVersion !== 1
+    || source?.artifactKind !== "itx-cheongchun-source-timetable"
+    || source?.artifactId !== reference.artifactId || source?.serviceId !== "ITX_CHEONGCHUN"
+    || source?.validationStatus !== "SUPPORTED" || source?.freshUntil !== reference.freshUntil
+    || source?.completenessEvidenceSha256 !== reference.completenessEvidenceSha256
+    || completeness?.schemaVersion !== 2
+    || completeness?.artifactKind !== "korail-itx-cheongchun-completeness-evidence"
+    || completeness?.serviceId !== "ITX_CHEONGCHUN"
+    || completeness?.validationMode !== "ADMISSION"
+    || completeness?.validationStatus !== "SUPPORTED"
+    || completeness?.materialization?.status !== "SUPPORTED"
+    || completeness?.admissionStatus !== source.promotionStatus
+    || !isUtcInstant(source?.observedAt)
+    || !isUtcInstant(completeness?.observedAt)
+    || completeness?.observedAt !== source.observedAt
+    || completeness?.sourceTimetableArtifact?.status !== source.promotionStatus
+    || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
+      .includes(source.promotionStatus)
+    || completeness?.sourceTimetableArtifact?.artifactId !== reference.artifactId
+    || completeness?.sourceTimetableArtifact?.policyVersion !== source.policyVersion
+    || completeness?.sourceTimetableArtifact?.freshUntil !== reference.freshUntil
+    || JSON.stringify(completeness?.selectedServiceDates) !== JSON.stringify(source.selectedServiceDates)
+    || !completeness?.allowedConsumerIssues?.includes("#1400")
+    || completeness?.credentialRedacted !== true) {
+    throw new Error("ITX topology source identity is invalid");
+  }
+}
+
+export function validateAdmittedSourceDocuments(
+  contract,
+  reference,
+  source,
+  completeness,
+  sourceSha256,
+  completenessSha256,
+  validation = {},
+) {
+  const options = validation instanceof Date
+    ? { verificationMode: CURRENT_VERIFICATION_MODE, buildNow: validation, currentAdmission: null }
+    : validation;
+  const mode = verificationMode(options.verificationMode ?? CURRENT_VERIFICATION_MODE);
+  if (mode === IMMUTABLE_INTEGRITY_VERIFICATION_MODE
+    && (Object.hasOwn(options, "buildNow") || Object.hasOwn(options, "currentAdmission"))) {
+    throw new Error("immutable integrity verification does not accept clock or current admission input");
+  }
+  const buildNow = mode === CURRENT_VERIFICATION_MODE
+    ? options.buildNow ?? candidateBuildNow()
+    : null;
+  const currentAdmission = mode === CURRENT_VERIFICATION_MODE
+    ? options.currentAdmission ?? null
+    : null;
+  validateAdmittedSourceReference(contract, reference);
+  if (sourceSha256 !== reference.sha256
+    || completenessSha256 !== reference.completenessEvidenceSha256) {
+    throw new Error("ITX topology source bytes do not match the coverage contract");
+  }
+  const requireFresh = options.requireFresh ?? true;
+  const freshUntilMillis = Date.parse(reference.freshUntil);
+  if (!Number.isFinite(freshUntilMillis)
+    || (mode === CURRENT_VERIFICATION_MODE && requireFresh
+      && (!(buildNow instanceof Date) || Number.isNaN(buildNow.getTime())
+        || (currentAdmission == null && freshUntilMillis <= buildNow.getTime())))) {
+    throw new Error("ITX topology source artifact is expired");
+  }
+  const admission = contract?.officialEvidence?.korailCompletenessAdmission;
+  if (Object.hasOwn(source ?? {}, "canonicalPackIdentity")
+    || Object.hasOwn(source ?? {}, "readmissions")
+    || Object.hasOwn(completeness ?? {}, "canonicalPackIdentity")
+    || Object.hasOwn(completeness ?? {}, "readmissions")
+    || Object.hasOwn(admission ?? {}, "canonicalPackIdentity")
+    || !isCurrentItxPromotionMode(reference?.promotion?.mode)) {
+    throw new Error("ITX topology legacy admission is forbidden");
+  }
+  const contractIdentity = stationCatalogIdentity(
+    admission?.stationCatalogPackIdentity,
+    "ITX coverage station catalog identity",
+  );
+  const sourceIdentity = stationCatalogIdentity(
+    source?.stationCatalogPackIdentity,
+    "ITX topology station catalog identity",
+  );
+  const completenessIdentity = stationCatalogIdentity(
+    completeness?.stationCatalogPackIdentity,
+    "ITX completeness station catalog identity",
+  );
+  if (JSON.stringify(contractIdentity) !== JSON.stringify(sourceIdentity)
+    || JSON.stringify(contractIdentity) !== JSON.stringify(completenessIdentity)) {
+    throw new Error("ITX topology station catalog identity mismatch");
+  }
+  assertAdmittedSourceAndCompletenessSchema(reference, source, completeness);
+  if (currentAdmission != null) {
+    return validateItxCurrentTopologyAdmission(currentAdmission, {
+      previousArtifactSha256: reference.sha256,
+      stationSequences: source.stationSequences,
+      now: buildNow,
+    });
+  }
+  const { pairHashes } = projectedItxDirectionalPairs(source.stationSequences);
+  return {
+    sourceId: source.artifactKind,
+    sourceSnapshotId: source.artifactId,
+    evidenceHash: source.evidenceHash,
+    verifiedAt: source.observedAt,
+    freshUntil: reference.freshUntil,
+    pairHashes,
+  };
+}
+
+function isUtcInstant(value) {
+  try {
+    requiredUtcInstant(value, "ITX observation timestamp");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function stationCatalogIdentity(value, label) {
+  const keys = ["artifactKind", "manifestVersion", "catalogPackId", "stationSetSha256", "payloadSha256", "manifestSha256"];
+  if (value == null
+    || Object.keys(value).sort((left, right) => left.localeCompare(right)).join(",")
+      !== [...keys].sort((left, right) => left.localeCompare(right)).join(",")
+    || value.artifactKind !== "station-catalog-pack"
+    || value.manifestVersion !== 1
+    || typeof value.catalogPackId !== "string" || value.catalogPackId.length === 0
+    || ![value.stationSetSha256, value.payloadSha256, value.manifestSha256]
+      .every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))) {
+    throw new Error(`${label} is invalid`);
+  }
+  return value;
+}
+
+function topologyInputPackIdentity(value, label) {
+  const keys = ["id", "sha256", "sqliteSha256", "byteSize"];
+  if (!hasExactKeys(value, keys)
+    || value.id !== "capital"
+    || ![value.sha256, value.sqliteSha256]
+      .every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))
+    || !Number.isSafeInteger(value.byteSize)
+    || value.byteSize <= 0) {
+    throw new Error(`${label} is invalid`);
+  }
+  return value;
+}
+
+function hasExactKeys(value, keys) {
+  return value != null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.keys(value).sort((left, right) => left.localeCompare(right)).join(",")
+      === [...keys].sort((left, right) => left.localeCompare(right)).join(",");
+}
+
+// 입력 팩 식별은 coverage contract의 topologyInputPackIdentity가 정한다(#979). 승격마다 원천 sha를 코드 허용 목록에 사람이 더하지 않는다.
+// 이 식별이 실제 입력 팩과 같은지는 고정된 mobile fixture를 staging하는 단계(Derive ITX-청춘 topology into the staged Mobile fixture)와 write 모드의 입력 팩 대조가 강제한다.
+export async function admittedTopologySource(reference, source, _currentAdmission = null, contract = null) {
+  if (Object.hasOwn(source, "canonicalPackIdentity")
+    || Object.hasOwn(source, "readmissions")
+    || !isCurrentItxPromotionMode(reference?.promotion?.mode)) {
+    throw new Error("ITX topology legacy admission is forbidden");
+  }
+  const identity = stationCatalogIdentity(source?.stationCatalogPackIdentity, "ITX topology station catalog identity");
+  const input = topologyInputPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
+    "ITX topology input pack identity",
+  );
+  return {
+    reference,
+    source,
+    stationCatalogPackIdentity: identity,
+    gzipSha256: input.sha256,
+    sqliteSha256: input.sqliteSha256,
+    byteSize: input.byteSize,
+  };
+}
+
+export function validateTopologyEvidence({
+  contract,
+  reference,
+  source,
+  topology,
+  evidence,
+  index,
+  inputGzipBytes,
+  admittedInput,
+}) {
+  const pack = index.packs?.find(({ id }) => id === "capital");
+  const inputSqliteBytes = gunzipWithLimit(inputGzipBytes, {
+    maxOutputLength: 512 * 1024 * 1024,
+    label: "ITX topology input pack",
+  });
+  const sourceIdentity = stationCatalogIdentity(
+    source?.stationCatalogPackIdentity,
+    "ITX topology station catalog identity",
+  );
+  const contractIdentity = stationCatalogIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.stationCatalogPackIdentity,
+    "ITX coverage station catalog identity",
+  );
+  const evidenceIdentity = stationCatalogIdentity(
+    evidence?.stationCatalogPackIdentity,
+    "ITX topology evidence station catalog identity",
+  );
+  const contractInput = topologyInputPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
+    "ITX topology input pack identity",
+  );
+  if (!hasExactKeys(evidence, [
+    "schemaVersion", "artifactKind", "serviceId", "sourceIssue",
+    "stationCatalogPackIdentity", "sourceArtifact", "topology", "pack",
+  ])
+    || Object.hasOwn(source, "canonicalPackIdentity")
+    || Object.hasOwn(source, "readmissions")
+    || !isCurrentItxPromotionMode(reference?.promotion?.mode)
+    || JSON.stringify(contractIdentity) !== JSON.stringify(sourceIdentity)
+    || JSON.stringify(evidenceIdentity) !== JSON.stringify(sourceIdentity)
+    || JSON.stringify(evidence?.sourceArtifact?.stationCatalogPackIdentity)
+      !== JSON.stringify(sourceIdentity)
+    || contractInput.sha256 !== admittedInput.gzipSha256
+    || contractInput.sqliteSha256 !== admittedInput.sqliteSha256
+    || contractInput.byteSize !== admittedInput.byteSize
+    || evidence?.schemaVersion !== 1
+    || evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence?.sourceIssue !== 2135
+    || evidence?.serviceId !== "ITX_CHEONGCHUN"
+    || evidence?.sourceArtifact?.id !== reference.artifactId
+    || evidence?.sourceArtifact?.sha256 !== reference.sha256
+    || evidence?.sourceArtifact?.completenessEvidenceSha256 !== reference.completenessEvidenceSha256
+    || evidence?.sourceArtifact?.freshUntil !== reference.freshUntil
+    || evidence?.topology?.stationMembershipCount !== topology.stations.length
+    || evidence?.topology?.servedStationCount !== topology.servedStations.length
+    || evidence?.pack?.inputSha256 !== admittedInput.gzipSha256
+    || evidence?.pack?.inputSqliteSha256 !== admittedInput.sqliteSha256
+    || evidence?.pack?.inputByteSize !== admittedInput.byteSize
+    || evidence?.topology?.sha256 !== topology.sha256
+    || evidence?.topology?.edgeCount !== topology.edges.length
+    || JSON.stringify(evidence?.topology?.directions) !== JSON.stringify(["up", "down"])
+    || evidence?.topology?.connectedComponentCount !== 1
+    || evidence?.topology?.isolatedServedStationCount !== 0
+    || evidence?.topology?.durationSecondsEmbedded !== false
+    || evidence?.topology?.fareEmbedded !== false
+    || evidence?.pack?.id !== "capital"
+    || evidence?.pack?.outputSha256 !== sha256(inputGzipBytes)
+    || evidence?.pack?.byteSize !== inputGzipBytes.length
+    || evidence?.pack?.byteSizeDelta !== inputGzipBytes.length - evidence.pack.inputByteSize
+    || evidence.pack.byteSizeDelta > MAX_GZIP_DELTA_BYTES
+    || pack?.sha256 !== sha256(inputGzipBytes)
+    || pack?.sqliteSha256 !== evidence?.pack?.outputSqliteSha256
+    || pack?.byteSize !== inputGzipBytes.length) {
+    throw new Error("ITX topology evidence or bundled pack index is stale");
+  }
+  return { inputSqliteBytes };
+}
+
+function routeServiceEvidence(contract, reference, source, canonicalPackIdentity, currentProjection) {
+  const identity = stationCatalogIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.stationCatalogPackIdentity,
+    "ITX coverage station catalog identity",
+  );
+  if (JSON.stringify(identity) !== JSON.stringify(source?.stationCatalogPackIdentity)) {
+    throw new Error("ITX coverage and source station catalog identity mismatch");
+  }
+  return {
+    artifactEvidence: {
+      serviceClass: "ITX_CHEONGCHUN",
+      timetableArtifactId: reference.artifactId,
+      timetableArtifactSha256: reference.sha256,
+      canonicalPackId: canonicalPackIdentity.id,
+      canonicalPackSha256: canonicalPackIdentity.sha256,
+      canonicalPackSqliteSha256: canonicalPackIdentity.sqliteSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: 1,
+      freshUntil: currentProjection.freshUntil,
+      sourceIssue: 2135,
+    },
+    stationCatalogEvidence: {
+      serviceClass: "ITX_CHEONGCHUN",
+      stationCatalogArtifactKind: identity.artifactKind,
+      stationCatalogManifestVersion: identity.manifestVersion,
+      stationCatalogPackId: identity.catalogPackId,
+      stationCatalogStationSetSha256: identity.stationSetSha256,
+      stationCatalogPayloadSha256: identity.payloadSha256,
+      stationCatalogManifestSha256: identity.manifestSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: 1,
+      freshUntil: currentProjection.freshUntil,
+      sourceIssue: 2649,
+    },
+  };
+}
+
+function collectTopologySequences(stationSequences, corridorSequences) {
+  const servedStations = new Map();
+  const edges = new Map();
+  const adjacency = new Map();
+  const directions = new Set();
+  for (const sequence of stationSequences) {
+    if (!Array.isArray(sequence.stops) || sequence.stops.length < 2) {
+      throw new Error(`ITX topology sequence needs at least two stops: ${sequence.trainNumber ?? "unknown"}`);
+    }
+    directions.add(sequence.directionId);
+    for (const stop of sequence.stops) {
+      if (typeof stop.stationId !== "string" || typeof stop.lineId !== "string") {
+        throw new Error("ITX topology stop identity is invalid");
+      }
+      servedStations.set(`${stop.stationId}:${stop.lineId}`, {
+        stationId: stop.stationId,
+        lineId: stop.lineId,
+      });
+    }
+    for (let index = 1; index < sequence.stops.length; index += 1) {
+      const from = sequence.stops[index - 1];
+      const to = sequence.stops[index];
+      const fromNodeId = `${from.stationId}:${from.lineId}:EXPRESS`;
+      const toNodeId = `${to.stationId}:${to.lineId}:EXPRESS`;
+      const fromKey = `${from.stationId}:${from.lineId}`;
+      const toKey = `${to.stationId}:${to.lineId}`;
+      const fromSequence = corridorSequences.get(fromKey);
+      const toSequence = corridorSequences.get(toKey);
+      const increasing = sequence.directionId === "up" && fromSequence < toSequence;
+      const decreasing = sequence.directionId === "down" && fromSequence > toSequence;
+      if (!Number.isInteger(fromSequence) || !Number.isInteger(toSequence)
+        || from.corridorSequence !== fromSequence || to.corridorSequence !== toSequence
+        || (!increasing && !decreasing)) {
+        throw new Error(`ITX topology direction is invalid: ${sequence.trainNumber ?? "unknown"}`);
+      }
+      if (!adjacency.has(fromKey)) adjacency.set(fromKey, new Set());
+      if (!adjacency.has(toKey)) adjacency.set(toKey, new Set());
+      adjacency.get(fromKey).add(toKey);
+      adjacency.get(toKey).add(fromKey);
+      const key = `${fromNodeId}->${toNodeId}`;
+      edges.set(key, {
+        id: `itx-cheongchun:${sha256(key).slice(0, 20)}`,
+        fromNodeId,
+        toNodeId,
+        durationSeconds: 0,
+        distanceMeters: 0,
+        edgeType: "RIDE",
+        servicePattern: "EXPRESS",
+        serviceClass: "ITX_CHEONGCHUN",
+      });
+    }
+  }
+  if (directions.size !== 2 || !directions.has("up") || !directions.has("down")) {
+    throw new Error("ITX topology requires U/D station sequences");
+  }
+  return { servedStations, edges, adjacency };
+}
+
+function assertConnectedServedStationGraph(expectedServedStationKeys, servedStations, stations, adjacency) {
+  if (expectedServedStationKeys.size === 0
+    || expectedServedStationKeys.size !== servedStations.size
+    || [...expectedServedStationKeys].some((key) => !servedStations.has(key))
+    || [...servedStations.keys()].some((key) => !stations.has(key))) {
+    throw new Error("ITX topology must cover the admitted service stop set");
+  }
+  const [firstServedStation] = expectedServedStationKeys;
+  const visited = new Set([firstServedStation]);
+  const pending = [firstServedStation];
+  while (pending.length > 0) {
+    for (const neighbor of adjacency.get(pending.pop()) ?? []) {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        pending.push(neighbor);
+      }
+    }
+  }
+  if (visited.size !== expectedServedStationKeys.size) {
+    throw new Error("ITX topology service stop graph must be connected");
+  }
+}
+
+export function deriveTopology(source) {
+  if (!Array.isArray(source?.stationSequences) || source.stationSequences.length === 0) {
+    throw new Error("ITX topology stationSequences must be non-empty");
+  }
+  const rosterStations = (source.stationRosters ?? [])
+    .flatMap(({ stations }) => stations ?? []);
+  const stations = new Map(rosterStations
+    .map(({ canonicalStationId, lineId }) => [
+      `${canonicalStationId}:${lineId}`,
+      { stationId: canonicalStationId, lineId },
+    ]));
+  const corridorSequences = new Map(rosterStations.map((station) => [
+    `${station.canonicalStationId}:${station.lineId}`,
+    station.corridorSequence,
+  ]));
+  if (stations.size === 0) throw new Error("ITX topology canonical station roster is empty");
+  const { servedStations, edges, adjacency } = collectTopologySequences(
+    source.stationSequences,
+    corridorSequences,
+  );
+  const expectedServedStationKeys = new Set((source.transitStopTimes ?? [])
+    .map(({ stationId, lineId }) => `${stationId}:${lineId}`));
+  assertConnectedServedStationGraph(expectedServedStationKeys, servedStations, stations, adjacency);
+  const topology = {
+    stations: [...stations.values()].sort((left, right) => codepointCompare(left.stationId, right.stationId)
+      || codepointCompare(left.lineId, right.lineId)),
+    servedStations: [...servedStations.values()].sort((left, right) => codepointCompare(left.stationId, right.stationId)
+      || codepointCompare(left.lineId, right.lineId)),
+    edges: [...edges.values()].sort((left, right) => codepointCompare(left.id, right.id)),
+  };
+  const normalizedBytes = Buffer.from(`${JSON.stringify(topology)}\n`);
+  return { ...topology, normalizedBytes, sha256: sha256(normalizedBytes) };
+}
+
+export function projectItxTopologyIntoCanonicalFixture(fixture, topology) {
+  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  if (fixture?.manifest?.channel !== "production"
+    || packs.length !== 1
+    || packs[0].artifactKind !== "production"
+    || !Array.isArray(packs[0].networkEdges)
+    || !Array.isArray(packs[0].stationLines)) {
+    throw new Error("ITX topology canonical fixture is invalid");
+  }
+  const pack = packs[0];
+  const memberships = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const projected = topology.edges.map((edge) => {
+    const [fromStationId, fromLineId] = String(edge.fromNodeId).split(":");
+    const [toStationId, toLineId] = String(edge.toNodeId).split(":");
+    if (!memberships.has(`${fromStationId}\0${fromLineId}`)
+      || !memberships.has(`${toStationId}\0${toLineId}`)) {
+      throw new Error("ITX topology canonical fixture station membership is missing");
+    }
+    return {
+      ...edge,
+      includesStairs: false,
+      stairAccessState: "UNKNOWN",
+      accessibilityStatus: "UNKNOWN",
+      reliabilityScore: 100,
+      facilityId: null,
+    };
+  });
+  const retained = pack.networkEdges.filter(({ serviceClass }) => serviceClass !== "ITX_CHEONGCHUN");
+  pack.networkEdges = [...retained, ...projected]
+    .sort((left, right) => codepointCompare(left.id, right.id));
+  if (pack.minimumTableRows && typeof pack.minimumTableRows === "object"
+    && Object.hasOwn(pack.minimumTableRows, "network_edges")) {
+    pack.minimumTableRows.network_edges = pack.networkEdges.length;
+  }
+  return { edgeCount: projected.length, topologySha256: topology.sha256 };
+}
+
+function hasColumn(database, table, column) {
+  return database.prepare(`PRAGMA table_info(${table})`).all().some(({ name }) => name === column);
+}
+
+function writeRouteServiceEvidence(database, admissionEvidence) {
+  const { artifactEvidence, stationCatalogEvidence } = admissionEvidence;
+  database.prepare("DELETE FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+  database.prepare("DELETE FROM route_service_station_catalog_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+  database.prepare(`
+    INSERT INTO route_service_artifact_evidence (
+      service_class, timetable_artifact_id, timetable_artifact_sha256,
+      canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+      admission_status, admission_eligible, fresh_until, source_issue
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    artifactEvidence.serviceClass,
+    artifactEvidence.timetableArtifactId,
+    artifactEvidence.timetableArtifactSha256,
+    artifactEvidence.canonicalPackId,
+    artifactEvidence.canonicalPackSha256,
+    artifactEvidence.canonicalPackSqliteSha256,
+    artifactEvidence.admissionStatus,
+    artifactEvidence.admissionEligible,
+    artifactEvidence.freshUntil,
+    artifactEvidence.sourceIssue,
+  );
+  database.prepare(`
+    INSERT INTO route_service_station_catalog_evidence (
+      service_class, station_catalog_artifact_kind, station_catalog_manifest_version,
+      station_catalog_pack_id, station_catalog_station_set_sha256,
+      station_catalog_payload_sha256, station_catalog_manifest_sha256,
+      admission_status, admission_eligible, fresh_until, source_issue
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    stationCatalogEvidence.serviceClass,
+    stationCatalogEvidence.stationCatalogArtifactKind,
+    stationCatalogEvidence.stationCatalogManifestVersion,
+    stationCatalogEvidence.stationCatalogPackId,
+    stationCatalogEvidence.stationCatalogStationSetSha256,
+    stationCatalogEvidence.stationCatalogPayloadSha256,
+    stationCatalogEvidence.stationCatalogManifestSha256,
+    stationCatalogEvidence.admissionStatus,
+    stationCatalogEvidence.admissionEligible,
+    stationCatalogEvidence.freshUntil,
+    stationCatalogEvidence.sourceIssue,
+  );
+}
+
+function normalizedSql(value) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function tableHasExactLayout(database, table, expectedLayout, requiredConstraints) {
+  const tableRow = database.prepare(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?`).get(table);
+  if (tableRow == null) return false;
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all()
+    .map(({ name, type, notnull, pk }) => [name, type, notnull, pk]);
+  const schema = normalizedSql(tableRow.sql);
+  return JSON.stringify(columns) === JSON.stringify(expectedLayout)
+    && requiredConstraints.every((constraint) => schema.includes(normalizedSql(constraint)));
+}
+
+function tableExists(database, table) {
+  return database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(table) != null;
+}
+
+function routeServiceEvidenceLayout(database) {
+  const artifactExists = tableExists(database, "route_service_artifact_evidence");
+  const stationExists = tableExists(database, "route_service_station_catalog_evidence");
+  const artifactCurrent = tableHasExactLayout(database, "route_service_artifact_evidence", ROUTE_SERVICE_ARTIFACT_EVIDENCE_LAYOUT, [
+    "CHECK (service_class = 'ITX_CHEONGCHUN')",
+    "CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(canonical_pack_id) > 0)",
+    "CHECK (length(canonical_pack_sha256) = 64 AND canonical_pack_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(canonical_pack_sqlite_sha256) = 64 AND canonical_pack_sqlite_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (admission_status = 'ADMITTED')", "CHECK (admission_eligible = 1)",
+    "CHECK (fresh_until IS NOT NULL)", "CHECK (source_issue IN (2116, 2135))",
+  ]);
+  const stationCurrent = tableHasExactLayout(database, "route_service_station_catalog_evidence", ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_LAYOUT, [
+    "CHECK (service_class = 'ITX_CHEONGCHUN')", "CHECK (station_catalog_artifact_kind = 'station-catalog-pack')",
+    "CHECK (station_catalog_manifest_version = 1)", "CHECK (length(station_catalog_pack_id) > 0)",
+    "CHECK (length(station_catalog_station_set_sha256) = 64 AND station_catalog_station_set_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(station_catalog_payload_sha256) = 64 AND station_catalog_payload_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(station_catalog_manifest_sha256) = 64 AND station_catalog_manifest_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (admission_status = 'ADMITTED')", "CHECK (admission_eligible = 1)",
+    "CHECK (fresh_until IS NOT NULL)", "CHECK (source_issue = 2649)",
+  ]);
+  const legacyV18 = !stationExists && tableHasExactLayout(database, "route_service_artifact_evidence", ROUTE_SERVICE_V18_MIXED_EVIDENCE_LAYOUT, [
+    "CHECK (service_class = 'ITX_CHEONGCHUN')",
+    "CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (station_catalog_artifact_kind = 'station-catalog-pack')", "CHECK (station_catalog_manifest_version = 1)",
+    "CHECK (length(station_catalog_pack_id) > 0)",
+    "CHECK (length(station_catalog_station_set_sha256) = 64 AND station_catalog_station_set_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(station_catalog_payload_sha256) = 64 AND station_catalog_payload_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(station_catalog_manifest_sha256) = 64 AND station_catalog_manifest_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (admission_status = 'ADMITTED')", "CHECK (admission_eligible = 1)", "CHECK (fresh_until IS NOT NULL)",
+    "CHECK (source_issue IN (2116, 2135))",
+  ]);
+  const legacyV18Artifact = !artifactCurrent && !stationExists && tableHasExactLayout(database,
+    "route_service_artifact_evidence", ROUTE_SERVICE_ARTIFACT_EVIDENCE_LAYOUT, [
+      "CHECK (service_class = 'ITX_CHEONGCHUN')",
+      "CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*')",
+      "CHECK (length(canonical_pack_sha256) = 64 AND canonical_pack_sha256 NOT GLOB '*[^0-9a-f]*')",
+      "CHECK (length(canonical_pack_sqlite_sha256) = 64 AND canonical_pack_sqlite_sha256 NOT GLOB '*[^0-9a-f]*')",
+      "CHECK (admission_status IN ('MISSING', 'ADMITTED'))", "CHECK (admission_eligible IN (0, 1))",
+      "CHECK (source_issue IN (2116, 2135))",
+    ]);
+  return { artifactExists, stationExists, artifactCurrent, stationCurrent, legacyV18: legacyV18 || legacyV18Artifact };
+}
+
+function requireExactRouteServiceEvidenceLayout(database, currentVersion) {
+  const layout = routeServiceEvidenceLayout(database);
+  if (currentVersion === 19) {
+    if (!layout.artifactCurrent || !layout.stationCurrent) {
+      throw new Error("v19 route service evidence schema is malformed or partial");
+    }
+    const artifactCount = database.prepare("SELECT count(*) AS count FROM route_service_artifact_evidence").get().count;
+    const stationCount = database.prepare("SELECT count(*) AS count FROM route_service_station_catalog_evidence").get().count;
+    if (artifactCount !== 1 || stationCount !== 1) {
+      throw new Error("v19 route service evidence requires exactly one row in each domain");
+    }
+    return "v19";
+  }
+  if (currentVersion === 18) {
+    if (!layout.legacyV18) throw new Error("v18 route service evidence schema is malformed or partial");
+    return "v18";
+  }
+  if ((currentVersion === 16 || currentVersion === 17)
+    && !layout.artifactExists && !layout.stationExists
+    && tableExists(database, "transit_trips") && tableExists(database, "network_edges")) {
+    return "legacy";
+  }
+  throw new Error(`ITX topology does not support route service evidence layout at user_version ${currentVersion}`);
+}
+
+function validateRouteServiceEvidence(admissionEvidence) {
+  const artifact = admissionEvidence?.artifactEvidence;
+  const station = admissionEvidence?.stationCatalogEvidence;
+  const artifactKeys = [
+    "serviceClass", "timetableArtifactId", "timetableArtifactSha256", "canonicalPackId",
+    "canonicalPackSha256", "canonicalPackSqliteSha256", "admissionStatus", "admissionEligible",
+    "freshUntil", "sourceIssue",
+  ];
+  const stationKeys = [
+    "serviceClass", "stationCatalogArtifactKind", "stationCatalogManifestVersion", "stationCatalogPackId",
+    "stationCatalogStationSetSha256", "stationCatalogPayloadSha256", "stationCatalogManifestSha256",
+    "admissionStatus", "admissionEligible", "freshUntil", "sourceIssue",
+  ];
+  if (!hasExactKeys(admissionEvidence, ["artifactEvidence", "stationCatalogEvidence"])
+    || !hasExactKeys(artifact, artifactKeys) || !hasExactKeys(station, stationKeys)
+    || artifact.serviceClass !== "ITX_CHEONGCHUN" || station.serviceClass !== "ITX_CHEONGCHUN"
+    || artifact.admissionStatus !== "ADMITTED" || station.admissionStatus !== "ADMITTED"
+    || artifact.admissionEligible !== 1 || station.admissionEligible !== 1
+    || artifact.sourceIssue !== 2135 || station.sourceIssue !== 2649
+    || typeof artifact.timetableArtifactId !== "string" || artifact.timetableArtifactId.length === 0
+    || typeof artifact.canonicalPackId !== "string" || artifact.canonicalPackId.length === 0
+    || typeof station.stationCatalogPackId !== "string" || station.stationCatalogPackId.length === 0
+    || station.stationCatalogArtifactKind !== "station-catalog-pack"
+    || station.stationCatalogManifestVersion !== 1
+    || artifact.freshUntil !== station.freshUntil || Number.isNaN(Date.parse(artifact.freshUntil ?? ""))
+    || ![
+      artifact.timetableArtifactSha256, artifact.canonicalPackSha256, artifact.canonicalPackSqliteSha256,
+      station.stationCatalogStationSetSha256, station.stationCatalogPayloadSha256,
+      station.stationCatalogManifestSha256,
+    ].every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))) {
+    throw new Error("ITX topology requires independent current route service evidence");
+  }
+}
+
+function ensureRouteServiceEvidenceSchemas(database, admissionEvidence, layout) {
+  if (layout === "v18") database.exec("ALTER TABLE route_service_artifact_evidence RENAME TO route_service_artifact_evidence_v18");
+  if (layout !== "v19") {
+    database.exec(`CREATE TABLE route_service_artifact_evidence (${ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMNS})`);
+    database.exec(`CREATE TABLE route_service_station_catalog_evidence (${ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_COLUMNS})`);
+  }
+  writeRouteServiceEvidence(database, admissionEvidence);
+  assertStoredRouteServiceEvidence(database, admissionEvidence);
+  if (layout === "v18") database.exec("DROP TABLE route_service_artifact_evidence_v18");
+}
+
+function assertStoredRouteServiceEvidence(database, admissionEvidence) {
+  const artifactEvidence = database.prepare(`
+    SELECT service_class AS serviceClass, timetable_artifact_id AS timetableArtifactId,
+           timetable_artifact_sha256 AS timetableArtifactSha256,
+           canonical_pack_id AS canonicalPackId, canonical_pack_sha256 AS canonicalPackSha256,
+           canonical_pack_sqlite_sha256 AS canonicalPackSqliteSha256,
+           admission_status AS admissionStatus, admission_eligible AS admissionEligible,
+           fresh_until AS freshUntil, source_issue AS sourceIssue
+    FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'
+  `).get();
+  const stationCatalogEvidence = database.prepare(`
+    SELECT service_class AS serviceClass,
+           station_catalog_artifact_kind AS stationCatalogArtifactKind,
+           station_catalog_manifest_version AS stationCatalogManifestVersion,
+           station_catalog_pack_id AS stationCatalogPackId,
+           station_catalog_station_set_sha256 AS stationCatalogStationSetSha256,
+           station_catalog_payload_sha256 AS stationCatalogPayloadSha256,
+           station_catalog_manifest_sha256 AS stationCatalogManifestSha256,
+           admission_status AS admissionStatus, admission_eligible AS admissionEligible,
+           fresh_until AS freshUntil, source_issue AS sourceIssue
+    FROM route_service_station_catalog_evidence WHERE service_class = 'ITX_CHEONGCHUN'
+  `).get();
+  const artifactCount = database.prepare("SELECT count(*) AS count FROM route_service_artifact_evidence").get().count;
+  const stationCount = database.prepare("SELECT count(*) AS count FROM route_service_station_catalog_evidence").get().count;
+  if (artifactCount !== 1 || stationCount !== 1
+    || JSON.stringify({ artifactEvidence, stationCatalogEvidence }) !== JSON.stringify(admissionEvidence)) {
+    throw new Error("current route service evidence replacement is incomplete");
+  }
+}
+
+function ensureVersion19(database, admissionEvidence) {
+  const currentVersion = database.prepare("PRAGMA user_version").get().user_version;
+  if (currentVersion !== CATALOG_VERSION) {
+    throw new Error(`ITX topology requires current catalog user_version ${CATALOG_VERSION}; found ${currentVersion}`);
+  }
+  const evidenceLayout = requireExactRouteServiceEvidenceLayout(database, currentVersion);
+  ensureRouteServiceEvidenceSchemas(database, admissionEvidence, evidenceLayout);
+}
+
+export function bindItxTopologyEdgeProvenance(topology, edgeAdmission) {
+  const sourceId = edgeAdmission?.sourceId;
+  const sourceSnapshotId = edgeAdmission?.sourceSnapshotId;
+  const evidenceHash = edgeAdmission?.evidenceHash;
+  const pairHashes = edgeAdmission?.pairHashes;
+  const lastVerifiedAt = Math.floor(requiredUtcInstant(
+    edgeAdmission?.verifiedAt,
+    "ITX topology edge verifiedAt",
+  ) / 1000);
+  if (typeof sourceId !== "string" || sourceId.length === 0
+    || typeof sourceSnapshotId !== "string" || sourceSnapshotId.length === 0
+    || !/^[a-f0-9]{64}$/u.test(evidenceHash ?? "")
+    || !(pairHashes instanceof Map)
+    || topology?.edges?.length !== pairHashes.size) {
+    throw new Error("ITX topology edge provenance admission is incomplete");
+  }
+  const projectedPairIds = new Set();
+  const edges = topology.edges.map((edge) => {
+    const [fromStationId] = String(edge.fromNodeId).split(":");
+    const [toStationId] = String(edge.toNodeId).split(":");
+    const pairId = `${fromStationId}\0${toStationId}`;
+    if (projectedPairIds.has(pairId)) {
+      throw new Error("ITX topology edge provenance contains a duplicate directional pair");
+    }
+    projectedPairIds.add(pairId);
+    const providerRecordHash = pairHashes.get(pairId);
+    if (!/^[a-f0-9]{64}$/u.test(providerRecordHash ?? "")) {
+      throw new Error(`ITX topology edge provenance is missing: ${edge.id}`);
+    }
+    return {
+      ...edge,
+      includesStairs: 0,
+      stairAccessState: "UNKNOWN",
+      accessibilityStatus: "UNKNOWN",
+      reliabilityScore: 100,
+      sourceId,
+      sourceSnapshotId,
+      providerRecordHash,
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      facilityId: null,
+      lastVerifiedAt,
+      evidenceHash,
+    };
+  });
+  if (projectedPairIds.size !== pairHashes.size
+    || [...pairHashes.keys()].some((pairId) => !projectedPairIds.has(pairId))) {
+    throw new Error("ITX topology edge provenance contains an extra directional pair");
+  }
+  return edges;
+}
+
+export function applyTopology(sqlitePath, topology, admissionEvidence, edgeAdmission) {
+  const database = new DatabaseSync(sqlitePath);
+  try {
+    database.exec("PRAGMA foreign_keys = ON");
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      validateRouteServiceEvidence(admissionEvidence);
+      ensureVersion19(database, admissionEvidence);
+      for (const station of topology.stations) {
+        const exists = database.prepare(`
+          SELECT EXISTS(
+            SELECT 1 FROM station_lines sl
+            JOIN route_map_positions rm
+              ON rm.station_id = sl.station_id AND rm.line_id = sl.line_id
+            WHERE sl.station_id = ? AND sl.line_id = ?
+          ) AS present
+        `).get(station.stationId, station.lineId).present;
+        if (exists !== 1) {
+          throw new Error(`ITX topology canonical station membership is missing: ${station.stationId}:${station.lineId}`);
+        }
+      }
+      const boundEdges = bindItxTopologyEdgeProvenance(topology, edgeAdmission);
+      database.exec("DELETE FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN'");
+      const insert = database.prepare(`
+        INSERT INTO network_edges (
+          id, from_node_id, to_node_id, duration_seconds, distance_meters,
+          edge_type, service_pattern, service_class, includes_stairs,
+          stair_access_state, accessibility_status, reliability_score,
+          source_id, source_snapshot_id, provider_record_hash, provenance_kind,
+          verification_status, facility_id, last_verified_at, evidence_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const edge of boundEdges) {
+        insert.run(edge.id, edge.fromNodeId, edge.toNodeId, edge.durationSeconds,
+          edge.distanceMeters, edge.edgeType, edge.servicePattern, edge.serviceClass,
+          edge.includesStairs, edge.stairAccessState, edge.accessibilityStatus,
+          edge.reliabilityScore, edge.sourceId, edge.sourceSnapshotId,
+          edge.providerRecordHash, edge.provenanceKind, edge.verificationStatus,
+          edge.facilityId, edge.lastVerifiedAt, edge.evidenceHash);
+      }
+      writeRouteServiceEvidence(database, admissionEvidence);
+      const foreignKeys = database.prepare("PRAGMA foreign_key_check").all();
+      if (foreignKeys.length !== 0) throw new Error("ITX topology foreign_key_check failed");
+      const integrity = database.prepare("PRAGMA integrity_check").get();
+      if (integrity.integrity_check !== "ok") throw new Error("ITX topology integrity_check failed");
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  } finally {
+    database.close();
+  }
+}
+
+export function assertStoredTopology(sqlitePath, topology, admissionEvidence, edgeAdmission) {
+  const expectedEdges = bindItxTopologyEdgeProvenance(topology, edgeAdmission);
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    const foreignKeys = database.prepare("PRAGMA foreign_key_check").all();
+    if (foreignKeys.length !== 0) throw new Error("ITX topology foreign_key_check failed");
+    const integrity = database.prepare("PRAGMA integrity_check").get();
+    if (integrity.integrity_check !== "ok") throw new Error("ITX topology integrity_check failed");
+    if (database.prepare("PRAGMA user_version").get().user_version !== CATALOG_VERSION
+      || !hasColumn(database, "network_edges", "service_class")) {
+      throw new Error("ITX topology bundled schema is stale");
+    }
+    const stored = database.prepare(`
+      SELECT id, from_node_id AS fromNodeId, to_node_id AS toNodeId,
+             duration_seconds AS durationSeconds, distance_meters AS distanceMeters,
+             edge_type AS edgeType, service_pattern AS servicePattern,
+             service_class AS serviceClass, includes_stairs AS includesStairs,
+             stair_access_state AS stairAccessState,
+             accessibility_status AS accessibilityStatus,
+             reliability_score AS reliabilityScore, source_id AS sourceId,
+             source_snapshot_id AS sourceSnapshotId,
+             provider_record_hash AS providerRecordHash,
+             provenance_kind AS provenanceKind,
+             verification_status AS verificationStatus, facility_id AS facilityId,
+             last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
+      FROM network_edges
+      WHERE service_class = 'ITX_CHEONGCHUN'
+      ORDER BY id
+    `).all().map((row) => ({ ...row }));
+    if (JSON.stringify(stored) !== JSON.stringify(expectedEdges)) {
+      throw new Error("ITX topology bundled edges are stale");
+    }
+    const timetableRows = database.prepare(`
+      SELECT COUNT(*) AS count FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN'
+    `).get().count;
+    if (timetableRows !== 0) throw new Error("Mobile pack must not contain ITX timetable rows");
+    const storedArtifactEvidence = database.prepare(`
+      SELECT service_class AS serviceClass, timetable_artifact_id AS timetableArtifactId,
+             timetable_artifact_sha256 AS timetableArtifactSha256,
+             canonical_pack_id AS canonicalPackId, canonical_pack_sha256 AS canonicalPackSha256,
+             canonical_pack_sqlite_sha256 AS canonicalPackSqliteSha256,
+             admission_status AS admissionStatus, admission_eligible AS admissionEligible,
+             fresh_until AS freshUntil, source_issue AS sourceIssue
+      FROM route_service_artifact_evidence
+      WHERE service_class = 'ITX_CHEONGCHUN'
+    `).get();
+    const storedStationCatalogEvidence = database.prepare(`
+      SELECT service_class AS serviceClass,
+             station_catalog_artifact_kind AS stationCatalogArtifactKind,
+             station_catalog_manifest_version AS stationCatalogManifestVersion,
+             station_catalog_pack_id AS stationCatalogPackId,
+             station_catalog_station_set_sha256 AS stationCatalogStationSetSha256,
+             station_catalog_payload_sha256 AS stationCatalogPayloadSha256,
+             station_catalog_manifest_sha256 AS stationCatalogManifestSha256,
+             admission_status AS admissionStatus, admission_eligible AS admissionEligible,
+             fresh_until AS freshUntil, source_issue AS sourceIssue
+      FROM route_service_station_catalog_evidence
+      WHERE service_class = 'ITX_CHEONGCHUN'
+    `).get();
+    if (JSON.stringify({ artifactEvidence: storedArtifactEvidence, stationCatalogEvidence: storedStationCatalogEvidence })
+      !== JSON.stringify(admissionEvidence)) {
+      throw new Error("ITX topology route service admission evidence is stale");
+    }
+  } finally {
+    database.close();
+  }
+}
+
+async function verifyStoredItxTopology({
+  contract,
+  reference,
+  source,
+  topology,
+  evidencePath,
+  indexPath,
+  inputGzipBytes,
+  topologySource,
+  admissionEvidence,
+  currentProjection,
+}) {
+  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  const index = JSON.parse(await readFile(indexPath, "utf8"));
+  const { inputSqliteBytes } = validateTopologyEvidence({
+    contract,
+    reference,
+    source,
+    topology,
+    evidence,
+    index,
+    inputGzipBytes,
+    admittedInput: topologySource,
+  });
+  const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-check-${randomUUID()}-`));
+  try {
+    const sqlitePath = path.join(directory, "capital.sqlite");
+    if (sha256(inputSqliteBytes) !== evidence.pack.outputSqliteSha256) {
+      throw new Error("ITX topology bundled SQLite identity is stale");
+    }
+    await writeFile(sqlitePath, inputSqliteBytes);
+    assertStoredTopology(sqlitePath, topology, admissionEvidence, currentProjection);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function main() {
+  const deriveFixtureRoot = option("--derive-fixture", null);
+  const packPath = path.resolve(root, deriveFixtureRoot == null ? option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz") : path.join(deriveFixtureRoot, "assets/datapacks/capital.sqlite.gz"));
+  const indexPath = path.resolve(root, deriveFixtureRoot == null ? option("--index", "apps/mobile/assets/datapacks/index.json") : path.join(deriveFixtureRoot, "assets/datapacks/index.json"));
+  const contractPath = path.resolve(root, option("--contract", "tools/datapack/itx-cheongchun-coverage-contract.json"));
+  const evidencePath = path.resolve(root, option("--evidence", "tools/datapack/itx-cheongchun-topology-evidence.json"));
+  const currentAdmissionOption = option("--current-admission", null);
+  const currentAdmissionPath = currentAdmissionOption == null ? null : path.resolve(root, currentAdmissionOption);
+  const fixtureProjectionPath = option("--project-fixture", null);
+  const check = process.argv.includes("--check");
+  const immutableIntegrity = process.argv.includes("--verify-immutable-integrity");
+  const migrateCurrentV18Requested = process.argv.includes("--migrate-current-v18");
+  if ([check, immutableIntegrity, migrateCurrentV18Requested, fixtureProjectionPath != null, deriveFixtureRoot != null].filter(Boolean).length > 1) {
+    throw new Error("--check, --verify-immutable-integrity, --migrate-current-v18, --project-fixture and --derive-fixture are mutually exclusive");
+  }
+  if (migrateCurrentV18Requested) {
+    throw new Error("--migrate-current-v18 is forbidden by the current-only datapack contract");
+  }
+  if (check || immutableIntegrity) {
+    const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+    if (Object.hasOwn(evidence, "migration")) {
+      throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
+    }
+  }
+  if (process.argv.some((arg) => arg === "--require-fresh=false" || arg.startsWith("--require-fresh="))) {
+    throw new Error("--require-fresh=false is forbidden by the current-only datapack contract");
+  }
+  const { contract, reference, source, sourceBytes, currentAdmission, currentProjection } =
+    await admittedSource(contractPath, {
+      // fixture 파생(staging)은 시계에 묶이지 않는다: 만료된 원천이어도 고정 입력에서 같은 팩을 다시 만들어 커밋된 증거와 대조한다.
+      verificationMode: immutableIntegrity || deriveFixtureRoot != null
+        ? IMMUTABLE_INTEGRITY_VERIFICATION_MODE
+        : CURRENT_VERIFICATION_MODE,
+      currentAdmissionPath,
+      requireFresh: true,
+    });
+  const topologySource = await admittedTopologySource(reference, source, currentAdmission, contract);
+  const topology = deriveTopology(source);
+  if (fixtureProjectionPath != null) {
+    const fixturePath = path.resolve(root, fixtureProjectionPath);
+    const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+    projectItxTopologyIntoCanonicalFixture(fixture, topology);
+    await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
+    return;
+  }
+  const admittedInputPack = topologyInputPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
+    "ITX topology input pack identity",
+  );
+  const admissionEvidence = routeServiceEvidence(
+    contract,
+    reference,
+    source,
+    admittedInputPack,
+    currentProjection,
+  );
+  if (admittedInputPack.sha256 !== topologySource.gzipSha256
+    || admittedInputPack.sqliteSha256 !== topologySource.sqliteSha256
+    || admittedInputPack.byteSize !== topologySource.byteSize) {
+    throw new Error("ITX topology input pack identity does not match the admitted current source");
+  }
+  const inputGzipBytes = await readFile(packPath);
+  if (check || immutableIntegrity) {
+    await verifyStoredItxTopology({
+      contract,
+      reference,
+      source,
+      topology,
+      evidencePath,
+      indexPath,
+      inputGzipBytes,
+      topologySource,
+      admissionEvidence,
+      currentProjection,
+    });
+    return;
+  }
+  const computed = await computeItxTopologyPack({
+    inputGzipBytes, index: JSON.parse(await readFile(indexPath, "utf8")), admittedInputPack, topology,
+    admissionEvidence, currentProjection, source, sourceBytes, reference,
+  });
+  if (deriveFixtureRoot != null) {
+    // staging 전용: 이미 커밋된 증거와 같은 팩·index를 입력 fixture에서 파생한다. 증거는 쓰지 않고 한 글자라도 다르면 실패한다.
+    const committed = JSON.parse(await readFile(evidencePath, "utf8"));
+    if (JSON.stringify(committed) !== JSON.stringify(computed.evidence)) {
+      throw new Error(`ITX_FIXTURE_DERIVATION_MISMATCH: the derived topology evidence differs from the committed evidence (${differingEvidenceFields(committed, computed.evidence).join(", ")})`);
+    }
+  } else {
+    await writeFile(evidencePath, `${JSON.stringify(computed.evidence, null, 2)}\n`);
+  }
+  await writeFile(packPath, computed.outputGzipBytes);
+  await writeFile(indexPath, `${JSON.stringify(computed.index, null, 2)}\n`);
+}
+
+/** 두 증거 JSON에서 값이 다른 필드 경로(정렬)를 돌려준다. 값은 해시·개수뿐이라 그대로 오류에 적는다. */
+function differingEvidenceFields(left, right, prefix = "") {
+  if (left !== null && right !== null && typeof left === "object" && typeof right === "object" && !Array.isArray(left) && !Array.isArray(right)) {
+    return [...new Set([...Object.keys(left), ...Object.keys(right)])].sort(codepointCompare)
+      .flatMap((key) => differingEvidenceFields(left[key], right[key], prefix === "" ? key : `${prefix}.${key}`));
+  }
+  return JSON.stringify(left) === JSON.stringify(right) ? [] : [`${prefix}: committed=${JSON.stringify(left)} derived=${JSON.stringify(right)}`];
+}
+
+/** 팩을 계산하는 런타임이 고정된 Node·SQLite인지 확인한다. 어긋나면 실제 버전을 적어 계산 전에 거부한다. */
+export function assertItxPackRuntime(versions = process.versions) {
+  if (versions.node !== PACK_NODE_VERSION || versions.sqlite !== PACK_SQLITE_VERSION) {
+    throw new Error(`ITX topology pack runtime must be Node ${PACK_NODE_VERSION} with SQLite ${PACK_SQLITE_VERSION} (actual: Node ${versions.node}, SQLite ${versions.sqlite})`);
+  }
+}
+
+/** 입력 팩에 승인 원천 topology를 적용해 출력 팩·index·증거를 계산한다. 파일을 쓰지 않는다. */
+async function computeItxTopologyPack({
+  inputGzipBytes, index, admittedInputPack, topology, admissionEvidence, currentProjection, source, sourceBytes, reference,
+}) {
+  assertItxPackRuntime();
+  const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-${randomUUID()}-`));
+  try {
+    const sqlitePath = path.join(directory, "capital.sqlite");
+    const inputSqliteBytes = gunzipWithLimit(inputGzipBytes, {
+    maxOutputLength: 512 * 1024 * 1024,
+    label: "ITX topology input pack",
+  });
+    if (admittedInputPack.sha256 !== sha256(inputGzipBytes)
+      || admittedInputPack.sqliteSha256 !== sha256(inputSqliteBytes)
+      || admittedInputPack.byteSize !== inputGzipBytes.length) {
+      throw new Error("ITX topology input pack does not match the coverage contract");
+    }
+    await writeFile(sqlitePath, inputSqliteBytes);
+    applyTopology(sqlitePath, topology, admissionEvidence, currentProjection);
+    const outputSqliteBytes = await readFile(sqlitePath);
+    const outputGzipBytes = gzipSync(outputSqliteBytes, { level: 9, mtime: 0 });
+    // zlib은 gzip 헤더의 OS 바이트(오프셋 9)를 실행 플랫폼으로 채운다(macOS 19, Linux 3). 압축 본문은 같지만 팩 sha256이 플랫폼마다 달라져
+    // CI(Linux)가 파생한 팩이 커밋된 증거와 어긋난다. OS 바이트를 고정해 어느 플랫폼에서든 같은 팩 바이트를 만든다(#979).
+    outputGzipBytes[GZIP_HEADER_OS_BYTE_OFFSET] = GZIP_HEADER_OS_BYTE;
+    if (outputGzipBytes.length - inputGzipBytes.length > MAX_GZIP_DELTA_BYTES) {
+      throw new Error("ITX topology exceeds the 64 KiB compressed size budget");
+    }
+    const pack = index.packs?.find(({ id }) => id === "capital");
+    if (!pack || pack.sha256 !== sha256(inputGzipBytes)) {
+      throw new Error("ITX topology bundled pack index is stale");
+    }
+    Object.assign(pack, {
+      sha256: sha256(outputGzipBytes),
+      sqliteSha256: sha256(outputSqliteBytes),
+      byteSize: outputGzipBytes.length,
+    });
+    const evidence = {
+      schemaVersion: 1,
+      artifactKind: "itx-cheongchun-mobile-topology-evidence",
+      serviceId: "ITX_CHEONGCHUN",
+      sourceIssue: 2135,
+      stationCatalogPackIdentity: source.stationCatalogPackIdentity,
+      sourceArtifact: {
+        id: reference.artifactId,
+        sha256: sha256(sourceBytes),
+        completenessEvidenceSha256: reference.completenessEvidenceSha256,
+        freshUntil: reference.freshUntil,
+        stationCatalogPackIdentity: source.stationCatalogPackIdentity,
+      },
+      topology: {
+        stationMembershipCount: topology.stations.length,
+        servedStationCount: topology.servedStations.length,
+        edgeCount: topology.edges.length,
+        directions: ["up", "down"],
+        connectedComponentCount: 1,
+        isolatedServedStationCount: 0,
+        sha256: topology.sha256,
+        durationSecondsEmbedded: false,
+        fareEmbedded: false,
+      },
+      pack: {
+        id: "capital",
+        inputSha256: sha256(inputGzipBytes),
+        inputSqliteSha256: sha256(inputSqliteBytes),
+        inputByteSize: inputGzipBytes.length,
+        outputSha256: sha256(outputGzipBytes),
+        outputSqliteSha256: sha256(outputSqliteBytes),
+        byteSize: outputGzipBytes.length,
+        byteSizeDelta: outputGzipBytes.length - inputGzipBytes.length,
+      },
+    };
+    return { outputGzipBytes, index, evidence };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}

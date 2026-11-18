@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "seoul-accessibility-observation",
+  "sourceId": "seoul-metro-facility-location",
+  "capturedAt": "2026-09-30T01:43:41.846Z",
+  "snapshotId": "seoul-metro-facility-location-20260930T014341846Z",
+  "snapshotRawSha256": "de7f590748986e7ac855f4fdfcdb034a392c263c1090f8be96fe7c4049a8c813",
+  "snapshotFile": "seoul-metro-facility-location-20260930T014341846Z.json",
+  "snapshotFileSha256": "82b4992309abda6bb227239c023c9fbf24627c8904d7f7dcdac649a6dca342ae",
+  "rawArtifactFile": "seoul-metro-facility-location-20260930T014341846Z.raw.json",
+  "rawObjectSha256": "1fd6b5176aabb964cbcb3f4621e27c412855aefa9144584c0da0154a3ed1fb86",
+  "rawObjectChecksumSha256": "H9a1F2qruWTLyz9GIeJ8QShVrvqRRFhMDaAVSj7R+4Y=",
+  "rawObjectByteSize": 739275,
+  "credentialRedacted": true
+}

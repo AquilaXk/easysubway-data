@@ -1,0 +1,1940 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import test from "node:test";
+import { gzipSync } from "node:zlib";
+
+import {
+  buildAccessibilitySourceCoverageReport,
+  partitionMolitTransferTuples,
+  loadAccessibilityAdmissionSnapshots,
+  loadMolitTransferSnapshot,
+  loadSelectableAccessibilityArtifacts,
+  manifestAssetRoot,
+} from "./build-accessibility-source-coverage-report.mjs";
+import { collectKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
+import { withCapitalKricFacilities } from "./prepare-nationwide-candidate-run.mjs";
+import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+
+const EVALUATED_AT = "2026-07-28T00:00:00.000Z";
+
+test("selectable artifact의 모든 claim이 fresh official snapshot에 결속되면 GO다", () => {
+  const input = validInput();
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "GO");
+  assert.deepEqual(report.artifacts, [
+    { artifactId: "bundled-capital", sqliteSha256: hash("sqlite-a"), searchableStationCount: 1, claimCount: 1 },
+    { artifactId: "remote-capital", sqliteSha256: hash("sqlite-b"), searchableStationCount: 1, claimCount: 1 },
+  ]);
+  assert.deepEqual(report.providerDomainMatrix, [{
+    sourceId: "official-accessibility",
+    domain: "STATION_FACILITY_EVIDENCE",
+    artifactIds: ["bundled-capital", "remote-capital"],
+    claimCount: 2,
+    status: "ADMITTED",
+  }]);
+  assert.deepEqual(report.violations, emptyViolations());
+});
+
+test("registered accessibility source binds admission, tracked bytes, and ledger policy without legacy evidence", () => {
+  const input = validInput();
+  const source = input.inventory.sources[0];
+  const snapshot = input.snapshots[0];
+  const policy = input.sourceSnapshotPolicies[0];
+  const rawObjectSha256 = hash("registered-oci-object");
+  const adminReviewRecordHash = hash("registered-review");
+  source.admissionEvidence = { decision: "APPROVED", adminReviewRecordHash };
+  source.registrationEvidence = {
+    sourceId: source.id,
+    snapshotId: snapshot.snapshotId,
+    snapshotFileSha256: snapshot.snapshotFileSha256,
+    snapshotRawSha256: snapshot.rawSha256,
+    rawObjectUri: "oci://fixture/registered-accessibility.json",
+    rawObjectSha256,
+    contentSha256: snapshot.contentSha256,
+    normalizedSchemaFingerprint: snapshot.schemaFingerprint,
+    claimBindingsSha256: hash(JSON.stringify(snapshot.claimBindings)),
+    rowCount: 2,
+    coverageCount: 2,
+    claimBindingCount: snapshot.claimBindings.length,
+    adminReviewRecordHash,
+  };
+  snapshot.rowCount = 2;
+  snapshot.stationCount = 2;
+  snapshot.claimBindingsSha256 = source.registrationEvidence.claimBindingsSha256;
+  delete source.accessibilityAdmissionEvidence;
+  Object.assign(policy, {
+    rawObjectUri: source.registrationEvidence.rawObjectUri,
+    rawSha256: rawObjectSha256,
+    contentSha256: snapshot.contentSha256,
+    schemaFingerprint: snapshot.schemaFingerprint,
+    claimBindingsSha256: snapshot.claimBindingsSha256,
+    adminReviewRecordHash,
+    redistributionAllowed: true,
+    credentialRedacted: true,
+    freshnessExpiresAt: snapshot.freshUntil,
+    rawReceipt: {
+      snapshotFileSha256: snapshot.snapshotFileSha256,
+      snapshotRawSha256: snapshot.rawSha256,
+    },
+  });
+
+  assert.equal(buildAccessibilitySourceCoverageReport(input).decision, "GO");
+  source.registrationEvidence.rawObjectSha256 = "0".repeat(64);
+  assert.equal(buildAccessibilitySourceCoverageReport(input).decision, "NO_GO");
+});
+
+test("미승인 source는 provider-domain matrix에서도 BLOCKED다", () => {
+  const input = validInput();
+  input.inventory.sources[0].accessibilityAdmissionEvidence.decision = "PENDING";
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.equal(report.providerDomainMatrix[0].status, "BLOCKED");
+});
+
+test("station domain source matrix는 실제 station-line 분모의 미평가 cell을 NO_GO로 남긴다", () => {
+  const input = validInput();
+  input.artifacts = [input.artifacts[0]];
+  input.artifacts[0].stationLines = [{
+    stationId: "station-a",
+    stationName: "사당",
+    stationAliases: [],
+    regionId: "capital",
+    lineId: "line-a",
+    lineName: "수도권 4호선",
+    operatorId: "seoul-metro",
+    operatorName: "서울교통공사",
+  }];
+  input.molitTransferSnapshot = {
+    sourceId: "molit-railway-transfer-movement",
+    snapshotId: "molit-railway-transfer-movement-20250811",
+    rawSha256: hash("transfer-raw"),
+    gzipSha256: hash("transfer-gzip"),
+    metadataFileSha256: hash("transfer-metadata"),
+    sourceInventoryFileSha256: hash("inventory-file"),
+    sourceInventorySha256: hash("inventory-canonical"),
+    candidateBuildSpecSourceInventorySha256: hash("inventory-canonical"),
+    rowCount: 1,
+    rows: [{
+      RAIL_OPR_ISTT_CD: "S1(서울교통공사)",
+      LN_NM: "4호선",
+      STIN_NM: "사당",
+    }],
+  };
+  input.providerCodeCatalog = {
+    providerLines: [{ railOprIsttCd: "S1", operatorName: "서울교통공사", lnCd: "4", lineName: "4호선" }],
+  };
+  input.inventory.sources[0].coverageScope = {
+    regionIds: ["capital"],
+    operatorIds: ["seoul-metro"],
+    lineIds: ["line-a"],
+    sourceDomains: ["accessibility_facilities"],
+  };
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.stationDomainSourceGate.matrix, [{
+    operatorId: "seoul-metro",
+    operatorName: "서울교통공사",
+    domain: "EXIT",
+    stationLineCount: 1,
+    evaluatedStationLineCount: 0,
+    missingStationLineCount: 1,
+    artifacts: [{
+      artifactId: "bundled-capital",
+      stationLineCount: 1,
+      evaluatedStationLineCount: 0,
+      missingStationLineCount: 1,
+    }],
+    sourceIds: [],
+    blockingReasons: ["NO_ADMITTED_SOURCE", "STATION_LINE_COVERAGE_INCOMPLETE"],
+    requiredEvidence: "OFFICIAL_EXHAUSTIVE_EXIT_PATH_SNAPSHOT_OR_EXPLICIT_ZERO",
+    status: "BLOCKED",
+  }, {
+    operatorId: "seoul-metro",
+    operatorName: "서울교통공사",
+    domain: "FACILITY",
+    stationLineCount: 1,
+    evaluatedStationLineCount: 1,
+    missingStationLineCount: 0,
+    artifacts: [{
+      artifactId: "bundled-capital",
+      stationLineCount: 1,
+      evaluatedStationLineCount: 1,
+      missingStationLineCount: 0,
+    }],
+    sourceIds: ["official-accessibility"],
+    blockingReasons: [],
+    requiredEvidence: "OFFICIAL_EXHAUSTIVE_FACILITY_SNAPSHOT_OR_EXPLICIT_ZERO",
+    status: "ADMITTED",
+  }, {
+    operatorId: "seoul-metro",
+    operatorName: "서울교통공사",
+    domain: "TRANSFER",
+    stationLineCount: 1,
+    evaluatedStationLineCount: 0,
+    missingStationLineCount: 1,
+    artifacts: [{
+      artifactId: "bundled-capital",
+      stationLineCount: 1,
+      evaluatedStationLineCount: 0,
+      missingStationLineCount: 1,
+    }],
+    sourceIds: [],
+    blockingReasons: ["NO_ADMITTED_SOURCE", "STATION_LINE_COVERAGE_INCOMPLETE"],
+    requiredEvidence: "OFFICIAL_TRANSFER_TOPOLOGY_AND_ACCESSIBILITY_SNAPSHOT",
+    status: "BLOCKED",
+  }]);
+  assert.equal(report.stationDomainSourceGate.transferTuplePartition.joined.length, 1);
+  assert.equal(report.stationDomainSourceGate.transferTuplePartition.unmatched.length, 0);
+  assert.equal(report.stationDomainSourceGate.transferTuplePartition.ambiguous.length, 0);
+  assert.deepEqual(report.stationDomainSourceGate.transferTuplePartition.identity, {
+    sourceId: "molit-railway-transfer-movement",
+    snapshotId: "molit-railway-transfer-movement-20250811",
+    rawSha256: hash("transfer-raw"),
+    gzipSha256: hash("transfer-gzip"),
+    metadataFileSha256: hash("transfer-metadata"),
+    sourceInventoryFileSha256: hash("inventory-file"),
+    sourceInventorySha256: hash("inventory-canonical"),
+    candidateBuildSpecSourceInventorySha256: hash("inventory-canonical"),
+    rowCount: 1,
+  });
+
+  delete input.inventory.sources[0].accessibilityAdmissionEvidence.absenceEvidenceMode;
+  assert.equal(buildAccessibilitySourceCoverageReport(input)
+    .stationDomainSourceGate.matrix.find(({ domain }) => domain === "FACILITY").status, "BLOCKED");
+
+  input.inventory.sources[0].accessibilityAdmissionEvidence.absenceEvidenceMode = "EXPLICIT_ZERO";
+  input.inventory.sources[0].coverageScope.operatorIds = ["korail"];
+  assert.equal(buildAccessibilitySourceCoverageReport(input)
+    .stationDomainSourceGate.matrix.find(({ domain }) => domain === "FACILITY").status, "BLOCKED");
+
+  input.inventory.sources[0].coverageScope.operatorIds = ["seoul-metro"];
+  input.inventory.sources[0].coverageScope.sourceDomains = ["indoor_movement_paths"];
+  assert.equal(buildAccessibilitySourceCoverageReport(input)
+    .stationDomainSourceGate.matrix.find(({ domain }) => domain === "FACILITY").status, "BLOCKED");
+
+  input.inventory.sources[0].coverageScope.sourceDomains = ["accessibility_facilities"];
+  input.inventory.sources[0].coverageScope.regionIds = ["busan"];
+  assert.equal(buildAccessibilitySourceCoverageReport(input)
+    .stationDomainSourceGate.matrix.find(({ domain }) => domain === "FACILITY").status, "BLOCKED");
+
+  input.inventory.sources[0].coverageScope.regionIds = ["capital"];
+  input.inventory.sources[0].coverageScope.lineIds = ["line-b"];
+  assert.equal(buildAccessibilitySourceCoverageReport(input)
+    .stationDomainSourceGate.matrix.find(({ domain }) => domain === "FACILITY").status, "BLOCKED");
+
+  input.inventory.sources[0].coverageScope.lineIds = ["line-a"];
+  input.molitTransferSnapshot.rawSha256 = "invalid";
+  assert.throws(() => buildAccessibilitySourceCoverageReport(input), /identity is invalid/);
+
+  input.molitTransferSnapshot.rawSha256 = hash("transfer-raw");
+  input.artifacts.push({
+    artifactId: "remote-core",
+    sqliteSha256: hash("sqlite-core"),
+    searchableStationIds: ["station-a"],
+    claims: [],
+  });
+  assert.throws(() => buildAccessibilitySourceCoverageReport(input), /station-lines for every artifact/);
+});
+
+test("station domain gate 입력은 둘 중 하나만 있으면 fail-closed다", () => {
+  const input = validInput();
+  input.molitTransferSnapshot = {};
+
+  assert.throws(() => buildAccessibilitySourceCoverageReport(input), /inputs must be provided together/);
+});
+
+test("MOLIT transfer tuple partition은 unmatched와 ambiguous를 추정 없이 보존한다", () => {
+  const row = (stationName) => ({
+    RAIL_OPR_ISTT_CD: "S1(서울교통공사)",
+    LN_NM: "4호선",
+    STIN_NM: stationName,
+  });
+  const artifacts = [{
+    artifactId: "capital",
+    stationLines: ["station-a", "station-b"].map((stationId) => ({
+      stationId,
+      stationName: "중앙",
+      stationAliases: [],
+      lineId: "line-a",
+      lineName: "수도권 4호선",
+      operatorId: "seoul-metro",
+      operatorName: "서울교통공사",
+    })),
+  }];
+
+  const partition = partitionMolitTransferTuples({
+    artifacts,
+    rows: [row("중앙"), row("중앙"), row("없는역")],
+    providerCodeCatalog: {
+      providerLines: [{ railOprIsttCd: "S1", operatorName: "서울교통공사", lnCd: "4", lineName: "4호선" }],
+    },
+  });
+
+  assert.deepEqual(partition.summary, {
+    rowCount: 3,
+    tupleCount: 2,
+    joinedTupleCount: 0,
+    joinedRowCount: 0,
+    unmatchedTupleCount: 1,
+    unmatchedRowCount: 1,
+    ambiguousTupleCount: 1,
+    ambiguousRowCount: 2,
+  });
+  assert.equal(partition.unmatched[0].reason, "CANONICAL_STATION_UNMATCHED");
+  assert.equal(partition.ambiguous[0].reason, "CANONICAL_STATION_AMBIGUOUS");
+});
+
+for (const { name, artifacts, providerLines, expectedKind, expectedReason } of [
+  {
+    name: "provider line 미등록",
+    artifacts: [],
+    providerLines: [],
+    expectedKind: "unmatched",
+    expectedReason: "PROVIDER_LINE_SCOPE_UNMAPPED",
+  },
+  {
+    name: "provider line 중복",
+    artifacts: [],
+    providerLines: [
+      { railOprIsttCd: "S1", operatorName: "서울교통공사", lineName: "4호선" },
+      { railOprIsttCd: "S1", operatorName: "서울교통공사", lineName: "4호선" },
+    ],
+    expectedKind: "ambiguous",
+    expectedReason: "PROVIDER_LINE_SCOPE_AMBIGUOUS",
+  },
+  {
+    name: "canonical line 미등록",
+    artifacts: [],
+    providerLines: [{ railOprIsttCd: "S1", operatorName: "서울교통공사", lineName: "4호선" }],
+    expectedKind: "unmatched",
+    expectedReason: "CANONICAL_LINE_SCOPE_UNMATCHED",
+  },
+]) {
+  test(`MOLIT transfer tuple partition은 ${name} 사유를 보존한다`, () => {
+    const partition = partitionMolitTransferTuples({
+      artifacts,
+      rows: [{ RAIL_OPR_ISTT_CD: "S1(서울교통공사)", LN_NM: "4호선", STIN_NM: "사당" }],
+      providerCodeCatalog: { providerLines },
+    });
+
+    assert.equal(partition[expectedKind][0].reason, expectedReason);
+    assert.equal(partition.summary[`${expectedKind}TupleCount`], 1);
+    assert.equal(partition.summary[`${expectedKind}RowCount`], 1);
+  });
+}
+
+test("MOLIT transfer tuple partition은 raw 운영사명 대신 검증된 catalog scope를 사용한다", () => {
+  const partition = partitionMolitTransferTuples({
+    artifacts: [{
+      artifactId: "capital",
+      stationLines: [{
+        stationId: "station-a",
+        stationName: "사당",
+        lineId: "line-a",
+        lineName: "4호선",
+        operatorId: "operator-a",
+        operatorName: "위조운영사",
+      }],
+    }],
+    rows: [{ RAIL_OPR_ISTT_CD: "S1(위조운영사)", LN_NM: "4호선", STIN_NM: "사당" }],
+    providerCodeCatalog: {
+      providerLines: [{ railOprIsttCd: "S1", operatorName: "서울교통공사", lineName: "4호선" }],
+    },
+  });
+
+  assert.equal(partition.unmatched[0].reason, "PROVIDER_OPERATOR_IDENTITY_MISMATCH");
+  assert.equal(partition.unmatched[0].catalogOperatorName, "서울교통공사");
+  assert.equal(partition.joined.length, 0);
+});
+
+test("MOLIT transfer tuple partition snapshot binding은 inventory와 build spec hash를 강제한다", async () => {
+  const repositoryRoot = path.resolve(import.meta.dirname, "../..");
+  const inventoryPath = path.join(import.meta.dirname, "source-inventory.json");
+  const inventoryBytes = await readFile(inventoryPath);
+  const inventory = JSON.parse(inventoryBytes);
+  const trackedCandidateBuildSpec = JSON.parse(await readFile(
+    path.join(import.meta.dirname, "release/candidate-build-spec.json"),
+  ));
+  const candidateBuildSpec = {
+    ...trackedCandidateBuildSpec,
+    sourceInventorySha256: hash(JSON.stringify(inventory)),
+  };
+  const metadataPath = path.join(
+    repositoryRoot,
+    inventory.sources.find(({ id }) => id === "molit-railway-transfer-movement").rawSnapshotAdmission.metadataPath,
+  );
+  // #862: 시계는 커밋된 판의 metadata(capturedAt·freshUntil)에서 유도한다.
+  const boundMetadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  const freshEvaluatedAt = new Date(Date.parse(boundMetadata.capturedAt) + 60_000).toISOString();
+  const futureEvaluatedAt = new Date(Date.parse(boundMetadata.capturedAt) - 1).toISOString();
+
+  const snapshot = await loadMolitTransferSnapshot({
+    metadataPath,
+    inventory,
+    inventoryBytes,
+    candidateBuildSpec,
+    repositoryRoot,
+    evaluatedAt: freshEvaluatedAt,
+  });
+
+  assert.equal(snapshot.rowCount, boundMetadata.rowCount);
+  assert.equal(snapshot.rows.length, boundMetadata.rowCount);
+  assert.equal(snapshot.sourceInventorySha256, candidateBuildSpec.sourceInventorySha256);
+  await assert.rejects(loadMolitTransferSnapshot({
+    metadataPath,
+    inventory,
+    inventoryBytes,
+    candidateBuildSpec,
+    repositoryRoot,
+    evaluatedAt: futureEvaluatedAt,
+  }), /snapshot is future-dated/);
+  await assert.rejects(loadMolitTransferSnapshot({
+    metadataPath,
+    inventory: {
+      ...inventory,
+      sources: inventory.sources.map((source) => source.id === "molit-railway-transfer-movement"
+        ? { ...source, rawSnapshotAdmission: { ...source.rawSnapshotAdmission, rawSha256: hash("tampered") } }
+        : source),
+    },
+    inventoryBytes,
+    candidateBuildSpec,
+    repositoryRoot,
+    evaluatedAt: freshEvaluatedAt,
+  }), /snapshot binding mismatch/);
+  await assert.rejects(loadMolitTransferSnapshot({
+    metadataPath,
+    inventory,
+    inventoryBytes,
+    candidateBuildSpec,
+    repositoryRoot,
+    evaluatedAt: boundMetadata.freshUntil,
+  }), /snapshot is stale/);
+});
+
+test("inventory에 없는 source는 provider-domain matrix에서도 BLOCKED다", () => {
+  const input = validInput();
+  input.artifacts[0].claims[0].sourceId = "unknown-source";
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.equal(
+    report.providerDomainMatrix.find(({ sourceId }) => sourceId === "unknown-source").status,
+    "BLOCKED",
+  );
+});
+
+test("accessibility 승인 license hash는 source governance 검토 hash와 일치해야 한다", () => {
+  const input = validInput();
+  input.inventory.sources[0].accessibilityAdmissionEvidence.licenseEvidenceHash = hash("stale-license");
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.license, ["official-accessibility:LICENSE_EVIDENCE_MISMATCH"]);
+});
+
+test("tracked snapshot bytes와 inventory file SHA가 일치해야 한다", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-accessibility-snapshot-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const snapshotPath = "official-accessibility-20260728.json";
+  const snapshot = {
+    sourceId: "official-accessibility",
+    snapshotId: "official-accessibility-20260728",
+    capturedAt: "2026-07-27T23:00:00.000Z",
+    observedAt: "2026-07-27T23:00:00.000Z",
+    freshUntil: "2026-07-29T23:00:00.000Z",
+    rawSha256: hash("raw"),
+    contentSha256: hash("content"),
+    schemaFingerprint: hash("schema"),
+  };
+  const bytes = `${JSON.stringify(snapshot)}\n`;
+  await writeFile(path.join(repositoryRoot, snapshotPath), bytes);
+  const sources = [{
+    id: snapshot.sourceId,
+    accessibilityAdmissionEvidence: { snapshotPath, snapshotFileSha256: hashBytes(bytes) },
+  }];
+
+  const [loaded] = await loadAccessibilityAdmissionSnapshots({
+    sources,
+    referencedSourceIds: new Set([snapshot.sourceId]),
+    repositoryRoot,
+  });
+
+  assert.equal(loaded.snapshotFileSha256, hashBytes(bytes));
+  assert.equal(loaded.snapshotId, snapshot.snapshotId);
+});
+
+test("remote manifest URL과 bundled index가 같은 gzip SQLite를 가리키면 artifact 하나로 읽는다", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-accessibility-source-report-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  const gzipPath = path.join(directory, "catalog", "capital.sqlite.gz");
+  await mkdir(path.dirname(gzipPath));
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(`
+    CREATE TABLE stations (id TEXT PRIMARY KEY);
+    CREATE TABLE operators (id TEXT PRIMARY KEY);
+    CREATE TABLE lines (id TEXT PRIMARY KEY);
+    CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
+    CREATE TABLE station_facility_evidence (
+      station_id TEXT, line_id TEXT, facility_type TEXT, evidence_kind TEXT,
+      source_id TEXT, source_snapshot_id TEXT, provider_record_hash TEXT, evidence_hash TEXT
+    );
+    CREATE TABLE facilities (
+      id TEXT, station_id TEXT, type TEXT, source_id TEXT, source_snapshot_id TEXT,
+      provider_record_hash TEXT, evidence_hash TEXT
+    );
+    CREATE TABLE station_exits (
+      id TEXT, station_id TEXT, has_elevator_connection INTEGER,
+      source_id TEXT, source_snapshot_id TEXT
+    );
+    CREATE TABLE network_edges (
+      id TEXT, from_node_id TEXT, to_node_id TEXT, edge_type TEXT,
+      accessibility_status TEXT, stair_access_state TEXT, source_id TEXT,
+      source_snapshot_id TEXT, provider_record_hash TEXT, evidence_hash TEXT
+    );
+    CREATE TABLE internal_route_edges (
+      id TEXT, from_node_id TEXT, to_node_id TEXT, edge_type TEXT,
+      accessibility_status TEXT, source_id TEXT, source_snapshot_id TEXT,
+      provider_record_hash TEXT, evidence_hash TEXT
+    );
+    CREATE TABLE station_pathway_nodes (id TEXT, station_id TEXT, line_id TEXT);
+    CREATE TABLE station_pathway_edges (
+      id TEXT, from_node_id TEXT, to_node_id TEXT, edge_type TEXT,
+      accessibility_status TEXT, source_id TEXT, source_snapshot_id TEXT,
+      provider_record_hash TEXT, evidence_hash TEXT
+    );
+    CREATE TABLE out_of_station_transfer_links (
+      id TEXT, from_station_id TEXT, from_line_id TEXT, to_station_id TEXT, to_line_id TEXT,
+      accessibility_status TEXT, source_id TEXT, source_snapshot_id TEXT,
+      provider_record_hash TEXT, evidence_hash TEXT
+    );
+  `);
+  database.prepare("INSERT INTO stations VALUES (?)").run("station-a");
+  database.prepare("INSERT INTO station_lines VALUES (?, ?)").run("station-a", "line-a");
+  database.prepare("INSERT INTO station_facility_evidence VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+    "station-a", "line-a", "ELEVATOR", "VERIFIED_PRESENT", "official-accessibility",
+    "official-accessibility-20260728", hash("record"), hash("evidence"),
+  );
+  database.prepare("INSERT INTO facilities VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    "facility-a", "station-a", "ELEVATOR", "official-accessibility",
+    "official-accessibility-20260728", hash("facility-record"), hash("facility-evidence"),
+  );
+  database.prepare("INSERT INTO facilities VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    "facility-without-provenance", "station-a", "ESCALATOR", "", "", "", "",
+  );
+  database.prepare("INSERT INTO station_exits VALUES (?, ?, ?, ?, ?)").run(
+    "exit-a", "station-a", 1, "fixture-capital-catalog", "fixture-capital-catalog-20260619",
+  );
+  database.prepare("INSERT INTO network_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    "edge-entry-a", "station-a", "station-a:line-a", "ENTRY", "UNKNOWN", "UNKNOWN",
+    "official-accessibility", "official-accessibility-20260728", hash("edge-record"), hash("edge-evidence"),
+  );
+  database.prepare("INSERT INTO network_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    "edge-without-provenance", "station-a", "station-a:line-a", "EXIT", "AVAILABLE", "UNKNOWN",
+    "", "", "", "",
+  );
+  database.prepare("INSERT INTO internal_route_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    "internal-edge-without-provenance", "station-a", "station-a:line-a", "WALK", "AVAILABLE",
+    "", "", "", "",
+  );
+  database.prepare("INSERT INTO internal_route_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    "internal-edge-unknown", "station-a", "station-a:line-a", "WALK", "UNKNOWN",
+    "", "", "", "",
+  );
+  database.prepare("INSERT INTO station_pathway_nodes VALUES (?, ?, ?)").run(
+    "path-node-a", "station-a", "line-a",
+  );
+  database.prepare("INSERT INTO station_pathway_nodes VALUES (?, ?, ?)").run(
+    "path-node-b", "station-a", "line-a",
+  );
+  database.prepare("INSERT INTO station_pathway_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    "path-edge-a", "path-node-a", "path-node-b", "ELEVATOR", "AVAILABLE", "", "", "", "",
+  );
+  database.prepare("INSERT INTO station_pathway_edges VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    "broken-path-edge", "missing-node", "path-node-b", "WALK", "AVAILABLE", "", "", "", "",
+  );
+  database.prepare("INSERT INTO out_of_station_transfer_links VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    "outside-transfer-a", "station-a", "line-a", "station-a", "line-a", "LIMITED", "", "", "", "",
+  );
+  database.close();
+  const sqliteBytes = await readFile(sqlitePath);
+  await writeFile(gzipPath, gzipSync(sqliteBytes));
+  const index = {
+    packs: [{
+      id: "capital",
+      asset: "catalog/capital.sqlite.gz",
+      sqliteSha256: hashBytes(sqliteBytes),
+    }],
+  };
+  const manifest = {
+    packs: [{
+      id: "capital",
+      url: "https://datapack.example/catalog/capital.sqlite.gz",
+      sqliteSha256: hashBytes(sqliteBytes),
+    }],
+  };
+
+  const artifacts = await loadSelectableAccessibilityArtifacts({
+    manifest,
+    manifestRoot: directory,
+    bundledIndex: index,
+    bundledRoot: directory,
+  });
+
+  const networkEdgeClaims = artifacts[0].claims.filter(({ domain }) => domain === "NETWORK_EDGE");
+  assert.deepEqual(networkEdgeClaims.map(({ claimId }) => claimId), [
+    "edge-without-provenance",
+    "internal-edge-without-provenance",
+    "broken-path-edge",
+    "path-edge-a",
+    "outside-transfer-a",
+  ]);
+  assert.equal(networkEdgeClaims.some(({ claimId }) => claimId === "edge-entry-a"), false);
+  const report = buildAccessibilitySourceCoverageReport({
+    ...validInput(),
+    artifacts: [artifacts[0]],
+  });
+  assert.ok(report.violations.provenance.includes(
+    "bundled-capital:station-a|line-a|EXIT|NETWORK_EDGE:PROVENANCE_MISSING",
+  ));
+
+  assert.deepEqual(artifacts, [{
+    artifactId: "bundled-capital",
+    sqliteSha256: hashBytes(sqliteBytes),
+    searchableStationIds: ["station-a"],
+    claims: [{
+      stationId: "station-a",
+      lineId: "line-a",
+      facilityType: "ELEVATOR",
+      domain: "STATION_FACILITY_EVIDENCE",
+      evidenceKind: "VERIFIED_PRESENT",
+      statusMeaning: null,
+      sourceId: "official-accessibility",
+      sourceSnapshotId: "official-accessibility-20260728",
+      providerRecordHash: hash("record"),
+      evidenceHash: hash("evidence"),
+    }, {
+      claimId: "facility-a",
+      stationId: "station-a",
+      lineId: "",
+      facilityType: "ELEVATOR",
+      domain: "FACILITY",
+      evidenceKind: "EXISTS",
+      sourceId: "official-accessibility",
+      sourceSnapshotId: "official-accessibility-20260728",
+      providerRecordHash: hash("facility-record"),
+      evidenceHash: hash("facility-evidence"),
+    }, {
+      claimId: "facility-without-provenance",
+      stationId: "station-a",
+      lineId: "",
+      facilityType: "ESCALATOR",
+      domain: "FACILITY",
+      evidenceKind: "EXISTS",
+      sourceId: "",
+      sourceSnapshotId: "",
+      providerRecordHash: "",
+      evidenceHash: "",
+    }, {
+      claimId: "exit-a",
+      stationId: "station-a",
+      lineId: "",
+      facilityType: "ELEVATOR_CONNECTION",
+      domain: "STATION_EXIT",
+      evidenceKind: "EXISTS",
+      sourceId: "fixture-capital-catalog",
+      sourceSnapshotId: "fixture-capital-catalog-20260619",
+      providerRecordHash: "",
+      evidenceHash: "",
+    }, {
+      claimId: "edge-without-provenance",
+      stationId: "station-a",
+      lineId: "line-a",
+      facilityType: "EXIT",
+      domain: "NETWORK_EDGE",
+      evidenceKind: "EXISTS",
+      sourceId: "",
+      sourceSnapshotId: "",
+      providerRecordHash: "",
+      evidenceHash: "",
+    }, {
+      claimId: "internal-edge-without-provenance",
+      stationId: "station-a",
+      lineId: "line-a",
+      facilityType: "WALK",
+      domain: "NETWORK_EDGE",
+      evidenceKind: "EXISTS",
+      sourceId: "",
+      sourceSnapshotId: "",
+      providerRecordHash: "",
+      evidenceHash: "",
+    }, {
+      claimId: "broken-path-edge",
+      stationId: "station-a",
+      lineId: "line-a",
+      facilityType: "WALK",
+      domain: "NETWORK_EDGE",
+      evidenceKind: "EXISTS",
+      sourceId: "",
+      sourceSnapshotId: "",
+      providerRecordHash: "",
+      evidenceHash: "",
+    }, {
+      claimId: "path-edge-a",
+      stationId: "station-a",
+      lineId: "line-a",
+      facilityType: "ELEVATOR",
+      domain: "NETWORK_EDGE",
+      evidenceKind: "EXISTS",
+      sourceId: "",
+      sourceSnapshotId: "",
+      providerRecordHash: "",
+      evidenceHash: "",
+    }, {
+      claimId: "outside-transfer-a",
+      stationId: "station-a",
+      lineId: "line-a",
+      facilityType: "OUT_OF_STATION_TRANSFER",
+      domain: "NETWORK_EDGE",
+      evidenceKind: "EXISTS",
+      sourceId: "",
+      sourceSnapshotId: "",
+      providerRecordHash: "",
+      evidenceHash: "",
+    }],
+  }]);
+});
+
+test("서로 다른 facility type의 위반은 고유 claim ID를 가진다", () => {
+  const input = validInput();
+  input.artifacts = [input.artifacts[0]];
+  input.artifacts[0].claims = ["ELEVATOR", "ESCALATOR"].map((facilityType) => ({
+    ...input.artifacts[0].claims[0],
+    facilityType,
+    sourceId: "",
+  }));
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(new Set(report.violations.provenance).size, 2);
+});
+
+test("nullable Seoul line identity는 예외 대신 NO_GO로 판정한다", () => {
+  const input = validInput();
+  input.artifacts = [input.artifacts[0]];
+  const claim = input.artifacts[0].claims[0];
+  claim.lineId = null;
+  claim.stationName = "사당";
+  input.snapshots[0].artifactKind = "seoul-accessibility-snapshot";
+  input.snapshots[0].stations = [{ stationName: "사당", lineName: "4호선", facilities: [] }];
+  delete input.snapshots[0].claimBindings;
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.ok(report.violations.provenance.some((violation) => violation.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")));
+});
+
+test("snapshot content에서 재계산할 수 없는 임의 claim hash는 NO_GO다", () => {
+  const input = validInput();
+  input.artifacts[0].claims[0].evidenceHash = hash("arbitrary-but-shaped");
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "bundled-capital:station-a|line-a|ELEVATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+});
+
+test("Seoul snapshot에 존재하는 역·노선은 NOT_EXISTS로 위조할 수 없다", () => {
+  const input = validInput();
+  const sourceId = "seoul-metro-accessibility";
+  const snapshotId = "seoul-metro-accessibility-20260728";
+  const claim = input.artifacts[0].claims[0];
+  input.artifacts = [input.artifacts[0]];
+  Object.assign(claim, {
+    stationId: "station-sadang",
+    stationName: "사당",
+    lineId: "seoul-4",
+    evidenceKind: "NOT_EXISTS",
+    sourceId,
+    sourceSnapshotId: snapshotId,
+  });
+  claim.providerRecordHash = hash(JSON.stringify({
+    stationId: claim.stationId,
+    lineName: "4호선",
+    status: "NOT_COVERED",
+  }));
+  claim.evidenceHash = hash(JSON.stringify({
+    snapshotId,
+    stationId: claim.stationId,
+    lineId: claim.lineId,
+    providerRecordHash: claim.providerRecordHash,
+  }));
+  Object.assign(input.inventory.sources[0], { id: sourceId });
+  Object.assign(input.inventory.sources[0].accessibilityAdmissionEvidence, {
+    snapshotId,
+    absenceEvidenceMode: "EXHAUSTIVE_LIST",
+  });
+  Object.assign(input.snapshots[0], {
+    artifactKind: "seoul-accessibility-snapshot",
+    sourceId,
+    snapshotId,
+    stations: [{ stationName: "사당", lineName: "4호선", facilities: [] }],
+  });
+  delete input.snapshots[0].claimBindings;
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "bundled-capital:station-sadang|seoul-4|ELEVATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+});
+
+test("KRIC snapshot에 matching row가 있으면 NOT_EXISTS로 위조할 수 없다", () => {
+  const input = validInput();
+  input.artifacts = [input.artifacts[0]];
+  const claim = input.artifacts[0].claims[0];
+  const row = { gubun: "EV", dtlLoc: "승강장" };
+  const query = { railOprIsttCd: "KR", lnCd: "4", stinCd: "448" };
+  claim.evidenceKind = "NOT_EXISTS";
+  claim.providerRecordHash = hash(JSON.stringify(row));
+  claim.evidenceHash = hash(JSON.stringify({
+    snapshotId: claim.sourceSnapshotId,
+    query,
+    providerRecordHash: claim.providerRecordHash,
+  }));
+  Object.assign(input.snapshots[0], {
+    artifactKind: "kric-accessibility-snapshot",
+    queries: [{ ...query, stationId: claim.stationId, lineId: claim.lineId, rows: [row] }],
+  });
+  delete input.snapshots[0].claimBindings;
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "bundled-capital:station-a|line-a|ELEVATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+});
+
+test("manifest root 기본값은 manifest 파일의 디렉터리다", () => {
+  assert.equal(manifestAssetRoot("/tmp/output/current.json"), "/tmp/output");
+});
+
+for (const { name, mutate, partition, expected } of [
+  {
+    name: "expired snapshot",
+    mutate: (input) => { input.sourceSnapshotPolicies[0].freshnessExpiresAt = EVALUATED_AT; },
+    partition: "freshness",
+    expected: "official-accessibility:SNAPSHOT_STALE",
+  },
+  {
+    name: "missing redistribution permission",
+    mutate: (input) => { input.inventory.sources[0].license.redistributionAllowed = false; },
+    partition: "license",
+    expected: "official-accessibility:LICENSE_NOT_REDISTRIBUTABLE",
+  },
+  {
+    name: "snapshot digest mismatch",
+    mutate: (input) => { input.snapshots[0].rawSha256 = hash("different-raw"); },
+    partition: "snapshot",
+    expected: "official-accessibility:SNAPSHOT_IDENTITY_MISMATCH",
+  },
+  {
+    name: "snapshot file digest mismatch",
+    mutate: (input) => { input.snapshots[0].snapshotFileSha256 = hash("different-file"); },
+    partition: "snapshot",
+    expected: "official-accessibility:SNAPSHOT_IDENTITY_MISMATCH",
+  },
+  {
+    name: "snapshot absence evidence mode mismatch",
+    mutate: (input) => { delete input.snapshots[0].absenceEvidenceMode; },
+    partition: "snapshot",
+    expected: "official-accessibility:SNAPSHOT_IDENTITY_MISMATCH",
+  },
+  {
+    name: "snapshot policy identity mismatch",
+    mutate: (input) => { input.sourceSnapshotPolicies[0].snapshotId = "other-snapshot"; },
+    partition: "snapshot",
+    expected: "official-accessibility:SNAPSHOT_POLICY_MISMATCH",
+  },
+  {
+    name: "claim provenance missing",
+    mutate: (input) => { input.artifacts[0].claims[0].sourceId = ""; },
+    partition: "provenance",
+    expected: "bundled-capital:station-a|line-a|ELEVATOR|STATION_FACILITY_EVIDENCE:PROVENANCE_MISSING",
+  },
+  {
+    name: "accessibility admission not approved",
+    mutate: (input) => { input.inventory.sources[0].accessibilityAdmissionEvidence.decision = "PENDING"; },
+    partition: "provenance",
+    expected: "official-accessibility:ACCESSIBILITY_ADMISSION_NOT_APPROVED",
+  },
+  {
+    name: "row absence without completeness evidence",
+    mutate: (input) => {
+      input.artifacts[0].claims[0].evidenceKind = "NOT_EXISTS";
+      delete input.inventory.sources[0].accessibilityAdmissionEvidence.absenceEvidenceMode;
+    },
+    partition: "absenceEvidence",
+    expected: "bundled-capital:station-a|line-a|ELEVATOR|STATION_FACILITY_EVIDENCE:ABSENCE_EVIDENCE_MISSING",
+  },
+  {
+    name: "placeholder evidence hash",
+    mutate: (input) => { input.artifacts[0].claims[0].evidenceHash = "a".repeat(64); },
+    partition: "placeholder",
+    expected: "bundled-capital:station-a|line-a|ELEVATOR|STATION_FACILITY_EVIDENCE:EVIDENCE_HASH_PLACEHOLDER",
+  },
+  {
+    name: "duplicate artifact identity",
+    mutate: (input) => { input.artifacts[1].artifactId = "bundled-capital"; },
+    partition: "artifactIdentity",
+    expected: "bundled-capital:DUPLICATE_ARTIFACT_ID",
+  },
+]) {
+  test(`${name}는 ${partition} violation으로 NO_GO다`, () => {
+    const input = validInput();
+    mutate(input);
+
+    const report = buildAccessibilitySourceCoverageReport(input);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations[partition], [expected]);
+  });
+}
+
+test("expired live admission remains valid while its locked snapshot policy is fresh", () => {
+  const input = validInput();
+  input.inventory.sources[0].accessibilityAdmissionEvidence.freshUntil = EVALUATED_AT;
+  input.snapshots[0].freshUntil = EVALUATED_AT;
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "GO");
+  assert.deepEqual(report.violations.freshness, []);
+});
+
+test("EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED absence evidence mode is admitted for NOT_EXISTS claims", () => {
+  const input = validInput();
+  input.artifacts[0].claims[0].evidenceKind = "NOT_EXISTS";
+  input.inventory.sources[0].accessibilityAdmissionEvidence.absenceEvidenceMode =
+    "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED";
+  input.snapshots[0].absenceEvidenceMode =
+    "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED";
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "GO");
+  assert.deepEqual(report.violations.absenceEvidence, []);
+});
+
+function validInput() {
+  const rawSha256 = hash("raw-snapshot");
+  const contentSha256 = hash("normalized-snapshot");
+  const schemaFingerprint = hash("schema");
+  const snapshotFileSha256 = hash("snapshot-file");
+  const snapshotId = "official-accessibility-20260728";
+  const sourceId = "official-accessibility";
+  const licenseEvidenceHash = hash("license-evidence");
+  const claim = (stationId) => ({
+    stationId,
+    lineId: "line-a",
+    facilityType: "ELEVATOR",
+    domain: "STATION_FACILITY_EVIDENCE",
+    evidenceKind: "VERIFIED_PRESENT",
+    sourceId,
+    sourceSnapshotId: snapshotId,
+    providerRecordHash: hash(`${stationId}-record`),
+    evidenceHash: hash(`${stationId}-evidence`),
+  });
+  return {
+    evaluatedAt: EVALUATED_AT,
+    artifacts: [
+      {
+        artifactId: "bundled-capital",
+        sqliteSha256: hash("sqlite-a"),
+        searchableStationIds: ["station-a"],
+        claims: [claim("station-a")],
+      },
+      {
+        artifactId: "remote-capital",
+        sqliteSha256: hash("sqlite-b"),
+        searchableStationIds: ["station-b"],
+        claims: [claim("station-b")],
+      },
+    ],
+    inventory: {
+      sources: [{
+        id: sourceId,
+        productionUseAllowed: true,
+        license: { redistributionAllowed: true, attribution: "공식 제공기관" },
+        admissionEvidence: { licenseEvidenceHash },
+        accessibilityAdmissionEvidence: {
+          decision: "APPROVED",
+          productionUseAllowed: true,
+          licenseEvidenceHash,
+          snapshotId,
+          snapshotPath: "tools/datapack/sources/official-accessibility-20260728.json",
+          capturedAt: "2026-07-27T23:00:00.000Z",
+          observedAt: "2026-07-27T23:00:00.000Z",
+          freshUntil: "2026-07-29T23:00:00.000Z",
+          rawSha256,
+          contentSha256,
+          schemaFingerprint,
+          snapshotFileSha256,
+          absenceEvidenceMode: "EXPLICIT_ZERO",
+        },
+      }],
+    },
+    snapshots: [{
+      sourceId,
+      snapshotId,
+      snapshotPath: "tools/datapack/sources/official-accessibility-20260728.json",
+      capturedAt: "2026-07-27T23:00:00.000Z",
+      observedAt: "2026-07-27T23:00:00.000Z",
+      freshUntil: "2026-07-29T23:00:00.000Z",
+      rawSha256,
+      contentSha256,
+      schemaFingerprint,
+      snapshotFileSha256,
+      absenceEvidenceMode: "EXPLICIT_ZERO",
+      claimBindings: ["station-a", "station-b"].map((stationId) => ({
+        stationId,
+        lineId: "line-a",
+        facilityType: "ELEVATOR",
+        providerRecordHash: hash(`${stationId}-record`),
+        evidenceHash: hash(`${stationId}-evidence`),
+      })),
+    }],
+    sourceSnapshotPolicies: [{
+      sourceId,
+      snapshotId,
+      snapshotStatus: "LOCKED",
+      fetchStatus: "SUCCESS",
+      schemaStatus: "PASS",
+      licenseStatus: "PASS",
+      redistributionAllowed: true,
+      credentialRedacted: true,
+      freshnessExpiresAt: "2026-10-26T23:00:00.000Z",
+    }],
+  };
+}
+
+function emptyViolations() {
+  return {
+    freshness: [],
+    license: [],
+    provenance: [],
+    snapshot: [],
+    absenceEvidence: [],
+    placeholder: [],
+    artifactIdentity: [],
+  };
+}
+
+function hash(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function hashBytes(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+test("지역 접근성 원천은 잠긴 snapshot policy·원문 row에 결속되면 GO다", () => {
+  const input = regionalBusanInput();
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("부산 원문 빈 count 필드는 미관측이라 NOT_EXISTS claim을 결속하지 못한다", () => {
+  const input = regionalBusanInput({ wheelchairRaw: "" });
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "bundled-nationwide:station-busan-100|line-busan-1|WHEELCHAIR_LIFT|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+});
+
+test("원천에 열이 없는 대전·광주 휠체어리프트 claim은 결속되지 않는다", () => {
+  for (const region of ["daejeon", "gwangju"]) {
+    const input = regionalCountInput(region);
+    const report = buildAccessibilitySourceCoverageReport(input);
+    assert.equal(report.decision, "GO", region);
+
+    input.artifacts[0].claims.push(regionalCountClaim(input, region, "WHEELCHAIR_LIFT", 0, "NOT_EXISTS"));
+    const blocked = buildAccessibilitySourceCoverageReport(input);
+    assert.equal(blocked.decision, "NO_GO", region);
+    assert.ok(blocked.violations.provenance.some((value) =>
+      value.includes("|WHEELCHAIR_LIFT|") && value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")), region);
+  }
+});
+
+test("대구 명시적 0은 EXPLICIT_ZERO 부재 claim으로 결속된다", () => {
+  const input = regionalCountInput("daegu");
+  input.artifacts[0].claims.push(regionalCountClaim(input, "daegu", "WHEELCHAIR_LIFT", 0, "NOT_EXISTS"));
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("지역 원천 license hash가 잠긴 policy 검토 hash와 다르면 NO_GO다", () => {
+  const input = regionalBusanInput();
+  input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = hash("stale-license");
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.license, ["busan-transportation-accessibility:LICENSE_EVIDENCE_MISMATCH"]);
+});
+
+test("지역 원천 row가 rowsSha256과 다르면 snapshot identity와 claim 결속이 모두 실패한다", () => {
+  const input = regionalBusanInput();
+  input.snapshots[0].rows[0].el_i = 9;
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.snapshot, ["busan-transportation-accessibility:SNAPSHOT_IDENTITY_MISMATCH"]);
+  assert.ok(report.violations.provenance.every((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")));
+});
+
+test("지역 원천 snapshot 파일은 내용 hash와 관측일로 snapshot id를 유도한다", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-regional-accessibility-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const { snapshots: [snapshot] } = regionalCountInput("daegu");
+  const { snapshotId: _snapshotId, snapshotPath: _snapshotPath, snapshotFileSha256: _fileSha256, ...fileJson } = snapshot;
+  const bytes = `${JSON.stringify(fileJson, null, 2)}\n`;
+  const derivedId = `daegu-transportation-accessibility-${hash(JSON.stringify(fileJson))}-20260728`;
+  await writeFile(path.join(repositoryRoot, "regional.json"), bytes);
+
+  const [loaded] = await loadAccessibilityAdmissionSnapshots({
+    sources: [{
+      id: "daegu-transportation-accessibility",
+      accessibilityAdmissionEvidence: { snapshotId: derivedId, snapshotPath: "regional.json" },
+    }],
+    referencedSourceIds: new Set(["daegu-transportation-accessibility"]),
+    repositoryRoot,
+  });
+
+  assert.equal(loaded.snapshotId, derivedId);
+  assert.equal(loaded.snapshotFileSha256, hashBytes(bytes));
+});
+
+const REGIONAL_COUNT_KINDS = Object.freeze({
+  daegu: { lineId: "line-daegu-1", row: { wheelchair_lift: 0, elevator: 4, escalator: 16 } },
+  daejeon: { lineId: "line-daejeon-1", row: { wheelchair_lift: 0, elevator: 4, escalator: 2 } },
+  gwangju: { lineId: "line-gwangju-1", row: { wheelchair_lift: 0, elevator: 2, escalator: 3 } },
+});
+
+function regionalSourceInput({ region, snapshotFields, rows, claims }) {
+  const sourceId = `${region}-transportation-accessibility`;
+  const capturedAt = "2026-07-27T23:00:00.000Z";
+  const freshUntil = "2026-07-28T23:00:00.000Z";
+  const rowsSha256 = hash(JSON.stringify(rows));
+  const fileJson = {
+    schemaVersion: 1,
+    artifactKind: `${region}-accessibility-snapshot`,
+    sourceId,
+    capturedAt,
+    freshUntil,
+    stationCount: rows.length,
+    rowCount: rows.length,
+    ...snapshotFields,
+    rowsSha256,
+    rows,
+  };
+  const snapshotId = `${sourceId}-${hash(JSON.stringify(fileJson))}-20260728`;
+  const snapshotPath = `tools/datapack/sources/${snapshotId}.json`;
+  const licenseEvidenceHash = hash(`${region}-license`);
+  return {
+    evaluatedAt: EVALUATED_AT,
+    artifacts: [{
+      artifactId: "bundled-nationwide",
+      sqliteSha256: hash("sqlite-nationwide"),
+      searchableStationIds: [`station-${region}-100`],
+      claims: claims({ sourceId, snapshotId, rowsSha256 }),
+    }],
+    inventory: {
+      sources: [{
+        id: sourceId,
+        productionUseAllowed: true,
+        license: { redistributionAllowed: true, attribution: "공식 제공기관" },
+        admissionEvidence: { licenseEvidenceHash },
+        capabilities: { facility: { status: "SUPPORTED", productionUseAllowed: true } },
+        accessibilityAdmissionEvidence: {
+          issue: 1,
+          materializer: `tools/datapack/materialize-${region}-accessibility.mjs`,
+          verificationTest: `tools/datapack/materialize-${region}-accessibility.test.mjs`,
+          snapshotId,
+          snapshotPath,
+          capturedAt,
+          freshUntil,
+          stationCount: rows.length,
+          rowCount: rows.length,
+          rawSha256: fileJson.rawSha256,
+          rowsSha256,
+        },
+      }],
+    },
+    snapshots: [{
+      ...structuredClone(fileJson),
+      snapshotId,
+      snapshotPath,
+      snapshotFileSha256: hash(`${snapshotId}-file`),
+    }],
+    sourceSnapshotPolicies: [{
+      sourceId,
+      snapshotId,
+      capturedAt,
+      rawSha256: fileJson.rawSha256,
+      contentSha256: rowsSha256,
+      snapshotStatus: "LOCKED",
+      fetchStatus: "SUCCESS",
+      schemaStatus: "PASS",
+      licenseStatus: "PASS",
+      redistributionAllowed: true,
+      credentialRedacted: true,
+      admissionEvidence: { licenseEvidenceHash },
+      freshnessExpiresAt: "2026-10-26T23:00:00.000Z",
+    }],
+  };
+}
+
+function regionalCountInput(region) {
+  const { lineId, row } = REGIONAL_COUNT_KINDS[region];
+  const rows = [{ stationCode: "100", stationName: "역", lineId, ...row }];
+  return regionalSourceInput({
+    region,
+    snapshotFields: { rawSha256: hash(`${region}-raw`) },
+    rows,
+    claims: ({ sourceId, snapshotId, rowsSha256 }) => ["ELEVATOR", "ESCALATOR"].flatMap((facilityType) => {
+      const count = facilityType === "ELEVATOR" ? row.elevator : row.escalator;
+      const base = regionalCountHash({ region, row: rows[0], facilityType, count });
+      return [{
+        stationId: `station-${region}-100`, stationName: "역", lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE",
+        evidenceKind: "EXISTS", sourceId, sourceSnapshotId: snapshotId, providerRecordHash: base, evidenceHash: rowsSha256,
+      }, {
+        claimId: `facility-${region}-100-${facilityType}`, stationId: `station-${region}-100`, stationName: "역", lineId: "", facilityType,
+        domain: "FACILITY", evidenceKind: "EXISTS", sourceId, sourceSnapshotId: snapshotId,
+        providerRecordHash: base, evidenceHash: rowsSha256,
+      }];
+    }),
+  });
+}
+
+function regionalCountClaim(input, region, facilityType, count, evidenceKind) {
+  const snapshot = input.snapshots[0];
+  return {
+    stationId: `station-${region}-100`,
+    stationName: snapshot.rows[0].stationName,
+    lineId: snapshot.rows[0].lineId,
+    facilityType,
+    domain: "STATION_FACILITY_EVIDENCE",
+    evidenceKind,
+    sourceId: snapshot.sourceId,
+    sourceSnapshotId: snapshot.snapshotId,
+    providerRecordHash: regionalCountHash({ region, row: snapshot.rows[0], facilityType, count }),
+    evidenceHash: snapshot.rowsSha256,
+  };
+}
+
+function regionalCountHash({ row, facilityType, count }) {
+  return hash(JSON.stringify({
+    stationCode: row.stationCode,
+    lineId: row.lineId,
+    type: facilityType,
+    count,
+    elevator: row.elevator,
+    escalator: row.escalator,
+    wheelchair_lift: row.wheelchair_lift,
+  }));
+}
+
+function regionalBusanInput({ wheelchairRaw = "0" } = {}) {
+  const lineId = "line-busan-1";
+  const values = {
+    sname: "동매", wl_i: wheelchairRaw, wl_o: wheelchairRaw, el_i: "2", el_o: "1", es: "0", blindroad: "1",
+    ourbridge: "0", helptake: "0", toilet: "2", toilet_gubun: "분리",
+  };
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><response><header><resultCode>00</resultCode></header><body><item>${
+    Object.entries(values).map(([name, value]) => `<${name}>${value}</${name}>`).join("")
+  }</item></body></response>`;
+  const bytes = Buffer.from(xml);
+  const rawResponses = [{ stationCode: "100", rawSha256: hashBytes(bytes), bytesBase64: bytes.toString("base64") }];
+  // 잠긴 기존 snapshot은 빈 필드를 0으로 저장했다. 원문이 그 0의 근거인지 원문으로 다시 판정해야 한다.
+  const rows = [{
+    stationCode: "100", stationName: "동매", lineId,
+    wl_i: 0, wl_o: 0, el_i: 2, el_o: 1, es: 0, blindroad: 1, ourbridge: 0, helptake: 0, toilet: 2,
+    toilet_gubun: "분리",
+  }];
+  const busanHash = (facilityType, count) => hash(JSON.stringify({
+    stationCode: "100", lineId, type: facilityType, count,
+    wl_i: rows[0].wl_i, wl_o: rows[0].wl_o, el_i: rows[0].el_i, el_o: rows[0].el_o, es: rows[0].es,
+  }));
+  return regionalSourceInput({
+    region: "busan",
+    snapshotFields: {
+      rawSha256: hash(JSON.stringify(rawResponses.map(({ stationCode, rawSha256 }) => ({ stationCode, rawSha256 })))),
+      rawResponses,
+    },
+    rows,
+    claims: ({ sourceId, snapshotId, rowsSha256 }) => [
+      ["ELEVATOR", 3, "EXISTS"],
+      ["ESCALATOR", 0, "NOT_EXISTS"],
+      ["WHEELCHAIR_LIFT", 0, "NOT_EXISTS"],
+    ].map(([facilityType, count, evidenceKind]) => ({
+      stationId: "station-busan-100", stationName: "동매", lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE", evidenceKind,
+      sourceId, sourceSnapshotId: snapshotId, providerRecordHash: busanHash(facilityType, count), evidenceHash: rowsSha256,
+    })),
+  });
+}
+
+test("지역 claim은 원천 row의 역 이름에 결속되어 다른 역 stationId로 옮길 수 없다(F1)", () => {
+  const input = regionalCountInput("daegu");
+  assert.equal(buildAccessibilitySourceCoverageReport(input).decision, "GO");
+
+  // loader는 stationId에서 정본 역 이름을 붙인다. 다른 역으로 옮기면 그 역의 이름이 따라온다.
+  const moved = regionalCountInput("daegu");
+  for (const claim of moved.artifacts[0].claims) Object.assign(claim, { stationId: "station-daegu-200", stationName: "다른역" });
+  const movedReport = buildAccessibilitySourceCoverageReport(moved);
+  assert.equal(movedReport.decision, "NO_GO");
+  assert.equal(movedReport.violations.provenance.length, moved.artifacts[0].claims.length);
+  assert.ok(movedReport.violations.provenance.every((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")));
+
+  // 정본 이름을 알 수 없는 claim도 결속하지 않는다.
+  const unnamed = regionalCountInput("daegu");
+  delete unnamed.artifacts[0].claims[0].stationName;
+  assert.equal(buildAccessibilitySourceCoverageReport(unnamed).decision, "NO_GO");
+
+  // 원천 이름의 괄호 부기·별칭은 후보 생성과 같은 규칙으로만 맞춘다.
+  const annotated = regionalCountInput("daegu");
+  annotated.snapshots[0].rows[0].stationName = "역(대학교)";
+  annotated.snapshots[0].rowsSha256 = hash(JSON.stringify(annotated.snapshots[0].rows));
+  annotated.inventory.sources[0].accessibilityAdmissionEvidence.rowsSha256 = annotated.snapshots[0].rowsSha256;
+  annotated.sourceSnapshotPolicies[0].contentSha256 = annotated.snapshots[0].rowsSha256;
+  for (const claim of annotated.artifacts[0].claims) claim.evidenceHash = annotated.snapshots[0].rowsSha256;
+  assert.equal(buildAccessibilitySourceCoverageReport(annotated).decision, "GO");
+});
+
+test("지역 FACILITY claim은 설치 상태가 원천 count와 맞을 때만 결속된다(F2)", () => {
+  const input = regionalCountInput("daegu");
+  const zeroLift = regionalCountClaim(input, "daegu", "WHEELCHAIR_LIFT", 0, "NOT_EXISTS");
+  const facility = { ...zeroLift, claimId: "facility-daegu-100-WHEELCHAIR_LIFT", lineId: "", domain: "FACILITY" };
+
+  // count 0 row 위의 FACILITY 존재 주장은 지어낸 존재다.
+  const fabricated = structuredClone(input);
+  fabricated.artifacts[0].claims.push({ ...facility, evidenceKind: "EXISTS" });
+  const fabricatedReport = buildAccessibilitySourceCoverageReport(fabricated);
+  assert.equal(fabricatedReport.decision, "NO_GO");
+  assert.deepEqual(fabricatedReport.violations.provenance, [
+    "bundled-nationwide:station-daegu-100||WHEELCHAIR_LIFT|FACILITY:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+
+  // 명시적 0의 미설치 시설 행은 부재로 결속된다.
+  const notInstalled = structuredClone(input);
+  notInstalled.artifacts[0].claims.push({ ...facility, evidenceKind: "NOT_EXISTS" });
+  assert.deepEqual(buildAccessibilitySourceCoverageReport(notInstalled).violations, emptyViolations());
+
+  // count가 양수인 row 위의 미설치 주장도 결속되지 않는다.
+  const hidden = structuredClone(input);
+  const elevator = hidden.artifacts[0].claims.find(({ domain, facilityType }) => domain === "FACILITY" && facilityType === "ELEVATOR");
+  elevator.evidenceKind = "NOT_EXISTS";
+  assert.equal(buildAccessibilitySourceCoverageReport(hidden).decision, "NO_GO");
+});
+
+test("facility 행의 설치 상태가 FACILITY claim의 evidenceKind가 된다(F2)", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-facility-installation-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const sqlitePath = path.join(directory, "pack.sqlite");
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(`
+    CREATE TABLE stations (id TEXT, name_ko TEXT);
+    CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
+    CREATE TABLE facilities (id TEXT, station_id TEXT, type TEXT, source_id TEXT, source_snapshot_id TEXT,
+      provider_record_hash TEXT, evidence_hash TEXT, installation_status TEXT);
+    INSERT INTO stations VALUES ('station-a', '역');
+    INSERT INTO station_lines VALUES ('station-a', 'line-a');
+    INSERT INTO facilities VALUES ('f-installed', 'station-a', 'ELEVATOR', 's', 'snap', 'h1', 'e1', 'INSTALLED');
+    INSERT INTO facilities VALUES ('f-absent', 'station-a', 'WHEELCHAIR_LIFT', 's', 'snap', 'h2', 'e2', 'NOT_INSTALLED');
+  `);
+  database.close();
+  const bytes = await readFile(sqlitePath);
+  await mkdir(path.join(directory, "catalog"), { recursive: true });
+  const gzipBytes = gzipSync(bytes);
+  await writeFile(path.join(directory, "catalog", "pack.sqlite.gz"), gzipBytes);
+  const manifest = { packs: [{
+    id: "pack-a", url: "https://example.invalid/catalog/pack.sqlite.gz", sha256: hashBytes(gzipBytes), sqliteSha256: hashBytes(bytes),
+  }] };
+  const artifacts = await loadSelectableAccessibilityArtifacts({
+    manifest, manifestRoot: directory, bundledIndex: { packs: [] }, bundledRoot: directory,
+  }).catch((error) => error);
+  if (artifacts instanceof Error) throw artifacts;
+  const facilityClaims = artifacts.flatMap(({ claims }) => claims).filter(({ domain }) => domain === "FACILITY");
+  assert.deepEqual(facilityClaims.map(({ claimId, evidenceKind }) => [claimId, evidenceKind]), [
+    ["f-installed", "EXISTS"],
+    ["f-absent", "NOT_EXISTS"],
+  ]);
+});
+
+// 리뷰 F3: 지역 원천 검증의 각 조건은 다른 조건이 모두 맞을 때 단독으로 깨져도 정확히 한 위반을 낸다.
+for (const [name, mutate, partition, code] of [
+  ["license hash 형식", (input) => {
+    input.inventory.sources[0].admissionEvidence.licenseEvidenceHash = "not-a-hash";
+    input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = "not-a-hash";
+  }, "license", "LICENSE_EVIDENCE_MISMATCH"],
+  ["policy license hash", (input) => {
+    input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = hash("other-license");
+  }, "license", "LICENSE_EVIDENCE_MISMATCH"],
+  ["시설 capability 상태", (input) => {
+    input.inventory.sources[0].capabilities.facility.status = "CANDIDATE";
+  }, "provenance", "ACCESSIBILITY_ADMISSION_NOT_APPROVED"],
+  ["시설 capability 운영 허용", (input) => {
+    input.inventory.sources[0].capabilities.facility.productionUseAllowed = false;
+  }, "provenance", "ACCESSIBILITY_ADMISSION_NOT_APPROVED"],
+  ["capturedAt 형식", (input) => {
+    for (const target of [input.snapshots[0], input.inventory.sources[0].accessibilityAdmissionEvidence, input.sourceSnapshotPolicies[0]]) {
+      target.capturedAt = "not-a-time";
+    }
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ["freshUntil 형식", (input) => {
+    input.snapshots[0].freshUntil = "not-a-time";
+    input.inventory.sources[0].accessibilityAdmissionEvidence.freshUntil = "not-a-time";
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ["미래 capturedAt", (input) => {
+    for (const target of [input.snapshots[0], input.inventory.sources[0].accessibilityAdmissionEvidence, input.sourceSnapshotPolicies[0]]) {
+      target.capturedAt = "2026-07-28T00:00:00.001Z";
+    }
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ...["snapshotPath", "capturedAt", "freshUntil", "rawSha256", "rowsSha256", "stationCount", "rowCount"].map((key) => [
+    `inventory ${key}`,
+    (input) => {
+      const evidence = input.inventory.sources[0].accessibilityAdmissionEvidence;
+      evidence[key] = typeof evidence[key] === "number" ? evidence[key] + 1 : `${evidence[key]}-x`;
+      if (key === "capturedAt") evidence[key] = "2026-07-27T22:00:00.000Z";
+      if (key === "freshUntil") evidence[key] = "2026-07-28T22:00:00.000Z";
+      if (key === "rawSha256" || key === "rowsSha256") evidence[key] = hash(`other-${key}`);
+    },
+    "snapshot",
+    "SNAPSHOT_IDENTITY_MISMATCH",
+  ]),
+  ["rawSha256 형식", (input) => {
+    input.snapshots[0].rawSha256 = "raw";
+    input.inventory.sources[0].accessibilityAdmissionEvidence.rawSha256 = "raw";
+    input.sourceSnapshotPolicies[0].rawSha256 = "raw";
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy capturedAt", (input) => {
+    input.sourceSnapshotPolicies[0].capturedAt = "2026-07-27T22:00:00.000Z";
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy rawSha256", (input) => {
+    input.sourceSnapshotPolicies[0].rawSha256 = hash("other-raw");
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy contentSha256", (input) => {
+    input.sourceSnapshotPolicies[0].contentSha256 = hash("other-content");
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ...["snapshotStatus", "fetchStatus", "schemaStatus", "licenseStatus"].map((key) => [
+    `policy ${key}`, (input) => { input.sourceSnapshotPolicies[0][key] = "PENDING"; }, "snapshot", "SNAPSHOT_POLICY_MISMATCH",
+  ]),
+  ...["redistributionAllowed", "credentialRedacted"].map((key) => [
+    `policy ${key}`, (input) => { input.sourceSnapshotPolicies[0][key] = false; }, "snapshot", "SNAPSHOT_POLICY_MISMATCH",
+  ]),
+  ["policy freshnessExpiresAt 형식", (input) => {
+    input.sourceSnapshotPolicies[0].freshnessExpiresAt = "not-a-time";
+  }, "freshness", "SNAPSHOT_STALE"],
+  ["policy 만료", (input) => {
+    input.sourceSnapshotPolicies[0].freshnessExpiresAt = EVALUATED_AT;
+  }, "freshness", "SNAPSHOT_STALE"],
+]) {
+  test(`지역 원천 ${name}만 깨지면 ${code} 하나만 낸다(F3)`, () => {
+    const input = regionalCountInput("daegu");
+    mutate(input);
+
+    const report = buildAccessibilitySourceCoverageReport(input);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations[partition], [`daegu-transportation-accessibility:${code}`]);
+    for (const other of Object.keys(emptyViolations()).filter((key) => key !== partition && key !== "provenance")) {
+      assert.deepEqual(report.violations[other], [], `${other} must stay empty`);
+    }
+  });
+}
+
+test("rowsSha256과 다른 지역 row는 hash 밖 필드만 바뀌어도 claim을 결속하지 못한다(F3)", () => {
+  const input = regionalCountInput("daegu");
+  // provider record hash에 들어가지 않는 역 이름만 바꾸고 claim도 그 이름으로 맞춘다. rowsSha256은 그대로다.
+  input.snapshots[0].rows[0].stationName = "바뀐역";
+  for (const claim of input.artifacts[0].claims) claim.stationName = "바뀐역";
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.equal(report.violations.provenance.filter((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")).length,
+    input.artifacts[0].claims.length);
+});
+
+// release-candidate 단계의 coverage report는 KRIC 세 상태 증거를 후보가 고정한 snapshot에서 다시 유도해 결속한다.
+const KRIC_STANDARD = "kric-station-convenience-standard";
+const KRIC_EVALUATED_AT = "2026-10-23T00:00:00.000Z";
+const KRIC_EVIDENCE_COLUMNS = Object.freeze([
+  "stationId", "lineId", "facilityType", "evidenceKind", "sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash", "statusMeaning",
+]);
+
+async function pinnedKricCoverageInputs(t) {
+  const read = await candidatePinnedReader();
+  const [inventory, sourceSnapshotPolicies, canonical] = await Promise.all([
+    candidatePinnedJson(read, "tools/datapack/source-inventory.json"),
+    candidatePinnedJson(read, "tools/datapack/release/source-snapshots.json"),
+    candidatePinnedJson(read, "tools/datapack/release/capital-production-canonical-pack.json"),
+  ]);
+  const { snapshotPath } = inventory.sources.find(({ id }) => id === KRIC_STANDARD).accessibilityAdmissionEvidence;
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-kric-coverage-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  await mkdir(path.dirname(path.join(repositoryRoot, snapshotPath)), { recursive: true });
+  await writeFile(path.join(repositoryRoot, snapshotPath), await read(snapshotPath));
+  const snapshots = await loadAccessibilityAdmissionSnapshots({
+    sources: inventory.sources, referencedSourceIds: new Set([KRIC_STANDARD]), repositoryRoot,
+  });
+  return { inventory, sourceSnapshotPolicies, pack: canonical.packs[0], snapshots, snapshot: snapshots[0], repositoryRoot };
+}
+
+async function kricCoverageReport({ inventory, sourceSnapshotPolicies, pack, snapshots, repositoryRoot }, evidenceRows, { stationLinesReadable = true } = {}) {
+  const directory = await mkdtemp(path.join(repositoryRoot, "pack-"));
+  const sqlitePath = path.join(directory, "pack.sqlite");
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(`
+    CREATE TABLE operators (id TEXT${stationLinesReadable ? ", name_ko TEXT" : ""});
+    CREATE TABLE lines (id TEXT, operator_id TEXT, name_ko TEXT);
+    CREATE TABLE stations (id TEXT, name_ko TEXT, region TEXT);
+    CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
+    CREATE TABLE station_facility_evidence (station_id TEXT, line_id TEXT, facility_type TEXT, evidence_kind TEXT, source_id TEXT,
+      source_snapshot_id TEXT, provider_record_hash TEXT, evidence_hash TEXT, status_meaning TEXT);
+  `);
+  const insertAll = (table, rows) => {
+    const statement = database.prepare(`INSERT INTO ${table} VALUES (${rows[0].map(() => "?").join(", ")})`);
+    for (const row of rows) statement.run(...row);
+  };
+  insertAll("operators", pack.operators.map(({ id, nameKo }) => (stationLinesReadable ? [id, nameKo] : [id])));
+  insertAll("lines", pack.lines.map(({ id, operatorId, nameKo }) => [id, operatorId, nameKo]));
+  insertAll("stations", pack.stations.map(({ id, nameKo, region }) => [id, nameKo, region]));
+  insertAll("station_lines", pack.stationLines.map(({ stationId, lineId }) => [stationId, lineId]));
+  insertAll("station_facility_evidence", evidenceRows.map((row) => KRIC_EVIDENCE_COLUMNS.map((column) => row[column])));
+  database.close();
+  const bytes = await readFile(sqlitePath);
+  await mkdir(path.join(directory, "catalog"));
+  await writeFile(path.join(directory, "catalog", "pack.sqlite.gz"), gzipSync(bytes));
+  const artifacts = await loadSelectableAccessibilityArtifacts({
+    manifest: { packs: [{ id: "nationwide", url: "https://example.invalid/catalog/pack.sqlite.gz", sqliteSha256: hashBytes(bytes) }] },
+    manifestRoot: directory, bundledIndex: { packs: [] }, bundledRoot: directory,
+  });
+  const evaluatedAt = new Date(Math.max(
+    Date.parse(KRIC_EVALUATED_AT),
+    ...snapshots.map(({ capturedAt }) => Date.parse(capturedAt) + 1_000),
+  )).toISOString();
+  return buildAccessibilitySourceCoverageReport({
+    artifacts, inventory, snapshots, sourceSnapshotPolicies, evaluatedAt,
+  });
+}
+
+// stationCnvFacl 조회 결과로 낸 상태 증거의 계약: provider hash는 조회 hash, evidence hash는 (snapshot, 조회 tuple, 유형, 상태)의 hash다.
+function kricStatusEvidence(snapshot, { stationId, lineId, facilityType, evidenceKind, statusMeaning }) {
+  const query = snapshot.queries.find((candidate) => candidate.stationId === stationId && candidate.lineId === lineId);
+  const tuple = { railOprIsttCd: query.railOprIsttCd, lnCd: query.lnCd, stinCd: query.stinCd };
+  return {
+    stationId, lineId, facilityType, evidenceKind, statusMeaning,
+    sourceId: KRIC_STANDARD,
+    sourceSnapshotId: snapshot.snapshotId,
+    providerRecordHash: query.providerRecordHash,
+    evidenceHash: hash(JSON.stringify({ snapshotId: snapshot.snapshotId, query: tuple, type: facilityType, evidenceKind })),
+  };
+}
+
+test("#3036 사당 4호선 에스컬레이터 UNKNOWN 증거는 고정 KRIC snapshot에 결속되어 coverage report가 GO다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  })]);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("#3036 후보 팩 생산 규칙이 낸 KRIC 시설 증거는 세 상태 모두 coverage report에서 결속된다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const { stationFacilityEvidence } = withCapitalKricFacilities({ pack: inputs.pack, snapshot: inputs.snapshot });
+  const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
+  assert.deepEqual(new Set(kricEvidence.map(({ evidenceKind, statusMeaning }) => `${evidenceKind}:${statusMeaning}`)), new Set([
+    "EXISTS:STATIC_LOCATION",
+    "NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE",
+    "UNKNOWN:SOURCE_DOES_NOT_COVER_TYPE",
+    "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY",
+    "UNKNOWN:STATION_LINE_NOT_QUERIED",
+  ]));
+
+  const report = await kricCoverageReport(inputs, kricEvidence);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+for (const [name, evidence] of [
+  ["에스컬레이터를 다른 노선 조회에 실렸다고 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "LISTED_ON_OTHER_LINE_QUERY",
+  }],
+  ["원천이 다루는 휠체어리프트를 원천 밖 유형이라 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  }],
+  ["신당 6호선 조회에 실린 휠체어리프트를 원천 밖 유형이라 적은 2호선 UNKNOWN", {
+    stationId: "station-e43cb7fb4322", lineId: "seoul-2", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  }],
+  ["청구 6호선 조회에 실린 승강기를 5호선에서 부재라 적은 NOT_EXISTS", {
+    stationId: "station-198b6e06f06c", lineId: "line-80fc4d5350d4", facilityType: "ELEVATOR", evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+  }],
+  ["형제 역-노선이 조회되지 않은 서울역 4호선 휠체어리프트를 부재라 적은 NOT_EXISTS", {
+    stationId: "station-2af75c3d707b", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+  }],
+  ["2·4호선이 모두 조회된 사당 휠체어리프트를 형제 역-노선 미조회라 적은 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "WHEELCHAIR_LIFT", evidenceKind: "UNKNOWN", statusMeaning: "STATION_LINE_NOT_QUERIED",
+  }],
+  ["상태 의미가 없는 에스컬레이터 UNKNOWN", {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: null,
+  }],
+]) {
+  test(`#3036 snapshot과 어긋난 증거(${name})는 결속되지 않아 NO_GO다`, async (t) => {
+    const inputs = await pinnedKricCoverageInputs(t);
+    const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)]);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations, {
+      ...emptyViolations(),
+      provenance: [
+        `manifest-nationwide:${evidence.stationId}|${evidence.lineId}|${evidence.facilityType}|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+      ],
+    });
+  });
+}
+
+// 결속은 상태 종류, provider hash, evidence hash 세 항이 모두 맞아야 한다. 참 상태(사당 4호선 에스컬레이터 UNKNOWN)에서 한 항만 바꾸고 나머지 둘은 참 값으로 둔다.
+const SADANG_ESCALATOR_UNKNOWN = Object.freeze({
+  stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+});
+
+for (const [term, tamper] of [
+  ["상태 종류(NOT_EXISTS)", () => ({ evidenceKind: "NOT_EXISTS" })],
+  ["provider hash", () => ({ providerRecordHash: hash("다른 조회의 provider hash") })],
+  ["evidence hash", () => ({ evidenceHash: hash("다른 상태의 evidence hash") })],
+]) {
+  test(`#3036 참 UNKNOWN 증거에서 ${term}만 바꾸면 나머지 둘이 참이어도 결속되지 않아 NO_GO다`, async (t) => {
+    const inputs = await pinnedKricCoverageInputs(t);
+    const evidence = { ...kricStatusEvidence(inputs.snapshot, SADANG_ESCALATOR_UNKNOWN), ...tamper() };
+    const report = await kricCoverageReport(inputs, [evidence]);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations.provenance, [
+      `manifest-nationwide:${evidence.stationId}|${evidence.lineId}|${evidence.facilityType}|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+    ]);
+  });
+}
+
+test("#3036 결과 03이 없어 조회별 코드를 쓰지 않는 snapshot의 KRIC 세 상태 증거도 coverage report에서 결속되어 GO다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const queries = inputs.snapshot.queries.filter(({ providerResultCode }) => providerResultCode !== "03")
+    .map(({ providerResultCode: _providerResultCode, ...query }) => query);
+  const snapshot = { ...inputs.snapshot, providerResultCode: "00", queries };
+  const { stationFacilityEvidence } = withCapitalKricFacilities({ pack: inputs.pack, snapshot });
+  const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
+  assert.equal(queries.some((query) => "providerResultCode" in query), false);
+  assert.equal(kricEvidence.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 181);
+
+  const report = await kricCoverageReport({ ...inputs, snapshots: [snapshot] }, kricEvidence);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("#3036 역-노선 표를 읽을 수 없는 artifact의 KRIC 상태 증거는 형제 역-노선을 확인할 수 없어 결속되지 않는다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const evidence = {
+    stationId: "station-sadang", lineId: "seoul-4", facilityType: "ESCALATOR", evidenceKind: "UNKNOWN", statusMeaning: "SOURCE_DOES_NOT_COVER_TYPE",
+  };
+  const report = await kricCoverageReport(inputs, [kricStatusEvidence(inputs.snapshot, evidence)], { stationLinesReadable: false });
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "manifest-nationwide:station-sadang|seoul-4|ESCALATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+});
+
+// #3036 QA 승인 2026-10-23: 에스컬레이터 증거는 stationEscalator snapshot(새 원천 id)에 결속된다.
+// 고정 수도권 snapshot의 조회 tuple에 결정적 응답을 붙여 실제 수집기로 만든 수집본과, 그 원천을 등록한 inventory·원장 행이다.
+const KRIC_ESCALATOR = "kric-station-escalator-detailed";
+const ESCALATOR_CAPTURED_AT = "2026-10-22T12:00:00.000Z";
+
+async function escalatorCoverageInputs(t, { withTerminal = true } = {}) {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const escalatorCapturedAt = new Date(Math.max(
+    Date.parse(ESCALATOR_CAPTURED_AT),
+    Date.parse(inputs.snapshot.capturedAt) + 1_000,
+  ));
+  const terminal = new Set(inputs.snapshot.queries.filter((_, index) => withTerminal && index % 17 === 0).map(({ stinCd }) => stinCd));
+  const { snapshot: collected } = await collectKricStandardAccessibilityObservation({
+    sourceId: KRIC_ESCALATOR, serviceKey: "fixture-only-key", now: escalatorCapturedAt,
+    roster: inputs.snapshot.queries.map(({ stationId, lineId, railOprIsttCd, lnCd, stinCd, canonicalMappings }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, canonicalMappings })),
+    fetchImpl: async (url) => {
+      const tuple = Object.fromEntries(["railOprIsttCd", "lnCd", "stinCd"].map((field) => [field, url.searchParams.get(field)]));
+      const row = { dtlLoc: "대합실", exitNo: "1", grndDvNmFr: "지하", grndDvNmTo: "지하", runStinFlorFr: "1", runStinFlorTo: "2", updnDvNm: "상행", ...tuple };
+      const body = terminal.has(tuple.stinCd) ? null : (hash(tuple.stinCd)[0] < "8" ? [row] : []);
+      return { ok: true, status: 200, json: async () => (body === null ? { header: { resultCode: "03" }, body: [] } : { header: { resultCode: "00" }, body }) };
+    },
+  });
+  const snapshotPath = `tools/datapack/sources/${collected.snapshotId}.json`;
+  const bytes = Buffer.from(`${JSON.stringify(collected, null, 2)}\n`);
+  await writeFile(path.join(inputs.repositoryRoot, snapshotPath), bytes);
+  const standardSource = inputs.inventory.sources.find(({ id }) => id === KRIC_STANDARD);
+  const escalatorSource = {
+    ...structuredClone(standardSource),
+    id: KRIC_ESCALATOR,
+    accessibilityAdmissionEvidence: {
+      ...structuredClone(standardSource.accessibilityAdmissionEvidence),
+      snapshotId: collected.snapshotId, snapshotPath, snapshotFileSha256: hashBytes(bytes),
+      ...Object.fromEntries(["capturedAt", "observedAt", "freshUntil", "rawSha256", "contentSha256", "schemaFingerprint", "absenceEvidenceMode"]
+        .map((field) => [field, collected[field]])),
+    },
+  };
+  const inventory = {
+    ...inputs.inventory,
+    sources: [...inputs.inventory.sources.filter(({ id }) => id !== KRIC_ESCALATOR), escalatorSource],
+  };
+  const standardHead = inputs.sourceSnapshotPolicies.findLast(({ sourceId }) => sourceId === KRIC_STANDARD);
+  const policy = { ...structuredClone(standardHead), sourceId: KRIC_ESCALATOR, snapshotId: collected.snapshotId, freshnessExpiresAt: collected.freshUntil };
+  const snapshots = await loadAccessibilityAdmissionSnapshots({
+    sources: inventory.sources, referencedSourceIds: new Set([KRIC_STANDARD, KRIC_ESCALATOR]), repositoryRoot: inputs.repositoryRoot,
+  });
+  const escalator = snapshots.find(({ sourceId }) => sourceId === KRIC_ESCALATOR);
+  const standardEvidence = withCapitalKricFacilities({ pack: inputs.pack, snapshot: inputs.snapshot });
+  const { stationFacilityEvidence } = withCapitalKricFacilities({ pack: { ...inputs.pack, ...standardEvidence }, snapshot: escalator });
+  return {
+    inputs: {
+      ...inputs,
+      inventory,
+      sourceSnapshotPolicies: [...inputs.sourceSnapshotPolicies.filter(({ sourceId }) => sourceId !== KRIC_ESCALATOR), policy],
+      snapshots,
+    },
+    escalator,
+    evidence: stationFacilityEvidence.filter(({ sourceId }) => [KRIC_STANDARD, KRIC_ESCALATOR].includes(sourceId)),
+  };
+}
+
+const escalatorClaimId = ({ stationId, lineId }) => `manifest-nationwide:${stationId}|${lineId}|ESCALATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`;
+
+test("#3036 후보 팩 생산 규칙이 낸 에스컬레이터 원천 증거는 네 상태 모두 coverage report에서 결속되어 GO다", async (t) => {
+  const { inputs, evidence } = await escalatorCoverageInputs(t);
+  const escalatorEvidence = evidence.filter(({ sourceId }) => sourceId === KRIC_ESCALATOR);
+  assert.deepEqual(new Set(escalatorEvidence.map(({ evidenceKind, statusMeaning }) => `${evidenceKind}:${statusMeaning}`)), new Set([
+    "EXISTS:STATIC_LOCATION", "NOT_EXISTS:EXHAUSTIVE_LIST_ABSENCE", "UNKNOWN:LISTED_ON_OTHER_LINE_QUERY", "UNKNOWN:STATION_LINE_NOT_QUERIED",
+  ]));
+
+  const report = await kricCoverageReport(inputs, evidence);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("#3036 결과 03이 없는 에스컬레이터 snapshot(조회별 코드 없음)의 증거도 결속되어 GO다", async (t) => {
+  const { inputs, evidence, escalator } = await escalatorCoverageInputs(t, { withTerminal: false });
+  assert.equal(escalator.providerResultCode, "00");
+  assert.equal(evidence.filter(({ sourceId, evidenceKind }) => sourceId === KRIC_ESCALATOR && evidenceKind === "NOT_EXISTS").length > 0, true);
+
+  const report = await kricCoverageReport(inputs, evidence);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+// 에스컬레이터 원천 증거의 결속 항(원천이 다루는 유형, 상태 종류·의미, provider hash, evidence hash, 결과 00 조회)을 하나씩 어긴다.
+for (const [term, pick, tamper] of [
+  ["존재 증거의 provider hash", ({ evidenceKind }) => evidenceKind === "EXISTS", () => ({ providerRecordHash: hash("다른 행") })],
+  ["존재 증거의 evidence hash", ({ evidenceKind }) => evidenceKind === "EXISTS", () => ({ evidenceHash: hash("다른 증거") })],
+  ["존재 증거를 승강기로 바꾼 유형", ({ evidenceKind }) => evidenceKind === "EXISTS", () => ({ facilityType: "ELEVATOR" })],
+  ["부재를 UNKNOWN으로 바꾼 상태 종류", ({ evidenceKind }) => evidenceKind === "NOT_EXISTS", () => ({ evidenceKind: "UNKNOWN" })],
+  ["부재의 상태 의미", ({ evidenceKind }) => evidenceKind === "NOT_EXISTS", () => ({ statusMeaning: "STATION_LINE_NOT_QUERIED" })],
+  ["부재의 provider hash", ({ evidenceKind }) => evidenceKind === "NOT_EXISTS", () => ({ providerRecordHash: hash("다른 조회") })],
+  ["부재의 evidence hash", ({ evidenceKind }) => evidenceKind === "NOT_EXISTS", () => ({ evidenceHash: hash("다른 상태") })],
+  ["다른 노선 조회에 실린 UNKNOWN을 부재로", ({ statusMeaning }) => statusMeaning === "LISTED_ON_OTHER_LINE_QUERY",
+    () => ({ evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE" })],
+  ["형제 역-노선 미조회 UNKNOWN을 부재로", ({ statusMeaning }) => statusMeaning === "STATION_LINE_NOT_QUERIED",
+    () => ({ evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE" })],
+]) {
+  test(`#3036 에스컬레이터 원천 증거에서 ${term}만 어기면 결속되지 않아 NO_GO다`, async (t) => {
+    const { inputs, evidence } = await escalatorCoverageInputs(t);
+    const target = evidence.find((row) => row.sourceId === KRIC_ESCALATOR && pick(row));
+    const tampered = { ...target, ...tamper(target) };
+    const others = evidence.filter((row) => row !== target && !(row.stationId === tampered.stationId && row.lineId === tampered.lineId
+      && row.facilityType === tampered.facilityType));
+
+    const report = await kricCoverageReport(inputs, [...others, tampered]);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations, {
+      ...emptyViolations(),
+      provenance: [escalatorClaimId(tampered).replaceAll("|ESCALATOR|", `|${tampered.facilityType}|`)],
+    });
+  });
+}
+
+test("#3036 결과 03 역-노선에 에스컬레이터 원천 증거를 쓰면 조회된 적이 없어 결속되지 않는다", async (t) => {
+  const { inputs, evidence, escalator } = await escalatorCoverageInputs(t);
+  const terminal = escalator.queries.find(({ providerResultCode, stationId, lineId }) => providerResultCode === "03"
+    && evidence.some((row) => row.stationId === stationId && row.lineId === lineId && row.facilityType === "ESCALATOR"));
+  const tuple = { railOprIsttCd: terminal.railOprIsttCd, lnCd: terminal.lnCd, stinCd: terminal.stinCd };
+  const forged = {
+    stationId: terminal.stationId, lineId: terminal.lineId, facilityType: "ESCALATOR", evidenceKind: "NOT_EXISTS",
+    statusMeaning: "EXHAUSTIVE_LIST_ABSENCE", sourceId: KRIC_ESCALATOR, sourceSnapshotId: escalator.snapshotId, providerRecordHash: hash("[]"),
+    evidenceHash: hash(JSON.stringify({ snapshotId: escalator.snapshotId, query: tuple, type: "ESCALATOR", evidenceKind: "NOT_EXISTS" })),
+  };
+  const others = evidence.filter((row) => !(row.stationId === forged.stationId && row.lineId === forged.lineId && row.facilityType === "ESCALATOR"));
+
+  const report = await kricCoverageReport(inputs, [...others, forged]);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [escalatorClaimId(forged)]);
+});
+
+test("대전(DJ/1, 22역)·광주(GJ/1, 20역) KRIC WHEELCHAIR_LIFT 존재(중앙로·양동시장)·부재(나머지 40역) 증거는 snapshot에 결속되어 GO이고, ELEVATOR·ESCALATOR 주장이나 변조는 NO_GO다", async (t) => {
+  const inputs = await pinnedKricCoverageInputs(t);
+  const rosterSnapshot = JSON.parse(await readFile(path.join(import.meta.dirname, "sources/kric-nationwide-route-rosters-20261001T050420765Z.json"), "utf8"));
+  const allRosterStations = rosterSnapshot.rosters.flatMap((r) => r.stations);
+  const djRows = allRosterStations.filter((r) => r.railOprIsttCd === "DJ" && r.lnCd === "1");
+  const gjRows = allRosterStations.filter((r) => r.railOprIsttCd === "GJ" && r.lnCd === "1");
+  const stationByNormName = (lineId) => {
+    const lineStationIds = new Set(inputs.pack.stationLines.filter((sl) => sl.lineId === lineId).map((sl) => sl.stationId));
+    return new Map(
+      inputs.pack.stations
+        .filter((s) => lineStationIds.has(s.id))
+        .map((s) => [s.nameKo.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim(), s.id]),
+    );
+  };
+  const djStationByName = stationByNormName("line-7051a9c2525c");
+  const gjStationByName = stationByNormName("line-e57a361e8892");
+  const regionalRoster = [
+    ...djRows.map((row) => {
+      const sid = djStationByName.get(row.stinNm.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim());
+      return {
+        stationId: sid,
+        lineId: "line-7051a9c2525c",
+        railOprIsttCd: "DJ",
+        lnCd: "1",
+        stinCd: row.stinCd,
+        canonicalMappings: [{ artifactId: "bundled-capital", stationId: sid, lineId: "line-7051a9c2525c" }],
+      };
+    }),
+    ...gjRows.map((row) => {
+      const sid = gjStationByName.get(row.stinNm.replace(/\([^)]*\)/g, "").replace(/역$/, "").trim());
+      return {
+        stationId: sid,
+        lineId: "line-e57a361e8892",
+        railOprIsttCd: "GJ",
+        lnCd: "1",
+        stinCd: row.stinCd,
+        canonicalMappings: [{ artifactId: "bundled-capital", stationId: sid, lineId: "line-e57a361e8892" }],
+      };
+    }),
+  ];
+  const yangdongId = inputs.pack.stations.find((s) => s.nameKo === "양동시장").id;
+  const { snapshot: regionalCollected } = await collectKricStandardAccessibilityObservation({
+    sourceId: KRIC_STANDARD,
+    roster: regionalRoster,
+    serviceKey: "fixture-only-key",
+    now: new Date("2026-11-10T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      const railOprIsttCd = url.searchParams.get("railOprIsttCd");
+      const lnCd = url.searchParams.get("lnCd");
+      const stinCd = url.searchParams.get("stinCd");
+      const target = regionalRoster.find((item) => item.railOprIsttCd === railOprIsttCd && item.lnCd === lnCd && item.stinCd === stinCd);
+      const cnvRow = (gubun, dtlLoc, stinFlor = "1") => ({
+        dtlLoc, grndDvCd: "2", gubun, imgPath: "", mlFmlDvCd: "", stinFlor, trfcWeakDvCd: "1",
+      });
+      const baseRows = [
+        cnvRow("EV", "대합실-승강장", "1"),
+        cnvRow("ES", "1번 출구", "1"),
+      ];
+      const hasWheelchairLift = (railOprIsttCd === "DJ" && stinCd === "0005") || target?.stationId === yangdongId;
+      const liftRows = hasWheelchairLift
+        ? [
+          cnvRow("WCLF", "대합실 1번 출구 방향", "1"),
+          cnvRow("WCLF", "승강장 방향", "2"),
+        ]
+        : [];
+      return { ok: true, status: 200, json: async () => ({ header: { resultCode: "00" }, body: [...baseRows, ...liftRows] }) };
+    },
+  });
+  const expandedSnapshot = {
+    ...inputs.snapshot,
+    queries: [
+      ...inputs.snapshot.queries.filter((q) => q.railOprIsttCd !== "DJ" && q.railOprIsttCd !== "GJ"),
+      ...regionalCollected.queries.map((q) => ({ providerResultCode: "00", ...q })),
+    ],
+  };
+  const { stationFacilityEvidence } = withCapitalKricFacilities({ pack: inputs.pack, snapshot: expandedSnapshot });
+  const kricEvidence = stationFacilityEvidence.filter(({ sourceId }) => sourceId === KRIC_STANDARD);
+  const regionalKricEvidence = kricEvidence.filter(({ lineId }) => lineId === "line-7051a9c2525c" || lineId === "line-e57a361e8892");
+
+  assert.equal(regionalKricEvidence.length, 42);
+  assert.equal(regionalKricEvidence.filter(({ evidenceKind }) => evidenceKind === "EXISTS").length, 2);
+  assert.equal(regionalKricEvidence.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 40);
+
+  const report = await kricCoverageReport({ ...inputs, snapshots: [expandedSnapshot] }, kricEvidence);
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+
+  // 반증 1: 대전/광주 KRIC 쿼리에서 다루지 않는 ELEVATOR를 주장하면 NO_GO
+  const djQuery = regionalCollected.queries.find((q) => q.railOprIsttCd === "DJ" && q.stinCd === "0005");
+  const forgedElevator = {
+    stationId: djQuery.stationId,
+    lineId: djQuery.lineId,
+    facilityType: "ELEVATOR",
+    evidenceKind: "EXISTS",
+    statusMeaning: "STATIC_LOCATION",
+    sourceId: KRIC_STANDARD,
+    sourceSnapshotId: expandedSnapshot.snapshotId,
+    providerRecordHash: hash(JSON.stringify(djQuery.rows[0])),
+    evidenceHash: expandedSnapshot.rawSha256,
+  };
+  const forgedReport = await kricCoverageReport({ ...inputs, snapshots: [expandedSnapshot] }, [...kricEvidence, forgedElevator]);
+  assert.equal(forgedReport.decision, "NO_GO");
+  assert.deepEqual(forgedReport.violations.provenance, [
+    `manifest-nationwide:${djQuery.stationId}|${djQuery.lineId}|ELEVATOR|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+  ]);
+
+  // 반증 2: 중앙로 WHEELCHAIR_LIFT EXISTS를 NOT_EXISTS로 변조하면 NO_GO
+  const tamperedExists = kricEvidence.map((row) => (
+    row.stationId === djQuery.stationId && row.lineId === djQuery.lineId && row.facilityType === "WHEELCHAIR_LIFT"
+      ? { ...row, evidenceKind: "NOT_EXISTS", statusMeaning: "EXHAUSTIVE_LIST_ABSENCE" }
+      : row
+  ));
+  const tamperedReport = await kricCoverageReport({ ...inputs, snapshots: [expandedSnapshot] }, tamperedExists);
+  assert.equal(tamperedReport.decision, "NO_GO");
+  assert.deepEqual(tamperedReport.violations.provenance, [
+    `manifest-nationwide:${djQuery.stationId}|${djQuery.lineId}|WHEELCHAIR_LIFT|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH`,
+  ]);
+});

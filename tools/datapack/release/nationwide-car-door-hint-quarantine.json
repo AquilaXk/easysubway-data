@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "datapack-car-door-hint-quarantine",
+  "issue": "https://github.com/AquilaXk/easysubway-data/issues/854",
+  "sourceId": "kric-station-convenience-standard",
+  "sourceSnapshotId": "kric-station-convenience-standard-20261117T025645094Z",
+  "rawSha256": "80ed50473f5d60660f61d91a2d209b5d725d3c4238018fdf0df27dcd444a3716",
+  "contract": {
+    "targetFacilityTypes": [
+      "STAIR",
+      "ELEVATOR",
+      "ESCALATOR",
+      "TRANSFER",
+      "WHEELCHAIR_LIFT"
+    ],
+    "carNumber": {
+      "min": 1,
+      "max": 10
+    },
+    "doorNumber": {
+      "min": 1,
+      "max": 4
+    },
+    "directions": [
+      "",
+      "UP",
+      "DOWN",
+      "INNER",
+      "OUTER"
+    ],
+    "references": [
+      "tools/datapack/schema/catalog-schema.sql station_car_door_hints CHECK",
+      "tools/datapack/import-car-door-hints.mjs DIRECTION_MAP"
+    ]
+  },
+  "summary": {
+    "generatedCount": 404,
+    "admittedCount": 402,
+    "quarantinedCount": 2,
+    "byReason": {
+      "DOOR_NUMBER_OUTSIDE_CONTRACT": 2
+    }
+  },
+  "rows": [
+    {
+      "id": "cardoor-station-e43cb7fb4322-line-3f41718e0833--ELEVATOR-5-8-2ad81cf947d35fe7",
+      "stationId": "station-e43cb7fb4322",
+      "lineId": "line-3f41718e0833",
+      "direction": "",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 5,
+      "doorNumber": 8,
+      "gubun": "TOLT",
+      "dtlLoc": "대합실 B1층 5~8번출입구 나가는 방향 계단 하부",
+      "providerRecordHash": "c28654582d0d444976829acb54e66089d6f09635f3ca7aa0452f2090e8d357af",
+      "reasons": [
+        "DOOR_NUMBER_OUTSIDE_CONTRACT"
+      ]
+    },
+    {
+      "id": "cardoor-station-72ba88ef7408-line-3f41718e0833--ELEVATOR-5-6-70f804937079e746",
+      "stationId": "station-72ba88ef7408",
+      "lineId": "line-3f41718e0833",
+      "direction": "",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 5,
+      "doorNumber": 6,
+      "gubun": "ELEC",
+      "dtlLoc": "또타 스토리지 우측 E/S 5~6호기 계단 하부 유휴공간",
+      "providerRecordHash": "7979e02d381c76b9a9634b3c29210f7e68a7e5d8facb182469022b65ca412806",
+      "reasons": [
+        "DOOR_NUMBER_OUTSIDE_CONTRACT"
+      ]
+    }
+  ]
+}

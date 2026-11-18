@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "current-static-source-revalidation-evidence",
+  "contractVersion": "1.0.0",
+  "sourceId": "seoulmetro-station-line-info",
+  "previousSnapshotId": "seoulmetro-station-line-info-change-admitted-20260813",
+  "observedAt": "2026-08-14T15:34:07.000Z",
+  "operation": "seoulmetro-line4-stations-one-to-five",
+  "rowCount": 5,
+  "canonicalRawSha256": "6e6060813eb9d029d5ffc0259a59553b37bfbd902fe1e03ff8246da3453bc29b",
+  "schemaFingerprint": "8826ff26d7eb0edc39e2232e144917777a8829edf6574cb2c07292915f1fa1a7",
+  "providerRecordHashesSha256": "72c91b4cda5d3a858cb15c2802eaa5ffa3c40946510a81ac88822b87a1be6940",
+  "responseSha256": "99248eeb6d1296db6454d3e62f4c8249d823998e0f49b77337546e19f02db756",
+  "outcome": "NO_CHANGE_REVALIDATED",
+  "credentialRedacted": true,
+  "evidenceSha256": "39ecf870ff47f3fbed249414b00e82d4f970cae77576b6ae78345bbca3a8a476"
+}

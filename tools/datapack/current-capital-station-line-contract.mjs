@@ -1,0 +1,60 @@
+const compareBytes = (left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right));
+const CANDIDATE_KEYS = [
+  "candidateId", "mappingContractVersion", "materializerVersion", "sourceSetSha256", "stationSetSha256",
+];
+
+export function canonicalCurrentCapitalStationLineInputJson(value) {
+  assertKeys(
+    value,
+    ["candidate", "stationLines", "evidenceRows"],
+    "full-capital station-line output",
+  );
+  assertKeys(value.candidate, CANDIDATE_KEYS, "full-capital station-line candidate");
+  if (!Array.isArray(value.stationLines) || !Array.isArray(value.evidenceRows)) {
+    throw new Error("full-capital station-line arrays are required");
+  }
+  return canonicalJson(value);
+}
+
+export function deriveCurrentReleaseCandidateObservedAt(evidenceRows) {
+  const captured = evidenceRows.map(({ capturedAt, freshUntil }) => {
+    const capturedMillis = Date.parse(capturedAt);
+    const freshMillis = Date.parse(freshUntil);
+    if (!Number.isFinite(capturedMillis) || !Number.isFinite(freshMillis)
+      || freshMillis <= capturedMillis) {
+      throw new Error("evidence freshness mismatch");
+    }
+    return { capturedMillis, freshMillis };
+  });
+  const observedMillis = Math.max(...captured.map(({ capturedMillis }) => capturedMillis));
+  if (!Number.isFinite(observedMillis)
+    || captured.some(({ freshMillis }) => freshMillis <= observedMillis)) {
+    throw new Error("evidence is stale at full-capital observation time");
+  }
+  return new Date(observedMillis).toISOString();
+}
+
+function assertKeys(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || canonicalJson(Object.keys(value).sort(compareBytes))
+      !== canonicalJson([...keys].sort(compareBytes))) {
+    throw new Error(`${label} keys mismatch`);
+  }
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(canonicalObject(value));
+}
+
+function canonicalObject(value) {
+  if (Array.isArray(value)) return value.map(canonicalObject);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort(compareBytes)
+    .map((key) => [key, canonicalObject(value[key])]));
+}
+
+export function canonicalCurrentCapitalRouteEdgeInputJson(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || canonicalJson(Object.keys(value).sort(compareBytes)) !== canonicalJson(["candidate", "routeEdges", "stationLines"])) throw new Error("full-capital route output keys mismatch");
+  if (!Array.isArray(value.stationLines) || !Array.isArray(value.routeEdges)) throw new Error("full-capital route arrays are required");
+  return canonicalJson(value);
+}

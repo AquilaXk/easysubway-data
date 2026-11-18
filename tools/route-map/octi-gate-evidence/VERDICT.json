@@ -1,0 +1,48 @@
+{
+  "artifactKind": "octi-phase1-gate-verdict",
+  "issue": 1789,
+  "date": "2026-07-06",
+  "branch": "route-map/octi-base",
+  "p13Commit": "13211333",
+  "loomCommit": "9d0a87a096abd8fd49d233dbc7df312c0438ad11",
+  "verdict": "C3 fallback (카카오 준지리형 + 국소수렴, 브리프 §8). octi 생성 경로는 사다리 C1→C2 소진 후 Phase 1 게이트 미달.",
+  "note_markdown_ignored": "이 리포는 .gitignore 4행 *.md로 마크다운 전역 무시 → 판정 기록은 JSON으로만 커밋 가능(build-loom도 .sh인 이유). 서술 정본은 본 JSON.",
+  "repro": [
+    "tools/route-map/build-loom.sh build",
+    "tools/route-map/build-loom.sh run <octi-bin-dir> <out>   # export→octi(base)→loom",
+    "<bin>/octi -b octihanan -g 60% --hanan-iters 3 --retry-on-error --skip-on-error < <out>/capital-geo.geojson > c1-octi.geojson   # C1 튜닝 1회",
+    "<bin>/loom --optim-method comb-no-ilp < c1-octi.geojson > c1-loom.geojson",
+    "node tools/route-map/octi-to-pack.mjs --loom c1-loom.geojson --transform <out>/capital-geo.transform.json --bundle-spacing 0",
+    "node tools/route-map/audit-station-spacing.mjs --json 03-c1-octi-sp0-norespace-BEST.json"
+  ],
+  "inputSha256": {
+    "capital-loom.geojson": "de806650df7f5ea49d7a8dc3e2dbd510abd881d608097905f556d6e059aea13b",
+    "capital-geo.geojson": "c6c5c2eb3e4695dc7ab27cc53c4740626a8395260a50ec4b0fde243784436fbf",
+    "capital-geo.transform.json": "28ff8a6d6f5b184a4a0e3c9086464f6254961f9e871fd15a446dd806fc714941"
+  },
+  "gate": { "free": 28, "octoViolations": 10, "p95OverP5": 7.1, "densityP5NorthStar": 56 },
+  "configs": [
+    { "id": "00-baseline", "desc": "현행 준지리형 (committed baseline)", "free": 19, "octoViolations": 10, "p95OverP5": 6.57, "densityP5": 44.95, "pass": true },
+    { "id": "01", "desc": "base octi(g100,h2) sp6 no-respace", "free": 140, "octoViolations": 20, "p95OverP5": 9.2, "pass": false },
+    { "id": "02", "desc": "base octi sp6 +respace(0.1/1.8)", "free": 245, "octoViolations": 2, "p95OverP5": 7.5, "pass": false },
+    { "id": "03-BEST", "desc": "C1 octi(g60,h3) sp0 no-respace (최선)", "free": 54, "octoViolations": 16, "p95OverP5": 5.82, "densityP5": 58.69, "pass": false },
+    { "id": "04", "desc": "C1 octi sp6 +respace(0.15)", "free": 132, "octoViolations": 2, "p95OverP5": 5.3, "pass": false }
+  ],
+  "baseOctiSp0FreeApprox": 95,
+  "reasoning": [
+    "2중 게이트 탈락: 최선 구성(03) free=54(게이트 2×)뿐 아니라 8선형 위반 16(≤10) 탈락. 8선형이 2로 떨어지는 건 respace 건 구성(02·04)뿐인데 그때 free 폭증(132·245) → free·8선형 동시 만족하는 octi 구성 없음.",
+    "respace(P1.4)는 octi에 유해 — 2구성 재현(base 140→245, C1 65→132). octi는 이미 간격 우수(p95/p5 5.8<7.1)라 P1.4 불필요.",
+    "C1(계획서 튜닝 1회 규정 준수, g100/h2→g60/h3): free 140→54 개선했으나 게이트 2×. 과신장 maxSeg 3902→1890px.",
+    "C2(국소)는 산술적으로 불충분: 잔여 54가 32셀 분산·top-5=39%(≈21). top-5 완벽 제거해도 54−21=33>28. 게이트엔 ≥26 제거 필요하나 모든 기하개입(respace 2회·오프셋)이 free를 늘렸다 → 기대값 음수.",
+    "★ 트레이드오프: octi 최선은 북극성 도심 p5≥56을 달성(58.7px, baseline 45.0의 1.3배) — 밀집 문제는 구조적으로 풀었으나 free 2×·8선형 16으로 기각. 밀집 해소분은 C3에서 폐기되지 않고 B-국소 P2(허브 국소확대)가 승계(목표선 p5≈56). '밀집은 풀었는데 왜 기각?'의 답 = 밀집 성공 ≠ 교차·8선형 게이트 통과."
+  ],
+  "c3RequiredDecisions": [
+    "본 실측이 브리프 §8 B-국소의 폴백이던 'A1 octi 완주'를 소거 → B-국소 실패 시 새 폴백 = 현행 baseline 유지 + P2 허브확대·P3 심미만(base 무교체).",
+    "B-국소 교차 예산 = +9뿐(baseline free 19, 게이트 28) → 수술 단위마다 free 재측정을 게이트로."
+  ],
+  "sideNotes": [
+    "번들 오프셋 부호 한계(free +11 기여): octi-to-pack.mjs 코드 주석 문서화. octi 재도입 시 노선별 전역 부호배정 필요.",
+    "baseline free 19(종전 22 대비 개선) = P0 데이터 정비(#1836 환승 오분리 병합·오병합 분리)로 가짜 인접/오병합 감소 추정.",
+    "브랜치 처분 = PR-B 도구-only 병합(사용자 결정, 2026-07-06). 미병합 브랜치는 영구 아님 — 게이트 증거를 main에 올려야 upside 경로(서울교통공사 허락 시 CSV base 승격·octi 재실험) 생존."
+  ]
+}

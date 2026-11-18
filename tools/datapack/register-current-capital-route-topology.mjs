@@ -1,0 +1,335 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { TOPOLOGY_REVERIFICATION_CADENCE } from "./lib/topology-freshness-cutover.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
+import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { isDeepStrictEqual } from "node:util";
+import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, capitalRouteTopologySnapshotIdMatchesCapturedAt, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+
+const SOURCE_ID = "capital-route-topology";
+const OWNER_SOURCE_ID = "seoul-metro-route-map-positions";
+const NAMESPACE = "axvym6vk8g7i";
+const BUCKET = "easysubway-datapacks";
+const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
+const SHA256 = /^[a-f0-9]{64}$/u;
+const sha = (value) => createHash("sha256").update(value).digest("hex");
+const jsonBytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
+const ADMISSION_INPUT_KEYS = Object.freeze(["inventoryBytes", "candidateBytes", "governanceBytes", "freshnessBytes"]);
+
+function parse(bytes, label) {
+  try { return JSON.parse(bytes); } catch { throw new Error(label + " is invalid JSON"); }
+}
+function instant(value, label) {
+  return requiredUtcInstant(value, label);
+}
+function exactSha(value, label) {
+  if (!SHA256.test(value ?? "")) throw new Error(label + " is invalid");
+  return value;
+}
+function rootPath(value) {
+  if (!path.isAbsolute(value ?? "")) throw new Error("capital topology registration requires an absolute repository root");
+  return path.resolve(value);
+}
+function target(root, relative) {
+  if (!OUTPUTS.includes(relative)) throw new Error("capital topology registration target is invalid");
+  const file = path.resolve(root, relative);
+  if (!file.startsWith(root + path.sep)) throw new Error("capital topology registration target escapes repository");
+  return file;
+}
+function selected(items, predicate, label) {
+  const matches = items.filter(predicate);
+  if (matches.length !== 1) throw new Error(label + " is ambiguous");
+  return matches[0];
+}
+function recordDigest(value) { return sha(Buffer.from(canonicalJson(value))); }
+function registrationMetadata(candidate) {
+  const metadata = candidate.registrationMetadata;
+  const keys = ["inventory", "governance", "freshness"];
+  const inventoryStringKeys = ["owner", "provider", "providerDepartment", "sourceSystem", "datasetUrl", "datasetKind", "coverage", "licenseName", "licenseTermsUrl"];
+  const inventoryKeys = [...inventoryStringKeys, "commercialUseAllowed", "derivativeWorkAllowed", "redistributionAllowed", "capabilities"];
+  const governanceKeys = ["retentionClassId", "ownerRole", "stewardRole", "approvalRole", "escalationHours", "alertRoute", "licenseReview"];
+  const licenseReviewKeys = ["status", "termsHash", "reviewedAt", "nextReviewAt", "termsUrl", "reviewedProvider", "reviewedDatasetUrl", "redistributionScopes", "approvedByRole"];
+  const freshnessKeys = ["examples", "basisField", "reverificationCadence", "offlinePackEligible", "eventTriggers", "changePublishSla", "freshnessMetric"];
+  if (!metadata || JSON.stringify(Object.keys(metadata).sort()) !== JSON.stringify([...keys].sort())
+    || JSON.stringify(Object.keys(metadata.inventory ?? {}).sort()) !== JSON.stringify([...inventoryKeys].sort())
+    || JSON.stringify(Object.keys(metadata.governance ?? {}).sort()) !== JSON.stringify([...governanceKeys].sort())
+    || JSON.stringify(Object.keys(metadata.freshness ?? {}).sort()) !== JSON.stringify([...freshnessKeys].sort())
+    || !metadata.governance.licenseReview || typeof metadata.governance.licenseReview !== "object"
+    || JSON.stringify(Object.keys(metadata.governance.licenseReview).sort()) !== JSON.stringify([...licenseReviewKeys].sort())
+    || !Array.isArray(metadata.freshness.examples) || !Array.isArray(metadata.freshness.eventTriggers)
+    || metadata.freshness.reverificationCadence !== TOPOLOGY_REVERIFICATION_CADENCE || metadata.freshness.basisField !== "retrievedAt"
+    || metadata.governance.retentionClassId !== "standard-90d"
+    || !Number.isInteger(metadata.governance.escalationHours) || metadata.governance.escalationHours <= 0
+    || typeof metadata.governance.ownerRole !== "string" || typeof metadata.governance.stewardRole !== "string" || typeof metadata.governance.approvalRole !== "string" || typeof metadata.governance.alertRoute !== "string"
+    || metadata.freshness.offlinePackEligible !== true || typeof metadata.freshness.changePublishSla !== "string" || typeof metadata.freshness.freshnessMetric !== "string"
+    || inventoryStringKeys.some((key) => typeof metadata.inventory[key] !== "string" || metadata.inventory[key].length === 0)
+    || metadata.inventory.commercialUseAllowed !== true || metadata.inventory.derivativeWorkAllowed !== true
+    || metadata.inventory.redistributionAllowed !== true
+    || JSON.stringify(Object.keys(metadata.inventory.capabilities ?? {})
+      .sort((left, right) => left.localeCompare(right))) !== JSON.stringify(["facility", "realtime", "schedule"])
+    || Object.values(metadata.inventory.capabilities).some((capability) => capability?.status !== "UNSUPPORTED" || capability.productionUseAllowed !== false)
+    || metadata.inventory.capabilities.realtime.liveEtaEligible !== false
+    || !metadata.inventory.datasetUrl.startsWith("https://") || !metadata.inventory.licenseTermsUrl.startsWith("https://")
+    || typeof candidate.displayName !== "string" || candidate.displayName.length === 0
+    || candidate.evidence?.provider !== metadata.inventory.provider || candidate.evidence?.coverage !== metadata.inventory.coverage) {
+    throw new Error("capital topology registration metadata is invalid");
+  }
+  return metadata;
+}
+
+async function admissionInputBytes(root, supplied) {
+  if (supplied == null) {
+    const values = await Promise.all([
+      readFile(path.join(root, OUTPUTS[0])),
+      readFile(path.join(root, "tools/datapack/source-candidates.json")),
+      readFile(path.join(root, OUTPUTS[2])),
+      readFile(path.join(root, OUTPUTS[3])),
+    ]);
+    return Object.fromEntries(ADMISSION_INPUT_KEYS.map((key, index) => [key, values[index]]));
+  }
+  if (typeof supplied !== "object" || Array.isArray(supplied)
+    || JSON.stringify(Object.keys(supplied).sort()) !== JSON.stringify([...ADMISSION_INPUT_KEYS].sort())
+    || ADMISSION_INPUT_KEYS.some((key) => !Buffer.isBuffer(supplied[key]))) {
+    throw new Error("capital topology admission input snapshot is invalid");
+  }
+  return Object.fromEntries(ADMISSION_INPUT_KEYS.map((key) => [key, Buffer.from(supplied[key])]));
+}
+
+// 재등록은 정책 파일(governance·신선도 SLA)을 쓰지 않는다(#989). 자동 병합 정책의 등록 단계는 원장·inventory 둘만 허용하므로 정책 변경이 필요한 상황은 사람 경로의 일이다.
+function policyChangeRequired(detail) {
+  return new Error(`REGISTRATION_POLICY_CHANGE_REQUIRED: ${detail}`);
+}
+
+export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot, now = new Date(), inputBytes = null, forbidPolicyChange = false } = {}) {
+  const root = rootPath(repositoryRoot);
+  if (!(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("capital topology admission time is invalid");
+  const { inventoryBytes, candidateBytes, governanceBytes, freshnessBytes } = await admissionInputBytes(root, inputBytes);
+  const inventory = parse(inventoryBytes, "source inventory");
+  const canonicalOwner = selected(Array.isArray(inventory.sources) ? inventory.sources : [], (source) => source?.id === OWNER_SOURCE_ID, "capital topology canonical owner");
+  const protectedTopology = await assertCurrentStaticNetworkTopologyAdmission({ repositoryRoot: root, now });
+  if (!isDeepStrictEqual(canonicalOwner.routeMapAdmissionEvidence?.currentTopologyAdmission, protectedTopology.topologyAdmission)) {
+    throw new Error("capital topology input snapshot changed during validation");
+  }
+  const ownerScope = canonicalOwner.coverageScope;
+  const lineIds = ownerScope?.lineIds;
+  if (!Array.isArray(lineIds) || lineIds.length === 0 || new Set(lineIds).size !== lineIds.length
+    || !Array.isArray(ownerScope.regionIds) || !Array.isArray(ownerScope.operatorIds)) throw new Error("capital topology canonical owner scope is invalid");
+  const candidates = parse(candidateBytes, "source candidates").candidates;
+  const candidate = selected(Array.isArray(candidates) ? candidates : [], (entry) => entry?.id === SOURCE_ID, "capital topology source candidate");
+  if (candidate.domain !== "route_graph_topology" || !candidate.operation || !candidate.operation.sourceDefinition
+    || !exactSha(candidate.operation.sourceDefinition.sourceSetSha256, "capital topology operation identity")) throw new Error("capital topology source candidate is invalid");
+  const registration = registrationMetadata(candidate);
+  const metadata = registration.inventory;
+  const { topologyAdmission, topologyRelative, topologyBytes, topology } = protectedTopology;
+  const snapshotId = topologyAdmission.topologySnapshotId;
+  const protectedLineIds = topologyAdmission.topologyLineages.map((lineage) => lineage?.lineId);
+  if (!isCapitalRouteTopologySnapshotId(snapshotId) || protectedLineIds.length !== lineIds.length
+    || protectedLineIds.some((lineId) => !lineIds.includes(lineId))) throw new Error("capital topology canonical owner scope is invalid");
+  const capturedAt = instant(topology.capturedAt, "capital topology capturedAt");
+  const freshUntil = instant(topology.freshUntil, "capital topology freshUntil");
+  const capturedDate = topology.capturedAt.slice(0, 10).replaceAll("-", "");
+  if (!capitalRouteTopologySnapshotIdMatchesCapturedAt(snapshotId, topology.capturedAt) || freshUntil <= capturedAt || now.valueOf() < capturedAt || now.valueOf() >= freshUntil) throw new Error("capital topology protected admission is not current");
+  const baseGovernancePolicy = parse(governanceBytes, "capital topology governance policy");
+  const baseFreshnessPolicy = parse(freshnessBytes, "capital topology freshness policy");
+  const governance = { sourceId: SOURCE_ID, sourceClassId: candidate.domain, ...registration.governance };
+  const freshness = { id: candidate.domain, sourceIds: [SOURCE_ID], ...registration.freshness };
+  const existingGovernance = (baseGovernancePolicy.sources ?? []).filter((entry) => entry?.sourceId === SOURCE_ID);
+  const existingFreshness = (baseFreshnessPolicy.sourceClasses ?? []).filter((entry) => entry?.id === candidate.domain);
+  if (existingGovernance.length > 1 || existingFreshness.length > 1
+    || (existingGovernance.length === 1) !== (existingFreshness.length === 1)
+    || (existingGovernance.length === 1 && (!isDeepStrictEqual(existingGovernance[0], governance) || !matchesSourceFreshness(existingFreshness[0], freshness)))) {
+    throw new Error("capital topology registration policy binding is invalid");
+  }
+  if (forbidPolicyChange && existingGovernance.length === 0) {
+    throw policyChangeRequired(`${SOURCE_ID} has no registered governance or freshness policy, so registering it would write both policy files`);
+  }
+  const governancePolicy = existingGovernance.length === 1 ? baseGovernancePolicy
+    : buildAppendOnlyGovernancePolicyRegistration({
+      predecessorPolicyBytes: governanceBytes,
+      addedSources: [governance],
+    }).policy;
+  const freshnessPolicy = existingFreshness.length === 1 ? baseFreshnessPolicy : { ...baseFreshnessPolicy, sourceClasses: [...baseFreshnessPolicy.sourceClasses, freshness] };
+  if (forbidPolicyChange) {
+    // 정책 출력은 기존 정책의 재직렬화다. 바이트가 현재 파일과 다르면 등록이 정책 파일을 쓰게 되므로 OCI 게시 전에(이 admission 읽기에서) 막는다.
+    const changed = [[OUTPUTS[2], governanceBytes, governancePolicy], [OUTPUTS[3], freshnessBytes, freshnessPolicy]]
+      .filter(([, current, next]) => !jsonBytes(next).equals(current)).map(([relative]) => relative);
+    if (changed.length > 0) throw policyChangeRequired(`the registration would rewrite ${changed.join(", ")}`);
+  }
+  const review = governance.licenseReview;
+  const reviewedAt = instant(review?.reviewedAt, "capital topology license reviewedAt");
+  const nextReviewAt = instant(review?.nextReviewAt, "capital topology license nextReviewAt");
+  if (governance.sourceClassId !== candidate.domain || typeof governance.retentionClassId !== "string"
+    || freshness.reverificationCadence !== TOPOLOGY_REVERIFICATION_CADENCE || JSON.stringify(freshness.sourceIds) !== JSON.stringify([SOURCE_ID]) || freshness.basisField !== "retrievedAt") throw new Error("capital topology governance or freshness selection is invalid");
+  const expectedFreshUntil = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: candidate.domain, basisAt: topology.capturedAt, evaluationAt: now.toISOString() });
+  if (expectedFreshUntil !== topology.freshUntil) throw new Error("capital topology freshness extends protected snapshot");
+  const license = topology.license;
+  if (!license || license.type !== "KOGL-1" || typeof license.attribution !== "string" || license.attribution.length === 0
+    || license.redistributionAllowed !== metadata.redistributionAllowed || license.evidenceUrl !== metadata.datasetUrl
+    || review.status !== "APPROVED" || review.termsHash !== recordDigest(license) || review.termsUrl !== metadata.licenseTermsUrl
+    || review.reviewedProvider !== metadata.provider || review.reviewedDatasetUrl !== metadata.datasetUrl
+    || JSON.stringify(review.redistributionScopes) !== JSON.stringify(["DERIVED_DATAPACK"])
+    || review.approvedByRole !== governance.approvalRole || reviewedAt > now.valueOf() || nextReviewAt <= now.valueOf()) throw new Error("capital topology license is invalid");
+  return { sourceId: SOURCE_ID, snapshotId, capturedDate, topologyAdmission, topologyRelative, topologyBytes, topology, lineIds: [...lineIds], coverageScope: { regionIds: [...ownerScope.regionIds], operatorIds: [...ownerScope.operatorIds] }, fieldsProvided: [...topology.fieldsProvided], candidate, metadata, registration, governancePolicy, governance, freshnessPolicy, freshness, governanceRecordSha256: recordDigest(governance), freshnessClassSha256: recordDigest(freshness), inputBindings: [
+    { relative: "tools/datapack/source-candidates.json", bytes: candidateBytes },
+    { relative: topologyRelative, bytes: topologyBytes },
+  ] };
+}
+
+function receiptFor({ receipt, admission, receiptBytes, now }) {
+  const expectedRawSha256 = sha(admission.topologyBytes);
+  const objectKey = "source-raw/" + admission.sourceId + "/" + admission.capturedDate + "/" + expectedRawSha256 + ".json";
+  const keys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt", "ociNamespace", "bucket", "objectKey", "contentType"];
+  if (!receipt || JSON.stringify(Object.keys(receipt).sort()) !== JSON.stringify([...keys].sort())
+    || receipt.schemaVersion !== 1 || receipt.artifactKind !== "static-network-source-raw-object-receipt" || receipt.sourceId !== admission.sourceId || receipt.snapshotId !== admission.snapshotId
+    || receipt.capturedAt !== admission.topology.capturedAt || receipt.rawObjectSha256 !== expectedRawSha256 || receipt.byteSize !== admission.topologyBytes.length
+    || receipt.ociNamespace !== NAMESPACE || receipt.bucket !== BUCKET || receipt.objectKey !== objectKey || receipt.rawObjectUri !== "oci://" + NAMESPACE + "/" + BUCKET + "/" + objectKey || receipt.contentType !== "application/json"
+    || instant(receipt.storedAt, "capital topology receipt storedAt") < instant(admission.topology.capturedAt, "capital topology capturedAt")
+    || instant(receipt.storedAt, "capital topology receipt storedAt") > now.valueOf() || instant(receipt.rawRetentionExpiresAt, "capital topology receipt retention") <= now.valueOf()) throw new Error("capital topology OCI receipt binding is invalid");
+  const retention = deriveRawRetentionExpiresAt({ policy: admission.governancePolicy, sourceId: admission.sourceId, retrievedAt: admission.topology.capturedAt });
+  if (receipt.rawRetentionExpiresAt !== retention) throw new Error("capital topology OCI receipt retention is invalid");
+  return { receipt, rawReceiptSha256: sha(receiptBytes) };
+}
+
+function currentHead(ledger, snapshotId) {
+  if (!Array.isArray(ledger)) throw new Error("capital topology snapshot ledger is invalid");
+  if (ledger.filter((snapshot) => snapshot?.snapshotId === snapshotId).length !== 0) throw new Error("capital topology snapshot ID already exists");
+  const snapshots = ledger.filter((snapshot) => snapshot?.sourceId === SOURCE_ID);
+  if (snapshots.length === 0) return null;
+  const byId = new Map();
+  for (const snapshot of snapshots) {
+    if (typeof snapshot.snapshotId !== "string" || byId.has(snapshot.snapshotId) || !exactSha(snapshot.rawSha256, "capital topology predecessor raw digest")) throw new Error("capital topology predecessor lineage is invalid");
+    byId.set(snapshot.snapshotId, snapshot);
+  }
+  const children = new Map();
+  for (const snapshot of snapshots) {
+    if (snapshot.previousSnapshotId == null) continue;
+    if (!byId.has(snapshot.previousSnapshotId) || children.has(snapshot.previousSnapshotId)) throw new Error("capital topology predecessor lineage is invalid");
+    children.set(snapshot.previousSnapshotId, snapshot.snapshotId);
+  }
+  const roots = snapshots.filter((snapshot) => snapshot.previousSnapshotId == null);
+  if (roots.length !== 1) throw new Error("capital topology predecessor lineage is invalid");
+  let head = roots[0]; const seen = new Set();
+  while (children.has(head.snapshotId)) {
+    if (seen.has(head.snapshotId)) throw new Error("capital topology predecessor lineage is invalid");
+    seen.add(head.snapshotId); head = byId.get(children.get(head.snapshotId));
+  }
+  if (seen.size + 1 !== snapshots.length) throw new Error("capital topology predecessor lineage is invalid");
+  return head;
+}
+
+export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot, receiptPath, now = new Date(), forbidPolicyChange = false } = {}) {
+  const root = rootPath(repositoryRoot);
+  if (!path.isAbsolute(receiptPath ?? "") || !(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("capital topology registration arguments are invalid");
+  const [inventoryBytes, ledgerBytes, candidateBytes, governanceBytes, freshnessBytes, receiptBytes] = await Promise.all([
+    readFile(target(root, OUTPUTS[0])), readFile(target(root, OUTPUTS[1])), readFile(path.join(root, "tools/datapack/source-candidates.json")),
+    readFile(target(root, OUTPUTS[2])), readFile(target(root, OUTPUTS[3])), readFile(receiptPath),
+  ]);
+  const admission = await readCurrentCapitalRouteTopologyAdmission({
+    repositoryRoot: root,
+    now,
+    inputBytes: { inventoryBytes, candidateBytes, governanceBytes, freshnessBytes },
+    forbidPolicyChange,
+  });
+  const inventory = parse(inventoryBytes, "source inventory");
+  const ledger = parse(ledgerBytes, "source snapshot ledger");
+  const { receipt, rawReceiptSha256 } = receiptFor({ receipt: parse(receiptBytes, "capital topology receipt"), admission, receiptBytes, now });
+  const sourceMatches = (Array.isArray(inventory.sources) ? inventory.sources : []).filter((source) => source?.id === SOURCE_ID);
+  if (sourceMatches.length > 1) throw new Error("capital topology inventory is duplicate");
+  const predecessor = currentHead(ledger, admission.snapshotId);
+  if ((sourceMatches.length === 0) !== (predecessor == null)) throw new Error("capital topology inventory and ledger registration disagree");
+  if (predecessor != null && !isDeepStrictEqual(sourceMatches[0].capitalTopologyAdmissionEvidence, predecessor.admissionEvidence)) throw new Error("capital topology inventory evidence does not bind the current ledger head");
+  const predecessorSnapshotIds = predecessor == null ? [] : [predecessor.snapshotId];
+  const evidence = { schemaVersion: 1, artifactKind: "capital-topology-admission-evidence", status: "APPROVED", issue: 456, sourceId: admission.sourceId, snapshotId: admission.snapshotId, snapshotPath: admission.topologyRelative, snapshotFileSha256: sha(admission.topologyBytes), snapshotRawSha256: receipt.rawObjectSha256, contentSha256: admission.topology.contentSha256, lineIds: admission.lineIds, orderedScopeSha256: sha(Buffer.from(canonicalJson(admission.lineIds))), operationSetSha256: admission.candidate.operation.sourceDefinition.sourceSetSha256, rawReceiptSha256, rawObjectUri: receipt.rawObjectUri, rawObjectSha256: receipt.rawObjectSha256, byteSize: receipt.byteSize, licenseSha256: recordDigest(admission.topology.license), governanceRecordSha256: admission.governanceRecordSha256, freshnessClassSha256: admission.freshnessClassSha256, evaluatedAt: now.toISOString(), predecessorSnapshotIds };
+  const source = {
+    id: admission.sourceId,
+    displayName: admission.candidate.displayName,
+    userDisplayName: sourceMatches[0]?.userDisplayName ?? "수도권 도시철도 노선별 역간거리",
+    owner: admission.metadata.owner,
+    provider: admission.metadata.provider,
+    providerDepartment: admission.metadata.providerDepartment,
+    sourceSystem: admission.metadata.sourceSystem,
+    datasetUrl: admission.metadata.datasetUrl,
+    datasetKind: admission.metadata.datasetKind,
+    coverage: admission.metadata.coverage,
+    coverageScope: {
+      regionIds: admission.coverageScope.regionIds,
+      operatorIds: admission.coverageScope.operatorIds,
+      lineIds: admission.lineIds,
+      sourceDomains: [admission.candidate.domain],
+    },
+    requiredForProductionPack: true,
+    productionUseAllowed: true,
+    updateFrequency: admission.freshness.reverificationCadence,
+    observedDataUpdatedAt: admission.topology.capturedAt.slice(0, 10),
+    retrievedAt: admission.topology.capturedAt.slice(0, 10),
+    license: {
+      type: admission.topology.license.type,
+      name: admission.metadata.licenseName,
+      attribution: admission.topology.license.attribution,
+      commercialUseAllowed: admission.metadata.commercialUseAllowed,
+      derivativeWorkAllowed: admission.metadata.derivativeWorkAllowed,
+      redistributionAllowed: admission.metadata.redistributionAllowed,
+      evidenceUrl: admission.topology.license.evidenceUrl,
+    },
+    admissionEvidence: { licenseEvidenceHash: evidence.licenseSha256 },
+    fieldsProvided: admission.fieldsProvided,
+    capabilities: admission.metadata.capabilities,
+    capitalTopologyAdmissionEvidence: evidence,
+  };
+  const snapshot = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: admission.sourceId, snapshotId: admission.snapshotId, previousSnapshotId: predecessor?.snapshotId ?? null, capturedAt: admission.topology.capturedAt, retrievedAt: admission.topology.capturedAt, sourceUpdatedAt: admission.topology.capturedAt, provider: admission.candidate.evidence?.provider, rowCount: admission.lineIds.length, coverageCount: admission.lineIds.length, rawSha256: receipt.rawObjectSha256, contentSha256: admission.topology.contentSha256, rawObjectUri: receipt.rawObjectUri, rawObjectSha256: receipt.rawObjectSha256, rawReceiptSha256, byteSize: receipt.byteSize, freshUntil: admission.topology.freshUntil, freshnessExpiresAt: admission.topology.freshUntil, rawRetentionExpiresAt: receipt.rawRetentionExpiresAt, governancePolicyVersion: admission.governancePolicy.policyVersion, governancePolicySha256: sha(jsonBytes(admission.governancePolicy)), schemaFingerprint: sha(Buffer.from(canonicalJson({ artifactKind: admission.topology.artifactKind, keys: Object.keys(admission.topology).sort((left, right) => left.localeCompare(right)) }))), redactedRequestFingerprint: recordDigest(admission.candidate.operation), snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS", redistributionAllowed: true, credentialRedacted: true, admissionEvidence: evidence };
+  if (predecessor != null) snapshot.diffSummary = buildSnapshotDiff(predecessor, snapshot);
+  const nextInventory = sourceMatches.length === 0 ? { ...inventory, sources: [...inventory.sources, source] } : { ...inventory, sources: inventory.sources.map((entry) => entry.id === SOURCE_ID ? source : entry) };
+  const nextLedger = [...ledger, snapshot];
+  const nextGovernancePolicy = admission.governancePolicy;
+  const nextFreshnessPolicy = admission.freshnessPolicy;
+  validateSourceGovernancePolicy({ policy: nextGovernancePolicy, inventory: nextInventory, freshnessPolicy: nextFreshnessPolicy });
+  const inputs = [...admission.inputBindings, { absolute: path.resolve(receiptPath), bytes: receiptBytes }];
+  const outputs = [
+    { relative: OUTPUTS[0], prestateBytes: inventoryBytes, bytes: jsonBytes(nextInventory) },
+    { relative: OUTPUTS[1], prestateBytes: ledgerBytes, bytes: jsonBytes(nextLedger) },
+    { relative: OUTPUTS[2], prestateBytes: governanceBytes, bytes: jsonBytes(nextGovernancePolicy) },
+    { relative: OUTPUTS[3], prestateBytes: freshnessBytes, bytes: jsonBytes(nextFreshnessPolicy) },
+  ];
+  outputs.forEach((output) => { output.inputs = inputs; });
+  return outputs;
+}
+
+// class의 source 구성은 확장될 수 있지만 수도권 cadence·basis 계약은 그대로 비교한다.
+function matchesSourceFreshness(actual, expected) {
+  const members = actual?.sourceIds;
+  return Array.isArray(members) && members.every((id) => typeof id === "string" && id.length > 0)
+    && new Set(members).size === members.length && members.includes(SOURCE_ID)
+    && isDeepStrictEqual({ ...actual, sourceIds: expected.sourceIds }, expected);
+}
+
+function exactOutputs(outputs) {
+  const inputs = outputs?.[0]?.inputs;
+  if (!Array.isArray(outputs) || outputs.length !== OUTPUTS.length || JSON.stringify(outputs.map(({ relative }) => relative)) !== JSON.stringify(OUTPUTS)
+    || outputs.some(({ bytes, prestateBytes }) => !Buffer.isBuffer(bytes) || !Buffer.isBuffer(prestateBytes) || inputs !== outputs[0].inputs)
+    || !Array.isArray(inputs) || inputs.length !== 3
+    || inputs[0]?.relative !== "tools/datapack/source-candidates.json"
+    || !CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(inputs[1]?.relative ?? "")
+    || !path.isAbsolute(inputs[2]?.absolute ?? "") || inputs.some(({ bytes }) => !Buffer.isBuffer(bytes))) throw new Error("capital topology transaction outputs are invalid");
+}
+const transaction = createSourceRegistrationTransaction({
+  label: "capital topology", validateOutputs: exactOutputs,
+});
+
+export async function recoverCurrentCapitalRouteTopologyRegistration({ repositoryRoot } = {}) {
+  return transaction.recover({ repositoryRoot: rootPath(repositoryRoot) });
+}
+export async function commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot, outputs, failAfter = null } = {}) {
+  return transaction.commit({ repositoryRoot: rootPath(repositoryRoot), outputs, failAfter });
+}
+export async function registerCurrentCapitalRouteTopology(options = {}) {
+  await recoverCurrentCapitalRouteTopologyRegistration({ repositoryRoot: options.repositoryRoot });
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs(options);
+  return commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: options.repositoryRoot, outputs });
+}

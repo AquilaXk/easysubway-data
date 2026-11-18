@@ -1,0 +1,215 @@
+name: Data Pack Release Candidate Chain
+
+# 후보 spec 또는 release request가 main에 들어오면 release-candidate(RC)를 실행한다(#927, #870).
+# hub promotion은 후보 run의 event가 workflow_dispatch여야 받으므로 push에서 직접 RC를 돌리지 않고 dispatch한다.
+# modeArgs는 저장소 파일에서만 만든다. release request가 spec에 결속되지 않으면 dispatch하지 않고 실패한다.
+# RC가 끝날 때까지 이 job을 유지한다(data#1084). 이 job이 진행 중인 동안 automerge-queue가 병합을 미루므로, RC부터 발행 체인까지
+# data main이 RC 커밋에서 움직이지 않는다(발행은 candidate head_sha == main을 요구한다).
+# RC는 GITHUB_TOKEN으로 dispatch하므로 끝나도 workflow_run 이벤트가 만들어지지 않는다(workflow_dispatch·repository_dispatch만 예외, data#1158,
+# https://docs.github.com/en/actions/using-workflows/triggering-a-workflow). 그래서 RC가 끝나면 이 job이 발행 체인(datapack-release-cross-repo-chain.yml)을
+# 직접 dispatch하고 그 run이 생긴 것을 확인한 뒤 끝난다. 이 job이 끝나는 시점에는 체인 run이 이미 진행 중이라 병합 잠금이 끊기지 않는다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/datapack/release/candidate-build-spec.json
+      - tools/datapack/release/release-request.json
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: datapack-release-candidate-chain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Release candidate chain
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Skip a candidate superseded on main
+        id: supersede
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          # RC는 dispatch 시점의 main에서 돈다. 그 사이 후보가 다시 바뀌었으면 새 push가 자기 RC를 dispatch한다.
+          # git diff --quiet: 0 같음, 1 다름. 그 밖의 종료 코드(잘못된 ref 등)는 건너뛰지 않고 실패한다.
+          set +e
+          git diff --quiet "${GITHUB_SHA}" origin/main -- tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json
+          diff_status=$?
+          set -e
+          case "${diff_status}" in
+            0)
+              unchanged="$(node --input-type=module -e '
+                import { execFileSync } from "node:child_process";
+                const before = process.env.BEFORE_SHA ?? "";
+                const current = process.env.GITHUB_SHA ?? "";
+                if (!/^[0-9a-f]{40}$/u.test(before) || /^0{40}$/u.test(before)) process.exit(0);
+                try {
+                  execFileSync("git", ["cat-file", "-e", before + "^{commit}"], { stdio: "ignore" });
+                } catch {
+                  process.exit(0);
+                }
+                const loadJson = (rev, file) => {
+                  try {
+                    return JSON.parse(execFileSync("git", ["show", rev + ":" + file], { encoding: "utf8" }));
+                  } catch {
+                    return null;
+                  }
+                };
+                const bs = "tools/datapack/release/candidate-build-spec.json";
+                const rr = "tools/datapack/release/release-request.json";
+                const prevSpec = loadJson(before, bs);
+                const currSpec = loadJson(current, bs);
+                const prevReq = loadJson(before, rr);
+                const currReq = loadJson(current, rr);
+                const sameCandidate = typeof prevSpec?.candidateId === "string" && prevSpec.candidateId.length > 0 && prevSpec.candidateId === currSpec?.candidateId;
+                const sameApproval = typeof prevReq?.approvalId === "string" && prevReq.approvalId.length > 0 && prevReq.approvalId === currReq?.approvalId;
+                if (sameCandidate && sameApproval) process.stdout.write("true");
+              ')"
+              if [[ "${unchanged}" == "true" ]]; then
+                echo "::notice title=Release candidate chain::candidateId와 approvalId가 ${BEFORE_SHA}..${GITHUB_SHA} 사이에서 바뀌지 않아 RC dispatch를 건너뛴다."
+                echo "current=false" >> "${GITHUB_OUTPUT}"
+              else
+                echo "current=true" >> "${GITHUB_OUTPUT}"
+              fi
+              ;;
+            1)
+              echo "::notice title=Release candidate chain::main의 후보가 ${GITHUB_SHA} 이후 다시 바뀌었다. 새 push의 실행이 RC를 dispatch한다."
+              echo "current=false" >> "${GITHUB_OUTPUT}"
+              ;;
+            *)
+              echo "candidate supersede check failed (git diff exit ${diff_status})" >&2
+              exit "${diff_status}"
+              ;;
+          esac
+      - name: Fetch the candidate gate run record
+        id: gate-run
+        if: ${{ steps.supersede.outputs.current == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # #929 D3: release request가 결속한 후보 생성 run의 GitHub 기록을 가져온다. 결속이 없으면(사람 역할) 가져오지 않는다.
+          run_id="$(node --input-type=module -e 'import { readFileSync } from "node:fs"; const request = JSON.parse(readFileSync("tools/datapack/release/release-request.json", "utf8")); process.stdout.write(request.gateRun === undefined ? "" : String(request.gateRun.runId));')"
+          if [[ -z "${run_id}" ]]; then
+            echo "record=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || { echo "release request gateRun runId is invalid" >&2; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > "${RUNNER_TEMP}/candidate-gate-run-record.json"
+          echo "record=${RUNNER_TEMP}/candidate-gate-run-record.json" >> "${GITHUB_OUTPUT}"
+      - name: Build release-candidate modeArgs from repository files
+        if: ${{ steps.supersede.outputs.current == 'true' }}
+        env:
+          GATE_RUN_RECORD: ${{ steps.gate-run.outputs.record }}
+        run: |
+          set -euo pipefail
+          args=(release-candidate-mode-args --output "${RUNNER_TEMP}/release-candidate-mode-args.json")
+          if [[ -n "${GATE_RUN_RECORD}" ]]; then
+            args+=(--gate-run-record "${GATE_RUN_RECORD}")
+          fi
+          node tools/ci/plan-datapack-release-chain.mjs "${args[@]}"
+      - name: Dispatch release candidate
+        id: dispatch
+        if: ${{ steps.supersede.outputs.current == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # #931 F1: workflow_dispatch는 브랜치로만 실행할 수 있다. 검증한 커밋(GITHUB_SHA)이 아직 main일 때만 dispatch하고,
+          # dispatch된 RC run의 head_sha가 그 커밋인지 다시 확인한다. 다르면 그 run을 취소하고 실패한다.
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "${main_sha}" != "${GITHUB_SHA}" ]]; then
+            echo "main moved from the verified ${GITHUB_SHA} to ${main_sha}; RC is not dispatched for an unverified commit" >&2
+            exit 1
+          fi
+          dispatched_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run datapack-release.yml --repo "${GITHUB_REPOSITORY}" --ref main -f mode=release-candidate -f targetChannel=production -f modeArgs="$(cat "${RUNNER_TEMP}/release-candidate-mode-args.json")"
+          run_line=""
+          for _ in $(seq 1 20); do
+            run_line="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/datapack-release.yml/runs" -f event=workflow_dispatch -f branch=main -f "created=>=${dispatched_after}" -f per_page=20 --jq '[.workflow_runs[] | select(.triggering_actor.login == "github-actions[bot]")] | sort_by(.created_at) | if length > 0 then "\(.[0].id) \(.[0].head_sha)" else "" end')"
+            [[ -n "${run_line}" ]] && break
+            sleep 6
+          done
+          [[ -n "${run_line}" ]] || { echo "the dispatched RC run was not found" >&2; exit 1; }
+          read -r rc_run_id rc_run_sha <<< "${run_line}"
+          if [[ "${rc_run_sha}" != "${GITHUB_SHA}" ]]; then
+            gh run cancel "${rc_run_id}" --repo "${GITHUB_REPOSITORY}"
+            echo "dispatched RC run ${rc_run_id} built ${rc_run_sha}, not the verified ${GITHUB_SHA}; the run was cancelled" >&2
+            exit 1
+          fi
+          echo "rc_run_id=${rc_run_id}" >> "${GITHUB_OUTPUT}"
+      - name: Hold the merge lock until the release candidate run finishes
+        if: ${{ steps.supersede.outputs.current == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC_RUN_ID: ${{ steps.dispatch.outputs.rc_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${RC_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "the dispatched RC run id is invalid" >&2; exit 1; }
+          # RC의 성공·실패는 여기서 판정하지 않는다. 이 step은 잠금 구간만 유지하고, 결과는 다음 step이 이어받는다.
+          for _ in $(seq 1 360); do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RC_RUN_ID}" --jq '.status')"
+            if [[ "${status}" == "completed" ]]; then
+              echo "release-candidate run ${RC_RUN_ID} finished; the merge lock is released."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "release-candidate run ${RC_RUN_ID} did not finish within 60 minutes" >&2
+          exit 1
+      # 성공한 RC만 체인으로 넘긴다. 체인 workflow는 입력 run id를 믿지 않고 API로 RC run을 다시 읽어 판정한다.
+      # RC가 성공이 아니면(failure·timed_out·startup_failure·cancelled 등) 체인을 시작하지 않고 이 step을 실패시킨다. 보고는 마지막 step이 맡는다.
+      # 체인 run은 시계가 아니라 이름 `chain rc=<RC run id>`로 찾는다(체인 workflow의 run-name). 이름이 맞는 run이 생기기 전에는 끝나지 않는다.
+      # 체인이 꺼져 있으면(DATAPACK_CROSS_REPO_CHAIN_ENABLED가 true가 아니면) 넘기지도 보고하지도 않는다.
+      - name: Hand the release candidate run over to the release chain
+        if: ${{ steps.supersede.outputs.current == 'true' && vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC_RUN_ID: ${{ steps.dispatch.outputs.rc_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${RC_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "the dispatched RC run id is invalid" >&2; exit 1; }
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RC_RUN_ID}" --jq '.conclusion // ""')"
+          if [[ "${conclusion}" != "success" ]]; then
+            echo "release-candidate run ${RC_RUN_ID} concluded '${conclusion}'; the release chain is not started" >&2
+            exit 1
+          fi
+          gh workflow run datapack-release-cross-repo-chain.yml --repo "${GITHUB_REPOSITORY}" --ref main -f rc_run_id="${RC_RUN_ID}"
+          chain_run_id=""
+          for _ in $(seq 1 20); do
+            chain_run_id="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/datapack-release-cross-repo-chain.yml/runs" -f event=workflow_dispatch -f branch=main -f per_page=100 \
+              | jq -r --arg title "chain rc=${RC_RUN_ID}" '[.workflow_runs[] | select(.display_title == $title)] | sort_by(.created_at) | if length > 0 then (.[0].id | tostring) else "" end')"
+            [[ -n "${chain_run_id}" ]] && break
+            sleep 6
+          done
+          [[ -n "${chain_run_id}" ]] || { echo "the release chain run was not found after the dispatch" >&2; exit 1; }
+          echo "release chain run ${chain_run_id} started for the release-candidate run ${RC_RUN_ID}; the merge lock continues in that run."
+      # RC를 dispatch한 뒤 체인이 시작되지 못한 모든 실패를 체인 실패 이슈(#926)로 올린다: RC 실패·timed_out·startup_failure·취소, 60분 대기 timeout,
+      # dispatch 실패, 체인 run 미발견. 취소도 올린다. 무인 원칙에서 이 RC의 발행이 시작되지 못했다는 사실은 사람이 알아야 하는 상태이고,
+      # 다음 후보가 오기 전에는 아무도 알아채지 못한다(사람이 일부러 취소했다면 이슈를 닫으면 된다).
+      # RC를 dispatch하지 못한 경우(main 이동 등 정상 경쟁)는 새 push의 실행이 이어받으므로 올리지 않는다.
+      - name: Report a release candidate handover failure
+        if: ${{ failure() && steps.dispatch.outcome == 'success' && vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' }}
+        env:
+          RC_RUN_ID: ${{ steps.dispatch.outputs.rc_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${RC_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "the dispatched RC run id is invalid" >&2; exit 1; }
+          # RC 실패는 RC run에, 대기 timeout·dispatch 실패·체인 run 미발견은 이 RC chain run에 원인이 있어 둘 다 기록한다.
+          node tools/ci/report-refresh-failure.mjs --workflow datapack-release-cross-repo-chain.yml --repository "${GITHUB_REPOSITORY}" --run-id "${RC_RUN_ID}"
+          node tools/ci/report-refresh-failure.mjs --workflow datapack-release-cross-repo-chain.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

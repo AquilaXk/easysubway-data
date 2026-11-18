@@ -1,0 +1,850 @@
+#!/usr/bin/env node
+import { createHash } from "node:crypto";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import { constants, zstdCompressSync } from "node:zlib";
+
+import { deriveBundleEdgeProvenance } from "./lib/bundle-edge-provenance.mjs";
+import { networkEdgeStairColumns } from "./lib/network-edge-stair-columns.mjs";
+import { canonicalJson, selectEffectiveDataPack, validateArtifactComponentManifest, withoutSignature } from "./lib/manifest-validation.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import {
+  canonicalRouteEdgeEvaluationJson,
+  evaluateRouteAccessibilityEdges,
+  routeEdgeSha256,
+} from "./evaluate-route-accessibility-edges.mjs";
+import {
+  canonicalStationLineAccessibilityJson,
+  materializeStationLineAccessibility,
+} from "./materialize-station-line-accessibility.mjs";
+import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
+import { FACILITY_SOURCE_ID, loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
+import { buildTransitionFacilityRequirements, readBundledStepFreeInputs } from "./build-step-free-path-transitions.mjs";
+import { bindStationPlatformGaps, loadStationPlatformGapInputs } from "./build-station-platform-gaps.mjs";
+import {
+  deriveTransferStairAccess,
+  loadTransferStairAccessInputs,
+  transferStairCatalogFromSqlite,
+} from "./build-transfer-stair-access.mjs";
+
+const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id", "evaluation-at", "station-line-input", "route-edge-input"]);
+const COMPONENTS = {
+  topology: ["network_edges", "out_of_station_transfer_links", "transfer_rules", "realtime_provider_line_mappings", "realtime_provider_station_mappings"],
+  timetable: ["service_calendars", "service_calendar_dates", "transit_routes", "transit_trips", "transit_stop_times", "transit_frequencies", "transit_feed_info", "route_service_artifact_evidence", "route_service_station_catalog_evidence"],
+  accessibility: ["station_exits", "facilities", "facility_status_snapshots", "station_facility_evidence", "station_accessibility_summaries", "internal_route_nodes", "internal_route_edges", "station_pathway_nodes", "station_pathway_edges", "station_car_door_hints"],
+  fare: ["fare_zones", "fare_rules", "fare_discounts", "station_fare_zones", "official_od_fare_quotes"],
+};
+const REFERENCES = { stations: ["id"], lines: ["id"], station_lines: ["station_id", "line_id", "line_sequence"] };
+const EXPECTED_CHILDREN = ["map-pack", "station-catalog-pack", "server-route-bundle"];
+const IDENTITY_DDL = "CREATE TABLE artifact_component_identity (bundleId TEXT NOT NULL, releaseSequence INTEGER NOT NULL CHECK (releaseSequence BETWEEN 1 AND 9007199254740991), stationSetSha256 TEXT NOT NULL, serviceTimezone TEXT NOT NULL CHECK (serviceTimezone = 'Asia/Seoul'))";
+const GENERATED_EVIDENCE_LAYOUT = {
+  stationLineAccessibility: {
+    table: "station_line_accessibility_evidence",
+    columns: ["materialization_digest", "canonical_json"],
+    rowCount: 1,
+    canonicalJson: "canonicalStationLineAccessibilityJson",
+    digest: { field: "materializationDigest", column: "materialization_digest", input: "canonical-payload-without-self-digest", algorithm: "sha256" },
+  },
+  routeEdgeEvaluation: {
+    table: "route_accessibility_edge_evidence",
+    columns: ["evaluation_digest", "materialization_digest", "canonical_json"],
+    rowCount: 1,
+    canonicalJson: "canonicalRouteEdgeEvaluationJson",
+    digest: { field: "evaluationDigest", column: "evaluation_digest", input: "canonical-payload-without-self-digest", algorithm: "sha256" },
+    materializationBinding: { field: "materializationDigest", column: "materialization_digest", equals: "station_line_accessibility_evidence.materialization_digest" },
+  },
+};
+export const GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL = Object.freeze({
+  station_line_accessibility_evidence: "CREATE TABLE station_line_accessibility_evidence (materialization_digest TEXT NOT NULL PRIMARY KEY CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL)",
+  route_accessibility_edge_evidence: "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY CHECK(length(evaluation_digest)=64 AND evaluation_digest NOT GLOB '*[^0-9a-f]*'), materialization_digest TEXT NOT NULL CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL, FOREIGN KEY(materialization_digest) REFERENCES station_line_accessibility_evidence(materialization_digest))",
+  station_elevator_path: "CREATE TABLE station_elevator_path (path_id TEXT NOT NULL, station_id TEXT NOT NULL, line_id TEXT NOT NULL, next_station_id TEXT NOT NULL, exit_no TEXT NOT NULL, platform_direction TEXT NOT NULL, step INTEGER NOT NULL CHECK(step > 0), detail TEXT NOT NULL, PRIMARY KEY (path_id, step))",
+  station_elevator_path_facility: "CREATE TABLE station_elevator_path_facility (path_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT','DIRECTION')), facility_id TEXT NOT NULL, PRIMARY KEY (path_id, group_kind, facility_id))",
+  station_platform_gaps: "CREATE TABLE station_platform_gaps (id TEXT PRIMARY KEY, station_id TEXT NOT NULL, line_id TEXT NOT NULL, direction TEXT CHECK(direction IN ('UP','DOWN')), platform_position TEXT NOT NULL, car_number INTEGER, door_number INTEGER, gap_grade TEXT NOT NULL CHECK(gap_grade IN ('NARROW','NORMAL','WIDE')), height_diff_grade TEXT NOT NULL CHECK(height_diff_grade IN ('LOW','NORMAL','HIGH')), curved INTEGER NOT NULL CHECK(curved IN (0,1)), source_snapshot_id TEXT NOT NULL)",
+  transition_facility_requirement: "CREATE TABLE transition_facility_requirement (transition_key TEXT NOT NULL, path_id TEXT NOT NULL, direction_next_station_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT_ELEVATORS','PLATFORM_DIRECTION_ELEVATORS')), facility_id TEXT NOT NULL, PRIMARY KEY (transition_key, path_id, group_kind, facility_id))",
+  // #925: 역 안 환승 간선 STEP_FREE 판정 근거(간선 x 방면 조합 x 계단 없는 공식 경로 원문 hash). 시간은 일반 환승 간선 값이다(D1).
+  transfer_stair_access_evidence: "CREATE TABLE transfer_stair_access_evidence (edge_id TEXT NOT NULL, from_direction_station_id TEXT NOT NULL, to_direction_station_id TEXT NOT NULL, path_sha256 TEXT NOT NULL CHECK(length(path_sha256)=64 AND path_sha256 NOT GLOB '*[^0-9a-f]*'), source_snapshot_id TEXT NOT NULL, duration_basis TEXT NOT NULL CHECK(duration_basis='GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH'), PRIMARY KEY (edge_id, from_direction_station_id, to_direction_station_id, path_sha256))",
+});
+const ROUTE_EDGE_SEED_CANDIDATE_KEYS = [
+  "candidateId", "stationSetSha256", "sourceSetSha256", "policyVersion", "evaluatorVersion",
+];
+
+export async function emitArtifactComponents(input) {
+  const root = path.resolve(input.repositoryRoot ?? process.cwd());
+  const source = await regular(input.sourceSqlite, "--source-sqlite");
+  const output = path.resolve(required(input.output, "--output"));
+  if (await exists(output)) throw new Error("--output must not already exist");
+  const buildSpecPath = exact(required(input.buildSpec, "--build-spec"), "tools/datapack/release/candidate-build-spec.json", "--build-spec");
+  const ids = readIds(input);
+  const evaluationAt = new Date(requiredUtcInstant(input.evaluationAt, "--evaluation-at")).toISOString();
+  requireObject(input.stationLineInput, "--station-line-input");
+  requireObject(input.routeEdgeInput, "--route-edge-input");
+  if (Date.parse(ids.activeFrom) >= Date.parse(ids.freshUntil)) throw new Error("--active-from must be before --fresh-until");
+
+  const buildSpecSnapshotBytes = input.buildSpecSnapshotBytes;
+  if (buildSpecSnapshotBytes !== undefined && !Buffer.isBuffer(buildSpecSnapshotBytes)) {
+    throw new Error("build spec snapshot bytes must be a Buffer");
+  }
+  const [buildSpecBytes, layoutBytes, contractBytes, sourceSchemaBytes, routeEdgePolicyBytes] = await Promise.all([
+    buildSpecSnapshotBytes === undefined ? readFile(path.join(root, buildSpecPath)) : buildSpecSnapshotBytes,
+    readFile(path.join(root, "contracts/datapack/artifact-component-table-layout.json")),
+    readFile(path.join(root, "contracts/datapack/server-route-bundle-build-contract.json")), readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql")),
+    readFile(path.join(root, "release/product-gates/route-edge-evaluation-policy.json")),
+  ]);
+  const buildSpec = parseJson(buildSpecBytes, "build spec");
+  const layout = parseJson(layoutBytes, "table layout");
+  const buildContract = parseJson(contractBytes, "build contract");
+  const routeEdgePolicy = parseJson(routeEdgePolicyBytes, "route edge evaluation policy");
+  const sourceSchema = layout?.serverRouteBundle?.sourceSchema;
+  validateFixedContracts(layout, buildContract, sourceSchema, sourceSchemaBytes);
+  const provenancePath = await regular(input.sourceProvenance, "--source-provenance");
+  if (path.basename(provenancePath) !== "current.provenance.json") throw new Error("--source-provenance must be current.provenance.json");
+  const currentPath = path.join(path.dirname(provenancePath), "current.json");
+  const [provenanceBytes, currentBytes, sourceBytes, snapshots, policy, governanceBytes, inventoryBytes] = await Promise.all([
+    readFile(provenancePath), readFile(currentPath), readFile(source), readJson(path.join(root, buildSpec.sourceSnapshotEvidencePath)),
+    readJson(path.join(root, "release/product-gates/datapack-freshness-sla.json")), readFile(path.join(root, "tools/datapack/source-governance-policy.json")), readFile(path.join(root, "tools/datapack/source-inventory.json")),
+  ]);
+  const provenance = parseJson(provenanceBytes, "source provenance");
+  const current = parseJson(currentBytes, "current manifest");
+  validateInputBinding(provenance, current, sha(currentBytes), sha(sourceBytes), sha(buildSpecBytes));
+  const freshness = validateSourceSnapshotFreshness({ buildSpec, snapshots, policy, evaluationAt: ids.builtAt, governancePolicy: parseJson(governanceBytes, "governance policy"), inventory: parseJson(inventoryBytes, "source inventory"), governancePolicySha256: sha(governanceBytes), governancePolicyBytes: governanceBytes });
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec.candidateId?.startsWith("nationwide-candidate");
+  const activePack = current?.packs?.find((p) => (current.activePack ? (p?.id === current.activePack.id && p?.version === current.activePack.version) : (p?.id === "capital" && p?.artifactKind === "production")));
+  const packSourceIds = new Set(activePack?.sourceInventory?.map((s) => s.id) ?? []);
+  const snapshotSourceMap = new Map((buildSpec.sourceSnapshots ?? snapshots).map((s) => [s.snapshotId, s.sourceId]));
+  const relevantResults = packSourceIds.size > 0
+    ? freshness.results.filter((result) => packSourceIds.has(snapshotSourceMap.get(result.snapshotId)))
+    : freshness.results;
+  const cap = isNationwide
+    ? requiredUtcInstant(current.expiresAt, "current.json.expiresAt")
+    : Math.min(
+        requiredUtcInstant(current.expiresAt, "current.json.expiresAt"),
+        ...(relevantResults.length > 0 ? relevantResults : freshness.results).map((result) => requiredUtcInstant(result.freshnessExpiresAt, "source freshness")),
+      );
+  if (Date.parse(ids.freshUntil) > cap) throw new Error("--fresh-until exceeds source freshness");
+
+  const mapAssets = {
+    basemapManifestBytes: await readFile(path.join(root, buildContract.capitalMapInput.basemapManifestPath)),
+    sourceSvgBytes: await readFile(path.join(root, buildContract.capitalMapInput.sourcePath)),
+  };
+  // #834: 운영 빌드 경로에서 커밋된 원천 스냅샷으로 엘리베이터 시설·이동경로 행을 만든다. 입력이 없으면 실패한다.
+  const stationElevatorPaths = await loadStationElevatorPathInputs({ repositoryRoot: root });
+  // #837: 운영 빌드 경로에서 커밋된 원천 스냅샷과 역코드 membership으로 승강장 연단 간격 등급 행을 만든다. 입력이 없으면 실패한다.
+  const stationPlatformGaps = await loadStationPlatformGapInputs({ repositoryRoot: root });
+  // #925: 운영 빌드 경로에서 커밋된 MOLIT 환승 이동경로 스냅샷을 승인·hash·신선도로 검증해 읽는다. 어긋나면 실패한다.
+  const transferStairAccess = await loadTransferStairAccessInputs({ repositoryRoot: root, evaluationAt: ids.builtAt });
+
+  return serializeArtifactComponents({
+    output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
+    layout, buildContract, mapAssets, evaluationAt, stationLineInput: input.stationLineInput,
+    routeEdgeInput: input.routeEdgeInput, routeEdgePolicy, stationElevatorPaths, stationPlatformGaps, transferStairAccess,
+    skipSourceProjection: input.skipSourceProjection ?? false,
+  });
+}
+
+// 검증을 마친 입력만 세 component artifact bytes로 직렬화하고 원자적으로 공개한다.
+export async function serializeArtifactComponents({
+  output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
+  layout, buildContract, mapAssets, evaluationAt, stationLineInput, routeEdgeInput, routeEdgePolicy,
+  stationElevatorPaths, stationPlatformGaps, transferStairAccess, skipSourceProjection = false,
+} = {}) {
+  requireStationElevatorPaths(stationElevatorPaths);
+  requireStationPlatformGaps(stationPlatformGaps);
+  requireTransferStairAccess(transferStairAccess);
+  // #925: 번들 freshUntil은 환승 계단 판정 원천(MOLIT) 신선도를 넘을 수 없다.
+  if (Date.parse(ids.freshUntil) > Date.parse(transferStairAccess.freshUntil)) throw new Error("--fresh-until exceeds transfer stair source freshness");
+  const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
+  const snapshot = path.join(temp, ".source.sqlite");
+  let sourceDb;
+  try {
+    await writeFile(snapshot, sourceBytes, { flag: "wx" });
+    sourceDb = new DatabaseSync(snapshot, { open: true, readOnly: true });
+    if (sourceDb.prepare("PRAGMA user_version").get().user_version !== sourceSchema.sqliteUserVersion) throw new Error("source SQLite user_version mismatch");
+    validateSourceSchema(sourceDb, sourceSchemaBytes);
+    const stationSetSha256 = stationSetDigest(sourceDb);
+    validateBundleReferences(sourceDb, layout.serverRouteBundle);
+    await emitMap(temp, sourceDb, ids, stationSetSha256, buildContract, mapAssets);
+    await emitCatalog(temp, sourceDb, ids, stationSetSha256);
+    await emitServer(temp, sourceDb, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, buildContract, {
+      evaluationAt,
+      stationLineInput,
+      routeEdgeInput,
+      routeEdgePolicy,
+      skipSourceProjection,
+      stationElevatorPaths,
+      stationPlatformGaps,
+      transferStairAccess,
+    });
+    sourceDb.close(); sourceDb = undefined;
+    await Promise.all([snapshot, `${snapshot}-wal`, `${snapshot}-shm`].map((file) => rm(file, { force: true })));
+    await validateOutput(temp);
+    await rename(temp, output);
+  } catch (error) {
+    sourceDb?.close();
+    await rm(temp, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function readIds(input) {
+  return { mapPackId: raw(input.mapPackId, "--map-pack-id"), catalogPackId: raw(input.catalogPackId, "--catalog-pack-id"), bundleId: raw(input.bundleId, "--bundle-id"), keyId: raw(input.keyId, "--key-id"), releaseSequence: positive(input.releaseSequence), activeFrom: kst(input.activeFrom, "--active-from"), freshUntil: kst(input.freshUntil, "--fresh-until"), builtAt: utc(input.builtAt, "--built-at") };
+}
+
+function validateFixedContracts(layout, build, sourceSchema, sourceSchemaBytes) {
+  if (layout?.schemaVersion !== 1 || layout?.artifactKind !== "artifact-component-table-layout") throw new Error("table layout contract mismatch");
+  if (!sourceSchema || sourceSchema.path !== "tools/datapack/schema/catalog-schema.sql" || sourceSchema.sqliteUserVersion !== 19 || sha(sourceSchemaBytes) !== sourceSchema.sha256) throw new Error("source schema contract mismatch");
+  if (build?.artifactKind !== "server-route-bundle-build-contract" || build?.compressionProfile?.api !== "node:zlib.zstdCompressSync" || build.compressionProfile.requiredNodeMajor !== 24 || build.compressionProfile.compressionLevel !== 10 || build.compressionProfile.checksumFlag !== 1 || build.compressionProfile.dictionary !== null || build?.capitalMapInput?.sourcePath !== "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg") throw new Error("build contract mismatch");
+  if (canonicalJson(layout?.serverRouteBundle?.components?.accessibility?.generatedEvidence) !== canonicalJson(GENERATED_EVIDENCE_LAYOUT)) throw new Error("generated accessibility evidence contract mismatch");
+  if (Number(process.versions.node.split(".")[0]) !== 24 || !raw(process.versions.node, "process.versions.node") || !raw(process.versions.zstd, "process.versions.zstd")) throw new Error("Node 24 Zstd runtime is required");
+}
+
+function validateSourceSchema(source, sourceSchemaBytes) {
+  const canonical = new DatabaseSync(":memory:");
+  try {
+    canonical.exec(Buffer.from(sourceSchemaBytes).toString("utf8"));
+    const tables = [...new Set(["operators", "route_map_positions", "route_map_line_tracks", "stations", "station_aliases", "lines", "station_lines", "station_contacts", "transfer_guide_sources", "transfer_guide_steps", ...Object.keys(REFERENCES), ...Object.values(COMPONENTS).flat()])];
+    for (const table of tables) {
+      const columns = (db) => db.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().map((column) => ({ name: column.name, type: column.type, notnull: column.notnull, dflt_value: column.dflt_value, pk: column.pk, hidden: column.hidden }));
+      const foreignKeys = (db) => db.prepare(`PRAGMA foreign_key_list(${quote(table)})`).all().map((foreign) => ({ id: foreign.id, seq: foreign.seq, table: foreign.table, from: foreign.from, to: foreign.to, on_update: foreign.on_update, on_delete: foreign.on_delete, match: foreign.match }));
+      if (canonicalJson(columns(source)) !== canonicalJson(columns(canonical)) || canonicalJson(foreignKeys(source)) !== canonicalJson(foreignKeys(canonical)) || canonicalJson(groupedForeignKeys(source, table)) !== canonicalJson(groupedForeignKeys(canonical, table))) throw new Error("source schema mismatch");
+    }
+    canonical.exec("PRAGMA foreign_keys=OFF; BEGIN");
+    try {
+      for (const table of tables) {
+        const columns = canonical.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().filter((column) => !column.hidden).map((column) => column.name);
+        const insert = canonical.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`);
+        for (const row of source.prepare(`SELECT ${columns.map(quote).join(",")} FROM ${quote(table)}`).all()) insert.run(...columns.map((column) => row[column]));
+      }
+      canonical.exec("COMMIT");
+    } catch (error) {
+      canonical.exec("ROLLBACK");
+      throw error;
+    }
+    if (canonical.prepare("PRAGMA foreign_key_check").all().length) throw new Error("source foreign key mismatch");
+  } finally {
+    canonical.close();
+  }
+}
+
+async function emitMap(out, db, ids, stationSetSha256, build, mapAssets) {
+  const artifact = path.join(out, "map-pack"); const payload = path.join(artifact, "payload"); await mkdir(payload, { recursive: true });
+  const base = parseJson(mapAssets?.basemapManifestBytes, "basemap manifest");
+  const seoul = base?.maps?.find?.((entry) => entry.id === "seoul") ?? base?.find?.((entry) => entry.id === "seoul");
+  if (!seoul || seoul.source !== build.capitalMapInput.sourcePath || seoul.sourceSvgSha256 !== build.capitalMapInput.sourceSha256) throw new Error("Seoul basemap binding mismatch");
+  const svg = mapAssets?.sourceSvgBytes;
+  if (sha(svg) !== build.capitalMapInput.sourceSha256) throw new Error("Seoul SVG digest mismatch");
+  await writeFile(path.join(payload, "metropolitan.svg"), svg);
+  const rows = db.prepare("SELECT station_id AS stationId,line_id AS lineId,region,x,y,label_dx AS labelDx,label_dy AS labelDy,label_polygon AS labelPolygon,up_path AS upPath,down_path AS downPath FROM route_map_positions WHERE region='수도권' ORDER BY station_id COLLATE BINARY,line_id COLLATE BINARY").all();
+  if (!rows.length) throw new Error("capital map rows are required");
+  const stationIds = new Set(db.prepare("SELECT id FROM stations").all().map((row) => row.id));
+  if (rows.some((row) => !stationIds.has(row.stationId))) throw new Error("map station is missing");
+  const lineIds = new Set(rows.map((row) => row.lineId));
+  for (const row of db.prepare("SELECT line_id,svg_color FROM route_map_line_tracks WHERE region='수도권'").all()) lineIds.add(row.line_id);
+  const lineStyles = [...lineIds].sort(bytes).map((lineId) => {
+    const colors = db.prepare("SELECT DISTINCT svg_color FROM route_map_line_tracks WHERE region='수도권' AND line_id=? AND svg_color<>'' ORDER BY svg_color COLLATE BINARY").all(lineId).map((row) => row.svg_color);
+    const line = db.prepare("SELECT color FROM lines WHERE id=?").get(lineId);
+    if (!line) throw new Error("map line is missing");
+    if (colors.length > 1) throw new Error("map line requires one svg color");
+    return { lineId, color: colors[0] ?? line.color };
+  });
+  const displayed = new Map();
+  for (const row of rows) {
+    let stationLineIds = displayed.get(row.stationId);
+    if (!stationLineIds) {
+      stationLineIds = [];
+      displayed.set(row.stationId, stationLineIds);
+    }
+    stationLineIds.push(row.lineId);
+  }
+  const interchanges = [...displayed].filter(([, lines]) => new Set(lines).size >= 2).sort(([a], [b]) => bytes(a, b)).map(([stationId, lines]) => ({ stationId, lineIds: [...new Set(lines)].sort(bytes) }));
+  for (const [file, value] of [["stations-layout.json", rows], ["line-styles.json", lineStyles], ["interchange-layout.json", interchanges]]) await json(path.join(payload, file), value);
+  const manifest = { manifestVersion: 1, artifactKind: "map-pack", mapPackId: ids.mapPackId, stationSetSha256, payloadSha256: await inventory(artifact, new Set(["payload/metropolitan.svg", "payload/stations-layout.json", "payload/line-styles.json", "payload/interchange-layout.json"])) };
+  validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.json"), manifest);
+}
+
+async function emitCatalog(out, source, ids, stationSetSha256) {
+  const artifact = path.join(out, "station-catalog-pack"); const file = path.join(artifact, "payload/catalog.sqlite"); await mkdir(path.dirname(file), { recursive: true });
+  const target = new DatabaseSync(file); sqliteProfile(target);
+  target.exec("CREATE TABLE stations(id TEXT NOT NULL PRIMARY KEY,name_ko TEXT NOT NULL,name_en TEXT NOT NULL DEFAULT '',name_sub TEXT NOT NULL DEFAULT '',normalized_name TEXT NOT NULL,region TEXT NOT NULL DEFAULT ''); CREATE TABLE station_aliases(station_id TEXT NOT NULL,alias TEXT NOT NULL,normalized_alias TEXT NOT NULL,FOREIGN KEY(station_id) REFERENCES stations(id)); CREATE TABLE lines(id TEXT NOT NULL PRIMARY KEY,name_ko TEXT NOT NULL,name_en TEXT NOT NULL DEFAULT ''); CREATE TABLE station_lines(station_id TEXT NOT NULL,line_id TEXT NOT NULL,station_code TEXT NOT NULL DEFAULT '',line_sequence INTEGER NOT NULL,PRIMARY KEY(station_id,line_id),FOREIGN KEY(station_id) REFERENCES stations(id),FOREIGN KEY(line_id) REFERENCES lines(id)); CREATE TABLE station_contacts(station_id TEXT NOT NULL,line_id TEXT NOT NULL,phone TEXT NOT NULL,phone_raw TEXT NOT NULL,source_snapshot_id TEXT NOT NULL,PRIMARY KEY(station_id,line_id),FOREIGN KEY(station_id) REFERENCES stations(id),FOREIGN KEY(line_id) REFERENCES lines(id)); CREATE TABLE transfer_guide_sources(source_snapshot_id TEXT NOT NULL PRIMARY KEY,dataset_label TEXT NOT NULL,attribution TEXT NOT NULL,raw_sha256 TEXT NOT NULL CHECK(length(raw_sha256)=64 AND raw_sha256 NOT GLOB '*[^0-9a-f]*')); CREATE TABLE transfer_guide_steps(station_id TEXT NOT NULL,from_line_id TEXT NOT NULL,from_prev_station_id TEXT NOT NULL,to_line_id TEXT NOT NULL,to_next_station_id TEXT NOT NULL,step_order INTEGER NOT NULL CHECK(step_order>=1),detail TEXT NOT NULL CHECK(length(detail)>0),source_snapshot_id TEXT NOT NULL,PRIMARY KEY(station_id,from_line_id,from_prev_station_id,to_line_id,to_next_station_id,step_order),FOREIGN KEY(station_id) REFERENCES stations(id),FOREIGN KEY(from_line_id) REFERENCES lines(id),FOREIGN KEY(from_prev_station_id) REFERENCES stations(id),FOREIGN KEY(to_line_id) REFERENCES lines(id),FOREIGN KEY(to_next_station_id) REFERENCES stations(id),FOREIGN KEY(source_snapshot_id) REFERENCES transfer_guide_sources(source_snapshot_id))");
+  project(source, target, "stations", ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"], ["id"]); project(source, target, "station_aliases", ["station_id", "alias", "normalized_alias"], ["station_id", "alias", "normalized_alias"]); project(source, target, "lines", ["id", "name_ko", "name_en"], ["id"]); project(source, target, "station_lines", ["station_id", "line_id", "station_code", "line_sequence"], ["station_id", "line_id"]);
+  project(source, target, "station_contacts", ["station_id", "line_id", "phone", "phone_raw", "source_snapshot_id"], ["station_id", "line_id"]);
+  project(source, target, "transfer_guide_sources", ["source_snapshot_id", "dataset_label", "attribution", "raw_sha256"], ["source_snapshot_id"]);
+  project(source, target, "transfer_guide_steps", ["station_id", "from_line_id", "from_prev_station_id", "to_line_id", "to_next_station_id", "step_order", "detail", "source_snapshot_id"], ["station_id", "from_line_id", "from_prev_station_id", "to_line_id", "to_next_station_id", "step_order"]);
+  finishSqlite(target); target.close(); await normalizeHeader(file);
+  const manifest = { manifestVersion: 1, artifactKind: "station-catalog-pack", catalogPackId: ids.catalogPackId, stationSetSha256, payloadSha256: await inventory(artifact, new Set(["payload/catalog.sqlite"])) };
+  validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.json"), manifest);
+}
+
+async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, build, evidenceInput) {
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec.candidateId?.startsWith("nationwide-candidate");
+  const artifact = path.join(out, "server-route-bundle"); const payload = path.join(artifact, "payload"); await mkdir(payload, { recursive: true }); const hashes = {};
+  const provisionalEvidence = buildGeneratedEvidence({
+    ...evidenceInput,
+    bundleId: ids.bundleId,
+    candidateId: buildSpec.candidateId,
+    source,
+    stationSetSha256,
+    sourceSetSha256: buildSpec.sourceSnapshotSetHash,
+    topologySha256: "0".repeat(64),
+    skipSourceProjection: true,
+  });
+  const provisionalBlockedEdgeIds = blockedEdgeIds(provisionalEvidence.evaluation);
+  // #925: route-edge 입력의 역 안 환승 간선을 커밋된 MOLIT 스냅샷으로 판정한다. STEP_FREE만 topology에 싣고 근거는 accessibility에 둔다.
+  const transferStair = deriveTransferStairAccess({
+    ...evidenceInput.transferStairAccess,
+    catalog: transferStairCatalogFromSqlite(source),
+    routeEdges: evidenceInput.routeEdgeInput.routeEdges,
+  });
+  const transferStepFreeEdgeIds = transferStair.edges.filter(({ state }) => state === "STEP_FREE").map(({ edgeId }) => edgeId);
+  let projectedTransferStepFreeEdgeIds;
+  let generatedEvidence;
+  for (const [name, owned] of Object.entries(COMPONENTS)) {
+    const componentPath = path.join(artifact, `.${name}.sqlite`); const target = new DatabaseSync(componentPath); sqliteProfile(target);
+    const present = new Set([...Object.keys(REFERENCES), ...owned]);
+    const selected = new Map([...present].map((table) => [table, REFERENCES[table] ?? tableColumns(source, table)]));
+    const requiredKeys = requiredUniqueKeys(source, present, selected);
+    for (const [table, columns] of Object.entries(REFERENCES)) copyTable(source, target, table, columns, present, selected, requiredKeys.get(table));
+    for (const table of owned) copyTable(source, target, table, undefined, present, selected, requiredKeys.get(table));
+    if (name === "topology") {
+      if (evidenceInput.skipSourceProjection && evidenceInput.routeEdgeInput?.routeEdges?.length) {
+        populateNationwideTopologyEdges(target, sourceBackedRouteEdges(source, evidenceInput.routeEdgeInput.routeEdges));
+      }
+      projectBlockedTopologyEdges(target, provisionalBlockedEdgeIds);
+      projectedTransferStepFreeEdgeIds = projectTransferStairAccess(target, transferStepFreeEdgeIds);
+    }
+    if (name === "accessibility") {
+      generatedEvidence = buildGeneratedEvidence({
+        ...evidenceInput,
+        bundleId: ids.bundleId,
+        candidateId: buildSpec.candidateId,
+        source,
+        stationSetSha256,
+        sourceSetSha256: buildSpec.sourceSnapshotSetHash,
+        topologySha256: hashes.topologySha256,
+        skipSourceProjection: Boolean(evidenceInput.skipSourceProjection),
+      });
+      assertBlockedEdgeProjection(provisionalBlockedEdgeIds, blockedEdgeIds(generatedEvidence.evaluation));
+      insertGeneratedEvidence(target, generatedEvidence);
+      insertStationElevatorRows(target, evidenceInput.stationElevatorPaths);
+      insertStationPlatformGapRows(target, source, evidenceInput.stationPlatformGaps);
+      insertTransitionFacilityRequirements(target, evidenceInput.routeEdgeInput.routeEdges);
+      insertTransferStairEvidence(target, transferStair.evidenceRows, projectedTransferStepFreeEdgeIds);
+    }
+    target.exec(IDENTITY_DDL); target.prepare("INSERT INTO artifact_component_identity VALUES(?,?,?,?)").run(ids.bundleId, ids.releaseSequence, stationSetSha256, "Asia/Seoul");
+    validateComponent(target, name, layout.serverRouteBundle);
+    finishSqlite(target); target.close(); await normalizeHeader(componentPath);
+    const compressed = zstdCompressSync(await readFile(componentPath), { params: { [constants.ZSTD_c_compressionLevel]: build.compressionProfile.compressionLevel, [constants.ZSTD_c_checksumFlag]: build.compressionProfile.checksumFlag } }); await rm(componentPath);
+    const output = path.join(payload, `${name}.sqlite.zst`); await writeFile(output, compressed); hashes[`${name}Sha256`] = sha(compressed);
+  }
+  if (!generatedEvidence) throw new Error("generated accessibility evidence is required");
+  const manifest = { manifestVersion: 1, artifactKind: "server-route-bundle", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, payloadSha256: await inventory(artifact, new Set(Object.keys(COMPONENTS).map((name) => `payload/${name}.sqlite.zst`))), ...hashes, provenanceSha256: "0".repeat(64), compatibilitySha256: "0".repeat(64), serviceTimezone: "Asia/Seoul", activeFrom: ids.activeFrom, freshUntil: ids.freshUntil, schemaCompatibility: build.manifestLifecycle.schemaCompatibility, keyId: ids.keyId, signature: { algorithm: "rsa-sha256-server-route-bundle-v1", value: "probe" } };
+  validateArtifactComponentManifest(manifest, stationSetSha256);
+  const provenance = { schemaVersion: 1, artifactKind: "server-route-bundle-provenance", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, serviceTimezone: "Asia/Seoul", activeFrom: ids.activeFrom, freshUntil: ids.freshUntil, builtAt: ids.builtAt, buildSpecSha256: sha(buildSpecBytes), sourceSnapshotSetHash: buildSpec.sourceSnapshotSetHash, sourceInventorySha256: buildSpec.sourceInventorySha256, sourceSnapshotIds: [...new Set(buildSpec.sourceSnapshotIds)].sort(bytes) };
+  await json(path.join(artifact, "provenance.json"), provenance); manifest.provenanceSha256 = sha(await readFile(path.join(artifact, "provenance.json")));
+  const sourceSchema = layout.serverRouteBundle.sourceSchema;
+  const compatibility = { schemaVersion: 1, artifactKind: "server-route-bundle-compatibility", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, serviceTimezone: "Asia/Seoul", manifestVersion: 1, tableLayoutSchemaVersion: layout.schemaVersion, sourceSchemaPath: sourceSchema.path, sourceSqliteUserVersion: sourceSchema.sqliteUserVersion, sourceSchemaSha256: sourceSchema.sha256, schemaCompatibility: build.manifestLifecycle.schemaCompatibility, compressionProfile: build.compressionProfile, encoderRuntime: { node: process.versions.node, zstd: process.versions.zstd } };
+  await json(path.join(artifact, "compatibility.json"), compatibility); manifest.compatibilitySha256 = sha(await readFile(path.join(artifact, "compatibility.json")));
+  validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
+}
+
+// #951: route-edge 입력은 출처 칸이 없는 정본 입력이라, 원천 팩(source SQLite)이 간선 값을 실제로 뒷받침하는 간선에만 그 원천의 출처·검증 상태를 싣는다.
+// 규칙은 lib/bundle-edge-provenance.mjs(환승은 VERIFIED 규칙+공식 경로 행, RIDE는 원천 행)이고, 근거 없는 간선은 UNKNOWN으로 남는다.
+function sourceBackedRouteEdges(source, routeEdges) {
+  return deriveBundleEdgeProvenance({
+    routeEdges,
+    sourceEdges: source.prepare(`
+      SELECT id, from_node_id AS fromNodeId, to_node_id AS toNodeId, duration_seconds AS durationSeconds,
+             distance_meters AS distanceMeters, edge_type AS edgeType, service_pattern AS servicePattern,
+             service_class AS serviceClass, source_id AS sourceId, source_snapshot_id AS sourceSnapshotId,
+             provider_record_hash AS providerRecordHash, provenance_kind AS provenanceKind,
+             verification_status AS verificationStatus, last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
+        FROM network_edges ORDER BY id COLLATE BINARY`).all().map((row) => ({ ...row })),
+    transferRules: source.prepare(`
+      SELECT id, from_station_id AS fromStationId, from_line_id AS fromLineId, to_station_id AS toStationId,
+             to_line_id AS toLineId, transfer_type AS transferType, min_transfer_seconds AS minTransferSeconds,
+             pathway_edge_id AS pathwayEdgeId, source_id AS sourceId, verification_status AS verificationStatus
+        FROM transfer_rules ORDER BY id COLLATE BINARY`).all().map((row) => ({ ...row })),
+    pathwayEdges: source.prepare(`
+      SELECT id, duration_seconds AS durationSeconds, distance_meters AS distanceMeters, source_id AS sourceId,
+             source_snapshot_id AS sourceSnapshotId, provider_record_hash AS providerRecordHash,
+             provenance_kind AS provenanceKind, verification_status AS verificationStatus,
+             last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
+        FROM station_pathway_edges ORDER BY id COLLATE BINARY`).all().map((row) => ({ ...row })),
+  });
+}
+
+// AquilaXk/easysubway-backend#480: 계단 칸 규칙은 lib/network-edge-stair-columns.mjs(모바일 팩 build-datapack과 공용)다.
+export function nationwideTopologyEdgeStairColumns(edge) {
+  return networkEdgeStairColumns(edge, edge.edgeId);
+}
+
+export function populateNationwideTopologyEdges(target, routeEdges) {
+  target.exec("DELETE FROM network_edges");
+  const insert = target.prepare(`
+    INSERT INTO network_edges (
+      id, from_node_id, to_node_id, duration_seconds, distance_meters,
+      edge_type, service_pattern, service_class, includes_stairs,
+      stair_access_state, accessibility_status, reliability_score,
+      source_id, source_snapshot_id, provider_record_hash, provenance_kind,
+      verification_status, facility_id, last_verified_at, evidence_hash
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  target.exec("BEGIN");
+  try {
+    for (const edge of routeEdges) {
+      const stair = nationwideTopologyEdgeStairColumns(edge);
+      insert.run(
+        edge.edgeId,
+        edge.fromNodeId,
+        edge.toNodeId,
+        edge.durationSeconds ?? 0,
+        edge.distanceMeters ?? 0,
+        edge.edgeType,
+        edge.servicePattern ?? "",
+        edge.serviceClass ?? "SUBWAY",
+        stair.includesStairs,
+        stair.stairAccessState,
+        edge.accessibilityStatus ?? "UNKNOWN",
+        edge.reliabilityScore ?? 100,
+        edge.sourceId ?? "",
+        edge.sourceSnapshotId ?? "",
+        edge.providerRecordHash ?? "",
+        edge.provenanceKind ?? "UNKNOWN",
+        edge.verificationStatus ?? "UNKNOWN",
+        edge.facilityId ?? null,
+        edge.lastVerifiedAt ?? null,
+        edge.evidenceHash ?? "",
+      );
+    }
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+// #925: 공식 근거로 STEP_FREE가 된 역 안 환승 간선만 topology network_edges에 싣는다(계단 칸은 #923 공용 규칙).
+// 간선이 없거나, 역 안 환승이 아니거나, 이미 다른 계단 상태를 가진 간선이면 덮지 않고 실패한다.
+// 반환값은 투영 뒤 network_edges에서 STEP_FREE인 역 안 환승 간선 전체다(근거 표와 맞춰 본다).
+export function projectTransferStairAccess(target, edgeIds) {
+  const select = target.prepare("SELECT edge_type AS edgeType, includes_stairs AS includesStairs, stair_access_state AS stairAccessState FROM network_edges WHERE id = ?");
+  const update = target.prepare("UPDATE network_edges SET includes_stairs = ?, stair_access_state = ? WHERE id = ?");
+  for (const edgeId of edgeIds) {
+    const row = select.get(edgeId);
+    if (!row) throw new Error(`transfer stair evidence edge is missing from network_edges: ${edgeId}`);
+    if (row.edgeType !== "IN_STATION_TRANSFER") throw new Error(`transfer stair edge is not an in-station transfer: ${edgeId}`);
+    if (row.stairAccessState !== "UNKNOWN" || row.includesStairs !== 0) throw new Error(`transfer stair state conflicts with network_edges: ${edgeId}`);
+  }
+  target.exec("BEGIN");
+  try {
+    for (const edgeId of edgeIds) {
+      const stair = networkEdgeStairColumns({ stairAccessState: "STEP_FREE" }, edgeId);
+      update.run(stair.includesStairs, stair.stairAccessState, edgeId);
+    }
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+  return target.prepare("SELECT id FROM network_edges WHERE edge_type = 'IN_STATION_TRANSFER' AND stair_access_state = 'STEP_FREE' ORDER BY id COLLATE BINARY")
+    .all().map(({ id }) => id);
+}
+
+// #925: 근거 표의 간선 집합은 topology에서 STEP_FREE인 역 안 환승 간선 집합과 정확히 같아야 한다(고아 근거·근거 없는 STEP_FREE 금지).
+export function insertTransferStairEvidence(target, evidenceRows, stepFreeEdgeIds) {
+  if (!Array.isArray(evidenceRows) || !Array.isArray(stepFreeEdgeIds)) throw new Error("transfer stair evidence input is required");
+  const evidenceEdgeIds = [...new Set(evidenceRows.map(({ edgeId }) => edgeId))].sort(bytes);
+  if (canonicalJson(evidenceEdgeIds) !== canonicalJson([...stepFreeEdgeIds].sort(bytes))) {
+    throw new Error("transfer stair evidence and network_edges STEP_FREE edges mismatch");
+  }
+  const insert = target.prepare("INSERT INTO transfer_stair_access_evidence(edge_id,from_direction_station_id,to_direction_station_id,path_sha256,source_snapshot_id,duration_basis) VALUES(?,?,?,?,?,?)");
+  target.exec("BEGIN");
+  try {
+    for (const row of evidenceRows) {
+      insert.run(row.edgeId, row.fromDirectionStationId, row.toDirectionStationId, row.pathSha256, row.sourceSnapshotId, row.durationBasis);
+    }
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function requireTransferStairAccess(value) {
+  if (!value || typeof value !== "object" || !value.snapshot || !Array.isArray(value.snapshot.rows) || !value.providerCodeCatalog
+    || !Number.isFinite(Date.parse(value.freshUntil))) {
+    throw new Error("transfer stair access input is required");
+  }
+}
+
+function blockedEdgeIds(evaluation) {
+  return evaluation.results.filter(({ state }) => state === "BLOCKED").map(({ edgeId }) => edgeId).sort(bytes);
+}
+
+function projectBlockedTopologyEdges(target, edgeIds) {
+  const before = target.prepare("SELECT id, accessibility_status AS accessibilityStatus FROM network_edges ORDER BY id COLLATE BINARY").all();
+  const existing = new Map(before.map(({ id, accessibilityStatus }) => [id, accessibilityStatus]));
+  if (edgeIds.some((id) => !existing.has(id))) throw new Error("blocked edge projection identity mismatch");
+  const update = target.prepare("UPDATE network_edges SET accessibility_status = 'UNAVAILABLE' WHERE id = ?");
+  for (const edgeId of edgeIds) update.run(edgeId);
+  const after = target.prepare("SELECT id, accessibility_status AS accessibilityStatus FROM network_edges ORDER BY id COLLATE BINARY").all();
+  for (const { id, accessibilityStatus } of after) {
+    if (edgeIds.includes(id) ? accessibilityStatus !== "UNAVAILABLE" : accessibilityStatus !== existing.get(id)) {
+      throw new Error("blocked topology projection mismatch");
+    }
+  }
+}
+
+function assertBlockedEdgeProjection(provisional, final) {
+  if (canonicalJson(provisional) !== canonicalJson(final)
+    || sha(Buffer.from(canonicalJson(provisional))) !== sha(Buffer.from(canonicalJson(final)))) {
+    throw new Error("blocked edge projection identity mismatch");
+  }
+}
+
+function buildGeneratedEvidence(input) {
+  assertKeys(input.stationLineInput, ["candidate", "stationLines", "evidenceRows"], "station-line input keys");
+  assertStationLineCandidate(input.stationLineInput?.candidate, input);
+  const materialization = materializeStationLineAccessibility({
+    ...input.stationLineInput,
+    observedAt: input.evaluationAt,
+  });
+  const routeEdgeSeed = requireObject(input.routeEdgeInput, "route-edge seed input");
+  assertKeys(routeEdgeSeed, ["candidate", "stationLines", "routeEdges"], "route-edge seed input keys");
+  const candidateSeed = requireObject(routeEdgeSeed.candidate, "route-edge seed candidate");
+  assertKeys(candidateSeed, ROUTE_EDGE_SEED_CANDIDATE_KEYS, "route-edge seed candidate keys");
+  if (candidateSeed.stationSetSha256 !== input.stationLineInput.candidate.stationSetSha256) {
+    throw new Error("route-edge station-line candidate station set identity mismatch");
+  }
+  for (const [field, expected, label] of [
+    ["candidateId", input.candidateId, "candidate"],
+    ["sourceSetSha256", input.sourceSetSha256, "source set"],
+  ]) {
+    if (candidateSeed[field] !== expected) throw new Error(`route-edge seed ${label} identity mismatch`);
+  }
+  if (!input.skipSourceProjection) {
+    assertExactProjection(
+      routeEdgeSeed.stationLines,
+      sourceStationLines(input.source, true),
+      ["stationId", "lineId", "operatorId", "lineSequence"],
+      "route-edge station-line source projection",
+    );
+    assertExactProjection(
+      routeEdgeSeed.routeEdges,
+      sourceRouteEdges(input.source),
+      ["edgeId"],
+      "route-edge source projection",
+    );
+  }
+  const evaluation = evaluateRouteAccessibilityEdges({
+    ...routeEdgeSeed,
+    candidate: {
+      ...candidateSeed,
+      stationSetSha256: input.stationSetSha256,
+      topologySha256: input.topologySha256,
+    },
+    evaluationAt: input.evaluationAt,
+    materialization,
+  }, input.routeEdgePolicy);
+  const materializationJson = canonicalStationLineAccessibilityJson(materialization);
+  const evaluationJson = canonicalRouteEdgeEvaluationJson(evaluation);
+  return { materialization, materializationJson, evaluation, evaluationJson };
+}
+
+function sourceStationLines(source, includeSequence) {
+  return source.prepare(`
+    SELECT station_lines.station_id AS stationId,
+           station_lines.line_id AS lineId,
+           lines.operator_id AS operatorId${includeSequence ? ",\n           station_lines.line_sequence AS lineSequence" : ""}
+      FROM station_lines
+      JOIN lines ON lines.id = station_lines.line_id
+     ORDER BY station_lines.station_id COLLATE BINARY,
+              station_lines.line_id COLLATE BINARY
+  `).all().map((row) => ({ ...row }));
+}
+
+function sourceRouteEdges(source) {
+  return source.prepare(`
+    SELECT id AS edgeId,
+           edge_type AS edgeType,
+           from_node_id AS fromNodeId,
+           to_node_id AS toNodeId,
+           duration_seconds AS durationSeconds,
+           distance_meters AS distanceMeters,
+           service_pattern AS servicePattern,
+           service_class AS serviceClass
+      FROM network_edges
+     ORDER BY id COLLATE BINARY
+  `).all().map((row) => {
+    const edge = { ...row };
+    return { ...edge, edgeSha256: routeEdgeSha256(edge) };
+  });
+}
+
+function assertExactProjection(actual, expected, orderFields, label) {
+  if (!Array.isArray(actual)) throw new Error(`${label} mismatch`);
+  const ordered = actual.map((row) => requireObject(row, label)).sort((left, right) => bytes(
+    canonicalJson(orderFields.map((field) => left[field])),
+    canonicalJson(orderFields.map((field) => right[field])),
+  ));
+  if (canonicalJson(ordered) !== canonicalJson(expected)) throw new Error(`${label} mismatch`);
+}
+
+function assertStationLineCandidate(candidate, input) {
+  requireObject(candidate, "station-line candidate");
+  for (const [field, expected, label] of [
+    ["candidateId", input.candidateId, "candidate"],
+    ["sourceSetSha256", input.sourceSetSha256, "source set"],
+  ]) {
+    if (candidate[field] !== expected) throw new Error(`station-line ${label} identity mismatch`);
+  }
+  const stationIds = input.stationLineInput.stationLines?.map((line) => line?.stationId);
+  if (!Array.isArray(stationIds) || stationIds.some((stationId) => typeof stationId !== "string" || stationId === "")) {
+    throw new Error("station-line candidate station set identity mismatch");
+  }
+  const stationSetSha256 = sha(Buffer.from(canonicalJson([...new Set(stationIds)].sort(bytes))));
+  if (candidate.stationSetSha256 !== stationSetSha256) {
+    throw new Error("station-line candidate station set identity mismatch");
+  }
+}
+
+function insertGeneratedEvidence(target, evidence) {
+  target.exec(Object.values(GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL).join("; "));
+  target.prepare("INSERT INTO station_line_accessibility_evidence VALUES(?,?)").run(
+    evidence.materialization.materializationDigest,
+    evidence.materializationJson,
+  );
+  target.prepare("INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)").run(
+    evidence.evaluation.evaluationDigest,
+    evidence.materialization.materializationDigest,
+    evidence.evaluationJson,
+  );
+}
+
+function requireStationElevatorPaths(value) {
+  if (!value || typeof value !== "object"
+    || !Array.isArray(value.facilities) || !Array.isArray(value.paths) || !Array.isArray(value.pathFacilities)) {
+    throw new Error("station elevator path input is required");
+  }
+  if (value.facilities.length === 0 || value.paths.length === 0) throw new Error("station elevator path input is empty");
+}
+
+function requireStationPlatformGaps(value) {
+  if (!value || typeof value !== "object" || !value.snapshot || !value.membership) {
+    throw new Error("station platform gap input is required");
+  }
+}
+
+// #837: 서울교통공사 연단 간격 등급 원천을 번들의 역·노선에 역코드 membership으로 결속해 station_platform_gaps에 적재한다.
+// 결속되지 않은 행과 정의되지 않은 값은 제외 목록으로 드러나며, 결속된 행이 하나도 없으면 빌드를 실패시킨다.
+function insertStationPlatformGapRows(target, source, data) {
+  requireStationPlatformGaps(data);
+  const pack = {
+    stations: source.prepare("SELECT id, name_ko, name_sub FROM stations").all()
+      .map((row) => ({ id: row.id, nameKo: row.name_ko, nameSub: row.name_sub })),
+    stationLines: source.prepare("SELECT station_id, line_id FROM station_lines").all()
+      .map((row) => ({ stationId: row.station_id, lineId: row.line_id })),
+  };
+  const { rows } = bindStationPlatformGaps({ snapshot: data.snapshot, membership: data.membership, pack });
+  if (rows.length === 0) throw new Error("station_platform_gaps is empty");
+  const insertGap = target.prepare(
+    "INSERT INTO station_platform_gaps(id,station_id,line_id,direction,platform_position,car_number,door_number,gap_grade,height_diff_grade,curved,source_snapshot_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+  );
+  target.exec("BEGIN");
+  try {
+    for (const row of [...rows].sort((left, right) => bytes(left.id, right.id))) {
+      insertGap.run(
+        row.id, row.station_id, row.line_id, row.direction, row.platform_position, row.car_number,
+        row.door_number, row.gap_grade, row.height_diff_grade, row.curved, row.source_snapshot_id,
+      );
+    }
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+// #834: getFcElvtr 엘리베이터 한 대 단위 시설 행을 서버 번들 facilities에만 넣고(모바일 pack 불변),
+// stationMovement 경로 단계와 경로 요구 묶음을 전용 테이블에 넣는다. 번들에 없는 역·노선은 실패로 드러낸다.
+function insertStationElevatorRows(target, data) {
+  requireStationElevatorPaths(data);
+  const stationLines = new Set(target.prepare("SELECT station_id, line_id FROM station_lines").all()
+    .map((row) => `${row.station_id}\u0000${row.line_id}`));
+  const requireStationLine = (stationId, lineId, label) => {
+    if (!stationLines.has(`${stationId}\u0000${lineId}`)) throw new Error(`${label} station-line is missing from bundle: ${stationId}/${lineId}`);
+  };
+  const exitIds = target.prepare("SELECT id FROM station_exits WHERE station_id = ? AND exit_number = ? ORDER BY id COLLATE BINARY");
+  const insertFacility = target.prepare("INSERT INTO facilities(id,station_id,exit_id,type,name,status,floor_from,floor_to,description,source_id,source_snapshot_id,provider_facility_ref,provider_record_hash,provenance_kind,verified_at,retrieved_at,evidence_hash,status_meaning,operational_status,installation_status,confidence) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const insertPath = target.prepare("INSERT INTO station_elevator_path(path_id,station_id,line_id,next_station_id,exit_no,platform_direction,step,detail) VALUES(?,?,?,?,?,?,?,?)");
+  const insertPathFacility = target.prepare("INSERT INTO station_elevator_path_facility(path_id,group_kind,facility_id) VALUES(?,?,?)");
+  target.exec("BEGIN");
+  try {
+    for (const facility of [...data.facilities].sort((left, right) => bytes(left.id, right.id))) {
+      requireStationLine(facility.stationId, facility.lineId, "station elevator facility");
+      // 출입구 번호가 하나이고 번들 station_exits에 같은 역·번호 행이 정확히 1개일 때만 exit_id를 채운다.
+      const exits = facility.location.kind === "EXIT" && facility.location.exitNumbers.length === 1
+        ? exitIds.all(facility.stationId, facility.location.exitNumbers[0])
+        : [];
+      insertFacility.run(
+        facility.id,
+        facility.stationId,
+        exits.length === 1 ? exits[0].id : null,
+        "ELEVATOR",
+        `${facility.stationName} 엘리베이터 ${facility.pathDescription}`,
+        "UNKNOWN",
+        "",
+        "",
+        facility.pathDescription,
+        FACILITY_SOURCE_ID,
+        facility.sourceSnapshotId,
+        facility.id.slice("smrt-elev:".length),
+        facility.providerRecordHash,
+        "OFFICIAL_SOURCE",
+        epochSeconds(facility.observedAt),
+        epochSeconds(facility.capturedAt),
+        sha(Buffer.from(canonicalJson({ facilityId: facility.id, providerRecordHash: facility.providerRecordHash, sourceSnapshotId: facility.sourceSnapshotId }))),
+        "STATIC_LOCATION",
+        "UNKNOWN",
+        "INSTALLED",
+        100,
+      );
+    }
+    for (const row of data.paths) {
+      requireStationLine(row.station_id, row.line_id, "station elevator path");
+      requireStationLine(row.next_station_id, row.line_id, "station elevator path next");
+      insertPath.run(row.path_id, row.station_id, row.line_id, row.next_station_id, row.exit_no, row.platform_direction, row.step, row.detail);
+    }
+    for (const row of data.pathFacilities) insertPathFacility.run(row.path_id, row.group_kind, row.facility_id);
+    const orphanPaths = target.prepare("SELECT DISTINCT path_id FROM station_elevator_path_facility WHERE path_id NOT IN (SELECT path_id FROM station_elevator_path)").all();
+    const orphanFacilities = target.prepare("SELECT DISTINCT facility_id FROM station_elevator_path_facility WHERE facility_id NOT IN (SELECT id FROM facilities)").all();
+    if (orphanPaths.length || orphanFacilities.length) throw new Error("station elevator path facility reference mismatch");
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+// #827: 방금 적재한 번들 경로·시설 묶음 테이블과 번들 topology와 같은 route edge의 승강장 노드(#873)로 무단차 요구 행을 만든다.
+// 요구 행이 0개면 모든 전환이 "요구 없음"으로 보이므로 건너뛰지 않고 빌드를 실패시킨다.
+function insertTransitionFacilityRequirements(target, routeEdges) {
+  const requirements = buildTransitionFacilityRequirements({ ...readBundledStepFreeInputs(target), routeEdges });
+  if (requirements.length === 0) throw new Error("transition_facility_requirement is empty");
+  const insert = target.prepare("INSERT INTO transition_facility_requirement(transition_key,path_id,direction_next_station_id,group_kind,facility_id) VALUES(?,?,?,?,?)");
+  target.exec("BEGIN");
+  try {
+    for (const row of requirements) insert.run(row.transition_key, row.path_id, row.direction_next_station_id, row.group_kind, row.facility_id);
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function epochSeconds(value) {
+  const millis = Date.parse(value);
+  if (!Number.isFinite(millis)) throw new Error("station elevator facility timestamp is invalid");
+  return Math.floor(millis / 1000);
+}
+
+function copyTable(source, target, table, projection = undefined, presentTables = undefined, selected = undefined, uniqueKeys = []) {
+  const info = source.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().filter((column) => !column.hidden); if (!info.length) throw new Error(`source table missing: ${table}`);
+  const columns = projection ?? info.map((column) => column.name); if (columns.some((column) => !info.some((entry) => entry.name === column))) throw new Error(`source projection missing: ${table}`);
+  const sourcePk = info.filter((column) => column.pk).sort((a, b) => a.pk - b.pk).map((column) => column.name);
+  const pk = sourcePk.every((column) => columns.includes(column)) ? sourcePk : [];
+  const definitions = columns.map((name) => { const column = info.find((entry) => entry.name === name); return `${quote(name)} ${column.type || ""}${column.notnull ? " NOT NULL" : ""}${column.dflt_value == null ? "" : ` DEFAULT ${column.dflt_value}`}`; });
+  if (pk.length) definitions.push(`PRIMARY KEY (${pk.map(quote).join(",")})`);
+  for (const key of uniqueKeys) definitions.push(`UNIQUE (${key.map(quote).join(",")})`);
+  for (const foreign of retainedForeignKeys(source, table, columns, presentTables, selected)) definitions.push(`FOREIGN KEY (${foreign.from.map(quote).join(",")}) REFERENCES ${quote(foreign.table)} (${foreign.to.map(quote).join(",")}) ON UPDATE ${foreign.onUpdate} ON DELETE ${foreign.onDelete} MATCH ${foreign.match}`);
+  target.exec(`CREATE TABLE ${quote(table)} (${definitions.join(",")})`);
+  const select = `SELECT ${columns.map(quote).join(",")} FROM ${quote(table)} ORDER BY ${columns.map((column) => `${quote(column)} COLLATE BINARY`).join(",")}`; const insert = target.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`);
+  target.exec("BEGIN");
+  try {
+    for (const row of source.prepare(select).all()) insert.run(...columns.map((column) => row[column]));
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function tableColumns(source, table) { return source.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().filter((column) => !column.hidden).map((column) => column.name); }
+function retainedForeignKeys(source, table, columns, presentTables, selected) { return groupedForeignKeys(source, table).filter((foreign) => presentTables?.has(foreign.table) && foreign.from.every((column) => columns.includes(column)) && foreign.to.every((column) => selected.get(foreign.table)?.includes(column))); }
+function requiredUniqueKeys(source, presentTables, selected) {
+  const required = new Map();
+  for (const table of presentTables) for (const foreign of retainedForeignKeys(source, table, selected.get(table), presentTables, selected)) {
+    const parentPk = source.prepare(`PRAGMA table_info(${quote(foreign.table)})`).all().filter((column) => column.pk).sort((a, b) => a.pk - b.pk).map((column) => column.name);
+    if (canonicalJson(foreign.to) === canonicalJson(parentPk)) continue;
+    const keys = required.get(foreign.table) ?? new Map(); keys.set(canonicalJson(foreign.to), foreign.to); required.set(foreign.table, keys);
+  }
+  return new Map([...required].map(([table, keys]) => [table, [...keys.values()]]));
+}
+function groupedForeignKeys(source, table) { const groups = new Map(); for (const row of source.prepare(`PRAGMA foreign_key_list(${quote(table)})`).all()) { const group = groups.get(row.id) ?? { table: row.table, from: [], to: [], onUpdate: row.on_update, onDelete: row.on_delete, match: row.match }; group.from[row.seq] = row.from; group.to[row.seq] = row.to; groups.set(row.id, group); } return [...groups.values()]; }
+function validateComponent(db, name, layout) {
+  if (db.prepare("PRAGMA foreign_key_check").all().length) throw new Error(`${name} component foreign key mismatch`);
+  const identity = db.prepare("SELECT * FROM artifact_component_identity").all(); if (identity.length !== 1) throw new Error(`${name} component identity mismatch`);
+  if (name === "topology") validateNetworkEdges(db);
+}
+function validateBundleReferences(db, layout) {
+  for (const reference of layout.crossComponentReferences) {
+    const [sourceComponent, sourceTable, sourceColumn] = reference.source.split(".");
+    const [targetComponent, targetTable, targetColumn] = reference.target.split(".");
+    if (sourceComponent !== "topology" || !COMPONENTS[sourceComponent]?.includes(sourceTable) || !COMPONENTS[targetComponent]?.includes(targetTable)) throw new Error("cross-component reference contract mismatch");
+    const sourceColumns = db.prepare(`PRAGMA table_xinfo(${quote(sourceTable)})`).all().map((column) => column.name);
+    const targetColumns = db.prepare(`PRAGMA table_xinfo(${quote(targetTable)})`).all().map((column) => column.name);
+    if (!sourceColumns.includes(sourceColumn) || !targetColumns.includes(targetColumn)) throw new Error("cross-component reference schema mismatch");
+    const rows = db.prepare(`SELECT ${quote(sourceColumn)} AS value FROM ${quote(sourceTable)}`).all();
+    if (!reference.nullable && rows.some((row) => row.value == null)) throw new Error("cross-component required reference missing");
+    const targets = new Set(db.prepare(`SELECT ${quote(targetColumn)} AS value FROM ${quote(targetTable)}`).all().map((row) => row.value));
+    if (rows.some((row) => row.value != null && !targets.has(row.value))) throw new Error("cross-component reference mismatch");
+  }
+}
+// #873·#866 PR-C: 경로 간선은 승강장(역-노선) 끝점만 잇는다. 역 단위 ENTRY/EXIT 끝점 모양(table-layout
+// stationEndpointTypes)은 수도권 live chain(legacy) 팩과 함께 지웠다. 역 끝점이 있으면 간선 종류와 무관하게 실패한다.
+function validateNetworkEdges(db) { const stations = new Set(db.prepare("SELECT id FROM stations").all().map((row) => row.id)); const pairs = new Set(db.prepare("SELECT station_id,line_id FROM station_lines").all().map((row) => `${row.station_id}\u0000${row.line_id}`)); for (const row of db.prepare("SELECT from_node_id,to_node_id FROM network_edges").all()) { const from = endpoint(row.from_node_id, stations, pairs); const to = endpoint(row.to_node_id, stations, pairs); if (from.kind !== "line" || to.kind !== "line") throw new Error("network edge endpoint mismatch"); } }
+function endpoint(value, stations, pairs) { if (typeof value !== "string" || !value || /:/.test(value) && value.split(":").some((part) => !part)) throw new Error("invalid network endpoint"); const parts = value.split(":"); if (parts.length === 1) { if (!stations.has(value)) throw new Error("network station endpoint missing"); return { kind: "station", station: value }; } if (!pairs.has(`${parts[0]}\u0000${parts[1]}`)) throw new Error("network station-line endpoint missing"); return { kind: "line", station: parts[0] }; }
+function sqliteProfile(db) { db.exec("PRAGMA page_size=4096; PRAGMA auto_vacuum=NONE; PRAGMA encoding='UTF-8'; PRAGMA foreign_keys=OFF;"); }
+function finishSqlite(db) { db.exec("PRAGMA user_version=19; VACUUM;"); }
+async function normalizeHeader(file) { const value = await readFile(file); value.writeUInt32BE(3053000, 96); await writeFile(file, value); }
+function project(source, target, table, columns, order) { const insert = target.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`); const sql = `SELECT ${columns.map(quote).join(",")} FROM ${quote(table)} ORDER BY ${order.map((column) => `${quote(column)} COLLATE BINARY`).join(",")}`; target.exec("BEGIN"); try { for (const row of source.prepare(sql).all()) insert.run(...columns.map((column) => row[column])); target.exec("COMMIT"); } catch (error) { target.exec("ROLLBACK"); throw error; } }
+function stationSetDigest(db) { return sha(Buffer.from(canonicalJson([...new Set(db.prepare("SELECT id FROM stations ORDER BY id COLLATE BINARY").all().map((row) => row.id))].sort(bytes)))); }
+async function inventory(root, expected) { const payload = path.join(root, "payload"); const entries = []; for (const name of await readdir(payload)) { const file = path.join(payload, name); const stat = await lstat(file); const relative = `payload/${name}`; if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0 || !expected.has(relative)) throw new Error("payload has unknown or invalid file"); const value = await readFile(file); entries.push({ path: relative, sizeBytes: value.length, sha256: sha(value) }); } if (entries.length !== expected.size || entries.some((entry) => !expected.has(entry.path))) throw new Error("payload paths mismatch"); return sha(Buffer.from(canonicalJson(entries.sort((a, b) => bytes(a.path, b.path))))); }
+async function validateOutput(root) { const children = (await readdir(root)).sort(bytes); if (canonicalJson(children) !== canonicalJson([...EXPECTED_CHILDREN].sort(bytes))) throw new Error("output children mismatch"); for (const [artifact, files] of [["map-pack", new Set(["manifest.json", "payload/metropolitan.svg", "payload/stations-layout.json", "payload/line-styles.json", "payload/interchange-layout.json"])], ["station-catalog-pack", new Set(["manifest.json", "payload/catalog.sqlite"])], ["server-route-bundle", new Set(["manifest.signing-input.json", "provenance.json", "compatibility.json", "payload/topology.sqlite.zst", "payload/timetable.sqlite.zst", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst"])]] ) { const actual = new Set(); await collectFiles(path.join(root, artifact), path.join(root, artifact), actual); if (actual.size !== files.size || [...actual].some((file) => !files.has(file))) throw new Error("unknown artifact output"); } }
+async function collectFiles(root, current, output) { for (const entry of await readdir(current, { withFileTypes: true })) { const target = path.join(current, entry.name); if (entry.isDirectory()) await collectFiles(root, target, output); else if (entry.isFile() && !entry.isSymbolicLink()) output.add(path.relative(root, target).split(path.sep).join("/")); else throw new Error("artifact output must be regular files"); } }
+// #866 PR-B(D3): capital@1 하드코딩 대신 current.json이 선택한 active production pack에 결속한다.
+// active pack 선택이 없거나 production이 아니면 이름으로 추측하지 않고 실패한다.
+export function validateInputBinding(provenance, current, currentHash, sourceHash, buildSpecHash) { if (provenance?.schemaVersion !== 1 || provenance.artifactKind !== "datapack-field-provenance" || provenance.manifestSha256 !== currentHash) throw new Error("source provenance does not bind raw current.json"); const active = selectEffectiveDataPack(current); if (!active || active.artifactKind !== "production") throw new Error("source pack identity mismatch"); for (const packs of [current?.packs, provenance?.packs]) { if (!Array.isArray(packs)) throw new Error("source pack identities are required"); const matching = packs.filter((pack) => pack?.id === active.id && String(pack?.version) === String(active.version) && pack?.artifactKind === "production"); if (matching.length !== 1 || matching[0].sqliteSha256 !== sourceHash) throw new Error("source pack identity mismatch"); } if (!provenance?.candidateBuild || typeof provenance.candidateBuild !== "object" || Array.isArray(provenance.candidateBuild) || provenance.candidateBuild.buildSpecSha256 !== buildSpecHash) throw new Error("build spec identity mismatch"); }
+function parseJson(bytes, label) { try { return JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error(`${label} must be JSON`); } }
+function parseCanonicalJson(bytes, label) { const value = parseJson(bytes, label); if (!Buffer.from(bytes).equals(Buffer.from(canonicalJson(value)))) throw new Error(`${label} must be canonical JSON`); return value; }
+function tupleCompare(a, b, fields) { for (const field of fields) { const result = bytes(a[field], b[field]); if (result) return result; } return 0; }
+function sha(value) { return createHash("sha256").update(value).digest("hex"); }
+function bytes(a, b) { return Buffer.compare(Buffer.from(a), Buffer.from(b)); }
+function quote(value) { return `"${String(value).replaceAll('"', '""')}"`; }
+function required(value, label) { if (typeof value !== "string" || !value) throw new Error(`${label} is required`); return value; }
+function requireObject(value, label) { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`); return value; }
+function assertKeys(value, expected, label) { const actual = Object.keys(requireObject(value, label)).sort(bytes); const wanted = [...expected].sort(bytes); if (canonicalJson(actual) !== canonicalJson(wanted)) throw new Error(`${label} mismatch`); }
+function raw(value, label) { value = required(value, label); if (value.trim() !== value) throw new Error(`${label} must be raw`); return value; }
+function exact(value, expected, label) { if (value !== expected) throw new Error(`${label} must be ${expected}`); return value; }
+function positive(value) { value = Number(value); if (!Number.isSafeInteger(value) || value < 1) throw new Error("--release-sequence must be positive safe integer"); return value; }
+function kst(value, label) { value = raw(value, label); if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}\+09:00$/.test(value) || Number.isNaN(Date.parse(value))) throw new Error(`${label} must be KST milliseconds`); return value; }
+function utc(value, label) { value = raw(value, label); if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) || Number.isNaN(Date.parse(value))) throw new Error(`${label} must be UTC milliseconds`); return value; }
+async function regular(value, label) { const target = path.resolve(required(value, label)); const stat = await lstat(target); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular file`); return target; }
+async function exists(target) { try { await lstat(target); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } }
+async function readJson(target) { return parseJson(await readFile(target), target); }
+async function json(target, value) { await writeFile(target, Buffer.from(canonicalJson(value))); }
+function parse(argv) { if (argv.length !== CLI_ARGS.size * 2) throw new Error("exactly the required arguments are required"); const values = {}; for (let index = 0; index < argv.length; index += 2) { const key = argv[index]; const value = argv[index + 1]; if (!key?.startsWith("--") || value === undefined || value.startsWith("--") || !CLI_ARGS.has(key.slice(2)) || Object.hasOwn(values, key.slice(2))) throw new Error("invalid arguments"); values[key.slice(2)] = value; } return values; }
+async function main(argv) {
+  const values = Object.fromEntries(Object.entries(parse(argv)).map(([key, value]) => [key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()), value]));
+  const [stationLinePath, routeEdgePath] = await Promise.all([
+    regular(values.stationLineInput, "--station-line-input"),
+    regular(values.routeEdgeInput, "--route-edge-input"),
+  ]);
+  values.stationLineInput = parseCanonicalJson(await readFile(stationLinePath), "station-line input");
+  values.routeEdgeInput = parseCanonicalJson(await readFile(routeEdgePath), "route-edge input");
+  await emitArtifactComponents(values);
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`emit-artifact-components: ${error.message}\n`); process.exitCode = 1; });

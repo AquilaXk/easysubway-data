@@ -1,0 +1,1136 @@
+#!/usr/bin/env node
+// 실행 시 --date YYYY-MM-DD, 검증된 KRIC 운행일 코드 --kric-day-cd 7|8|9,
+// credential 비포함 absolute --output 경로를 함께 전달한다.
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { parseRetryAfterMs } from "./lib/transient-retry.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const BASE = "https://apis.data.go.kr/1613000/TrainInfo";
+const DETAIL_URL = "https://www.data.go.kr/data/15098552/openapi.do";
+const NON_PAGINATED_OPERATIONS = new Set(["GetVhcleKndList", "GetCtyCodeList"]);
+const PAGINATED_OPERATIONS = new Set(["GetCtyAcctoTrainSttnList", "GetStrtpntAlocFndTrainInfo"]);
+export const TAGO_DAILY_REQUEST_LIMIT = 10_000;
+const TAGO_MAX_RETRY_AFTER_SECONDS = 60;
+// 일시 오류(resultCode 99, HTTP 408·5xx, 전송 오류)는 같은 요청을 지수 백오프로 다시 보낸다(data#1089, data#1267).
+// 간격은 1초에서 시작해 두 배씩 늘리다 상한(64초)에서 멈추고, 재시도 한도(8번)만큼 만들어 합계(191초)는 배열에서 계산한다.
+// 같은 원천에 같은 요청을 다시 보낼 뿐이라 fallback이 아니며, 한도를 다 쓰고도 실패하면 기존처럼 오류로 끝난다.
+// 8번·191초의 근거(data#1267): run 38781966262에서 공급자 장애가 첫 99부터 정상 복귀까지 대기 합계 108초 이상 이어졌고, 5번·31초로는 토요일 OD 1개의 두 조회일이 모두 99로 남았다.
+// 한 요청(페이지) 안에서 세 종류가 한도를 함께 쓴다. 시도마다 requestBudget(일일 10,000건)을 차감한다.
+export const TAGO_TRANSIENT_RETRY_LIMIT = 8;
+export const TAGO_TRANSIENT_BACKOFF_CAP_MS = 64_000;
+export const TAGO_TRANSIENT_RETRY_SCHEDULE_MS = Object.freeze(Array.from(
+  { length: TAGO_TRANSIENT_RETRY_LIMIT },
+  (_, retryIndex) => Math.min(1_000 * 2 ** retryIndex, TAGO_TRANSIENT_BACKOFF_CAP_MS),
+));
+export const TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS = TAGO_TRANSIENT_RETRY_SCHEDULE_MS.reduce((total, delay) => total + delay, 0);
+const TAGO_TRANSIENT_RESULT_CODE = "99";
+// 요청 timeout. 요청 하나가 응답 없이 끝나는 데 걸리는 최대 시간이다.
+export const TAGO_REQUEST_TIMEOUT_MS = 15_000;
+// run 전체(같은 requestBudget을 쓰는 운행일들)의 재시도 시간 예산. 재시도 대기뿐 아니라 일시 오류로 끝난 시도가 쓴 경과 시간(벽시계)도 센다(#1101의 공통 정책과 같은 방식).
+// 느린 실패(요청 timeout 15초 뒤 99, 1초 대기 뒤 성공)가 반복돼도 재시도가 늘리는 실행 시간은 예산(15분)과 한도를 다 쓴 요청마다 세지 않는 마지막 시도 하나를 넘지 않는다.
+// 한도를 다 쓰는 요청은 간격 합계(191초) 이상의 예산을 쓰므로 최대 4개라, 최악 재시도 시간 = 15분 + 5 x 15초 = 16분 15초다.
+// 이 값에 수집 step 자체의 소요 시간을 더한다. 이 수집기를 쓰는 workflow의 timeout은 current-capital-topology-refresh 45분, itx-current-collection 60분, itx-current-promotion 90분이다.
+// 정상 공급자에서 수집 step은 최대 17분 13초라 ≈ 34분으로 셋 모두 안이다. 요청이 느린 장애 밤(run 38781966262)에는 step 자체가 60분 37초 걸렸고 ≈ 77분이라 90분 workflow만 담는다(테스트가 workflow 파일에서 timeout을 읽어 단정한다).
+// 넘기 전에 일자 수집을 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 멈춘다.
+export const TAGO_RETRY_BUDGET_MS = 900_000;
+const TAGO_RETRY_TIME_BUDGET_EXHAUSTED = "TAGO_RETRY_TIME_BUDGET_EXHAUSTED";
+const tagoRateLimitStates = new WeakMap();
+export const ITX_ADMISSION_LOOKAHEAD_DAYS = 14;
+const CANONICAL_STATIONS = Object.freeze({
+  "청량리": "station-b819702fa7d9",
+  "춘천": "station-dd14cfb89cbc",
+});
+
+export function validateItxServiceDates(serviceDates, { now = new Date(), replay = false } = {}) {
+  const result = {};
+  const today = calendarDate(kstDate(now));
+  for (const dayCd of ["8", "7", "9"]) {
+    const value = requiredString(serviceDates?.[dayCd], `dayCd ${dayCd} date`);
+    const date = validateServiceDay(value, dayCd);
+    const offset = Math.round((date - today) / 86_400_000);
+    if (!replay && (offset < 0 || offset >= ITX_ADMISSION_LOOKAHEAD_DAYS)) {
+      throw new Error("ITX admission dates must be today through 13 days in Asia/Seoul");
+    }
+    result[dayCd] = value;
+  }
+  return result;
+}
+
+export function buildItxOdMatrix(date, stations) {
+  calendarDate(date);
+  const ordered = (stations ?? []).map(({ providerStationId, canonicalStationId, corridorSequence }) => ({
+    providerStationId: requiredString(providerStationId, "providerStationId"),
+    stationId: requiredString(canonicalStationId ?? providerStationId, "canonicalStationId"),
+    corridorSequence: Number.isInteger(corridorSequence) ? corridorSequence : null,
+  })).sort((left, right) => (
+    (left.corridorSequence ?? Number.MAX_SAFE_INTEGER) - (right.corridorSequence ?? Number.MAX_SAFE_INTEGER)
+      || stringCompare(left.stationId, right.stationId)
+  ));
+  const providerIds = ordered.map(({ providerStationId }) => providerStationId);
+  const stationIds = ordered.map(({ stationId }) => stationId);
+  if (providerIds.length < 2 || new Set(providerIds).size !== providerIds.length || new Set(stationIds).size !== stationIds.length) {
+    throw new Error("ITX roster stations must be unique and contain at least 2 stations");
+  }
+  const rows = providerIds.flatMap((depStationId) => providerIds
+    .filter((arrStationId) => arrStationId !== depStationId)
+    .map((arrStationId) => ({ date, depStationId, arrStationId })));
+  const stationByProviderId = new Map(ordered.map((station) => [station.providerStationId, station]));
+  const stationMappings = ordered.map(({ stationId, providerStationId }) => (
+    [stationId, providerStationId]
+  )).sort((left, right) => stringCompare(JSON.stringify(left), JSON.stringify(right)));
+  const hashTuples = rows.map(({ depStationId, arrStationId }) => (
+    [
+      date,
+      stationByProviderId.get(depStationId).stationId,
+      depStationId,
+      stationByProviderId.get(arrStationId).stationId,
+      arrStationId,
+    ]
+  )).sort((left, right) => stringCompare(JSON.stringify(left), JSON.stringify(right)));
+  return {
+    rows,
+    expectedOdCount: providerIds.length * (providerIds.length - 1),
+    stationSetHash: sha256(JSON.stringify(stationMappings)),
+    odMatrixHash: sha256(JSON.stringify(hashTuples)),
+  };
+}
+
+export function materializeTagoItxOdRows({
+  itineraries,
+  corridorStations,
+  serviceDate,
+  kricServiceDayCode,
+}) {
+  try {
+    return materializeTagoItxOdRowsStrict({
+      itineraries, corridorStations, serviceDate, kricServiceDayCode,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      error.reconstructionSummary = reconstructionFailureSummary(error, itineraries);
+    }
+    throw error;
+  }
+}
+
+function materializeTagoItxOdRowsStrict({
+  itineraries,
+  corridorStations,
+  serviceDate,
+  kricServiceDayCode,
+}) {
+  const serviceId = { "8": "weekday-kric", "7": "saturday-kric", "9": "holiday-kric" }[kricServiceDayCode];
+  if (serviceId === undefined) throw new Error("kricServiceDayCode must be 7, 8, or 9");
+  validateServiceDay(serviceDate, kricServiceDayCode);
+  if (!Array.isArray(itineraries) || itineraries.length === 0) {
+    throw new Error("TAGO_OD_PAIR_COVERAGE_INCOMPLETE: no itineraries");
+  }
+  if (!Array.isArray(corridorStations) || corridorStations.length < 2) {
+    throw new Error("TAGO_OD_STOP_SEQUENCE_INVALID: corridor stations");
+  }
+
+  const stationsById = new Map();
+  for (const [index, station] of corridorStations.entries()) {
+    const stationId = requiredString(station?.stationId, `corridorStations[${index}].stationId`);
+    const nameKo = requiredString(station?.nameKo, `corridorStations[${index}].nameKo`);
+    const corridorSequence = Number(station?.corridorSequence);
+    const lineId = requiredString(station?.lineId, `corridorStations[${index}].lineId`);
+    if (!Number.isInteger(corridorSequence) || corridorSequence <= 0 || stationsById.has(stationId)
+      || !["line-6e39be0cb6e2", "line-54a7b980b7c3"].includes(lineId)) {
+      throw new Error("TAGO_OD_STOP_SEQUENCE_INVALID: corridor stations");
+    }
+    stationsById.set(stationId, { stationId, nameKo, corridorSequence, lineId });
+  }
+
+  const grouped = new Map();
+  const uniqueOdKeys = new Set();
+  for (const [index, itinerary] of itineraries.entries()) {
+    const trainNumber = normalizeTrainNumber(itinerary?.trainNumber);
+    let departureStationId;
+    let arrivalStationId;
+    try {
+      departureStationId = requiredString(itinerary?.departureStationId, `itineraries[${index}].departureStationId`);
+      arrivalStationId = requiredString(itinerary?.arrivalStationId, `itineraries[${index}].arrivalStationId`);
+    } catch {
+      throw new Error(`TAGO_OD_STOP_SEQUENCE_INVALID: ${trainNumber}`);
+    }
+    if (!stationsById.has(departureStationId) || !stationsById.has(arrivalStationId)) {
+      throw new Error(`TAGO_OD_STOP_SEQUENCE_INVALID: ${trainNumber}`);
+    }
+    const key = JSON.stringify([serviceDate, trainNumber, departureStationId, arrivalStationId]);
+    if (uniqueOdKeys.has(key)) {
+      throw reconstructionError(`TAGO_OD_DUPLICATE: ${trainNumber}`, { duplicateOdCount: 1 });
+    }
+    uniqueOdKeys.add(key);
+    const rows = grouped.get(trainNumber) ?? [];
+    if (typeof itinerary?.departureAt !== "string" || itinerary.departureAt === ""
+      || typeof itinerary?.arrivalAt !== "string" || itinerary.arrivalAt === "") {
+      throw reconstructionError(`TAGO_OD_TIME_CONFLICT: ${trainNumber}`, { conflictingTimestampCount: 1 });
+    }
+    rows.push({
+      trainNumber,
+      departureStationId,
+      arrivalStationId,
+      departureAt: itinerary.departureAt,
+      arrivalAt: itinerary.arrivalAt,
+    });
+    grouped.set(trainNumber, rows);
+  }
+
+  const trainNumbers = [...grouped.keys()].sort(naturalCompare);
+  const stationSequences = [];
+  const transitTrips = [];
+  const transitStopTimes = [];
+  for (const trainNumber of trainNumbers) {
+    const rows = grouped.get(trainNumber);
+    const signs = new Set(rows.map((row) => Math.sign(
+      stationsById.get(row.arrivalStationId).corridorSequence
+        - stationsById.get(row.departureStationId).corridorSequence,
+    )));
+    if (signs.size !== 1 || signs.has(0)) throw new Error(`TAGO_OD_STOP_SEQUENCE_INVALID: ${trainNumber}`);
+    const directionId = signs.has(1) ? "up" : "down";
+    const stopIds = [...new Set(rows.flatMap(({ departureStationId, arrivalStationId }) => (
+      [departureStationId, arrivalStationId]
+    )))].sort((left, right) => {
+      const difference = stationsById.get(left).corridorSequence - stationsById.get(right).corridorSequence;
+      return (directionId === "up" ? difference : -difference) || naturalCompare(left, right);
+    });
+    if (stopIds.length < 2) throw new Error(`TAGO_OD_STOP_SEQUENCE_INVALID: ${trainNumber}`);
+    const usedSequences = stopIds.map((stationId) => stationsById.get(stationId).corridorSequence);
+    if (new Set(usedSequences).size !== usedSequences.length) {
+      throw new Error(`TAGO_OD_STOP_SEQUENCE_INVALID: ${trainNumber}`);
+    }
+
+    const pairByEndpoints = new Map(rows.map((row) => [
+      `${row.departureStationId}\u0000${row.arrivalStationId}`,
+      row,
+    ]));
+    const missingPairs = [];
+    for (let from = 0; from < stopIds.length - 1; from += 1) {
+      for (let to = from + 1; to < stopIds.length; to += 1) {
+        if (!pairByEndpoints.has(`${stopIds[from]}\u0000${stopIds[to]}`)) {
+          missingPairs.push([stopIds[from], stopIds[to]]);
+        }
+      }
+    }
+    const expectedPairCount = stopIds.length * (stopIds.length - 1) / 2;
+    if (missingPairs.length > 0 || rows.length !== expectedPairCount) {
+      throw reconstructionError(`TAGO_OD_PAIR_COVERAGE_INCOMPLETE: ${trainNumber}`, {
+        missingPairCount: Math.max(missingPairs.length, expectedPairCount - rows.length),
+      });
+    }
+
+    const stops = stopIds.map((stationId, index) => {
+      const arrivals = new Set(rows.filter((row) => row.arrivalStationId === stationId).map(({ arrivalAt }) => arrivalAt));
+      const departures = new Set(rows.filter((row) => row.departureStationId === stationId).map(({ departureAt }) => departureAt));
+      if (arrivals.size > 1 || departures.size > 1
+        || (index > 0 && arrivals.size !== 1)
+        || (index < stopIds.length - 1 && departures.size !== 1)) {
+        throw reconstructionError(`TAGO_OD_TIME_CONFLICT: ${trainNumber}`, { conflictingTimestampCount: 1 });
+      }
+      const arrivalAt = index === 0 ? [...departures][0] : [...arrivals][0];
+      const departureAt = index === stopIds.length - 1 ? [...arrivals][0] : [...departures][0];
+      const arrivalSeconds = tagoServiceSeconds(arrivalAt, serviceDate, trainNumber);
+      const departureSeconds = tagoServiceSeconds(departureAt, serviceDate, trainNumber);
+      if (arrivalSeconds > departureSeconds) throw new Error(`TAGO_OD_STOP_SEQUENCE_INVALID: ${trainNumber}`);
+      const station = stationsById.get(stationId);
+      return { ...station, arrivalAt, departureAt, arrivalSeconds, departureSeconds };
+    });
+    for (let index = 1; index < stops.length; index += 1) {
+      if (stops[index - 1].departureSeconds > stops[index].arrivalSeconds) {
+        throw new Error(`TAGO_OD_STOP_SEQUENCE_INVALID: ${trainNumber}`);
+      }
+    }
+    for (let from = 0; from < stops.length - 1; from += 1) {
+      for (let to = from + 1; to < stops.length; to += 1) {
+        const pair = pairByEndpoints.get(`${stops[from].stationId}\u0000${stops[to].stationId}`);
+        if (pair.departureAt !== stops[from].departureAt || pair.arrivalAt !== stops[to].arrivalAt) {
+          throw reconstructionError(`TAGO_OD_TIME_CONFLICT: ${trainNumber}`, { conflictingTimestampCount: 1 });
+        }
+      }
+    }
+
+    const routeId = `route-line-54a7b980b7c3-${directionId}`;
+    const tripId = `${routeId}-${trainNumber}-${kricServiceDayCode}`;
+    transitTrips.push({
+      id: tripId,
+      routeId,
+      serviceId,
+      tripHeadsign: stops.at(-1).nameKo,
+      directionId,
+      servicePattern: "EXPRESS",
+      trainNo: trainNumber,
+    });
+    stops.forEach((stop, index) => transitStopTimes.push({
+      tripId,
+      stopSequence: index + 1,
+      stationId: stop.stationId,
+      lineId: stop.lineId,
+      arrivalSeconds: stop.arrivalSeconds,
+      departureSeconds: stop.departureSeconds,
+    }));
+    stationSequences.push({
+      trainNumber,
+      directionId,
+      originStationName: stops[0].nameKo,
+      destinationStationName: stops.at(-1).nameKo,
+      terminalVariant: `${stops[0].nameKo}→${stops.at(-1).nameKo}`,
+      observedOdCount: rows.length,
+      stopCount: stops.length,
+      conflictingTimestampCount: 0,
+      missingPairCount: 0,
+      duplicateOdCount: 0,
+      stops: stops.map((stop, index) => ({ ...stop, stopSequence: index + 1 })),
+    });
+  }
+
+  transitTrips.sort((left, right) => stringCompare(left.id, right.id));
+  transitStopTimes.sort((left, right) => stringCompare(left.tripId, right.tripId) || left.stopSequence - right.stopSequence);
+  return {
+    trainNumbers,
+    stationSequences,
+    transitTrips,
+    transitStopTimes,
+    reconstructionSummary: {
+      trainCount: trainNumbers.length,
+      stopCount: transitStopTimes.length,
+      conflictingTimestampCount: 0,
+      missingPairCount: 0,
+      duplicateOdCount: 0,
+    },
+  };
+}
+
+export function normalizeTrainNumber(value) {
+  const match = /^(?:ITX-)?(\d+)$/.exec(String(value ?? ""));
+  const digits = match?.[1].replace(/^0+/, "") ?? "";
+  if (digits === "") throw new Error("invalid train number");
+  return digits;
+}
+
+export async function collectTagoItxCheongchunRoster({
+  serviceKey,
+  serviceDate,
+  kricServiceDayCode,
+  canonicalStations,
+  fetchImpl = fetch,
+  now = new Date(),
+  requestBudget = { limit: TAGO_DAILY_REQUEST_LIMIT, remaining: TAGO_DAILY_REQUEST_LIMIT },
+  waitImpl = wait,
+  clockImpl = Date.now,
+} = {}) {
+  const key = normalizeDataGoKrServiceKey(serviceKey);
+  if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("kricServiceDayCode must be 7, 8, or 9");
+  validateServiceDay(serviceDate, kricServiceDayCode);
+  if (!Array.isArray(canonicalStations) || canonicalStations.length < 2) throw new Error("canonicalStations must contain at least 2 stations");
+  const canonicalIds = new Set();
+  for (const station of canonicalStations) {
+    const canonicalStationId = requiredString(station?.canonicalStationId, "canonicalStations.canonicalStationId");
+    requiredString(station?.nameKo, "canonicalStations.nameKo");
+    if (canonicalIds.has(canonicalStationId)
+      || !Number.isInteger(station?.corridorSequence) || station.corridorSequence <= 0
+      || !["line-6e39be0cb6e2", "line-54a7b980b7c3"].includes(station?.lineId)) {
+      throw new Error("canonicalStations corridor metadata is invalid");
+    }
+    canonicalIds.add(canonicalStationId);
+  }
+  if (!Number.isInteger(requestBudget?.limit) || requestBudget.limit <= 0
+    || requestBudget.limit > TAGO_DAILY_REQUEST_LIMIT
+    || !Number.isInteger(requestBudget.remaining) || requestBudget.remaining < 0
+    || requestBudget.remaining > requestBudget.limit) {
+    throw new Error("requestBudget must stay within the 10000-request daily limit");
+  }
+
+  tagoRateLimitState(requestBudget).now = clockImpl;
+  const trainGrades = await fetchAll("GetVhcleKndList", {}, key, fetchImpl, requestBudget, waitImpl);
+  const gradeRows = trainGrades.rows.filter((row) => normalize(row.vehiclekndnm) === "itx청춘");
+  if (gradeRows.length !== 1) throw new Error("TAGO ITX-청춘 train grade is missing or ambiguous");
+  const grade = gradeRows[0];
+  const gradeId = requiredString(grade.vehiclekndid, "vehiclekndid");
+  const cities = await fetchAll("GetCtyCodeList", {}, key, fetchImpl, requestBudget, waitImpl);
+  const stationOperations = [];
+  const stationRows = [];
+  for (const city of cities.rows) {
+    const operation = await fetchAll("GetCtyAcctoTrainSttnList", {
+      cityCode: requiredString(city.citycode, "citycode"),
+    }, key, fetchImpl, requestBudget, waitImpl);
+    stationOperations.push(operation);
+    stationRows.push(...operation.rows);
+  }
+  const stations = [];
+  const excludedCanonicalStations = [];
+  for (const { canonicalStationId, nameKo, corridorSequence, lineId } of canonicalStations) {
+    const canonicalId = requiredString(canonicalStationId, "canonicalStations.canonicalStationId");
+    const canonicalName = requiredString(nameKo, "canonicalStations.nameKo");
+    const matches = stationRows.filter((row) => normalize(row.nodename) === normalize(canonicalName));
+    if (matches.length === 0) {
+      excludedCanonicalStations.push({
+        canonicalStationId: canonicalId,
+        nameKo: canonicalName,
+        reasonCode: "NOT_IN_TAGO_TRAIN_STATION_CATALOG",
+      });
+      continue;
+    }
+    if (matches.length !== 1) throw new Error(`TAGO station mapping is missing or ambiguous: ${canonicalName}`);
+    stations.push({
+      providerStationId: requiredString(matches[0].nodeid, `${canonicalName}.nodeid`),
+      providerStationName: matches[0].nodename,
+      canonicalStationId: canonicalId,
+      nameKo: canonicalName,
+      corridorSequence: Number(corridorSequence),
+      lineId: requiredString(lineId, `${canonicalName}.lineId`),
+    });
+  }
+  const requiredStationNames = ["용산", "옥수", "왕십리", "청량리", "춘천"];
+  const excludedRequired = requiredStationNames.filter((name) => (
+    canonicalStations.some((station) => normalize(station.nameKo) === normalize(name))
+      && !stations.some((station) => normalize(station.nameKo) === normalize(name))
+  ));
+  if (excludedRequired.length > 0) {
+    throw new Error(`TAGO required station mapping is incomplete: ${excludedRequired.map(safeLabel).join(",")}`);
+  }
+  stations.sort((left, right) => left.corridorSequence - right.corridorSequence
+    || stringCompare(left.canonicalStationId, right.canonicalStationId));
+  const matrix = buildItxOdMatrix(serviceDate, stations);
+  const catalogRequestCount = [trainGrades, cities, ...stationOperations]
+    .reduce((total, operation) => total + operation.requestCount, 0);
+  const remainingInitialRequestBudget = requestBudget.remaining;
+  const initialOdRequestCount = matrix.expectedOdCount * 2;
+  if (initialOdRequestCount > remainingInitialRequestBudget) {
+    throw new Error("TAGO_QUOTA_BUDGET_EXHAUSTED");
+  }
+  const stationByProviderId = new Map(stations.map((station) => [station.providerStationId, station]));
+  const odOperations = [];
+  const calendarDateWindowInventory = [];
+  const itineraries = [];
+  const failedOds = [];
+  let completedOdCount = 0;
+  for (const { depStationId, arrStationId } of matrix.rows) {
+    const departureStation = stationByProviderId.get(depStationId);
+    const arrivalStation = stationByProviderId.get(arrStationId);
+    const remainingBeforeOd = requestBudget.remaining;
+    try {
+      const projectedWindows = [];
+      let firstWindowError = null;
+      for (const queryDate of [serviceDate, nextCalendarDay(serviceDate)]) {
+        try {
+          const operation = await fetchAll("GetStrtpntAlocFndTrainInfo", {
+            depPlaceId: depStationId,
+            arrPlaceId: arrStationId,
+            depPlandTime: queryDate,
+            trainGradeCode: gradeId,
+          }, key, fetchImpl, requestBudget, waitImpl);
+          odOperations.push(operation);
+          const window = projectTagoCalendarDateWindow(operation.rows, {
+            serviceDate,
+            queryDate,
+            departureStation,
+            arrivalStation,
+          });
+          calendarDateWindowInventory.push(window.inventory);
+          projectedWindows.push(window.projected);
+        } catch (error) {
+          if (isFatalTagoRosterError(error)) throw error;
+          calendarDateWindowInventory.push(error?.calendarDateWindowInventory ?? {
+            queryCalendarOffset: queryDate === serviceDate ? 0 : 1,
+            outcome: "REJECTED",
+            relationCounts: {},
+          });
+          firstWindowError ??= error;
+        }
+      }
+      if (firstWindowError) throw firstWindowError;
+      itineraries.push(...unionTagoCalendarDateWindows(projectedWindows));
+      completedOdCount += 1;
+    } catch (error) {
+      if (isFatalTagoRosterError(error)) throw error;
+      const failure = tagoOdFailure(error);
+      failedOds.push({
+        departureStationId: departureStation.canonicalStationId,
+        arrivalStationId: arrivalStation.canonicalStationId,
+        requestCount: remainingBeforeOd - requestBudget.remaining,
+        ...failure,
+      });
+    }
+  }
+  const trainNumbers = [...new Set(itineraries.map(({ trainNumber }) => normalizeTrainNumber(trainNumber)))].sort(naturalCompare);
+  if (trainNumbers.length === 0 && failedOds.length === 0) throw new Error("TAGO ITX-청춘 roster returned zero rows");
+  const buildArtifact = (materialized, reconstructionSummary = null) => {
+    const odRequestCount = remainingInitialRequestBudget - requestBudget.remaining;
+    const failedOdRequestCount = failedOds.reduce((total, { requestCount }) => total + requestCount, 0);
+    const artifact = {
+      schemaVersion: 2,
+      artifactKind: "tago-itx-cheongchun-roster-evidence",
+      serviceId: "ITX_CHEONGCHUN",
+      officialSourceUrl: DETAIL_URL,
+      observedAt: now.toISOString(),
+      serviceDate,
+      kricServiceDayCode,
+      trainGrade: { code: gradeId, name: grade.vehiclekndnm, serviceId: "ITX_CHEONGCHUN" },
+      canonicalStationCount: canonicalStations.length,
+      rosterStationCount: stations.length,
+      excludedCanonicalStations: excludedCanonicalStations.sort((left, right) => naturalCompare(left.nameKo, right.nameKo)),
+      stations,
+      expectedOdCount: matrix.expectedOdCount,
+      completedOdCount,
+      failedOdCount: failedOds.length,
+      ...(failedOds.length > 0 ? { failedOds } : {}),
+      stationSetHash: matrix.stationSetHash,
+      odMatrixHash: matrix.odMatrixHash,
+      calendarDateProjection: {
+        contractVersion: "tago-itx-calendar-date-projection-v2",
+        queryCalendarOffsets: [0, 1],
+      },
+      calendarDateWindowInventory,
+      quotaSummary: {
+        catalogRequestCount,
+        remainingInitialRequestBudget,
+        initialOdRequestCount,
+        odRequestCount,
+        failedOdRequestCount,
+        actualRequestCount: catalogRequestCount + odRequestCount,
+      },
+      operations: [trainGrades, cities, ...stationOperations, ...odOperations].map(operationEvidence),
+      trainNumbers: materialized?.trainNumbers ?? trainNumbers,
+      itineraries,
+      ...(materialized ? materialized : {}),
+      ...(!materialized && reconstructionSummary ? { reconstructionSummary } : {}),
+      credentialRedacted: true,
+    };
+    artifact.evidenceHash = sha256(JSON.stringify(artifact));
+    return artifact;
+  };
+  if (failedOds.length > 0) return buildArtifact(null);
+  try {
+    return buildArtifact(materializeTagoItxOdRows({
+      itineraries,
+      corridorStations: stations.map(({ canonicalStationId, nameKo, corridorSequence, lineId }) => ({
+        stationId: canonicalStationId, nameKo, corridorSequence, lineId,
+      })),
+      serviceDate,
+      kricServiceDayCode,
+    }));
+  } catch (error) {
+    if (error instanceof Error) error.rosterEvidence = buildArtifact(null, error.reconstructionSummary);
+    throw error;
+  }
+}
+
+export async function collectTagoItxCheongchunOd({
+  serviceKey,
+  departureDate,
+  kricServiceDayCode,
+  fetchImpl = fetch,
+  now = new Date(),
+  waitImpl = wait,
+} = {}) {
+  const key = normalizeDataGoKrServiceKey(serviceKey);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate ?? "")) throw new Error("departureDate must be YYYY-MM-DD");
+  if (!["7", "8", "9"].includes(kricServiceDayCode)) {
+    throw new Error("kricServiceDayCode must be 7, 8, or 9");
+  }
+  const rateLimitState = tagoRateLimitState(null);
+  const fetchOperation = (operation, query) => fetchAll(
+    operation, query, key, fetchImpl, null, waitImpl, rateLimitState,
+  );
+  const trainGrades = await fetchOperation("GetVhcleKndList", {});
+  const gradeRows = trainGrades.rows.filter((row) => normalize(row.vehiclekndnm) === "itx청춘");
+  if (gradeRows.length !== 1) throw new Error("TAGO ITX-청춘 train grade is missing or ambiguous");
+  const grade = gradeRows[0];
+
+  const cities = await fetchOperation("GetCtyCodeList", {});
+  const stationRows = [];
+  for (const city of cities.rows) {
+    const cityCode = requiredString(city.citycode, "citycode");
+    const stations = await fetchOperation("GetCtyAcctoTrainSttnList", { cityCode });
+    stationRows.push(...stations.rows);
+  }
+  const departure = uniqueStation(stationRows, "청량리");
+  const arrival = uniqueStation(stationRows, "춘천");
+  const od = await fetchOperation("GetStrtpntAlocFndTrainInfo", {
+    depPlaceId: departure.nodeid,
+    arrPlaceId: arrival.nodeid,
+    depPlandTime: departureDate.replaceAll("-", ""),
+    trainGradeCode: grade.vehiclekndid,
+  });
+  const itineraries = od.rows.map((row, index) => normalizeItinerary(row, index));
+  const trainNumbers = [...new Set(itineraries.map(({ trainNumber }) => trainNumber))].sort(naturalCompare);
+  if (itineraries.length === 0) throw new Error("TAGO ITX-청춘 OD returned zero rows");
+  if (trainNumbers.length !== itineraries.length) throw new Error("TAGO ITX-청춘 OD duplicate train number");
+  return {
+    schemaVersion: 1,
+    artifactKind: "tago-itx-cheongchun-od-evidence",
+    serviceId: "ITX_CHEONGCHUN",
+    officialSourceUrl: DETAIL_URL,
+    license: "이용허락범위 제한 없음",
+    developmentDailyQuota: 10_000,
+    observedAt: now.toISOString(),
+    departureDate,
+    kricServiceDayCode,
+    trainGrade: { code: String(grade.vehiclekndid), name: grade.vehiclekndnm, serviceId: "ITX_CHEONGCHUN" },
+    departureStation: stationMapping(departure, "청량리"),
+    arrivalStation: stationMapping(arrival, "춘천"),
+    pickupDropoff: {
+      status: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+      reasonCode: "OFFICIAL_OPERATION_FIELD_NOT_PROVIDED",
+      operation: "GetStrtpntAlocFndTrainInfo",
+      checkedAt: now.toISOString(),
+    },
+    fare: { status: "SUPPORTED", field: "adultcharge", unit: "KRW", passenger: "ADULT_1" },
+    operations: [trainGrades, cities, od].map(operationEvidence),
+    trainNumbers,
+    itineraries,
+    evidenceHash: sha256(JSON.stringify({ departureDate, kricServiceDayCode, grade, departure, arrival, itineraries })),
+    credentialRedacted: true,
+  };
+}
+
+async function fetchAll(
+  operation,
+  query,
+  key,
+  fetchImpl,
+  requestBudget = null,
+  waitImpl = wait,
+  rateLimitState = tagoRateLimitState(requestBudget),
+) {
+  const paginated = PAGINATED_OPERATIONS.has(operation);
+  if (!paginated && !NON_PAGINATED_OPERATIONS.has(operation)) {
+    throw new Error(`TAGO operation is unsupported: ${safeCode(operation)}`);
+  }
+  const all = [];
+  const rawHashes = [];
+  if (rateLimitState.stopped) throw rateLimitError(rateLimitState);
+  let requestCount = 0;
+  let totalCount = null;
+  const maxPages = paginated ? 100 : 1;
+  for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
+    const url = new URL(`${BASE}/${operation}`);
+    const pagination = paginated ? { pageNo: String(pageNo), numOfRows: "100" } : {};
+    for (const [name, value] of Object.entries({ serviceKey: key, _type: "json", ...pagination, ...query })) {
+      url.searchParams.set(name, String(value));
+    }
+    const retryState = { used: 0 };
+    let raw;
+    let root;
+    let code;
+    while (true) {
+      const fetched = await fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl, rateLimitState, retryState);
+      const response = fetched.response;
+      requestCount += fetched.attemptCount;
+      if (!response.ok) {
+        if (response.body) await response.body.cancel().catch(() => {});
+        throw new Error(`TAGO ${operation} HTTP ${response.status}`);
+      }
+      const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+      if (contentType !== "application/json") {
+        if (response.body) await response.body.cancel().catch(() => {});
+        throw new Error(`TAGO ${operation} schema mismatch: content-type`);
+      }
+      try {
+        raw = await response.text();
+      } catch (error) {
+        // 본문을 읽다가 timeout·연결 끊김이 나면 전송 오류와 같은 재시도 대상이다(data#1089). 한도를 다 쓰면 transport failure다.
+        if (retryState.used >= TAGO_TRANSIENT_RETRY_LIMIT) throw new Error("TAGO transport failure", { cause: error });
+        await waitForTransientRetry(retryState, rateLimitState, waitImpl);
+        continue;
+      }
+      let json;
+      try { json = JSON.parse(raw); } catch { throw new Error(`TAGO ${operation} schema mismatch: invalid JSON`); }
+      root = json.response ?? json;
+      code = String(root?.header?.resultCode ?? "");
+      if (code === TAGO_TRANSIENT_RESULT_CODE && retryState.used < TAGO_TRANSIENT_RETRY_LIMIT) {
+        // 실패한 시도의 본문은 증거 해시에 넣지 않는다. 시도 자체는 요청 수와 provider capture에 남는다.
+        await waitForTransientRetry(retryState, rateLimitState, waitImpl);
+        continue;
+      }
+      break;
+    }
+    rawHashes.push(sha256(raw));
+    if (code !== "00") throw new Error(`TAGO ${operation} provider resultCode ${safeCode(code)}`);
+    const body = root?.body;
+    if (!body || typeof body !== "object") throw new Error(`TAGO ${operation} schema mismatch: body`);
+    const items = body.items?.item;
+    if (!paginated && (items == null || typeof items !== "object")) {
+      throw new Error(`TAGO ${operation} schema mismatch: item`);
+    }
+    const rows = items == null ? [] : Array.isArray(items) ? items : [items];
+    if (rows.some((row) => !row || typeof row !== "object" || Array.isArray(row))) {
+      throw new Error(`TAGO ${operation} schema mismatch: item`);
+    }
+    if (!paginated) {
+      all.push(...rows);
+      totalCount = rows.length;
+      break;
+    }
+    if (body.totalCount === undefined || body.totalCount === null || body.totalCount === "") {
+      const bodyFields = Object.keys(body)
+        .filter((field) => /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(field))
+        .sort((left, right) => codepointCompare(left, right))
+        .join(",") || "NONE";
+      throw new Error(`TAGO ${operation} schema mismatch: totalCount bodyFields=${bodyFields}`);
+    }
+    const pageTotal = Number(body.totalCount);
+    if (!Number.isInteger(pageTotal) || pageTotal < 0 || (totalCount !== null && totalCount !== pageTotal)) {
+      throw new Error(`TAGO ${operation} schema mismatch: totalCount`);
+    }
+    totalCount ??= pageTotal;
+    all.push(...rows);
+    if (all.length >= totalCount) break;
+    if (rows.length === 0) throw new Error(`TAGO ${operation} pagination incomplete`);
+  }
+  if (all.length !== totalCount) throw new Error(`TAGO ${operation} pagination incomplete`);
+  return { operation, endpoint: `${BASE}/${operation}`, pageCount: rawHashes.length, requestCount, totalCount, rawResponseSha256: sha256(rawHashes.join("|")), rows: all };
+}
+
+async function fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl, rateLimitState, retryState) {
+  let attemptCount = 0;
+  while (true) {
+    let response;
+    try {
+      if (requestBudget) {
+        if (requestBudget.remaining <= 0) throw new Error("TAGO_QUOTA_BUDGET_EXHAUSTED");
+        requestBudget.remaining -= 1;
+      }
+      rateLimitState.attemptStartedAt = rateLimitState.now();
+      response = await fetchImpl(url, {
+        redirect: "error",
+        signal: AbortSignal.timeout(TAGO_REQUEST_TIMEOUT_MS),
+        headers: { accept: "application/json" },
+      });
+      attemptCount += 1;
+    } catch (error) {
+      if (error instanceof Error && error.message === "TAGO_QUOTA_BUDGET_EXHAUSTED") throw error;
+      attemptCount += 1;
+      if (retryState.used >= TAGO_TRANSIENT_RETRY_LIMIT) throw new Error("TAGO transport failure", { cause: error });
+      await waitForTransientRetry(retryState, rateLimitState, waitImpl);
+      continue;
+    }
+    if (response.status === 429) {
+      const retryAfterSeconds = retryAfterDeltaSeconds(response.headers.get("retry-after"));
+      if (response.body) await response.body.cancel().catch(() => {});
+      if (rateLimitState.cooldownUsed || retryAfterSeconds === null) {
+        rateLimitState.stopped = true;
+        rateLimitState.operation = operation;
+        rateLimitState.attemptCount = attemptCount;
+        throw rateLimitError(rateLimitState);
+      }
+      rateLimitState.cooldownUsed = true;
+      await waitImpl(retryAfterSeconds * 1_000);
+      continue;
+    }
+    const retryable = response.status === 408 || response.status >= 500;
+    if (!retryable || retryState.used >= TAGO_TRANSIENT_RETRY_LIMIT) return { response, attemptCount };
+    if (response.body) await response.body.cancel().catch(() => {});
+    await waitForTransientRetry(retryState, rateLimitState, waitImpl);
+  }
+}
+
+class TagoRateLimitedError extends Error {
+  constructor(operation, attemptCount, cooldownUsed) {
+    super(`TAGO ${operation} HTTP 429`);
+    this.name = "TagoRateLimitedError";
+    this.attemptCount = attemptCount;
+    this.cooldownUsed = cooldownUsed;
+  }
+}
+
+// 일시 오류 재시도 대기: 한 요청 안의 횟수(retryState)와 run 전체의 재시도 시간 예산(rateLimitState.retrySpentMs)을 함께 차감한다.
+// 예산은 방금 일시 오류로 끝난 시도의 경과 시간(벽시계)과 이어질 대기를 센다. 정상으로 끝난 시도의 시간은 세지 않는다.
+async function waitForTransientRetry(retryState, rateLimitState, waitImpl) {
+  const delay = TAGO_TRANSIENT_RETRY_SCHEDULE_MS[retryState.used];
+  rateLimitState.retrySpentMs += Math.max(0, rateLimitState.now() - rateLimitState.attemptStartedAt);
+  if (rateLimitState.retrySpentMs + delay > TAGO_RETRY_BUDGET_MS) throw new Error(TAGO_RETRY_TIME_BUDGET_EXHAUSTED);
+  rateLimitState.retrySpentMs += delay;
+  retryState.used += 1;
+  await waitImpl(delay);
+}
+
+// now는 시계(테스트용 주입), attemptStartedAt은 마지막으로 나간 시도의 시작 시각이다.
+function newTagoRateLimitState() {
+  return { cooldownUsed: false, stopped: false, operation: null, attemptCount: 0, retrySpentMs: 0, now: Date.now, attemptStartedAt: 0 };
+}
+
+function tagoRateLimitState(requestBudget) {
+  if (!requestBudget) return newTagoRateLimitState();
+  let state = tagoRateLimitStates.get(requestBudget);
+  if (!state) {
+    state = newTagoRateLimitState();
+    tagoRateLimitStates.set(requestBudget, state);
+  }
+  return state;
+}
+
+function retryAfterDeltaSeconds(value) {
+  const retryAfterMillis = parseRetryAfterMs(value);
+  if (retryAfterMillis === undefined) return null;
+  const seconds = Math.ceil(retryAfterMillis / 1_000);
+  return seconds >= 1 && seconds <= TAGO_MAX_RETRY_AFTER_SECONDS ? seconds : null;
+}
+
+function rateLimitError(state) {
+  return new TagoRateLimitedError(
+    state.operation ?? "GetStrtpntAlocFndTrainInfo",
+    state.attemptCount,
+    state.cooldownUsed,
+  );
+}
+
+function isFatalTagoRosterError(error) {
+  return error instanceof TagoRateLimitedError
+    || (error instanceof Error && (error.message === "TAGO_QUOTA_BUDGET_EXHAUSTED" || error.message === TAGO_RETRY_TIME_BUDGET_EXHAUSTED));
+}
+
+function uniqueStation(rows, name) {
+  const matches = rows.filter((row) => normalize(row.nodename) === normalize(name));
+  if (matches.length !== 1) throw new Error(`TAGO station mapping is missing or ambiguous: ${name}`);
+  requiredString(matches[0].nodeid, `${name}.nodeid`);
+  return matches[0];
+}
+
+function stationMapping(row, name) {
+  return { providerStationId: row.nodeid, providerStationName: row.nodename, canonicalStationId: CANONICAL_STATIONS[name] };
+}
+
+function normalizeItinerary(row, index, expected = {}) {
+  if (normalize(row.traingradename) !== "itx청춘") throw new Error(`TAGO OD row[${index}] train grade mismatch`);
+  const departureAt = providerTimestamp(row.depplandtime, `row[${index}].depplandtime`);
+  const arrivalAt = providerTimestamp(row.arrplandtime, `row[${index}].arrplandtime`);
+  if (arrivalAt.epoch <= departureAt.epoch) throw new Error(`TAGO OD row[${index}] arrival must follow departure`);
+  const departureStationName = requiredString(row.depplacename, `row[${index}].depplacename`);
+  const arrivalStationName = requiredString(row.arrplacename, `row[${index}].arrplacename`);
+  if ((expected.departureStationName && normalize(departureStationName) !== normalize(expected.departureStationName))
+    || (expected.arrivalStationName && normalize(arrivalStationName) !== normalize(expected.arrivalStationName))) {
+    throw new Error(`TAGO OD row[${index}] station mismatch`);
+  }
+  const fare = Number(row.adultcharge);
+  if (!Number.isInteger(fare) || fare < 0) throw new Error(`TAGO OD row[${index}] adultcharge is invalid`);
+  return {
+    trainNumber: normalizeTrainNumber(row.trainno),
+    trainType: "ITX_CHEONGCHUN",
+    departureStationName,
+    arrivalStationName,
+    departureAt: departureAt.iso,
+    arrivalAt: arrivalAt.iso,
+    adultFareWon: fare,
+  };
+}
+
+function tagoServiceDayPartition(value) {
+  const text = String(value ?? "");
+  const calendarDay = text.slice(0, 8);
+  const serviceDayDate = calendarDate(calendarDay);
+  if (Number(text.slice(8, 10)) < 3) serviceDayDate.setUTCDate(serviceDayDate.getUTCDate() - 1);
+  const serviceDay = `${serviceDayDate.getUTCFullYear()}${String(serviceDayDate.getUTCMonth() + 1).padStart(2, "0")}${String(serviceDayDate.getUTCDate()).padStart(2, "0")}`;
+  return { calendarDay, serviceDay };
+}
+
+function calendarDateMismatchError(index, calendarDay, requestedServiceDay, queryCalendarOffset) {
+  if (queryCalendarOffset !== 0 && queryCalendarOffset !== 1) {
+    throw new Error("TAGO OD query calendar offset is invalid");
+  }
+  const relation = calendarDay === previousCalendarDay(requestedServiceDay)
+    ? "previous_calendar_day"
+    : calendarDay === nextCalendarDay(requestedServiceDay)
+      ? "next_calendar_day"
+      : "non_adjacent_calendar_day";
+  const error = new Error(`TAGO OD row[${index}] departure date mismatch:${relation}`);
+  error.queryCalendarOffset = queryCalendarOffset;
+  return error;
+}
+
+function serviceDayMismatchError(index, serviceDay, requestedServiceDay, queryCalendarOffset) {
+  const relation = serviceDay === previousCalendarDay(requestedServiceDay)
+    ? "previous_service_day"
+    : serviceDay === nextCalendarDay(requestedServiceDay)
+      ? "next_service_day"
+      : "non_adjacent_service_day";
+  const error = new Error(`TAGO OD row[${index}] departure date mismatch:${relation}`);
+  error.queryCalendarOffset = queryCalendarOffset;
+  return error;
+}
+
+const CALENDAR_RELATIONS = [
+  "previous_calendar_day",
+  "same_calendar_day",
+  "next_calendar_day",
+  "non_adjacent_calendar_day",
+];
+
+function calendarDayRelation(calendarDay, serviceDate) {
+  if (calendarDay === previousCalendarDay(serviceDate)) return "previous_calendar_day";
+  if (calendarDay === serviceDate) return "same_calendar_day";
+  if (calendarDay === nextCalendarDay(serviceDate)) return "next_calendar_day";
+  return "non_adjacent_calendar_day";
+}
+
+function calendarDateWindowInventory(queryCalendarOffset, outcome, relationCounts) {
+  return {
+    queryCalendarOffset,
+    outcome,
+    relationCounts: Object.fromEntries(CALENDAR_RELATIONS
+      .filter((relation) => relationCounts[relation] > 0)
+      .map((relation) => [relation, relationCounts[relation]])),
+  };
+}
+
+function projectTagoCalendarDateWindow(rows, {
+  serviceDate,
+  queryDate,
+  departureStation,
+  arrivalStation,
+}) {
+  const queryCalendarOffset = queryDate === serviceDate ? 0 : 1;
+  const projected = new Map();
+  const relationCounts = {};
+  let firstError = null;
+  for (const [index, row] of rows.entries()) {
+    try {
+      const calendarDay = String(row.depplandtime).slice(0, 8);
+      let relation = null;
+      try {
+        providerTimestamp(row.depplandtime, `row[${index}].depplandtime`);
+        calendarDate(calendarDay);
+        relation = calendarDayRelation(calendarDay, serviceDate);
+        relationCounts[relation] = (relationCounts[relation] ?? 0) + 1;
+      } catch {
+        // normalizeItinerary keeps the existing typed validation failure precedence.
+      }
+      const itinerary = {
+        ...normalizeItinerary(row, index, {
+          departureStationName: departureStation.providerStationName,
+          arrivalStationName: arrivalStation.providerStationName,
+        }),
+        departureStationId: departureStation.canonicalStationId,
+        arrivalStationId: arrivalStation.canonicalStationId,
+      };
+      calendarDate(calendarDay);
+      const { serviceDay } = tagoServiceDayPartition(row.depplandtime);
+      relation ??= calendarDayRelation(calendarDay, serviceDate);
+      if (!(relation in relationCounts)) relationCounts[relation] = 1;
+      const validNonTarget = queryCalendarOffset === 0
+        ? [previousCalendarDay(serviceDate), serviceDate, nextCalendarDay(serviceDate)].includes(calendarDay)
+        : calendarDay === queryDate || serviceDay === queryDate;
+      if (serviceDay !== serviceDate && !validNonTarget) {
+        throw serviceDay === calendarDay
+          ? calendarDateMismatchError(index, calendarDay, serviceDate, queryCalendarOffset)
+          : serviceDayMismatchError(index, serviceDay, serviceDate, queryCalendarOffset);
+      }
+      if (serviceDay !== serviceDate) continue;
+      const key = JSON.stringify([
+        itinerary.trainNumber,
+        itinerary.departureStationId,
+        itinerary.arrivalStationId,
+      ]);
+      if (projected.has(key)) throw new Error(`TAGO_OD_DUPLICATE: ${itinerary.trainNumber}`);
+      projected.set(key, itinerary);
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  if (firstError) {
+    firstError.calendarDateWindowInventory = calendarDateWindowInventory(queryCalendarOffset, "REJECTED", relationCounts);
+    throw firstError;
+  }
+  return {
+    projected,
+    inventory: calendarDateWindowInventory(queryCalendarOffset, "ACCEPTED", relationCounts),
+  };
+}
+
+function unionTagoCalendarDateWindows(windows) {
+  const union = new Map();
+  for (const window of windows) {
+    for (const [key, itinerary] of window) {
+      const existing = union.get(key);
+      if (existing && JSON.stringify(existing) !== JSON.stringify(itinerary)) {
+        throw new Error("TAGO_OD_WINDOW_MISMATCH");
+      }
+      if (!existing) union.set(key, itinerary);
+    }
+  }
+  return [...union.entries()]
+    .sort(([left], [right]) => stringCompare(left, right))
+    .map(([, itinerary]) => itinerary);
+}
+
+function nextCalendarDay(value) {
+  const date = calendarDate(value);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function previousCalendarDay(value) {
+  const date = calendarDate(value);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function providerTimestamp(value, label) {
+  const text = requiredString(String(value), label);
+  if (!/^\d{14}$/.test(text)) throw new Error(`${label} must be YYYYMMDDHHMISS`);
+  const iso = `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}T${text.slice(8, 10)}:${text.slice(10, 12)}:${text.slice(12, 14)}+09:00`;
+  const epoch = Date.parse(iso);
+  if (!Number.isFinite(epoch)) throw new Error(`${label} is invalid`);
+  return { iso, epoch };
+}
+
+function tagoServiceSeconds(value, serviceDate, trainNumber) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\+09:00$/.exec(String(value ?? ""));
+  if (!match) {
+    throw reconstructionError(`TAGO_OD_TIME_CONFLICT: ${trainNumber}`, { conflictingTimestampCount: 1 });
+  }
+  const timestampDate = `${match[1]}${match[2]}${match[3]}`;
+  const hours = Number(match[4]);
+  const minutes = Number(match[5]);
+  const seconds = Number(match[6]);
+  if (hours > 23 || minutes > 59 || seconds > 59) {
+    throw reconstructionError(`TAGO_OD_TIME_CONFLICT: ${trainNumber}`, { conflictingTimestampCount: 1 });
+  }
+  const next = calendarDate(serviceDate);
+  next.setUTCDate(next.getUTCDate() + 1);
+  const nextServiceDate = `${next.getUTCFullYear()}${String(next.getUTCMonth() + 1).padStart(2, "0")}${String(next.getUTCDate()).padStart(2, "0")}`;
+  const offset = timestampDate === serviceDate ? 0 : timestampDate === nextServiceDate && hours <= 2 ? 86_400 : null;
+  if (offset === null) throw new Error(`TAGO_OD_STOP_SEQUENCE_INVALID: ${trainNumber}`);
+  return offset + hours * 3600 + minutes * 60 + seconds;
+}
+
+function kstDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(value).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
+function calendarDate(value) {
+  if (!/^\d{8}$/.test(value ?? "")) throw new Error("service date must be YYYYMMDD");
+  const date = new Date(Date.UTC(Number(value.slice(0, 4)), Number(value.slice(4, 6)) - 1, Number(value.slice(6, 8))));
+  const actual = `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+  if (actual !== value) throw new Error("service date must be a valid calendar date");
+  return date;
+}
+
+function validateServiceDay(value, dayCd) {
+  const date = calendarDate(value);
+  const weekday = date.getUTCDay();
+  const expectedDay = dayCd === "8" ? "weekday" : dayCd === "7" ? "Saturday" : "Sunday";
+  const validDay = dayCd === "8" ? weekday >= 1 && weekday <= 5 : weekday === (dayCd === "7" ? 6 : 0);
+  if (!validDay) throw new Error(`dayCd ${dayCd} must be a ${expectedDay}`);
+  return date;
+}
+
+function operationEvidence({ operation, endpoint, pageCount, requestCount, totalCount, rawResponseSha256 }) {
+  return { operation, endpoint, pageCount, requestCount, totalCount, providerResultCode: "00", schemaStatus: "EXPECTED", rawResponseSha256 };
+}
+
+function tagoOdFailure(error) {
+  const message = error instanceof Error ? error.message : "";
+  const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_calendar_day|next_calendar_day|non_adjacent_calendar_day|previous_service_day|next_service_day|non_adjacent_service_day)$/.exec(message)?.[1];
+  const queryCalendarOffset = error?.queryCalendarOffset;
+  if (dateMismatch && (queryCalendarOffset === 0 || queryCalendarOffset === 1)) {
+    return {
+      reasonCode: "PROVIDER_SCHEMA_FAILURE",
+      failureContext: `operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=${dateMismatch},queryCalendarOffset=${queryCalendarOffset}`,
+    };
+  }
+  const httpStatus = /^TAGO GetStrtpntAlocFndTrainInfo HTTP (\d{3})$/.exec(message)?.[1];
+  if (httpStatus) {
+    return {
+      reasonCode: "PROVIDER_HTTP_FAILURE",
+      failureContext: `operation=GetStrtpntAlocFndTrainInfo,httpStatus=${httpStatus}`,
+    };
+  }
+  const schema = /^TAGO GetStrtpntAlocFndTrainInfo schema mismatch: (content-type|invalid JSON|body|item|totalCount)(?: bodyFields=([A-Za-z0-9_,.-]+))?$/.exec(message);
+  if (schema) {
+    const reason = schema[1] === "invalid JSON" ? "invalid-json" : schema[1];
+    return {
+      reasonCode: "PROVIDER_SCHEMA_FAILURE",
+      failureContext: `operation=GetStrtpntAlocFndTrainInfo,reason=schema_mismatch,${reason}`
+        + (schema[2] ? `,bodyFields=${schema[2]}` : ""),
+    };
+  }
+  if (/^TAGO transport failure$/.test(message)) {
+    return { reasonCode: "PROVIDER_TRANSPORT_FAILURE", failureContext: "operation=GetStrtpntAlocFndTrainInfo" };
+  }
+  if (/provider resultCode/.test(message)) {
+    return { reasonCode: "PROVIDER_RESULT_FAILURE", failureContext: "operation=GetStrtpntAlocFndTrainInfo" };
+  }
+  if (/pagination incomplete/.test(message)) {
+    return {
+      reasonCode: "PROVIDER_PAGINATION_INCOMPLETE",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=pagination_incomplete",
+    };
+  }
+  for (const [pattern, reason] of [
+    [/station mismatch/, "station_mismatch"],
+    [/departure date mismatch/, "date_mismatch"],
+    [/train grade mismatch/, "train_grade_mismatch"],
+    [/arrival must follow departure/, "time_order_mismatch"],
+    [/must be YYYYMMDDHHMISS|must be a valid calendar date|is invalid|adultcharge is invalid|invalid train number/, "field_contract_mismatch"],
+  ]) {
+    if (pattern.test(message)) {
+      return {
+        reasonCode: "PROVIDER_SCHEMA_FAILURE",
+        failureContext: `operation=GetStrtpntAlocFndTrainInfo,reason=${reason}`,
+      };
+    }
+  }
+  return { reasonCode: "PROVIDER_OR_SCHEMA_FAILURE", failureContext: "operation=GetStrtpntAlocFndTrainInfo" };
+}
+
+function reconstructionFailureSummary(error, itineraries) {
+  const trainCount = new Set((Array.isArray(itineraries) ? itineraries : []).flatMap((itinerary) => {
+    try { return [normalizeTrainNumber(itinerary?.trainNumber)]; } catch { return []; }
+  })).size;
+  const counts = error?.reconstructionCounts ?? {};
+  return {
+    trainCount,
+    stopCount: 0,
+    conflictingTimestampCount: reportedCount(counts.conflictingTimestampCount),
+    missingPairCount: reportedCount(counts.missingPairCount),
+    duplicateOdCount: reportedCount(counts.duplicateOdCount),
+  };
+}
+
+function reconstructionError(message, counts) {
+  const error = new Error(message);
+  error.reconstructionCounts = counts;
+  return error;
+}
+
+function reportedCount(value) {
+  return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function normalize(value) { return String(value ?? "").toLocaleLowerCase("ko-KR").replace(/[^\p{L}\p{N}]+/gu, ""); }
+function requiredString(value, label) { if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`); return value; }
+function safeCode(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }
+function safeLabel(value) { const text = String(value ?? "").normalize("NFC"); return /^[\p{L}\p{N}._-]{1,32}$/u.test(text) ? text : "UNKNOWN"; }
+function naturalCompare(left, right) { return left.localeCompare(right, "ko", { numeric: true }); }
+function stringCompare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
+function parseArgs(argv) { const result = {}; for (let i = 0; i < argv.length; i += 2) result[argv[i]?.replace(/^--/, "")] = argv[i + 1]; return result; }
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const output = requiredString(args.output, "--output");
+  if (!path.isAbsolute(output)) throw new Error("--output must be absolute");
+  const artifact = await collectTagoItxCheongchunOd({
+    serviceKey: process.env.DATA_GO_KR_SERVICE_KEY,
+    departureDate: args.date,
+    kricServiceDayCode: args["kric-day-cd"],
+  });
+  await writeFile(output, `${JSON.stringify(artifact, null, 2)}\n`, { mode: 0o600 });
+  console.log(`sanitized TAGO ITX-청춘 OD evidence ready: trains=${artifact.trainNumbers.length}`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error) => { console.error(error instanceof Error ? error.message : "TAGO ITX probe failed"); process.exitCode = 1; });
+}

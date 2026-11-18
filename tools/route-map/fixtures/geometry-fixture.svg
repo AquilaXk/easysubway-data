@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120">
+  <style>
+    .hidden { display: none; }
+  </style>
+  <g id="scaled-nodes" transform="translate(4 6) scale(2)">
+    <circle id="_노드역" data-name="노드역" data-station="노드역" data-node-role="ordinary" data-line="1" cx="10" cy="20" r="3" fill="#fff" stroke="#000"/>
+    <g id="transfer-station-symbol-환승노드" data-station="환승노드" data-node-role="transfer" data-line="2" transform="rotate(90 30 30)">
+      <circle cx="30" cy="30" r="4" fill="#fff" stroke="#000"/>
+    </g>
+    <!-- #2068 C1 회귀(v4 김포공항 형상). 중간 <g> 래퍼가 **잉크(circle)와 x/y 없는
+         빈 <text>를 함께** 품는다 — 편집기가 남기는 실제 형태다. 이때 래퍼 자신의
+         getBBox는 로컬 원점의 퇴화 박스까지 삼켜 (0,0)~(44,54)로 벌어지므로,
+         "퇴화 자손 배제"만으로는 못 막는다(래퍼는 퇴화가 아니다). 래퍼를 합집합에
+         넣으면 노드 중심이 (48,60)으로 무너지고, leaf 잉크만 합쳐야 circle 중심
+         (84,106)이 나온다.
+         회귀 실증: 구 필터(title/desc/metadata/defs만 배제) 재현본에서 이 형상은
+         (48,60)을 내 테스트가 실패한다. -->
+    <g id="transfer-station-symbol-빈텍스트노드" data-station="빈텍스트노드" data-node-role="transfer" data-line="3">
+      <g id="빈텍스트-래퍼">
+        <circle cx="40" cy="50" r="4" fill="#fff" stroke="#000"/>
+        <text font-size="6"><tspan/></text>
+      </g>
+    </g>
+    <!-- #2068 C2 회귀: 같은 역에 자기 심벌 잉크를 가진 노드가 따로 있는데 외부
+         아이콘(data-icon-source)만 담은 장식 그룹에도 같은 data-station이 달린
+         경우 — 장식 쪽은 좌표 후보에서 배제해야 한다. -->
+    <g id="transfer-station-symbol-중복역" data-station="중복역" data-node-role="transfer" data-line="4">
+      <circle cx="60" cy="20" r="4" fill="#fff" stroke="#000"/>
+    </g>
+    <g id="transfer-station-symbol-중복역-0" data-station="중복역" data-node-role="transfer" data-line="4">
+      <g id="airport-icon-중복역" data-icon-source="Bootstrap Icons airplane-fill">
+        <path d="M 10,80 L 18,80 L 18,88 Z" fill="#3ea8ea"/>
+      </g>
+    </g>
+    <!-- 아이콘이 그 역의 유일한 마커면(수도권 인천공항1·2터미널, 부산 공항)
+         그대로 역 노드로 쓴다 — 위 배제 규칙이 삼키면 안 된다. -->
+    <g id="transfer-station-symbol-아이콘단독역" data-station="아이콘단독역" data-node-role="transfer" data-line="5">
+      <g id="airport-icon-아이콘단독역" data-icon-source="Bootstrap Icons airplane-fill">
+        <path d="M 70,60 L 78,60 L 78,68 Z" fill="#3ea8ea"/>
+      </g>
+    </g>
+  </g>
+  <g id="station-labels" class="labels" transform="translate(10 5)">
+    <text id="alpha" x="20" y="30" font-size="12" data-route-map-classification="station_label" data-station-key="fixture-alpha-101" data-station="알파" data-line="fixture-1" data-label-role="station">알파역</text>
+    <text id="rotated" x="60" y="40" font-size="10" transform="rotate(30 60 40)">회전역</text>
+    <text id="line-label" x="20" y="80" font-size="9">1호선</text>
+    <text id="notice" x="100" y="100" font-size="8">Not to scale</text>
+    <text id="hidden" class="hidden" x="5" y="100">숨김역</text>
+  </g>
+  <g id="transparent-layer" opacity="0">
+    <text x="20" y="20">투명역</text>
+  </g>
+  <g id="hidden-layer" visibility="hidden">
+    <text x="20" y="40">비가시역</text>
+  </g>
+  <g id="display-none-layer" display="none">
+    <text x="20" y="60">레이어숨김역</text>
+  </g>
+  <defs>
+    <text id="template" x="0" y="0">템플릿역</text>
+  </defs>
+</svg>

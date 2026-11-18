@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysubway.local/schema/datapack-manifest.schema.json",
+  "title": "EasySubway data pack manifest",
+  "type": "object",
+  "required": ["ttlSeconds", "packs"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "manifestVersion": { "const": 2 } },
+        "required": ["manifestVersion"]
+      },
+      "then": {
+        "required": [
+          "manifestVersion",
+          "channel",
+          "releaseSequence",
+          "publishedAt",
+          "expiresAt",
+          "keyId",
+          "signature"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "manifestVersion": {
+      "enum": [1, 2]
+    },
+    "channel": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+    },
+    "releaseSequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "publishedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "keyId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "sha256-manifest-v2",
+            "rsa-sha256-manifest-v2"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "ttlSeconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "activePack": {
+      "$ref": "#/$defs/packIdentity"
+    },
+    "emergencyOverride": {
+      "allOf": [
+        { "$ref": "#/$defs/packIdentity" },
+        {
+          "type": "object",
+          "required": ["reason"],
+          "properties": {
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "rollout": {
+      "type": "object",
+      "required": ["percentage", "seed"],
+      "additionalProperties": false,
+      "properties": {
+        "percentage": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "seed": { "type": "string", "pattern": "^[a-f0-9]{32}$" }
+      }
+    },
+    "rollbackProvenance": {
+      "type": "object",
+      "required": [
+        "kind",
+        "currentReleaseSequence",
+        "failedReleaseSequence",
+        "failedManifestSha256",
+        "knownGoodReleaseSequence",
+        "knownGoodManifestSha256",
+        "rollbackApprovalEventId",
+        "approvedByRole",
+        "approvedAt",
+        "reasonCode"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "MONOTONIC_RESCUE" },
+        "currentReleaseSequence": { "type": "integer", "minimum": 1 },
+        "failedReleaseSequence": { "type": "integer", "minimum": 1 },
+        "failedManifestSha256": { "$ref": "#/$defs/sha256" },
+        "knownGoodReleaseSequence": { "type": "integer", "minimum": 1 },
+        "knownGoodManifestSha256": { "$ref": "#/$defs/sha256" },
+        "rollbackApprovalEventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "approvedByRole": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,63}$" },
+        "approvedAt": { "type": "string", "format": "date-time" },
+        "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" }
+      }
+    },
+    "packs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "artifactKind",
+          "url",
+          "sha256",
+          "sqliteSha256",
+          "sizeBytes",
+          "signature",
+          "schemaVersion",
+          "sourceInventory",
+          "regionalQualityMetrics",
+          "representativeRouteRegressions",
+          "representativeRouteRegressionSignature",
+          "requiredTables"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+          "version": { "type": "string", "pattern": "^[0-9]+$" },
+          "artifactKind": { "enum": ["fixture", "production"] },
+          "payloadKind": { "enum": ["sqlite_catalog"] },
+          "url": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "sqliteSha256": { "$ref": "#/$defs/sha256" },
+          "sizeBytes": { "type": "integer", "minimum": 1 },
+          "signature": {
+            "type": "object",
+            "required": ["algorithm", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "algorithm": {
+                "enum": [
+                  "sha256-pack-manifest-v1",
+                  "rsa-sha256-pack-manifest-v1",
+                  "sha256-pack-manifest-v2",
+                  "rsa-sha256-pack-manifest-v2"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
+          },
+          "schemaVersion": { "type": "string", "minLength": 1 },
+          "sourceInventory": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/source" }
+          },
+          "regionalQualityMetrics": {
+            "type": "object",
+            "required": [
+              "stationCount",
+              "facilityCoverageRatio",
+              "requiredFacilityEvidenceCoverageRatio",
+              "strictRouteEligibleFacilityRatio",
+              "operationalKnownRatio",
+              "freshnessValidRatio",
+              "fieldVerifiedPathwayRatio",
+              "edgeCount",
+              "unknownAccessibilityRatio",
+              "unknownEdgeRatioByProfile"
+            ],
+            "properties": {
+              "stationCount": { "type": "integer", "minimum": 0 },
+              "facilityCoverageRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "requiredFacilityEvidenceCoverageRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "strictRouteEligibleFacilityRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "operationalKnownRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "freshnessValidRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "fieldVerifiedPathwayRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "edgeCount": { "type": "integer", "minimum": 0 },
+              "unknownAccessibilityRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "unknownEdgeRatioByProfile": {
+                "type": "object",
+                "required": ["wheelchair", "stroller", "lowMobility"],
+                "properties": {
+                  "wheelchair": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "stroller": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "lowMobility": { "type": "number", "minimum": 0, "maximum": 1 }
+                }
+              }
+            }
+          },
+          "routeRegressionScope": {
+            "type": "object",
+            "required": ["mode", "excludedPatterns", "claim"],
+            "properties": {
+              "mode": { "enum": ["DIRECT_ONLY"] },
+              "excludedPatterns": {
+                "type": "array",
+                "items": {
+                  "enum": ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"]
+                }
+              },
+              "claim": { "type": "string", "minLength": 1 }
+            }
+          },
+          "representativeRouteRegressions": {
+            "type": "array",
+            "minItems": 0,
+            "items": { "$ref": "#/$defs/representativeRouteRegression" }
+          },
+          "representativeRouteRegressionSignature": {
+            "type": "object",
+            "required": ["algorithm", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "algorithm": {
+                "enum": [
+                  "sha256-route-regression-v1",
+                  "rsa-sha256-route-regression-v1"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
+          },
+          "requiredTables": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+          },
+          "minimumTableRows": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "dependencies": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/packIdentity" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "packIdentity": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+        "version": { "type": "string", "pattern": "^[0-9]+$" }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "representativeRouteRegression": {
+      "type": "object",
+      "required": ["id", "pattern", "fromNodeId", "toNodeId", "requiredEdgeIds"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "pattern": {
+          "enum": [
+            "DIRECT",
+            "TRANSFER",
+            "MULTI_TRANSFER",
+            "LOOP_BRANCH",
+            "EXPRESS_LOCAL"
+          ]
+        },
+        "fromNodeId": { "type": "string", "minLength": 1 },
+        "toNodeId": { "type": "string", "minLength": 1 },
+        "requiredEdgeIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "id",
+        "owner",
+        "url",
+        "license",
+        "licenseStatus",
+        "redistributionAllowed",
+        "updateFrequency",
+        "updatedAt",
+        "fields"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "license": { "type": "string", "minLength": 1 },
+        "licenseStatus": { "type": "string", "minLength": 1 },
+        "redistributionAllowed": { "type": "boolean" },
+        "updateFrequency": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "minLength": 1 },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

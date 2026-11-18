@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "mobile": [
+    {
+      "appVersionRange": ">=1.0.0",
+      "acceptsIndexSchemaVersions": [1],
+      "acceptsManifestSchemaVersions": [1],
+      "acceptsSigningKeyIds": ["production-v1"]
+    }
+  ],
+  "notes": "새 schemaVersion 도입 시 이 매트릭스 갱신과 old-mobile/new-datapack 테스트 추가 없이는 병합 금지"
+}

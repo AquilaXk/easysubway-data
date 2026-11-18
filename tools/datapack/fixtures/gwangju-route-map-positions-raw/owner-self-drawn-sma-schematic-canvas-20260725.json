@@ -1,0 +1,522 @@
+[
+  {
+    "stationName": "녹동",
+    "x": 1881.438,
+    "y": 1288.356,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1878,
+        "y": 1277
+      },
+      {
+        "x": 1916,
+        "y": 1277
+      },
+      {
+        "x": 1916,
+        "y": 1299
+      },
+      {
+        "x": 1878,
+        "y": 1299
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "소태",
+    "x": 1881.438,
+    "y": 1078.807,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1878,
+        "y": 1068
+      },
+      {
+        "x": 1916,
+        "y": 1068
+      },
+      {
+        "x": 1916,
+        "y": 1090
+      },
+      {
+        "x": 1878,
+        "y": 1090
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "학동증심사입구",
+    "x": 1881.438,
+    "y": 895.637,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1846,
+        "y": 885
+      },
+      {
+        "x": 1949,
+        "y": 885
+      },
+      {
+        "x": 1949,
+        "y": 907
+      },
+      {
+        "x": 1846,
+        "y": 907
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "남광주",
+    "x": 1881.438,
+    "y": 655.244,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1872,
+        "y": 644
+      },
+      {
+        "x": 1923,
+        "y": 644
+      },
+      {
+        "x": 1923,
+        "y": 666
+      },
+      {
+        "x": 1872,
+        "y": 666
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "문화전당",
+    "x": 1881.438,
+    "y": 468.396,
+    "labelDx": 0,
+    "labelDy": 16,
+    "labelPolygon": [
+      {
+        "x": 1849,
+        "y": 473
+      },
+      {
+        "x": 1913,
+        "y": 473
+      },
+      {
+        "x": 1913,
+        "y": 495
+      },
+      {
+        "x": 1849,
+        "y": 495
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "금남로4가",
+    "x": 1483.811,
+    "y": 284.045,
+    "labelDx": 0,
+    "labelDy": 16,
+    "labelPolygon": [
+      {
+        "x": 1445,
+        "y": 289
+      },
+      {
+        "x": 1522,
+        "y": 289
+      },
+      {
+        "x": 1522,
+        "y": 311
+      },
+      {
+        "x": 1445,
+        "y": 311
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "금남로5가",
+    "x": 1082.085,
+    "y": 544.277,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1060,
+        "y": 533
+      },
+      {
+        "x": 1137,
+        "y": 533
+      },
+      {
+        "x": 1137,
+        "y": 555
+      },
+      {
+        "x": 1060,
+        "y": 555
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "양동시장",
+    "x": 1082.085,
+    "y": 744.569,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1066,
+        "y": 734
+      },
+      {
+        "x": 1130,
+        "y": 734
+      },
+      {
+        "x": 1130,
+        "y": 756
+      },
+      {
+        "x": 1066,
+        "y": 756
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "돌고개",
+    "x": 1082.085,
+    "y": 934.087,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1073,
+        "y": 923
+      },
+      {
+        "x": 1124,
+        "y": 923
+      },
+      {
+        "x": 1124,
+        "y": 945
+      },
+      {
+        "x": 1073,
+        "y": 945
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "농성",
+    "x": 1082.085,
+    "y": 1119.303,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1079,
+        "y": 1108
+      },
+      {
+        "x": 1117,
+        "y": 1108
+      },
+      {
+        "x": 1117,
+        "y": 1130
+      },
+      {
+        "x": 1079,
+        "y": 1130
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "화정",
+    "x": 1082.085,
+    "y": 1303.602,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 1079,
+        "y": 1293
+      },
+      {
+        "x": 1117,
+        "y": 1293
+      },
+      {
+        "x": 1117,
+        "y": 1315
+      },
+      {
+        "x": 1079,
+        "y": 1315
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "쌍촌",
+    "x": 1082.085,
+    "y": 1489.513,
+    "labelDx": 0,
+    "labelDy": 16,
+    "labelPolygon": [
+      {
+        "x": 1063,
+        "y": 1495
+      },
+      {
+        "x": 1101,
+        "y": 1495
+      },
+      {
+        "x": 1101,
+        "y": 1517
+      },
+      {
+        "x": 1063,
+        "y": 1517
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "운천",
+    "x": 674.318,
+    "y": 1666.312,
+    "labelDx": 0,
+    "labelDy": 16,
+    "labelPolygon": [
+      {
+        "x": 655,
+        "y": 1671
+      },
+      {
+        "x": 693,
+        "y": 1671
+      },
+      {
+        "x": 693,
+        "y": 1693
+      },
+      {
+        "x": 655,
+        "y": 1693
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "상무",
+    "x": 272.413,
+    "y": 1499.284,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 269,
+        "y": 1488
+      },
+      {
+        "x": 307,
+        "y": 1488
+      },
+      {
+        "x": 307,
+        "y": 1510
+      },
+      {
+        "x": 269,
+        "y": 1510
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "김대중컨벤션센터",
+    "x": 272.413,
+    "y": 1323.867,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 230,
+        "y": 1313
+      },
+      {
+        "x": 346,
+        "y": 1313
+      },
+      {
+        "x": 346,
+        "y": 1335
+      },
+      {
+        "x": 230,
+        "y": 1335
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "공항",
+    "x": 272.413,
+    "y": 1118.55,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 269,
+        "y": 1108
+      },
+      {
+        "x": 307,
+        "y": 1108
+      },
+      {
+        "x": 307,
+        "y": 1130
+      },
+      {
+        "x": 269,
+        "y": 1130
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "송정공원",
+    "x": 272.413,
+    "y": 939.243,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 256,
+        "y": 928
+      },
+      {
+        "x": 320,
+        "y": 928
+      },
+      {
+        "x": 320,
+        "y": 950
+      },
+      {
+        "x": 256,
+        "y": 950
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "광주송정역",
+    "x": 272.413,
+    "y": 759.437,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 250,
+        "y": 748
+      },
+      {
+        "x": 327,
+        "y": 748
+      },
+      {
+        "x": 327,
+        "y": 770
+      },
+      {
+        "x": 250,
+        "y": 770
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "도산",
+    "x": 272.413,
+    "y": 579.294,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 269,
+        "y": 568
+      },
+      {
+        "x": 307,
+        "y": 568
+      },
+      {
+        "x": 307,
+        "y": 590
+      },
+      {
+        "x": 269,
+        "y": 590
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  },
+  {
+    "stationName": "평동",
+    "x": 272.413,
+    "y": 398.664,
+    "labelDx": 16,
+    "labelDy": 0,
+    "labelPolygon": [
+      {
+        "x": 269,
+        "y": 388
+      },
+      {
+        "x": 307,
+        "y": 388
+      },
+      {
+        "x": 307,
+        "y": 410
+      },
+      {
+        "x": 269,
+        "y": 410
+      }
+    ],
+    "canvasSourceId": "owner-self-drawn-sma-schematic"
+  }
+]

@@ -1,0 +1,294 @@
+#!/usr/bin/env node
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { sha256 } from "../lib/hash.mjs";
+import { fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, withRequestInterval } from "./lib/source-collection-retry.mjs";
+import { decodeXmlBytes, decodeXmlEntities } from "./lib/xml-decode.mjs";
+
+const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_process.tnn"; // NOSONAR -- provider contract is HTTP-only
+const SOURCE_ID = "busan-transportation-timetable";
+const DETAIL_URL = "https://www.data.go.kr/data/15000522/openapi.do";
+const DAYS = Object.freeze(["1", "2", "3"]);
+const RESPONSE_FIELDS = Object.freeze([
+  "sname", "engname", "trainno", "hour", "time", "day", "updown", "endcode", "scode", "line",
+]);
+const LINE_CODES = Object.freeze({
+  "line-ab1a041f6266": "1",
+  "line-eb7b47920390": "2",
+  "line-d74614a04530": "3",
+  "line-d812a5bc1e5f": "4",
+});
+const EXPECTED_LINE_IDS = Object.keys(LINE_CODES).sort(compareText);
+const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
+const FRESHNESS_MILLIS = 24 * 60 * 60 * 1000;
+
+export function busanTimetableCounts(rows) {
+  const trips = new Set();
+  for (const row of rows) trips.add([row.line, row.day, row.trainno, row.updown, row.endcode].join("\0"));
+  return { departureCount: rows.length, tripCount: trips.size, stopTimeCount: rows.length };
+}
+
+export async function collectBusanTimetable({
+  serviceKey,
+  stationScopes,
+  fetchImpl: providerFetch = fetch,
+  now = new Date(),
+  concurrency = 4,
+  sleepImpl = sleep,
+  randomImpl,
+  requestIntervalMs = 0,
+  recordTelemetry = true,
+  telemetry = true,
+  replay = false,
+} = {}) {
+  const capturedAt = validDate(now, "now");
+  const key = normalizeDataGoKrServiceKey(serviceKey);
+  const shouldRecordTelemetry = key !== "retained-replay" && recordTelemetry !== false && telemetry !== false && replay !== true;
+  const scope = normalizeBusanTimetableScope(stationScopes);
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
+  const fetchImpl = withRequestInterval(providerFetch, { intervalMs: requestIntervalMs, sleep: sleepImpl });
+  const requests = scope.flatMap((station) => DAYS.map((day) => ({ station, day })));
+  const responses = new Array(requests.length);
+  let next = 0;
+  let failure;
+  const worker = async () => {
+    while (!failure && next < requests.length) {
+      const index = next;
+      next += 1;
+      try {
+        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl, randomImpl, recordTelemetry: shouldRecordTelemetry });
+      } catch (error) {
+        failure = error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, requests.length) }, () => worker()));
+  if (failure) throw failure;
+  const rows = responses.flatMap(({ rows }) => rows).sort(compareRows);
+  validateCompleteRows(rows, scope);
+  const rawSha256 = sha256(JSON.stringify(responses.map((response, index) => ({
+    stationCode: requests[index].station.stationCode,
+    day: requests[index].day,
+    rawSha256: response.rawSha256,
+  }))));
+  return {
+    schemaVersion: 1,
+    artifactKind: "busan-timetable-snapshot",
+    sourceId: SOURCE_ID,
+    detailUrl: DETAIL_URL,
+    endpoint: ENDPOINT,
+    capturedAt: capturedAt.toISOString(),
+    freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
+    official: true,
+    fixture: false,
+    credentialRedacted: true,
+    requestCount: requests.length,
+    stationCount: scope.length,
+    rowCount: rows.length,
+    dayTypes: [...DAYS],
+    lineIds: [...EXPECTED_LINE_IDS],
+    outputFields: [...RESPONSE_FIELDS],
+    fieldsProvided: ["service_calendar", "trip", "stop_time"],
+    responseEncodings: [...new Set(responses.map(({ responseEncoding }) => responseEncoding))].sort(compareText),
+    license: {
+      type: "KOGL-1",
+      attribution: "부산교통공사, 공공누리 제1유형(출처표시); 제3자 권리 포함 저작권 표시",
+      redistributionAllowed: true,
+      evidenceUrl: DETAIL_URL,
+    },
+    scope,
+    scopeSha256: sha256(JSON.stringify(scope)),
+    rawSha256,
+    rawResponses: responses.map((response, index) => ({
+      stationCode: requests[index].station.stationCode,
+      day: requests[index].day,
+      bytesBase64: response.rawBytes.toString("base64"),
+    })),
+    rowsSha256: sha256(JSON.stringify(rows)),
+    rows,
+  };
+}
+
+async function collectResponse({ station, day, key, fetchImpl, sleepImpl, randomImpl, recordTelemetry }) {
+  const url = new URL(ENDPOINT);
+  url.searchParams.set("serviceKey", key);
+  url.searchParams.set("act", "xml");
+  url.searchParams.set("scode", station.stationCode);
+  url.searchParams.set("day", day);
+  url.searchParams.set("pageNo", "1");
+  url.searchParams.set("numOfRows", "999");
+  const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl, recordTelemetry);
+  const rawSha256 = sha256(bytes);
+  if (!response.ok) throw new Error(`Busan timetable HTTP ${response.status}; rawBytes=${bytes.length}; rawSha256=${rawSha256}`);
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
+  if (!XML_CONTENT_TYPES.has(contentType)) {
+    throw new Error(`Busan timetable schema mismatch: content-type ${contentType || "missing"}; rawSha256=${rawSha256}`);
+  }
+  const { raw, responseEncoding } = decodeXmlBytes(bytes);
+  const resultCode = scalar(raw, "resultCode");
+  if (resultCode !== "00") throw new Error(`Busan timetable provider resultCode ${safeToken(resultCode ?? "missing")}; rawSha256=${rawSha256}`);
+  const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(raw)?.[1];
+  if (body == null) throw new Error(`Busan timetable schema mismatch: response body; rawSha256=${rawSha256}`);
+  const items = [...body.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map((match) => match[1]);
+  if (items.length === 0) throw new Error(`Busan timetable schema mismatch: empty items; rawSha256=${rawSha256}`);
+  const totalCount = scalar(raw, "totalCount");
+  if (totalCount != null && (!/^\d+$/.test(totalCount) || Number(totalCount) !== items.length)) {
+    throw new Error(`Busan timetable schema mismatch: truncated items; items=${items.length}; `
+      + `totalCount=${safeToken(totalCount)}; rawSha256=${rawSha256}`);
+  }
+  const common = Object.fromEntries(["sname", "engname", "scode", "line"].map((field) => [field, scalar(body, field)]));
+  const rows = items.map((item, index) => validateRow(
+    Object.fromEntries(RESPONSE_FIELDS.map((field) => [field, common[field] ?? scalar(item, field)])),
+    { station, day, index },
+  ));
+  return { rows, rawBytes: bytes, rawSha256, responseEncoding };
+}
+
+function validateRow(values, { station, day, index }) {
+  if (Object.values(values).some((value) => value == null)) {
+    throw new Error(`Busan timetable schema mismatch: item[${index}] fields`);
+  }
+  const hour = Number(values.hour);
+  const minute = Number(values.time);
+  const expectedLine = LINE_CODES[station.lineId];
+  const invalid = [];
+  if (values.sname.trim() === "" || values.sname.trim().length > 100) invalid.push("sname");
+  if (values.engname.trim() === "" || values.engname.trim().length > 100) invalid.push("engname");
+  if (!/^\d{1,8}$/.test(values.trainno)) invalid.push("trainno");
+  if (!/^\d{1,2}$/.test(values.hour) || hour < 0 || hour > 29) invalid.push("hour");
+  if (!/^\d{1,2}$/.test(values.time) || minute < 0 || minute > 59) invalid.push("time");
+  if (values.day !== day || !DAYS.includes(values.day)) invalid.push("day");
+  if (!new Set(["0", "1"]).has(values.updown)) invalid.push("updown");
+  if (values.scode !== station.stationCode) invalid.push("scode");
+  if (values.line !== expectedLine) invalid.push("line");
+  if (!/^\d{2,3}$/.test(values.endcode)) invalid.push("endcode");
+  if (invalid.length > 0) {
+    const endcodeDiagnostic = invalid.includes("endcode") ? "; endcodeFormat=MALFORMED" : "";
+    throw new Error(`Busan timetable schema mismatch: item[${index}] values=${invalid.join(",")}; `
+      + `stationCode=${station.stationCode}; day=${day}${endcodeDiagnostic}`);
+  }
+  return { ...values, hour: String(hour).padStart(2, "0"), time: String(minute).padStart(2, "0") };
+}
+
+function validateCompleteRows(rows, scope) {
+  const expected = new Set(scope.flatMap(({ stationCode }) =>
+    DAYS.flatMap((day) => ["0", "1"].map((updown) => `${stationCode}:${day}:${updown}`))));
+  const seen = new Set();
+  const keys = new Set();
+  for (const row of rows) {
+    seen.add(`${row.scode}:${row.day}:${row.updown}`);
+    const key = RESPONSE_FIELDS.map((field) => row[field]).join(":");
+    if (keys.has(key)) throw new Error("Busan timetable schema mismatch: duplicate row");
+    keys.add(key);
+  }
+  if (seen.size !== expected.size || [...expected].some((key) => !seen.has(key))) {
+    throw new Error("Busan timetable schema mismatch: station/day/direction scope incomplete");
+  }
+}
+
+export function normalizeBusanTimetableScope(scope) {
+  if (!Array.isArray(scope) || scope.length !== 114) throw new Error("Busan timetable scope must contain 114 stations");
+  const codes = new Set();
+  const normalized = scope.map((entry) => {
+    const stationCode = requiredText(entry?.stationCode, "scope.stationCode");
+    const stationName = requiredText(entry?.stationName, `scope ${stationCode}.stationName`);
+    const lineId = requiredText(entry?.lineId, `scope ${stationCode}.lineId`);
+    if (!/^\d{2,3}$/.test(stationCode) || !LINE_CODES[lineId] || codes.has(stationCode)) {
+      throw new Error(`Busan timetable scope is invalid: ${stationCode}`);
+    }
+    codes.add(stationCode);
+    return { stationCode, stationName, lineId };
+  }).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));
+  const lineIds = [...new Set(normalized.map(({ lineId }) => lineId))].sort(compareText);
+  if (JSON.stringify(lineIds) !== JSON.stringify(EXPECTED_LINE_IDS)) throw new Error("Busan timetable scope line set is incomplete");
+  return normalized;
+}
+
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs).
+// 본문 수신 중 timeout도 같은 GET을 다시 보내고(#1333: 본문 timeout 한 번이 부산 그룹 3개 recipe를 롤백했다),
+// 200 응답이어도 data.go.kr 코드 체계(부산교통공사 게이트웨이도 같은 이름을 쓴다)의 envelope resultCode가 일시 오류 코드(01·02·04·05·30·99)면 다시 보낸다. 소진하면 마지막 응답이 아래 검증에서 resultCode와 함께 실패한다.
+function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl, recordTelemetry = true) {
+  return fetchBytesWithSourceRetry({
+    url,
+    fetchImpl,
+    accept: "application/xml,text/xml",
+    label: "Busan timetable",
+    sourceId: SOURCE_ID,
+    resultCodeOf: ({ bytes }) => providerResultCode(bytes),
+    isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
+    transportFailure: (failure) => {
+      const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";
+      return new Error(`Busan timetable transport failure; code=${safeToken(String(code))}`);
+    },
+    recordTelemetry,
+    sleep: sleepImpl,
+    random: randomImpl,
+  });
+}
+
+function providerResultCode(bytes) {
+  try {
+    return scalar(decodeXmlBytes(bytes).raw, "resultCode");
+  } catch {
+    return null;
+  }
+}
+
+function scalar(raw, field) {
+  const value = new RegExp(String.raw`<${field}\b[^>]*>([^<]{0,200})<\/${field}>`, "i").exec(raw)?.[1];
+  return value == null ? null : decodeXmlEntities(value.trim());
+}
+
+function validDate(value, label) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
+  return date;
+}
+
+function requiredText(value, label) {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
+  return value.trim();
+}
+
+function safeToken(value) {
+  return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN";
+}
+
+function compareRows(left, right) {
+  return RESPONSE_FIELDS.map((field) => left[field]).join(":")
+    .localeCompare(RESPONSE_FIELDS.map((field) => right[field]).join(":"), "en");
+}
+
+function compareText(left, right) { return left.localeCompare(right, "en"); }
+function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
+
+export async function main(args = process.argv.slice(2), { env = process.env, fetchImpl, sleepImpl, randomImpl } = {}) {
+  const expected = ["--scope-snapshot", "--output"];
+  if (args.length !== 4 || args.filter((_, index) => index % 2 === 0).some((name, index) => name !== expected[index])) {
+    throw new Error("usage: collect-busan-timetable.mjs --scope-snapshot <json> --output <absolute.json>");
+  }
+  const output = args[3];
+  if (!path.isAbsolute(output)) throw new Error("output must be absolute");
+  const topology = JSON.parse(await readFile(args[1], "utf8"));
+  const snapshot = await collectBusanTimetable({
+    serviceKey: env.DATA_GO_KR_SERVICE_KEY,
+    stationScopes: topology.scope,
+    fetchImpl,
+    sleepImpl,
+    randomImpl,
+    requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
+  });
+  await writeFile(output, `${JSON.stringify(snapshot)}\n`, { mode: 0o600 });
+  console.log(`sanitized Busan timetable snapshot ready: rows=${snapshot.rowCount}`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Busan timetable collection failed");
+    process.exitCode = 1;
+  }
+}

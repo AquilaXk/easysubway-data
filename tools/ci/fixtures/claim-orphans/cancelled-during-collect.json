@@ -1,0 +1,145 @@
+{
+  "status": "completed",
+  "conclusion": "cancelled",
+  "workflowName": "Seoul Current Accessibility Refresh",
+  "headBranch": "main",
+  "createdAt": "2026-10-10T14:22:46Z",
+  "startedAt": "2026-10-10T14:22:46Z",
+  "jobs": [
+    {
+      "name": "refresh",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Set up job",
+          "number": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:24:59Z",
+          "completedAt": "2026-10-10T14:25:00Z"
+        },
+        {
+          "name": "Run actions/checkout",
+          "number": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:25:00Z",
+          "completedAt": "2026-10-10T14:25:08Z"
+        },
+        {
+          "name": "Run actions/setup-node",
+          "number": 3,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:25:08Z",
+          "completedAt": "2026-10-10T14:25:09Z"
+        },
+        {
+          "name": "Prepare paths",
+          "number": 4,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:25:09Z",
+          "completedAt": "2026-10-10T14:25:13Z"
+        },
+        {
+          "name": "Read due state",
+          "number": 5,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:25:13Z",
+          "completedAt": "2026-10-10T14:25:13Z"
+        },
+        {
+          "name": "Create durable claim",
+          "number": 6,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:25:13Z",
+          "completedAt": "2026-10-10T14:25:18Z"
+        },
+        {
+          "name": "Validate provider configuration",
+          "number": 7,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:25:18Z",
+          "completedAt": "2026-10-10T14:25:18Z"
+        },
+        {
+          "name": "Collect current snapshot",
+          "number": 8,
+          "status": "completed",
+          "conclusion": "cancelled",
+          "startedAt": "2026-10-10T14:26:14Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        },
+        {
+          "name": "Publish and register Seoul accessibility snapshot",
+          "number": 9,
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-10T14:43:17Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        },
+        {
+          "name": "Finalize claimed refresh branch",
+          "number": 10,
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-10T14:43:17Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        },
+        {
+          "name": "Create draft pull request",
+          "number": 11,
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-10T14:43:17Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        },
+        {
+          "name": "Upload sanitized evidence",
+          "number": 12,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:43:17Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        },
+        {
+          "name": "Release this failed run's claim",
+          "number": 13,
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-10T14:43:17Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        },
+        {
+          "name": "Post Run actions/setup-node",
+          "number": 14,
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-10T14:43:17Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        },
+        {
+          "name": "Post Run actions/checkout",
+          "number": 15,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:43:17Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        },
+        {
+          "name": "Complete job",
+          "number": 16,
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-10-10T14:43:17Z",
+          "completedAt": "2026-10-10T14:43:17Z"
+        }
+      ]
+    }
+  ]
+}

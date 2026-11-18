@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "server-timetable-snapshot-evidence",
+  "schemaIdentity": "backend-timetable-snapshot-v1",
+  "snapshotId": "server-timetable-snapshot-72bb9f913e53675c",
+  "snapshotSha256": "72bb9f913e53675cb15d680a3708c717d430cfdbe2ea7d1a6d13bffb7cca4fe9",
+  "snapshotSqlByteSize": 9429710,
+  "snapshotGzipSha256": "2957545137760dfb451f3fb0aaa2e8d504d7fa74dc8621fc0632eaeed5321546",
+  "snapshotGzipByteSize": 344354,
+  "freshUntil": "2026-08-31T00:00:00+09:00",
+  "serviceIdentity": {
+    "serviceId": "ITX_CHEONGCHUN",
+    "canonicalLineId": "line-54a7b980b7c3",
+    "servicePattern": "EXPRESS",
+    "timezone": "Asia/Seoul"
+  },
+  "sourceArtifact": {
+    "id": "itx-cheongchun-source-timetable-20260824170958799",
+    "sha256": "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
+    "completenessEvidenceSha256": "e62f37eabfb6786d8f0491d9085d70f05b90a9c6302c6fc2d98bd7baf12c223d"
+  },
+  "stationCatalogPackIdentity": {
+    "artifactKind": "station-catalog-pack",
+    "manifestVersion": 1,
+    "catalogPackId": "itx-current-station-catalog-v1",
+    "stationSetSha256": "d2cef87aa1eeee23a50ac94d7e784f432101e9d8936331152981dcaeb8d25dd9",
+    "payloadSha256": "a7726c83e9637b0008000579ad74e329495ac0928e673bcb8ccac1deaeedc8a4",
+    "manifestSha256": "0cea5ac4d07ce3a09232eb7dd53a0d2b59f423ad10ef97c8a4db233c873737b5"
+  },
+  "canonicalPackIdentity": {
+    "id": "capital",
+    "sha256": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+    "sqliteSha256": "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98"
+  },
+  "canonicalPackLineage": {
+    "topologyEvidenceSha256": "9ff9810e467eb9df53fc461e380ccb368bca4cd6c52b3f84fa2b0fb7c58acd1a",
+    "topologySha256": "cf0c8fb426ee3de49183bdc640f39497523e1eecae5f000596f4ba00f3596329",
+    "topologyInputSha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+    "topologyInputSqliteSha256": "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5"
+  },
+  "accessibilitySource": {
+    "materializedSqlSha256": "e308dceb2bf01a57cc474e299405d8c1be4489121761eded5219f2f526792485"
+  },
+  "canonicalStationSet": {
+    "version": "sha256:1d44e5838691cb5103a864713f50d1d867d1337477544347b31e0f3ee94dd273",
+    "sha256": "1d44e5838691cb5103a864713f50d1d867d1337477544347b31e0f3ee94dd273",
+    "memberCount": 18
+  },
+  "sourceLineageSha256": "b1317c8c6933425bffc53de5f08983d19b66b096ba55ed58efdbc663d45c5364",
+  "servicePatternEvidence": {
+    "localTripCount": 888,
+    "expressTripCount": 147,
+    "representativeLocal": {
+      "tripId": "route-seoul-4-down-4236-8",
+      "routeId": "route-seoul-4-down",
+      "directionId": "down",
+      "terminalStationId": "station-871f17171f3c",
+      "stopStationIds": [
+        "station-sadang",
+        "station-2a2d0080fa4a",
+        "station-e95f8616788c",
+        "station-b90e3daa23a1",
+        "station-a5392987e17f",
+        "station-319d94686a49",
+        "station-a70f2c253492",
+        "station-2af75c3d707b",
+        "station-ae0e5bd1256d",
+        "station-cb4c8948c9f2",
+        "station-32b6747795b6",
+        "station-b1f32d3f7d4d",
+        "station-1cf13ec0de75",
+        "station-c94d2aebf662",
+        "station-e0e57dfb9ba1",
+        "station-d490bb686722",
+        "station-28d327b6af8c",
+        "station-153b1d7fc702",
+        "station-2c11d90fdb36",
+        "station-697787cc84e5",
+        "station-b0ab9028ddcc",
+        "station-a95a856ea633",
+        "station-239ba3bb73a6",
+        "station-3d32c6fc878a",
+        "station-871f17171f3c"
+      ],
+      "passThroughStationIds": [],
+      "stopPatternSha256": "33ef38960a5cad4baf8be9e1905020c686e16b420281a987cde00e75328cd0c3"
+    },
+    "representativeExpress": {
+      "tripId": "route-line-54a7b980b7c3-down-2002-8",
+      "routeId": "route-line-54a7b980b7c3-down",
+      "directionId": "down",
+      "terminalStationId": "station-8aa315864466",
+      "stopStationIds": [
+        "station-dd14cfb89cbc",
+        "station-d5e344125b52",
+        "station-4f6045ff9103",
+        "station-661ff65ea040",
+        "station-f3d9c93ba7d6",
+        "station-2ccf5647f7f7",
+        "station-b52ac4dfe64e",
+        "station-83bcb1eae340",
+        "station-b819702fa7d9",
+        "station-e5cf592cf355",
+        "station-8aa315864466"
+      ],
+      "passThroughStationIds": [
+        "station-c0679b9a6cf8",
+        "station-b42d22b753ca",
+        "station-c7f9f6a29fc1",
+        "station-6c1f50a5aa3b",
+        "station-add5012df314",
+        "station-30ba86472e55",
+        "station-67e47e3e2da2"
+      ],
+      "stopPatternSha256": "2867053b936a0df7fd6528f4aa5deca721e44a186e83fecc49ac8165e48738c7"
+    }
+  },
+  "rowCounts": {
+    "calendars": 5,
+    "routes": 4,
+    "trips": 1035,
+    "stopTimes": 33934,
+    "subwayTrips": 895,
+    "subwayStopTimes": 33062,
+    "itxTrips": 140,
+    "itxStopTimes": 872,
+    "officialFares": 2914,
+    "routeServiceEvidence": 1,
+    "stationPathwayNodes": 4,
+    "stationPathwayEdges": 4,
+    "transferRules": 0,
+    "routeEdgeEvidence": 4
+  },
+  "evidenceHash": "01505f569a92bd844ec8f5f73e38970919fb8216802018f46d34d592cf29529c"
+}

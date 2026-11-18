@@ -1,0 +1,2456 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { sha256 } from "../lib/hash.mjs";
+
+import {
+  TAGO_REQUEST_TIMEOUT_MS,
+  TAGO_RETRY_BUDGET_MS,
+  TAGO_TRANSIENT_BACKOFF_CAP_MS,
+  TAGO_TRANSIENT_RETRY_LIMIT,
+  TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS,
+  TAGO_TRANSIENT_RETRY_SCHEDULE_MS,
+  buildItxOdMatrix,
+  collectTagoItxCheongchunOd,
+  collectTagoItxCheongchunRoster,
+  materializeTagoItxOdRows,
+  normalizeTrainNumber,
+  validateItxServiceDates,
+} from "./collect-tago-itx-cheongchun-od.mjs";
+
+// 재시도 한도·간격·예산은 생산 모듈의 export에서 가져온다. 값 자체는 아래 "재시도 정책 불변식" 테스트가 독립 불변식으로 묶는다.
+const BACKOFF = TAGO_TRANSIENT_RETRY_SCHEDULE_MS;
+const MAX_ATTEMPTS = TAGO_TRANSIENT_RETRY_LIMIT + 1;
+const sum = (values) => values.reduce((total, value) => total + value, 0);
+
+test("TAGO ITX roster collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectTagoItxCheongchunRoster({ serviceKey: "invalid%ZZ", serviceDate: "20260715", kricServiceDayCode: "8", canonicalStations: canonicalRosterStations(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+test("TAGO ITX OD collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectTagoItxCheongchunOd({ serviceKey: "invalid%ZZ", departureDate: "2026-07-14", kricServiceDayCode: "8", now: new Date("2026-07-13T00:00:00.000Z"), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+function tagoResponse(items, totalCount = items.length) {
+  return new Response(JSON.stringify({ response: {
+    header: { resultCode: "00", resultMsg: "NORMAL SERVICE." },
+    body: { items: { item: items }, pageNo: 1, numOfRows: 100, totalCount },
+  } }), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+function tagoCatalogResponse(items) {
+  return new Response(JSON.stringify({ response: {
+    header: { resultCode: "00", resultMsg: "NORMAL SERVICE." },
+    body: { items: { item: items } },
+  } }), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+async function withoutTotalCount(response) {
+  const payload = await response.json();
+  delete payload.response.body.totalCount;
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+test("ITX admission 날짜는 KST 오늘~13일과 dayCd 요일을 검증한다", () => {
+  const serviceDates = { "8": "20260715", "7": "20260718", "9": "20260719" };
+  assert.deepEqual(validateItxServiceDates(serviceDates, {
+    now: new Date("2026-07-14T15:00:00.000Z"),
+    replay: false,
+  }), serviceDates);
+  assert.throws(() => validateItxServiceDates({ ...serviceDates, "8": "20260713" }, {
+    now: new Date("2026-07-14T00:00:00.000Z"),
+    replay: false,
+  }), /today through 13 days/);
+  assert.throws(() => validateItxServiceDates({ ...serviceDates, "8": "20260718" }, {
+    now: new Date("2026-07-14T00:00:00.000Z"),
+    replay: false,
+  }), /dayCd 8 must be a weekday/);
+  assert.deepEqual(validateItxServiceDates({ "8": "20260713", "7": "20260718", "9": "20260719" }, {
+    now: new Date("2026-07-14T00:00:00.000Z"),
+    replay: true,
+  }), { "8": "20260713", "7": "20260718", "9": "20260719" });
+  assert.deepEqual(validateItxServiceDates({ "8": "20270101", "7": "20270102", "9": "20270103" }, {
+    now: new Date("2026-12-31T15:00:00.000Z"), replay: false,
+  }), { "8": "20270101", "7": "20270102", "9": "20270103" });
+  assert.deepEqual(validateItxServiceDates({ "8": "20280229", "7": "20280304", "9": "20280305" }, {
+    now: new Date("2028-02-27T15:00:00.000Z"), replay: false,
+  }), { "8": "20280229", "7": "20280304", "9": "20280305" });
+  const liveDates = { "8": "20260811", "7": "20260822", "9": "20260816" };
+  assert.deepEqual(validateItxServiceDates(liveDates, {
+    now: new Date("2026-08-11T09:17:00.000Z"), replay: false,
+  }), liveDates);
+  const upperBoundDates = { ...serviceDates, "8": "20260728" };
+  assert.deepEqual(validateItxServiceDates(upperBoundDates, {
+    now: new Date("2026-07-14T15:00:00.000Z"), replay: false,
+  }), upperBoundDates);
+  assert.throws(() => validateItxServiceDates({ ...serviceDates, "8": "20260729" }, {
+    now: new Date("2026-07-14T15:00:00.000Z"), replay: false,
+  }), /today through 13 days/);
+});
+
+test("TAGO ITX roster collector는 serviceDate와 dayCd 요일 불일치를 provider 호출 전에 거부한다", async () => {
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "7",
+    canonicalStations: canonicalRosterStations(),
+    fetchImpl: async () => assert.fail("provider must not be called"),
+  }), /dayCd 7 must be a Saturday/);
+});
+
+test("TAGO ITX roster는 selected service date를 보존하고 모든 OD를 D then D+1로 조회한다", async () => {
+  for (const { serviceDate, expectedQueryDates } of [
+    { serviceDate: "20260731", expectedQueryDates: ["20260731", "20260801"] },
+    { serviceDate: "20261231", expectedQueryDates: ["20261231", "20270101"] },
+    { serviceDate: "20280229", expectedQueryDates: ["20280229", "20280301"] },
+  ]) {
+    const requestedDates = [];
+    const fallback = validFetch({ responseServiceDate: serviceDate });
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "fixture-credential-must-not-leak",
+      serviceDate,
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) {
+          requestedDates.push(parsed.searchParams.get("depPlandTime"));
+        }
+        return fallback(url);
+      },
+    });
+
+    assert.deepEqual(requestedDates, [...expectedQueryDates, ...expectedQueryDates]);
+    assert.equal(artifact.serviceDate, serviceDate);
+    assert.equal(artifact.expectedOdCount, 2);
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.credentialRedacted, true);
+    assert.equal(JSON.stringify(artifact).includes("fixture-credential-must-not-leak"), false);
+  }
+});
+
+test("TAGO ITX roster는 two-window row를 03:00 service day로 union materialize한다", async (context) => {
+  await context.test("live incident의 D+1 next-service rows는 제외하고 D target rows는 보존한다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [
+          { ...row, trainno: "2035", depplandtime: "20260716083000", arrplandtime: "20260716095000" },
+          { ...row, trainno: "2036", depplandtime: "20260717025900", arrplandtime: "20260717030400" },
+        ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.deepEqual(artifact.trainNumbers, ["2001", "2002"]);
+    assert.equal(artifact.itineraries.some(({ trainNumber }) => ["2035", "2036"].includes(trainNumber)), false);
+    assert.deepEqual(artifact.calendarDateWindowInventory.slice(0, 2), [
+      { queryCalendarOffset: 0, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 1 } },
+      {
+        queryCalendarOffset: 1,
+        outcome: "ACCEPTED",
+        relationCounts: { next_calendar_day: 1, non_adjacent_calendar_day: 1 },
+      },
+    ]);
+  });
+
+  await context.test("offset 0의 유효한 D+1 row는 두 창의 exact D target set corroboration에서 제외한다", async () => {
+    const fallback = validFetch();
+    const requestedDates = [];
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "fixture-credential-must-not-leak",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
+        requestedDates.push(parsed.searchParams.get("depPlandTime"));
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = parsed.searchParams.get("depPlandTime") === "20260715"
+          ? [
+            row,
+            { ...row, trainno: "2035", depplandtime: "20260716030000", arrplandtime: "20260716030500" },
+          ]
+          : [
+            row,
+            { ...row, trainno: "2034", depplandtime: "20260716030000", arrplandtime: "20260716030500" },
+          ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.deepEqual(requestedDates, ["20260715", "20260716"]);
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.quotaSummary.odRequestCount, 4);
+    assert.deepEqual(artifact.trainNumbers, ["2001", "2002"]);
+    assert.equal(artifact.itineraries.filter(({ trainNumber }) => ["2034", "2035"].includes(trainNumber)).length, 0);
+    assert.deepEqual(artifact.calendarDateWindowInventory, [
+      {
+        queryCalendarOffset: 0,
+        outcome: "ACCEPTED",
+        relationCounts: { next_calendar_day: 1, same_calendar_day: 1 },
+      },
+      {
+        queryCalendarOffset: 1,
+        outcome: "ACCEPTED",
+        relationCounts: { next_calendar_day: 1, same_calendar_day: 1 },
+      },
+      {
+        queryCalendarOffset: 0,
+        outcome: "ACCEPTED",
+        relationCounts: { same_calendar_day: 1 },
+      },
+      {
+        queryCalendarOffset: 1,
+        outcome: "ACCEPTED",
+        relationCounts: { same_calendar_day: 1 },
+      },
+    ]);
+    const serializedInventory = JSON.stringify(artifact.calendarDateWindowInventory);
+    for (const rawValue of ["fixture-credential-must-not-leak", "20260715", "20260716", "NAT130126", "NAT140873", "2034", "2035"]) {
+      assert.equal(serializedInventory.includes(rawValue), false);
+    }
+  });
+
+  await context.test("valid D+1 departure timestamp의 unrelated fare failure도 relation count에 남긴다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260715") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [
+          row,
+          { ...row, trainno: "2035", depplandtime: "20260716030000", arrplandtime: "20260716030500", adultcharge: "invalid-fare" },
+        ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(artifact.completedOdCount, 1);
+    assert.equal(artifact.failedOdCount, 1);
+    assert.equal(artifact.failedOds[0].requestCount, 2);
+    assert.equal(artifact.failedOds[0].failureContext, "operation=GetStrtpntAlocFndTrainInfo,reason=field_contract_mismatch");
+    assert.deepEqual(artifact.calendarDateWindowInventory.slice(0, 2), [
+      { queryCalendarOffset: 0, outcome: "REJECTED", relationCounts: { next_calendar_day: 1, same_calendar_day: 1 } },
+      { queryCalendarOffset: 1, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 1 } },
+    ]);
+  });
+
+  await context.test("D then D+1은 같은 non-date query params로 순서대로 조회하고 adjacent observation을 제외한다", async () => {
+    const odQueries = [];
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) {
+          odQueries.push(Object.fromEntries(parsed.searchParams));
+        }
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        const queryDate = parsed.searchParams.get("depPlandTime");
+        payload.response.body.items.item = [
+          row,
+          queryDate === "20260715"
+            ? { ...row, trainno: "2034", depplandtime: "20260714030000", arrplandtime: "20260714030500" }
+            : { ...row, trainno: "2035", depplandtime: "20260716030000", arrplandtime: "20260716030500" },
+        ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.deepEqual(odQueries.map(({ depPlandTime }) => depPlandTime), ["20260715", "20260716", "20260715", "20260716"]);
+    const withoutDate = ({ depPlandTime, ...query }) => query;
+    assert.deepEqual(withoutDate(odQueries[0]), withoutDate(odQueries[1]));
+    assert.deepEqual(withoutDate(odQueries[2]), withoutDate(odQueries[3]));
+    assert.deepEqual(withoutDate(odQueries[0]), {
+      _type: "json", arrPlaceId: "NAT140873", depPlaceId: "NAT130126", numOfRows: "100", pageNo: "1", serviceKey: "key", trainGradeCode: "07",
+    });
+    assert.deepEqual(withoutDate(odQueries[2]), {
+      _type: "json", arrPlaceId: "NAT130126", depPlaceId: "NAT140873", numOfRows: "100", pageNo: "1", serviceKey: "key", trainGradeCode: "07",
+    });
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.quotaSummary.initialOdRequestCount, 4);
+    assert.equal(artifact.quotaSummary.odRequestCount, 4);
+    assert.equal(artifact.operations.filter(({ operation }) => operation === "GetStrtpntAlocFndTrainInfo").length, 4);
+    assert.deepEqual(artifact.calendarDateProjection, {
+      contractVersion: "tago-itx-calendar-date-projection-v2",
+      queryCalendarOffsets: [0, 1],
+    });
+    assert.deepEqual(artifact.trainNumbers, ["2001", "2002"]);
+    assert.equal(artifact.itineraries.some(({ trainNumber }) => ["2034", "2035"].includes(trainNumber)), false);
+  });
+
+  await context.test("D+1 02:59 row는 requested service day target으로 union한다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+        const payload = await response.json();
+        payload.response.body.items.item[0].trainno = "2035";
+        payload.response.body.items.item[0].depplandtime = "20260716025900";
+        payload.response.body.items.item[0].arrplandtime = "20260716025930";
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.transitTrips.some(({ trainNo }) => trainNo === "2035"), true);
+    assert.equal(artifact.itineraries.some(({ departureAt }) => departureAt === "2026-07-16T02:59:00+09:00"), true);
+  });
+
+  await context.test("cross-window extra target row는 deterministic union에 포함한다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [row, { ...row, trainno: "2035" }];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.itineraries.some(({ trainNumber }) => trainNumber === "2035"), true);
+  });
+
+  await context.test("cross-window target value conflict는 partial pair failure로 닫힌다", async () => {
+      const fallback = validFetch();
+      const artifact = await collectTagoItxCheongchunRoster({
+        serviceKey: "key",
+        serviceDate: "20260715",
+        kricServiceDayCode: "8",
+        canonicalStations: canonicalRosterStations(),
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          const response = await fallback(url);
+          if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+            || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+            || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+          const payload = await response.json();
+          payload.response.body.items.item[0].arrplandtime = "20260715095500";
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      });
+      assert.equal(artifact.completedOdCount, 1);
+      assert.equal(artifact.failedOdCount, 1);
+      assert.equal(artifact.transitTrips, undefined);
+  });
+
+  await context.test("first-window validation failure도 D then D+1 attempt를 모두 기록하고 first failure로 pair를 닫는다", async () => {
+    const odDates = [];
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) return response;
+        odDates.push(parsed.searchParams.get("depPlandTime"));
+        if (parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260715") return response;
+        const payload = await response.json();
+        payload.response.body.items.item[0].traingradename = "KTX";
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.deepEqual(odDates, ["20260715", "20260716", "20260715", "20260716"]);
+    assert.equal(artifact.completedOdCount, 1);
+    assert.equal(artifact.failedOdCount, 1);
+    assert.equal(artifact.failedOds[0].requestCount, 2);
+    assert.equal(artifact.quotaSummary.odRequestCount, 4);
+    assert.equal(artifact.quotaSummary.actualRequestCount, artifact.quotaSummary.catalogRequestCount + 4);
+  });
+
+  await context.test("reverse-order multi-row window도 exact row-set equality면 한 번만 materialize한다", async () => {
+    const collectWithRowOrder = async (reverseRows) => {
+      const fallback = validFetch();
+      return collectTagoItxCheongchunRoster({
+        serviceKey: "key",
+        serviceDate: "20260715",
+        kricServiceDayCode: "8",
+        canonicalStations: canonicalRosterStations(),
+        now: new Date("2026-07-14T15:00:00.000Z"),
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          const response = await fallback(url);
+          if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+            || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
+          const payload = await response.json();
+          const row = payload.response.body.items.item[0];
+          const rows = [row, { ...row, trainno: "2003", depplandtime: "20260715100000", arrplandtime: "20260715113000" }];
+          payload.response.body.items.item = reverseRows ? rows.reverse() : rows;
+          payload.response.body.totalCount = 2;
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      });
+    };
+    const artifact = await collectWithRowOrder(false);
+    const reverseOrderArtifact = await collectWithRowOrder(true);
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.deepEqual(artifact.trainNumbers, ["2001", "2002", "2003"]);
+    assert.equal(artifact.itineraries.filter(({ trainNumber }) => trainNumber === "2003").length, 1);
+    assert.deepEqual(artifact.calendarDateWindowInventory, [
+      { queryCalendarOffset: 0, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 2 } },
+      { queryCalendarOffset: 1, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 2 } },
+      { queryCalendarOffset: 0, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 1 } },
+      { queryCalendarOffset: 1, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 1 } },
+    ]);
+    assert.deepEqual(reverseOrderArtifact.calendarDateWindowInventory, artifact.calendarDateWindowInventory);
+    assert.equal(
+      sha256(JSON.stringify(reverseOrderArtifact.calendarDateWindowInventory)),
+      sha256(JSON.stringify(artifact.calendarDateWindowInventory)),
+    );
+  });
+
+  for (const { name, queryDate, timestamp } of [
+    { name: "D-1", queryDate: "20260715", timestamp: "20260714030000" },
+    { name: "D+1", queryDate: "20260716", timestamp: "20260716030000" },
+  ]) {
+    await context.test(`malformed allowed adjacent ${name} row도 strict validation으로 fail closed한다`, async () => {
+      const fallback = validFetch();
+      const artifact = await collectTagoItxCheongchunRoster({
+        serviceKey: "key",
+        serviceDate: "20260715",
+        kricServiceDayCode: "8",
+        canonicalStations: canonicalRosterStations(),
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          const response = await fallback(url);
+          if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+            || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+            || parsed.searchParams.get("depPlandTime") !== queryDate) return response;
+          const payload = await response.json();
+          payload.response.body.items.item.push({
+            ...payload.response.body.items.item[0],
+            trainno: "2035",
+            depplandtime: timestamp,
+            arrplandtime: timestamp,
+          });
+          payload.response.body.totalCount = 2;
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      });
+      assert.equal(artifact.completedOdCount, 1);
+      assert.equal(artifact.failedOdCount, 1);
+      assert.equal(artifact.failedOds[0].failureContext, "operation=GetStrtpntAlocFndTrainInfo,reason=time_order_mismatch");
+    });
+  }
+});
+
+test("TAGO two-window preflight는 expected OD pair의 doubled floor 미만이면 OD 호출 전에 닫힌다", async () => {
+  let odCalls = 0;
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    requestBudget: { limit: 10, remaining: 7 },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) odCalls += 1;
+      return validFetch()(url);
+    },
+  }), /TAGO_QUOTA_BUDGET_EXHAUSTED/);
+  assert.equal(odCalls, 0);
+});
+
+test("ITX OD matrix hash는 정렬된 service date·canonical/provider endpoint tuple로 결정된다", () => {
+  const matrix = buildItxOdMatrix("20260715", [
+    { providerStationId: "B" },
+    { providerStationId: "A" },
+  ]);
+  const rows = [
+    { date: "20260715", depStationId: "A", arrStationId: "B" },
+    { date: "20260715", depStationId: "B", arrStationId: "A" },
+  ];
+  const tuples = [
+    ["20260715", "A", "A", "B", "B"],
+    ["20260715", "B", "B", "A", "A"],
+  ];
+  assert.deepEqual(matrix.rows, rows);
+  assert.equal(matrix.expectedOdCount, 2);
+  assert.equal(matrix.stationSetHash, sha256(JSON.stringify([["A", "A"], ["B", "B"]])));
+  assert.equal(matrix.odMatrixHash, sha256(JSON.stringify(tuples)));
+});
+
+test("ITX OD matrix hash는 canonical ID가 같아도 실제 provider station ID가 바뀌면 달라진다", () => {
+  const canonical = ["station-a", "station-b"];
+  const first = buildItxOdMatrix("20260715", [
+    { providerStationId: "NAT-A1", canonicalStationId: canonical[0] },
+    { providerStationId: "NAT-B1", canonicalStationId: canonical[1] },
+  ]);
+  const second = buildItxOdMatrix("20260715", [
+    { providerStationId: "NAT-A2", canonicalStationId: canonical[0] },
+    { providerStationId: "NAT-B2", canonicalStationId: canonical[1] },
+  ]);
+
+  assert.notEqual(first.stationSetHash, second.stationSetHash);
+  assert.notEqual(first.odMatrixHash, second.odMatrixHash);
+});
+
+test("ITX OD matrix hash는 같은 provider ID 집합의 canonical mapping 교환도 탐지한다", () => {
+  const first = buildItxOdMatrix("20260715", [
+    { providerStationId: "NAT-A", canonicalStationId: "station-a" },
+    { providerStationId: "NAT-B", canonicalStationId: "station-b" },
+  ]);
+  const swapped = buildItxOdMatrix("20260715", [
+    { providerStationId: "NAT-B", canonicalStationId: "station-a" },
+    { providerStationId: "NAT-A", canonicalStationId: "station-b" },
+  ]);
+
+  assert.notEqual(first.stationSetHash, swapped.stationSetHash);
+  assert.notEqual(first.odMatrixHash, swapped.odMatrixHash);
+});
+
+test("ITX train number는 digits와 명시적 ITX prefix만 허용한다", () => {
+  assert.equal(normalizeTrainNumber("02001"), "2001");
+  assert.equal(normalizeTrainNumber("ITX-02001"), "2001");
+  assert.throws(() => normalizeTrainNumber("20O1"), /invalid train number/);
+  assert.throws(() => normalizeTrainNumber("2001x"), /invalid train number/);
+});
+
+test("TAGO pairwise OD는 U/D 정차시각을 추정 없이 결정론적으로 materialize한다", () => {
+  const materialized = materializeTagoItxOdRows({
+    itineraries: [
+      od("02001", "A", "B", "2026-07-15T08:00:00+09:00", "2026-07-15T09:00:00+09:00"),
+      od("02001", "A", "C", "2026-07-15T08:00:00+09:00", "2026-07-15T10:00:00+09:00"),
+      od("02001", "B", "C", "2026-07-15T09:05:00+09:00", "2026-07-15T10:00:00+09:00"),
+      od("02002", "C", "B", "2026-07-15T11:00:00+09:00", "2026-07-15T12:00:00+09:00"),
+      od("02002", "C", "A", "2026-07-15T11:00:00+09:00", "2026-07-15T13:00:00+09:00"),
+      od("02002", "B", "A", "2026-07-15T12:05:00+09:00", "2026-07-15T13:00:00+09:00"),
+    ],
+    corridorStations: corridorStations(),
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+  });
+
+  assert.deepEqual(materialized.trainNumbers, ["2001", "2002"]);
+  assert.deepEqual(materialized.stationSequences.map(({ trainNumber, directionId, terminalVariant, observedOdCount }) => ({
+    trainNumber, directionId, terminalVariant, observedOdCount,
+  })), [
+    { trainNumber: "2001", directionId: "up", terminalVariant: "가→다", observedOdCount: 3 },
+    { trainNumber: "2002", directionId: "down", terminalVariant: "다→가", observedOdCount: 3 },
+  ]);
+  assert.deepEqual(materialized.transitTrips.map(({ id, routeId, serviceId, tripHeadsign }) => ({
+    id, routeId, serviceId, tripHeadsign,
+  })), [
+    {
+      id: "route-line-54a7b980b7c3-down-2002-8",
+      routeId: "route-line-54a7b980b7c3-down",
+      serviceId: "weekday-kric",
+      tripHeadsign: "가",
+    },
+    {
+      id: "route-line-54a7b980b7c3-up-2001-8",
+      routeId: "route-line-54a7b980b7c3-up",
+      serviceId: "weekday-kric",
+      tripHeadsign: "다",
+    },
+  ]);
+  assert.deepEqual(materialized.transitStopTimes.filter(({ tripId }) => tripId.includes("-up-")), [
+    { tripId: "route-line-54a7b980b7c3-up-2001-8", stopSequence: 1, stationId: "A", lineId: "line-6e39be0cb6e2", arrivalSeconds: 28_800, departureSeconds: 28_800 },
+    { tripId: "route-line-54a7b980b7c3-up-2001-8", stopSequence: 2, stationId: "B", lineId: "line-54a7b980b7c3", arrivalSeconds: 32_400, departureSeconds: 32_700 },
+    { tripId: "route-line-54a7b980b7c3-up-2001-8", stopSequence: 3, stationId: "C", lineId: "line-54a7b980b7c3", arrivalSeconds: 36_000, departureSeconds: 36_000 },
+  ]);
+  assert.deepEqual(materialized.reconstructionSummary, {
+    trainCount: 2,
+    stopCount: 6,
+    conflictingTimestampCount: 0,
+    missingPairCount: 0,
+    duplicateOdCount: 0,
+  });
+});
+
+test("TAGO OD materialization은 duplicate·pair 누락·시각 충돌·방향 혼합을 정확한 code로 거부한다", () => {
+  const base = [
+    od("2001", "A", "B", "2026-07-15T08:00:00+09:00", "2026-07-15T09:00:00+09:00"),
+    od("2001", "A", "C", "2026-07-15T08:00:00+09:00", "2026-07-15T10:00:00+09:00"),
+    od("2001", "B", "C", "2026-07-15T09:05:00+09:00", "2026-07-15T10:00:00+09:00"),
+  ];
+  const input = (itineraries, stations = corridorStations()) => ({
+    itineraries, corridorStations: stations, serviceDate: "20260715", kricServiceDayCode: "8",
+  });
+
+  assert.throws(() => materializeTagoItxOdRows(input([...base, base[0]])), (error) => {
+    assert.match(error.message, /TAGO_OD_DUPLICATE/);
+    assert.equal(error.reconstructionSummary.duplicateOdCount, 1);
+    return true;
+  });
+  assert.throws(() => materializeTagoItxOdRows(input(base.slice(0, 2))), (error) => {
+    assert.match(error.message, /TAGO_OD_PAIR_COVERAGE_INCOMPLETE/);
+    assert.equal(error.reconstructionSummary.missingPairCount, 1);
+    return true;
+  });
+  assert.throws(() => materializeTagoItxOdRows(input([
+    od("2001", "A", "B", "2026-07-15T08:00:00+09:00", "2026-07-15T09:00:00+09:00"),
+    od("2001", "B", "C", "2026-07-15T09:05:00+09:00", "2026-07-15T10:00:00+09:00"),
+    od("2001", "C", "D", "2026-07-15T10:05:00+09:00", "2026-07-15T11:00:00+09:00"),
+  ], [
+    ...corridorStations(),
+    { stationId: "D", nameKo: "라", corridorSequence: 4, lineId: "line-54a7b980b7c3" },
+  ])), (error) => {
+    assert.match(error.message, /TAGO_OD_PAIR_COVERAGE_INCOMPLETE/);
+    assert.equal(error.reconstructionSummary.missingPairCount, 3);
+    return true;
+  });
+  assert.throws(() => materializeTagoItxOdRows(input([
+    base[0],
+    { ...base[1], departureAt: "2026-07-15T08:01:00+09:00" },
+    base[2],
+  ])), (error) => {
+    assert.match(error.message, /TAGO_OD_TIME_CONFLICT/);
+    assert.equal(error.reconstructionSummary.conflictingTimestampCount, 1);
+    return true;
+  });
+  assert.throws(() => materializeTagoItxOdRows(input([
+    ...base,
+    od("2001", "C", "A", "2026-07-15T11:00:00+09:00", "2026-07-15T13:00:00+09:00"),
+  ])), /TAGO_OD_STOP_SEQUENCE_INVALID/);
+  assert.throws(() => materializeTagoItxOdRows(input(base, [
+    ...corridorStations(),
+    { stationId: "D", nameKo: "라", corridorSequence: 2, lineId: "line-54a7b980b7c3" },
+  ].map((station) => station.stationId === "C" ? { ...station, corridorSequence: 2 } : station))), /TAGO_OD_STOP_SEQUENCE_INVALID/);
+});
+
+test("TAGO OD materialization은 24:xx를 02:59까지만 허용한다", () => {
+  const input = (arrivalAt) => ({
+    itineraries: [od("2001", "A", "B", "2026-07-15T23:50:00+09:00", arrivalAt)],
+    corridorStations: corridorStations().slice(0, 2),
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+  });
+  const accepted = materializeTagoItxOdRows(input("2026-07-16T02:59:00+09:00"));
+  assert.equal(accepted.transitStopTimes.at(-1).arrivalSeconds, 97_140);
+  assert.throws(() => materializeTagoItxOdRows(input("2026-07-16T03:00:00+09:00")), /TAGO_OD_STOP_SEQUENCE_INVALID/);
+});
+
+test("TAGO catalog operation은 pagination field와 totalCount를 요구하지 않는다", async (context) => {
+  for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) {
+    await context.test(`${operation} totalCount 없음`, async () => {
+      const fallback = validFetch();
+      const artifact = await collectTagoItxCheongchunOd({
+        serviceKey: "key",
+        departureDate: "2026-07-14",
+        kricServiceDayCode: "8",
+        fetchImpl: async (url) => {
+          const response = await fallback(url);
+          return new URL(url).pathname.endsWith(operation) ? withoutTotalCount(response) : response;
+        },
+      });
+      assert.deepEqual(artifact.trainNumbers, ["2001"]);
+    });
+  }
+
+  await context.test("pagination query 없음", async () => {
+    const fallback = validFetch();
+    await collectTagoItxCheongchunOd({
+      serviceKey: "key",
+      departureDate: "2026-07-14",
+      kricServiceDayCode: "8",
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("GetVhcleKndList") || parsed.pathname.endsWith("GetCtyCodeList")) {
+          assert.equal(parsed.searchParams.has("pageNo"), false);
+          assert.equal(parsed.searchParams.has("numOfRows"), false);
+        }
+        return fallback(url);
+      },
+    });
+  });
+});
+
+test("TAGO ITX roster는 canonical 역의 양방향 OD 전체를 수집한다", async () => {
+  const odRequests = [];
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "never-print-data-key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    now: new Date("2026-07-14T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetVhcleKndList")) {
+        return tagoResponse([{ vehiclekndid: "07", vehiclekndnm: "ITX-청춘" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyCodeList")) {
+        return tagoResponse([{ citycode: "11", cityname: "서울" }, { citycode: "32", cityname: "강원" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyAcctoTrainSttnList")) {
+        return parsed.searchParams.get("cityCode") === "11"
+          ? tagoResponse([{ nodeid: "NAT130126", nodename: "청량리" }])
+          : tagoResponse([{ nodeid: "NAT140873", nodename: "춘천" }]);
+      }
+      odRequests.push([
+        parsed.searchParams.get("depPlaceId"),
+        parsed.searchParams.get("arrPlaceId"),
+      ]);
+      const forward = parsed.searchParams.get("depPlaceId") === "NAT130126";
+      return tagoResponse([{
+        trainno: forward ? "2001" : "2002",
+        traingradename: "ITX-청춘",
+        depplandtime: forward ? "20260715083000" : "20260715103000",
+        arrplandtime: forward ? "20260715095000" : "20260715115000",
+        depplacename: forward ? "청량리" : "춘천",
+        arrplacename: forward ? "춘천" : "청량리",
+        adultcharge: "9800",
+      }]);
+    },
+  });
+
+  assert.deepEqual(odRequests, [
+    ["NAT130126", "NAT140873"],
+    ["NAT130126", "NAT140873"],
+    ["NAT140873", "NAT130126"],
+    ["NAT140873", "NAT130126"],
+  ]);
+  assert.equal(artifact.expectedOdCount, 2);
+  assert.equal(artifact.completedOdCount, 2);
+  assert.equal(artifact.failedOdCount, 0);
+  assert.deepEqual(artifact.trainNumbers, ["2001", "2002"]);
+  assert.match(artifact.stationSetHash, /^[a-f0-9]{64}$/);
+  assert.match(artifact.odMatrixHash, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(artifact), /never-print-data-key/);
+});
+
+test("TAGO roster artifact는 같은 provider body와 observedAt에서 byte-identical하다", async () => {
+  const input = () => ({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    now: new Date("2026-07-14T00:00:00.000Z"),
+    fetchImpl: validFetch(),
+  });
+  const first = await collectTagoItxCheongchunRoster(input());
+  const second = await collectTagoItxCheongchunRoster(input());
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
+  assert.equal(JSON.stringify(first), JSON.stringify(second));
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
+  assert.equal(first.evidenceHash, second.evidenceHash);
+});
+
+test("TAGO catalog는 non-paginated로 한 번만 수집하고 station·OD는 strict pagination을 유지한다", async () => {
+  const catalogCalls = new Map();
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      const operation = parsed.pathname.split("/").at(-1);
+      if (["GetVhcleKndList", "GetCtyCodeList"].includes(operation)) {
+        catalogCalls.set(operation, (catalogCalls.get(operation) ?? 0) + 1);
+        assert.equal(parsed.searchParams.has("pageNo"), false);
+        assert.equal(parsed.searchParams.has("numOfRows"), false);
+        return tagoCatalogResponse(operation === "GetVhcleKndList"
+          ? [{ vehiclekndid: "07", vehiclekndnm: "ITX-청춘" }]
+          : [{ citycode: "11", cityname: "서울" }, { citycode: "32", cityname: "강원" }]);
+      }
+      assert.equal(parsed.searchParams.get("pageNo"), "1");
+      assert.equal(parsed.searchParams.get("numOfRows"), "100");
+      if (operation === "GetCtyAcctoTrainSttnList") {
+        return parsed.searchParams.get("cityCode") === "11"
+          ? tagoResponse([{ nodeid: "NAT130126", nodename: "청량리" }])
+          : tagoResponse([{ nodeid: "NAT140873", nodename: "춘천" }]);
+      }
+      const reverse = parsed.searchParams.get("depPlaceId") === "NAT140873";
+      return tagoResponse([{
+        trainno: reverse ? "2002" : "2001",
+        traingradename: "ITX-청춘",
+        depplandtime: reverse ? "20260715103000" : "20260715083000",
+        arrplandtime: reverse ? "20260715115000" : "20260715095000",
+        depplacename: reverse ? "춘천" : "청량리",
+        arrplacename: reverse ? "청량리" : "춘천",
+        adultcharge: "9800",
+      }]);
+    },
+  });
+
+  assert.deepEqual(Object.fromEntries(catalogCalls), {
+    GetVhcleKndList: 1,
+    GetCtyCodeList: 1,
+  });
+  assert.equal(artifact.completedOdCount, 2);
+});
+
+test("TAGO ITX roster는 일시적 HTTP 응답을 OD 실패 확정 전에 재시도한다", async () => {
+  let forwardAttempts = 0;
+  const artifact = await collectTagoItxCheongchunRoster({
+    waitImpl: async () => {},
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    now: new Date("2026-07-14T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetVhcleKndList")) {
+        return tagoResponse([{ vehiclekndid: "07", vehiclekndnm: "ITX-청춘" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyCodeList")) {
+        return tagoResponse([{ citycode: "11", cityname: "서울" }, { citycode: "32", cityname: "강원" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyAcctoTrainSttnList")) {
+        return parsed.searchParams.get("cityCode") === "11"
+          ? tagoResponse([{ nodeid: "NAT130126", nodename: "청량리" }])
+          : tagoResponse([{ nodeid: "NAT140873", nodename: "춘천" }]);
+      }
+      const forward = parsed.searchParams.get("depPlaceId") === "NAT130126";
+      if (forward && ++forwardAttempts < 3) return new Response("temporary", { status: 503 });
+      return tagoResponse([{
+        trainno: forward ? "2001" : "2002",
+        traingradename: "ITX-청춘",
+        depplandtime: forward ? "20260715083000" : "20260715103000",
+        arrplandtime: forward ? "20260715095000" : "20260715115000",
+        depplacename: forward ? "청량리" : "춘천",
+        arrplacename: forward ? "춘천" : "청량리",
+        adultcharge: "9800",
+      }]);
+    },
+  });
+
+  assert.equal(forwardAttempts, 4);
+  assert.equal(artifact.completedOdCount, 2);
+  assert.equal(artifact.failedOdCount, 0);
+});
+
+test("TAGO 429는 server Retry-After를 operation 전체에서 정확히 한 번 따른다", async () => {
+  const fallback = validFetch();
+  const delays = [];
+  let odRequestCount = 0;
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "fixture-key-must-not-leak",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) return fallback(url);
+      odRequestCount += 1;
+      if (odRequestCount === 1) {
+        return new Response("raw-provider-body-must-not-leak", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      return fallback(url);
+    },
+  });
+
+  assert.deepEqual(delays, [1_000]);
+  assert.equal(odRequestCount, 5);
+  assert.equal(artifact.completedOdCount, 2);
+  assert.equal(artifact.failedOdCount, 0);
+  const serialized = JSON.stringify(artifact);
+  assert.equal(serialized.includes("fixture-key-must-not-leak"), false);
+  assert.equal(serialized.includes("raw-provider-body-must-not-leak"), false);
+});
+
+test("TAGO 429가 cooldown 뒤 반복되면 later window와 OD를 호출하지 않는다", async () => {
+  const fallback = validFetch();
+  const delays = [];
+  let odRequestCount = 0;
+  let captured;
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "fixture-key-must-not-leak",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) return fallback(url);
+      odRequestCount += 1;
+      return new Response("raw-provider-body-must-not-leak", {
+        status: 429,
+        headers: { "retry-after": "1" },
+      });
+    },
+  }), (error) => {
+    captured = error;
+    return error?.name === "TagoRateLimitedError"
+      && error.message === "TAGO GetStrtpntAlocFndTrainInfo HTTP 429"
+      && error.attemptCount === 2
+      && error.cooldownUsed === true;
+  });
+
+  assert.deepEqual(delays, [1_000]);
+  assert.equal(odRequestCount, 2);
+  const serialized = JSON.stringify(captured);
+  assert.equal(serialized.includes("fixture-key-must-not-leak"), false);
+  assert.equal(serialized.includes("raw-provider-body-must-not-leak"), false);
+});
+
+test("TAGO 429의 absent·invalid·out-of-range Retry-After는 대기나 later OD 없이 닫힌다", async (context) => {
+  for (const retryAfter of [null, "not-a-number", "0", "61"]) {
+    await context.test(retryAfter ?? "absent", async () => {
+      const fallback = validFetch();
+      const delays = [];
+      let odRequestCount = 0;
+      let captured;
+      await assert.rejects(collectTagoItxCheongchunRoster({
+        serviceKey: "fixture-key-must-not-leak",
+        serviceDate: "20260715",
+        kricServiceDayCode: "8",
+        canonicalStations: canonicalRosterStations(),
+        waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) return fallback(url);
+          odRequestCount += 1;
+          const headers = retryAfter === null ? undefined : { "retry-after": retryAfter };
+          return new Response("raw-provider-body-must-not-leak", { status: 429, headers });
+        },
+      }), (error) => {
+        captured = error;
+        return error?.name === "TagoRateLimitedError"
+          && error.message === "TAGO GetStrtpntAlocFndTrainInfo HTTP 429"
+          && error.attemptCount === 1
+          && error.cooldownUsed === false;
+      });
+
+      assert.deepEqual(delays, []);
+      assert.equal(odRequestCount, 1);
+      const serialized = JSON.stringify(captured);
+      assert.equal(serialized.includes("fixture-key-must-not-leak"), false);
+      assert.equal(serialized.includes("raw-provider-body-must-not-leak"), false);
+      assert.equal(serialized.includes(retryAfter ?? "retry-after"), false);
+    });
+  }
+});
+
+test("TAGO retry는 최종 503 body를 정리하고 재시도 한도까지(첫 시도 + 재시도)만 시도한다", async () => {
+  let attempts = 0;
+  let cancellations = 0;
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    waitImpl: async () => {},
+    fetchImpl: async () => {
+      attempts += 1;
+      return new Response(new ReadableStream({
+        cancel() { cancellations += 1; },
+      }), { status: 503 });
+    },
+  }), /^Error: TAGO GetVhcleKndList HTTP 503$/);
+  assert.equal(attempts, MAX_ATTEMPTS);
+  assert.equal(cancellations, MAX_ATTEMPTS);
+});
+
+test("TAGO retry는 최종 transport 실패까지 재시도 한도에서 종료한다", async () => {
+  let attempts = 0;
+  const delays = [];
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async () => {
+      attempts += 1;
+      throw new Error("socket unavailable");
+    },
+  }), /^Error: TAGO transport failure$/);
+  assert.equal(attempts, MAX_ATTEMPTS);
+  assert.deepEqual(delays, BACKOFF);
+});
+
+// ---- #1089: TAGO 일시 오류(resultCode 99, HTTP 5xx, 전송 오류) 재시도 ----
+// fixture는 itx-current-promotion run 37970736919(2026-10-09T18:05Z)의 provider-response-capture에서 꺼낸 실제 응답 바이트다.
+const REAL = JSON.parse(readFileSync(new URL("./test-fixtures/tago-itx-run-37970736919-responses.json", import.meta.url), "utf8"));
+const REAL_HEADERS = { "content-type": "application/json;charset=UTF-8" };
+const realBody = (name) => new Response(REAL[name], { status: 200, headers: REAL_HEADERS });
+
+test("fixture는 실제 실패 run의 응답 바이트와 기록된 sha256이 같다", () => {
+  for (const name of ["unknownError99", "gradeList", "cityCodeList"]) {
+    assert.equal(sha256(REAL[name]), REAL.sha256[name], name);
+  }
+  assert.equal(REAL.unknownError99, '{"header":{"resultCode":"99","resultMsg":"UNKNOWN_ERROR."}}');
+});
+
+// 실제 grade·city 응답을 쓰고, 강원(32)에만 춘천, 서울(11)에만 청량리를 둔다. failures는 operation별로 앞에서부터 소모하는 일시 오류다.
+function realRosterFetch({ failures = {}, calls = [] } = {}) {
+  const remaining = new Map(Object.entries(failures).map(([operation, list]) => [operation, [...list]]));
+  return async (url) => {
+    const parsed = new URL(url);
+    const operation = parsed.pathname.split("/").at(-1);
+    calls.push(operation);
+    const queue = remaining.get(operation);
+    if (queue?.length) {
+      const next = queue.shift();
+      if (next === "99") return realBody("unknownError99");
+      if (next === "22") return new Response('{"header":{"resultCode":"22","resultMsg":"LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR"}}', { status: 200, headers: REAL_HEADERS });
+      if (next === "503") return new Response("temporary", { status: 503 });
+      if (next === "throw") throw new Error("socket unavailable");
+    }
+    if (operation === "GetVhcleKndList") return realBody("gradeList");
+    if (operation === "GetCtyCodeList") return realBody("cityCodeList");
+    if (operation === "GetCtyAcctoTrainSttnList") {
+      const city = parsed.searchParams.get("cityCode");
+      return tagoResponse(city === "11" ? [{ nodeid: "NAT130126", nodename: "청량리" }] : city === "32" ? [{ nodeid: "NAT140873", nodename: "춘천" }] : []);
+    }
+    const forward = parsed.searchParams.get("depPlaceId") === "NAT130126";
+    return tagoResponse([{
+      trainno: forward ? "2001" : "2002", traingradename: "ITX-청춘",
+      depplandtime: forward ? "20260715083000" : "20260715103000", arrplandtime: forward ? "20260715095000" : "20260715115000",
+      depplacename: forward ? "청량리" : "춘천", arrplacename: forward ? "춘천" : "청량리", adultcharge: "9800",
+    }]);
+  };
+}
+
+const rosterInput = (extra) => ({
+  serviceKey: "fixture-credential-must-not-leak", serviceDate: "20260715", kricServiceDayCode: "8",
+  canonicalStations: canonicalRosterStations(), now: new Date("2026-07-14T00:00:00.000Z"), ...extra,
+});
+
+test("TAGO resultCode 99(UNKNOWN_ERROR) 뒤에 정상 응답이 오면 같은 요청을 다시 보내 수집을 끝낸다", async () => {
+  const delays = [];
+  const calls = [];
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const artifact = await collectTagoItxCheongchunRoster(rosterInput({
+    requestBudget, waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    // 실패 run과 같은 모양: 도시 코드 목록 1회, 역 목록 1회, OD 1회 실패.
+    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: ["99"], GetCtyAcctoTrainSttnList: ["99"], GetStrtpntAlocFndTrainInfo: ["99"] } }),
+  }));
+
+  assert.equal(artifact.completedOdCount, 2);
+  assert.equal(artifact.failedOdCount, 0);
+  assert.deepEqual(delays, [1_000, 1_000, 1_000]);
+  const byOperation = Object.fromEntries(artifact.operations.map(({ operation, requestCount }) => [operation, requestCount]));
+  assert.equal(byOperation.GetCtyCodeList, 2, "시도 수는 재시도를 포함한 실제 요청 수다");
+  assert.equal(byOperation.GetVhcleKndList, 1);
+  // 일일 한도 예산은 시도마다 차감된다.
+  assert.equal(requestBudget.limit - requestBudget.remaining, calls.length);
+  assert.equal(artifact.quotaSummary.actualRequestCount, calls.length);
+  assert.equal(JSON.stringify(artifact).includes("fixture-credential-must-not-leak"), false);
+  assert.equal(JSON.stringify(artifact).includes("UNKNOWN_ERROR"), false, "실패한 시도의 본문은 증거에 남기지 않는다");
+});
+
+test("TAGO resultCode 99가 끝까지 이어지면 재시도 한도를 다 쓴 뒤 지금처럼 resultCode 오류로 끝난다", async () => {
+  const delays = [];
+  const calls = [];
+  await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: Array(MAX_ATTEMPTS + 1).fill("99") } }),
+  })), /^Error: TAGO GetCtyCodeList provider resultCode 99$/);
+  assert.equal(calls.filter((operation) => operation === "GetCtyCodeList").length, MAX_ATTEMPTS);
+  assert.deepEqual(delays, BACKOFF);
+  assert.equal(calls.includes("GetCtyAcctoTrainSttnList"), false, "실패한 operation 뒤의 호출은 하지 않는다");
+});
+
+test("TAGO 99 이외의 provider 코드는 재시도하지 않는다", async () => {
+  const delays = [];
+  const calls = [];
+  await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: ["22"] } }),
+  })), /^Error: TAGO GetCtyCodeList provider resultCode 22$/);
+  assert.equal(calls.filter((operation) => operation === "GetCtyCodeList").length, 1);
+  assert.deepEqual(delays, []);
+});
+
+test("TAGO HTTP 5xx와 전송 오류는 같은 요청을 정해진 간격으로 재시도 한도까지 다시 보낸다", async () => {
+  for (const kind of ["503", "throw"]) {
+    const delays = [];
+    const calls = [];
+    const artifact = await collectTagoItxCheongchunRoster(rosterInput({
+      waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+      fetchImpl: realRosterFetch({ calls, failures: { GetVhcleKndList: Array(TAGO_TRANSIENT_RETRY_LIMIT).fill(kind) } }),
+    }));
+    assert.equal(artifact.completedOdCount, 2, kind);
+    assert.deepEqual(delays, BACKOFF, kind);
+    assert.equal(calls.filter((operation) => operation === "GetVhcleKndList").length, MAX_ATTEMPTS, kind);
+  }
+});
+
+test("TAGO 재시도 한도는 99·5xx·전송 오류가 한 요청 안에서 함께 쓴다", async () => {
+  // 503·99·전송 오류를 돌려가며 쓰고 마지막 시도는 99로 끝난다.
+  const mixedFailures = Array.from({ length: MAX_ATTEMPTS }, (_, index) => ["503", "99", "throw"][index % 3]);
+  mixedFailures[MAX_ATTEMPTS - 1] = "99";
+  const delays = [];
+  const calls = [];
+  await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: mixedFailures } }),
+  })), /^Error: TAGO GetCtyCodeList provider resultCode 99$/);
+  assert.equal(calls.filter((operation) => operation === "GetCtyCodeList").length, MAX_ATTEMPTS);
+  assert.deepEqual(delays, BACKOFF);
+});
+
+test("TAGO 일일 요청 예산이 바닥나면 재시도하지 않고 예산 오류로 멈춘다", async () => {
+  const calls = [];
+  await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
+    requestBudget: { limit: 10_000, remaining: 3 },
+    waitImpl: async () => {},
+    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: Array(10).fill("99") } }),
+  })), /TAGO_QUOTA_BUDGET_EXHAUSTED/);
+  assert.equal(calls.length, 3, "예산 3건: 등급 1 + 도시 코드 2(첫 시도와 재시도 1)");
+});
+
+// 독립 oracle: 남은 예산 안에서 간격 배열을 앞에서부터 더해 가며 다음 대기가 남은 예산을 넘기 직전까지 기다리는 시간.
+const waitUntilBudgetStops = (remainingMs) => {
+  let waited = 0;
+  for (const delay of BACKOFF) {
+    if (waited + delay > remainingMs) break;
+    waited += delay;
+  }
+  return waited;
+};
+
+test("재시도 대기 합계는 run 단위 예산을 넘지 않고, 넘기 전에 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 수집을 멈춘다 (F1)", async () => {
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const delays = [];
+  const calls = [];
+  // 장애가 계속되는 공급자: 카탈로그는 정상이고 모든 OD 요청이 99다. 운행일 3개가 같은 requestBudget(= 같은 run)을 쓴다.
+  const outage = realRosterFetch({ calls, failures: { GetStrtpntAlocFndTrainInfo: Array(1000).fill("99") } });
+  const outcomes = [];
+  for (let day = 0; day < 3; day += 1) {
+    try {
+      outcomes.push(await collectTagoItxCheongchunRoster(rosterInput({
+        requestBudget, waitImpl: async (milliseconds) => { delays.push(milliseconds); }, fetchImpl: outage,
+      })));
+    } catch (error) {
+      outcomes.push(error);
+    }
+  }
+  // 1일차: 예산 안에서 OD마다 재시도를 다 쓴 뒤 OD 실패(MISSING 증거)로 남는다. 2·3일차: 예산이 닿기 전에 수집을 멈춘다.
+  assert.equal(outcomes[0].completedOdCount, 0);
+  assert.equal(outcomes[0].failedOdCount, 2);
+  assert.ok(outcomes[0].failedOds.every(({ reasonCode }) => reasonCode === "PROVIDER_RESULT_FAILURE"));
+  for (const error of outcomes.slice(1)) {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, "TAGO_RETRY_TIME_BUDGET_EXHAUSTED");
+  }
+  const total = sum(delays);
+  assert.ok(total <= TAGO_RETRY_BUDGET_MS, `waited ${total}ms`);
+  // 1일차는 OD 2개 x 조회일 2개가 간격 합계를 모두 쓰고, 2·3일차는 남은 예산이 다음 대기를 못 받는 순간까지만 기다린다.
+  const firstDay = 4 * sum(BACKOFF);
+  const secondDay = waitUntilBudgetStops(TAGO_RETRY_BUDGET_MS - firstDay);
+  const thirdDay = waitUntilBudgetStops(TAGO_RETRY_BUDGET_MS - firstDay - secondDay);
+  assert.equal(total, firstDay + secondDay + thirdDay);
+  // 같은 run의 이후 호출도 남은 예산만 쓰고 합계는 끝까지 예산을 넘지 않는다.
+  await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
+    requestBudget, waitImpl: async (milliseconds) => { delays.push(milliseconds); }, fetchImpl: outage,
+  })), /TAGO_RETRY_TIME_BUDGET_EXHAUSTED/);
+  assert.ok(sum(delays) <= TAGO_RETRY_BUDGET_MS);
+});
+
+test("재시도 시간 예산은 요청 단위 한도와 함께 쓰이며 예산 안에서는 기존 동작과 같다", async () => {
+  const delays = [];
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const artifact = await collectTagoItxCheongchunRoster(rosterInput({
+    requestBudget, waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: realRosterFetch({ failures: { GetCtyCodeList: ["99", "99", "99", "99", "99"] } }),
+  }));
+  assert.equal(artifact.completedOdCount, 2);
+  assert.deepEqual(delays, BACKOFF.slice(0, 5));
+});
+
+test("재시도 유무와 관계없이 정상 응답의 rawResponseSha256·pageCount·evidenceHash는 서버가 준 정상 본문만으로 정해진다 (F2)", async () => {
+  // 독립 oracle: fetch가 실제로 돌려준 정상(00) 본문의 sha256을 직접 기록하고, 단일 페이지 operation의 기대값 sha256(bodySha)를 여기서 계산한다.
+  const withServedBodies = (inner) => {
+    const served = [];
+    const fetchImpl = async (url) => {
+      const response = await inner(url);
+      const text = await response.clone().text();
+      if (response.status === 200 && JSON.parse(text)?.response?.header?.resultCode === "00") {
+        served.push({ operation: new URL(url).pathname.split("/").at(-1), bodySha256: sha256(text) });
+      }
+      return response;
+    };
+    return { served, fetchImpl };
+  };
+  const failures = {
+    GetVhcleKndList: ["99", "503"], GetCtyCodeList: ["99", "throw"], GetCtyAcctoTrainSttnList: ["99", "99"], GetStrtpntAlocFndTrainInfo: ["99", "503", "throw"],
+  };
+  for (const [label, scenario] of [["clean", {}], ["retried", failures]]) {
+    const { served, fetchImpl } = withServedBodies(realRosterFetch({ failures: scenario }));
+    const artifact = await collectTagoItxCheongchunRoster(rosterInput({ fetchImpl, waitImpl: async () => {} }));
+    // 증거의 operation 순서(등급, 도시, 역…, OD…)에 맞춰 기대 해시를 만든다.
+    const expectedByOperation = new Map();
+    for (const { operation, bodySha256 } of served) {
+      expectedByOperation.set(operation, [...(expectedByOperation.get(operation) ?? []), sha256(bodySha256)]);
+    }
+    assert.equal(expectedByOperation.get("GetVhcleKndList")[0], sha256(REAL.sha256.gradeList), label);
+    assert.equal(expectedByOperation.get("GetCtyCodeList")[0], sha256(REAL.sha256.cityCodeList), label);
+    const cursor = new Map();
+    for (const operation of artifact.operations) {
+      const index = cursor.get(operation.operation) ?? 0;
+      cursor.set(operation.operation, index + 1);
+      assert.equal(operation.rawResponseSha256, expectedByOperation.get(operation.operation)[index], `${label} ${operation.operation}`);
+      assert.equal(operation.pageCount, 1, `${label} ${operation.operation}`);
+    }
+    // 실패한 시도의 본문(99)은 어떤 해시에도 들어가지 않는다.
+    assert.equal(JSON.stringify(artifact).includes(REAL.sha256.unknownError99), false, label);
+    assert.equal(JSON.stringify(artifact).includes(sha256(REAL.sha256.unknownError99)), false, label);
+    // evidenceHash는 자기 자신을 뺀 증거의 sha256이다(요청 수는 실제 시도 수를 반영한다).
+    const { evidenceHash, ...rest } = artifact;
+    assert.equal(evidenceHash, sha256(JSON.stringify(rest)), label);
+    if (label === "retried") {
+      const attempts = artifact.operations.reduce((sum, { requestCount }) => sum + requestCount, 0);
+      assert.equal(attempts, artifact.operations.length + 9, "재시도 9번(등급 2 + 도시 2 + 역 2 + OD 3)이 requestCount에 드러난다");
+    }
+  }
+});
+
+test("HTTP 408은 1초 대기 뒤 같은 요청을 다시 보낸다 (F3)", async () => {
+  const delays = [];
+  const calls = [];
+  let first = true;
+  const base = realRosterFetch({ calls });
+  const artifact = await collectTagoItxCheongchunRoster(rosterInput({
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      if (new URL(url).pathname.endsWith("GetVhcleKndList") && first) { first = false; return new Response("timeout", { status: 408 }); }
+      return base(url);
+    },
+  }));
+  assert.equal(artifact.completedOdCount, 2);
+  assert.deepEqual(delays, [1_000]);
+  assert.equal(calls.filter((operation) => operation === "GetVhcleKndList").length, 1, "408 이후 재시도 한 번만 base에 도달");
+  assert.equal(artifact.operations.find(({ operation }) => operation === "GetVhcleKndList").requestCount, 2);
+});
+
+test("본문을 읽다가 timeout·연결 끊김이 나도 같은 요청을 재시도하고, 끝까지 실패하면 transport failure다 (F4)", async () => {
+  const bodyFailure = (kind) => ({
+    ok: true, status: 200, headers: new Headers({ "content-type": "application/json" }),
+    body: null,
+    text: async () => { throw Object.assign(new Error("The operation was aborted due to timeout"), { name: kind }); },
+  });
+  for (const kind of ["TimeoutError", "AbortError"]) {
+    const delays = [];
+    const base = realRosterFetch();
+    let failures = 2;
+    const artifact = await collectTagoItxCheongchunRoster(rosterInput({
+      waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+      fetchImpl: async (url) => {
+        if (new URL(url).pathname.endsWith("GetCtyCodeList") && failures > 0) { failures -= 1; return bodyFailure(kind); }
+        return base(url);
+      },
+    }));
+    assert.equal(artifact.completedOdCount, 2, kind);
+    assert.deepEqual(delays, [1_000, 2_000], kind);
+    assert.equal(artifact.operations.find(({ operation }) => operation === "GetCtyCodeList").requestCount, 3, kind);
+  }
+  const delays = [];
+  const attempts = [];
+  await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => { attempts.push(url); return bodyFailure("TimeoutError"); },
+  })), /^Error: TAGO transport failure$/);
+  assert.equal(attempts.length, MAX_ATTEMPTS);
+  assert.deepEqual(delays, BACKOFF);
+});
+
+test("TAGO OD 단독 probe도 resultCode 99를 같은 규칙으로 재시도한다", async () => {
+  const delays = [];
+  const failures = { GetVhcleKndList: ["99"] };
+  const fetchImpl = realRosterFetch({ failures });
+  const artifact = await collectTagoItxCheongchunOd({
+    serviceKey: "key", departureDate: "2026-07-15", kricServiceDayCode: "8", now: new Date("2026-07-14T00:00:00.000Z"),
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); }, fetchImpl,
+  });
+  assert.deepEqual(delays, [1_000]);
+  assert.equal(artifact.operations[0].requestCount, 2);
+});
+
+test("TAGO grade와 corridor metadata는 후속 provider quota 전에 검증한다", async (context) => {
+  await context.test("invalid corridor", async () => {
+    let calls = 0;
+    await assert.rejects(collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: [
+        { canonicalStationId: "station-a", nameKo: "청량리", corridorSequence: 0, lineId: "line-54a7b980b7c3" },
+        ...canonicalRosterStations().slice(1),
+      ],
+      fetchImpl: async () => { calls += 1; return assert.fail("provider must not be called"); },
+    }), /canonicalStations corridor metadata is invalid/);
+    assert.equal(calls, 0);
+  });
+
+  await context.test("missing grade id", async () => {
+    let calls = 0;
+    await assert.rejects(collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async () => {
+        calls += 1;
+        return tagoCatalogResponse([{ vehiclekndnm: "ITX-청춘" }]);
+      },
+    }), /vehiclekndid is required/);
+    assert.equal(calls, 1);
+  });
+});
+
+test("TAGO invalid train number는 OD별 failed evidence로 보존한다", async () => {
+  const fallback = validFetch();
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    fetchImpl: async (url) => {
+      const response = await fallback(url);
+      const parsed = new URL(url);
+      if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+        || parsed.searchParams.get("depPlaceId") !== "NAT140873") return response;
+      const payload = await response.json();
+      payload.response.body.items.item[0].trainno = "ITX";
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  assert.equal(artifact.completedOdCount, 1);
+  assert.equal(artifact.failedOdCount, 1);
+  assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_SCHEMA_FAILURE");
+  assert.equal(
+    artifact.failedOds[0].failureContext,
+    "operation=GetStrtpntAlocFndTrainInfo,reason=field_contract_mismatch",
+  );
+});
+
+test("TAGO ITX roster는 OD 일부 실패를 count한 뒤 admission이 거부할 evidence를 반환한다", async () => {
+  const fallback = validFetch();
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    waitImpl: async () => {},
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+        && parsed.searchParams.get("depPlaceId") === "NAT140873") {
+        return new Response("unavailable", { status: 503 });
+      }
+      return fallback(url);
+    },
+  });
+
+  assert.equal(artifact.expectedOdCount, 2);
+  assert.equal(artifact.completedOdCount, 1);
+  assert.equal(artifact.failedOdCount, 1);
+  assert.deepEqual(artifact.failedOds, [{
+    departureStationId: "station-b",
+    arrivalStationId: "station-a",
+    // D와 D+1 두 창이 각각 첫 시도 + 재시도 전부(#1089, #1267)를 쓴다.
+    requestCount: 2 * MAX_ATTEMPTS,
+    reasonCode: "PROVIDER_HTTP_FAILURE",
+    failureContext: "operation=GetStrtpntAlocFndTrainInfo,httpStatus=503",
+  }]);
+  assert.equal(artifact.quotaSummary.odRequestCount, 2 + 2 * MAX_ATTEMPTS);
+  assert.equal(artifact.quotaSummary.failedOdRequestCount, 2 * MAX_ATTEMPTS);
+  assert.equal(
+    artifact.quotaSummary.actualRequestCount,
+    artifact.quotaSummary.catalogRequestCount + artifact.quotaSummary.odRequestCount,
+  );
+  assert.deepEqual(artifact.trainNumbers, ["2001"]);
+});
+
+test("TAGO ITX roster는 non-retryable 4xx를 HTTP failure로 기록한다", async () => {
+  const fallback = validFetch();
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+        && parsed.searchParams.get("depPlaceId") === "NAT140873") {
+        return new Response("not found", { status: 404 });
+      }
+      return fallback(url);
+    },
+  });
+
+  assert.equal(artifact.failedOdCount, 1);
+  assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_HTTP_FAILURE");
+  assert.equal(
+    artifact.failedOds[0].failureContext,
+    "operation=GetStrtpntAlocFndTrainInfo,httpStatus=404",
+  );
+});
+
+test("TAGO content-type mismatch는 응답 body를 취소한다", async () => {
+  const fallback = validFetch();
+  let cancellations = 0;
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+        && parsed.searchParams.get("depPlaceId") === "NAT140873") {
+        return new Response(new ReadableStream({
+          start(controller) { controller.enqueue(new TextEncoder().encode("not-json")); },
+          cancel() { cancellations += 1; },
+        }), { status: 200, headers: { "content-type": "text/plain" } });
+      }
+      return fallback(url);
+    },
+  });
+
+  assert.equal(cancellations, 2);
+  assert.equal(artifact.failedOdCount, 1);
+  assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_SCHEMA_FAILURE");
+});
+
+test("TAGO 공유 quota는 paginated OD의 실제 retry attempt마다 차감한다", async () => {
+  const fallback = validFetch();
+  const attempts = new Map();
+  let actualRequestCount = 0;
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    requestBudget: { limit: 10, remaining: 10 },
+    waitImpl: async () => {},
+    fetchImpl: async (url) => {
+      actualRequestCount += 1;
+      const parsed = new URL(url);
+      if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+        || parsed.searchParams.get("depPlaceId") !== "NAT130126") return fallback(url);
+      const pageNo = parsed.searchParams.get("pageNo");
+      const count = (attempts.get(pageNo) ?? 0) + 1;
+      attempts.set(pageNo, count);
+      if (count < 3) return new Response("retry", { status: 503 });
+      const row = {
+        trainno: "2001", traingradename: "ITX-청춘",
+        depplandtime: "20260715083000", arrplandtime: "20260715095000",
+        depplacename: "청량리", arrplacename: "춘천", adultcharge: "9800",
+      };
+      return tagoResponse(pageNo === "1" ? Array.from({ length: 100 }, () => row) : [row], 101);
+    },
+  }), /TAGO_QUOTA_BUDGET_EXHAUSTED/);
+  assert.equal(actualRequestCount, 10);
+  assert.deepEqual([...attempts.values()], [3, 3]);
+});
+
+test("TAGO materialization 실패는 완료된 OD matrix evidence를 error에 보존한다", async () => {
+  const names = new Map([["A", "청량리"], ["B", "평내호평"], ["C", "춘천"]]);
+  const times = new Map([
+    ["A:B", ["080000", "090000"]],
+    ["A:C", ["080100", "100000"]],
+    ["B:C", ["090500", "100000"]],
+    ["C:B", ["110000", "120000"]],
+    ["C:A", ["110000", "130000"]],
+    ["B:A", ["120500", "130000"]],
+  ]);
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: [...names].map(([canonicalStationId, nameKo], index) => ({
+      canonicalStationId, nameKo, corridorSequence: index + 1, lineId: "line-54a7b980b7c3",
+    })),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetVhcleKndList")) {
+        return tagoCatalogResponse([{ vehiclekndid: "07", vehiclekndnm: "ITX-청춘" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyCodeList")) {
+        return tagoCatalogResponse([{ citycode: "11", cityname: "수도권" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyAcctoTrainSttnList")) {
+        return tagoResponse([...names].map(([nodeid, nodename]) => ({ nodeid, nodename })));
+      }
+      const departure = parsed.searchParams.get("depPlaceId");
+      const arrival = parsed.searchParams.get("arrPlaceId");
+      const [departureTime, arrivalTime] = times.get(`${departure}:${arrival}`);
+      return tagoResponse([{
+        trainno: departure < arrival ? "2001" : "2002",
+        traingradename: "ITX-청춘",
+        depplandtime: `20260715${departureTime}`,
+        arrplandtime: `20260715${arrivalTime}`,
+        depplacename: names.get(departure),
+        arrplacename: names.get(arrival),
+        adultcharge: "9800",
+      }]);
+    },
+  }), (error) => {
+    assert.match(error.message, /TAGO_OD_TIME_CONFLICT/);
+    assert.equal(error.rosterEvidence.expectedOdCount, 6);
+    assert.equal(error.rosterEvidence.completedOdCount, 6);
+    assert.equal(error.rosterEvidence.failedOdCount, 0);
+    assert.match(error.rosterEvidence.stationSetHash, /^[a-f0-9]{64}$/);
+    assert.match(error.rosterEvidence.odMatrixHash, /^[a-f0-9]{64}$/);
+    assert.deepEqual(error.rosterEvidence.reconstructionSummary, {
+      trainCount: 2,
+      stopCount: 0,
+      conflictingTimestampCount: 1,
+      missingPairCount: 0,
+      duplicateOdCount: 0,
+    });
+    return true;
+  });
+});
+
+test("TAGO 필수 역 mapping 누락은 Unicode-safe 역 이름을 보존한다", async () => {
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetVhcleKndList")) {
+        return tagoCatalogResponse([{ vehiclekndid: "07", vehiclekndnm: "ITX-청춘" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyCodeList")) {
+        return tagoCatalogResponse([
+          { citycode: "11", cityname: "서울" },
+          { citycode: "32", cityname: "강원" },
+        ]);
+      }
+      if (parsed.pathname.endsWith("GetCtyAcctoTrainSttnList")) {
+        return parsed.searchParams.get("cityCode") === "11"
+          ? tagoResponse([{ nodeid: "NAT130126", nodename: "청량리" }])
+          : tagoResponse([]);
+      }
+      return assert.fail("OD provider must not be called");
+    },
+  }), /TAGO required station mapping is incomplete: 춘천/);
+});
+
+test("TAGO ITX roster는 공식 totalCount가 없는 OD 응답을 완료로 세지 않는다", async () => {
+  const fallback = validFetch();
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+        && parsed.searchParams.get("depPlaceId") === "NAT140873") {
+        const response = await fallback(url);
+        const payload = await response.json();
+        delete payload.response.body.totalCount;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return fallback(url);
+    },
+  });
+
+  assert.equal(artifact.expectedOdCount, 2);
+  assert.equal(artifact.completedOdCount, 1);
+  assert.equal(artifact.failedOdCount, 1);
+  assert.deepEqual(artifact.failedOds, [{
+    departureStationId: "station-b",
+    arrivalStationId: "station-a",
+    requestCount: 2,
+    reasonCode: "PROVIDER_SCHEMA_FAILURE",
+    failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=schema_mismatch,totalCount,bodyFields=items,numOfRows,pageNo",
+  }]);
+  assert.deepEqual(artifact.trainNumbers, ["2001"]);
+});
+
+test("TAGO paginated schema mismatch는 값 없이 정렬된 body field만 진단한다", async () => {
+  const fallback = validFetch();
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      const response = await fallback(url);
+      if (!parsed.pathname.endsWith("GetCtyAcctoTrainSttnList")) return response;
+      const payload = await response.json();
+      delete payload.response.body.totalCount;
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  }), /^Error: TAGO GetCtyAcctoTrainSttnList schema mismatch: totalCount bodyFields=items,numOfRows,pageNo$/);
+});
+
+test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 않는다", async (context) => {
+  await context.test("요청일 02:59는 이전 service day로 제외하고 03:00은 target에 포함", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260715") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [
+          { ...row, trainno: "2034", depplandtime: "20260715025900", arrplandtime: "20260715030400" },
+          { ...row, trainno: "2035", depplandtime: "20260715030000", arrplandtime: "20260715030500" },
+        ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(artifact.trainNumbers.includes("2034"), false);
+    assert.equal(artifact.trainNumbers.includes("2035"), true);
+  });
+
+  await context.test("제외될 요청일 02:59 row도 schema와 station을 먼저 검증", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [
+          { ...row, depplandtime: "20260715025900", arrplandtime: "20260715030400", depplacename: "잘못된역" },
+          { ...row, depplandtime: "20260715030000", arrplandtime: "20260715030500" },
+        ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(artifact.failedOdCount, 1);
+    assert.equal(
+      artifact.failedOds[0].failureContext,
+      "operation=GetStrtpntAlocFndTrainInfo,reason=station_mismatch",
+    );
+  });
+
+  await context.test("익일 02:59 추가 row는 requested service day target에 포함한다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT140873") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [
+          row,
+          { ...row, trainno: "2035", depplandtime: "20260716025900", arrplandtime: "20260716025930" },
+        ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.itineraries.some(({ trainNumber }) => trainNumber === "2035"), true);
+  });
+
+  await context.test("raw calendar date보다 derived service day가 target projection을 결정", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [parsed.searchParams.get("depPlandTime") === "20260715"
+          ? { ...row, trainno: "2035", depplandtime: "20260715000100", arrplandtime: "20260715000400" }
+          : { ...row, trainno: "2034", depplandtime: "20260716000100", arrplandtime: "20260716000400" }];
+        payload.response.body.totalCount = 1;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.itineraries.filter(({ trainNumber }) => trainNumber === "2035").length, 0);
+    assert.equal(
+      artifact.itineraries.find(({ trainNumber }) => trainNumber === "2034")?.departureAt,
+      "2026-07-16T00:01:00+09:00",
+    );
+  });
+
+  await context.test("window 내부 target duplicate는 pair failure로 닫힌다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260715") return response;
+        const payload = await response.json();
+        const row = {
+          ...payload.response.body.items.item[0],
+          trainno: "2035",
+          depplandtime: "20260715083000",
+          arrplandtime: "20260715095000",
+        };
+        payload.response.body.items.item = [row, { ...row }];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    assert.equal(artifact.completedOdCount, 1);
+    assert.equal(artifact.failedOdCount, 1);
+  });
+
+  for (const scenario of [
+    {
+      name: "요청과 다른 역",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=station_mismatch",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800"],
+      mutate: (payload) => {
+        payload.response.body.items.item[0].depplacename = "청량리";
+      },
+    },
+    {
+      name: "익일 03:00 추가 출발",
+      expectedSuccess: true,
+      mutate: (payload) => {
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [
+          row,
+          { ...row, trainno: "2035", depplandtime: "20260716030000", arrplandtime: "20260716031000" },
+        ];
+        payload.response.body.totalCount = 2;
+      },
+    },
+    {
+      name: "요청 전일 출발",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_calendar_day,queryCalendarOffset=1",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800", "20260714083000", "20260714095000"],
+      mutate: (payload) => {
+        payload.response.body.items.item[0].depplandtime = "20260714083000";
+        payload.response.body.items.item[0].arrplandtime = "20260714095000";
+      },
+    },
+    {
+      name: "요청일 이틀 뒤 출발",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=non_adjacent_calendar_day,queryCalendarOffset=0",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800", "20260717083000", "20260717095000"],
+      mutate: (payload) => {
+        payload.response.body.items.item[0].depplandtime = "20260717083000";
+        payload.response.body.items.item[0].arrplandtime = "20260717095000";
+      },
+    },
+    {
+      name: "불가능한 달력 날짜",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=field_contract_mismatch",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800", "20260230083000", "20260230095000"],
+      mutate: (payload) => {
+        payload.response.body.items.item[0].depplandtime = "20260230083000";
+        payload.response.body.items.item[0].arrplandtime = "20260230095000";
+      },
+    },
+  ]) {
+    await context.test(scenario.name, async () => {
+      const fallback = validFetch();
+      const artifact = await collectTagoItxCheongchunRoster({
+        serviceKey: "fixture-credential-must-not-leak",
+        serviceDate: "20260715",
+        kricServiceDayCode: "8",
+        canonicalStations: canonicalRosterStations(),
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          const response = await fallback(url);
+          if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+            || parsed.searchParams.get("depPlaceId") !== "NAT140873") return response;
+          const payload = await response.json();
+          scenario.mutate(payload);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      });
+
+      if (scenario.expectedSuccess) {
+        assert.equal(artifact.completedOdCount, 2);
+        assert.equal(artifact.failedOdCount, 0);
+        assert.equal(artifact.itineraries.some(({ trainNumber }) => trainNumber === "2035"), false);
+        return;
+      }
+      assert.equal(artifact.completedOdCount, 1);
+      assert.equal(artifact.failedOdCount, 1);
+      assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_SCHEMA_FAILURE");
+      assert.equal(artifact.failedOds[0].failureContext, scenario.failureContext);
+      assert.equal(artifact.failedOds[0].requestCount, 2);
+      assert.deepEqual(Object.keys(artifact.failedOds[0]).sort(), ["arrivalStationId", "departureStationId", "failureContext", "reasonCode", "requestCount"]);
+      const serializedFailure = JSON.stringify(artifact.failedOds[0]);
+      assert.doesNotMatch(serializedFailure, /depplandtime|arrplandtime|serviceKey|https?:\/\//i);
+      for (const rawValue of scenario.rawValues) {
+        assert.equal(serializedFailure.includes(rawValue), false);
+      }
+    });
+  }
+
+  await context.test("D+1 query의 요청일 03:00 이전 행은 previous service day로 닫힌다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "fixture-credential-must-not-leak",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT140873"
+          || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+        const payload = await response.json();
+        payload.response.body.items.item[0].depplandtime = "20260715020000";
+        payload.response.body.items.item[0].arrplandtime = "20260715021000";
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(artifact.completedOdCount, 1);
+    assert.equal(artifact.failedOdCount, 1);
+    assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_SCHEMA_FAILURE");
+    assert.equal(
+      artifact.failedOds[0].failureContext,
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_service_day,queryCalendarOffset=1",
+    );
+    assert.equal(artifact.failedOds[0].requestCount, 2);
+    const serializedFailure = JSON.stringify(artifact.failedOds[0]);
+    assert.doesNotMatch(serializedFailure, /depplandtime|arrplandtime|serviceKey|https?:\/\//i);
+    for (const rawValue of ["fixture-credential-must-not-leak", "20260715", "20260715020000", "20260715021000", "NAT140873", "NAT130126"]) {
+      assert.equal(serializedFailure.includes(rawValue), false);
+    }
+  });
+
+  await context.test("D+1 query date mismatch는 sanitized queryCalendarOffset=1로 닫힌다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "fixture-credential-must-not-leak",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT140873"
+          || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+        const payload = await response.json();
+        payload.response.body.items.item[0].depplandtime = "20260717030000";
+        payload.response.body.items.item[0].arrplandtime = "20260717031000";
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(artifact.completedOdCount, 1);
+    assert.equal(artifact.failedOdCount, 1);
+    assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_SCHEMA_FAILURE");
+    assert.equal(
+      artifact.failedOds[0].failureContext,
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=non_adjacent_calendar_day,queryCalendarOffset=1",
+    );
+    assert.equal(artifact.failedOds[0].requestCount, 2);
+    const serializedFailure = JSON.stringify(artifact.failedOds[0]);
+    assert.doesNotMatch(serializedFailure, /depplandtime|arrplandtime|serviceKey|https?:\/\//i);
+    for (const rawValue of ["fixture-credential-must-not-leak", "20260716", "20260717030000", "20260717031000", "NAT140873", "NAT130126"]) {
+      assert.equal(serializedFailure.includes(rawValue), false);
+    }
+  });
+});
+
+test("TAGO roster matrix는 provider station catalog와 canonical 경춘선의 교집합을 증명한다", async () => {
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "key",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: [
+      { canonicalStationId: "station-x", nameKo: "회기", corridorSequence: 3, lineId: "line-54a7b980b7c3" },
+      ...canonicalRosterStations(),
+    ],
+    fetchImpl: validFetch(),
+  });
+
+  assert.equal(artifact.canonicalStationCount, 3);
+  assert.equal(artifact.rosterStationCount, 2);
+  assert.deepEqual(artifact.excludedCanonicalStations, [
+    { canonicalStationId: "station-x", nameKo: "회기", reasonCode: "NOT_IN_TAGO_TRAIN_STATION_CATALOG" },
+  ]);
+  assert.equal(artifact.expectedOdCount, 2);
+});
+
+test("TAGO ITX-청춘 probe는 grade·station·OD를 연결하고 secret을 제거한다", async () => {
+  const secret = "never-print-data-key";
+  const artifact = await collectTagoItxCheongchunOd({
+    serviceKey: secret,
+    departureDate: "2026-07-14",
+    kricServiceDayCode: "8",
+    now: new Date("2026-07-13T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      assert.equal(parsed.searchParams.get("serviceKey"), secret);
+      if (parsed.pathname.endsWith("GetVhcleKndList")) {
+        return tagoResponse([{ vehiclekndid: "07", vehiclekndnm: "ITX-청춘" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyCodeList")) {
+        return tagoResponse([{ citycode: "11", cityname: "서울" }, { citycode: "32", cityname: "강원" }]);
+      }
+      if (parsed.pathname.endsWith("GetCtyAcctoTrainSttnList")) {
+        return parsed.searchParams.get("cityCode") === "11"
+          ? tagoResponse([{ nodeid: "NAT130126", nodename: "청량리" }])
+          : tagoResponse([{ nodeid: "NAT140873", nodename: "춘천" }]);
+      }
+      return tagoResponse([{
+        trainno: "2001", traingradename: "ITX-청춘", depplandtime: "20260714083000",
+        arrplandtime: "20260714095000", depplacename: "청량리", arrplacename: "춘천", adultcharge: "9800",
+      }]);
+    },
+  });
+
+  assert.deepEqual(artifact.trainGrade, { code: "07", name: "ITX-청춘", serviceId: "ITX_CHEONGCHUN" });
+  assert.equal(artifact.departureStation.providerStationId, "NAT130126");
+  assert.equal(artifact.arrivalStation.providerStationId, "NAT140873");
+  assert.deepEqual(artifact.trainNumbers, ["2001"]);
+  assert.equal(artifact.kricServiceDayCode, "8");
+  assert.equal(artifact.itineraries[0].adultFareWon, 9800);
+  assert.equal(artifact.pickupDropoff.status, "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE");
+  assert.doesNotMatch(JSON.stringify(artifact), new RegExp(secret));
+});
+
+test("TAGO ITX-청춘 probe도 catalog와 OD 전체에서 cooldown을 한 번만 사용한다", async () => {
+  const fallback = validFetch({ useQueryDate: true });
+  const delays = [];
+  const operations = [];
+  let gradeCalls = 0;
+  let captured;
+  await assert.rejects(collectTagoItxCheongchunOd({
+    serviceKey: "fixture-key-must-not-leak",
+    departureDate: "2026-07-14",
+    kricServiceDayCode: "8",
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      const operation = parsed.pathname.split("/").at(-1);
+      operations.push(operation);
+      if (parsed.pathname.endsWith("GetVhcleKndList") && gradeCalls++ === 0) {
+        return new Response("first-provider-body-must-not-leak", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      if (parsed.pathname.endsWith("GetCtyCodeList")) {
+        return new Response("second-provider-body-must-not-leak", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      return fallback(url);
+    },
+  }), (error) => {
+    captured = error;
+    return error?.name === "TagoRateLimitedError"
+      && error.message === "TAGO GetCtyCodeList HTTP 429"
+      && error.attemptCount === 1
+      && error.cooldownUsed === true;
+  });
+
+  assert.deepEqual(delays, [1_000]);
+  assert.deepEqual(operations, ["GetVhcleKndList", "GetVhcleKndList", "GetCtyCodeList"]);
+  const serialized = JSON.stringify(captured);
+  for (const rawValue of [
+    "fixture-key-must-not-leak",
+    "first-provider-body-must-not-leak",
+    "second-provider-body-must-not-leak",
+  ]) {
+    assert.equal(serialized.includes(rawValue), false);
+  }
+});
+
+function od(trainNumber, departureStationId, arrivalStationId, departureAt, arrivalAt) {
+  return { trainNumber, departureStationId, arrivalStationId, departureAt, arrivalAt };
+}
+
+function corridorStations() {
+  return [
+    { stationId: "A", nameKo: "가", corridorSequence: 1, lineId: "line-6e39be0cb6e2" },
+    { stationId: "B", nameKo: "나", corridorSequence: 2, lineId: "line-54a7b980b7c3" },
+    { stationId: "C", nameKo: "다", corridorSequence: 3, lineId: "line-54a7b980b7c3" },
+  ];
+}
+
+function canonicalRosterStations() {
+  return [
+    { canonicalStationId: "station-a", nameKo: "청량리", corridorSequence: 1, lineId: "line-54a7b980b7c3" },
+    { canonicalStationId: "station-b", nameKo: "춘천", corridorSequence: 2, lineId: "line-54a7b980b7c3" },
+  ];
+}
+
+test("TAGO ITX-청춘 probe는 grade 없음·provider failure·역순 시간을 거부한다", async (context) => {
+  await context.test("KRIC service day code missing", async () => {
+    await assert.rejects(collectTagoItxCheongchunOd({
+      serviceKey: "key", departureDate: "2026-07-14",
+    }), /kricServiceDayCode must be 7, 8, or 9/);
+  });
+  await context.test("grade missing", async () => {
+    await assert.rejects(collectTagoItxCheongchunOd({
+      serviceKey: "key", departureDate: "2026-07-14", kricServiceDayCode: "8",
+      fetchImpl: async () => tagoResponse([{ vehiclekndid: "00", vehiclekndnm: "KTX" }]),
+    }), /ITX-청춘 train grade is missing/);
+  });
+  await context.test("provider failure", async () => {
+    await assert.rejects(collectTagoItxCheongchunOd({
+      serviceKey: "key", departureDate: "2026-07-14", kricServiceDayCode: "8", waitImpl: async () => {},
+      fetchImpl: async () => new Response(JSON.stringify({ response: { header: { resultCode: "99" } } }), {
+        status: 200, headers: { "content-type": "application/json" },
+      }),
+    }), /provider resultCode 99/);
+  });
+  await context.test("duplicate train number", async () => {
+    await assert.rejects(collectTagoItxCheongchunOd({
+      serviceKey: "key", departureDate: "2026-07-14", kricServiceDayCode: "8",
+      fetchImpl: validFetch({ duplicateOd: true, useQueryDate: true }),
+    }), /duplicate train number/);
+  });
+  await context.test("arrival before departure", async () => {
+    await assert.rejects(collectTagoItxCheongchunOd({
+      serviceKey: "key", departureDate: "2026-07-14", kricServiceDayCode: "8",
+      fetchImpl: validFetch({ reverseTime: true, useQueryDate: true }),
+    }), /arrival must follow departure/);
+  });
+});
+
+function validFetch({
+  duplicateOd = false,
+  reverseTime = false,
+  responseServiceDate = "20260715",
+  useQueryDate = false,
+} = {}) {
+  return async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("GetVhcleKndList")) {
+      return tagoResponse([{ vehiclekndid: "07", vehiclekndnm: "ITX-청춘" }]);
+    }
+    if (parsed.pathname.endsWith("GetCtyCodeList")) {
+      return tagoResponse([{ citycode: "11", cityname: "서울" }, { citycode: "32", cityname: "강원" }]);
+    }
+    if (parsed.pathname.endsWith("GetCtyAcctoTrainSttnList")) {
+      return parsed.searchParams.get("cityCode") === "11"
+        ? tagoResponse([{ nodeid: "NAT130126", nodename: "청량리" }])
+        : tagoResponse([{ nodeid: "NAT140873", nodename: "춘천" }]);
+    }
+    const reverse = parsed.searchParams.get("depPlaceId") === "NAT140873";
+    const serviceDate = useQueryDate
+      ? parsed.searchParams.get("depPlandTime") ?? "20260714"
+      : responseServiceDate;
+    const row = {
+      trainno: reverse ? "2002" : "2001",
+      traingradename: "ITX-청춘",
+      depplandtime: `${serviceDate}${reverse ? "103000" : "083000"}`,
+      arrplandtime: reverseTime
+        ? `${serviceDate}082000`
+        : `${serviceDate}${reverse ? "115000" : "095000"}`,
+      depplacename: reverse ? "춘천" : "청량리",
+      arrplacename: reverse ? "청량리" : "춘천",
+      adultcharge: "9800",
+    };
+    return tagoResponse(duplicateOd ? [row, row] : [row]);
+  };
+}
+
+// ---- #1267: 운행일 OD 수집이 공급자 장애 구간에 걸려도 같은 요청을 끝까지 다시 보내 회복한다 ----
+// fixture는 itx-current-promotion run 38781966262(2026-10-15T18:00Z)의 provider-response-capture에서 꺼낸 실제 응답 바이트다.
+// 그 run은 토요일(20261017) 용산→왕십리 OD가 resultCode 99를 두 조회일 모두 6번(첫 시도 + 재시도 5) 받아 OD 1개가 빠졌고 운행일 전체가 MISSING이 됐다.
+const REAL_1267 = JSON.parse(readFileSync(new URL("./test-fixtures/tago-itx-run-38781966262-responses.json", import.meta.url), "utf8"));
+const jsonBody = (text) => new Response(text, { status: 200, headers: REAL_HEADERS });
+// 실제 run에서 관측한 값(capture 복호): 첫 99부터 정상 복귀까지 재시도 대기 합계 108초 이상, run 전체 재시도 대기 131초.
+const OBSERVED_OUTAGE_MS = 108_000;
+const OBSERVED_RUN_RETRY_WAIT_MS = 131_000;
+// 같은 run의 수집 step 소요 시간(Actions 기록): 정상일 때 최대 17분 13초(run 38062621511), 장애 밤 60분 37초(run 38781966262).
+const OBSERVED_NORMAL_COLLECT_MS = 18 * 60_000;
+const OBSERVED_DEGRADED_COLLECT_MS = 61 * 60_000;
+
+test("#1267 fixture는 capture record의 bodySha256과 위치(run·artifact·index·요청)에 결속된다", () => {
+  const { provenance } = REAL_1267;
+  assert.equal(provenance.runId, "38781966262");
+  assert.equal(provenance.artifactName, "itx-current-promotion-38781966262");
+  assert.equal(provenance.file, "provider-response-capture.json");
+  assert.match(provenance.captureContentSha256, /^[0-9a-f]{64}$/);
+  assert.equal(provenance.captureRequestCount, 1929);
+  const bodies = new Map([
+    ...["unknownError99", "externalApi504", "gradeList", "cityCodeList", "seoulStationList",
+      "yongsanToWangsimni20261016", "yongsanToWangsimni20261017", "wangsimniToYongsan20261016", "wangsimniToYongsan20261017"]
+      .map((name) => [provenance.records[name], REAL_1267[name], name]).map(([record, text, name]) => [name, { record, text }]),
+    ...Object.entries(REAL_1267.saturdayOd).map(([key, text]) => [key, { record: provenance.saturdayOdRecords[key], text }]),
+  ]);
+  assert.equal(bodies.size, 9 + 12);
+  const indexes = new Set();
+  for (const [name, { record, text }] of bodies) {
+    assert.ok(record, name);
+    assert.equal(sha256(text), record.bodySha256, name);
+    assert.ok(Number.isInteger(record.index) && record.index >= 0 && record.index < provenance.captureRequestCount, name);
+    indexes.add(record.index);
+  }
+  assert.equal(indexes.size, bodies.size, "서로 다른 capture record에서 꺼냈다");
+  // 토요일 OD 응답은 capture의 토요일 구간에서, 키와 같은 요청(출발·도착·조회일)의 record에서 꺼냈다.
+  const [from, to] = provenance.saturdayRecordIndexRange;
+  for (const [key, record] of Object.entries(provenance.saturdayOdRecords)) {
+    const [dep, arr, date] = key.split(">");
+    const query = Object.fromEntries(record.query);
+    assert.ok(record.index >= from && record.index <= to, key);
+    assert.equal(record.path, "/1613000/TrainInfo/GetStrtpntAlocFndTrainInfo", key);
+    assert.deepEqual([query.depPlaceId, query.arrPlaceId, query.depPlandTime], [dep, arr, date], key);
+  }
+  // 장애 응답 본문은 실제로 resultCode 99다.
+  assert.equal(JSON.parse(REAL_1267.unknownError99).header.resultCode, "99");
+  assert.equal(JSON.parse(REAL_1267.externalApi504).header.resultCode, "99");
+  assert.match(REAL_1267.externalApi504, /\[504\]/);
+  assert.ok(JSON.stringify(REAL_1267).includes("serviceKey") === false);
+});
+
+test("#1267 재시도 정책 불변식: 간격은 단조 증가 후 상한에서 멈추고, 합계는 관측 장애보다 길며, run 예산은 요청 하나가 쓰는 시간의 여러 배다", () => {
+  assert.equal(BACKOFF.length, TAGO_TRANSIENT_RETRY_LIMIT);
+  assert.ok(TAGO_TRANSIENT_RETRY_LIMIT > 5, "옛 한도(5번)로는 실패 run의 장애를 못 덮는다");
+  assert.ok(BACKOFF.every((delay, index) => index === 0 || delay >= BACKOFF[index - 1]), "단조 증가(비감소)");
+  assert.ok(BACKOFF.every((delay) => delay >= 1_000 && delay <= TAGO_TRANSIENT_BACKOFF_CAP_MS));
+  assert.equal(BACKOFF[0], 1_000);
+  assert.equal(BACKOFF.at(-1), TAGO_TRANSIENT_BACKOFF_CAP_MS, "마지막 간격이 상한이다");
+  assert.ok(BACKOFF.slice(0, -1).some((delay) => delay < TAGO_TRANSIENT_BACKOFF_CAP_MS));
+  assert.equal(TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS, sum(BACKOFF), "요청 하나의 대기 합계는 간격 배열의 합이다");
+  assert.ok(TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS > OBSERVED_OUTAGE_MS, "관측한 장애 길이를 한 요청 안에서 덮는다");
+  assert.ok(TAGO_RETRY_BUDGET_MS >= 4 * TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS, "한도를 다 쓰는 요청 여러 개를 감당한다");
+  assert.ok(TAGO_RETRY_BUDGET_MS >= 4 * OBSERVED_RUN_RETRY_WAIT_MS, "실패 run이 쓴 재시도 대기의 여러 배다");
+  assert.ok(TAGO_REQUEST_TIMEOUT_MS > 0 && TAGO_REQUEST_TIMEOUT_MS <= 30_000);
+});
+
+// 토요일(20261017) 용산·옥수·상봉 roster. 응답은 실제 토요일 운행일 응답 바이트다(운행 없음 00/0건 포함).
+// 가상 시계(clock)는 waitImpl과 느린 시도(attemptMs)만 움직인다.
+// outage는 해당 operation의 첫 요청 시각부터 lengthMs 동안 모든 요청에 resultCode 99 본문을 돌려준다.
+// slowFirstAttempt는 같은 요청의 첫 시도마다 attemptMs를 쓰고 99를 돌려준 뒤 다음 시도부터 정상 응답한다(느린 실패가 반복되는 공급자).
+function saturdayProvider({ outage = null, slowFirstAttempt = null, clock = { now: 0 } } = {}) {
+  const delays = [];
+  const calls = [];
+  const seen = new Set();
+  let outageStartedAt = null;
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    const operation = parsed.pathname.split("/").at(-1);
+    calls.push({ operation, at: clock.now });
+    if (outage && operation === outage.operation) {
+      outageStartedAt ??= clock.now;
+      if (clock.now < outageStartedAt + outage.lengthMs) {
+        clock.now += outage.attemptMs ?? 0;
+        return jsonBody(REAL_1267[outage.body]);
+      }
+    }
+    if (slowFirstAttempt && operation === slowFirstAttempt.operation && !seen.has(String(url))) {
+      seen.add(String(url));
+      clock.now += slowFirstAttempt.attemptMs;
+      return jsonBody(REAL_1267[slowFirstAttempt.body]);
+    }
+    if (operation === "GetVhcleKndList") return jsonBody(REAL_1267.gradeList);
+    if (operation === "GetCtyCodeList") return jsonBody(REAL_1267.cityCodeList);
+    if (operation === "GetCtyAcctoTrainSttnList") {
+      return parsed.searchParams.get("cityCode") === "11" ? jsonBody(REAL_1267.seoulStationList) : tagoResponse([]);
+    }
+    const key = [parsed.searchParams.get("depPlaceId"), parsed.searchParams.get("arrPlaceId"), parsed.searchParams.get("depPlandTime")].join(">");
+    assert.ok(REAL_1267.saturdayOd[key], `fixture has no response for ${key}`);
+    return jsonBody(REAL_1267.saturdayOd[key]);
+  };
+  const waitImpl = async (milliseconds) => { delays.push(milliseconds); clock.now += milliseconds; };
+  return { fetchImpl, waitImpl, clockImpl: () => clock.now, delays, calls, clock };
+}
+
+const saturdayStations = () => [
+  { canonicalStationId: "station-yongsan", nameKo: "용산", corridorSequence: 1, lineId: "line-54a7b980b7c3" },
+  { canonicalStationId: "station-oksu", nameKo: "옥수", corridorSequence: 2, lineId: "line-54a7b980b7c3" },
+  { canonicalStationId: "station-sangbong", nameKo: "상봉", corridorSequence: 7, lineId: "line-54a7b980b7c3" },
+];
+const saturdayInput = (provider, extra = {}) => ({
+  serviceKey: "fixture-credential-must-not-leak", serviceDate: "20261017", kricServiceDayCode: "7",
+  canonicalStations: saturdayStations(), now: new Date("2026-10-16T00:00:00.000Z"),
+  fetchImpl: provider.fetchImpl, waitImpl: provider.waitImpl, clockImpl: provider.clockImpl, ...extra,
+});
+
+// 독립 oracle: fixture 본문에서 토요일 서비스일(20261017) 출발 행 수를 직접 센다. 20261018 조회 창의 행은 다음 날이라 제외한다.
+const saturdayServiceDayRows = () => Object.entries(REAL_1267.saturdayOd)
+  .filter(([key]) => key.endsWith(">20261017"))
+  .flatMap(([, text]) => JSON.parse(text).response.body.items.item)
+  .filter((row) => row.depplandtime.startsWith("20261017"));
+
+test("#1267 장애 없는 토요일 roster는 운행 없음(00, 0건) OD를 결손이 아니라 완료로 센다", async () => {
+  const provider = saturdayProvider();
+  const artifact = await collectTagoItxCheongchunRoster(saturdayInput(provider));
+  assert.equal(artifact.expectedOdCount, 6);
+  assert.equal(artifact.completedOdCount, 6);
+  assert.equal(artifact.failedOdCount, 0);
+  assert.equal(artifact.failedOds, undefined);
+  assert.equal(artifact.itineraries.length, saturdayServiceDayRows().length);
+  assert.ok(artifact.itineraries.length > 0);
+  assert.deepEqual(provider.delays, []);
+});
+
+test("#1267 토요일 OD가 관측한 길이의 장애 구간에 걸려도 같은 요청을 다시 보내 모든 OD를 완료한다", async () => {
+  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: OBSERVED_OUTAGE_MS, body: "unknownError99" } });
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const artifact = await collectTagoItxCheongchunRoster(saturdayInput(provider, { requestBudget }));
+  assert.equal(artifact.completedOdCount, 6);
+  assert.equal(artifact.failedOdCount, 0);
+  assert.equal(artifact.failedOds, undefined);
+  assert.equal(artifact.itineraries.length, saturdayServiceDayRows().length);
+  // 같은 요청의 재시도일 뿐이다: 모든 대기는 정해진 간격이고, 한 요청 안의 대기 합계는 간격 합계를 넘지 않는다.
+  assert.ok(provider.delays.length > 0);
+  assert.ok(provider.delays.every((delay) => BACKOFF.includes(delay)));
+  assert.ok(sum(provider.delays) <= TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS);
+  // 회복한 응답의 증거에는 실패한 시도의 본문이 들어가지 않는다. 시도 수는 요청 수와 예산 차감에 모두 드러난다.
+  assert.equal(JSON.stringify(artifact).includes("UNKNOWN_ERROR"), false);
+  const cityCount = JSON.parse(REAL_1267.cityCodeList).response.body.items.item.length;
+  assert.equal(artifact.operations.length, 1 + 1 + cityCount + 6 * 2);
+  assert.equal(requestBudget.limit - requestBudget.remaining, provider.calls.length);
+  assert.equal(artifact.quotaSummary.actualRequestCount, provider.calls.length);
+  assert.ok(provider.calls.length > 1 + 1 + cityCount + 6 * 2, "재시도 요청이 실제로 나갔다");
+});
+
+test("#1267 역 목록 요청이 장애 구간에 걸려도 같은 요청을 다시 보내 roster를 끝낸다 (실제 [504] 응답 바이트)", async () => {
+  const provider = saturdayProvider({ outage: { operation: "GetCtyAcctoTrainSttnList", lengthMs: OBSERVED_OUTAGE_MS, body: "externalApi504" } });
+  const artifact = await collectTagoItxCheongchunRoster(saturdayInput(provider));
+  assert.equal(artifact.completedOdCount, 6);
+  assert.equal(artifact.failedOdCount, 0);
+  assert.ok(provider.delays.length > 0);
+  assert.equal(JSON.stringify(artifact).includes("외부 API"), false);
+});
+
+test("#1267 장애가 한 요청의 재시도 간격 합계보다 길면 지금처럼 OD를 결손으로 남기고 SUPPORTED로 덮지 않는다", async () => {
+  // 첫 OD는 두 조회일 모두 재시도를 다 쓰고도 99라 결손이다. 이후 OD부터는 복귀한다.
+  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: 2 * TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS + 60_000, body: "unknownError99" } });
+  const artifact = await collectTagoItxCheongchunRoster(saturdayInput(provider));
+  assert.ok(artifact.failedOdCount >= 1);
+  assert.equal(artifact.completedOdCount + artifact.failedOdCount, artifact.expectedOdCount);
+  assert.ok(artifact.failedOds.every(({ reasonCode }) => reasonCode === "PROVIDER_RESULT_FAILURE"));
+  assert.equal(artifact.materialization, undefined, "결손이 있으면 OD 행을 만들지 않는다");
+  // 결손 OD의 itinerary를 추정해 채우지 않는다.
+  const failedKeys = new Set(artifact.failedOds.map(({ departureStationId, arrivalStationId }) => `${departureStationId}>${arrivalStationId}`));
+  assert.ok(artifact.itineraries.every(({ departureStationId, arrivalStationId }) => !failedKeys.has(`${departureStationId}>${arrivalStationId}`)));
+});
+
+test("#1267 끝나지 않는 장애는 run 단위 재시도 예산 안에서 멈추고 예산을 넘겨 기다리지 않는다", async () => {
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: 10 * 3_600_000, body: "unknownError99" } });
+  await assert.rejects(collectTagoItxCheongchunRoster(saturdayInput(provider, { requestBudget })), /^Error: TAGO_RETRY_TIME_BUDGET_EXHAUSTED$/);
+  const total = sum(provider.delays);
+  assert.ok(total <= TAGO_RETRY_BUDGET_MS, `waited ${total}ms`);
+  assert.ok(total > TAGO_RETRY_BUDGET_MS - BACKOFF.at(-1), "다음 대기가 예산을 넘는 순간에만 멈춘다");
+  // 일일 한도: 이 run이 쓴 요청은 시도마다 차감되고 10,000건 한도의 3분의 1도 쓰지 않는다.
+  assert.equal(requestBudget.limit - requestBudget.remaining, provider.calls.length);
+  assert.ok(provider.calls.length < 10_000 / 3);
+});
+
+// F2: run 재시도 예산은 대기뿐 아니라 일시 오류로 끝난 시도가 쓴 경과 시간(벽시계)도 센다.
+// 최악 재시도 시간 = 예산 + 한도를 다 쓴 요청마다 세지 않는 마지막 시도 하나(요청 timeout). 한도를 다 쓰는 요청은 간격 합계 이상의 예산을 쓰므로 최대 floor(예산 / 합계)개다.
+const worstRetryAddedMs = () => TAGO_RETRY_BUDGET_MS
+  + (Math.floor(TAGO_RETRY_BUDGET_MS / TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS) + 1) * TAGO_REQUEST_TIMEOUT_MS;
+
+test("#1267 느린 실패가 반복되면 대기가 아니라 경과 시간 기준으로 예산이 닿아 수집을 멈춘다 (가상 시계)", async () => {
+  const clock = { now: 0 };
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const waits = [];
+  const outcomes = [];
+  // 모든 OD 요청의 첫 시도가 요청 timeout만큼 걸린 뒤 99로 끝나고, 재시도 한 번(1초 대기)이면 정상이다. 대기만 세면 이 패턴은 예산(수백 초)에 거의 닿지 않는다.
+  for (let day = 0; day < 12; day += 1) {
+    const provider = saturdayProvider({ slowFirstAttempt: { operation: "GetStrtpntAlocFndTrainInfo", attemptMs: TAGO_REQUEST_TIMEOUT_MS, body: "unknownError99" }, clock });
+    try {
+      outcomes.push(await collectTagoItxCheongchunRoster(saturdayInput(provider, { requestBudget })));
+    } catch (error) {
+      outcomes.push(error);
+      waits.push(...provider.delays);
+      break;
+    }
+    waits.push(...provider.delays);
+  }
+  const stopped = outcomes.at(-1);
+  assert.ok(stopped instanceof Error, "예산이 닿기 전에 12일치 수집이 모두 끝났다");
+  assert.equal(stopped.message, "TAGO_RETRY_TIME_BUDGET_EXHAUSTED");
+  assert.ok(outcomes.length > 1, "예산이 닿기 전에 최소 하루치는 회복했다");
+  // 대기 합계만으로는 예산의 일부밖에 안 되지만(1초 x 재시도 수), 경과 시간까지 합하면 예산 가까이 쓴다.
+  assert.ok(sum(waits) < TAGO_RETRY_BUDGET_MS / 4, `waited only ${sum(waits)}ms`);
+  assert.ok(clock.now <= worstRetryAddedMs(), `retry-added time ${clock.now}ms`);
+  assert.ok(clock.now > TAGO_RETRY_BUDGET_MS - TAGO_REQUEST_TIMEOUT_MS - BACKOFF[0], "경과 시간까지 합해 예산을 거의 다 쓰고서야 멈춘다");
+});
+
+test("#1267 느린 99가 계속돼도 가상 시계의 재시도 시간은 최악 상한을 넘지 않는다", async () => {
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: 10 * 3_600_000, attemptMs: TAGO_REQUEST_TIMEOUT_MS, body: "unknownError99" } });
+  await assert.rejects(collectTagoItxCheongchunRoster(saturdayInput(provider, { requestBudget })), /^Error: TAGO_RETRY_TIME_BUDGET_EXHAUSTED$/);
+  assert.ok(provider.clock.now <= worstRetryAddedMs(), `retry-added time ${provider.clock.now}ms`);
+  assert.ok(provider.clock.now > TAGO_RETRY_BUDGET_MS - TAGO_REQUEST_TIMEOUT_MS - BACKOFF.at(-1));
+});
+
+test("#1267 최악 재시도 시간은 이 수집기를 쓰는 workflow의 실제 timeout 안에 든다", () => {
+  const workflowTimeoutMs = (file) => {
+    const text = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), "utf8");
+    assert.match(text, /run-current-itx-collection\.mjs/, `${file} runs the current ITX collector`);
+    const minutes = [...text.matchAll(/^\s+timeout-minutes:\s*(\d+)\s*$/gm)].map(([, value]) => Number(value));
+    assert.equal(minutes.length, 1, `${file} has exactly one job timeout`);
+    return minutes[0] * 60_000;
+  };
+  const timeouts = {
+    "itx-current-promotion.yml": workflowTimeoutMs("itx-current-promotion.yml"),
+    "itx-current-collection.yml": workflowTimeoutMs("itx-current-collection.yml"),
+  };
+  const worstAdded = worstRetryAddedMs();
+  // 정상 공급자에서 수집 step이 걸린 시간(최대 17분 13초)에 재시도 최악 시간을 더해도 가장 짧은 timeout(60분)보다 짧다.
+  for (const [file, timeout] of Object.entries(timeouts)) {
+    assert.ok(OBSERVED_NORMAL_COLLECT_MS + worstAdded < timeout, `${file}: ${(OBSERVED_NORMAL_COLLECT_MS + worstAdded) / 60_000} min vs ${timeout / 60_000} min`);
+  }
+  // 장애 밤처럼 요청 자체가 느려 수집 step이 60분 넘게 걸린 경우는 90분 timeout의 승격 workflow만 담을 수 있고, 재시도 최악 시간을 더해도 남는다.
+  // 오프라인 replay(대기 없음)와 게이트·PR 단계에 쓸 남은 시간이 10분 이상이다.
+  const promotion = timeouts["itx-current-promotion.yml"];
+  assert.ok(OBSERVED_DEGRADED_COLLECT_MS + worstAdded + 10 * 60_000 < promotion, `${(OBSERVED_DEGRADED_COLLECT_MS + worstAdded) / 60_000} min vs ${promotion / 60_000} min`);
+  assert.deepEqual(Object.values(timeouts).toSorted((left, right) => left - right), [60, 90].map((minutes) => minutes * 60_000));
+});

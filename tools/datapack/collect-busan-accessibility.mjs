@@ -1,0 +1,313 @@
+#!/usr/bin/env node
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import {
+  fetchBytesWithSourceRetry, HUMETRO_REQUEST_INTERVAL_MS, isTransientDataGoKrResultCode, transportFailureWithCode, withRequestInterval,
+} from "./lib/source-collection-retry.mjs";
+import { sha256 } from "../lib/hash.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { decodeXmlBytes, decodeXmlEntities } from "./lib/xml-decode.mjs";
+
+const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn"; // NOSONAR -- provider contract is HTTP-only
+const SOURCE_ID = "busan-transportation-accessibility";
+const DETAIL_URL = "https://www.data.go.kr/data/15001020/openapi.do";
+const COUNT_FIELDS = Object.freeze([
+  "wl_i", "wl_o", "el_i", "el_o", "es", "blindroad", "ourbridge", "helptake", "toilet",
+]);
+const RESPONSE_FIELDS = Object.freeze(["sname", ...COUNT_FIELDS, "toilet_gubun"]);
+const LINE_IDS = Object.freeze([
+  "line-ab1a041f6266", "line-d74614a04530", "line-d812a5bc1e5f", "line-eb7b47920390",
+]);
+const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
+const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
+
+export async function collectBusanAccessibility({
+  serviceKey,
+  stationScopes,
+  fetchImpl: providerFetch = fetch,
+  now = new Date(),
+  concurrency = 4,
+  sleepImpl,
+  randomImpl,
+  requestIntervalMs = 0,
+} = {}) {
+  const capturedAt = validDate(now, "now");
+  const key = normalizeDataGoKrServiceKey(serviceKey);
+  const scope = validateScope(stationScopes);
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
+  const fetchImpl = withRequestInterval(providerFetch, { intervalMs: requestIntervalMs, sleep: sleepImpl });
+  const responses = new Array(scope.length);
+  let next = 0;
+  let failure;
+  const worker = async () => {
+    while (!failure && next < scope.length) {
+      const index = next;
+      next += 1;
+      try {
+        responses[index] = await collectResponse({ station: scope[index], key, fetchImpl, retry: { sleepImpl, randomImpl } });
+      } catch (error) {
+        failure = error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, scope.length) }, () => worker()));
+  if (failure) throw failure;
+  return buildBusanAccessibilitySnapshot({ scope, responses, capturedAt });
+}
+
+/** 보관 원문은 동일한 파서와 생성기를 사용하되 네트워크와 인증키를 요구하지 않는다. */
+export function replayBusanAccessibility({ rawResponses, stationScopes, now } = {}) {
+  const scope = validateScope(stationScopes);
+  const capturedAt = validDate(now, "now");
+  if (!Array.isArray(rawResponses) || rawResponses.length !== scope.length) {
+    throw new Error("Busan accessibility retained raw responses are required");
+  }
+  const responses = rawResponses.map((response, index) => {
+    const station = scope[index];
+    if (response.stationCode !== station.stationCode) {
+      throw new Error("Busan accessibility retained response station mismatch");
+    }
+    const bytes = Buffer.from(response.bytesBase64, "base64");
+    return {
+      ...parseBusanAccessibilityResponse({ bytes, station }),
+      rawSha256: sha256(bytes), bytesBase64: bytes.toString("base64"),
+    };
+  });
+  return buildBusanAccessibilitySnapshot({ scope, responses, capturedAt });
+}
+
+function buildBusanAccessibilitySnapshot({ scope, responses, capturedAt }) {
+  const rows = responses.map(({ row }) => row).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));
+  if (rows.length !== 114 || new Set(rows.map(({ stationCode }) => stationCode)).size !== 114) {
+    throw new Error("Busan accessibility station scope incomplete");
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "busan-accessibility-snapshot",
+    sourceId: SOURCE_ID,
+    detailUrl: DETAIL_URL,
+    endpoint: ENDPOINT,
+    capturedAt: capturedAt.toISOString(),
+    freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
+    official: true,
+    fixture: false,
+    credentialRedacted: true,
+    requestCount: scope.length,
+    stationCount: scope.length,
+    rowCount: rows.length,
+    lineIds: [...LINE_IDS],
+    outputFields: [...RESPONSE_FIELDS],
+    fieldsProvided: ["elevator", "escalator", "wheelchair_lift", "status", "verified_at"],
+    responseEncodings: [...new Set(responses.map(({ responseEncoding }) => responseEncoding))]
+      .sort((left, right) => left.localeCompare(right, "en")),
+    license: {
+      type: "PUBLIC-DOMAIN",
+      attribution: "부산교통공사",
+      redistributionAllowed: true,
+      evidenceUrl: DETAIL_URL,
+    },
+    scope,
+    scopeSha256: sha256(JSON.stringify(scope)),
+    rawSha256: sha256(JSON.stringify(responses.map(({ rawSha256 }, index) => ({
+      stationCode: scope[index].stationCode,
+      rawSha256,
+    })))),
+    rawResponses: responses.map(({ rawSha256, bytesBase64 }, index) => ({
+      stationCode: scope[index].stationCode,
+      rawSha256,
+      bytesBase64,
+    })),
+    rowsSha256: sha256(JSON.stringify(rows)),
+    rows,
+  };
+}
+
+async function collectResponse({ station, key, fetchImpl, retry }) {
+  const url = new URL(ENDPOINT);
+  url.searchParams.set("serviceKey", key);
+  url.searchParams.set("act", "xml");
+  url.searchParams.set("scode", station.stationCode);
+  const { response, bytes } = await fetchWithRetry(url, fetchImpl, retry);
+  const rawSha256 = sha256(bytes);
+  if (!response.ok) {
+    throw new Error(`Busan accessibility HTTP ${response.status}; rawBytes=${bytes.length}; rawSha256=${rawSha256}`);
+  }
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
+  if (!XML_CONTENT_TYPES.has(contentType)) {
+    throw new Error(`Busan accessibility schema mismatch: content-type ${contentType || "missing"}; rawSha256=${rawSha256}`);
+  }
+  const { raw } = decodeXmlBytes(bytes);
+  // 원문 보존 시 응답에 반사된 인증키까지 발행하지 않도록 차단한다.
+  if (raw.includes(key)) throw new Error("Busan accessibility credential echo in response");
+  let parsed;
+  try { parsed = parseBusanAccessibilityResponse({ bytes, station }); }
+  catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : "Busan accessibility schema mismatch"}; rawSha256=${rawSha256}`);
+  }
+  return {
+    rawSha256,
+    bytesBase64: bytes.toString("base64"),
+    ...parsed,
+  };
+}
+
+/** Parses one already-authenticated official XML response for offline retained-raw replay. */
+export function parseBusanAccessibilityResponse({ bytes, station } = {}) {
+  const { raw, responseEncoding } = decodeXmlBytes(bytes);
+  const resultCode = scalar(raw, "resultCode");
+  if (resultCode !== "00") {
+    throw new Error(`Busan accessibility provider resultCode ${safeToken(resultCode ?? "missing")}`);
+  }
+  const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(raw)?.[1];
+  if (body == null) throw new Error("Busan accessibility schema mismatch: response body");
+  const values = Object.fromEntries(RESPONSE_FIELDS.map((field) => [field, scalar(body, field)]));
+  const missing = RESPONSE_FIELDS.filter((field) => values[field] == null);
+  if (missing.length > 0) throw new Error(`Busan accessibility schema mismatch: fields=${missing.join(",")}`);
+  // 공식 API는 일부 역에서 count 필드를 빈 문자열로 내려준다. 빈 값은 0이 아니라 미관측(null)이다.
+  // 원문에 명시적으로 적힌 숫자만 count로 쓴다(QA 승인 2026-10-02, Fallback 금지).
+  const invalid = [];
+  for (const field of COUNT_FIELDS) {
+    if (values[field] !== "" && !/^\d{1,4}$/.test(values[field])) invalid.push(field);
+  }
+  if (values.sname.trim() === "" || values.sname.length > 100) invalid.push("sname");
+  if (values.toilet_gubun.trim() === "" || values.toilet_gubun.length > 20) invalid.push("toilet_gubun");
+  if (invalid.length > 0) throw new Error(`Busan accessibility schema mismatch: values=${invalid.join(",")}`);
+  return {
+    responseEncoding,
+    row: {
+      stationCode: station.stationCode,
+      stationName: values.sname,
+      lineId: station.lineId,
+      ...Object.fromEntries(COUNT_FIELDS.map((field) => [
+        field,
+        values[field] === "" ? null : Number(values[field]),
+      ])),
+      toilet_gubun: values.toilet_gubun,
+    },
+  };
+}
+
+/**
+ * 잠긴 snapshot의 보존 원문을 다시 파싱해 원문에 명시된 count만 돌려준다.
+ * 빈 필드는 null(미관측)이며, 이전 수집기가 빈 필드를 0으로 저장한 row만 그 차이를 허용한다.
+ */
+export function observedBusanAccessibilityRows(snapshot) {
+  const rows = snapshot?.rows;
+  const rawResponses = snapshot?.rawResponses;
+  if (!Array.isArray(rows) || !Array.isArray(rawResponses) || rawResponses.length !== rows.length
+    || snapshot.rawSha256 !== sha256(JSON.stringify(rawResponses.map(({ stationCode, rawSha256 }) => ({
+      stationCode,
+      rawSha256,
+    }))))) {
+    throw new Error("Busan accessibility retained raw responses are required");
+  }
+  const retainedByCode = new Map(rawResponses.map((response) => [response.stationCode, response]));
+  if (retainedByCode.size !== rawResponses.length) {
+    throw new Error("Busan accessibility retained raw responses are duplicated");
+  }
+  return rows.map((row) => {
+    const retained = retainedByCode.get(row.stationCode);
+    const bytes = Buffer.from(retained?.bytesBase64 ?? "", "base64");
+    if (!retained || sha256(bytes) !== retained.rawSha256) {
+      throw new Error(`Busan accessibility retained raw response mismatch: ${row.stationCode}`);
+    }
+    const { row: observed } = parseBusanAccessibilityResponse({ bytes, station: row });
+    for (const field of COUNT_FIELDS) {
+      if (row[field] !== observed[field] && !(observed[field] === null && row[field] === 0)) {
+        throw new Error(`Busan accessibility retained raw count mismatch: ${row.stationCode}:${field}`);
+      }
+    }
+    return observed;
+  });
+}
+
+function validateScope(scope) {
+  if (!Array.isArray(scope) || scope.length !== 114) throw new Error("Busan accessibility scope must contain 114 stations");
+  const codes = new Set();
+  const normalized = scope.map((entry) => {
+    const stationCode = requiredText(entry?.stationCode, "scope.stationCode");
+    const stationName = requiredText(entry?.stationName, `scope ${stationCode}.stationName`);
+    const lineId = requiredText(entry?.lineId, `scope ${stationCode}.lineId`);
+    if (!/^\d{2,3}$/.test(stationCode) || !LINE_IDS.includes(lineId) || codes.has(stationCode)) {
+      throw new Error(`Busan accessibility scope is invalid: ${stationCode}`);
+    }
+    codes.add(stationCode);
+    return { stationCode, stationName, lineId };
+  }).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));
+  if (JSON.stringify([...new Set(normalized.map(({ lineId }) => lineId))].sort(codepointCompare)) !== JSON.stringify(LINE_IDS)) {
+    throw new Error("Busan accessibility scope line set is incomplete");
+  }
+  return normalized;
+}
+
+// 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책(lib/source-collection-retry.mjs: 최대 3회, full jitter, HTTP 429·500·502·503·504와 전송 오류)으로 같은 GET을 다시 보낸다.
+// 200 응답이어도 data.go.kr 코드 체계(부산교통공사 게이트웨이도 같은 이름을 쓴다)의 envelope resultCode가 일시 오류 코드(01·02·04·05·30·99)면 다시 보낸다. 소진하면 마지막 응답이 parseBusanAccessibilityResponse에서 resultCode와 함께 실패한다.
+function fetchWithRetry(url, fetchImpl, { sleepImpl, randomImpl }) {
+  return fetchBytesWithSourceRetry({
+    url,
+    fetchImpl,
+    accept: "application/xml,text/xml",
+    label: "Busan accessibility",
+    sourceId: SOURCE_ID,
+    resultCodeOf: ({ bytes }) => providerResultCode(bytes),
+    isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
+    transportFailure: transportFailureWithCode("Busan accessibility"),
+    sleep: sleepImpl,
+    random: randomImpl,
+  });
+}
+
+function providerResultCode(bytes) {
+  try {
+    return scalar(decodeXmlBytes(bytes).raw, "resultCode");
+  } catch {
+    return null;
+  }
+}
+
+function scalar(raw, field) {
+  const value = new RegExp(String.raw`<${field}\b[^>]*>([^<]{0,200})<\/${field}>`, "i").exec(raw)?.[1];
+  return value == null ? null : decodeXmlEntities(value.trim());
+}
+
+function validDate(value, label) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
+  return date;
+}
+
+function requiredText(value, label) {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
+  return value.trim();
+}
+
+function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }
+
+export async function main(args = process.argv.slice(2), { env = process.env, fetchImpl, sleepImpl, randomImpl } = {}) {
+  const expected = ["--scope-snapshot", "--output"];
+  if (args.length !== 4 || expected.some((flag, index) => args[index * 2] !== flag) || !path.isAbsolute(args[3])) {
+    throw new Error("usage: collect-busan-accessibility.mjs --scope-snapshot <json> --output <absolute.json>");
+  }
+  const topology = JSON.parse(await readFile(args[1], "utf8"));
+  const snapshot = await collectBusanAccessibility({
+    serviceKey: env.DATA_GO_KR_SERVICE_KEY,
+    stationScopes: topology.scope,
+    fetchImpl,
+    sleepImpl,
+    randomImpl,
+    requestIntervalMs: HUMETRO_REQUEST_INTERVAL_MS,
+  });
+  await writeFile(args[3], `${JSON.stringify(snapshot)}\n`, { mode: 0o600 });
+  console.log(`sanitized Busan accessibility snapshot ready: rows=${snapshot.rowCount}`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Busan accessibility collection failed");
+    process.exitCode = 1;
+  }
+}

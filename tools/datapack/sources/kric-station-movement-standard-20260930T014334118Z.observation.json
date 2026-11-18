@@ -1,0 +1,27 @@
+{
+  "artifactKind": "kric-exit-path-observation",
+  "capturedAt": "2026-09-30T01:43:34.118Z",
+  "collectionPlanDigest": "6de165af15e85cc58b57e246877b6661cba69e08ed8af8ba0e04d77062859b72",
+  "contentSha256": "173e59a24fcb915cf0a2a718e3f28e88865be28f02a9b463ddd6e4dcd46cdf55",
+  "credentialRedacted": true,
+  "freshUntil": "2026-10-01T01:43:34.118Z",
+  "queryCount": 420,
+  "queryPlanSha256": "121d6410d9a0b0ccceb7bf8b73f94cc664e58976eb2791efe54abf9e4c252ba9",
+  "rawArtifactFile": "kric-station-movement-standard-20260930T014334118Z.raw.json",
+  "rawObjectByteSize": 1623960,
+  "rawObjectSha256": "3ecf076a8a1ef1dd74fc807ccc7ab0ac53925272a213259a51e20a44cf156557",
+  "rawSha256": "d4f912d74120675f207dadf281d118466c94c7175c781195a1e7c5c4665afd76",
+  "resultStateCounts": {
+    "EXPLICIT_ZERO": 0,
+    "PROVIDER_NO_DATA": 40,
+    "PROVIDER_RESULT_UNVERIFIED": 0,
+    "ROWS_OBSERVED": 380
+  },
+  "rowCount": 3785,
+  "schemaVersion": 1,
+  "snapshotDigest": "2b57b2a22a1cdade9e5c939755a798d4bf5133332afa6df649843b96ce8f097d",
+  "snapshotFile": "kric-station-movement-standard-20260930T014334118Z.json",
+  "snapshotFileSha256": "9211f8a9234e0e5ba2dd8221ade4a1f601af217f8be8b10ed08554d388fa5d65",
+  "snapshotId": "kric-station-movement-standard-20260930T014334118Z",
+  "sourceId": "kric-station-movement-standard"
+}

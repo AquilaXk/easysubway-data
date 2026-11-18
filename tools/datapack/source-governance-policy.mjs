@@ -1,0 +1,733 @@
+
+import { deriveFreshness, deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
+const LEGACY_GOVERNANCE_POLICY_SHA256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
+const PRIOR_GOVERNANCE_POLICY_SHA256 = "13f8a78c0ae0f7bfa6817005f44a92be3131e6f6708a69a4024747478203beaa";
+const CURRENT_GOVERNANCE_POLICY_SHA256 = "e6e607e0711bebafbc25843996a0d6ff1dce6e6e82b4cadb425e78ccd284d9f3";
+const CURRENT_GOVERNANCE_POLICY_VERSION = "2026-07-15";
+const ADMISSION_GOVERNANCE_POLICY_VERSION = "2026-08-29";
+const ADMISSION_GOVERNANCE_POLICY_SHA256 = "b4656dca1fdb660da495d0269ff91c7d31469045fd1db66a1534e3feffeeba33";
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const RELEASE_PROTECTION_MAX_AGE_MS = 5 * 60 * 1_000;
+const RELEASE_PROTECTION_REASONS = new Set(["ACTIVE_RELEASE", "ROLLBACK_WINDOW"]);
+const LICENSE_STATUSES = new Set(["APPROVED", "REVIEW_REQUIRED", "BLOCKED", "EXPIRED"]);
+const LEGAL_HOLD_REASONS = new Set(["REGULATORY_AUDIT", "SECURITY_INVESTIGATION", "LEGAL_REQUEST"]);
+const GOVERNANCE_REASON_CODES = new Set([
+  "SOURCE_LINEAGE_BROKEN",
+  "SOURCE_DIFF_MISSING",
+  "SOURCE_FRESHNESS_POLICY_MISSING",
+  "SOURCE_SNAPSHOT_EXPIRED",
+  "RAW_RETENTION_OVERDUE",
+  "LEGAL_HOLD_INVALID",
+  "LICENSE_REVIEW_REQUIRED",
+  "REDISTRIBUTION_NOT_APPROVED",
+  "SOURCE_GOVERNANCE_OWNER_MISSING",
+]);
+
+export function validateSourceGovernancePolicy({ policy, inventory, freshnessPolicy }) {
+  if (policy?.schemaVersion !== 1 || policy?.artifactKind !== "datapack-source-governance-policy") {
+    throw new Error("SOURCE_GOVERNANCE_OWNER_MISSING: policy identity");
+  }
+  requiredUtcDate(policy.policyVersion, "policyVersion");
+  const retentionClasses = new Map();
+  for (const retentionClass of requiredArray(policy.retentionClasses, "retentionClasses")) {
+    const id = requiredRole(retentionClass?.id, "retentionClasses[].id");
+    requiredPositiveInteger(retentionClass.retentionDays, `${id}.retentionDays`);
+    if (retentionClasses.has(id)) throw new Error(`RAW_RETENTION_OVERDUE: duplicate retention class ${id}`);
+    retentionClasses.set(id, retentionClass);
+  }
+
+  const inventorySources = new Map();
+  for (const source of requiredArray(inventory?.sources, "inventory.sources")) {
+    const sourceId = requiredText(source?.id, "inventory source id");
+    if (inventorySources.has(sourceId)) {
+      throw new Error(`SOURCE_GOVERNANCE_OWNER_MISSING: duplicate inventory source ${sourceId}`);
+    }
+    inventorySources.set(sourceId, source);
+  }
+  if (!Array.isArray(policy.sources)) {
+    throw new Error("SOURCE_GOVERNANCE_OWNER_MISSING: policy.sources");
+  }
+  const policySources = new Map();
+  for (const entry of policy.sources) {
+    validatePolicySource(entry, { inventorySources, retentionClasses, freshnessPolicy });
+    if (policySources.has(entry.sourceId)) {
+      throw new Error(`SOURCE_GOVERNANCE_OWNER_MISSING: duplicate source ${entry.sourceId}`);
+    }
+    policySources.set(entry.sourceId, entry);
+  }
+  for (const source of inventorySources.values()) {
+    if (source.requiredForProductionPack === true && !policySources.has(source.id)) {
+      throw new Error(`SOURCE_GOVERNANCE_OWNER_MISSING: ${source.id}`);
+    }
+  }
+  validateReasonCodeEscalations(policy.reasonCodeEscalations);
+  return { policySources, retentionClasses };
+}
+
+export function deriveRawRetentionExpiresAt({ policy, sourceId, retrievedAt }) {
+  const entry = policyEntry(policy, sourceId);
+  const retentionClass = policy.retentionClasses?.find((candidate) => candidate.id === entry.retentionClassId);
+  if (!retentionClass) throw new Error(`RAW_RETENTION_OVERDUE: retention policy ${sourceId}`);
+  const retentionDays = requiredPositiveInteger(retentionClass.retentionDays, "retentionDays");
+  return new Date(requiredUtcInstant(retrievedAt, "retrievedAt") + retentionDays * DAY_MS).toISOString();
+}
+
+// Policy additions do not rewrite approvals already sealed under the exact
+// predecessor bytes. Epochs are closed so arbitrary version/hash pairs never
+// become a substitute for the recorded governance lineage.
+const GOVERNANCE_EPOCHS = [
+  {
+    version: CURRENT_GOVERNANCE_POLICY_VERSION,
+    sha256: CURRENT_GOVERNANCE_POLICY_SHA256,
+    predecessorSha256: [PRIOR_GOVERNANCE_POLICY_SHA256, LEGACY_GOVERNANCE_POLICY_SHA256],
+    currentOrPriorSha256: [PRIOR_GOVERNANCE_POLICY_SHA256],
+  },
+  {
+    version: ADMISSION_GOVERNANCE_POLICY_VERSION,
+    sha256: ADMISSION_GOVERNANCE_POLICY_SHA256,
+    predecessorSha256: [CURRENT_GOVERNANCE_POLICY_SHA256, PRIOR_GOVERNANCE_POLICY_SHA256, LEGACY_GOVERNANCE_POLICY_SHA256],
+    currentOrPriorSha256: [CURRENT_GOVERNANCE_POLICY_SHA256],
+  },
+];
+
+function governanceEpoch(currentPolicyVersion, currentPolicySha256) {
+  return GOVERNANCE_EPOCHS.find((epoch) => epoch.version === currentPolicyVersion && epoch.sha256 === currentPolicySha256) ?? null;
+}
+
+function governanceBindingError() {
+  throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
+}
+
+function prettyPolicyBytes(policy) {
+  try { return Buffer.from(`${JSON.stringify(policy, null, 2)}\n`); }
+  catch { governanceBindingError(); }
+}
+
+function exactPolicyBytes(bytes) {
+  if (!Buffer.isBuffer(bytes)) governanceBindingError();
+  let policy;
+  try { policy = JSON.parse(bytes); } catch { governanceBindingError(); }
+  if (!policy || typeof policy !== "object" || Array.isArray(policy)) governanceBindingError();
+  return policy;
+}
+
+function sourceIds(policy) {
+  if (!Array.isArray(policy?.sources)) governanceBindingError();
+  const ids = policy.sources.map(({ sourceId }) => requiredText(sourceId, "governance sourceId"));
+  if (new Set(ids).size !== ids.length) governanceBindingError();
+  return ids;
+}
+
+const LINEAGE_COMMON_KEYS = ["predecessorLineage", "predecessorPolicySha256", "predecessorPolicyText"];
+const ADDED_LINEAGE_KEYS = [...LINEAGE_COMMON_KEYS, "addedSourceIds"].sort(codepointCompare);
+const RETIRED_LINEAGE_KEYS = [...LINEAGE_COMMON_KEYS, "retiredSourceIds", "retiredSources"].sort(codepointCompare);
+const RETIRED_RECORD_KEYS = ["position", "source"];
+
+function hasExactKeys(value, expected) {
+  return JSON.stringify(Object.keys(value).sort(codepointCompare)) === JSON.stringify(expected);
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function uniqueSourceIds(value) {
+  if (!Array.isArray(value) || value.length === 0) governanceBindingError();
+  const ids = value.map((sourceId) => requiredText(sourceId, "lineage sourceId"));
+  if (new Set(ids).size !== ids.length) governanceBindingError();
+  return ids;
+}
+
+// 한 단계는 등록(addedSourceIds) 또는 퇴역(retiredSourceIds + 원문) 중 하나만 한다.
+function registrationLineage(policy) {
+  const lineage = policy?.registrationLineage;
+  if (!isPlainObject(lineage)
+    || !(hasExactKeys(lineage, ADDED_LINEAGE_KEYS) || hasExactKeys(lineage, RETIRED_LINEAGE_KEYS))) governanceBindingError();
+  if (lineage.predecessorPolicyText !== null && typeof lineage.predecessorPolicyText !== "string") governanceBindingError();
+  requiredSha256(lineage.predecessorPolicySha256, "predecessorPolicySha256");
+  if (lineage.predecessorLineage !== null && !isPlainObject(lineage.predecessorLineage)) governanceBindingError();
+  uniqueSourceIds(lineage.addedSourceIds ?? lineage.retiredSourceIds);
+  return lineage;
+}
+
+// 직전 lineage 사슬 전체에서 퇴역한 id. 퇴역은 되돌릴 수 없으므로 이후 등록 단계가 같은 id를 다시 추가할 수 없다.
+function retiredSourceIdsIn(lineage) {
+  const retired = new Set();
+  for (let step = lineage; isPlainObject(step); step = step.predecessorLineage) {
+    if (Array.isArray(step.retiredSourceIds)) step.retiredSourceIds.forEach((sourceId) => retired.add(sourceId));
+  }
+  return retired;
+}
+
+function sourcesBeforeRegistration(sources, lineage) {
+  const ids = sources.map(({ sourceId }) => sourceId);
+  const { addedSourceIds } = lineage;
+  const retired = retiredSourceIdsIn(lineage.predecessorLineage);
+  if (addedSourceIds.some((sourceId) => retired.has(sourceId))) governanceBindingError();
+  if (ids.length <= addedSourceIds.length
+    || JSON.stringify(ids.slice(-addedSourceIds.length)) !== JSON.stringify(addedSourceIds)
+    || ids.slice(0, -addedSourceIds.length).some((sourceId) => addedSourceIds.includes(sourceId))) {
+    governanceBindingError();
+  }
+  return sources.slice(0, -addedSourceIds.length);
+}
+
+// 퇴역 원문을 기록된 위치에 되돌려 직전 정책의 sources를 재구성한다. 위치는 직전 정책 기준 오름차순이다.
+function sourcesBeforeRetirement(sources, lineage) {
+  const { retiredSourceIds, retiredSources } = lineage;
+  if (!Array.isArray(retiredSources) || retiredSources.length !== retiredSourceIds.length) governanceBindingError();
+  const restored = [...sources];
+  let previousPosition = -1;
+  for (const [index, record] of retiredSources.entries()) {
+    if (!isPlainObject(record) || !hasExactKeys(record, RETIRED_RECORD_KEYS)
+      || !Number.isSafeInteger(record.position) || record.position <= previousPosition || record.position > restored.length
+      || !isPlainObject(record.source) || record.source.sourceId !== retiredSourceIds[index]) governanceBindingError();
+    restored.splice(record.position, 0, record.source);
+    previousPosition = record.position;
+  }
+  return restored;
+}
+
+function validateGovernancePolicyLineage({ currentPolicyVersion, currentPolicySha256, currentPolicyBytes }) {
+  if (!isSha256(currentPolicySha256)) governanceBindingError();
+  if (currentPolicyBytes === undefined) {
+    const epoch = governanceEpoch(currentPolicyVersion, currentPolicySha256);
+    if (!epoch) governanceBindingError();
+    return { states: [], root: epoch };
+  }
+  if (!Buffer.isBuffer(currentPolicyBytes)) governanceBindingError();
+  const currentBytes = Buffer.from(currentPolicyBytes);
+  if (sha256(currentBytes) !== currentPolicySha256) governanceBindingError();
+  let policy = exactPolicyBytes(currentBytes);
+  if (policy.policyVersion !== currentPolicyVersion) governanceBindingError();
+  let bytes = currentBytes;
+  const states = [];
+  const seenHashes = new Set();
+  while (true) {
+    const digest = sha256(bytes);
+    if (seenHashes.has(digest)) governanceBindingError();
+    seenHashes.add(digest);
+    const ids = sourceIds(policy);
+    states.push({ policy, bytes, sha256: digest, sourceIds: new Set(ids) });
+    const epoch = governanceEpoch(policy.policyVersion, digest);
+    if (epoch) return { states, root: epoch };
+    if (!bytes.equals(prettyPolicyBytes(policy))) governanceBindingError();
+    const lineage = registrationLineage(policy);
+    const predecessor = {
+      ...policy,
+      sources: "retiredSourceIds" in lineage
+        ? sourcesBeforeRetirement(policy.sources, lineage)
+        : sourcesBeforeRegistration(policy.sources, lineage),
+    };
+    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
+    else predecessor.registrationLineage = lineage.predecessorLineage;
+    bytes = prettyPolicyBytes(predecessor);
+    // 최초 승인 원문의 서식도 증거다. 내용이 같은 원문만 원래 SHA로 검증한다.
+    if (lineage.predecessorPolicyText !== null) {
+      const originalBytes = Buffer.from(lineage.predecessorPolicyText);
+      const original = exactPolicyBytes(originalBytes);
+      if (original.registrationLineage != null
+        || JSON.stringify(original) !== JSON.stringify(predecessor)
+        || !governanceEpoch(original.policyVersion, sha256(originalBytes))) governanceBindingError();
+      bytes = originalBytes;
+    }
+    if (sha256(bytes) !== lineage.predecessorPolicySha256) governanceBindingError();
+    policy = predecessor;
+  }
+}
+
+function knownEpochBinding({ snapshot, epoch }) {
+  const binding = {
+    governancePolicyVersion: snapshot?.governancePolicyVersion,
+    governancePolicySha256: snapshot?.governancePolicySha256,
+  };
+  if (binding.governancePolicyVersion === epoch.version && binding.governancePolicySha256 === epoch.sha256) return binding;
+  if (binding.governancePolicyVersion === CURRENT_GOVERNANCE_POLICY_VERSION
+    && epoch.predecessorSha256.includes(binding.governancePolicySha256)
+    && (binding.governancePolicySha256 !== LEGACY_GOVERNANCE_POLICY_SHA256 || snapshot?.sourceId !== TRANSFER_SOURCE_ID)) return binding;
+  governanceBindingError();
+}
+
+// 직전 정책 bytes가 닫힌 epoch까지 이어지는 승인 lineage를 갖는지 확인하고 다음 단계가 기록할 결속을 만든다.
+function successorBinding(predecessorPolicyBytes) {
+  if (!Buffer.isBuffer(predecessorPolicyBytes)) governanceBindingError();
+  const predecessorBytes = Buffer.from(predecessorPolicyBytes);
+  const predecessor = exactPolicyBytes(predecessorBytes);
+  const predecessorSha256 = sha256(predecessorBytes);
+  const { states } = validateGovernancePolicyLineage({
+    currentPolicyVersion: predecessor.policyVersion,
+    currentPolicySha256: predecessorSha256,
+    currentPolicyBytes: predecessorBytes,
+  });
+  return {
+    predecessor,
+    knownSourceIds: new Set(states.flatMap(({ sourceIds }) => [...sourceIds])),
+    lineageHead: {
+      predecessorPolicySha256: predecessorSha256,
+      predecessorLineage: predecessor.registrationLineage ?? null,
+      predecessorPolicyText: predecessorBytes.equals(prettyPolicyBytes(predecessor))
+        ? null : predecessorBytes.toString("utf8"),
+    },
+  };
+}
+
+function frozenSuccessor(policy) {
+  return Object.freeze({
+    policy: Object.freeze(policy),
+    bytes: prettyPolicyBytes(policy),
+    registrationLineage: Object.freeze(policy.registrationLineage),
+  });
+}
+
+export function buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes, addedSources }) {
+  const { predecessor, knownSourceIds, lineageHead } = successorBinding(predecessorPolicyBytes);
+  if (!Array.isArray(addedSources) || addedSources.length === 0 || addedSources.some((entry) => !isPlainObject(entry))) {
+    governanceBindingError();
+  }
+  const addedSourceIds = addedSources.map(({ sourceId }) => requiredText(sourceId, "added sourceId"));
+  // 퇴역한 id도 과거 정책에 남아 있으므로 다시 등록할 수 없다.
+  if (new Set(addedSourceIds).size !== addedSourceIds.length || addedSourceIds.some((sourceId) => knownSourceIds.has(sourceId))) governanceBindingError();
+  return frozenSuccessor({
+    ...predecessor,
+    sources: [...predecessor.sources, ...addedSources],
+    registrationLineage: {
+      predecessorPolicySha256: lineageHead.predecessorPolicySha256,
+      addedSourceIds,
+      predecessorLineage: lineageHead.predecessorLineage,
+      predecessorPolicyText: lineageHead.predecessorPolicyText,
+    },
+  });
+}
+
+/**
+ * 원장은 추가 전용이라 원천을 지우지 않고 퇴역 단계를 덧붙인다. 퇴역 원천은 현재 sources에서 빠지고, 원문과 직전 정책 안의
+ * 위치가 lineage에 남아 검증기가 직전 정책 bytes를 그대로 재구성한다. 직전 정책의 sources 순서대로 기록한다.
+ */
+export function buildGovernancePolicyRetirement({ predecessorPolicyBytes, retiredSourceIds }) {
+  const { predecessor, lineageHead } = successorBinding(predecessorPolicyBytes);
+  const requested = uniqueSourceIds(retiredSourceIds);
+  const retiredSources = predecessor.sources
+    .map((source, position) => ({ position, source }))
+    .filter(({ source }) => requested.includes(source.sourceId));
+  if (retiredSources.length !== requested.length || retiredSources.length === predecessor.sources.length) governanceBindingError();
+  return frozenSuccessor({
+    ...predecessor,
+    sources: predecessor.sources.filter(({ sourceId }) => !requested.includes(sourceId)),
+    registrationLineage: {
+      predecessorPolicySha256: lineageHead.predecessorPolicySha256,
+      retiredSourceIds: retiredSources.map(({ source }) => source.sourceId),
+      retiredSources,
+      predecessorLineage: lineageHead.predecessorLineage,
+      predecessorPolicyText: lineageHead.predecessorPolicyText,
+    },
+  });
+}
+
+export function approvedGovernanceBindingTransition({ snapshot, currentPolicyVersion, currentPolicySha256, currentPolicyBytes = undefined }) {
+  const lineage = validateGovernancePolicyLineage({ currentPolicyVersion, currentPolicySha256, currentPolicyBytes });
+  const binding = {
+    governancePolicyVersion: snapshot?.governancePolicyVersion,
+    governancePolicySha256: snapshot?.governancePolicySha256,
+  };
+  if (lineage.states.length === 0) return knownEpochBinding({ snapshot, epoch: lineage.root });
+  const sourceId = snapshot?.sourceId;
+  if (typeof sourceId !== "string") governanceBindingError();
+  for (const state of lineage.states) {
+    if (binding.governancePolicyVersion === state.policy.policyVersion
+      && binding.governancePolicySha256 === state.sha256
+      && state.sourceIds.has(sourceId)) return binding;
+  }
+  if (lineage.states.at(-1).sourceIds.has(sourceId)) return knownEpochBinding({ snapshot, epoch: lineage.root });
+  governanceBindingError();
+}
+
+export function isApprovedCurrentOrPriorGovernanceBinding({
+  binding, currentPolicyVersion, currentPolicySha256, currentPolicyBytes = undefined, sourceId = undefined,
+}) {
+  try {
+    const lineage = validateGovernancePolicyLineage({ currentPolicyVersion, currentPolicySha256, currentPolicyBytes });
+    if (lineage.states.length === 0) {
+      return binding?.governancePolicyVersion === lineage.root.version && binding.governancePolicySha256 === lineage.root.sha256
+        || binding?.governancePolicyVersion === CURRENT_GOVERNANCE_POLICY_VERSION
+          && lineage.root.currentOrPriorSha256.includes(binding.governancePolicySha256);
+    }
+    if (typeof sourceId !== "string") return false;
+    return lineage.states.some((state) => binding?.governancePolicyVersion === state.policy.policyVersion
+      && binding.governancePolicySha256 === state.sha256 && state.sourceIds.has(sourceId))
+      || lineage.states.at(-1).sourceIds.has(sourceId)
+        && binding?.governancePolicyVersion === CURRENT_GOVERNANCE_POLICY_VERSION
+        && lineage.root.currentOrPriorSha256.includes(binding.governancePolicySha256);
+  } catch {
+    return false;
+  }
+}
+
+export function evaluateSourceGovernance({
+  source,
+  snapshot,
+  policy,
+  freshnessPolicy,
+  evaluationAt,
+  legalHold = null,
+  protectedBy = [],
+  protectionEvaluatedAt = null,
+  purgeEvidence = null,
+}) {
+  const reasonCodes = new Set();
+  const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
+  let entry;
+  try {
+    entry = policyEntry(policy, source?.id);
+  } catch {
+    reasonCodes.add("SOURCE_GOVERNANCE_OWNER_MISSING");
+  }
+
+  if (!entry || !hasRequiredRoles(entry)) {
+    reasonCodes.add("SOURCE_GOVERNANCE_OWNER_MISSING");
+  }
+
+  if (entry) {
+    evaluateFreshness({ entry, snapshot, freshnessPolicy, evaluationAt, reasonCodes });
+    evaluateRetention({
+      entry,
+      snapshot,
+      policy,
+      evaluatedMillis,
+      legalHold,
+      protectedBy,
+      protectionEvaluatedAt,
+      purgeEvidence,
+      reasonCodes,
+    });
+    evaluateLicense({ entry, source, snapshot, evaluatedMillis, reasonCodes });
+  }
+
+  const sortedReasonCodes = [...reasonCodes].sort(compareText);
+  return {
+    sourceId: source?.id ?? snapshot?.sourceId ?? "-",
+    snapshotId: snapshot?.snapshotId ?? "-",
+    policyVersion: policy?.policyVersion ?? "-",
+    decision: sortedReasonCodes.length === 0 ? "GO" : "NO_GO",
+    reasonCodes: sortedReasonCodes,
+  };
+}
+
+export function buildGovernanceSummary({ entries, evaluationAt }) {
+  const results = requiredArray(entries, "entries")
+    .map((entry) => evaluateSourceGovernance({ ...entry, evaluationAt }))
+    .sort((left, right) => compareText(left.sourceId, right.sourceId));
+  const body = {
+    schemaVersion: 1,
+    artifactKind: "datapack-source-governance-summary",
+    evaluatedAt: new Date(requiredUtcInstant(evaluationAt, "evaluationAt")).toISOString(),
+    decision: results.every((result) => result.decision === "GO") ? "GO" : "NO_GO",
+    reasonCodes: [...new Set(results.flatMap((result) => result.reasonCodes))].sort(compareText),
+    sources: results,
+  };
+  return { ...body, summarySha256: sha256(JSON.stringify(body)) };
+}
+
+export function isValidLegalHold({ hold, policy, sourceId, snapshotId, evaluationAt }) {
+  try {
+    return validateLegalHold(
+      hold,
+      policyEntry(policy, sourceId),
+      { snapshotId },
+      requiredUtcInstant(evaluationAt, "evaluationAt"),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function validatePolicySource(entry, { inventorySources, retentionClasses, freshnessPolicy }) {
+  const sourceId = requiredText(entry?.sourceId, "sourceId");
+  const source = inventorySources.get(sourceId);
+  if (!source) throw new Error(`SOURCE_GOVERNANCE_OWNER_MISSING: unknown source ${sourceId}`);
+  const sourceClassId = requiredIdentifier(entry.sourceClassId, `${sourceId}.sourceClassId`);
+  const sourceClass = freshnessPolicy?.sourceClasses?.find((candidate) => candidate.id === sourceClassId);
+  if (!sourceClass || !sourceClass.sourceIds?.includes(sourceId)) {
+    throw new Error(`SOURCE_FRESHNESS_POLICY_MISSING: ${sourceId}`);
+  }
+  if (!retentionClasses.has(requiredRole(entry.retentionClassId, `${sourceId}.retentionClassId`))) {
+    throw new Error(`RAW_RETENTION_OVERDUE: ${sourceId}`);
+  }
+  if (!hasRequiredRoles(entry)) throw new Error(`SOURCE_GOVERNANCE_OWNER_MISSING: ${sourceId}`);
+  requiredPositiveInteger(entry.escalationHours, `${sourceId}.escalationHours`);
+  requiredText(entry.alertRoute, `${sourceId}.alertRoute`);
+  validateLicenseReview(entry.licenseReview, entry, sourceId);
+  if (!isSha256(source.admissionEvidence?.licenseEvidenceHash)) {
+    throw new Error(`LICENSE_REVIEW_REQUIRED: ${sourceId}.licenseEvidenceHash`);
+  }
+}
+
+function validateReasonCodeEscalations(escalations) {
+  const found = new Set();
+  for (const escalation of requiredArray(escalations, "reasonCodeEscalations")) {
+    requiredRole(escalation?.responsibleRole, "reasonCodeEscalations[].responsibleRole");
+    requiredText(escalation.alertRoute, "reasonCodeEscalations[].alertRoute");
+    requiredPositiveInteger(escalation.escalationHours, "reasonCodeEscalations[].escalationHours");
+    for (const reasonCode of requiredArray(escalation.reasonCodes, "reasonCodeEscalations[].reasonCodes")) {
+      if (!GOVERNANCE_REASON_CODES.has(reasonCode) || found.has(reasonCode)) {
+        throw new Error(`SOURCE_GOVERNANCE_OWNER_MISSING: reason code escalation ${reasonCode}`);
+      }
+      found.add(reasonCode);
+    }
+  }
+  if (found.size !== GOVERNANCE_REASON_CODES.size) {
+    throw new Error("SOURCE_GOVERNANCE_OWNER_MISSING: incomplete reason code escalation");
+  }
+}
+
+function validateLicenseReview(review, entry, sourceId) {
+  if (!review || !LICENSE_STATUSES.has(review.status)) {
+    throw new Error(`LICENSE_REVIEW_REQUIRED: ${sourceId}.status`);
+  }
+  requiredSha256(review.termsHash, `${sourceId}.termsHash`);
+  const reviewedAt = requiredUtcInstant(review.reviewedAt, `${sourceId}.reviewedAt`);
+  const nextReviewAt = requiredUtcInstant(review.nextReviewAt, `${sourceId}.nextReviewAt`);
+  if (nextReviewAt <= reviewedAt) throw new Error(`LICENSE_REVIEW_REQUIRED: ${sourceId}.nextReviewAt`);
+  requiredHttpsUrl(review.termsUrl, `${sourceId}.termsUrl`);
+  requiredText(review.reviewedProvider, `${sourceId}.reviewedProvider`);
+  requiredHttpsUrl(review.reviewedDatasetUrl, `${sourceId}.reviewedDatasetUrl`);
+  if (!requiredArray(review.redistributionScopes, `${sourceId}.redistributionScopes`).includes("DERIVED_DATAPACK")) {
+    throw new Error(`REDISTRIBUTION_NOT_APPROVED: ${sourceId}`);
+  }
+  if (review.approvedByRole !== entry.approvalRole) {
+    throw new Error(`LICENSE_REVIEW_REQUIRED: ${sourceId}.approvedByRole`);
+  }
+}
+
+function evaluateFreshness({ entry, snapshot, freshnessPolicy, evaluationAt, reasonCodes }) {
+  const sourceClass = freshnessPolicy?.sourceClasses?.find((candidate) => candidate.id === entry.sourceClassId);
+  if (!sourceClass || !sourceClass.sourceIds?.includes(entry.sourceId)) {
+    reasonCodes.add("SOURCE_FRESHNESS_POLICY_MISSING");
+    return;
+  }
+  try {
+    const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
+    const providerValidUntil = sourceClass.providerValidityEndField
+      ? snapshot?.[sourceClass.providerValidityEndField]
+      : undefined;
+    if (providerValidUntil != null
+      && evaluatedMillis >= requiredUtcInstant(providerValidUntil, sourceClass.providerValidityEndField)) {
+      reasonCodes.add("SOURCE_SNAPSHOT_EXPIRED");
+      return;
+    }
+    const reverificationField = typeof sourceClass.unchangedReverificationBasisField === "string"
+      ? sourceClass.unchangedReverificationBasisField
+      : null;
+    const basisAt = reverificationField != null
+      && typeof snapshot?.[reverificationField] === "string"
+      && snapshot[reverificationField].trim() !== ""
+      ? snapshot[reverificationField]
+      : snapshot?.[sourceClass.basisField];
+    const result = deriveFreshness({
+      policy: freshnessPolicy,
+      sourceClassId: entry.sourceClassId,
+      basisAt,
+      providerValidUntil,
+      storedExpiresAt: snapshot?.freshnessExpiresAt,
+      evaluationAt,
+    });
+    for (const reasonCode of result.reasonCodes) reasonCodes.add(reasonCode);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    reasonCodes.add(message.startsWith("SOURCE_SNAPSHOT_EXPIRED")
+      ? "SOURCE_SNAPSHOT_EXPIRED"
+      : "SOURCE_FRESHNESS_POLICY_MISSING");
+  }
+}
+
+function evaluateRetention({
+  entry,
+  snapshot,
+  policy,
+  evaluatedMillis,
+  legalHold,
+  protectedBy,
+  protectionEvaluatedAt,
+  purgeEvidence,
+  reasonCodes,
+}) {
+  let storedMillis;
+  try {
+    const derived = deriveRawRetentionExpiresAt({
+      policy,
+      sourceId: entry.sourceId,
+      retrievedAt: snapshot?.retrievedAt,
+    });
+    storedMillis = requiredUtcInstant(snapshot?.rawRetentionExpiresAt, "rawRetentionExpiresAt");
+    if (new Date(storedMillis).toISOString() !== derived) reasonCodes.add("RAW_RETENTION_OVERDUE");
+  } catch {
+    reasonCodes.add("RAW_RETENTION_OVERDUE");
+    return;
+  }
+
+  const holdValid = legalHold == null ? false : validateLegalHold(legalHold, entry, snapshot, evaluatedMillis);
+  if (legalHold != null && !holdValid) reasonCodes.add("LEGAL_HOLD_INVALID");
+  const validProtection = Array.isArray(protectedBy)
+    && new Set(protectedBy).size === protectedBy.length
+    && protectedBy.every((reason) => RELEASE_PROTECTION_REASONS.has(reason));
+  if (!validProtection) reasonCodes.add("RAW_RETENTION_OVERDUE");
+  let protectionIsCurrent = false;
+  try {
+    const protectionMillis = requiredUtcInstant(protectionEvaluatedAt, "protectionEvaluatedAt");
+    protectionIsCurrent = protectionMillis <= evaluatedMillis
+      && evaluatedMillis - protectionMillis <= RELEASE_PROTECTION_MAX_AGE_MS;
+  } catch {
+    protectionIsCurrent = false;
+  }
+  const hasReleaseProtection = validProtection && protectedBy.length > 0;
+  if (hasReleaseProtection && !protectionIsCurrent) reasonCodes.add("RAW_RETENTION_OVERDUE");
+  const releaseProtected = hasReleaseProtection && protectionIsCurrent;
+  const purgeCompleted = validPurgeEvidence(purgeEvidence, entry, snapshot, storedMillis, evaluatedMillis);
+  if (evaluatedMillis >= storedMillis && !releaseProtected && !holdValid && !purgeCompleted) {
+    reasonCodes.add("RAW_RETENTION_OVERDUE");
+  }
+}
+
+function validPurgeEvidence(evidence, entry, snapshot, storedMillis, evaluatedMillis) {
+  if (evidence?.sourceId !== entry.sourceId
+    || evidence.snapshotId !== snapshot?.snapshotId
+    || evidence.rawSha256 !== snapshot?.rawSha256) {
+    return false;
+  }
+  try {
+    const purgedMillis = requiredUtcInstant(evidence.purgedAt, "purgedAt");
+    return purgedMillis >= storedMillis && purgedMillis <= evaluatedMillis;
+  } catch {
+    return false;
+  }
+}
+
+function evaluateLicense({ entry, source, snapshot, evaluatedMillis, reasonCodes }) {
+  const review = entry.licenseReview;
+  let reviewedMillis = Number.NaN;
+  let nextReviewMillis = Number.NaN;
+  try {
+    reviewedMillis = requiredUtcInstant(review?.reviewedAt, "licenseReview.reviewedAt");
+    nextReviewMillis = requiredUtcInstant(review?.nextReviewAt, "licenseReview.nextReviewAt");
+  } catch {
+    // Invalid review timestamps are handled by the fail-closed predicate below.
+  }
+  const reviewRequired = review?.status !== "APPROVED"
+    || !isSha256(review?.termsHash)
+    || review.termsHash !== source?.admissionEvidence?.licenseEvidenceHash
+    || review.reviewedProvider !== source?.provider
+    || review.reviewedDatasetUrl !== source?.datasetUrl
+    || review.approvedByRole !== entry.approvalRole
+    || !Number.isFinite(reviewedMillis)
+    || !Number.isFinite(nextReviewMillis)
+    || reviewedMillis > evaluatedMillis
+    || reviewedMillis >= nextReviewMillis
+    || evaluatedMillis >= nextReviewMillis;
+  if (reviewRequired) reasonCodes.add("LICENSE_REVIEW_REQUIRED");
+
+  if (
+    source?.license?.redistributionAllowed !== true
+    || snapshot?.redistributionAllowed !== true
+    || !review?.redistributionScopes?.includes("DERIVED_DATAPACK")
+  ) {
+    reasonCodes.add("REDISTRIBUTION_NOT_APPROVED");
+  }
+}
+
+function validateLegalHold(hold, entry, snapshot, evaluatedMillis) {
+  try {
+    if (hold.sourceId !== entry.sourceId || hold.snapshotId !== snapshot?.snapshotId) return false;
+    if (hold.ownerRole !== entry.ownerRole || !LEGAL_HOLD_REASONS.has(hold.reasonCode)) return false;
+    const createdMillis = requiredUtcInstant(hold.createdAt, "legalHold.createdAt");
+    const expiresMillis = requiredUtcInstant(hold.expiresAt, "legalHold.expiresAt");
+    return createdMillis <= evaluatedMillis
+      && expiresMillis > createdMillis
+      && evaluatedMillis < expiresMillis;
+  } catch {
+    return false;
+  }
+}
+
+function policyEntry(policy, sourceId) {
+  const matches = policy?.sources?.filter((entry) => entry.sourceId === sourceId) ?? [];
+  if (matches.length !== 1) throw new Error(`SOURCE_GOVERNANCE_OWNER_MISSING: ${sourceId ?? "source"}`);
+  return matches[0];
+}
+
+function hasRequiredRoles(entry) {
+  return [entry?.ownerRole, entry?.stewardRole, entry?.approvalRole].every(isRole);
+}
+
+function isRole(value) {
+  return typeof value === "string" && /^[a-z][a-z0-9-]*$/.test(value);
+}
+
+function requiredRole(value, label) {
+  if (!isRole(value)) throw new Error(`SOURCE_GOVERNANCE_OWNER_MISSING: ${label}`);
+  return value;
+}
+
+function requiredIdentifier(value, label) {
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_]*$/.test(value)) {
+    throw new Error(`SOURCE_FRESHNESS_POLICY_MISSING: ${label}`);
+  }
+  return value;
+}
+
+function requiredText(value, label) {
+  if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
+  return value;
+}
+
+function requiredUtcDate(value, label) {
+  const match = typeof value === "string" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+  if (!match) throw new Error(`${label} must be a UTC date`);
+  const millis = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(millis) || new Date(millis).toISOString().slice(0, 10) !== value) {
+    throw new Error(`${label} must be a UTC date`);
+  }
+  return value;
+}
+
+function requiredArray(value, label) {
+  if (!Array.isArray(value) || value.length === 0) throw new Error(`${label} must be a non-empty array`);
+  return value;
+}
+
+function requiredPositiveInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive integer`);
+  return value;
+}
+
+function requiredSha256(value, label) {
+  if (!isSha256(value)) throw new Error(`${label} must be a sha256 hex string`);
+  return value;
+}
+
+function isSha256(value) {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function requiredHttpsUrl(value, label) {
+  const raw = requiredText(value, label);
+  if (!/^[A-Za-z0-9:/?#\[\]@!$&'()*+,;=._~%\-]+$/.test(raw)
+    || /%(?![0-9A-Fa-f]{2})/.test(raw)) {
+    throw new Error(`${label} must be a valid URL`);
+  }
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`${label} must be a valid URL`);
+  }
+  if (url.protocol !== "https:") throw new Error(`${label} must use HTTPS`);
+  return value;
+}
+
+function compareText(left, right) {
+  return codepointCompare(left, right);
+}

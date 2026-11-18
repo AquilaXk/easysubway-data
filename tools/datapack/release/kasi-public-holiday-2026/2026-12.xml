@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><response><header><resultCode>00</resultCode><resultMsg>NORMAL SERVICE.</resultMsg></header><body><items><item><dateKind>01</dateKind><dateName>기독탄신일</dateName><isHoliday>Y</isHoliday><locdate>20261225</locdate><seq>1</seq></item></items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount></body></response>

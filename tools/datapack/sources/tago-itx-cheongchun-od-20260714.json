@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "tago-itx-cheongchun-od-evidence",
+  "serviceId": "ITX_CHEONGCHUN",
+  "officialSourceUrl": "https://www.data.go.kr/data/15098552/openapi.do",
+  "license": "이용허락범위 제한 없음",
+  "developmentDailyQuota": 10000,
+  "observedAt": "2026-07-14T05:29:00.648Z",
+  "departureDate": "2026-07-14",
+  "kricServiceDayCode": "8",
+  "trainGrade": {
+    "code": "09",
+    "name": "ITX-청춘",
+    "serviceId": "ITX_CHEONGCHUN"
+  },
+  "departureStation": {
+    "providerStationId": "NAT130126",
+    "providerStationName": "청량리",
+    "canonicalStationId": "station-b819702fa7d9"
+  },
+  "arrivalStation": {
+    "providerStationId": "NAT140873",
+    "providerStationName": "춘천",
+    "canonicalStationId": "station-dd14cfb89cbc"
+  },
+  "pickupDropoff": {
+    "status": "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+    "reasonCode": "OFFICIAL_OPERATION_FIELD_NOT_PROVIDED",
+    "operation": "GetStrtpntAlocFndTrainInfo",
+    "checkedAt": "2026-07-14T05:29:00.648Z"
+  },
+  "fare": {
+    "status": "SUPPORTED",
+    "field": "adultcharge",
+    "unit": "KRW",
+    "passenger": "ADULT_1"
+  },
+  "operations": [
+    {
+      "operation": "GetVhcleKndList",
+      "endpoint": "https://apis.data.go.kr/1613000/TrainInfo/GetVhcleKndList",
+      "pageCount": 1,
+      "totalCount": 14,
+      "providerResultCode": "00",
+      "schemaStatus": "EXPECTED",
+      "rawResponseSha256": "78caf8af45d775bc90aa8311e1682de7e15ad3d55886d434e7a8535cfe68c1d3"
+    },
+    {
+      "operation": "GetCtyCodeList",
+      "endpoint": "https://apis.data.go.kr/1613000/TrainInfo/GetCtyCodeList",
+      "pageCount": 1,
+      "totalCount": 15,
+      "providerResultCode": "00",
+      "schemaStatus": "EXPECTED",
+      "rawResponseSha256": "0c297566d33800e8174c0acb2911fa6a520feded6d7009f97f28e93f000f1ae0"
+    },
+    {
+      "operation": "GetStrtpntAlocFndTrainInfo",
+      "endpoint": "https://apis.data.go.kr/1613000/TrainInfo/GetStrtpntAlocFndTrainInfo",
+      "pageCount": 1,
+      "totalCount": 18,
+      "providerResultCode": "00",
+      "schemaStatus": "EXPECTED",
+      "rawResponseSha256": "22e904e52c6e9896b617146bcba629751d539ed1c81a1de73dc7bb1462e88587"
+    }
+  ],
+  "trainNumbers": [
+    "02001",
+    "02003",
+    "02005",
+    "02007",
+    "02009",
+    "02011",
+    "02013",
+    "02015",
+    "02017",
+    "02019",
+    "02021",
+    "02023",
+    "02025",
+    "02027",
+    "02029",
+    "02031",
+    "02033",
+    "02035"
+  ],
+  "itineraries": [
+    {
+      "trainNumber": "02001",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T05:55:00+09:00",
+      "arrivalAt": "2026-07-14T06:53:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02003",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T06:56:00+09:00",
+      "arrivalAt": "2026-07-14T07:54:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02005",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T08:10:00+09:00",
+      "arrivalAt": "2026-07-14T09:09:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02007",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T09:10:00+09:00",
+      "arrivalAt": "2026-07-14T10:08:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02009",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T10:30:00+09:00",
+      "arrivalAt": "2026-07-14T11:26:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02011",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T11:14:00+09:00",
+      "arrivalAt": "2026-07-14T12:11:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02013",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T12:18:00+09:00",
+      "arrivalAt": "2026-07-14T13:15:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02015",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T13:06:00+09:00",
+      "arrivalAt": "2026-07-14T14:09:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02017",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T14:21:00+09:00",
+      "arrivalAt": "2026-07-14T15:18:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02019",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T15:37:00+09:00",
+      "arrivalAt": "2026-07-14T16:34:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02021",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T16:15:00+09:00",
+      "arrivalAt": "2026-07-14T17:18:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02023",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T17:18:00+09:00",
+      "arrivalAt": "2026-07-14T18:17:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02025",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T18:18:00+09:00",
+      "arrivalAt": "2026-07-14T19:23:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02027",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T19:17:00+09:00",
+      "arrivalAt": "2026-07-14T20:22:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02029",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T20:17:00+09:00",
+      "arrivalAt": "2026-07-14T21:22:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02031",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T20:49:00+09:00",
+      "arrivalAt": "2026-07-14T21:54:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02033",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T21:38:00+09:00",
+      "arrivalAt": "2026-07-14T22:36:00+09:00",
+      "adultFareWon": 8600
+    },
+    {
+      "trainNumber": "02035",
+      "trainType": "ITX_CHEONGCHUN",
+      "departureStationName": "청량리",
+      "arrivalStationName": "춘천",
+      "departureAt": "2026-07-14T23:07:00+09:00",
+      "arrivalAt": "2026-07-15T00:04:00+09:00",
+      "adultFareWon": 8600
+    }
+  ],
+  "evidenceHash": "dab65b434470cd5adecb12529700a81a708af152bcd04f869b66644f637929ae",
+  "credentialRedacted": true
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysubway.local/schema/datapack-release-request.schema.json",
+  "title": "EasySubway data pack release request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactKind",
+    "candidateId",
+    "scopeId",
+    "buildSpecSha256",
+    "sourceSnapshotSetHash",
+    "approvedLedgerHash",
+    "requestedBy",
+    "approvedBy",
+    "approvalId",
+    "targetChannel"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "datapack-release-request" },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "scopeId": { "type": "string", "minLength": 1 },
+    "buildSpecSha256": { "$ref": "#/$defs/sha256" },
+    "sourceSnapshotSetHash": { "$ref": "#/$defs/sha256" },
+    "approvedLedgerHash": { "$ref": "#/$defs/sha256" },
+    "requestedBy": { "type": "string", "minLength": 1 },
+    "approvedBy": { "type": "string", "minLength": 1 },
+    "approvalId": { "type": "string", "minLength": 1 },
+    "targetChannel": { "enum": ["dev", "staging", "production"] },
+    "gateRun": {
+      "description": "#929 D3: 이 후보를 만든 CI run. 정기 전용 역할(datapack-scheduled-refresh·datapack-release-gates)이면 필수이고 event는 schedule이거나 스케줄러 App이 시작한 workflow_dispatch다(#1032). workflow_dispatch run은 시작한 행위자(actor)를 함께 결속한다.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "workflowPath", "runId", "runAttempt", "event", "headSha"],
+      "properties": {
+        "repository": { "const": "AquilaXk/easysubway-data" },
+        "workflowPath": { "const": ".github/workflows/nationwide-candidate-refresh.yml" },
+        "runId": { "type": "integer", "minimum": 1 },
+        "runAttempt": { "type": "integer", "minimum": 1 },
+        "event": { "type": "string", "minLength": 1 },
+        "headSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "actor": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

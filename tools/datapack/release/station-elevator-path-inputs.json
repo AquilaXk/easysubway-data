@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "station-elevator-path-inputs",
+  "issue": 834,
+  "movement": {
+    "sourceId": "kric-station-movement-standard",
+    "observationPath": "tools/datapack/sources/kric-station-movement-standard-20260930T014334118Z.observation.json",
+    "observationSha256": "1c4e522aa1d5a84d4fcb2da3b566fe9e74ca41c80cd97a806273eab61d75da44",
+    "snapshotPath": "tools/datapack/sources/kric-station-movement-standard-20260930T014334118Z.json",
+    "snapshotSha256": "9211f8a9234e0e5ba2dd8221ade4a1f601af217f8be8b10ed08554d388fa5d65",
+    "rawCollectionPath": "tools/datapack/sources/kric-station-movement-standard-20260930T014334118Z.raw.json",
+    "rawCollectionSha256": "3ecf076a8a1ef1dd74fc807ccc7ab0ac53925272a213259a51e20a44cf156557"
+  },
+  "facilityLocation": {
+    "sourceId": "seoul-metro-facility-location",
+    "observationPath": "tools/datapack/sources/seoul-metro-facility-location-20260930T014341846Z.observation.json",
+    "observationSha256": "4c9af6f48d9289c003546e897e5c6595ce72b038b442c11150e0397420e212ff",
+    "snapshotPath": "tools/datapack/sources/seoul-metro-facility-location-20260930T014341846Z.json",
+    "snapshotSha256": "82b4992309abda6bb227239c023c9fbf24627c8904d7f7dcdac649a6dca342ae",
+    "rawCollectionPath": "tools/datapack/sources/seoul-metro-facility-location-20260930T014341846Z.raw.json",
+    "rawCollectionSha256": "1fd6b5176aabb964cbcb3f4621e27c412855aefa9144584c0da0154a3ed1fb86"
+  },
+  "canonicalMapping": {
+    "sourceId": "kric-station-convenience-standard",
+    "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20260904T043909603Z.json",
+    "snapshotSha256": "50a897027042d47764ffe79666d712b5b9d2a7f9deb83c28dea0c16252fc0fde"
+  }
+}

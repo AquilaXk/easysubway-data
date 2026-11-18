@@ -1,0 +1,720 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import {
+  assertErrorOmitsSecrets,
+  defineDataGoKrResultCodeRetryTests,
+  defineSourceCollectionRetryTests,
+} from "./lib/source-collection-retry-test-support.mjs";
+import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
+import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
+import {
+  DAEJEON_COVERAGE_OPERATIONS,
+  probeDaejeonCoverageApi,
+} from "./probe-daejeon-coverage-api.mjs";
+import {
+  prepareDaejeonTimetableRegistration,
+  registerDaejeonTimetable,
+} from "./register-daejeon-timetable.mjs";
+
+// #1099·#1334: 일시 오류는 표준 정책(최대 3회 시도, full jitter)으로 같은 요청을 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리해 대기를 기록하고 즉시 지나간다.
+// 난수 0.5는 상한(base·2^n)의 절반이다: 1·2초.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
+
+test("Daejeon probe는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({ sourceId: "daejeon-station-distance-fare", serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+const sourceCandidates = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
+const timetableEvidence = JSON.parse(await readFile(
+  new URL("./sources/daejeon-train-timetable-20260714.json", import.meta.url), "utf8",
+));
+const timetableRowsEvidence = JSON.parse(await readFile(
+  new URL("./sources/daejeon-train-timetable-20260720.json", import.meta.url), "utf8",
+));
+const distanceFareEvidence = JSON.parse(await readFile(
+  new URL("./sources/daejeon-station-distance-fare-20260714.json", import.meta.url), "utf8",
+));
+const FROZEN_TIMETABLE_ROWS = JSON.parse(await readFile(
+  new URL("./sources/daejeon-train-timetable-20260720.json", import.meta.url), "utf8",
+)).rows;
+const FROZEN_TOPOLOGY_BYTES = await readFile(new URL(
+  "./sources/daejeon-station-distance-fare-8ad2f0ce04aff883391c84df3d13b78a59e17434246054416f26fc8a22d8bab7.json",
+  import.meta.url,
+));
+const FROZEN_MOLIT_BYTES = await readFile(new URL(
+  "./sources/molit-urban-rail-full-route-current-20260824T114822985Z.json",
+  import.meta.url,
+));
+
+test("Daejeon timetable registration replays frozen provider rows through the source transaction", async (context) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "daejeon-timetable-register-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const observedAt = new Date("2026-03-02T00:00:00.000Z");
+  const now = new Date(observedAt.valueOf() + 60_000);
+  const snapshot = await probeDaejeonCoverageApi({
+    sourceId: "daejeon-train-timetable",
+    serviceKey: "fixture-key",
+    now: observedAt,
+    fetchImpl: async () => new Response(timetableXml(FROZEN_TIMETABLE_ROWS), {
+      headers: { "content-type": "application/xml" },
+    }),
+  });
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const snapshotPath = path.join(root, "retained-timetable.json");
+  const topologySnapshot = JSON.parse(FROZEN_TOPOLOGY_BYTES);
+  const topologySnapshotId = "frozen-daejeon-topology";
+  const topologyRelative = `tools/datapack/sources/${topologySnapshotId}.json`;
+  const molitObservation = JSON.parse(FROZEN_MOLIT_BYTES);
+  const molitLedger = {
+    schemaVersion: 1,
+    artifactKind: "official-source-snapshot",
+    sourceId: molitObservation.sourceId,
+    snapshotId: molitObservation.snapshotId,
+    previousSnapshotId: null,
+    capturedAt: molitObservation.capturedAt,
+    retrievedAt: molitObservation.capturedAt,
+    sourceUpdatedAt: null,
+    provider: "fixture MOLIT",
+    rowCount: molitObservation.rowCount,
+    coverageCount: molitObservation.rowCount,
+    rawSha256: molitObservation.rawSha256,
+    contentSha256: molitObservation.contentSha256,
+    rawObjectUri: "oci://fixture/molit.json",
+    redactedRequestFingerprint: "1".repeat(64),
+    schemaFingerprint: molitObservation.schemaFingerprint,
+    snapshotStatus: "LOCKED",
+    schemaStatus: "PASS",
+    licenseStatus: "PASS",
+    fetchStatus: "SUCCESS",
+    redistributionAllowed: true,
+    credentialRedacted: true,
+    diffSummary: null,
+    normalizedObservationSha256: createHash("sha256").update(FROZEN_MOLIT_BYTES).digest("hex"),
+    providerRecordHashes: molitObservation.providerRecordHashes,
+  };
+  const sourceId = "daejeon-train-timetable";
+  const license = { redistributionAllowed: true, evidenceUrl: "https://example.test/license" };
+  const licenseHash = createHash("sha256").update(canonicalJson(license)).digest("hex");
+  const freshness = {
+    id: "daejeon_timetable_observation",
+    sourceIds: [sourceId],
+    basisField: "observedAt",
+    reverificationCadence: "P30D",
+    futureBasisAllowed: false,
+    providerValidityEndField: null,
+    eventTriggers: ["official timetable revision"],
+  };
+  const governance = governancePolicy({
+    sourceId,
+    sourceClassId: freshness.id,
+    licenseHash,
+    license,
+    now,
+  });
+  const source = {
+    id: sourceId,
+    provider: "fixture Daejeon operator",
+    datasetUrl: "https://example.test/timetable",
+    productionUseAllowed: true,
+    requiredForProductionPack: false,
+    license,
+    scheduleAdmissionEvidence: {
+      issue: 1,
+      materializer: "fixture-materializer",
+      verificationTest: "fixture-test",
+      capturedAt: new Date(observedAt.valueOf() - 24 * 60 * 60 * 1_000).toISOString(),
+      freshUntil: observedAt.toISOString(),
+    },
+  };
+  const topologySource = {
+    id: "daejeon-station-distance-fare",
+    productionUseAllowed: true,
+    requiredForProductionPack: false,
+    license: { redistributionAllowed: true },
+    topologyAdmissionEvidence: {
+      snapshotId: topologySnapshotId,
+      snapshotPath: topologyRelative,
+      capturedAt: topologySnapshot.observedAt,
+      stationCount: topologySnapshot.stationNumbers.length,
+      edgeCount: topologySnapshot.rowCount,
+      rawSha256: topologySnapshot.rawSha256,
+      contentSha256: topologySnapshot.contentSha256,
+    },
+  };
+  const molitSource = {
+    id: molitObservation.sourceId,
+    requiredForProductionPack: false,
+    admissionEvidence: {
+      sourceId: molitObservation.sourceId,
+      decision: "APPROVED",
+      snapshotId: molitObservation.snapshotId,
+      rawSha256: molitObservation.rawSha256,
+    },
+  };
+  const inventory = { sources: [source, topologySource, molitSource] };
+  const outputValues = [
+    inventory,
+    [molitLedger],
+    governance,
+    { sourceClasses: [] },
+  ];
+  for (const [index, relative] of SOURCE_REGISTRATION_OUTPUTS.entries()) {
+    const target = path.join(root, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, `${JSON.stringify(outputValues[index], null, 2)}\n`);
+  }
+  await mkdir(path.join(root, "tools/datapack/sources"), { recursive: true });
+  await writeFile(path.join(root, topologyRelative), FROZEN_TOPOLOGY_BYTES);
+  await writeFile(path.join(root, `tools/datapack/sources/${molitObservation.snapshotId}.json`), FROZEN_MOLIT_BYTES);
+  await writeFile(snapshotPath, snapshotBytes);
+  await writeFile(path.join(root, "tools/datapack/source-candidates.json"), JSON.stringify({ candidates: [{
+    id: sourceId,
+    domain: "schedule_timetable",
+    registrationMetadata: { governance: governance.sources[0], freshness },
+  }] }));
+
+  const telemetryPath = path.join(root, "telemetry.jsonl");
+  await writeFile(telemetryPath, "");
+  const prevTelemetry = process.env.SOURCE_FETCH_TELEMETRY_PATH;
+  process.env.SOURCE_FETCH_TELEMETRY_PATH = telemetryPath;
+  context.after(() => {
+    if (prevTelemetry === undefined) delete process.env.SOURCE_FETCH_TELEMETRY_PATH;
+    else process.env.SOURCE_FETCH_TELEMETRY_PATH = prevTelemetry;
+  });
+  await probeDaejeonCoverageApi({
+    sourceId,
+    serviceKey: "test-key",
+    replay: true,
+    now: observedAt,
+    fetchImpl: async () => new Response(Buffer.from(snapshot.rawResponseBase64, "base64"), {
+      status: 200,
+      headers: { "content-type": "application/xml" },
+    }),
+  });
+  const receiptPath = path.join(root, "receipt.json");
+  const options = { repositoryRoot: root, snapshotPath, receiptPath, now, env: fixtureOciEnv() };
+  const prepared = await prepareDaejeonTimetableRegistration(options);
+  await writeFile(receiptPath, `${JSON.stringify(receiptFor(prepared, now))}\n`);
+  await registerDaejeonTimetable(options);
+  assert.equal(await readFile(telemetryPath, "utf8"), "");
+
+  const [registeredInventory, registeredLedger, , registeredFreshness] = await Promise.all(
+    SOURCE_REGISTRATION_OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))),
+  );
+  const registered = registeredInventory.sources.find(({ id }) => id === sourceId);
+  assert.equal(registered.requiredForProductionPack, true);
+  assert.equal(registered.admissionEvidence.licenseEvidenceHash, licenseHash);
+  assert.equal(registered.scheduleAdmissionEvidence.snapshotId, prepared.snapshotId);
+  assert.equal(registered.scheduleAdmissionEvidence.rawSha256, snapshot.rawSha256);
+  assert.equal(registered.scheduleAdmissionEvidence.rowsSha256, snapshot.rowsSha256);
+  assert.equal(registered.scheduleAdmissionEvidence.topologySnapshotId, topologySnapshotId);
+  assert.equal(registeredLedger.at(-1).observedAt, snapshot.observedAt);
+  assert.equal(registeredLedger.at(-1).freshUntil, registered.scheduleAdmissionEvidence.freshUntil);
+  assert.equal(registeredFreshness.sourceClasses.at(-1).id, freshness.id);
+  assert.deepEqual(await readFile(path.join(root, registered.scheduleAdmissionEvidence.snapshotPath)), snapshotBytes);
+});
+
+test("대전 coverage probe는 시간표 XML을 검증하고 credential을 제거한다", async () => {
+  const secret = "never-print-this-key";
+  let requestedUrl;
+  let responseBytes;
+  const evidence = await probeDaejeonCoverageApi({
+    sourceId: "daejeon-train-timetable",
+    serviceKey: secret,
+    now: new Date("2026-07-14T07:00:00.000Z"),
+    fetchImpl: async (url, init) => {
+      requestedUrl = url;
+      assert.equal(init.headers.accept, "application/xml,text/xml");
+      responseBytes = Buffer.from(`<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>0</dayType><drctType>1</drctType><stNum>101</stNum><tmList>30</tmList><tmZone>5</tmZone></item></items></body></response>`);
+      return new Response(responseBytes, {
+        status: 200,
+        headers: { "content-type": "application/xml" },
+      });
+    },
+  });
+
+  assert.equal(new URL(requestedUrl).searchParams.get("serviceKey"), secret);
+  assert.equal(evidence.providerResultCode, "00");
+  assert.equal(evidence.observedAt, "2026-07-14T07:00:00.000Z");
+  assert.equal(evidence.rowCount, 1);
+  assert.equal(typeof evidence.rawResponseBase64, "string");
+  assert.deepEqual(Buffer.from(evidence.rawResponseBase64, "base64"), responseBytes);
+  assert.equal(evidence.rawBytes, responseBytes.length);
+  assert.equal(evidence.rawSha256, createHash("sha256").update(responseBytes).digest("hex"));
+  assert.deepEqual(evidence.outputFields, ["dayType", "drctType", "stNum", "tmList", "tmZone"]);
+  assert.deepEqual(evidence.rows, [{
+    dayType: "0",
+    drctType: "1",
+    stNum: "101",
+    tmList: "30",
+    tmZone: "5",
+  }]);
+  assert.match(evidence.rowsSha256, /^[a-f0-9]{64}$/);
+  assert.equal(evidence.credentialRedacted, true);
+  assert.doesNotMatch(JSON.stringify(evidence), new RegExp(secret));
+});
+
+test("대전 coverage probe는 공식 역간 거리·시간·요금 XML schema를 검증한다", async () => {
+  const evidence = await probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare",
+    serviceKey: "encoded%2Bkey",
+    now: new Date("2026-07-14T10:42:00.000Z"),
+    fetchImpl: async (url, init) => {
+      assert.equal(new URL(url).searchParams.get("serviceKey"), "encoded+key");
+      assert.equal(new URL(url).searchParams.get("strstnno"), "111");
+      assert.equal(new URL(url).searchParams.get("endstnno"), "120");
+      assert.equal(init.headers.accept, "application/xml,text/xml");
+      return new Response(`<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>NORMAL SERVICE.</resultMsg></header><body><items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items><numOfRows>10</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount></body></response>`, {
+        status: 200,
+        headers: { "content-type": "application/xml" },
+      });
+    },
+  });
+
+  assert.equal(evidence.observedAt, "2026-07-14T10:42:00.000Z");
+  assert.equal(evidence.rowCount, 1);
+  assert.equal(evidence.rawBytes > 0, true);
+  assert.deepEqual(evidence.outputFields, ["distfloat", "fee", "min", "sec"]);
+  assert.notEqual(evidence.outputFields,
+    DAEJEON_COVERAGE_OPERATIONS["daejeon-station-distance-fare"].expectedFields);
+  assert.equal(evidence.schemaStatus, "EXPECTED");
+});
+
+test("대전 시간표 XML은 공개 timetable 값 계약 밖 row를 거부한다", async (context) => {
+  const cases = [
+    ["day type", { dayType: "2" }],
+    ["direction type", { drctType: "2" }],
+    ["station number", { stNum: "100" }],
+    ["hour zone", { tmZone: "25" }],
+    ["minute", { tmList: "60" }],
+    ["empty token", { tmList: "05  10" }],
+    ["unsafe destination", { tmList: "05(alert!)" }],
+  ];
+
+  for (const [name, overrides] of cases) {
+    await context.test(name, async () => {
+      const row = {
+        dayType: "0",
+        drctType: "1",
+        stNum: "101",
+        tmList: "05 10(반석)",
+        tmZone: "5",
+        ...overrides,
+      };
+      await assert.rejects(probeDaejeonCoverageApi({
+        sourceId: "daejeon-train-timetable",
+        serviceKey: "key",
+        fetchImpl: async () => new Response(
+          `<response><header><resultCode>00</resultCode></header><body><items><item>${
+            Object.entries(row).map(([field, value]) => `<${field}>${value}</${field}>`).join("")
+          }</item></items></body></response>`,
+          { status: 200, headers: { "content-type": "application/xml" } },
+        ),
+      }), /schema mismatch: timetable values/);
+    });
+  }
+});
+
+test("대전 역간 XML은 빈 row와 잘못된 수치를 거부한다", async (context) => {
+  const cases = [
+    ["empty", "<items></items>"],
+    ["missing field", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min></item></items>"],
+    ["missing field per item", "<items><item><distfloat>9.8</distfloat><min>19</min><sec>50</sec></item><item><distfloat>1.2</distfloat><fee>1200</fee><min>2</min><sec>10</sec></item></items>"],
+    ["distance zero", "<items><item><distfloat>0</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items>"],
+    ["distance non-number", "<items><item><distfloat>NaN</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items>"],
+    ["distance infinite", "<items><item><distfloat>Infinity</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items>"],
+    ["distance exponent", "<items><item><distfloat>9.8e0</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items>"],
+    ["distance hex", "<items><item><distfloat>0x10</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items>"],
+    ["fee empty", "<items><item><distfloat>9.8</distfloat><fee></fee><min>19</min><sec>50</sec></item></items>"],
+    ["minute whitespace", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min> </min><sec>50</sec></item></items>"],
+    ["second empty", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec></sec></item></items>"],
+    ["fee exponent", "<items><item><distfloat>9.8</distfloat><fee>12e2</fee><min>19</min><sec>50</sec></item></items>"],
+    ["second hex", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec>0x10</sec></item></items>"],
+    ["fee negative", "<items><item><distfloat>9.8</distfloat><fee>-1</fee><min>19</min><sec>50</sec></item></items>"],
+    ["fee fractional", "<items><item><distfloat>9.8</distfloat><fee>1.5</fee><min>19</min><sec>50</sec></item></items>"],
+    ["minute negative", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min>-1</min><sec>50</sec></item></items>"],
+    ["minute fractional", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min>1.5</min><sec>50</sec></item></items>"],
+    ["second negative", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec>-1</sec></item></items>"],
+    ["second overflow", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec>60</sec></item></items>"],
+    ["second fractional", "<items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec>1.5</sec></item></items>"],
+  ];
+
+  for (const [name, items] of cases) {
+    await context.test(name, async () => {
+      await assert.rejects(probeDaejeonCoverageApi({
+        sourceId: "daejeon-station-distance-fare",
+        serviceKey: "key",
+        fetchImpl: async () => new Response(`<response><header><resultCode>00</resultCode></header><body>${items}</body></response>`, {
+          status: 200,
+          headers: { "content-type": "application/xml" },
+        }),
+      }), /schema mismatch/);
+    });
+  }
+});
+
+test("대전 열차시각표 candidate는 official XML과 topology lineage로 schedule을 production admission한다", () => {
+  const candidate = sourceCandidates.candidates.find(({ id }) => id === "daejeon-train-timetable");
+  assert.equal(candidate.sampleEvidenceStatus, "validated_live_full_snapshot");
+  assert.equal(candidate.admissionStatus, "production_schedule_materialized");
+  assert.equal(candidate.productionInventoryReferenceId, "daejeon-train-timetable");
+  assert.equal(candidate.evidence.liveValidation.providerResultCode, "00");
+  assert.equal(candidate.evidence.liveValidation.rowCount, 1628);
+  assert.equal(candidate.evidence.liveValidation.observedAt, timetableRowsEvidence.observedAt);
+  assert.deepEqual(candidate.evidence.coverageAssessment, {
+    state: "SUPPORTED",
+    requirementCount: 1,
+    sourceDomain: "schedule_timetable",
+    artifactKind: "production",
+    materializer: "tools/datapack/materialize-daejeon-timetable.mjs",
+    verificationTest: "tools/datapack/materialize-daejeon-timetable.test.mjs",
+  });
+  assert.equal(candidate.evidence.liveValidation.evidenceArtifact,
+    "tools/datapack/sources/daejeon-train-timetable-20260720.json");
+  assert.equal(candidate.evidence.liveValidation.rowsSha256, timetableRowsEvidence.rowsSha256);
+  assert.equal(timetableEvidence.sourceId, candidate.id);
+  assert.equal(timetableEvidence.rawSha256, candidate.evidence.liveValidation.rawSha256);
+  assert.deepEqual(timetableEvidence.outputFields, candidate.evidence.outputFields);
+  assert.deepEqual(candidate.evidence.materializationValidation, {
+    departureCount: 9574,
+    tripCount: 460,
+    stopTimeCount: 10034,
+    topologySourceId: "daejeon-station-distance-fare",
+    topologyContentSha256: "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
+  });
+});
+
+test("대전 열차시각표 sanitized snapshot은 1628개 공개 row와 semantic hash를 고정한다", () => {
+  assert.equal(timetableRowsEvidence.sourceId, "daejeon-train-timetable");
+  assert.equal(timetableRowsEvidence.providerResultCode, "00");
+  assert.equal(timetableRowsEvidence.schemaStatus, "EXPECTED");
+  assert.equal(timetableRowsEvidence.rowCount, 1628);
+  assert.equal(timetableRowsEvidence.rows.length, timetableRowsEvidence.rowCount);
+  assert.equal(timetableRowsEvidence.rowsSha256,
+    createHash("sha256").update(JSON.stringify(timetableRowsEvidence.rows)).digest("hex"));
+  assert.equal(timetableRowsEvidence.rawSha256, timetableEvidence.rawSha256);
+  assert.deepEqual([...new Set(timetableRowsEvidence.rows.map(({ dayType }) => dayType))].sort(), ["0", "1"]);
+  assert.deepEqual([...new Set(timetableRowsEvidence.rows.map(({ drctType }) => drctType))].sort(), ["0", "1"]);
+  assert.deepEqual([...new Set(timetableRowsEvidence.rows.map(({ stNum }) => stNum))].sort(),
+    Array.from({ length: 22 }, (_, index) => String(101 + index)));
+  assert.equal(timetableRowsEvidence.credentialRedacted, true);
+  assert.doesNotMatch(JSON.stringify(timetableRowsEvidence), /serviceKey|authorization|credentialEnv/i);
+});
+
+test("대전 역간 candidate는 official XML과 full adjacent OD로 topology를 production admission한다", () => {
+  const candidate = sourceCandidates.candidates.find(({ id }) => id === "daejeon-station-distance-fare");
+  assert.equal(candidate.detailUrl, "https://www.data.go.kr/data/15158794/openapi.do");
+  assert.equal(candidate.requestUrl, "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01");
+  assert.equal(candidate.admissionStatus, "production_topology_materialized");
+  assert.equal(candidate.evidence.liveValidation.rowCount > 0, true);
+  assert.equal(candidate.evidence.coverageAssessment.state, "SUPPORTED");
+  assert.equal(candidate.evidence.coverageAssessment.requirementCount, 1);
+  assert.equal(candidate.evidence.topologyValidation.edgeCount, 42);
+  assert.equal(candidate.evidence.topologyValidation.contentSha256,
+    "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f");
+  assert.deepEqual(candidate.operation.runner, {
+    command: "node tools/datapack/collect-daejeon-route-topology.mjs",
+    requiredEnv: ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_TOPOLOGY_OUTPUT"],
+  });
+  assert.deepEqual(candidate.evidence.coverageLimitations, [
+    "대전도시철도 1호선 22개 역의 인접 21구간 양방향 edge만 포함한다",
+    "provider credential과 raw XML은 배포 artifact에 포함하지 않는다",
+  ]);
+  assert.equal(candidate.evidence.historicalSources[0].reasonCode, "SUPERSEDED_FOR_LIVE_PROBE");
+  assert.equal(candidate.evidence.historicalSources[0].runtimeEligible, false);
+  assert.equal(candidate.nextAction,
+    "#2325에서 공식 timetable과 이 topology의 인접 소요시간을 결합해 schedule_timetable production admission을 완료한다.");
+  assert.equal(distanceFareEvidence.rawSha256, candidate.evidence.liveValidation.rawSha256);
+  assert.equal(distanceFareEvidence.rawBytes > 0, true);
+  assert.equal(distanceFareEvidence.observedAt.startsWith("2026-07-14"), true);
+  assert.equal("rows" in distanceFareEvidence, false);
+  assert.equal("raw" in distanceFareEvidence, false);
+  assert.equal("body" in distanceFareEvidence, false);
+});
+
+test("대전 coverage probe는 provider/schema 오류를 fail closed한다", async (context) => {
+  await context.test("유효한 XML 본문도 JSON content-type이면 거부한다", async () => {
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-train-timetable",
+      serviceKey: "key",
+      fetchImpl: async () => new Response(
+        `<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>0</dayType><drctType>1</drctType><stNum>101</stNum><tmList>30</tmList><tmZone>5</tmZone></item></items></body></response>`,
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    }), /schema mismatch: content-type application\/json/);
+  });
+
+  await context.test("XML content-type mismatch는 credential 없는 hash 진단을 남긴다", async () => {
+    const secret = "do-not-log-content-type-key";
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-station-distance-fare",
+      serviceKey: secret,
+      now: new Date("2026-07-14T10:43:00.000Z"),
+      fetchImpl: async () => new Response("<response><header><resultCode>00</resultCode></header><body><items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items></body></response>", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      }),
+    }), (error) => {
+      assert.match(error.message, /schema mismatch: content-type text\/plain/);
+      assert.equal(error.message.match(/text\/plain/g)?.length, 1);
+      assert.match(error.message, /observedAt=2026-07-14T10:43:00.000Z/);
+      assert.match(error.message, /rawBytes=\d+; rawSha256=[a-f0-9]{64}/);
+      assert.doesNotMatch(error.message, new RegExp(secret));
+      return true;
+    });
+  });
+
+  await context.test("HTTP failure는 credential 없는 HTTP/hash 진단을 남긴다", async () => {
+    const secret = "do-not-log-http-key";
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-station-distance-fare",
+      serviceKey: secret,
+      now: new Date("2026-07-14T07:20:00.000Z"),
+      fetchImpl: async () => new Response("forbidden", {
+        status: 403,
+        headers: { "content-type": "text/plain" },
+      }),
+    }), (error) => {
+      assert.match(error.message, /HTTP 403/);
+      assert.match(error.message, /observedAt=2026-07-14T07:20:00.000Z/);
+      assert.match(error.message, /contentType=text\/plain; rawBytes=9; rawSha256=[a-f0-9]{64}/);
+      assert.doesNotMatch(error.message, new RegExp(secret));
+      return true;
+    });
+  });
+
+  await context.test("XML envelope 누락은 credential 없는 HTTP/hash 진단을 남긴다", async () => {
+    const secret = "do-not-log-this-key";
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-train-timetable",
+      serviceKey: secret,
+      now: new Date("2026-07-14T07:10:00.000Z"),
+      fetchImpl: async () => new Response("", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      }),
+    }), (error) => {
+      assert.match(error.message, /provider resultCode UNKNOWN/);
+      assert.match(error.message, /observedAt=2026-07-14T07:10:00.000Z/);
+      assert.match(error.message, /httpStatus=200; contentType=text\/plain; rawBytes=0; rawSha256=[a-f0-9]{64}/);
+      assert.doesNotMatch(error.message, new RegExp(secret));
+      return true;
+    });
+  });
+
+  await context.test("XML provider failure", async () => {
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-train-timetable",
+      serviceKey: "key",
+      ...retryFast(),
+      fetchImpl: async () => new Response("<response><header><resultCode>99</resultCode></header><body/></response>", {
+        status: 200,
+        headers: { "content-type": "application/xml" },
+      }),
+    }), /provider resultCode 99/);
+  });
+
+  assert.deepEqual(Object.keys(DAEJEON_COVERAGE_OPERATIONS).sort(), [
+    "daejeon-station-distance-fare",
+    "daejeon-train-timetable",
+  ]);
+});
+
+function timetableXml(rows) {
+  const items = rows.map((row) => `<item>${["dayType", "drctType", "stNum", "tmList", "tmZone"]
+    .map((field) => `<${field}>${row[field]}</${field}>`).join("")}</item>`).join("");
+  return `<?xml version="1.0"?><response><header><resultCode>00</resultCode></header><body><items>${items}</items></body></response>`;
+}
+
+function governancePolicy({ sourceId, sourceClassId, licenseHash, license, now }) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "datapack-source-governance-policy",
+    policyVersion: "2026-03-01",
+    sources: [{
+      sourceId,
+      sourceClassId,
+      retentionClassId: "standard-90d",
+      ownerRole: "data-owner",
+      stewardRole: "data-steward",
+      approvalRole: "data-owner",
+      escalationHours: 24,
+      alertRoute: "data-owner",
+      licenseReview: {
+        status: "APPROVED",
+        termsHash: licenseHash,
+        termsUrl: license.evidenceUrl,
+        reviewedProvider: "fixture Daejeon operator",
+        reviewedDatasetUrl: "https://example.test/timetable",
+        reviewedAt: new Date(now.valueOf() - 60_000).toISOString(),
+        nextReviewAt: new Date(now.valueOf() + 60_000).toISOString(),
+        redistributionScopes: ["DERIVED_DATAPACK"],
+        approvedByRole: "data-owner",
+      },
+    }],
+    retentionClasses: [{ id: "standard-90d", retentionDays: 90 }],
+    reasonCodeEscalations: [{
+      responsibleRole: "data-owner",
+      alertRoute: "data-owner",
+      escalationHours: 24,
+      reasonCodes: [
+        "SOURCE_LINEAGE_BROKEN", "SOURCE_DIFF_MISSING", "SOURCE_FRESHNESS_POLICY_MISSING",
+        "SOURCE_SNAPSHOT_EXPIRED", "RAW_RETENTION_OVERDUE", "LEGAL_HOLD_INVALID",
+        "LICENSE_REVIEW_REQUIRED", "REDISTRIBUTION_NOT_APPROVED", "SOURCE_GOVERNANCE_OWNER_MISSING",
+      ],
+    }],
+  };
+}
+
+function fixtureOciEnv() {
+  return {
+    EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL:
+      "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/",
+  };
+}
+
+function receiptFor(prepared, now) {
+  const objectKey = `source-raw/daejeon-train-timetable/${prepared.snapshotId.slice(-8)}/${prepared.snapshotSha256}.json`;
+  return {
+    schemaVersion: 1,
+    artifactKind: "static-network-source-raw-object-receipt",
+    sourceId: "daejeon-train-timetable",
+    snapshotId: prepared.snapshotId,
+    capturedAt: prepared.snapshot.observedAt,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`,
+    rawObjectSha256: prepared.snapshotSha256,
+    byteSize: prepared.snapshotBytes.length,
+    storedAt: now.toISOString(),
+    rawRetentionExpiresAt: prepared.rawRetentionExpiresAt,
+    ociNamespace: "axvym6vk8g7i",
+    bucket: "easysubway-datapacks",
+    objectKey,
+    contentType: "application/json",
+  };
+}
+
+const distanceFareXml = "<?xml version=\"1.0\"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items></body></response>";
+const xmlResponse = (body, status = 200) => new Response(body, { status, headers: { "content-type": "application/xml" } });
+
+test("대전 coverage probe는 HTTP 5xx·resultCode 99·연결 timeout 뒤 같은 요청이 성공하면 그 원문으로 증거를 만든다", async () => {
+  const outcomes = [
+    () => xmlResponse("busy", 503),
+    () => xmlResponse("<response><header><resultCode>99</resultCode><resultMsg>UNKNOWN_ERROR.</resultMsg></header></response>"),
+  ];
+  let calls = 0;
+  const waits = [];
+  const evidence = await probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(waits),
+    fetchImpl: async () => { calls += 1; const next = outcomes.shift(); return next === undefined ? xmlResponse(distanceFareXml) : next(); },
+  });
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [1_000, 2_000]);
+  assert.equal(evidence.rowCount, 1);
+  // 실패한 시도의 본문은 증거에 들어가지 않는다: 보존 원문은 성공한 응답 그대로다.
+  assert.equal(Buffer.from(evidence.rawResponseBase64, "base64").toString("utf8"), distanceFareXml);
+  assert.equal(evidence.rawSha256, createHash("sha256").update(distanceFareXml).digest("hex"));
+});
+
+test("대전 coverage probe는 일시 오류가 한도(3회 시도)를 넘으면 기존 오류로 끝난다", async () => {
+  const waits = [];
+  let calls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(waits),
+    fetchImpl: async () => { calls += 1; return xmlResponse("busy", 503); },
+  }), /Daejeon coverage API HTTP 503; observedAt=.*rawSha256=[a-f0-9]{64}/);
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [1_000, 2_000]);
+
+  let transportCalls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(),
+    fetchImpl: async () => { transportCalls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
+  }), /Daejeon coverage API transport failure; code=ECONNRESET/);
+  assert.equal(transportCalls, 3);
+
+  let budgetCalls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", sleepImpl: async () => {}, randomImpl: () => 0.5, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { budgetCalls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
+  }), /Daejeon coverage API transport failure; code=ECONNRESET/);
+  assert.equal(budgetCalls, 2);
+});
+
+test("대전 coverage probe는 인증·내용 오류를 재시도하지 않는다(HTTP 401·403·404·408)", async () => {
+  for (const status of [401, 403, 404, 408]) {
+    let calls = 0;
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(),
+      fetchImpl: async () => { calls += 1; return xmlResponse("denied", status); },
+    }), new RegExp(`HTTP ${status}`));
+    assert.equal(calls, 1, String(status));
+  }
+});
+
+test("대전 coverage probe는 HTTP 429를 Retry-After 유무로 가른다: 힌트가 없으면 1회만, cap(20초) 초과면 기다리지 않고 실패한다", async () => {
+  let unhinted = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(),
+    fetchImpl: async () => { unhinted += 1; return xmlResponse("slow down", 429); },
+  }), /HTTP 429/);
+  assert.equal(unhinted, 2);
+
+  const waits = [];
+  let hinted = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(waits),
+    fetchImpl: async () => { hinted += 1; return new Response("slow down", { status: 429, headers: { "retry-after": "21" } }); },
+  }), /RETRY_AFTER_EXCEEDS_CAP/);
+  assert.equal(hinted, 1);
+  assert.deepEqual(waits, []);
+});
+
+const daejeonProbeRun = (fetchImpl) => probeDaejeonCoverageApi({
+  sourceId: "daejeon-station-distance-fare", serviceKey: "key", fetchImpl, ...retryFast(),
+  now: new Date("2026-07-14T07:00:00.000Z"),
+});
+const daejeonEnvelope = (code) => xmlResponse(`<response><header><resultCode>${code}</resultCode><resultMsg>x</resultMsg></header><body/></response>`);
+
+defineSourceCollectionRetryTests({
+  name: "대전 coverage probe",
+  httpError: /Daejeon coverage API HTTP 403/,
+  delegate: async () => xmlResponse(distanceFareXml),
+  headers: { "content-type": "application/xml" },
+  run: ({ fetchImpl }) => daejeonProbeRun(fetchImpl),
+});
+
+defineDataGoKrResultCodeRetryTests({
+  name: "대전 coverage probe",
+  delegate: async () => xmlResponse(distanceFareXml),
+  rejectedResponse: daejeonEnvelope,
+  run: ({ fetchImpl }) => daejeonProbeRun(fetchImpl),
+  assertRecovered: (evidence) => assert.equal(evidence.rowCount, 1),
+  assertFinal: (outcome, resultCode) => assert.rejects(outcome, new RegExp(`provider resultCode ${resultCode}`)),
+});
+
+test("대전 coverage probe는 전송 오류에 인증키·URL을 싣지 않는다", async () => {
+  const serviceKey = "SECRETKEY0123456789abcdef";
+  const leaky = async (url) => { throw Object.assign(new Error(`connect failed ${url}`), { code: "ECONNRESET", cause: { url: String(url) } }); };
+  const failure = await probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey, fetchImpl: leaky, ...retryFast(),
+  }).catch((error) => error);
+  assert.match(failure.message, /transport failure; code=ECONNRESET/);
+  assertErrorOmitsSecrets(failure, [serviceKey, "apis.data.go.kr"]);
+});
+
+test("대전 coverage probe는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  let calls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", sleepImpl: async () => {}, randomImpl: () => 0.5, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { calls += 1; return xmlResponse("busy", 503); },
+  }), /Daejeon coverage API HTTP 503; observedAt=.*rawSha256=[a-f0-9]{64}/);
+  assert.equal(calls, 2);
+});

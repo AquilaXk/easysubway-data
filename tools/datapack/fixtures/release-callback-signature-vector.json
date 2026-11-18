@@ -1,0 +1,21 @@
+{
+  "hmacKey": "0123456789abcdef0123456789abcdef",
+  "fields": {
+    "schemaVersion": 2,
+    "artifactKind": "datapack-release-callback",
+    "releaseRequestId": "release-request-1",
+    "releaseSequence": 42,
+    "channel": "production",
+    "idempotencyKey": "release-request-1:42:1111111111111111111111111111111111111111111111111111111111111111",
+    "workflowRunUrl": "https://github.com/AquilaXk/easysubway/actions/runs/9001",
+    "manifestSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "sqliteSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "gzipSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "evidenceBundleSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "validatorStatus": "PASS",
+    "routeRegressionStatus": "PASS",
+    "publishStatus": "PASS"
+  },
+  "expectedPayloadSha256": "68f79bd7a3d89e10e431019401dd111607c91fc0e61046c5cf1620da09b797c8",
+  "expectedHmacHex": "0d75cd1e3076fa1334213a9bdcdc55dd58eedc2180333b53fb4986f8647d6bb9"
+}

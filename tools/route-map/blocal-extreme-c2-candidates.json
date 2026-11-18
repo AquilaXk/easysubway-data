@@ -1,0 +1,65 @@
+{
+  "artifactKind": "blocal-extreme-c2-candidates",
+  "issue": 1789,
+  "date": "2026-07-07",
+  "note": "변위 ≥35px 극단 티어 — 1~2세그먼트 splice로 흡수 초과, C2 수동 nudge 테이블(route-map-coordinate-overrides.json) 대상. 자동 수렴 제외해도 수렴률 94%로 게이트(≥90%) 통과.",
+  "count": 7,
+  "candidates": [
+    {
+      "name": "신사",
+      "stationId": "station-9707f89c740a",
+      "memberCount": 2,
+      "span": 216,
+      "target": 13,
+      "displacement": 102
+    },
+    {
+      "name": "논현",
+      "stationId": "station-4a2c2985d3b7",
+      "memberCount": 2,
+      "span": 144,
+      "target": 13,
+      "displacement": 66
+    },
+    {
+      "name": "영등포구청",
+      "stationId": "station-d0aceb7dd41f",
+      "memberCount": 2,
+      "span": 144,
+      "target": 13,
+      "displacement": 66
+    },
+    {
+      "name": "효창공원앞",
+      "stationId": "station-63e60a85df8e",
+      "memberCount": 2,
+      "span": 136,
+      "target": 13,
+      "displacement": 62
+    },
+    {
+      "name": "홍대입구",
+      "stationId": "station-0f50a307ac33",
+      "memberCount": 3,
+      "span": 127,
+      "target": 28,
+      "displacement": 50
+    },
+    {
+      "name": "청량리",
+      "stationId": "station-b819702fa7d9",
+      "memberCount": 4,
+      "span": 153,
+      "target": 54,
+      "displacement": 49
+    },
+    {
+      "name": "회기",
+      "stationId": "station-28e5946b8e67",
+      "memberCount": 3,
+      "span": 104,
+      "target": 28,
+      "displacement": 38
+    }
+  ]
+}

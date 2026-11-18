@@ -1,0 +1,179 @@
+name: Nationwide Candidate Refresh
+
+# 전국 후보 갱신(단독 운영): CI에서 refresh-nationwide-candidate를 실행해 main에 직접 반영하고 release-candidate 체인을 dispatch한다.
+# - 원천 수집·등록은 하지 않는다(저장소 파일만 읽는다).
+# - 사람 dispatch는 2인 역할을 입력으로만 받는다. 정기 실행은 정기 전용 고정 역할과 다음 sequence를 쓰고,
+#   저장소 변수 DATAPACK_SCHEDULED_CANDIDATE_REFRESH가 true일 때만 돈다.
+# - 정기 실행은 2시간마다 돌며, 후보 입력 매니페스트가 작업 트리와 다를 때(STALE)만 후보를 만든다. 사람 dispatch는 CURRENT여도 진행한다(FORCED).
+# - 보호 admission의 수도권 topology snapshot이 아직 원장에 등록되지 않았으면 기다린다(BLOCKED_BY_PENDING_REGISTRATION).
+on:
+  schedule:
+    - cron: "29 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      releaseSequence:
+        description: 새 후보의 releaseSequence(커밋된 후보보다 커야 한다). 사람 dispatch는 필수이고 스케줄러 dispatch는 비운다
+        required: false
+        type: string
+      requestedBy:
+        description: 요청 역할(예 data-operator-lead). 사람 dispatch는 필수이고 스케줄러 dispatch는 비운다
+        required: false
+        type: string
+      approvedBy:
+        description: 승인 역할(요청 역할과 달라야 한다, 예 data-release-authority). 사람 dispatch는 필수이고 스케줄러 dispatch는 비운다
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: nationwide-candidate-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Nationwide candidate refresh
+    # 사람(sender.type이 User) dispatch만 변수와 무관하게 돈다(Sonar githubactions:S8232). 스케줄러 식별과 2인 역할 결속은 plan 단계가 맡는다.
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.event.sender.type == 'User') || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    # 후보 입력 발행(OCI) 사전 인증 URL은 이 environment의 secret이다. secret은 후보를 만드는 step의 env에서만 읽는다.
+    environment: datapack-release-check
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Decide whether the nationwide candidate must be refreshed
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          decision_root="${RUNNER_TEMP}/nationwide-candidate-refresh-decision/${GITHUB_RUN_ID}"
+          mkdir -p "${decision_root}"
+          : > "${decision_root}/branches.txt"
+          : > "${decision_root}/automation-branches.txt"
+          printf '[]\n' > "${decision_root}/prs.json"
+          printf 'CANDIDATE_BASE_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
+          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --actor "${ACTOR}" --triggering-actor "${TRIGGERING_ACTOR}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+      - name: Note candidate refresh waiting on capital topology registration
+        if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_REGISTRATION' }}
+        env:
+          REGISTRATION_SNAPSHOT: ${{ steps.decision.outputs.registration_snapshot }}
+        run: |
+          echo "::notice title=Nationwide candidate refresh::capital topology admission ${REGISTRATION_SNAPSHOT} is not registered in the ledger yet; a candidate built before registration fails the candidate build tests, so the candidate is refreshed after registration completes."
+      - name: Validate candidate refresh inputs
+        id: plan
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        env:
+          RELEASE_SEQUENCE: ${{ inputs.releaseSequence }}
+          REQUESTED_BY: ${{ inputs.requestedBy }}
+          APPROVED_BY: ${{ inputs.approvedBy }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --event "${EVENT_NAME}" --actor "${ACTOR}" --triggering-actor "${TRIGGERING_ACTOR}" --github-output "${GITHUB_OUTPUT}"
+      - name: Record the candidate gate run
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        run: |
+          set -euo pipefail
+          node tools/ci/plan-datapack-release-chain.mjs gate-run --output "${RUNNER_TEMP}/candidate-gate-run.json"
+      - name: Refresh nationwide candidate
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        env:
+          EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
+          RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
+          REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
+          APPROVED_BY: ${{ steps.plan.outputs.approved_by }}
+          # 후보 입력 매니페스트의 바이트를 OCI candidate-inputs/sha256/에 올린다.
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/refresh-nationwide-candidate.mjs --evaluated-at "${EVALUATED_AT}" --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --gate-run "${RUNNER_TEMP}/candidate-gate-run.json"
+      - name: Verify candidate refresh output scope
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        run: |
+          set -euo pipefail
+          # 출력 목록은 후보 갱신 도구가 선언한 NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS뿐이다. 목록을 못 읽으면 여기서 실패한다.
+          output_list="$(node --input-type=module -e 'import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./tools/datapack/refresh-nationwide-candidate.mjs"; console.log(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.join("\n"));')"
+          outputs=()
+          while IFS= read -r output; do [[ -n "${output}" ]] && outputs+=("${output}"); done <<< "${output_list}"
+          [[ "${#outputs[@]}" -gt 0 ]] || { echo "candidate refresh output list is empty" >&2; exit 1; }
+          git add -- "${outputs[@]}"
+          unstaged="$(git diff --name-only)"
+          untracked="$(git ls-files --others --exclude-standard)"
+          [[ -z "${unstaged}" && -z "${untracked}" ]] || { echo "candidate refresh changed a path outside its outputs" >&2; exit 1; }
+          # git diff --quiet: 0 변화 없음, 1 변화 있음. 그 밖의 종료 코드는 오류로 실패한다.
+          set +e
+          git diff --cached --quiet
+          diff_status=$?
+          set -e
+          case "${diff_status}" in
+            0) echo "candidate refresh produced no change" >&2; exit 1 ;;
+            1) ;;
+            *) echo "candidate refresh staged diff check failed (git diff exit ${diff_status})" >&2; exit "${diff_status}" ;;
+          esac
+      - name: Commit and push nationwide candidate directly to main
+        id: push
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        env:
+          STALE_PATHS: ${{ steps.decision.outputs.stale_paths }}
+          EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
+          RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
+          REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
+          APPROVED_BY: ${{ steps.plan.outputs.approved_by }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse origin/main)" != "${CANDIDATE_BASE_SHA}" ]]; then
+            echo "::notice title=Nationwide candidate refresh::main moved from ${CANDIDATE_BASE_SHA} while the candidate was being built; nothing was pushed and the next run decides again."
+            echo "pushed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})"
+          CANDIDATE_HEAD_SHA="$(git rev-parse HEAD)"
+          printf 'CANDIDATE_HEAD_SHA=%s\n' "${CANDIDATE_HEAD_SHA}" >> "${GITHUB_ENV}"
+          gh auth setup-git
+          git push origin HEAD:main
+          if [[ -n "${STALE_PATHS}" ]]; then reason="후보 입력 변경(${STALE_PATHS})"; else reason="사람 dispatch(명시 요청)"; fi
+          changed_paths="${RUNNER_TEMP}/candidate-changed-paths.txt"
+          git diff --name-only "${CANDIDATE_BASE_SHA}" "${CANDIDATE_HEAD_SHA}" > "${changed_paths}"
+          evidence_block="$(node tools/ci/automation-pr-evidence.mjs candidate-refresh-block --build-spec tools/datapack/release/candidate-build-spec.json --changed-paths "${changed_paths}" --base-sha "${CANDIDATE_BASE_SHA}" --head-sha "${CANDIDATE_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
+          printf '%s\n' \
+            "## Summary" \
+            "" \
+            "- CI가 \`refresh-nationwide-candidate.mjs\`로 전국 후보를 main에 직접 반영했다." \
+            "- releaseSequence: ${RELEASE_SEQUENCE}" \
+            "- 후보 시계(evaluatedAt): ${EVALUATED_AT}" \
+            "- 요청 역할: ${REQUESTED_BY}, 승인 역할: ${APPROVED_BY}" \
+            "- 시작 사유: ${reason}" \
+            "- 실행 run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "" \
+            "${evidence_block}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "pushed=true" >> "${GITHUB_OUTPUT}"
+      - name: Dispatch release candidate chain for pushed candidate
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.push.outputs.pushed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # GITHUB_TOKEN으로 main에 직접 push하면 push 트리거가 돌지 않으므로 release-candidate 체인을 dispatch한다.
+          gh workflow run datapack-release-candidate-chain.yml --repo "${GITHUB_REPOSITORY}" --ref main
+      - name: Report refresh failure summary
+        if: ${{ failure() || cancelled() }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow nationwide-candidate-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

@@ -1,0 +1,205 @@
+name: Data Pack Expiry Alert
+
+# #1001: run 이름에 dispatch target이 들어가 heartbeat 점검(check-scheduler-heartbeat)이 4시간 점검과 하루 한 번 알림을 구분한다.
+run-name: ${{ github.workflow }} (${{ inputs.target || github.event_name }})
+
+on:
+  schedule:
+    - cron: "23 */4 * * *"
+    - cron: "41 0 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: >-
+          Which check to run. all runs both jobs (manual default). The external scheduler (#1001) dispatches datapack-expiry
+          every 4 hours and provider-approval once a day so the daily Slack notice is not repeated.
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - datapack-expiry
+          - provider-approval
+
+concurrency:
+  group: datapack-expiry-alert-${{ github.workflow }}-${{ github.ref }}-${{ github.event.schedule || inputs.target || github.event_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  provider-approval-expiry:
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'provider-approval')) || github.event.schedule == '41 0 * * *' }}
+    name: Provider Approval Expiry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SLACK_RELEASE_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK_URL }}
+    steps:
+      - name: Provider Approval Expiry / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Provider Approval Expiry / Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+
+      - name: Provider Approval Expiry / Check repository approvals
+        id: check
+        run: node tools/datapack/source-operation.mjs check-approvals --github-output "${GITHUB_OUTPUT}"
+
+      - name: Provider Approval Expiry / Skip missing Slack webhook
+        if: ${{ steps.check.outputs.status == 'WARNING' && env.SLACK_RELEASE_WEBHOOK_URL == '' }}
+        run: echo "::notice title=Provider approval notification::SLACK_RELEASE_WEBHOOK_URL is not configured."
+
+      - name: Provider Approval Expiry / Notify Slack on renewal window
+        if: ${{ steps.check.outputs.status == 'WARNING' && env.SLACK_RELEASE_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d
+        with:
+          webhook: ${{ env.SLACK_RELEASE_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "EasySubway provider approval renewal window"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    *EasySubway Provider Approval Renewal Window*
+                    • approved contracts: `${{ steps.check.outputs.approved_count }}`
+                    • repo: `${{ github.repository }}`
+                    • run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions 열기>
+
+  datapack-expiry-alert:
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'datapack-expiry')) || github.event.schedule == '23 */4 * * *' }}
+    name: Data Pack Expiry Alert
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NODE_OPTIONS: --disable-warning=ExperimentalWarning
+      SLACK_RELEASE_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK_URL }}
+      EASYSUBWAY_DATAPACK_FRESHNESS_POLICY: build/contracts/datapack/datapack-freshness-sla.json
+    outputs:
+      status: ${{ steps.check.outputs.status }}
+      severity: ${{ steps.check.outputs.severity }}
+    steps:
+      - name: Data Pack Expiry Alert / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Data Pack Expiry Alert / Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+
+      - name: Data Pack Expiry Alert / Stage product contracts
+        run: node tools/datapack/stage-contracts.mjs
+
+      - name: Data Pack Expiry Alert / Configure temp paths
+        run: |
+          set -euo pipefail
+          {
+            echo "EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST=${{ runner.temp }}/easysubway-datapack-expiry/current.json"
+            echo "EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE=${{ runner.temp }}/easysubway-datapack-expiry/expiry-alert-evidence.json"
+            echo "EASYSUBWAY_DATAPACK_EXPIRY_DECISION=${{ runner.temp }}/easysubway-datapack-expiry/release-decision.json"
+          } >> "${GITHUB_ENV}"
+
+      - name: Data Pack Expiry Alert / Restore GitHub Actions dotenv secret
+        id: restore-env
+        env:
+          EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "${EASYSUBWAY_ENV_SECRET}" ]]; then
+            echo "::notice title=Data Pack Expiry Alert::EASYSUBWAY_ENV secret is not configured; skipping expiry check."
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          env_file="${RUNNER_TEMP}/easysubway-expiry-alert.env"
+          printf '%s' "${EASYSUBWAY_ENV_SECRET}" > "${env_file}"
+          chmod 600 "${env_file}"
+          base_url="$(grep -m1 '^EASYSUBWAY_DATA_PACK_BASE_URL=' "${env_file}" | cut -d '=' -f2-)"
+          rm -f "${env_file}"
+          if [[ -z "${base_url}" ]]; then
+            echo "::notice title=Data Pack Expiry Alert::EASYSUBWAY_DATA_PACK_BASE_URL is not set in EASYSUBWAY_ENV; skipping expiry check."
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "EASYSUBWAY_DATA_PACK_BASE_URL=${base_url}" >> "${GITHUB_ENV}"
+          echo "enabled=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Data Pack Expiry Alert / Download production manifest
+        if: ${{ steps.restore-env.outputs.enabled == 'true' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}")"
+          curl -fsS --connect-timeout 10 --max-time 30 "${EASYSUBWAY_DATA_PACK_BASE_URL}/catalog/current.json" -o "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}"
+
+      - name: Data Pack Expiry Alert / Check expiry alert
+        if: ${{ steps.restore-env.outputs.enabled == 'true' }}
+        id: check
+        run: |
+          set -euo pipefail
+          node tools/datapack/check-datapack-expiry-alert.mjs \
+            --manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
+            --output "${EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE}" \
+            --policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}"
+          node tools/datapack/decide-datapack-release.mjs \
+            --alert-only \
+            --current-manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
+            --freshness-policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}" \
+            --output "${EASYSUBWAY_DATAPACK_EXPIRY_DECISION}"
+          # shellcheck disable=SC2016
+          node -e '
+            const fs = require("fs");
+            const evidence = JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE, "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `status=${evidence.alert.status}\n`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `severity=${evidence.alert.severity}\n`);
+          '
+
+      - name: Data Pack Expiry Alert / Upload evidence artifact
+        if: ${{ steps.restore-env.outputs.enabled == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: easysubway-datapack-expiry-alert-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/easysubway-datapack-expiry/expiry-alert-evidence.json
+            ${{ runner.temp }}/easysubway-datapack-expiry/release-decision.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Data Pack Expiry Alert / Skip missing Slack webhook
+        if: ${{ steps.restore-env.outputs.enabled == 'true' && steps.check.outputs.status == 'FIRING' && env.SLACK_RELEASE_WEBHOOK_URL == '' }}
+        run: echo "::notice title=Slack notification::SLACK_RELEASE_WEBHOOK_URL is not configured."
+
+      - name: Data Pack Expiry Alert / Notify Slack on firing alert
+        if: ${{ steps.restore-env.outputs.enabled == 'true' && steps.check.outputs.status == 'FIRING' && env.SLACK_RELEASE_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d
+        with:
+          webhook: ${{ env.SLACK_RELEASE_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "EasySubway data pack expiry alert ${{ steps.check.outputs.severity }}"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    *EasySubway Data Pack Expiry Alert*
+                    • status: `${{ steps.check.outputs.status }}`
+                    • severity: `${{ steps.check.outputs.severity }}`
+                    • repo: `${{ github.repository }}`
+                    • run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions 열기>
+
+      - name: Data Pack Expiry Alert / Fail run on critical severity
+        if: ${{ steps.restore-env.outputs.enabled == 'true' && steps.check.outputs.severity == 'critical' }}
+        run: |
+          echo "Data pack manifest severity is critical (already expired or past expiry threshold)." >&2
+          exit 1

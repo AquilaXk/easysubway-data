@@ -1,0 +1,642 @@
+name: CI
+
+on:
+  # automerge coordinator가 BEHIND PR의 base를 GITHUB_TOKEN으로 갱신하면 synchronize
+  # 이벤트가 뜨지 않아 새 head에 required context(Data contracts)가 붙지 않는다.
+  # 그 경로를 잇는 유일한 수단이 명시 dispatch다.
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+# 같은 PR에 새 head가 올라오면 이전 head의 검증은 쓸모가 없으므로 PR 실행만 취소한다.
+# main push와 dispatch는 실행마다 고유 그룹이라 서로 취소하지 않는다(병합 후 전체 검증 보존).
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # 소유 required-pr 테스트는 갈래를 나눠 동시에 돈다. mobile-v19 profile과 기본 profile 4 shard다.
+  # 각 job 안에서도 러너 4 vCPU만큼 test 프로세스를 병렬로 돌리고(mobile-v19 job은 메모리 한도 때문에 2, #934), 오래 걸리는 파일은 top-level
+  # test 이름으로 나눈다(data-test-discovery가 실행된 이름 집합을 정적 목록과 대조해 누락·중복이면
+  # 실패한다). 테스트를 빼거나 건너뛰지 않는다.
+  contracts_mobile_v19:
+    name: Data contracts (mobile-v19)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify pinned Mobile fixture ref exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 checkout이 불투명하게 실패하므로 먼저 원인을 드러낸다.
+          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/basemap-textnomerge-1495^{}' | awk '{print $1}')"
+          if [[ "${peeled}" != "d3694c0fe1d15e9ee7854cba14e9120fd8ade9da" ]]; then
+            echo "pinned Mobile fixture tag data-fixture/basemap-textnomerge-1495 must point to d3694c0fe1d15e9ee7854cba14e9120fd8ade9da (found '${peeled}'); do not delete or move this tag" >&2
+            exit 1
+          fi
+
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: data-fixture/basemap-textnomerge-1495
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="d3694c0fe1d15e9ee7854cba14e9120fd8ade9da"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
+
+      - name: Verify current Mobile v19 ITX topology evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tools/datapack/verify-production-pack-artifact-identity.test.mjs
+          node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs
+          git diff --exit-code -- tools/datapack/itx-cheongchun-topology-evidence.json
+
+      - name: Verify and run current Mobile v19 owned required tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #934: 병렬 4에서는 node 합계 RSS가 러너 메모리(16GB) 근처까지 올라 OOM 종료(exit 143)가 반복됐다.
+          # 병렬도만 2로 낮추고(실행 테스트 집합은 discovery가 그대로 대조한다) 메모리 사용을 같은 로그에 남긴다.
+          # 최대값은 30초 간격 표본의 최대(sampled peak)라 짧은 순간 최대는 놓칠 수 있다.
+          # 관측 루프는 TERM을 받으면 자기 자식(대기 중인 sleep)을 모두 끄고 끝난다.
+          (
+            trap 'kill $(jobs -p) 2>/dev/null || true; exit 0' TERM
+            peak=0
+            while true; do
+              used="$(free -m | awk '/^Mem:/ {print $3}')"
+              if (( used > peak )); then peak="${used}"; fi
+              echo "mobile-v19 memory used=${used}MB sampled peak=${peak}MB"
+              sleep 30 &
+              wait "$!"
+            done
+          ) &
+          monitor=$!
+          trap 'kill "${monitor}" 2>/dev/null || true; wait "${monitor}" 2>/dev/null || true; free -m' EXIT
+          node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2
+
+      - name: Re-verify current Mobile fixture for owned tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="d3694c0fe1d15e9ee7854cba14e9120fd8ade9da"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+          # 파생된 팩(apps/mobile)은 커밋된 증거의 출력 sha여야 한다(#979).
+          expected_target_sha256="$(node -p "JSON.parse(require('node:fs').readFileSync('tools/datapack/itx-cheongchun-topology-evidence.json', 'utf8')).pack.outputSha256")"
+          source=".external/mobile/apps/mobile"
+          source_capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          target="apps/mobile"
+          target_capital_gzip="${target}/assets/datapacks/capital.sqlite.gz"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          [[ -f "${source_capital_gzip}" && ! -L "${source_capital_gzip}" ]]
+          source_sha256="$(sha256sum "${source_capital_gzip}" | awk '{print $1}')"
+          [[ "${source_sha256}" == "${expected_sha256}" ]]
+          [[ -d "${target}" && ! -L "${target}" ]]
+
+          [[ -f "${target_capital_gzip}" && ! -L "${target_capital_gzip}" ]]
+          target_sha256="$(sha256sum "${target_capital_gzip}" | awk '{print $1}')"
+          [[ "${target_sha256}" == "${expected_target_sha256}" ]]
+
+      - name: Lint workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 워크플로를 실제 YAML 파서로 읽는 유일한 게이트다. run 블록의 block scalar가
+          # 깨져 스크립트 일부가 YAML 구조로 새어 나가는 파손은 텍스트 기반 계약 테스트로는
+          # 잡히지 않는다. 이미지는 다른 pin과 같은 규칙으로 digest 고정한다.
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
+      - name: Validate source inventory against pinned Hub contracts
+        # Data Pack Release는 contracts.lock.json으로 고정한 Hub 번들의 신선도 정책으로 governance 결속을
+        # 판정한다. data 사본에만 등록한 원천이 main release에서야 드러나지 않도록 같은 stage와 같은 인자로
+        # PR에서 먼저 검증한다(#876). 인자 일치는 datapack-release-workflow 계약 테스트가 고정한다.
+        env:
+          EASYSUBWAY_DATAPACK_FRESHNESS_POLICY: build/contracts/datapack/datapack-freshness-sla.json
+          EASYSUBWAY_DATAPACK_SCOPE_POLICY: release/product-gates/production-datapack-scope.json
+        run: |
+          set -euo pipefail
+          node tools/datapack/stage-contracts.mjs
+          node tools/datapack/validate-source-inventory.mjs \
+            --inventory tools/datapack/source-inventory.json \
+            --scope "${EASYSUBWAY_DATAPACK_SCOPE_POLICY}" \
+            --governance-policy tools/datapack/source-governance-policy.json \
+            --freshness-policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}"
+
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"; if [[ -n "${changed}" ]]; then echo "tests changed the working tree" >&2; echo "${changed}" >&2; exit 1; fi
+
+  contracts_shard_1:
+    name: Data contracts (shard 1/4)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify pinned Mobile fixture ref exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 checkout이 불투명하게 실패하므로 먼저 원인을 드러낸다.
+          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/basemap-textnomerge-1495^{}' | awk '{print $1}')"
+          if [[ "${peeled}" != "d3694c0fe1d15e9ee7854cba14e9120fd8ade9da" ]]; then
+            echo "pinned Mobile fixture tag data-fixture/basemap-textnomerge-1495 must point to d3694c0fe1d15e9ee7854cba14e9120fd8ade9da (found '${peeled}'); do not delete or move this tag" >&2
+            exit 1
+          fi
+
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: data-fixture/basemap-textnomerge-1495
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="d3694c0fe1d15e9ee7854cba14e9120fd8ade9da"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
+
+      - name: Set up Chrome for browser-dependent required tests
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
+        with:
+          chrome-version: "152.0.7977.54"
+          install-dependencies: true
+
+      - name: Verify and run pristine Mobile owned required tests (shard 1/4)
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          ROUTE_MAP_CHROME_NO_SANDBOX: "1"
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 1
+
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"; if [[ -n "${changed}" ]]; then echo "tests changed the working tree" >&2; echo "${changed}" >&2; exit 1; fi
+
+  contracts_shard_2:
+    name: Data contracts (shard 2/4)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify pinned Mobile fixture ref exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 checkout이 불투명하게 실패하므로 먼저 원인을 드러낸다.
+          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/basemap-textnomerge-1495^{}' | awk '{print $1}')"
+          if [[ "${peeled}" != "d3694c0fe1d15e9ee7854cba14e9120fd8ade9da" ]]; then
+            echo "pinned Mobile fixture tag data-fixture/basemap-textnomerge-1495 must point to d3694c0fe1d15e9ee7854cba14e9120fd8ade9da (found '${peeled}'); do not delete or move this tag" >&2
+            exit 1
+          fi
+
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: data-fixture/basemap-textnomerge-1495
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="d3694c0fe1d15e9ee7854cba14e9120fd8ade9da"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
+
+      - name: Set up Chrome for browser-dependent required tests
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
+        with:
+          chrome-version: "152.0.7977.54"
+          install-dependencies: true
+
+      - name: Verify and run pristine Mobile owned required tests (shard 2/4)
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          ROUTE_MAP_CHROME_NO_SANDBOX: "1"
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 2
+
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"; if [[ -n "${changed}" ]]; then echo "tests changed the working tree" >&2; echo "${changed}" >&2; exit 1; fi
+
+  contracts_shard_3:
+    name: Data contracts (shard 3/4)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify pinned Mobile fixture ref exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 checkout이 불투명하게 실패하므로 먼저 원인을 드러낸다.
+          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/basemap-textnomerge-1495^{}' | awk '{print $1}')"
+          if [[ "${peeled}" != "d3694c0fe1d15e9ee7854cba14e9120fd8ade9da" ]]; then
+            echo "pinned Mobile fixture tag data-fixture/basemap-textnomerge-1495 must point to d3694c0fe1d15e9ee7854cba14e9120fd8ade9da (found '${peeled}'); do not delete or move this tag" >&2
+            exit 1
+          fi
+
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: data-fixture/basemap-textnomerge-1495
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="d3694c0fe1d15e9ee7854cba14e9120fd8ade9da"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
+
+      - name: Set up Chrome for browser-dependent required tests
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
+        with:
+          chrome-version: "152.0.7977.54"
+          install-dependencies: true
+
+      - name: Verify and run pristine Mobile owned required tests (shard 3/4)
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          ROUTE_MAP_CHROME_NO_SANDBOX: "1"
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 3
+
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"; if [[ -n "${changed}" ]]; then echo "tests changed the working tree" >&2; echo "${changed}" >&2; exit 1; fi
+
+  contracts_shard_4:
+    name: Data contracts (shard 4/4)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify pinned Mobile fixture ref exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 checkout이 불투명하게 실패하므로 먼저 원인을 드러낸다.
+          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/basemap-textnomerge-1495^{}' | awk '{print $1}')"
+          if [[ "${peeled}" != "d3694c0fe1d15e9ee7854cba14e9120fd8ade9da" ]]; then
+            echo "pinned Mobile fixture tag data-fixture/basemap-textnomerge-1495 must point to d3694c0fe1d15e9ee7854cba14e9120fd8ade9da (found '${peeled}'); do not delete or move this tag" >&2
+            exit 1
+          fi
+
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: data-fixture/basemap-textnomerge-1495
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="d3694c0fe1d15e9ee7854cba14e9120fd8ade9da"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
+
+      - name: Set up Chrome for browser-dependent required tests
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
+        with:
+          chrome-version: "152.0.7977.54"
+          install-dependencies: true
+
+      - name: Verify and run pristine Mobile owned required tests (shard 4/4)
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          ROUTE_MAP_CHROME_NO_SANDBOX: "1"
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 4
+
+      - name: Validate solo repository hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked_agent="$(git ls-files -- \
+            AGENTS.md GEMINI.md TODO.md \
+            '*/AGENTS.md' '*/GEMINI.md' '*/TODO.md' \
+            '.coderabbit*' '*/.coderabbit*' \
+            .github/dependabot.yml \
+            '.codex/*' '*/.codex/*' \
+            '.gemini/*' '*/.gemini/*' \
+            '.agents/*' '*/.agents/*')"
+          if [[ -n "${tracked_agent}" ]]; then
+            echo "unexpected local agent or bot config files tracked:" >&2
+            echo "${tracked_agent}" >&2
+            exit 1
+          fi
+          if git grep -inE "(\b(codex|coderabbit|copilot|anthropic|co-authored-by|chatgpt)\b|\.codex|\.coderabbit|\.gemini|\.agents)" -- ':!.gitignore' ':!.github/workflows/ci.yml' ':!CLAUDE.md' ':!.claude/**'; then
+            echo "unexpected AI or bot reference in tracked files" >&2
+            exit 1
+          fi
+
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"; if [[ -n "${changed}" ]]; then echo "tests changed the working tree" >&2; echo "${changed}" >&2; exit 1; fi
+
+  contracts:
+    name: Data contracts
+    permissions:
+      contents: read
+    needs: [contracts_mobile_v19, contracts_shard_1, contracts_shard_2, contracts_shard_3, contracts_shard_4]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require successful pristine Mobile required-test shards
+        shell: bash
+        env:
+          MOBILE_V19_RESULT: ${{ needs.contracts_mobile_v19.result }}
+          SHARD_1_RESULT: ${{ needs.contracts_shard_1.result }}
+          SHARD_2_RESULT: ${{ needs.contracts_shard_2.result }}
+          SHARD_3_RESULT: ${{ needs.contracts_shard_3.result }}
+          SHARD_4_RESULT: ${{ needs.contracts_shard_4.result }}
+        run: |
+          set -euo pipefail
+          [[ "${MOBILE_V19_RESULT}" == "success" ]]
+          [[ "${SHARD_1_RESULT}" == "success" ]]
+          [[ "${SHARD_2_RESULT}" == "success" ]]
+          [[ "${SHARD_3_RESULT}" == "success" ]]
+          [[ "${SHARD_4_RESULT}" == "success" ]]

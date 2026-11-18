@@ -1,0 +1,369 @@
+#!/usr/bin/env node
+// 전국 후보 갱신 (#862 결정 C)
+//
+// 원천별 갱신 workflow(topology·FACILITY·서울 접근성·지역 시간표)는 수집 → 원본 게시 → 원장 등록까지만 한다.
+// 후보 spec·release request·hash evidence는 이 명령 하나로만 다시 만든다. 이 명령은 QA 승인 체크포인트다.
+//
+// 사용:
+//   node tools/datapack/refresh-nationwide-candidate.mjs \
+//     --evaluated-at <후보 시계, ISO-8601 UTC ms> --release-sequence <양의 정수> \
+//     --requested-by <요청자> --approved-by <승인자> [--gate-run <이 후보를 만드는 CI run 기록 JSON, 절대 경로>]
+//
+// 순서: 5권역 fan-in(--evaluated-at) → 소유권 원장 → prepare-nationwide-candidate-run → build-nationwide-candidate(spec·scope·request·hash)
+//       → route-edge 정책 sync(전국 route-edge 입력, #866) → 결속 검증
+//       → 후보 입력 매니페스트 기록·OCI 발행(#942, EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL 필요).
+// - 승인 역할은 명시 인자로만 받는다. 환경 변수나 이전 후보의 승인으로 채우지 않는다. 요청자와 승인자는 달라야 한다.
+// - 깨끗한 worktree에서만 실행한다. builder git SHA가 실제 코드를 가리켜야 하기 때문이다.
+// - 어느 단계든 실패하거나 결속 검증이 어긋나면 모든 출력을 실행 전 바이트로 되돌리고 실패로 끝낸다.
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
+
+import { readAdmittedItxRideEdgeSetSha256 } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH } from "./build-current-five-region-source-fan-in.mjs";
+import { LEDGER_PATH as OWNERSHIP_LEDGER_PATH } from "./build-nationwide-requirement-ownership-ledger.mjs";
+import { exportLedgerHash } from "./export-ledger-hashes.mjs";
+import {
+  CAPITAL_TIMETABLE_REPORT_PATH,
+  OFFICIAL_LINE_TIMETABLE_REPORT_PATH,
+  OFFICIAL_STOP_TIMES_PATH,
+  CAR_DOOR_HINT_QUARANTINE_PATH,
+  REGIONAL_TIMETABLE_QUARANTINE_PATH,
+} from "./prepare-nationwide-candidate-run.mjs";
+import {
+  CURRENT_ROUTE_EDGE_INPUT as NATIONWIDE_ROUTE_EDGE_INPUT_PATH,
+  ROUTE_EDGE_POLICY_PATH,
+  syncCurrentRouteEdgePolicyFile,
+} from "./sync-current-route-edge-policy.mjs";
+import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
+import { CANDIDATE_RELEASE_OUTPUTS } from "./lib/source-registration-transaction.mjs";
+import { SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
+import { CANDIDATE_INPUT_MANIFEST_PATH } from "./lib/candidate-input-bundle.mjs";
+import { sha256 } from "../lib/hash.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+
+const execFileAsync = promisify(execFile);
+const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const TOOLS = path.dirname(fileURLToPath(import.meta.url));
+const SPEC_PATH = "tools/datapack/release/candidate-build-spec.json";
+const REQUEST_PATH = "tools/datapack/release/release-request.json";
+const HASH_EVIDENCE_PATH = "tools/datapack/release/hash-evidence.json";
+const SOURCE_SNAPSHOTS_PATH = "tools/datapack/release/source-snapshots.json";
+const FRESHNESS_POLICY_PATH = "release/product-gates/datapack-freshness-sla.json";
+const GOVERNANCE_POLICY_PATH = "tools/datapack/source-governance-policy.json";
+const OVERRIDES_PATH = "tools/datapack/fixtures/admin-review-overrides.json";
+const LEDGER_FIELDS = Object.freeze([
+  ["approvedAliasLedgerHash", "alias"],
+  ["facilityEvidenceLedgerHash", "facility-evidence"],
+  ["routeEvidenceLedgerHash", "route-evidence"],
+  ["approvedOverrideSetHash", "override"],
+]);
+
+export const NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS = Object.freeze([
+  CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH,
+  OWNERSHIP_LEDGER_PATH,
+  "tools/datapack/release/nationwide-production-canonical-pack.json",
+  NATIONWIDE_ROUTE_EDGE_INPUT_PATH,
+  "tools/datapack/release/nationwide-station-line-input.json",
+  "tools/datapack/release/nationwide-candidate-preparation.json",
+  CAR_DOOR_HINT_QUARANTINE_PATH,
+  REGIONAL_TIMETABLE_QUARANTINE_PATH,
+  CAPITAL_TIMETABLE_REPORT_PATH,
+  OFFICIAL_LINE_TIMETABLE_REPORT_PATH,
+  OFFICIAL_STOP_TIMES_PATH,
+  ...CANDIDATE_RELEASE_OUTPUTS,
+  ROUTE_EDGE_POLICY_PATH,
+  CANDIDATE_INPUT_MANIFEST_PATH,
+]);
+const PREPARATION_PATH = "tools/datapack/release/nationwide-candidate-preparation.json";
+const STEPS = Object.freeze([
+  "five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build",
+  "route edge policy sync",
+]);
+// #942: 결속 검증을 통과한 후보만 입력 매니페스트를 기록하고, 그 바이트를 OCI 공개 읽기 경로에 올린다.
+const INPUT_STEPS = Object.freeze(["candidate input record", "candidate input publish"]);
+
+export function parseRefreshNationwideCandidateArgs(argv) {
+  const flags = new Map([
+    ["--evaluated-at", "evaluatedAt"],
+    ["--release-sequence", "releaseSequence"],
+    ["--requested-by", "requestedBy"],
+    ["--approved-by", "approvedBy"],
+  ]);
+  const optional = new Map([["--gate-run", "gateRunPath"]]);
+  const values = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const flag = argv[index];
+    const key = flags.get(flag) ?? optional.get(flag);
+    if (!key) throw new Error(`unknown nationwide candidate refresh argument: ${flag ?? ""}`);
+    if (Object.hasOwn(values, key)) throw new Error(`duplicate nationwide candidate refresh argument: ${flag}`);
+    const value = argv[index + 1];
+    if (typeof value !== "string" || value.trim() === "" || value.startsWith("--")) throw new Error(`${flag} requires a value`);
+    values[key] = value;
+  }
+  for (const [flag, key] of flags) {
+    if (!Object.hasOwn(values, key)) throw new Error(`${flag} is required`);
+  }
+  const instant = Date.parse(values.evaluatedAt);
+  if (!Number.isFinite(instant) || new Date(instant).toISOString() !== values.evaluatedAt) {
+    throw new Error("--evaluated-at must be an exact ISO-8601 UTC instant with milliseconds");
+  }
+  if (!/^[1-9][0-9]*$/u.test(values.releaseSequence) || !Number.isSafeInteger(Number(values.releaseSequence))) {
+    throw new Error("--release-sequence must be a positive integer");
+  }
+  const requestedBy = values.requestedBy.trim();
+  const approvedBy = values.approvedBy.trim();
+  if (requestedBy.toLowerCase() === approvedBy.toLowerCase()) {
+    throw new Error(`two-person rule violation: requester and approver must differ (${requestedBy})`);
+  }
+  assertGateRunArgument({ requestedBy, approvedBy, gateRunPath: values.gateRunPath });
+  return {
+    evaluatedAt: values.evaluatedAt, releaseSequence: Number(values.releaseSequence), requestedBy, approvedBy,
+    ...(Object.hasOwn(values, "gateRunPath") ? { gateRunPath: values.gateRunPath } : {}),
+  };
+}
+
+// #929 D3: 정기 역할은 그 후보를 만드는 CI run 기록(gate-run 파일) 없이는 쓸 수 없다.
+function assertGateRunArgument({ requestedBy, approvedBy, gateRunPath }) {
+  const scheduled = requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy;
+  if (scheduled && gateRunPath === undefined) throw new Error("scheduled roles require --gate-run");
+  if (gateRunPath !== undefined && !path.isAbsolute(gateRunPath)) throw new Error("--gate-run must be an absolute path");
+}
+
+export async function readNationwideCandidateRefreshState(repositoryRoot = ROOT) {
+  const read = (relative) => readFile(path.join(repositoryRoot, relative));
+  const [fanInBytes, snapshotsBytes, buildSpecBytes, requestBytes, hashEvidenceBytes] = await Promise.all([
+    read(CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH), read(SOURCE_SNAPSHOTS_PATH), read(SPEC_PATH), read(REQUEST_PATH), read(HASH_EVIDENCE_PATH),
+  ]);
+  const buildSpec = JSON.parse(buildSpecBytes);
+  if (typeof buildSpec.fixturePath !== "string" || !/^tools\/datapack\/release\/[^/]+\.json$/u.test(buildSpec.fixturePath)) {
+    throw new Error("candidate build spec fixturePath is invalid");
+  }
+  const fixture = path.join(repositoryRoot, buildSpec.fixturePath);
+  const ledgerHashes = {};
+  for (const [field, kind] of LEDGER_FIELDS) {
+    ledgerHashes[field] = (await exportLedgerHash(kind, {
+      fixture,
+      ...(kind === "override" ? { overrides: path.join(repositoryRoot, OVERRIDES_PATH) } : {}),
+    })).ledgerHash;
+  }
+  return {
+    fanIn: JSON.parse(fanInBytes),
+    sourceSnapshots: JSON.parse(snapshotsBytes),
+    buildSpec,
+    buildSpecBytes,
+    releaseRequest: JSON.parse(requestBytes),
+    hashEvidence: JSON.parse(hashEvidenceBytes),
+    fixtureSha256: sha256(await readFile(fixture)),
+    ledgerHashes,
+  };
+}
+
+// 생성된 후보가 이번 fan-in head·시계·전국 팩·2인 승인에 결속됐는지 본다. 어긋남 목록을 돌려준다.
+export function nationwideCandidateRefreshViolations({
+  evaluatedAt, requestedBy, approvedBy, fanIn, sourceSnapshots, buildSpec, buildSpecBytes,
+  releaseRequest, hashEvidence, fixtureSha256, ledgerHashes, gateRun,
+}) {
+  const violations = [];
+  const mismatch = (label, actual, expected, names = ["actual", "expected"]) => {
+    if (actual !== expected) violations.push(`${label} mismatch (${names[0]}: ${actual}, ${names[1]}: ${expected})`);
+  };
+  mismatch("fan-in evaluatedAt", fanIn?.evaluatedAt, evaluatedAt, ["fan-in", "requested"]);
+  mismatch("publishedAt", buildSpec?.publishedAt, fanIn?.evaluatedAt, ["build spec", "fan-in"]);
+  const supplementalIds = (Array.isArray(sourceSnapshots) ? sourceSnapshots : [])
+    .filter((row) => row?.snapshotStatus === "LOCKED" && Array.isArray(row?.admissionRecordSha256s)
+      && row.admissionRecordSha256s.some((entry) => entry?.kind === "rawSnapshotAdmission"))
+    .map(({ snapshotId }) => snapshotId);
+  const selectedIds = [...(fanIn?.selectedSources ?? []).map(({ snapshotId }) => snapshotId), ...supplementalIds];
+  const sorted = (values) => JSON.stringify([...values].sort(codepointCompare));
+  if (!Array.isArray(buildSpec?.sourceSnapshotIds) || sorted(buildSpec.sourceSnapshotIds) !== sorted(selectedIds)) {
+    violations.push("sourceSnapshotIds do not match fan-in heads");
+  }
+  const selected = new Set(selectedIds);
+  const selectedRows = (Array.isArray(sourceSnapshots) ? sourceSnapshots : []).filter(({ snapshotId }) => selected.has(snapshotId));
+  mismatch("sourceSnapshotSetHash", buildSpec?.sourceSnapshotSetHash, sha256(JSON.stringify(selectedRows)), ["build spec", "ledger heads"]);
+  mismatch("fixtureSha256", buildSpec?.fixtureSha256, fixtureSha256, ["build spec", "fixture"]);
+  for (const [field] of LEDGER_FIELDS) {
+    mismatch(field, buildSpec?.[field], ledgerHashes?.[field], ["build spec", "recomputed"]);
+  }
+  mismatch("hash evidence sourceSnapshotSetHash", hashEvidence?.sourceSnapshotSetHash?.value, buildSpec?.sourceSnapshotSetHash, ["hash evidence", "build spec"]);
+  mismatch("hash evidence fixture", hashEvidence?.fixturePath?.sha256, buildSpec?.fixtureSha256, ["hash evidence", "build spec"]);
+  mismatch("hash evidence candidateId", hashEvidence?.identifiers?.candidateId?.value, buildSpec?.candidateId, ["hash evidence", "build spec"]);
+  for (const [field] of LEDGER_FIELDS) {
+    mismatch(`hash evidence ${field}`, hashEvidence?.ledgerHashes?.[field]?.value, buildSpec?.[field], ["hash evidence", "build spec"]);
+  }
+  violations.push(...releaseRequestBindingViolations({
+    buildSpec,
+    buildSpecSha256: Buffer.isBuffer(buildSpecBytes) ? sha256(buildSpecBytes) : null,
+    releaseRequest,
+    expectedApprovalId: `release-request-${buildSpec?.candidateId}`,
+  }));
+  mismatch("requestedBy", releaseRequest?.requestedBy, requestedBy, ["release request", "requested"]);
+  mismatch("approvedBy", releaseRequest?.approvedBy, approvedBy, ["release request", "requested"]);
+  // #929 D3: release request의 gateRun은 이번 갱신 run 기록과 정확히 같아야 한다(둘 다 없으면 같다).
+  mismatch("gateRun", JSON.stringify(releaseRequest?.gateRun ?? null), JSON.stringify(gateRun ?? null), ["release request", "run"]);
+  return violations;
+}
+
+// 하위 CLI는 출력 형식이 제각각이다(message만, 또는 console.error(err)의 message + own property + cause + stack frame).
+// ANSI 이스케이프·stack frame·Node 종료 배너를 걷어 낸 뒤 남은 줄을 순서대로 ` | `로 잇는다.
+// 여러 줄 메시지·AggregateError 하위 오류·cause 체인이 모두 보이며, 남은 줄이 없으면 호출자가 프로세스 오류를 쓴다.
+const ANSI_ESCAPE = /\u001b\[[0-9;?]*[ -/]*[@-~]/gu;
+const STACK_FRAME_LINE = /^\s+at\s/u;
+const NODE_BANNER_LINE = /^Node\.js v\d/u;
+const SECRET_QUERY_VALUE = /([\w-]*key)=([^&\s'"|]+)/giu;
+const FAILURE_DETAIL_MAX_LENGTH = 2000;
+function failureDetailFromStderr(stderr) {
+  const detail = String(stderr ?? "").replace(ANSI_ESCAPE, "").split("\n")
+    .filter((line) => !STACK_FRAME_LINE.test(line) && !NODE_BANNER_LINE.test(line))
+    .map((line) => line.trim()).filter((line) => line !== "")
+    .join(" | ")
+    .replace(SECRET_QUERY_VALUE, "$1=***");
+  return detail.length > FAILURE_DETAIL_MAX_LENGTH ? detail.slice(-FAILURE_DETAIL_MAX_LENGTH) : detail;
+}
+
+export async function runNodeScript(repositoryRoot, script, args, scriptDirectory = TOOLS) {
+  const env = { ...process.env };
+  // prepare는 승인 역할을 환경 변수에서도 읽는다. 명시 인자만 쓰도록 비운다.
+  delete env.DATAPACK_REQUESTED_BY;
+  delete env.DATAPACK_APPROVED_BY;
+  try {
+    await execFileAsync(process.execPath, [path.join(scriptDirectory, script), ...args], {
+      cwd: repositoryRoot, env, maxBuffer: 256 * 1024 * 1024,
+    });
+  } catch (error) {
+    const detail = failureDetailFromStderr(error.stderr);
+    throw new Error(detail || error.message);
+  }
+}
+
+export async function runNationwideCandidateRefreshStep({ name, repositoryRoot, evaluatedAt, releaseSequence, requestedBy, approvedBy, gateRunPath }) {
+  if (name === "five-region fan-in") {
+    const temporary = await mkdtemp(path.join(os.tmpdir(), "nationwide-fan-in-"));
+    try {
+      const output = path.join(temporary, "current-five-region-source-fan-in.json");
+      await runNodeScript(repositoryRoot, "build-current-five-region-source-fan-in.mjs", [
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--tally", "tools/datapack/reports/nationwide-coverage-tally.json",
+        "--ownership", "tools/datapack/release/nationwide-requirement-ownership.json",
+        "--inventory", "tools/datapack/source-inventory.json",
+        "--source-snapshots", SOURCE_SNAPSHOTS_PATH,
+        "--freshness-policy", FRESHNESS_POLICY_PATH,
+        "--governance-policy", GOVERNANCE_POLICY_PATH,
+        "--evaluated-at", evaluatedAt,
+        "--output", output,
+      ]);
+      await writeFile(path.join(repositoryRoot, CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH), await readFile(output));
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+    return;
+  }
+  if (name === "ownership ledger") {
+    await runNodeScript(repositoryRoot, "build-nationwide-requirement-ownership-ledger.mjs", []);
+    return;
+  }
+  if (name === "nationwide candidate preparation") {
+    await runNodeScript(repositoryRoot, "prepare-nationwide-candidate-run.mjs", [
+      `--requested-by=${requestedBy}`, `--approved-by=${approvedBy}`, `--sequence=${releaseSequence}`,
+    ]);
+    return;
+  }
+  if (name === "nationwide candidate build") {
+    // spec·scope·request·hash evidence는 이 단일 생성기가 fan-in head 기준으로 전부 다시 계산한다.
+    await runNodeScript(repositoryRoot, "build-nationwide-candidate.mjs", [
+      "--preparation", PREPARATION_PATH, ...(gateRunPath === undefined ? [] : ["--gate-run", gateRunPath]),
+    ]);
+    return;
+  }
+  if (name === "route edge policy sync") {
+    // 정책 RIDE digest를 이번 전국 route-edge 입력에서 다시 계산한다. ITX 원천 승인은 벽시계가 아니라 후보 시계로 본다.
+    await syncCurrentRouteEdgePolicyFile({
+      repositoryRoot,
+      inputPath: path.join(repositoryRoot, NATIONWIDE_ROUTE_EDGE_INPUT_PATH),
+      policyPath: path.join(repositoryRoot, ROUTE_EDGE_POLICY_PATH),
+      readAdmittedItxRideEdgeSetSha256Impl: (root) =>
+        readAdmittedItxRideEdgeSetSha256(root, { buildNow: new Date(evaluatedAt) }),
+    });
+    return;
+  }
+  if (name === "candidate input record") {
+    await runNodeScript(repositoryRoot, "record-nationwide-candidate-inputs.mjs", ["record"]);
+    return;
+  }
+  if (name === "candidate input publish") {
+    await runNodeScript(repositoryRoot, "record-nationwide-candidate-inputs.mjs", ["publish"]);
+    return;
+  }
+  throw new Error(`unknown nationwide candidate refresh step: ${name}`);
+}
+
+async function assertGitCleanWorktree(repositoryRoot) {
+  const { stdout } = await execFileAsync("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: repositoryRoot });
+  if (stdout.trim() !== "") throw new Error("nationwide candidate refresh requires a clean worktree");
+}
+
+async function readOptional(file) {
+  try { return await readFile(file); } catch (error) { if (error?.code === "ENOENT") return null; throw error; }
+}
+
+export async function refreshNationwideCandidate({
+  repositoryRoot = ROOT,
+  evaluatedAt,
+  releaseSequence,
+  requestedBy,
+  approvedBy,
+  gateRunPath,
+  runStep = runNationwideCandidateRefreshStep,
+  assertCleanWorktree = assertGitCleanWorktree,
+} = {}) {
+  const repository = path.resolve(repositoryRoot);
+  await assertCleanWorktree(repository);
+  const gateRun = gateRunPath === undefined ? undefined : JSON.parse(await readFile(gateRunPath, "utf8"));
+  const prestate = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map(async (relative) =>
+    ({ relative, bytes: await readOptional(path.join(repository, relative)) })));
+  let step = "five-region fan-in";
+  try {
+    for (const name of STEPS) {
+      step = name;
+      await runStep({ name, repositoryRoot: repository, evaluatedAt, releaseSequence, requestedBy, approvedBy, gateRunPath });
+    }
+    step = "binding verification";
+    const violations = nationwideCandidateRefreshViolations({
+      ...(await readNationwideCandidateRefreshState(repository)), evaluatedAt, requestedBy, approvedBy, gateRun,
+    });
+    if (violations.length > 0) throw new Error(violations.join("; "));
+    for (const name of INPUT_STEPS) {
+      step = name;
+      await runStep({ name, repositoryRoot: repository, evaluatedAt, releaseSequence, requestedBy, approvedBy, gateRunPath });
+    }
+  } catch (error) {
+    for (const { relative, bytes } of prestate) {
+      const target = path.join(repository, relative);
+      if (bytes == null) await rm(target, { force: true });
+      else await writeFile(target, bytes);
+    }
+    throw new Error(`전국 후보 갱신 실패 (${step}): ${error.message}`, { cause: error });
+  }
+  const buildSpec = JSON.parse(await readFile(path.join(repository, SPEC_PATH)));
+  return {
+    candidateId: buildSpec.candidateId,
+    publishedAt: buildSpec.publishedAt,
+    releaseSequence: buildSpec.releaseSequence,
+    sourceSnapshotSetHash: buildSpec.sourceSnapshotSetHash,
+    outputs: [...NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS],
+  };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {
+    const result = await refreshNationwideCandidate(parseRefreshNationwideCandidateArgs(process.argv.slice(2)));
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  }
+}

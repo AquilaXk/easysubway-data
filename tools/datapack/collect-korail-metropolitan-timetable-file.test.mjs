@@ -1,0 +1,390 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  BODY_TIMEOUT_MS,
+  HEADER_TIMEOUT_MS,
+  KORAIL_TIMETABLE_BOARD_URL,
+  MIN_BODY_THROUGHPUT_BYTES_PER_SECOND,
+  OBSERVED_FILE_BYTES,
+  REQUEST_TIMEOUT_MS,
+  collectKorailMetropolitanTimetableFile,
+  validateKorailTimetableFileReceipt,
+  verifyCurrentKorailBoardTimetableUrl,
+} from "./collect-korail-metropolitan-timetable-file.mjs";
+import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
+
+const URL = "https://www.korail.com/file/cubedata/COMMON/jfile/metropolitan-timetable.xlsx";
+const XLSX = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00]);
+const SHA256 = createHash("sha256").update(XLSX).digest("hex");
+
+test("collects retained official XLSX bytes and creates the fixed receipt", async () => {
+  await withDirectory(async (outputDirectory) => {
+    const calls = [];
+    const receipt = await collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory,
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        return new Response(XLSX, { status: 200, headers: { "content-type": "application/octet-stream" } });
+      },
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, URL);
+    assert.equal(calls[0].init.method, "GET");
+    assert.equal(calls[0].init.redirect, "error");
+    assert.deepEqual(await readFile(path.join(outputDirectory, "timetable.xlsx")), XLSX);
+    assert.deepEqual(await readdir(outputDirectory), ["receipt.json", "timetable.xlsx"]);
+    assert.equal((await stat(path.join(outputDirectory, "receipt.json"))).isFile(), true);
+    assert.deepEqual(JSON.parse(await readFile(path.join(outputDirectory, "receipt.json"), "utf8")), receipt);
+    assert.deepEqual(validateKorailTimetableFileReceipt(receipt, { rawSha256: SHA256, rawByteLength: XLSX.length }), receipt);
+    assert.throws(() => validateKorailTimetableFileReceipt({ ...receipt, byteLength: XLSX.length + 1 },
+      { rawSha256: SHA256, rawByteLength: XLSX.length }), /RECEIPT/);
+    assert.deepEqual(receipt, {
+      schemaVersion: 1, artifactKind: "korail-metropolitan-timetable-file-receipt",
+      sourceId: "korail-metropolitan-timetable-file", capturedAt: receipt.capturedAt,
+      rawFile: "timetable.xlsx", byteLength: XLSX.length, sha256: SHA256,
+      officialUrl: URL, credentialRedacted: true,
+    });
+  });
+});
+
+test("rejects a SHA mismatch without creating a success receipt", async () => {
+  await withParent(async (parent) => {
+    const outputDirectory = path.join(parent, "capture");
+    await assert.rejects(collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: "0".repeat(64), outputDirectory,
+      fetchImpl: async () => new Response(XLSX, { status: 200, headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } }),
+    }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256/);
+    await assert.rejects(stat(path.join(outputDirectory, "receipt.json")));
+  });
+});
+
+test("rejects a non-official URL before making a network call", async () => {
+  await withParent(async (parent) => {
+    let calls = 0;
+    await assert.rejects(collectKorailMetropolitanTimetableFile({
+      url: "https://www.korail.com/other.xlsx", expectedSha256: SHA256,
+      outputDirectory: path.join(parent, "capture"), fetchImpl: async () => { calls += 1; },
+    }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_URL/);
+    assert.equal(calls, 0);
+  });
+});
+
+// #1099·#1340: 일시 오류(HTTP 429·500·502·503·504, 연결·본문 timeout)는 표준 정책(최대 3회 시도, full jitter)으로 같은 요청을 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
+// 난수 0.5로 full jitter 대기(base 2초·cap 20초)는 1·2초다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget(), randomImpl: () => 0.5 });
+const XLSX_HEADERS = { "content-type": "application/octet-stream" };
+const xlsxResponse = () => new Response(XLSX, { status: 200, headers: XLSX_HEADERS });
+const brokenBody = (code) => new Response(new ReadableStream({
+  start(controller) { controller.error(Object.assign(new TypeError("terminated"), { cause: Object.assign(new Error("transport"), { code }) })); },
+}), { status: 200, headers: XLSX_HEADERS });
+
+test("HTTP 503·연결 timeout·본문 수신 오류 뒤 같은 요청이 성공하면 그 파일로 수집한다", async () => {
+  const outcomes = [
+    () => new Response("busy", { status: 503 }),
+    () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
+    () => brokenBody("UND_ERR_BODY_TIMEOUT"),
+    () => brokenBody("ECONNRESET"),
+    () => new Response("gateway", { status: 502 }),
+  ];
+  for (const failure of outcomes) {
+    await withDirectory(async (outputDirectory) => {
+      let calls = 0;
+      const waits = [];
+      const receipt = await collectKorailMetropolitanTimetableFile({
+        url: URL, expectedSha256: SHA256, outputDirectory, ...retryFast(waits),
+        fetchImpl: async () => { calls += 1; return calls === 1 ? failure() : xlsxResponse(); },
+      });
+      assert.equal(calls, 2);
+      assert.deepEqual(waits, [1_000]);
+      assert.deepEqual(await readdir(outputDirectory), ["receipt.json", "timetable.xlsx"]);
+      assert.deepEqual(await readFile(path.join(outputDirectory, "timetable.xlsx")), XLSX);
+      assert.equal(receipt.sha256, SHA256);
+    });
+  }
+});
+
+test("일시 오류가 한도(2번 재시도)를 넘어 이어지면 기존 오류 코드로 실패하고 receipt를 남기지 않는다", async () => {
+  const cases = [
+    [() => new Response("busy", { status: 503 }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP$/],
+    [() => { throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }); }, /KORAIL_METROPOLITAN_TIMETABLE_FILE_TRANSPORT$/],
+    [() => brokenBody("UND_ERR_BODY_TIMEOUT"), /KORAIL_METROPOLITAN_TIMETABLE_FILE_BODY$/],
+  ];
+  for (const [respond, expectation] of cases) {
+    await withDirectory(async (outputDirectory) => {
+      let calls = 0;
+      const waits = [];
+      await assert.rejects(collectKorailMetropolitanTimetableFile({
+        url: URL, expectedSha256: SHA256, outputDirectory, ...retryFast(waits),
+        fetchImpl: async () => { calls += 1; return respond(); },
+      }), expectation);
+      assert.equal(calls, 3);
+      assert.deepEqual(waits, [1_000, 2_000]);
+      assert.deepEqual(await readdir(outputDirectory), []);
+    });
+  }
+});
+
+test("인증·내용 오류(HTTP 403·404·501, 형식, SHA, 리다이렉트)는 재시도하지 않는다", async () => {
+  const cases = [
+    [() => new Response("denied", { status: 403 }), /_HTTP$/],
+    [() => new Response("missing", { status: 404 }), /_HTTP$/],
+    [() => new Response("boom", { status: 501 }), /_HTTP$/],
+    [() => new Response(XLSX, { status: 200, headers: { "content-type": "text/html" } }), /_CONTENT_TYPE$/],
+    [() => new Response(Buffer.from("not an xlsx"), { status: 200, headers: XLSX_HEADERS }), /_XLSX$/],
+    [() => xlsxResponse(), /_SHA256$/],
+  ];
+  for (const [respond, expectation] of cases) {
+    await withDirectory(async (outputDirectory) => {
+      let calls = 0;
+      const waits = [];
+      await assert.rejects(collectKorailMetropolitanTimetableFile({
+        url: URL, expectedSha256: expectation.source.includes("SHA256") ? "0".repeat(64) : SHA256, outputDirectory, ...retryFast(waits),
+        fetchImpl: async () => { calls += 1; return respond(); },
+      }), expectation);
+      assert.equal(calls, 1, String(expectation));
+      assert.deepEqual(waits, []);
+    });
+  }
+});
+
+test("재시도 대기 예산을 넘기면 마지막 시도의 오류 코드로 실패한다", async () => {
+  await withDirectory(async (outputDirectory) => {
+    let calls = 0;
+    await assert.rejects(collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
+      fetchImpl: async () => { calls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
+    }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_TRANSPORT$/);
+    assert.equal(calls, 2);
+  });
+});
+
+async function withDirectory(run) {
+  return withParent(async (parent) => run(path.join(parent, "capture")));
+}
+
+async function withParent(run) {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "korail-file-test-"));
+  try { return await run(parent); } finally { await rm(parent, { recursive: true, force: true }); }
+}
+
+test("HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류 코드로 실패한다(#1099 리뷰 F1)", async () => {
+  await withDirectory(async (outputDirectory) => {
+    let calls = 0;
+    await assert.rejects(collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500), randomImpl: () => 0.5,
+      fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
+    }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP$/);
+    assert.equal(calls, 2);
+  });
+});
+
+test("#997 헤더 timeout과 본문 수신 한도를 분리하고 본문 데드라인 초과는 재시도 없이 TIMEOUT으로 실패한다", { timeout: 5_000 }, async () => {
+  assert.equal(HEADER_TIMEOUT_MS, 30_000);
+  assert.equal(REQUEST_TIMEOUT_MS, HEADER_TIMEOUT_MS);
+  assert.equal(OBSERVED_FILE_BYTES, 51_799);
+  assert.equal(MIN_BODY_THROUGHPUT_BYTES_PER_SECOND, 1_000);
+  assert.equal(BODY_TIMEOUT_MS, 60_000);
+
+  // (1) 헤더 응답 직후 타이머가 해제되어 본문이 headerTimeoutMs보다 느려도 bodyTimeoutMs 안이면 성공한다.
+  await withDirectory(async (outputDirectory) => {
+    const receipt = await collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory, headerTimeoutMs: 30, bodyTimeoutMs: 2_000,
+      fetchImpl: async (_url, init) => {
+        let sent = 0;
+        const size = Math.ceil(XLSX.length / 2);
+        const body = new ReadableStream({
+          async pull(controller) {
+            if (sent >= 2) { controller.close(); return; }
+            await new Promise((resolve) => setTimeout(resolve, 60));
+            init.signal?.throwIfAborted();
+            controller.enqueue(XLSX.subarray(sent * size, (sent + 1) * size));
+            sent += 1;
+          },
+        });
+        return { status: 200, ok: true, redirected: false, headers: new Headers(XLSX_HEADERS), body };
+      },
+    });
+    assert.equal(receipt.sha256, SHA256);
+    assert.deepEqual(await readFile(path.join(outputDirectory, "timetable.xlsx")), XLSX);
+  });
+
+  // (2) 본문 스트림이 멈춰 bodyTimeoutMs를 넘기면 reader.cancel()을 호출하고 재시도 없이 즉시 TIMEOUT으로 실패한다.
+  await withDirectory(async (outputDirectory) => {
+    let calls = 0;
+    let cancelled = false;
+    const waits = [];
+    await assert.rejects(collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory, headerTimeoutMs: 500, bodyTimeoutMs: 40, ...retryFast(waits),
+      fetchImpl: async () => {
+        calls += 1;
+        const body = new ReadableStream({
+          pull() { return new Promise(() => {}); },
+          cancel() { cancelled = true; },
+        });
+        return { status: 200, ok: true, redirected: false, headers: new Headers(XLSX_HEADERS), body };
+      },
+    }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_TIMEOUT$/);
+    assert.equal(calls, 1);
+    assert.equal(cancelled, true);
+    assert.deepEqual(waits, []);
+    assert.deepEqual(await readdir(outputDirectory), []);
+  });
+
+  // (3) 헤더 timeout은 일시 오류로 재시도한 뒤 성공한다.
+  await withDirectory(async (outputDirectory) => {
+    let calls = 0;
+    const waits = [];
+    const receipt = await collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory, headerTimeoutMs: 25, bodyTimeoutMs: 1_000, ...retryFast(waits),
+      fetchImpl: async (_url, init) => {
+        calls += 1;
+        if (calls === 1) return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+        return xlsxResponse();
+      },
+    });
+    assert.equal(calls, 2);
+    assert.deepEqual(waits, [1_000]);
+    assert.equal(receipt.sha256, SHA256);
+  });
+
+  // (4) 유효하지 않은 timeout 인자는 거부한다.
+  for (const bad of [0, -1, 1.5, "30"]) {
+    await withParent(async (parent) => {
+      await assert.rejects(collectKorailMetropolitanTimetableFile({
+        url: URL, expectedSha256: SHA256, outputDirectory: path.join(parent, "a"), headerTimeoutMs: bad, fetchImpl: async () => xlsxResponse(),
+      }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_TIMEOUT/);
+      await assert.rejects(collectKorailMetropolitanTimetableFile({
+        url: URL, expectedSha256: SHA256, outputDirectory: path.join(parent, "b"), bodyTimeoutMs: bad, fetchImpl: async () => xlsxResponse(),
+      }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_TIMEOUT/);
+    });
+  }
+});
+
+defineSourceCollectionRetryTests({
+  name: "KORAIL 수도권 시간표 파일 수집기",
+  httpError: /KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP$/,
+  delegate: async () => xlsxResponse(),
+  headers: XLSX_HEADERS,
+  run: ({ fetchImpl, sleepImpl }) => withDirectory(async (outputDirectory) => {
+    const { sha256, byteLength } = await collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory, fetchImpl, sleepImpl, randomImpl: () => 0,
+    });
+    return { sha256, byteLength, bytes: await readFile(path.join(outputDirectory, "timetable.xlsx")) };
+  }),
+});
+
+test("#988 lineName이 주어지면 코레일 시각표 게시판의 최신 글 첨부 URL과 대조하고 새 파일 URL이 올라오면 다운로드 전에 URL_DRIFT로 실패한다", async () => {
+  const NEWER_PATH = "jfile/202611/01/20261101_daegyeong_timetable.xlsx";
+  const NEWER_URL = `https://www.korail.com/file/cubedata/COMMON/${NEWER_PATH}`;
+  const boardResponse = (boardList) => new Response(JSON.stringify({ strResult: "SUCC", boardList }), {
+    status: 200,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+
+  await withDirectory(async (outputDirectory) => {
+    const requestedUrls = [];
+    const receipt = await collectKorailMetropolitanTimetableFile({
+      url: URL,
+      expectedSha256: SHA256,
+      outputDirectory,
+      lineName: "대경선",
+      fetchImpl: async (requestedUrl) => {
+        requestedUrls.push(requestedUrl);
+        if (requestedUrl === KORAIL_TIMETABLE_BOARD_URL) {
+          return boardResponse([
+            {
+              bdIdx: 12002,
+              bdCode: "_ticketTable02",
+              bdTitle: " 대경선 시각표(2025.10.27.부터)  ",
+              bdContent: "<p><br></p>",
+              fileId: ["jfile/older-timetable.xlsx"],
+            },
+            {
+              bdIdx: 12618,
+              bdCode: "_ticketTable02",
+              bdTitle: "대경선 전동열차 시각표(2026.9.1.부터)",
+              bdContent: "<p><br></p>",
+              fileId: ["jfile/metropolitan-timetable.xlsx"],
+            },
+          ]);
+        }
+        return xlsxResponse();
+      },
+    });
+    assert.deepEqual(requestedUrls, [KORAIL_TIMETABLE_BOARD_URL, URL]);
+    assert.equal(receipt.officialUrl, URL);
+    assert.equal(receipt.sha256, SHA256);
+  });
+
+  await withDirectory(async (outputDirectory) => {
+    const requestedUrls = [];
+    await assert.rejects(collectKorailMetropolitanTimetableFile({
+      url: URL,
+      expectedSha256: SHA256,
+      outputDirectory,
+      lineName: "대경선",
+      fetchImpl: async (requestedUrl) => {
+        requestedUrls.push(requestedUrl);
+        if (requestedUrl === KORAIL_TIMETABLE_BOARD_URL) {
+          return boardResponse([
+            {
+              bdIdx: 12618,
+              bdCode: "_ticketTable02",
+              bdTitle: "대경선 전동열차 시각표(2026.9.1.부터)",
+              bdContent: "<p><br></p>",
+              fileId: ["jfile/metropolitan-timetable.xlsx"],
+            },
+            {
+              bdIdx: 12700,
+              bdCode: "_ticketTable02",
+              bdTitle: " 대경선 시각표(2026.12.1.부터)  ",
+              bdContent: "<p><br></p>",
+              fileId: [NEWER_PATH],
+            },
+          ]);
+        }
+        return xlsxResponse();
+      },
+    }), {
+      name: "Error",
+      message: `KORAIL_METROPOLITAN_TIMETABLE_FILE_URL_DRIFT: expected ${URL} but board head is ${NEWER_URL}`,
+    });
+    assert.deepEqual(requestedUrls, [KORAIL_TIMETABLE_BOARD_URL]);
+    assert.deepEqual(await readdir(outputDirectory), []);
+  });
+
+  await assert.rejects(verifyCurrentKorailBoardTimetableUrl({
+    lineName: "   ",
+    expectedUrl: URL,
+    fetchImpl: async () => boardResponse([]),
+  }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_LINE_NAME$/u);
+
+  for (const invalidBoard of [
+    new Response("not-json", { status: 200 }),
+    new Response(JSON.stringify({ strResult: "FAIL", boardList: [] }), { status: 200 }),
+    new Response(JSON.stringify({ strResult: "SUCC", boardList: [] }), { status: 200 }),
+    new Response(JSON.stringify({
+      strResult: "SUCC",
+      boardList: [{ bdIdx: 12618, bdCode: "_ticketTable02", bdTitle: "대경선 전동열차 시각표", bdContent: "<p><br></p>", fileId: [] }],
+    }), { status: 200 }),
+    new Response(JSON.stringify({
+      strResult: "SUCC",
+      boardList: [
+        { bdIdx: "invalid", bdCode: "_ticketTable02", bdTitle: "대경선 시각표(개정)", bdContent: "<p><br></p>", fileId: [NEWER_PATH] },
+        { bdIdx: 12618, bdCode: "_ticketTable02", bdTitle: "대경선 전동열차 시각표", bdContent: "<p><br></p>", fileId: ["jfile/metropolitan-timetable.xlsx"] },
+      ],
+    }), { status: 200 }),
+  ]) {
+    await assert.rejects(verifyCurrentKorailBoardTimetableUrl({
+      lineName: "대경선",
+      expectedUrl: URL,
+      fetchImpl: async () => invalidBoard.clone(),
+    }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_BOARD$/u);
+  }
+});

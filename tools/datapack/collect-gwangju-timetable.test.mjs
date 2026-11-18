@@ -1,0 +1,218 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import test from "node:test";
+
+import { collectGwangjuTimetable, readRetainedGwangjuTimetableCsv } from "./collect-gwangju-timetable.mjs";
+
+const retainedCsvHeader = "요일,종착역 코드,방향(상_하행),도착시간,역사코드,기준일자,호선,종착역명,역사명";
+
+test("retained CSV reader는 BOM과 CRLF 원문을 검증된 행으로 보존한다", () => {
+  const csvBytes = Buffer.from(`\uFEFF${retainedCsvHeader}\r\n평일,100,상행,05:30,101,20250801,1호선,녹동역,평동역\r\n`);
+
+  const retained = readRetainedGwangjuTimetableCsv(csvBytes);
+
+  assert.equal(retained.datasetId, "15111497");
+  assert.equal(retained.rawSha256, createHash("sha256").update(csvBytes).digest("hex"));
+  assert.equal(retained.rawByteLength, csvBytes.byteLength);
+  assert.deepEqual(retained.rows, [{
+    day: "평일", endCord: "100", direction: "상행", time: "05:30", subwayCord: "101",
+    updateDt: "20250801", subwayLine: "1호선", endName: "녹동역", subwayName: "평동역",
+  }]);
+  for (const field of ["tripId", "freshUntil", "capturedAt", "fieldsProvided", "calendar"]) {
+    assert.equal(Object.hasOwn(retained, field), false);
+    assert.equal(Object.hasOwn(retained.rows[0], field), false);
+  }
+});
+
+test("retained CSV reader는 header, column, UTF-8, empty 입력을 거부한다", () => {
+  const validRow = "평일,100,상행,05:30,101,20250801,1호선,녹동역,평동역";
+  assert.throws(
+    () => readRetainedGwangjuTimetableCsv(Buffer.from(`wrong,header\n${validRow}\n`)),
+    /header mismatch/,
+  );
+  assert.throws(
+    () => readRetainedGwangjuTimetableCsv(Buffer.from(`${retainedCsvHeader}\n${validRow.split(",").slice(0, -1).join(",")}\n`)),
+    /column count mismatch/,
+  );
+  assert.throws(
+    () => readRetainedGwangjuTimetableCsv(new Uint8Array([0xff])),
+    /not valid UTF-8/,
+  );
+  assert.throws(() => readRetainedGwangjuTimetableCsv(new Uint8Array()), /is empty/);
+});
+
+test("광주 timetable collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectGwangjuTimetable({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+function xmlResponse({ resultCode = "00", rows = sampleRows(), totalCount = rows.length, pageNo = 1, pageSize = rows.length } = {}) {
+  const items = rows.map((row) => `<item>${Object.entries(row)
+    .map(([field, value]) => `<${field}>${value}</${field}>`).join("")}</item>`).join("");
+  return new Response(`<?xml version="1.0" encoding="UTF-8"?><response>
+    <header><resultCode>${resultCode}</resultCode><resultMsg>정상</resultMsg></header>
+    <body><items>${items}</items><numOfRows>${pageSize}</numOfRows><pageNo>${pageNo}</pageNo>
+    <totalCount>${totalCount}</totalCount></body></response>`, {
+    headers: { "content-type": "application/xml;charset=UTF-8" },
+  });
+}
+
+function sampleRows() {
+  const common = { day: "평일", updateDt: "2025-08-01", subwayLine: "1호선" };
+  return [
+    { ...common, endCord: "100", direction: "상행", time: "05:30", subwayCord: "101", endName: "녹동역", subwayName: "평동역" },
+    { ...common, endCord: "119", direction: "하행", time: "05:32", subwayCord: "101", endName: "평동역", subwayName: "녹동역" },
+  ];
+}
+
+test("광주 timetable collector는 공식 XML을 redacted deterministic snapshot으로 만든다", async () => {
+  const secret = "never-print-gwangju-key";
+  let requested;
+  const snapshot = await collectGwangjuTimetable({
+    serviceKey: secret,
+    now: new Date("2026-07-20T13:00:00.000Z"),
+    fetchImpl: async (url) => {
+      requested = new URL(url);
+      return xmlResponse();
+    },
+  });
+
+  assert.equal(requested.origin + requested.pathname, "https://apis.data.go.kr/B551232/grtcTimetable/timetable");
+  assert.deepEqual([...requested.searchParams], [
+    ["serviceKey", secret], ["pageNo", "1"], ["numOfRows", "500"],
+  ]);
+  assert.equal(snapshot.artifactKind, "gwangju-timetable-snapshot");
+  assert.equal(snapshot.sourceId, "gwangju-transportation-timetable");
+  assert.equal(snapshot.providerResultCode, "00");
+  assert.equal(snapshot.schemaStatus, "EXPECTED");
+  assert.equal(snapshot.rowCount, 2);
+  assert.deepEqual(snapshot.outputFields, [
+    "day", "endCord", "direction", "time", "subwayCord", "updateDt", "subwayLine", "endName", "subwayName",
+  ]);
+  assert.deepEqual(snapshot.dayTypes, ["평일"]);
+  assert.deepEqual(snapshot.directions, ["상행", "하행"]);
+  assert.match(snapshot.rawSha256, /^[a-f0-9]{64}$/);
+  assert.match(snapshot.rowsSha256, /^[a-f0-9]{64}$/);
+  assert.equal(snapshot.credentialRedacted, true);
+  assert.doesNotMatch(JSON.stringify(snapshot), new RegExp(secret));
+});
+
+test("광주 정적 관측은 수집 시각으로 유효기간이나 열차 연결을 합성하지 않는다", async () => {
+  const rows = sampleRows();
+  const firstCapture = new Date(`${rows[0].updateDt}T12:00:00.000Z`);
+  const secondCapture = new Date(firstCapture.getTime() + 60 * 60 * 1_000);
+  const snapshots = [];
+  for (const now of [firstCapture, secondCapture]) {
+    const snapshot = await collectGwangjuTimetable({
+      serviceKey: "key", now, fetchImpl: async () => xmlResponse({ rows }),
+    });
+    assert.equal(snapshot.schemaVersion, 2);
+    assert.equal(Object.hasOwn(snapshot, "freshUntil"), false);
+    assert.equal(Object.hasOwn(snapshot, "fieldsProvided"), false);
+    assert.equal(snapshot.capturedAt, now.toISOString());
+    assert.deepEqual(snapshot.rows.map(({ updateDt }) => updateDt), rows.map(({ updateDt }) => updateDt));
+    snapshots.push(snapshot);
+  }
+  assert.equal(snapshots[0].rawSha256, snapshots[1].rawSha256);
+  assert.equal(snapshots[0].rowsSha256, snapshots[1].rowsSha256);
+});
+
+test("광주 정적 관측은 투영하지 않은 필드를 포함한 응답 원문을 보존한다", async () => {
+  const body = Buffer.from((await xmlResponse().text()).replace(
+    "<item>", "<item>\n<sourceNote>official observation</sourceNote>\n",
+  ));
+  const snapshot = await collectGwangjuTimetable({
+    serviceKey: "test-service-key",
+    fetchImpl: async () => new Response(body, { headers: { "content-type": "application/xml" } }),
+  });
+  assert.equal(snapshot.rawPages.length, 1);
+  assert.equal(snapshot.rawPages[0].pageNo, 1);
+  assert.deepEqual(Buffer.from(snapshot.rawPages[0].bodyBase64, "base64"), body);
+  assert.equal(snapshot.rawPages[0].rawSha256, createHash("sha256").update(body).digest("hex"));
+});
+
+test("광주 timetable collector는 provider 500건 cap을 bounded pagination으로 완결한다", async () => {
+  const rows = [...sampleRows(), {
+    day: "평일", endCord: "100", direction: "상행", time: "0534", subwayCord: "102",
+    updateDt: "20250801", subwayLine: "1호선", endName: "녹동역", subwayName: "도산역",
+  }];
+  const requestedPages = [];
+  const snapshot = await collectGwangjuTimetable({
+    serviceKey: "key",
+    fetchImpl: async (url) => {
+      const pageNo = Number(new URL(url).searchParams.get("pageNo"));
+      requestedPages.push(pageNo);
+      return pageNo === 1
+        ? xmlResponse({ rows: rows.slice(0, 2), totalCount: 3, pageNo, pageSize: 2 })
+        : xmlResponse({ rows: rows.slice(2), totalCount: 3, pageNo, pageSize: 2 });
+    },
+  });
+
+  assert.deepEqual(requestedPages, [1, 2]);
+  assert.equal(snapshot.requestCount, 2);
+  assert.equal(snapshot.rowCount, 3);
+  assert.equal(snapshot.stationCodes.length, 2);
+});
+
+test("광주 timetable collector는 provider·pagination·row schema 오류를 fail closed한다", async () => {
+  await assert.rejects(collectGwangjuTimetable({
+    serviceKey: "key",
+    fetchImpl: async () => xmlResponse({ resultCode: "20" }),
+  }), /provider resultCode 20/);
+  await assert.rejects(collectGwangjuTimetable({
+    serviceKey: "key",
+    fetchImpl: async (url) => {
+      const pageNo = Number(new URL(url).searchParams.get("pageNo"));
+      return pageNo === 1
+        ? xmlResponse({ totalCount: 3, pageNo, pageSize: 2 })
+        : xmlResponse({ rows: [], totalCount: 3, pageNo, pageSize: 2 });
+    },
+  }), /empty items/);
+  await assert.rejects(collectGwangjuTimetable({
+    serviceKey: "key",
+    fetchImpl: async () => xmlResponse({ rows: [{ ...sampleRows()[0], time: "not-a-time" }] }),
+  }), /item\[0\] values=time; shapes=time:TEXT_LENGTH_10/);
+});
+
+test("광주 timetable collector는 credential과 provider body 없이 transport code만 진단한다", async () => {
+  const transport = Object.assign(new Error("secret-bearing provider body"), { code: "ENOTFOUND" });
+  let calls = 0;
+  await assert.rejects(collectGwangjuTimetable({
+    serviceKey: "never-print-gwangju-key",
+    sleepImpl: async () => {},
+    fetchImpl: async () => { calls += 1; throw transport; },
+  }), (error) => {
+    assert.match(error.message, /transport failure; code=ENOTFOUND/);
+    assert.doesNotMatch(error.message, /never-print|secret-bearing/);
+    return true;
+  });
+  assert.equal(calls, 3);
+});
+
+test("광주 timetable collector는 일시적 HTTP/resultCode만 재시도하고 영구 오류는 즉시 실패한다", async () => {
+  for (const [status, expectedCalls] of [[429, 2], [500, 3], [403, 1]]) {
+    let calls = 0;
+    await assert.rejects(collectGwangjuTimetable({
+      serviceKey: "key",
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response("unavailable", { status });
+      },
+    }), new RegExp(`HTTP ${status}`));
+    assert.equal(calls, expectedCalls);
+  }
+  for (const [resultCode, expectedCalls] of [["05", 3], ["20", 1]]) {
+    let calls = 0;
+    await assert.rejects(collectGwangjuTimetable({
+      serviceKey: "key",
+      sleepImpl: async () => {},
+      fetchImpl: async () => {
+        calls += 1;
+        return xmlResponse({ resultCode });
+      },
+    }), new RegExp(`provider resultCode ${resultCode}`));
+    assert.equal(calls, expectedCalls);
+  }
+});

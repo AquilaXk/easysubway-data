@@ -1,0 +1,28 @@
+name: Recovered Failure Issues Close (Retired)
+
+# 단독 운영 전환으로 자동 실패 이슈 생성·종료는 중단되었다.
+# 외부 스케줄러 계약(contracts/release/platform-data-workflow-scheduler-contract.json) 정리 전까지 읽기 전용 no-op stub으로만 유지한다.
+on:
+  schedule:
+    - cron: "13 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: recovered-failure-issues-close
+  cancel-in-progress: false
+
+jobs:
+  close:
+    name: Notice retirement of failure issue auto-close
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Notice retirement of failure issue auto-close
+        run: |
+          set -euo pipefail
+          echo "::notice title=Retired workflow::Automatic failure issue creation and closing are retired in solo-project mode."

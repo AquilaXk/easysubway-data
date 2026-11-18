@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "official-source-snapshot",
+  "snapshotId": "molit-urban-rail-full-route-revalidated-20260813",
+  "sourceId": "molit-urban-rail-full-route",
+  "provider": "국토교통부",
+  "retrievedAt": "2026-08-13T14:02:45.000Z",
+  "sourceUpdatedAt": "2026-06-22T00:00:00Z",
+  "rowCount": 5,
+  "rawSha256": "3ad2a676f45d23c1f39a90dc13f3a040c92ac05a01c43b9e6bbb82bf07172268",
+  "rawObjectUri": "s3://easysubway-datapack-sources/molit-urban-rail-full-route/20260712.json",
+  "redactedRequestFingerprint": "0083ea2781e850663cc12de4ddb21e508959c6683923a724dd73cc54e0b16ba1",
+  "schemaFingerprint": "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
+  "snapshotStatus": "LOCKED",
+  "schemaStatus": "PASS",
+  "licenseStatus": "PASS",
+  "fetchStatus": "SUCCESS",
+  "redistributionAllowed": true,
+  "credentialRedacted": true,
+  "previousSnapshotId": "molit-urban-rail-full-route-capital-admission-20260712",
+  "diffSummary": {
+    "status": "NO_CHANGE",
+    "rawHashChanged": false,
+    "schemaHashChanged": false,
+    "requestHashChanged": false,
+    "sourceUpdatedAtChanged": false,
+    "rowDelta": 0,
+    "coverageDelta": 0
+  },
+  "freshnessExpiresAt": "2026-09-12T14:02:45.000Z",
+  "rawRetentionExpiresAt": "2026-11-11T14:02:45.000Z",
+  "providerRecordHashes": [
+    "bd7a904db6ad00a48389f6938201fe6b562d6989a22cfb0c3a70044adecca16f",
+    "f52908004e7391f192b050d7714b28c429706e0224b668a76a513188dce470e0",
+    "8c850edadffc61c98cfe1d7af1eaf0ef35a6e0bf832756b22277792b1c29e8f3",
+    "9c46ebc5740e5ba48a84a50a71235e70e022cf75ed6cd1c104c863a2a56b5b8e",
+    "79b1206245996aefa38ab0c6adf1bed48686cca2e14afb19774a0b460c244e9a"
+  ],
+  "coverageCount": 5,
+  "revalidationEvidenceSha256": "c6b3a0fe0dab4657877c9ab6c648ec497b107c76bc8dcc6042368907af92e9f4"
+}

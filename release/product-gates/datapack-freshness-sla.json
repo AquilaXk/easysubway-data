@@ -1,0 +1,323 @@
+{
+  "schemaVersion": 2,
+  "applicationId": "easysubway",
+  "androidApplicationId": "com.easysubway.app",
+  "releaseGate": "datapack-freshness-sla",
+  "issue": 1418,
+  "policyOwner": "QA",
+  "clockSkewSeconds": 300,
+  "sourceClasses": [
+    {
+      "id": "static_network_metadata",
+      "sourceIds": [
+        "molit-urban-rail-full-route",
+        "seoulmetro-station-line-info",
+        "kric-train-operation-organ"
+      ],
+      "examples": [
+        "station",
+        "line",
+        "operator identity"
+      ],
+      "basisField": "retrievedAt",
+      "reverificationCadence": "P30D",
+      "offlinePackEligible": true,
+      "eventTriggers": [
+        "station rename",
+        "operator change",
+        "line extension opening"
+      ],
+      "changePublishSla": "P3D",
+      "freshnessMetric": "freshnessValidRatio"
+    },
+    {
+      "id": "static_accessibility_facility",
+      "sourceIds": [
+        "incheon-transit-accessibility",
+        "kric-station-convenience-standard",
+        "seoul-metro-accessibility",
+        "daegu-transportation-accessibility",
+        "daejeon-transportation-accessibility",
+        "gwangju-transportation-accessibility",
+        "busan-transportation-accessibility",
+        "kric-station-escalator-detailed"
+      ],
+      "examples": [
+        "KRIC elevator",
+        "KRIC escalator",
+        "KRIC wheelchair lift"
+      ],
+      "basisField": "retrievedAt",
+      "reverificationCadence": "P90D",
+      "offlinePackEligible": true,
+      "eventTriggers": [
+        "operator construction notice",
+        "facility outage notice",
+        "field verification override"
+      ],
+      "changePublishSla": "P3D",
+      "freshnessMetric": "freshnessValidRatio"
+    },
+    {
+      "id": "planned_timetable",
+      "sourceIds": [
+        "korail-metropolitan-planned-timetable",
+        "kric-subway-timetable",
+        "kric-subway-timetable-station-lines"
+      ],
+      "examples": [
+        "service calendar",
+        "trips",
+        "stop_times",
+        "headway"
+      ],
+      "basisField": "serviceEffectiveAt",
+      "maximumReverificationCadence": "P30D",
+      "futureBasisAllowed": true,
+      "providerValidityEndField": "serviceEffectiveUntil",
+      "offlinePackEligible": true,
+      "eventTriggers": [
+        "operator timetable revision",
+        "service calendar expiry",
+        "line extension opening"
+      ],
+      "changePublishSla": "before-effective-date",
+      "freshnessMetric": "plannedEtaCoverageRatio",
+      "unchangedReverificationBasisField": "reverifiedUnchangedAt"
+    },
+    {
+      "id": "route_map_positions",
+      "sourceIds": [
+        "seoul-metro-route-map-positions"
+      ],
+      "examples": [
+        "official public station code/name/latitude/longitude",
+        "versioned deterministic route-map layout"
+      ],
+      "basisField": "retrievedAt",
+      "reverificationCadence": "P90D",
+      "offlinePackEligible": true,
+      "eventTriggers": [
+        "official public data revision",
+        "new station opening",
+        "line extension opening"
+      ],
+      "changePublishSla": "P3D",
+      "freshnessMetric": "routeMapPositionFreshnessRatio"
+    },
+    {
+      "id": "route_map_asset_historical",
+      "sourceIds": [
+        "seoulmetro-cyberstation-route-map"
+      ],
+      "examples": [
+        "historical web route-map diagnostic only"
+      ],
+      "basisField": "retrievedAt",
+      "reverificationCadence": "P1Y",
+      "offlinePackEligible": false,
+      "eventTriggers": [
+        "historical evidence review"
+      ],
+      "changePublishSla": "not-applicable",
+      "freshnessMetric": "routeMapPositionFreshnessRatio"
+    },
+    {
+      "id": "annual_official_file",
+      "sourceIds": [
+        "molit-railway-transfer-movement",
+        "seoul-metro-transfer-distance-duration",
+        "seoul-metro-transfer-car-door-duration"
+      ],
+      "examples": [
+        "official annual railway transfer movement CSV"
+      ],
+      "basisField": "observedAt",
+      "reverificationCadence": "P1Y",
+      "offlinePackEligible": true,
+      "eventTriggers": [
+        "official file revision",
+        "station transfer path revision",
+        "line or station opening"
+      ],
+      "changePublishSla": "P14D",
+      "freshnessMetric": "freshnessValidRatio"
+    },
+    {
+      "id": "realtime_overlay",
+      "sourceIds": [],
+      "examples": [
+        "Seoul TOPIS arrival",
+        "provider train position"
+      ],
+      "basisField": "observedAt",
+      "reverificationCadence": "PT90S",
+      "offlinePackEligible": false,
+      "eventTriggers": [
+        "provider stale",
+        "mapping failure spike",
+        "quota or terms change"
+      ],
+      "changePublishSla": "online-overlay-only",
+      "freshnessMetric": "providerFreshnessSecondsMax"
+    },
+    {
+      "id": "route_graph_topology",
+      "sourceIds": [
+        "capital-route-topology",
+        "korail-metropolitan-timetable-file",
+        "gwangju-transportation-route-topology",
+        "busan-transportation-route-topology",
+        "daejeon-station-distance-fare",
+        "daegu-line1-route-topology",
+        "daegu-line2-route-topology",
+        "daegu-line3-route-topology",
+        "incheon-transit-station-info"
+      ],
+      "examples": [
+        "official capital route graph topology"
+      ],
+      "basisField": "retrievedAt",
+      "reverificationCadence": "P7D",
+      "offlinePackEligible": true,
+      "eventTriggers": [
+        "official source revision",
+        "line extension opening"
+      ],
+      "changePublishSla": "P3D",
+      "freshnessMetric": "routeTopologyFreshnessRatio"
+    },
+    {
+      "id": "official_static_timetable_confirmation",
+      "sourceIds": [
+        "kric-nationwide-timetable-file"
+      ],
+      "basisField": "observedAt",
+      "reverificationCadence": "P7D",
+      "futureBasisAllowed": false,
+      "eventTriggers": [
+        "official timetable revision notice"
+      ],
+      "providerValidityEndField": "serviceEffectiveUntil"
+    },
+    {
+      "id": "daejeon_timetable_observation",
+      "sourceIds": [
+        "daejeon-train-timetable"
+      ],
+      "basisField": "observedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
+    },
+    {
+      "id": "busan_timetable_observation",
+      "sourceIds": [
+        "busan-transportation-timetable"
+      ],
+      "basisField": "capturedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
+    },
+    {
+      "id": "daegu_timetable_observation",
+      "sourceIds": [
+        "daegu-line1-train-timetable",
+        "daegu-line2-train-timetable",
+        "daegu-line3-train-timetable"
+      ],
+      "basisField": "capturedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
+    },
+    {
+      "id": "incheon_timetable_observation",
+      "sourceIds": [
+        "incheon-line1-train-timetable",
+        "incheon-line2-train-timetable"
+      ],
+      "basisField": "capturedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
+    }
+  ],
+  "monitoring": {
+    "manualCheckCadence": "P1D",
+    "channels": [
+      "operator notices",
+      "public data portal update metadata",
+      "GitHub Actions schedule"
+    ],
+    "alertBeforePackExpiry": "PT6H",
+    "alertWhenFreshnessInvalid": true,
+    "productionChannelAllowsExpiredPack": false
+  },
+  "scheduledPipeline": {
+    "cadence": "P1D",
+    "requiredStages": [
+      "source-snapshot",
+      "change-detection",
+      "build",
+      "strict-validation",
+      "conditional-publish",
+      "conditional-post-publish-artifact-validation"
+    ],
+    "releaseSequenceManagedByPipeline": true,
+    "expiresAtManagedByPipeline": true,
+    "reusesProductionValidationIssue": 1393
+  },
+  "reasonCodes": [
+    "SOURCE_FRESHNESS_POLICY_MISSING",
+    "SOURCE_FRESHNESS_DERIVATION_MISMATCH",
+    "SOURCE_SNAPSHOT_EXPIRED",
+    "PACK_PUBLISH_FRESHNESS_EXPIRING",
+    "PACK_PUBLISH_FRESHNESS_EXPIRED",
+    "BUNDLED_PACK_EXPIRED",
+    "MATERIAL_CHANGE_UNAPPROVED",
+    "PUBLISH_REQUIRED_NOT_COMPLETED",
+    "PUBLISH_SEQUENCE_NOT_INCREASING",
+    "POST_PUBLISH_REMOTE_VALIDATION_FAILED"
+  ],
+  "staleExposurePolicy": {
+    "expiredManifestAppBehavior": "continue-with-visible-stale-label",
+    "expiredManifestEtaSource": "STALE",
+    "visibleLabelKo": "저장된 데이터 기준 · 갱신 필요",
+    "strictProfileCanUseStaleAsFound": false,
+    "supportClaimDowngradeRequired": true,
+    "linkedUiIssues": [
+      1396,
+      1398
+    ]
+  },
+  "rollback": {
+    "runbookCommand": "node tools/datapack/run-emergency-datapack-drill.mjs --input <drill-input.json> --output <drill-evidence.json>",
+    "rehearsalEvidenceRequired": true,
+    "requiredEvidence": [
+      "manifest-hashes",
+      "rollback-time-seconds",
+      "route-regression-replay"
+    ]
+  },
+  "requiredEvidence": [
+    "freshness-policy-json",
+    "scheduled-pipeline-log-one-cycle",
+    "expiry-alert-evidence",
+    "rollback-rehearsal-evidence",
+    "stale-label-android-ui-tree-or-screenshot"
+  ]
+}

@@ -1,0 +1,398 @@
+#!/usr/bin/env node
+// 대전교통공사 1호선 엘리베이터·에스컬레이터 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
+// API key·포털 활용신청 없이 data.go.kr 파일데이터(15041384·15041361)만 사용한다.
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
+import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const ELEVATOR_DATASET_ID = "15041384";
+const ESCALATOR_DATASET_ID = "15041361";
+const DATASET_IDS = Object.freeze([ELEVATOR_DATASET_ID, ESCALATOR_DATASET_ID]);
+const ELEVATOR_DETAIL_URL = `https://www.data.go.kr/data/${ELEVATOR_DATASET_ID}/fileData.do`;
+const ESCALATOR_DETAIL_URL = `https://www.data.go.kr/data/${ESCALATOR_DATASET_ID}/fileData.do`;
+const SOURCE_ID = "daejeon-transportation-accessibility";
+const ARTIFACT_KIND = "daejeon-accessibility-snapshot";
+const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
+const LINE_ID = "line-7051a9c2525c";
+const EXPECTED_STATION_COUNT = 22;
+const EXPECTED_ELEVATOR_ROWS = 76;
+const EXPECTED_ESCALATOR_ROWS = 168;
+const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
+const STATION_NUMBERS = Object.freeze(Array.from({ length: EXPECTED_STATION_COUNT }, (_, index) => String(101 + index)));
+const ELEVATOR_HEADER_SETS = Object.freeze([
+  Object.freeze(["철도운영기관명", "선명", "역명", "출입구번호", "상세위치", "정원_인원", "정원_중량"]),
+  Object.freeze(["철도운영기관명", "선명", "역명", "출입구번호", "상세위치", "정원인원", "정원중량"]),
+]);
+const ESCALATOR_HEADER_SETS = Object.freeze([
+  Object.freeze(["철도운영기관명", "선명", "역명", "상하행구분", "출입구번호", "상세위치", "시작층", "종료층"]),
+]);
+
+export function normalizedDaejeonStationName(name) {
+  return String(name).normalize("NFKC")
+    .replace(/\([^)]*\)/gu, "")
+    .replace(/[\s/.·]/gu, "")
+    .replace(/[0-9]+$/u, "")
+    .replace(/역$/u, "");
+}
+
+export function parseDaejeonAccessibilityCsv({
+  elevatorBytes,
+  escalatorBytes,
+  topologySnapshot,
+  canonicalStationMappings,
+}) {
+  if (!(elevatorBytes instanceof Uint8Array) || elevatorBytes.byteLength === 0) {
+    throw new Error("Daejeon elevator CSV bytes are required");
+  }
+  if (!(escalatorBytes instanceof Uint8Array) || escalatorBytes.byteLength === 0) {
+    throw new Error("Daejeon escalator CSV bytes are required");
+  }
+  validateTopologySnapshot(topologySnapshot);
+  const mappings = validateMappings(canonicalStationMappings);
+  const scopeByNorm = new Map(mappings.map((mapping) => [
+    normalizedDaejeonStationName(mapping.stationName),
+    mapping,
+  ]));
+  if (scopeByNorm.size !== EXPECTED_STATION_COUNT) {
+    throw new Error("Daejeon accessibility mapping normalization collided");
+  }
+
+  const elevatorCounts = countFacilityRows({
+    bytes: elevatorBytes,
+    expectedHeaderSets: ELEVATOR_HEADER_SETS,
+    expectedRowCount: EXPECTED_ELEVATOR_ROWS,
+    label: "elevator",
+    scopeByNorm,
+  });
+  const escalatorCounts = countFacilityRows({
+    bytes: escalatorBytes,
+    expectedHeaderSets: ESCALATOR_HEADER_SETS,
+    expectedRowCount: EXPECTED_ESCALATOR_ROWS,
+    label: "escalator",
+    scopeByNorm,
+  });
+
+  const rows = mappings.map((mapping) => {
+    const elevator = elevatorCounts.get(mapping.stationNumber);
+    const escalator = escalatorCounts.get(mapping.stationNumber);
+    if (!Number.isInteger(elevator) || elevator < 1) {
+      throw new Error(`Daejeon accessibility missing elevator rows: ${mapping.stationName}`);
+    }
+    if (!Number.isInteger(escalator) || escalator < 1) {
+      throw new Error(`Daejeon accessibility missing escalator rows: ${mapping.stationName}`);
+    }
+    return {
+      stationCode: mapping.stationNumber,
+      stationName: mapping.stationName,
+      lineId: LINE_ID,
+      // 원천 파일에 휠체어리프트 열이 없다. 0을 지어내지 않고 미관측(null)으로 남긴다.
+      wheelchair_lift: null,
+      elevator,
+      escalator,
+    };
+  }).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));
+
+  if (rows.length !== EXPECTED_STATION_COUNT) {
+    throw new Error(`Daejeon accessibility station count mismatch: ${rows.length}`);
+  }
+  const codes = new Set(rows.map(({ stationCode }) => stationCode));
+  if (codes.size !== EXPECTED_STATION_COUNT
+    || STATION_NUMBERS.some((code) => !codes.has(code))) {
+    throw new Error("Daejeon accessibility station code scope mismatch");
+  }
+  return rows;
+}
+
+export function collectDaejeonAccessibility({
+  elevatorBytes,
+  escalatorBytes,
+  topologySnapshot,
+  topologySource,
+  canonicalStationMappings,
+  now = new Date(),
+  downloadProvenance,
+} = {}) {
+  const capturedAt = validDate(now, "now");
+  const topologyEvidence = validateTopologySourceBinding({ topologySnapshot, topologySource });
+  const rows = parseDaejeonAccessibilityCsv({
+    elevatorBytes,
+    escalatorBytes,
+    topologySnapshot,
+    canonicalStationMappings,
+  });
+  const scope = rows.map(({ stationCode, stationName, lineId }) => ({ stationCode, stationName, lineId }));
+  const topologyLineages = [{
+    sourceId: topologySource.id,
+    snapshotId: topologyEvidence.snapshotId,
+    contentSha256: topologySnapshot.contentSha256,
+    lineId: LINE_ID,
+  }];
+  const elevatorSha256 = sha256(Buffer.from(elevatorBytes));
+  const escalatorSha256 = sha256(Buffer.from(escalatorBytes));
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDataGoDownloadProvenance(downloadProvenance, DATASET_IDS, {
+      [ELEVATOR_DATASET_ID]: elevatorBytes,
+      [ESCALATOR_DATASET_ID]: escalatorBytes,
+    });
+  return {
+    schemaVersion: 1,
+    artifactKind: ARTIFACT_KIND,
+    sourceId: SOURCE_ID,
+    detailUrl: ELEVATOR_DETAIL_URL,
+    detailUrls: {
+      elevator: ELEVATOR_DETAIL_URL,
+      escalator: ESCALATOR_DETAIL_URL,
+    },
+    datasetIds: [...DATASET_IDS],
+    endpoint: ELEVATOR_DETAIL_URL,
+    capturedAt: capturedAt.toISOString(),
+    freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
+    official: true,
+    fixture: false,
+    credentialRequired: false,
+    credentialRedacted: true,
+    stationCount: rows.length,
+    rowCount: rows.length,
+    elevatorRowCount: EXPECTED_ELEVATOR_ROWS,
+    escalatorRowCount: EXPECTED_ESCALATOR_ROWS,
+    lineIds: [LINE_ID],
+    fieldsProvided: ["elevator", "escalator", "wheelchair_lift", "status", "verified_at"],
+    license: {
+      type: "PUBLIC-DOMAIN",
+      attribution: "대전교통공사",
+      redistributionAllowed: true,
+      evidenceUrl: ELEVATOR_DETAIL_URL,
+    },
+    topologyLineages,
+    scope,
+    scopeSha256: sha256(JSON.stringify(scope)),
+    rawSha256: sha256(JSON.stringify({
+      [ELEVATOR_DATASET_ID]: elevatorSha256,
+      [ESCALATOR_DATASET_ID]: escalatorSha256,
+    })),
+    rawSources: [
+      retainedRawSource(ELEVATOR_DATASET_ID, elevatorBytes),
+      retainedRawSource(ESCALATOR_DATASET_ID, escalatorBytes),
+    ],
+    elevatorRawSha256: elevatorSha256,
+    escalatorRawSha256: escalatorSha256,
+    rowsSha256: sha256(JSON.stringify(rows)),
+    rows,
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
+  };
+}
+
+function countFacilityRows({ bytes, expectedHeaderSets, expectedRowCount, label, scopeByNorm }) {
+  const table = parseCsv(decodeOfficialCsv(bytes));
+  if (table.length < 2) throw new Error(`Daejeon ${label} CSV has no data rows`);
+  const header = table[0];
+  if (!expectedHeaderSets.some((expectedHeaders) => JSON.stringify(header) === JSON.stringify(expectedHeaders))) {
+    throw new Error(`Daejeon ${label} CSV missing column`);
+  }
+  const nameIndex = header.indexOf("역명");
+  const operatorIndex = header.indexOf("철도운영기관명");
+  const lineIndex = header.indexOf("선명");
+  const counts = new Map();
+  for (const [rowIndex, row] of table.slice(1).entries()) {
+    if (row.length !== header.length) {
+      throw new Error(`Daejeon ${label} CSV column count mismatch at row ${rowIndex + 2}`);
+    }
+    if (String(row[operatorIndex] ?? "").trim() !== "대전교통공사") {
+      throw new Error(`Daejeon ${label} unexpected operator at row ${rowIndex + 2}`);
+    }
+    if (String(row[lineIndex] ?? "").trim() !== "1호선") {
+      throw new Error(`Daejeon ${label} unexpected line at row ${rowIndex + 2}`);
+    }
+    const stationNameRaw = String(row[nameIndex] ?? "").trim();
+    if (stationNameRaw.length === 0) {
+      throw new Error(`Daejeon ${label} empty station name at row ${rowIndex + 2}`);
+    }
+    const mapping = scopeByNorm.get(normalizedDaejeonStationName(stationNameRaw));
+    if (!mapping) {
+      throw new Error(`Daejeon accessibility station join failed: ${stationNameRaw}`);
+    }
+    counts.set(mapping.stationNumber, (counts.get(mapping.stationNumber) ?? 0) + 1);
+  }
+  if (table.length - 1 !== expectedRowCount) {
+    throw new Error(`Daejeon ${label} row count mismatch: ${table.length - 1}`);
+  }
+  if (counts.size !== EXPECTED_STATION_COUNT) {
+    throw new Error(`Daejeon ${label} station coverage incomplete: ${counts.size}`);
+  }
+  for (const code of STATION_NUMBERS) {
+    if (!counts.has(code)) throw new Error(`Daejeon ${label} missing station code: ${code}`);
+  }
+  return counts;
+}
+
+function validateTopologySnapshot(topologySnapshot) {
+  if (topologySnapshot?.schemaVersion !== 1
+    || topologySnapshot.artifactKind !== "daejeon-route-topology-collection"
+    || topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
+    || topologySnapshot.credentialRedacted !== true
+    || JSON.stringify(topologySnapshot.stationNumbers) !== JSON.stringify(STATION_NUMBERS)
+    || topologySnapshot.rowCount !== 42
+    || topologySnapshot.rows?.length !== 42
+    || topologySnapshot.contentSha256 !== sha256(JSON.stringify(topologySnapshot.rows))
+    || topologySnapshot.rowsSha256 !== topologySnapshot.contentSha256) {
+    throw new Error("invalid Daejeon topology snapshot");
+  }
+}
+
+function validateTopologySourceBinding({ topologySnapshot, topologySource }) {
+  const evidence = topologySource?.topologyAdmissionEvidence;
+  if (topologySnapshot?.sourceId !== TOPOLOGY_SOURCE_ID
+    || topologySource?.id !== TOPOLOGY_SOURCE_ID
+    || typeof evidence?.snapshotId !== "string" || evidence.snapshotId.length === 0
+    || !evidence.snapshotId.startsWith(`${TOPOLOGY_SOURCE_ID}-`)
+    || typeof evidence.snapshotPath !== "string"
+    || !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(evidence.snapshotPath)
+    || evidence.capturedAt !== topologySnapshot.observedAt
+    || evidence.stationCount !== topologySnapshot.stationNumbers?.length
+    || evidence.edgeCount !== topologySnapshot.rowCount
+    || evidence.excludedTransferCount !== topologySnapshot.excludedTransferCount
+    || evidence.rawSha256 !== topologySnapshot.rawSha256
+    || evidence.contentSha256 !== topologySnapshot.contentSha256) {
+    throw new Error("Daejeon accessibility topology source binding is invalid");
+  }
+  return evidence;
+}
+
+function validateMappings(canonicalStationMappings) {
+  if (!Array.isArray(canonicalStationMappings) || canonicalStationMappings.length !== EXPECTED_STATION_COUNT) {
+    throw new Error("Daejeon accessibility MOLIT mappings must contain 22 stations");
+  }
+  const codes = new Set();
+  for (const [index, mapping] of canonicalStationMappings.entries()) {
+    if (mapping.stationNumber !== STATION_NUMBERS[index]
+      || typeof mapping.stationName !== "string"
+      || mapping.stationName.trim() === ""
+      || codes.has(mapping.stationNumber)) {
+      throw new Error("Daejeon accessibility MOLIT mappings are invalid");
+    }
+    codes.add(mapping.stationNumber);
+  }
+  return canonicalStationMappings;
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      if (quoted && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+      continue;
+    }
+    if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+    if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(cell);
+      if (row.some((value) => value.trim() !== "")) rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+    cell += char;
+  }
+  if (cell || row.length > 0) {
+    row.push(cell);
+    if (row.some((value) => value.trim() !== "")) rows.push(row);
+  }
+  return rows;
+}
+
+function validDate(value, label) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
+  return date;
+}
+
+function retainedRawSource(datasetId, bytes) {
+  const exactBytes = Buffer.from(bytes);
+  return {
+    datasetId,
+    rawSha256: sha256(exactBytes),
+    bytesBase64: exactBytes.toString("base64"),
+  };
+}
+
+const ARG_SPEC = Object.freeze({
+  usage: "usage: collect-daejeon-accessibility.mjs "
+    + "(--elevator-input <csv> --escalator-input <csv> [--captured-at <iso>] | --download) "
+    + "--topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json>",
+  valueFlags: ["elevator-input", "escalator-input", "topology-snapshot", "inventory", "molit-csv", "output", "captured-at"],
+  fileModeRequired: ["elevator-input", "escalator-input", "topology-snapshot", "inventory", "molit-csv", "output"],
+  downloadRequired: ["topology-snapshot", "inventory", "molit-csv", "output"],
+  downloadForbidden: ["elevator-input", "escalator-input", "captured-at"],
+  absolute: ["output"],
+});
+
+export async function runDaejeonAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date(), sleepImpl, randomImpl } = {}) {
+  const args = parseDownloadModeArgs(argv, ARG_SPEC);
+  const [topologySnapshot, inventory, molitBytes] = await Promise.all([
+    readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
+    readFile(args.inventory, "utf8").then(JSON.parse),
+    readFile(args["molit-csv"]),
+  ]);
+  const { bytes: [elevatorBytes, escalatorBytes], downloadProvenance } = await loadDataGoInputs({
+    args, fetchImpl, datasetIds: DATASET_IDS, inputPaths: [args["elevator-input"], args["escalator-input"]],
+    retry: { sleepImpl, randomImpl },
+  });
+  const topologySource = selectTopologySource(inventory);
+  assertTopologyInputPath(args, topologySource);
+  const snapshot = collectDaejeonAccessibility({
+    elevatorBytes,
+    escalatorBytes,
+    topologySnapshot,
+    topologySource,
+    canonicalStationMappings: parseMolitDaejeonStationMappings(molitBytes),
+    now: resolveCapturedAt(args, now),
+    downloadProvenance,
+  });
+  await writeFileReplacing(args.output, Buffer.from(`${JSON.stringify(snapshot)}\n`));
+  console.log(`Daejeon accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);
+  return snapshot;
+}
+
+function selectTopologySource(inventory) {
+  const matches = inventory?.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
+  if (matches.length !== 1) throw new Error("Daejeon accessibility topology source is invalid");
+  return matches[0];
+}
+
+function assertTopologyInputPath(args, topologySource) {
+  const root = path.resolve(path.dirname(args.inventory), "../..");
+  const expected = path.resolve(root, topologySource.topologyAdmissionEvidence?.snapshotPath ?? "");
+  if (path.resolve(args["topology-snapshot"]) !== expected) {
+    throw new Error("Daejeon accessibility topology input path is invalid");
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {
+    await runDaejeonAccessibilityCollector(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Daejeon accessibility collection failed");
+    process.exitCode = 1;
+  }
+}

@@ -1,0 +1,211 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
+
+import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const root = path.resolve(import.meta.dirname, "../..");
+const SHA256 = /^[a-f0-9]{64}$/u;
+const DORASAN = { stationId: "station-4c48e8115728", lineId: "line-6e39be0cb6e2", x: 1449, y: 763 };
+const BUSAN_RECEIPT = {
+  region: "부산권",
+  lineId: "line-eb7b47920390",
+  x: 6597,
+  y: 4425,
+  stationIds: ["station-080c154ce646", "station-61f6dbfb5d4b"],
+  sourceSha256: "8bd04aa7e94c8e6cd5c1a2dd83fda605e7d892bc66078db57ba8291cee80cdb0",
+  reason: "동일 tracked Busan v3 SVG source coordinate의 owner-approved two-station overlap",
+  reviewedAt: "2026-08-15T00:00:00.000Z",
+  reviewedBy: "Owner",
+  reviewSource: "https://github.com/AquilaXk/easysubway-data/issues/309",
+};
+
+async function json(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
+
+async function inputs() {
+  const dorasanCsvBytes = await readFile(
+    path.join(root, "tools/datapack/sources/seoul-wikimedia-svg-route-map-20260624.csv"),
+  );
+  return {
+    fixture: await json("tools/datapack/release/capital-production-canonical-pack.json"),
+    basemapManifest: await json("tools/route-map/basemap-build-manifest.json"),
+    dorasanCsvBytes,
+    reviewedAmbiguities: await json("tools/route-map/fixtures/reviewed-ambiguities.json"),
+  };
+}
+
+test("canonical route-map provenance는 tracked five-region source와 Dorasan CSV를 정확히 투영한다", async () => {
+  const source = await inputs();
+  const projected = projectCanonicalRouteMapProvenance(source);
+  const capital = projected.packs.find(({ id }) => id === "capital");
+  const dorasan = capital.routeMapPositions.find((row) => row.stationId === DORASAN.stationId && row.lineId === DORASAN.lineId);
+  const incheonSource = source.fixture.packs.find(({ id }) => id === "capital").sourceInventory
+    .find(({ id }) => id === "incheon-transit-station-info");
+  assert.ok(incheonSource);
+  const incheonPosition = capital.routeMapPositions.find(({ sourceId }) => sourceId === incheonSource.id);
+
+  assert.equal(capital.routeMapPositions.length, 1102);
+  assert.ok(capital.routeMapPositions.every(({ sourceSha256 }) => SHA256.test(sourceSha256)));
+  assert.deepEqual(
+    { sourceId: incheonPosition.sourceId, sourceUrl: incheonPosition.sourceUrl, sourceSha256: incheonPosition.sourceSha256 },
+    { sourceId: incheonSource.id, sourceUrl: incheonSource.url, sourceSha256: incheonSource.sourceSha256 },
+  );
+  assert.deepEqual(
+    { x: dorasan.x, y: dorasan.y, upPath: dorasan.upPath, labelPolygon: dorasan.labelPolygon, sourceSha256: dorasan.sourceSha256 },
+    {
+      x: DORASAN.x,
+      y: DORASAN.y,
+      upPath: "M 836 334 L 1449 763",
+      labelPolygon: [{ x: 1439.769, y: 751.693 }, { x: 1490.769, y: 751.693 }, { x: 1490.769, y: 773.693 }, { x: 1439.769, y: 773.693 }],
+      sourceSha256: sha256(source.dorasanCsvBytes),
+    },
+  );
+  const busanReceipt = source.reviewedAmbiguities.reviewedAmbiguities.find(
+    ({ lineId, x, y }) => lineId === BUSAN_RECEIPT.lineId && x === BUSAN_RECEIPT.x && y === BUSAN_RECEIPT.y,
+  );
+  assert.deepEqual(
+    {
+      region: busanReceipt.region,
+      lineId: busanReceipt.lineId,
+      x: busanReceipt.x,
+      y: busanReceipt.y,
+      stationIds: busanReceipt.stationIds,
+      sourceSha256: busanReceipt.sourceSha256,
+      reason: busanReceipt.reason,
+      reviewedAt: busanReceipt.reviewedAt,
+      reviewedBy: busanReceipt.reviewedBy,
+      reviewSource: busanReceipt.reviewSource,
+    },
+    BUSAN_RECEIPT,
+  );
+
+  assert.deepEqual(
+    Buffer.from(`${JSON.stringify(projected)}\n`),
+    Buffer.from(`${JSON.stringify(projectCanonicalRouteMapProvenance({ ...source, fixture: projected }))}\n`),
+  );
+});
+
+test("unknown source, mismatched Dorasan, 또는 Busan receipt drift는 fail closed한다", async () => {
+  const source = await inputs();
+  const unknownSource = structuredClone(source);
+  unknownSource.dorasanCsvBytes = source.dorasanCsvBytes;
+  unknownSource.fixture.packs[0].routeMapPositions[0].sourceUrl = "internal:unknown.svg";
+  assert.throws(() => projectCanonicalRouteMapProvenance(unknownSource), /route-map source identity is invalid/);
+
+  const unknownSha = structuredClone(source);
+  unknownSha.basemapManifest.maps.find(({ id }) => id === "busan").sourceSvgSha256 = "a".repeat(64);
+  assert.throws(() => projectCanonicalRouteMapProvenance(unknownSha), /route-map basemap manifest identity is invalid/);
+
+  const wrongDorasan = structuredClone(source);
+  wrongDorasan.dorasanCsvBytes = Buffer.from(
+    (await readFile(path.join(root, "tools/datapack/sources/seoul-wikimedia-svg-route-map-20260624.csv"), "utf8"))
+      .replace(",1449,763,\"도라산\"", ",1449.1,763,\"도라산\""),
+  );
+  assert.throws(() => projectCanonicalRouteMapProvenance(wrongDorasan), /Dorasan CSV identity is invalid/);
+
+  const staleDorasanGeometry = structuredClone(source);
+  staleDorasanGeometry.dorasanCsvBytes = source.dorasanCsvBytes;
+  staleDorasanGeometry.fixture.packs[0].routeMapPositions.find(({ stationId, lineId }) =>
+    stationId === DORASAN.stationId && lineId === DORASAN.lineId,
+  ).upPath = "M 836 334 L 1450 763";
+  assert.throws(() => projectCanonicalRouteMapProvenance(staleDorasanGeometry), /Dorasan geometry identity is invalid/);
+
+  const missingReceipt = structuredClone(source);
+  missingReceipt.dorasanCsvBytes = source.dorasanCsvBytes;
+  missingReceipt.reviewedAmbiguities.reviewedAmbiguities = [];
+  assert.throws(() => projectCanonicalRouteMapProvenance(missingReceipt), /Busan duplicate receipt is invalid/);
+
+  const extraReceipt = structuredClone(source);
+  extraReceipt.dorasanCsvBytes = source.dorasanCsvBytes;
+  extraReceipt.reviewedAmbiguities.reviewedAmbiguities.push({
+    ...BUSAN_RECEIPT,
+    sourceSha256: "a".repeat(64),
+    reason: "extra",
+    reviewedAt: "2026-08-15T00:00:00.000Z",
+    reviewedBy: "QA",
+    reviewSource: "https://github.com/AquilaXk/easysubway-data/issues/309",
+  });
+  assert.throws(() => projectCanonicalRouteMapProvenance(extraReceipt), /Busan duplicate receipt is invalid/);
+
+  const receiptMetadataDrift = structuredClone(source);
+  receiptMetadataDrift.dorasanCsvBytes = source.dorasanCsvBytes;
+  receiptMetadataDrift.reviewedAmbiguities.reviewedAmbiguities.find(
+    ({ lineId }) => lineId === BUSAN_RECEIPT.lineId,
+  ).reviewedBy = "QA";
+  assert.throws(() => projectCanonicalRouteMapProvenance(receiptMetadataDrift), /Busan duplicate receipt is invalid/);
+
+  const missingBusanRow = structuredClone(source);
+  missingBusanRow.dorasanCsvBytes = source.dorasanCsvBytes;
+  missingBusanRow.fixture.packs[0].routeMapPositions = missingBusanRow.fixture.packs[0].routeMapPositions
+    .filter(({ stationId, lineId }) => !(stationId === BUSAN_RECEIPT.stationIds[0] && lineId === BUSAN_RECEIPT.lineId));
+  assert.throws(() => projectCanonicalRouteMapProvenance(missingBusanRow), /Busan canonical duplicate identity is invalid/);
+
+  const extraBusanRow = structuredClone(source);
+  extraBusanRow.dorasanCsvBytes = source.dorasanCsvBytes;
+  extraBusanRow.fixture.packs[0].routeMapPositions.push({
+    ...extraBusanRow.fixture.packs[0].routeMapPositions.find(({ stationId, lineId }) =>
+      stationId === BUSAN_RECEIPT.stationIds[0] && lineId === BUSAN_RECEIPT.lineId,
+    ),
+    stationId: "station-extra-busan-duplicate",
+  });
+  assert.throws(() => projectCanonicalRouteMapProvenance(extraBusanRow), /Busan canonical duplicate identity is invalid/);
+
+  const wrongBusanSource = structuredClone(source);
+  wrongBusanSource.dorasanCsvBytes = source.dorasanCsvBytes;
+  wrongBusanSource.fixture.packs[0].routeMapPositions.find(({ stationId, lineId }) =>
+    stationId === BUSAN_RECEIPT.stationIds[0] && lineId === BUSAN_RECEIPT.lineId,
+  ).sourceUrl = "internal:route-map/route-map-defs/svg-sources/easy-subway-daegu-v3.svg";
+  assert.throws(() => projectCanonicalRouteMapProvenance(wrongBusanSource), /Busan canonical duplicate identity is invalid/);
+
+  const missingPositionSource = structuredClone(source);
+  missingPositionSource.dorasanCsvBytes = source.dorasanCsvBytes;
+  missingPositionSource.fixture.packs[0].sourceInventory = missingPositionSource.fixture.packs[0].sourceInventory
+    .filter(({ id }) => id !== "seoul-metro-route-map-positions");
+  assert.throws(() => projectCanonicalRouteMapProvenance(missingPositionSource), /route-map position source identity is invalid/);
+
+  const duplicatePositionSource = structuredClone(source);
+  duplicatePositionSource.dorasanCsvBytes = source.dorasanCsvBytes;
+  duplicatePositionSource.fixture.packs[0].sourceInventory.push(
+    structuredClone(duplicatePositionSource.fixture.packs[0].sourceInventory.find(({ id }) => id === "seoul-metro-route-map-positions")),
+  );
+  assert.throws(() => projectCanonicalRouteMapProvenance(duplicatePositionSource), /route-map position source identity is invalid/);
+
+  const invalidPositionSha = structuredClone(source);
+  invalidPositionSha.dorasanCsvBytes = source.dorasanCsvBytes;
+  invalidPositionSha.fixture.packs[0].sourceInventory.find(({ id }) => id === "seoul-metro-route-map-positions").sourceSha256 = "invalid";
+  assert.throws(() => projectCanonicalRouteMapProvenance(invalidPositionSha), /route-map position source identity is invalid/);
+
+  const positionUrlDrift = structuredClone(source);
+  positionUrlDrift.dorasanCsvBytes = source.dorasanCsvBytes;
+  positionUrlDrift.fixture.packs[0].routeMapPositions.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").sourceUrl = "https://example.invalid/drift";
+  assert.throws(() => projectCanonicalRouteMapProvenance(positionUrlDrift), /route-map position source identity is invalid/);
+
+  const incheonPositionUrlDrift = structuredClone(source);
+  incheonPositionUrlDrift.dorasanCsvBytes = source.dorasanCsvBytes;
+  const incheonSource = incheonPositionUrlDrift.fixture.packs[0].sourceInventory
+    .find(({ id }) => id === "incheon-transit-station-info");
+  incheonPositionUrlDrift.fixture.packs[0].routeMapPositions
+    .find(({ sourceId }) => sourceId === incheonSource.id).sourceUrl = "https://example.invalid/drift";
+  assert.throws(() => projectCanonicalRouteMapProvenance(incheonPositionUrlDrift), /route-map position source identity is invalid/);
+
+  const duplicateIncheonPositionSource = structuredClone(source);
+  duplicateIncheonPositionSource.dorasanCsvBytes = source.dorasanCsvBytes;
+  duplicateIncheonPositionSource.fixture.packs[0].sourceInventory.push(
+    structuredClone(duplicateIncheonPositionSource.fixture.packs[0].sourceInventory
+      .find(({ id }) => id === "incheon-transit-station-info")),
+  );
+  assert.throws(() => projectCanonicalRouteMapProvenance(duplicateIncheonPositionSource), /route-map position source identity is invalid/);
+
+  const ownerSourceCollision = structuredClone(source);
+  ownerSourceCollision.dorasanCsvBytes = source.dorasanCsvBytes;
+  ownerSourceCollision.fixture.packs[0].sourceInventory.push({
+    ...structuredClone(ownerSourceCollision.fixture.packs[0].sourceInventory
+      .find(({ id }) => id === "incheon-transit-station-info")),
+    id: "owner-self-drawn-sma-schematic",
+    url: "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+    sourceSha256: "0".repeat(64),
+  });
+  assert.throws(() => projectCanonicalRouteMapProvenance(ownerSourceCollision), /route-map position source identity is invalid/);
+});

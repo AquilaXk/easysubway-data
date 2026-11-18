@@ -1,0 +1,2025 @@
+{
+  "manifest": {
+    "releaseSequence": 1,
+    "ttlSeconds": 3600,
+    "activePack": {
+      "id": "capital",
+      "version": "1"
+    }
+  },
+  "packs": [
+    {
+      "id": "capital",
+      "version": "1",
+      "artifactKind": "fixture",
+      "schemaVersion": "1",
+      "url": "catalog/capital-v1.sqlite.gz",
+      "sourceInventory": [
+        {
+          "id": "fixture-capital-catalog",
+          "owner": "EasySubway local fixture",
+          "url": "https://easysubway.local/fixtures/catalog-fixture.json",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "redistributionAllowed": false,
+          "updateFrequency": "manual",
+          "updatedAt": "2026-06-19T00:00:00.000Z",
+          "fields": [
+            "operators",
+            "lines",
+            "stations",
+            "station_lines",
+            "service_calendars",
+            "service_calendar_dates",
+            "transit_routes",
+            "transit_trips",
+            "transit_stop_times",
+            "transit_frequencies",
+            "fare_zones",
+            "fare_rules",
+            "fare_discounts",
+            "station_fare_zones",
+            "official_od_fare_quotes",
+            "transfer_rules",
+            "station_pathway_nodes",
+            "station_pathway_edges",
+            "out_of_station_transfer_links",
+            "network_edges",
+            "route_map_positions",
+            "station_exits",
+            "facilities",
+            "internal_routes"
+          ]
+        },
+        {
+          "id": "seoul-metro-transfer-distance-duration",
+          "owner": "서울교통공사",
+          "url": "https://www.data.go.kr/data/15044419/fileData.do",
+          "license": "PUBLIC_DATA_FREE_USE",
+          "licenseStatus": "redistributable",
+          "redistributionAllowed": true,
+          "updateFrequency": "annual file snapshot",
+          "updatedAt": "2026-07-12T00:00:00.000Z",
+          "fields": [
+            "연번",
+            "호선",
+            "환승거리",
+            "환승노선",
+            "환승소요시간",
+            "환승역명"
+          ]
+        },
+        {
+          "id": "seoul-metro-fast-exit-car-door",
+          "owner": "서울교통공사",
+          "url": "https://www.data.go.kr/data/15143840/openapi.do",
+          "license": "PUBLIC_DATA_FREE_USE",
+          "licenseStatus": "redistributable",
+          "redistributionAllowed": true,
+          "updateFrequency": "provider realtime API; sampled records dated 2024-12-31; production cadence not admitted",
+          "updatedAt": "2026-07-12T00:00:00.000Z",
+          "fields": [
+            "crtrYmd",
+            "drtnInfo",
+            "elvtrNo",
+            "facNo",
+            "facPstnNm",
+            "fwkPstnNm",
+            "lineNm",
+            "plfmCmgFac",
+            "qckgffMngNo",
+            "qckgffVhclDoorNo",
+            "stnCd",
+            "stnNm",
+            "stnNo",
+            "upbdnbSe"
+          ]
+        },
+        {
+          "id": "seoul-metro-official-od-fares",
+          "owner": "서울특별시",
+          "url": "https://www.data.go.kr/data/15143846/openapi.do",
+          "license": "공공데이터포털 이용허락범위 제한 없음",
+          "licenseStatus": "redistributable",
+          "redistributionAllowed": true,
+          "updateFrequency": "approved-snapshot-only",
+          "updatedAt": "2026-07-12T00:00:00.000Z",
+          "fields": [
+            "childCardFare",
+            "childCashFare",
+            "gnrlCardFare",
+            "gnrlCashFare",
+            "yungCardFare",
+            "yungCashFare"
+          ],
+          "coverageScope": {
+            "regionIds": [
+              "capital"
+            ],
+            "operatorIds": [
+              "seoul-metro",
+              "korail"
+            ],
+            "sourceDomains": [
+              "official_od_fares"
+            ]
+          }
+        }
+      ],
+      "requiredTables": [
+        "catalog_metadata",
+        "operators",
+        "lines",
+        "stations",
+        "station_lines",
+        "service_calendars",
+        "service_calendar_dates",
+        "transit_routes",
+        "transit_trips",
+        "transit_stop_times",
+        "transit_frequencies",
+        "fare_zones",
+        "fare_rules",
+        "fare_discounts",
+        "station_fare_zones",
+        "official_od_fare_quotes",
+        "transfer_rules",
+        "station_pathway_nodes",
+        "station_pathway_edges",
+        "out_of_station_transfer_links",
+        "network_edges",
+        "route_map_positions",
+        "station_exits",
+        "facilities",
+        "data_quality_records",
+        "station_car_door_hints"
+      ],
+      "minimumTableRows": {
+        "catalog_metadata": 2,
+        "operators": 2,
+        "lines": 4,
+        "stations": 6,
+        "station_lines": 9,
+        "service_calendars": 1,
+        "service_calendar_dates": 1,
+        "transit_routes": 2,
+        "transit_trips": 4,
+        "transit_stop_times": 8,
+        "transit_frequencies": 1,
+        "fare_zones": 1,
+        "fare_rules": 1,
+        "fare_discounts": 3,
+        "station_fare_zones": 9,
+        "official_od_fare_quotes": 2,
+        "transfer_rules": 2,
+        "station_pathway_nodes": 6,
+        "station_pathway_edges": 5,
+        "out_of_station_transfer_links": 1,
+        "network_edges": 20,
+        "route_map_positions": 9,
+        "station_exits": 1,
+        "facilities": 4,
+        "data_quality_records": 5,
+        "station_car_door_hints": 35
+      },
+      "metadata": {
+        "activePack": "capital"
+      },
+      "operators": [
+        {
+          "id": "seoul-metro",
+          "nameKo": "서울교통공사",
+          "nameEn": "Seoul Metro"
+        },
+        {
+          "id": "korail",
+          "nameKo": "한국철도공사",
+          "nameEn": "KORAIL"
+        }
+      ],
+      "lines": [
+        {
+          "id": "seoul-2",
+          "operatorId": "seoul-metro",
+          "nameKo": "수도권 2호선",
+          "nameEn": "Seoul Subway Line 2",
+          "color": "#00A84D"
+        },
+        {
+          "id": "seoul-4",
+          "operatorId": "seoul-metro",
+          "nameKo": "수도권 4호선",
+          "nameEn": "Seoul Subway Line 4",
+          "color": "#00A5DE"
+        },
+        {
+          "id": "shinbundang",
+          "operatorId": "seoul-metro",
+          "nameKo": "신분당선",
+          "nameEn": "Shinbundang Line",
+          "color": "#D4003B"
+        },
+        {
+          "id": "seoul-2-branch",
+          "operatorId": "seoul-metro",
+          "nameKo": "수도권 2호선 지선",
+          "nameEn": "Seoul Subway Line 2 Branch",
+          "color": "#00A84D"
+        }
+      ],
+      "stations": [
+        {
+          "id": "station-sangnoksu",
+          "nameKo": "상록수",
+          "nameEn": "Sangnoksu",
+          "normalizedName": "상록수",
+          "region": "수도권",
+          "latitude": 37.3028,
+          "longitude": 126.8666,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-sadang",
+          "nameKo": "사당",
+          "nameEn": "Sadang",
+          "normalizedName": "사당",
+          "region": "수도권",
+          "latitude": 37.4766,
+          "longitude": 126.9816,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-gangnam",
+          "nameKo": "강남",
+          "nameEn": "Gangnam",
+          "normalizedName": "강남",
+          "region": "수도권",
+          "latitude": 37.4979,
+          "longitude": 127.0276,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-jeongja",
+          "nameKo": "정자",
+          "nameEn": "Jeongja",
+          "normalizedName": "정자",
+          "region": "수도권",
+          "latitude": 37.3671,
+          "longitude": 127.1081,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-seongsu",
+          "nameKo": "성수",
+          "nameEn": "Seongsu",
+          "normalizedName": "성수",
+          "region": "수도권",
+          "latitude": 37.5446,
+          "longitude": 127.0559,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-sinseoldong",
+          "nameKo": "신설동",
+          "nameEn": "Sinseoldong",
+          "normalizedName": "신설동",
+          "region": "수도권",
+          "latitude": 37.5753,
+          "longitude": 127.0251,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        }
+      ],
+      "stationAliases": [
+        {
+          "stationId": "station-sangnoksu",
+          "alias": "상록수역",
+          "normalizedAlias": "상록수역"
+        },
+        {
+          "stationId": "station-sangnoksu",
+          "alias": "Sangnoksu",
+          "normalizedAlias": "sangnoksu"
+        },
+        {
+          "stationId": "station-sangnoksu",
+          "alias": "448",
+          "normalizedAlias": "448"
+        },
+        {
+          "stationId": "station-sangnoksu",
+          "alias": "4호선 상록수",
+          "normalizedAlias": "4호선상록수"
+        }
+      ],
+      "stationLines": [
+        {
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "stationCode": "448",
+          "lineSequence": 43,
+          "platformInfo": "당고개 방면 / 오이도 방면"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "stationCode": "226",
+          "lineSequence": 26,
+          "platformInfo": "내선 / 외선"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "stationCode": "433",
+          "lineSequence": 28,
+          "platformInfo": "당고개 방면 / 오이도 방면"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "stationCode": "222",
+          "lineSequence": 22,
+          "platformInfo": "내선 / 외선"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "shinbundang",
+          "stationCode": "D07",
+          "lineSequence": 7,
+          "platformInfo": "신사 방면 / 광교 방면"
+        },
+        {
+          "stationId": "station-jeongja",
+          "lineId": "shinbundang",
+          "stationCode": "D12",
+          "lineSequence": 12,
+          "platformInfo": "신사 방면 / 광교 방면"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "stationCode": "211",
+          "lineSequence": 11,
+          "platformInfo": "내선 / 외선"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2-branch",
+          "stationCode": "211-1",
+          "lineSequence": 1,
+          "platformInfo": "신설동 방면"
+        },
+        {
+          "stationId": "station-sinseoldong",
+          "lineId": "seoul-2-branch",
+          "stationCode": "211-4",
+          "lineSequence": 4,
+          "platformInfo": "성수 방면"
+        }
+      ],
+      "fareZones": [
+        {
+          "id": "capital-integrated",
+          "nameKo": "수도권 통합요금",
+          "region": "수도권",
+          "currencyCode": "KRW",
+          "sourceId": "fixture-capital-catalog"
+        }
+      ],
+      "fareRules": [
+        {
+          "id": "capital-integrated-standard",
+          "zoneId": "capital-integrated",
+          "baseCardFare": 1550,
+          "baseCashFare": 1650,
+          "baseDistanceMeters": 10000,
+          "additionalSteps": [
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 8000,
+              "cardFare": 100,
+              "cashFare": 100
+            }
+          ]
+        }
+      ],
+      "fareDiscounts": [
+        {
+          "id": "capital-integrated-youth",
+          "zoneId": "capital-integrated",
+          "riderType": "YOUTH",
+          "cardFare": 900,
+          "cashFare": 1650,
+          "descriptionKo": "청소년 기준 요금"
+        },
+        {
+          "id": "capital-integrated-child",
+          "zoneId": "capital-integrated",
+          "riderType": "CHILD",
+          "cardFare": 550,
+          "cashFare": 550,
+          "descriptionKo": "어린이 기준 요금"
+        },
+        {
+          "id": "capital-integrated-concession",
+          "zoneId": "capital-integrated",
+          "riderType": "CONCESSION",
+          "freeRide": true,
+          "descriptionKo": "만 65세 이상·장애인·국가유공자 우대 무임"
+        }
+      ],
+      "stationFareZones": [
+        {
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "shinbundang",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-jeongja",
+          "lineId": "shinbundang",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2-branch",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-sinseoldong",
+          "lineId": "seoul-2-branch",
+          "zoneId": "capital-integrated"
+        }
+      ],
+      "officialOdFareQuotes": [
+        {
+          "originStationId": "station-sangnoksu",
+          "destinationStationId": "station-sadang",
+          "sourceId": "seoul-metro-official-od-fares",
+          "snapshotId": "seoul-metro-official-od-fares-20260712",
+          "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+          "gnrlCardFare": 1950,
+          "gnrlCashFare": 2050,
+          "yungCardFare": 1220,
+          "yungCashFare": 2050,
+          "childCardFare": 750,
+          "childCashFare": 750
+        },
+        {
+          "originStationId": "station-sadang",
+          "destinationStationId": "station-sangnoksu",
+          "sourceId": "seoul-metro-official-od-fares",
+          "snapshotId": "seoul-metro-official-od-fares-20260712",
+          "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+          "gnrlCardFare": 1950,
+          "gnrlCashFare": 2050,
+          "yungCardFare": 1220,
+          "yungCashFare": 2050,
+          "childCardFare": 750,
+          "childCashFare": 750
+        }
+      ],
+      "serviceCalendars": [
+        {
+          "serviceId": "weekday-2026",
+          "monday": true,
+          "tuesday": true,
+          "wednesday": false,
+          "thursday": true,
+          "friday": true,
+          "saturday": false,
+          "sunday": false,
+          "startDate": "20260701",
+          "endDate": "20261231",
+          "timezone": "Asia/Seoul"
+        }
+      ],
+      "serviceCalendarDates": [
+        {
+          "serviceId": "weekday-2026",
+          "date": "20260701",
+          "exceptionType": 1
+        }
+      ],
+      "transitRoutes": [
+        {
+          "id": "route-seoul-4-oido-bound",
+          "lineId": "seoul-4",
+          "routeShortName": "4",
+          "routeLongName": "수도권 4호선 오이도 방면",
+          "directionName": "오이도 방면",
+          "timezone": "Asia/Seoul"
+        },
+        {
+          "id": "route-seoul-2-inner",
+          "lineId": "seoul-2",
+          "routeShortName": "2",
+          "routeLongName": "수도권 2호선 내선",
+          "directionName": "내선",
+          "timezone": "Asia/Seoul"
+        }
+      ],
+      "transitTrips": [
+        {
+          "id": "trip-seoul-4-local-0805",
+          "routeId": "route-seoul-4-oido-bound",
+          "serviceId": "weekday-2026",
+          "tripHeadsign": "오이도",
+          "directionId": "down",
+          "servicePattern": "LOCAL",
+          "serviceDayStartSeconds": 0
+        },
+        {
+          "id": "trip-seoul-4-express-0810",
+          "routeId": "route-seoul-4-oido-bound",
+          "serviceId": "weekday-2026",
+          "tripHeadsign": "오이도",
+          "directionId": "down",
+          "servicePattern": "EXPRESS",
+          "serviceDayStartSeconds": 0
+        },
+        {
+          "id": "trip-seoul-2-local-0825",
+          "routeId": "route-seoul-2-inner",
+          "serviceId": "weekday-2026",
+          "tripHeadsign": "내선순환",
+          "directionId": "inner",
+          "servicePattern": "LOCAL",
+          "serviceDayStartSeconds": 0
+        },
+        {
+          "id": "trip-seoul-4-local-2505",
+          "routeId": "route-seoul-4-oido-bound",
+          "serviceId": "weekday-2026",
+          "tripHeadsign": "오이도",
+          "directionId": "down",
+          "servicePattern": "LOCAL",
+          "serviceDayStartSeconds": 0
+        }
+      ],
+      "transitStopTimes": [
+        {
+          "tripId": "trip-seoul-4-local-0805",
+          "stopSequence": 1,
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 29100,
+          "departureSeconds": 29100
+        },
+        {
+          "tripId": "trip-seoul-4-local-0805",
+          "stopSequence": 2,
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 29820,
+          "departureSeconds": 29940
+        },
+        {
+          "tripId": "trip-seoul-4-express-0810",
+          "stopSequence": 1,
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 29400,
+          "departureSeconds": 29400
+        },
+        {
+          "tripId": "trip-seoul-4-express-0810",
+          "stopSequence": 2,
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 30000,
+          "departureSeconds": 30120
+        },
+        {
+          "tripId": "trip-seoul-2-local-0825",
+          "stopSequence": 1,
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "arrivalSeconds": 30300,
+          "departureSeconds": 30300
+        },
+        {
+          "tripId": "trip-seoul-2-local-0825",
+          "stopSequence": 2,
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "arrivalSeconds": 30900,
+          "departureSeconds": 30900
+        },
+        {
+          "tripId": "trip-seoul-4-local-2505",
+          "stopSequence": 1,
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 90300,
+          "departureSeconds": 90300
+        },
+        {
+          "tripId": "trip-seoul-4-local-2505",
+          "stopSequence": 2,
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 91020,
+          "departureSeconds": 91020
+        }
+      ],
+      "transitFrequencies": [
+        {
+          "tripId": "trip-seoul-2-local-0825",
+          "startTimeSeconds": 30300,
+          "endTimeSeconds": 33300,
+          "headwaySeconds": 600,
+          "exactTimes": false
+        }
+      ],
+      "networkEdges": [
+        {
+          "id": "edge-sangnoksu-sadang-seoul-4",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-sadang:seoul-4",
+          "durationSeconds": 420,
+          "distanceMeters": 18600,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sadang-sangnoksu-seoul-4",
+          "fromNodeId": "station-sadang:seoul-4",
+          "toNodeId": "station-sangnoksu:seoul-4",
+          "durationSeconds": 420,
+          "distanceMeters": 18600,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "entry-sangnoksu-seoul-4",
+          "fromNodeId": "station-sangnoksu",
+          "toNodeId": "station-sangnoksu:seoul-4",
+          "durationSeconds": 90,
+          "distanceMeters": 0,
+          "edgeType": "ENTRY",
+          "servicePattern": "",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "exit-sangnoksu-seoul-4",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-sangnoksu",
+          "durationSeconds": 60,
+          "distanceMeters": 0,
+          "edgeType": "EXIT",
+          "servicePattern": "",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "entry-sadang-seoul-4",
+          "fromNodeId": "station-sadang",
+          "toNodeId": "station-sadang:seoul-4",
+          "durationSeconds": 90,
+          "distanceMeters": 0,
+          "edgeType": "ENTRY",
+          "servicePattern": "",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "exit-sadang-seoul-4",
+          "fromNodeId": "station-sadang:seoul-4",
+          "toNodeId": "station-sadang",
+          "durationSeconds": 60,
+          "distanceMeters": 0,
+          "edgeType": "EXIT",
+          "servicePattern": "",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sangnoksu-sadang-seoul-4-express",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-sadang:seoul-4",
+          "durationSeconds": 360,
+          "distanceMeters": 18600,
+          "edgeType": "RIDE",
+          "servicePattern": "EXPRESS",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sadang-sangnoksu-seoul-4-express",
+          "fromNodeId": "station-sadang:seoul-4",
+          "toNodeId": "station-sangnoksu:seoul-4",
+          "durationSeconds": 360,
+          "distanceMeters": 18600,
+          "edgeType": "RIDE",
+          "servicePattern": "EXPRESS",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sadang-gangnam-seoul-2",
+          "fromNodeId": "station-sadang:seoul-2",
+          "toNodeId": "station-gangnam:seoul-2",
+          "durationSeconds": 180,
+          "distanceMeters": 2200,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-gangnam-sadang-seoul-2",
+          "fromNodeId": "station-gangnam:seoul-2",
+          "toNodeId": "station-sadang:seoul-2",
+          "durationSeconds": 180,
+          "distanceMeters": 2200,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-gangnam-jeongja-shinbundang",
+          "fromNodeId": "station-gangnam:shinbundang",
+          "toNodeId": "station-jeongja:shinbundang",
+          "durationSeconds": 960,
+          "distanceMeters": 17400,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-jeongja-gangnam-shinbundang",
+          "fromNodeId": "station-jeongja:shinbundang",
+          "toNodeId": "station-gangnam:shinbundang",
+          "durationSeconds": 960,
+          "distanceMeters": 17400,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-gangnam-seongsu-seoul-2",
+          "fromNodeId": "station-gangnam:seoul-2",
+          "toNodeId": "station-seongsu:seoul-2",
+          "durationSeconds": 720,
+          "distanceMeters": 8900,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-seongsu-gangnam-seoul-2",
+          "fromNodeId": "station-seongsu:seoul-2",
+          "toNodeId": "station-gangnam:seoul-2",
+          "durationSeconds": 720,
+          "distanceMeters": 8900,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-seongsu-sinseoldong-branch",
+          "fromNodeId": "station-seongsu:seoul-2-branch",
+          "toNodeId": "station-sinseoldong:seoul-2-branch",
+          "durationSeconds": 300,
+          "distanceMeters": 5200,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sinseoldong-seongsu-branch",
+          "fromNodeId": "station-sinseoldong:seoul-2-branch",
+          "toNodeId": "station-seongsu:seoul-2-branch",
+          "durationSeconds": 300,
+          "distanceMeters": 5200,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sadang-line4-line2-transfer",
+          "fromNodeId": "station-sadang:seoul-4",
+          "toNodeId": "station-sadang:seoul-2",
+          "durationSeconds": 62,
+          "distanceMeters": 74,
+          "edgeType": "IN_STATION_TRANSFER",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-gangnam-line2-shinbundang-transfer",
+          "fromNodeId": "station-gangnam:seoul-2",
+          "toNodeId": "station-gangnam:shinbundang",
+          "durationSeconds": 178,
+          "distanceMeters": 110,
+          "edgeType": "IN_STATION_TRANSFER",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-seongsu-loop-branch-transfer",
+          "fromNodeId": "station-seongsu:seoul-2",
+          "toNodeId": "station-seongsu:seoul-2-branch",
+          "durationSeconds": 120,
+          "distanceMeters": 60,
+          "edgeType": "IN_STATION_TRANSFER",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        }
+      ],
+      "outOfStationTransferLinks": [
+        {
+          "id": "out-transfer-sadang-gangnam",
+          "fromStationId": "station-sadang",
+          "fromLineId": "seoul-2",
+          "toStationId": "station-gangnam",
+          "toLineId": "shinbundang",
+          "durationSeconds": 420,
+          "distanceMeters": 520,
+          "bidirectional": false,
+          "requiresFareExit": true,
+          "requiresReentry": true,
+          "coveredRoute": "COVERED",
+          "crossingRisk": "LOW",
+          "slopeLevel": 1,
+          "curbCutStatus": "AVAILABLE",
+          "sidewalkStatus": "AVAILABLE",
+          "accessibilityStatus": "AVAILABLE",
+          "stairAccessState": "STEP_FREE",
+          "reliabilityScore": 90,
+          "sourceId": "fixture-capital-catalog",
+          "sourceSnapshotId": "fixture-capital-catalog-2026-06-19",
+          "providerRecordHash": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+          "provenanceKind": "FIELD_SURVEY",
+          "verificationStatus": "VERIFIED",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z",
+          "evidenceHash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        }
+      ],
+      "routeMapPositions": [
+        {
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "region": "수도권",
+          "x": 156,
+          "y": 250,
+          "labelPolygon": [
+            { "x": 166, "y": 226 },
+            { "x": 214, "y": 226 },
+            { "x": 214, "y": 246 },
+            { "x": 166, "y": 246 }
+          ],
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "region": "수도권",
+          "x": 420,
+          "y": 210,
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "region": "수도권",
+          "x": 420,
+          "y": 250,
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "region": "수도권",
+          "x": 520,
+          "y": 210,
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "shinbundang",
+          "region": "수도권",
+          "x": 520,
+          "y": 310,
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "stationId": "station-jeongja",
+          "lineId": "shinbundang",
+          "region": "수도권",
+          "x": 620,
+          "y": 310,
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "region": "수도권",
+          "x": 640,
+          "y": 210,
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2-branch",
+          "region": "수도권",
+          "x": 640,
+          "y": 150,
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "stationId": "station-sinseoldong",
+          "lineId": "seoul-2-branch",
+          "region": "수도권",
+          "x": 720,
+          "y": 150,
+          "sourceId": "fixture-route-map-source-capital-review",
+          "sourceName": "fixture route map source",
+          "sourceUrl": "https://easysubway.local/fixtures/route-map",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "commercialUseAllowed": false,
+          "attributionRequired": true,
+          "reviewedAt": "2026-06-19T00:00:00.000Z"
+        }
+      ],
+      "representativeRouteRegressions": [
+        {
+          "id": "direct-local-sangnoksu-sadang",
+          "pattern": "DIRECT",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-sadang:seoul-4",
+          "requiredEdgeIds": [
+            "edge-sangnoksu-sadang-seoul-4"
+          ]
+        },
+        {
+          "id": "transfer-sangnoksu-gangnam",
+          "pattern": "TRANSFER",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-gangnam:seoul-2",
+          "requiredEdgeIds": [
+            "edge-sangnoksu-sadang-seoul-4",
+            "edge-sadang-line4-line2-transfer",
+            "edge-sadang-gangnam-seoul-2"
+          ]
+        },
+        {
+          "id": "multi-transfer-sangnoksu-jeongja",
+          "pattern": "MULTI_TRANSFER",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-jeongja:shinbundang",
+          "requiredEdgeIds": [
+            "edge-sangnoksu-sadang-seoul-4",
+            "edge-sadang-line4-line2-transfer",
+            "edge-sadang-gangnam-seoul-2",
+            "edge-gangnam-line2-shinbundang-transfer",
+            "edge-gangnam-jeongja-shinbundang"
+          ]
+        },
+        {
+          "id": "loop-branch-sinseoldong-gangnam",
+          "pattern": "LOOP_BRANCH",
+          "fromNodeId": "station-sinseoldong:seoul-2-branch",
+          "toNodeId": "station-gangnam:seoul-2",
+          "requiredEdgeIds": [
+            "edge-sinseoldong-seongsu-branch",
+            "edge-seongsu-loop-branch-transfer",
+            "edge-seongsu-gangnam-seoul-2"
+          ]
+        },
+        {
+          "id": "express-sangnoksu-sadang",
+          "pattern": "EXPRESS_LOCAL",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-sadang:seoul-4",
+          "requiredEdgeIds": [
+            "edge-sangnoksu-sadang-seoul-4-express"
+          ]
+        }
+      ],
+      "stationExits": [
+        {
+          "id": "exit-sangnoksu-1",
+          "stationId": "station-sangnoksu",
+          "exitNumber": "1",
+          "description": "상록수역 1번 출구",
+          "latitude": 37.3021,
+          "longitude": 126.8661,
+          "hasElevatorConnection": true,
+          "sourceId": "fixture-capital-catalog",
+          "sourceSnapshotId": "fixture-capital-catalog-20260619",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        }
+      ],
+      "facilities": [
+        {
+          "id": "facility-sangnoksu-elevator-1",
+          "stationId": "station-sangnoksu",
+          "exitId": "exit-sangnoksu-1",
+          "type": "ELEVATOR",
+          "name": "1번 출구 엘리베이터",
+          "status": "NORMAL",
+          "floorFrom": "B1",
+          "floorTo": "1F",
+          "description": "대합실과 1번 출구 지상을 연결"
+        },
+        {
+          "id": "facility-sangnoksu-escalator-1",
+          "stationId": "station-sangnoksu",
+          "exitId": "exit-sangnoksu-1",
+          "type": "ESCALATOR",
+          "name": "1번 출구 에스컬레이터",
+          "status": "NORMAL",
+          "floorFrom": "B1",
+          "floorTo": "1F",
+          "description": "현장 검증 전 이동 보조 시설"
+        },
+        {
+          "id": "facility-sangnoksu-accessible-toilet-1",
+          "stationId": "station-sangnoksu",
+          "type": "ACCESSIBLE_TOILET",
+          "name": "대합실 장애인 화장실",
+          "status": "NORMAL",
+          "floorFrom": "B1",
+          "floorTo": "B1",
+          "description": "대합실 내부"
+        },
+        {
+          "id": "facility-sadang-transfer-elevator-1",
+          "stationId": "station-sadang",
+          "type": "ELEVATOR",
+          "name": "2호선-4호선 환승 엘리베이터",
+          "status": "NORMAL",
+          "floorFrom": "B2",
+          "floorTo": "B3",
+          "description": "환승 통로 step-free fixture"
+        }
+      ],
+      "stationAccessibilitySummaries": [
+        {
+          "stationId": "station-sangnoksu",
+          "summary": "1번 출구 엘리베이터 이용 가능",
+          "warning": ""
+        }
+      ],
+      "internalRouteNodes": [
+        {
+          "id": "node-sangnoksu-concourse",
+          "stationId": "station-sangnoksu",
+          "label": "상록수역 대합실",
+          "nodeType": "CONCOURSE"
+        },
+        {
+          "id": "node-sangnoksu-exit-1",
+          "stationId": "station-sangnoksu",
+          "label": "상록수역 1번 출구",
+          "nodeType": "EXIT"
+        }
+      ],
+      "internalRouteEdges": [
+        {
+          "id": "edge-sangnoksu-concourse-exit-1",
+          "fromNodeId": "node-sangnoksu-concourse",
+          "toNodeId": "node-sangnoksu-exit-1",
+          "edgeType": "ELEVATOR",
+          "distanceMeters": 42,
+          "durationSeconds": 120,
+          "includesStairs": false,
+          "requiresElevator": true,
+          "requiresEscalator": false,
+          "slopeLevel": 1,
+          "widthLevel": 3,
+          "reliabilityScore": 88,
+          "accessibilityStatus": "AVAILABLE",
+          "instruction": "엘리베이터를 이용해 1번 출구로 이동"
+        }
+      ],
+      "stationPathwayNodes": [
+        {
+          "id": "path-node-sangnoksu-entrance-1",
+          "stationId": "station-sangnoksu",
+          "nodeType": "ENTRANCE",
+          "label": "상록수역 1번 출입구",
+          "level": "1F"
+        },
+        {
+          "id": "path-node-sangnoksu-concourse",
+          "stationId": "station-sangnoksu",
+          "nodeType": "CONCOURSE",
+          "label": "상록수역 대합실",
+          "level": "B1",
+          "legacyInternalRouteNodeId": "node-sangnoksu-concourse"
+        },
+        {
+          "id": "path-node-sangnoksu-platform-4",
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "nodeType": "PLATFORM",
+          "label": "상록수역 4호선 승강장",
+          "level": "B2"
+        },
+        {
+          "id": "path-node-sangnoksu-exit-1",
+          "stationId": "station-sangnoksu",
+          "nodeType": "EXIT",
+          "label": "상록수역 1번 출구",
+          "level": "1F",
+          "legacyInternalRouteNodeId": "node-sangnoksu-exit-1"
+        },
+        {
+          "id": "path-node-sadang-platform-4",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "nodeType": "PLATFORM",
+          "label": "사당역 4호선 승강장",
+          "level": "B3"
+        },
+        {
+          "id": "path-node-sadang-platform-2",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "nodeType": "PLATFORM",
+          "label": "사당역 2호선 승강장",
+          "level": "B2"
+        }
+      ],
+      "stationPathwayEdges": [
+        {
+          "id": "path-edge-sangnoksu-entry-platform-elevator",
+          "fromNodeId": "path-node-sangnoksu-entrance-1",
+          "toNodeId": "path-node-sangnoksu-platform-4",
+          "edgeType": "ELEVATOR",
+          "durationSeconds": 180,
+          "distanceMeters": 56,
+          "bidirectional": true,
+          "requiresElevator": true,
+          "levelFrom": "1F",
+          "levelTo": "B2",
+          "requiresFacilityId": "facility-sangnoksu-elevator-1",
+          "minWidthCm": 90,
+          "verticalMeters": 9.5,
+          "reliabilityScore": 88,
+          "accessibilityStatus": "AVAILABLE",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "엘리베이터로 4호선 승강장까지 이동"
+        },
+        {
+          "id": "path-edge-sangnoksu-platform-exit-elevator",
+          "fromNodeId": "path-node-sangnoksu-platform-4",
+          "toNodeId": "path-node-sangnoksu-exit-1",
+          "edgeType": "ELEVATOR",
+          "durationSeconds": 170,
+          "distanceMeters": 52,
+          "bidirectional": true,
+          "requiresElevator": true,
+          "levelFrom": "B2",
+          "levelTo": "1F",
+          "requiresFacilityId": "facility-sangnoksu-elevator-1",
+          "minWidthCm": 90,
+          "verticalMeters": 9.5,
+          "reliabilityScore": 88,
+          "accessibilityStatus": "AVAILABLE",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "승강장에서 1번 출구까지 엘리베이터로 이동"
+        },
+        {
+          "id": "path-edge-sangnoksu-concourse-exit-1",
+          "fromNodeId": "path-node-sangnoksu-concourse",
+          "toNodeId": "path-node-sangnoksu-exit-1",
+          "edgeType": "ELEVATOR",
+          "durationSeconds": 120,
+          "distanceMeters": 42,
+          "bidirectional": false,
+          "requiresElevator": true,
+          "levelFrom": "B1",
+          "levelTo": "1F",
+          "requiresFacilityId": "facility-sangnoksu-elevator-1",
+          "reliabilityScore": 88,
+          "accessibilityStatus": "AVAILABLE",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "엘리베이터를 이용해 1번 출구로 이동",
+          "legacyInternalRouteEdgeId": "edge-sangnoksu-concourse-exit-1"
+        },
+        {
+          "id": "path-edge-sadang-4-to-2-fast",
+          "fromNodeId": "path-node-sadang-platform-4",
+          "toNodeId": "path-node-sadang-platform-2",
+          "edgeType": "STAIRS",
+          "durationSeconds": 62,
+          "distanceMeters": 74,
+          "bidirectional": true,
+          "includesStairs": true,
+          "levelFrom": "B3",
+          "levelTo": "B2",
+          "reliabilityScore": 80,
+          "accessibilityStatus": "LIMITED",
+          "sourceId": "seoul-metro-transfer-distance-duration",
+          "sourceSnapshotId": "seoul-metro-transfer-distance-duration-admission-20260713",
+          "provenanceKind": "OFFICIAL_SOURCE",
+          "verificationStatus": "VERIFIED",
+          "instruction": "계단 환승 통로로 2호선 승강장 이동"
+        },
+        {
+          "id": "path-edge-sadang-4-to-2-step-free",
+          "fromNodeId": "path-node-sadang-platform-4",
+          "toNodeId": "path-node-sadang-platform-2",
+          "edgeType": "ELEVATOR",
+          "durationSeconds": 360,
+          "distanceMeters": 150,
+          "bidirectional": true,
+          "requiresElevator": true,
+          "levelFrom": "B3",
+          "levelTo": "B2",
+          "requiresFacilityId": "facility-sadang-transfer-elevator-1",
+          "minWidthCm": 90,
+          "verticalMeters": 5.2,
+          "reliabilityScore": 82,
+          "accessibilityStatus": "AVAILABLE",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "엘리베이터 환승 통로로 2호선 승강장 이동"
+        }
+      ],
+      "transferRules": [
+        {
+          "id": "transfer-sadang-seoul-4-to-seoul-2",
+          "fromStationId": "station-sadang",
+          "fromLineId": "seoul-4",
+          "toStationId": "station-sadang",
+          "toLineId": "seoul-2",
+          "transferType": "IN_STATION",
+          "minTransferSeconds": 62,
+          "pathwayEdgeId": "path-edge-sadang-4-to-2-fast",
+          "strictStepFreePathwayEdgeId": "path-edge-sadang-4-to-2-step-free",
+          "sourceId": "seoul-metro-transfer-distance-duration",
+          "verificationStatus": "VERIFIED"
+        },
+        {
+          "id": "transfer-station-gangnam-seoul-2-shinbundang",
+          "fromStationId": "station-gangnam",
+          "fromLineId": "seoul-2",
+          "toStationId": "station-gangnam",
+          "toLineId": "shinbundang",
+          "transferType": "IN_STATION",
+          "minTransferSeconds": 178,
+          "pathwayEdgeId": null,
+          "strictStepFreePathwayEdgeId": null,
+          "sourceId": "seoul-metro-transfer-distance-duration",
+          "verificationStatus": "VERIFIED"
+        }
+      ],
+      "stationCarDoorHints": [
+        {
+          "id": "cardoor-station-gangnam-seoul-2-DOWN-ELEVATOR-3-4-f4c0d0fb33c1b32ee35a03efb618feb0e83bac136854e2047026ab9a387d077b",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "ELEVATOR",
+          "carNumber": 3,
+          "doorNumber": 4,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "b503c11481bca3cb8019af4535f064b013850c30d5501d76fdecf628fbbff7ac",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-DOWN-STAIR-2-3-4f62e2c75d68bb76e0a2f4ed5bf500c49635258b21e4a95529dcb53816a551c7",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "STAIR",
+          "carNumber": 2,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "bb381160d52a19fee659bd160faac67778d9a0f252ab9d6bb4002673b865d9ca",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-DOWN-STAIR-4-2-a3bb04826ea4631b17b3b90594e063fde9ba77c2b6326c97ccfaf9f6508e13f2",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "STAIR",
+          "carNumber": 4,
+          "doorNumber": 2,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "8ca88924112eb71caefad2d8b4fcf0a4f92c9afc7bb1173b9c08ff8b6ec72aee",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-DOWN-STAIR-7-2-43335df44fd537528ebd9900882a8b2d751fbd9cc2066e18d8fb014647de4e8f",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "STAIR",
+          "carNumber": 7,
+          "doorNumber": 2,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "df540c3a6cd812ba0164a7765a0b53cfe86deb3ea34c161fcc419145d0f85e27",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-DOWN-STAIR-9-1-93192c8a5790ffb8fda26c04c406a6aabc89cdf0bd536bf2b17de9f7ee97cf6e",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "STAIR",
+          "carNumber": 9,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "6fa84e4dabea6e79bbf3667eb1d2fecc86010fe743ce9ecc1f82717923b19c50",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-UP-ELEVATOR-8-1-063f61fc7d443ffd214d8c8706635c4dd9561e6b98ca23963332bb227d8bf40f",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "ELEVATOR",
+          "carNumber": 8,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "9a02308b6874c068563b531157b040202dadf1306cec1272c7acad6ee1cbfc80",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-UP-STAIR-2-4-d6d00b9b074bf8d8145994fc49cd6472a14a87bdeb8decb3496cc6f9126e7ffe",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 2,
+          "doorNumber": 4,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "d4d87fc73f6f48287afb8cd27815f1ee518836423d525b8473a62038d198c485",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-UP-STAIR-4-3-b8ff6dd62749d7f77f6a260fcfe72d0528a205570d785953d7dfcff81bdca4f6",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 4,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "7efe060307cc7bf1790d35261ac222afff8ae3dfba433502256ad5e589ab2572",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-UP-STAIR-7-3-ac0a5d8fd29a6500fcc56b5943fba23dd24eee87c3dd6183662c59c2c9ef121c",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 7,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "5e2e163b3238ec61d3cb81518845b87de696c5c26775acf5f08d2ef5ec84f087",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-gangnam-seoul-2-UP-STAIR-9-2-8a5b387f20627754e49d4639df5b74776cc80ccec87e84f7063d22bf685375ce",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 9,
+          "doorNumber": 2,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "15bdca1edca25ae37cbe7c0325ef4417db40d3e0cb44798b6a36083e5cbe378f",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-DOWN-ESCALATOR-3-3-741e1a61d08bd02a7c9cfe4cd08d14abd2d4c21b546da836c5a3f15d68308675",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 3,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "c6ecd312fa4a985373a6259184b8ac533146e6bd63bb0b92cd768c17c0280c6f",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-DOWN-ESCALATOR-3-3-9a7ca371812507eeff3d1be4d7960eda1f4e76b518a669b2a5341049e46e8384",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 3,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "3a5dc14a5e9678d78e114bd6d31f30ba071545fae231638f81219265e1b22cd5",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-DOWN-ESCALATOR-8-1-5bd59682effac1b3f4e1a01303e0c27ffdbd0880949f674a1f6372f404ec90b7",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 8,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "9e0ec3f7f7f8701368dd86baab8762f4e89bae7267c2234b12dcfafcb2eb6cbd",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-DOWN-ESCALATOR-8-1-ec0524c40fe051a417a4175a5b40e028108f14cf3e7af04396482960f912a832",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 8,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "7cf5288c8a8b8d852c45da683e4ec998fc7df12d9b023835bceea43d3017835d",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-DOWN-STAIR-3-3-cf1e2b737075baa97f773984ad16d9a975fd06cab6016c2b87339902a2a1ed47",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "STAIR",
+          "carNumber": 3,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "c1f031e5bbea3ecbb9fdb1a88f15abfe9af9688cf00b6694d86c4e38c3fc54b7",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-DOWN-STAIR-8-1-9297e9dd9b9ec0a2b07720c19f41063db060e28de24fe67d62efc041616f8e9b",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "STAIR",
+          "carNumber": 8,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "582171b8f7ce00c922376252d2a7fe005b99a3cf351ee7f16def43292653fc40",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-UP-ELEVATOR-4-4-ddbc8c382e28e37355e03597032b2199301b4301a58cb860d84325a52e6e9090",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "ELEVATOR",
+          "carNumber": 4,
+          "doorNumber": 4,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "952be8e6fe6bf5e9c56a029bde1438b87274e9a3977f0c8c81b540b6e0769a24",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-UP-ESCALATOR-3-3-90abe88804cd7fc5e8eb38acd3164efc47fbf4aa7579ce84eb08023146513ead",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 3,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "8100d3e89d6e1ca044878ececea34a08889c58129eb7ebd0d9d7eef6ce948b4f",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-UP-ESCALATOR-3-3-a40704b72ea493904e755ba73cbb0bb211ca3b7d73dde231e99ebf00354f2aa5",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 3,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "e166d76e77a401f39023a98f15d7499bf2a6d8f7b56e00b6af2ad6be200ae69d",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-UP-ESCALATOR-8-1-a6892e9d9b7eda9b23f75a8ca1e934df9f1a2a33b6c6f7ddf4a4aed8f789664a",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 8,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "aedc464063b3839ef3f309103c3596fcfbce8fe8b043cc785ab6e3626d9ee638",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-UP-ESCALATOR-8-1-c0aad1950d29510a04500011ce30daf40d30046bc532e712b20afa908cce4bf6",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 8,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "2a01bb0fce1dca73ce8cbfde05abc329e7c7751a1bd01779d77b224de1811c07",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-UP-STAIR-3-3-41e279f0e416dde5318ae8668c3b4638c6feec7b45324efb68031477af086070",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 3,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "2714c37372d57e10d049e81660619e06e8af21e82a82845640078e02c7e90b50",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-2-UP-STAIR-8-1-668ad3c0cef9f0aad9a814ab6e8a75e5f78a1b3630e76619ed7e43b1e43a3757",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 8,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "16c640a83525e9d887c8a6f97eb3e4974397c9d1e9749decdf28e80c3edd5490",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-4-DOWN-ELEVATOR-2-3-6a8b0506b01b4d325e4ad48a765486720c26890c2e83d3e4b024685a7b52f0e8",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "direction": "DOWN",
+          "targetFacilityType": "ELEVATOR",
+          "carNumber": 2,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "4bdcc1267aa2730943bf30f5b49a56f8bf3115d5b35aca4a6da3901c26ada27e",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-4-DOWN-ESCALATOR-1-1-8e8de3b3ecc949e1d915e76040f48cef6514bd5a64677f348c2d97a113d4c062",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "direction": "DOWN",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 1,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "6d6ca5166e82e908f3971ae2385b2ff10423428e2c60608896c1ffdbf3c684e6",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-4-DOWN-STAIR-1-1-d577932a401c8f9fb6c0cff04612f06998cc8af4a7dde1aea5451bcbd2c0af1c",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "direction": "DOWN",
+          "targetFacilityType": "STAIR",
+          "carNumber": 1,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "0bc22601c555f92a12737e571a9835da0cb263d66d289e5b6b0090182a4897df",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-4-DOWN-STAIR-5-2-8d48b1e8deedff1e1a86e2ffae23369f6fae492624cb3e7c15f1c9ce64f77cec",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "direction": "DOWN",
+          "targetFacilityType": "STAIR",
+          "carNumber": 5,
+          "doorNumber": 2,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "2e157ad0f1a8920573df7ab49146d126a29b614013ed8e8d9b562fdf80dec1d9",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-4-UP-ELEVATOR-9-2-b91be9199e6500fe8019c482eb6e975a37c42390fba69a7fff9556854c61fb65",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "direction": "UP",
+          "targetFacilityType": "ELEVATOR",
+          "carNumber": 9,
+          "doorNumber": 2,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "d7745ea46274264f49c3dfceb66bb27a09bb2fe11d1aac822c8201ef8be1914d",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-4-UP-ESCALATOR-10-4-c5d2d5bab005aec154e6fc70fde7cd88460162817ce17954f11f1227d95f1a71",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "direction": "UP",
+          "targetFacilityType": "ESCALATOR",
+          "carNumber": 10,
+          "doorNumber": 4,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "8755ee8432fd9a02f6739e9361682dbc9a47316bc9e80ff2a27f47004c2330c9",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-4-UP-STAIR-10-4-6339fe1309b3508d070f71821e5d8da1b4b4ad60663365a359d87977ccb06144",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 10,
+          "doorNumber": 4,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "b5e431160a51bfc04887532990108900fb5665a55d179de40d6c9a136c909ef1",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-sadang-seoul-4-UP-STAIR-6-3-1776e1429d8012200687eca106f6599e57d1797de647e7fff69501d8ad401cdc",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 6,
+          "doorNumber": 3,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "aa64cecec184e169fe988752d3779448aa0d270eb54f1d420f1dc7c6359a4379",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-seongsu-seoul-2-DOWN-ELEVATOR-4-4-851ef4d6acb83b8ab7f299157756af91d89f72e51c1e41c627df02ed52d9bba7",
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "direction": "DOWN",
+          "targetFacilityType": "ELEVATOR",
+          "carNumber": 4,
+          "doorNumber": 4,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "e26534c8c3a2e8798bb62212685bd4a400b5beb6e4469f80dd51fdc330d0cd40",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-seongsu-seoul-2-UP-ELEVATOR-7-1-6779958ab7a91333532a99fcea6edf6e526bdea2679c73730526fa3f6dd9fb73",
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "ELEVATOR",
+          "carNumber": 7,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "b9be04a4d0403624b2ab9efe933022f630194147e2030ead0f4562e2a189cea8",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-seongsu-seoul-2-UP-STAIR-1-1-6e8a87e973412885f152d34d8df7d497163006d5b1900bfa3d040d537d38c75f",
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 1,
+          "doorNumber": 1,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "fe8404ddb59ae83e4add31a548b48c9d888683a3e18307ca3757afb45f8d1070",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        },
+        {
+          "id": "cardoor-station-seongsu-seoul-2-UP-STAIR-10-4-f84923ac270bd56136b56af1afa84dbbd7afd37f281085a18c2ce294c0592f87",
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "direction": "UP",
+          "targetFacilityType": "STAIR",
+          "carNumber": 10,
+          "doorNumber": 4,
+          "sourceId": "seoul-metro-fast-exit-car-door",
+          "sourceSnapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+          "providerRecordHash": "f4975803614f270e083d3fbd2f9c0d405b3ccc9251de90de60790ebcf41e355f",
+          "provenanceKind": "OFFICIAL",
+          "verificationStatus": "OFFICIAL"
+        }
+      ],
+      "dataQualityRecords": [
+        {
+          "id": "quality-station-sangnoksu",
+          "targetType": "station",
+          "targetId": "station-sangnoksu",
+          "qualityLevel": "LEVEL_2",
+          "checkedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "quality-exit-sangnoksu-1-field",
+          "targetType": "station_exit",
+          "targetId": "exit-sangnoksu-1",
+          "qualityLevel": "FIELD_VERIFIED",
+          "checkedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "quality-facility-sangnoksu-elevator-1-field",
+          "targetType": "facility",
+          "targetId": "facility-sangnoksu-elevator-1",
+          "qualityLevel": "FIELD_VERIFIED",
+          "checkedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "quality-facility-sangnoksu-escalator-1-field",
+          "targetType": "facility",
+          "targetId": "facility-sangnoksu-escalator-1",
+          "qualityLevel": "FIELD_UNKNOWN"
+        },
+        {
+          "id": "quality-facility-sangnoksu-accessible-toilet-1-field",
+          "targetType": "facility",
+          "targetId": "facility-sangnoksu-accessible-toilet-1",
+          "qualityLevel": "FIELD_STALE",
+          "checkedAt": "2025-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "quality-internal-route-sangnoksu-concourse-exit-1-field",
+          "targetType": "internal_route_edge",
+          "targetId": "edge-sangnoksu-concourse-exit-1",
+          "qualityLevel": "FIELD_VERIFIED",
+          "checkedAt": "2026-06-19T00:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1233 @@
+#!/usr/bin/env node
+
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+
+const severityRank = new Map([
+  ["BLOCKER", 0],
+  ["HIGH", 1],
+  ["MEDIUM", 2],
+  ["LOW", 3],
+  ["INFO", 4],
+]);
+
+function usage() {
+  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--line-tracks tracks.json]... [--reviewed-ambiguities reviewed.json] [--reviewed-line-tracks reviewed.json] [--route-map-coverage-scope-exemptions exemptions.json] [--require-label-polygons] [--fail-on BLOCKER,HIGH] [--pretty]
+
+Audits routeMapPositions against stationLines so production route-map coordinate
+coverage can be checked before rebuilding datapacks.`;
+}
+
+function parseArgs(argv) {
+  const options = {
+    fixture: null,
+    reviewedAmbiguities: null,
+    reviewedLineTracks: null,
+    routeMapCoverageScopeExemptions: null,
+    requireLabelPolygons: false,
+    lineTracks: [],
+    failOn: [],
+    pretty: false,
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    switch (arg) {
+      case "--fixture":
+        options.fixture = argv[++index];
+        break;
+      case "--line-tracks":
+        options.lineTracks.push(argv[++index]);
+        break;
+      case "--reviewed-ambiguities":
+        options.reviewedAmbiguities = argv[++index];
+        break;
+      case "--reviewed-line-tracks":
+        options.reviewedLineTracks = argv[++index];
+        break;
+      case "--route-map-coverage-scope-exemptions":
+        options.routeMapCoverageScopeExemptions = argv[++index];
+        break;
+      case "--require-label-polygons":
+        options.requireLabelPolygons = true;
+        break;
+      case "--fail-on":
+        options.failOn = (argv[++index] ?? "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
+        break;
+      case "--pretty":
+        options.pretty = true;
+        break;
+      case "--help":
+      case "-h":
+        console.log(usage());
+        process.exit(0);
+      default:
+        throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!options.fixture) {
+    throw new Error("--fixture is required");
+  }
+  for (const severity of options.failOn) {
+    if (!severityRank.has(severity)) {
+      throw new Error(`Unknown severity in --fail-on: ${severity}`);
+    }
+  }
+  return options;
+}
+
+function stationLineKeyFor(row) {
+  return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}`;
+}
+
+function stationLineRegionKeyFor(row, region) {
+  return `${normalizedText(region)}\u0000${row.stationId ?? ""}\u0000${row.lineId ?? ""}`;
+}
+
+function coverageKeyForStationLine(row, stationsById) {
+  const region = normalizedText(
+    stationsById.get(normalizedText(row.stationId))?.region,
+  );
+  return region ? stationLineRegionKeyFor(row, region) : stationLineKeyFor(row);
+}
+
+function routeMapPositionKeyFor(row) {
+  return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}\u0000${row.region ?? ""}`;
+}
+
+function duplicateCoordinateKeyFor({ region, lineId, x, y, stationIds }) {
+  return [
+    normalizedText(region),
+    normalizedText(lineId),
+    Number(x),
+    Number(y),
+    ...stationIds.map(normalizedText).sort(),
+  ].join("\u0000");
+}
+
+function normalizedText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizedStationLabel(value) {
+  return normalizedText(value)
+    .normalize("NFKC")
+    .replace(/\([^)]*\)/gu, "")
+    .replace(/\[[^\]]*\]/gu, "")
+    .replace(/[·ㆍ･.\s]/gu, "")
+    .replace(/역$/u, "");
+}
+
+function stationDisplayName(station) {
+  const nameKo = normalizedText(station?.nameKo);
+  const nameSub = normalizedText(station?.nameSub);
+  return nameSub ? `${nameKo}(${nameSub})` : nameKo;
+}
+
+function scopeParts(scopeKey) {
+  const [regionId, operatorId, lineId, ...extra] = normalizedText(scopeKey).split(":");
+  return extra.length === 0 && regionId && operatorId && lineId
+    ? { regionId, operatorId, lineId }
+    : null;
+}
+
+function approvedRouteLabelRenameFor({ pack, position, station, renames }) {
+  const sourceLabel = normalizedText(position.sourceLabel);
+  const rosterName = normalizedText(stationDisplayName(station));
+  const sourceMatches = (pack.sourceInventory ?? []).filter(
+    (source) => source?.id === position.sourceId,
+  );
+  if (sourceMatches.length !== 1) {
+    return null;
+  }
+  const source = sourceMatches[0];
+  const sourceScope = source?.coverageScope;
+  // 승인 개명의 권역은 팩 id가 아니라 팩이 선언한 region:operator:line 조합으로 결속한다.
+  // 전국 팩(id "nationwide")은 여러 권역을 담으므로 팩 id가 권역 id가 아니다.
+  const declaredScopeKeys = new Set(
+    (pack.coverageLineOperatorScopes ?? []).map(
+      ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`,
+    ),
+  );
+  const matches = renames.filter((alias) => {
+    const scope = scopeParts(alias?.scopeKey);
+    return alias?.reasonCode === "OFFICIAL_RENAME"
+      && scope != null
+      && declaredScopeKeys.has(`${scope.regionId}:${scope.operatorId}:${scope.lineId}`)
+      && scope.lineId === position.lineId
+      && normalizedText(alias.snapshotStationName) === sourceLabel
+      && normalizedText(alias.rosterStationName) === rosterName
+      && (sourceScope?.sourceDomains ?? []).includes("route_map_positions")
+      && (sourceScope.regionIds ?? []).includes(scope.regionId)
+      && (sourceScope.operatorIds ?? []).includes(scope.operatorId)
+      && (sourceScope.lineIds ?? []).includes(scope.lineId)
+      && source.sourceSha256 === position.sourceSha256
+      && source.url === position.sourceUrl;
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function addFinding(findings, finding) {
+  findings.push({
+    severity: finding.severity,
+    code: finding.code,
+    packId: finding.packId,
+    region: finding.region ?? "",
+    lineId: finding.lineId ?? "",
+    stationId: finding.stationId ?? "",
+    message: finding.message,
+  });
+}
+
+function isNonNegativeInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isNonNegativeFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function polygonArea(points) {
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(area / 2);
+}
+
+function polygonBounds(points) {
+  return points.reduce(
+    (bounds, point) => ({
+      minX: Math.min(bounds.minX, point.x),
+      minY: Math.min(bounds.minY, point.y),
+      maxX: Math.max(bounds.maxX, point.x),
+      maxY: Math.max(bounds.maxY, point.y),
+    }),
+    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+  );
+}
+
+function polygonCenter(points) {
+  const bounds = polygonBounds(points);
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  };
+}
+
+function boundsOverlap(a, b) {
+  return a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
+}
+
+function distanceSquared(a, b) {
+  return ((a.x - b.x) ** 2) + ((a.y - b.y) ** 2);
+}
+
+function distanceSquaredToSegment(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) {
+    return distanceSquared(point, start);
+  }
+  const t = Math.max(
+    0,
+    Math.min(
+      1,
+      (((point.x - start.x) * dx) + ((point.y - start.y) * dy)) /
+        lengthSquared,
+    ),
+  );
+  return distanceSquared(point, {
+    x: start.x + dx * t,
+    y: start.y + dy * t,
+  });
+}
+
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (
+    let index = 0, previous = polygon.length - 1;
+    index < polygon.length;
+    previous = index, index += 1
+  ) {
+    const current = polygon[index];
+    const previousPoint = polygon[previous];
+    const crossesY = (current.y > point.y) !== (previousPoint.y > point.y);
+    if (!crossesY) {
+      continue;
+    }
+    const intersectionX =
+      ((previousPoint.x - current.x) * (point.y - current.y)) /
+        (previousPoint.y - current.y) +
+      current.x;
+    if (point.x < intersectionX) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function distanceSquaredToPolygon(point, polygon) {
+  if (pointInPolygon(point, polygon)) {
+    return 0;
+  }
+  let best = Infinity;
+  for (let index = 0; index < polygon.length; index += 1) {
+    best = Math.min(
+      best,
+      distanceSquaredToSegment(
+        point,
+        polygon[index],
+        polygon[(index + 1) % polygon.length],
+      ),
+    );
+  }
+  return best;
+}
+
+function hitScore(point, position) {
+  const nodeScore = distanceSquared(point, position);
+  if (hasValidLabelPolygon(position.labelPolygon)) {
+    return Math.min(nodeScore, distanceSquaredToPolygon(point, position.labelPolygon));
+  }
+  const labelOffset = fallbackLabelOffset(position);
+  const labelCenter = {
+    x: position.x + labelOffset.x,
+    y: position.y + labelOffset.y,
+  };
+  return Math.min(nodeScore, distanceSquared(point, labelCenter));
+}
+
+function usesOfficialRouteMapSource(position) {
+  const sourceId = normalizedText(position.sourceId);
+  return (
+    sourceId.endsWith("-cyberstation") ||
+    sourceId === "qa-wikimedia-seoul-svg-coordinate"
+  );
+}
+
+function fallbackLabelOffset(position) {
+  if (usesOfficialRouteMapSource(position)) {
+    return {
+      x: position.labelDx ?? 0,
+      y: position.labelDy ?? 0,
+    };
+  }
+  const pathData = normalizedText(position.downPath) !== ""
+    ? position.downPath
+    : position.upPath;
+  if (normalizedText(pathData) === "") {
+    return { x: 8, y: 3 };
+  }
+  const bounds = pathBounds(pathData);
+  if (bounds == null) {
+    return { x: 8, y: 3 };
+  }
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  if (width > height * 1.2) {
+    return { x: 0, y: 12 };
+  }
+  if (height > width * 1.2) {
+    return { x: 9, y: 3 };
+  }
+  return { x: 8, y: -8 };
+}
+
+function pathBounds(pathData) {
+  const tokens = [...String(pathData).matchAll(/[A-Za-z]|-?\d+(?:\.\d+)?/g)]
+    .map((match) => match[0]);
+  let index = 0;
+  let command = "";
+  let current = { x: 0, y: 0 };
+  let lastControl = { x: 0, y: 0 };
+  const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  const includePoint = (point) => {
+    bounds.minX = Math.min(bounds.minX, point.x);
+    bounds.minY = Math.min(bounds.minY, point.y);
+    bounds.maxX = Math.max(bounds.maxX, point.x);
+    bounds.maxY = Math.max(bounds.maxY, point.y);
+  };
+  const number = () => Number.parseFloat(tokens[index++]);
+  const point = () => ({ x: number(), y: number() });
+  const relativePoint = () => {
+    const value = point();
+    return { x: current.x + value.x, y: current.y + value.y };
+  };
+  while (index < tokens.length) {
+    if (/^[A-Za-z]$/.test(tokens[index])) {
+      command = tokens[index++];
+    }
+    switch (command) {
+      case "M":
+      case "L":
+        current = point();
+        includePoint(current);
+        break;
+      case "m":
+      case "l":
+        current = relativePoint();
+        includePoint(current);
+        break;
+      case "H":
+        current = { x: number(), y: current.y };
+        includePoint(current);
+        break;
+      case "h":
+        current = { x: current.x + number(), y: current.y };
+        includePoint(current);
+        break;
+      case "V":
+        current = { x: current.x, y: number() };
+        includePoint(current);
+        break;
+      case "v":
+        current = { x: current.x, y: current.y + number() };
+        includePoint(current);
+        break;
+      case "C": {
+        const c1 = point();
+        const c2 = point();
+        current = point();
+        lastControl = c2;
+        includePoint(c1);
+        includePoint(c2);
+        includePoint(current);
+        break;
+      }
+      case "c": {
+        const c1 = relativePoint();
+        const c2 = relativePoint();
+        current = relativePoint();
+        lastControl = c2;
+        includePoint(c1);
+        includePoint(c2);
+        includePoint(current);
+        break;
+      }
+      case "S": {
+        const c1 = { x: current.x * 2 - lastControl.x, y: current.y * 2 - lastControl.y };
+        const c2 = point();
+        current = point();
+        lastControl = c2;
+        includePoint(c1);
+        includePoint(c2);
+        includePoint(current);
+        break;
+      }
+      case "s": {
+        const c1 = { x: current.x * 2 - lastControl.x, y: current.y * 2 - lastControl.y };
+        const c2 = relativePoint();
+        current = relativePoint();
+        lastControl = c2;
+        includePoint(c1);
+        includePoint(c2);
+        includePoint(current);
+        break;
+      }
+      case "Q": {
+        const c = point();
+        current = point();
+        lastControl = c;
+        includePoint(c);
+        includePoint(current);
+        break;
+      }
+      case "q": {
+        const c = relativePoint();
+        current = relativePoint();
+        lastControl = c;
+        includePoint(c);
+        includePoint(current);
+        break;
+      }
+      default:
+        return bounds.minX === Infinity ? null : bounds;
+    }
+  }
+  return bounds.minX === Infinity ? null : bounds;
+}
+
+function labelPolygonError(value) {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  if (!Array.isArray(value) || value.length < 3) {
+    return "labelPolygon must be a polygon with at least three points.";
+  }
+  for (const [index, point] of value.entries()) {
+    if (!point || typeof point !== "object" || Array.isArray(point)) {
+      return `labelPolygon[${index}] must be an object point.`;
+    }
+    if (!isNonNegativeFiniteNumber(point.x) || !isNonNegativeFiniteNumber(point.y)) {
+      return `labelPolygon[${index}] must contain finite non-negative x/y.`;
+    }
+  }
+  if (polygonArea(value) <= 0) {
+    return "labelPolygon area must be greater than 0.";
+  }
+  return "";
+}
+
+function hasValidLabelPolygon(value) {
+  return (
+    Array.isArray(value) &&
+    value.length >= 3 &&
+    labelPolygonError(value) === ""
+  );
+}
+
+function coverageRatio(coveredCount, totalCount) {
+  return totalCount === 0
+    ? 1
+    : Number((coveredCount / totalCount).toFixed(4));
+}
+
+function regionCoverageSummaries(stationsById, stationLines, positions) {
+  const stationLineKeysByRegion = new Map();
+  const positionKeysByRegion = new Map();
+  const positionCountsByRegion = new Map();
+  const labelPolygonKeysByRegion = new Map();
+  const labelPolygonCountsByRegion = new Map();
+  for (const stationLine of stationLines) {
+    const region = normalizedText(
+      stationsById.get(normalizedText(stationLine.stationId))?.region,
+    );
+    if (!region) {
+      continue;
+    }
+    const keys = stationLineKeysByRegion.get(region) ?? new Set();
+    keys.add(stationLineKeyFor(stationLine));
+    stationLineKeysByRegion.set(region, keys);
+  }
+
+  for (const position of positions) {
+    const region = normalizedText(position.region);
+    const lineId = normalizedText(position.lineId);
+    if (!region || !lineId) {
+      continue;
+    }
+    positionCountsByRegion.set(
+      region,
+      (positionCountsByRegion.get(region) ?? 0) + 1,
+    );
+
+    const keys = positionKeysByRegion.get(region) ?? new Set();
+    keys.add(stationLineKeyFor(position));
+    positionKeysByRegion.set(region, keys);
+
+    if (hasValidLabelPolygon(position.labelPolygon)) {
+      labelPolygonCountsByRegion.set(
+        region,
+        (labelPolygonCountsByRegion.get(region) ?? 0) + 1,
+      );
+      const labelPolygonKeys = labelPolygonKeysByRegion.get(region) ?? new Set();
+      labelPolygonKeys.add(stationLineKeyFor(position));
+      labelPolygonKeysByRegion.set(region, labelPolygonKeys);
+    }
+  }
+
+  return [
+    ...new Set([
+      ...stationLineKeysByRegion.keys(),
+      ...positionCountsByRegion.keys(),
+    ]),
+  ]
+    .map((region) => {
+      const stationLineKeys = [...(stationLineKeysByRegion.get(region) ?? [])];
+      const positionKeys = positionKeysByRegion.get(region) ?? new Set();
+      const labelPolygonKeys = labelPolygonKeysByRegion.get(region) ?? new Set();
+      const coveredCount = stationLineKeys.filter((key) =>
+        positionKeys.has(key),
+      ).length;
+      const labelPolygonCoveredCount = stationLineKeys.filter((key) =>
+        labelPolygonKeys.has(key),
+      ).length;
+      return {
+        region,
+        stationLineCount: stationLineKeys.length,
+        routeMapPositionCount: positionCountsByRegion.get(region) ?? 0,
+        coveredStationLineCount: coveredCount,
+        coverageRatio: coverageRatio(coveredCount, stationLineKeys.length),
+        labelPolygonCount: labelPolygonCountsByRegion.get(region) ?? 0,
+        labelPolygonCoverageRatio: coverageRatio(
+          labelPolygonCoveredCount,
+          stationLineKeys.length,
+        ),
+      };
+    })
+    .sort((a, b) => codepointCompare(a.region, b.region));
+}
+
+function reviewedAmbiguityEntries(raw) {
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+  if (Array.isArray(raw?.reviewedAmbiguities)) {
+    return raw.reviewedAmbiguities;
+  }
+  throw new Error(
+    "reviewed ambiguities must be an array or contain reviewedAmbiguities array",
+  );
+}
+
+function reviewedLineTrackKeyFor(region, lineId) {
+  return `${normalizedText(region)}\u0000${normalizedText(lineId)}`;
+}
+
+// #1638 line-track 0표(소거법 배정) 노선의 수동 검수 기록. region+lineId로
+// LINE_TRACKS_ZERO_VOTE(HIGH)를 REVIEWED_LINE_TRACK_ZERO_VOTE(INFO)로 다운그레이드해
+// --fail-on BLOCKER,HIGH 게이트를 통과시킨다. 검수 provenance는 필수.
+function parseReviewedLineTracks(raw) {
+  const entries = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.reviewedLineTracks)
+      ? raw.reviewedLineTracks
+      : null;
+  if (entries == null) {
+    throw new Error(
+      "reviewed line tracks must be an array or contain reviewedLineTracks array",
+    );
+  }
+  const reviewed = new Map();
+  for (const [index, entry] of entries.entries()) {
+    const region = normalizedText(entry?.region);
+    const lineId = normalizedText(entry?.lineId);
+    const reason = normalizedText(entry?.reason);
+    const reviewedAt = normalizedText(entry?.reviewedAt);
+    const reviewedBy = normalizedText(entry?.reviewedBy);
+    const reviewSource = normalizedText(entry?.reviewSource);
+    if (!region || !lineId) {
+      throw new Error(
+        `reviewedLineTracks[${index}] must include region and lineId`,
+      );
+    }
+    if (!reason || !reviewedAt || !reviewedBy || !reviewSource) {
+      throw new Error(
+        `reviewedLineTracks[${index}] must include reason, reviewedAt, reviewedBy, and reviewSource`,
+      );
+    }
+    reviewed.set(reviewedLineTrackKeyFor(region, lineId), {
+      region,
+      lineId,
+      reason,
+      reviewedAt,
+      reviewedBy,
+      reviewSource,
+    });
+  }
+  return reviewed;
+}
+
+function parseReviewedAmbiguities(raw) {
+  const reviewed = new Map();
+  for (const [index, entry] of reviewedAmbiguityEntries(raw).entries()) {
+    const region = normalizedText(entry?.region);
+    const lineId = normalizedText(entry?.lineId);
+    const reason = normalizedText(entry?.reason);
+    const reviewedAt = normalizedText(entry?.reviewedAt);
+    const reviewedBy = normalizedText(entry?.reviewedBy);
+    const reviewSource = normalizedText(entry?.reviewSource);
+    const stationIds = Array.isArray(entry?.stationIds)
+      ? entry.stationIds.map(normalizedText).filter(Boolean)
+      : [];
+    const x = Number(entry?.x);
+    const y = Number(entry?.y);
+    if (!region || !lineId || !Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error(
+        `reviewedAmbiguities[${index}] must include region, lineId, x, and y`,
+      );
+    }
+    if (stationIds.length < 2) {
+      throw new Error(
+        `reviewedAmbiguities[${index}].stationIds must include at least two station ids`,
+      );
+    }
+    if (!reason || !reviewedAt || !reviewedBy || !reviewSource) {
+      throw new Error(
+        `reviewedAmbiguities[${index}] must include reason, reviewedAt, reviewedBy, and reviewSource`,
+      );
+    }
+    reviewed.set(
+      duplicateCoordinateKeyFor({ region, lineId, x, y, stationIds }),
+      {
+        region,
+        lineId,
+        x,
+        y,
+        stationIds: stationIds.sort(),
+        reason,
+        reviewedAt,
+        reviewedBy,
+        reviewSource,
+      },
+    );
+  }
+  return reviewed;
+}
+
+function auditPack(pack, reviewedAmbiguities, options = {}) {
+  const findings = [];
+  const stationsById = new Map(
+    (Array.isArray(pack.stations) ? pack.stations : []).map((station) => [
+      normalizedText(station.id),
+      station,
+    ]),
+  );
+  const stationLines = Array.isArray(pack.stationLines) ? pack.stationLines : [];
+  const positions = Array.isArray(pack.routeMapPositions)
+    ? pack.routeMapPositions
+    : [];
+  const requiresRouteMapPositions = packRequiresRouteMapPositions(pack, positions);
+  const stationLineKeys = new Set(stationLines.map(stationLineKeyFor));
+  const stationLineCoverageKeys = new Set(
+    stationLines.map((stationLine) =>
+      coverageKeyForStationLine(stationLine, stationsById),
+    ),
+  );
+  const positionKeys = new Set();
+  const positionedStationLineCoverageKeys = new Set();
+  const labelPolygonCoverageKeys = new Set();
+  const coordinateGroups = new Map();
+  const labelPolygons = [];
+
+  for (const position of positions) {
+    const key = routeMapPositionKeyFor(position);
+    const stationLineKey = stationLineKeyFor(position);
+    if (positionKeys.has(key)) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "DUPLICATE_ROUTE_MAP_POSITION",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message: "routeMapPositions has duplicate stationId/lineId rows.",
+      });
+    }
+    positionKeys.add(key);
+    positionedStationLineCoverageKeys.add(stationLineKey);
+    positionedStationLineCoverageKeys.add(
+      stationLineRegionKeyFor(position, position.region),
+    );
+
+    if (!isNonNegativeInteger(position.x) || !isNonNegativeInteger(position.y)) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "INVALID_ROUTE_MAP_COORDINATE",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message: "routeMapPositions x/y must be finite non-negative integers.",
+      });
+    }
+
+    const polygonError = labelPolygonError(position.labelPolygon);
+    if (polygonError) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "INVALID_ROUTE_MAP_LABEL_POLYGON",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message: polygonError,
+      });
+    } else if (Array.isArray(position.labelPolygon) && position.labelPolygon.length >= 3) {
+      labelPolygonCoverageKeys.add(stationLineKey);
+      labelPolygonCoverageKeys.add(
+        stationLineRegionKeyFor(position, position.region),
+      );
+      labelPolygons.push({
+        position,
+        bounds: polygonBounds(position.labelPolygon),
+      });
+    }
+
+    if (!stationLineKeys.has(stationLineKey)) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "ROUTE_MAP_POSITION_WITHOUT_STATION_LINE",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message:
+          "routeMapPositions row does not match a stationLines membership.",
+      });
+    }
+
+    const sourceFields = [
+      ["sourceId", position.sourceId],
+      ["sourceName", position.sourceName],
+      ["sourceUrl", position.sourceUrl],
+      ["licenseStatus", position.licenseStatus],
+    ].filter(([, value]) => normalizedText(value) === "");
+    if (sourceFields.length > 0) {
+      addFinding(findings, {
+        severity: "HIGH",
+        code: "MISSING_ROUTE_MAP_SOURCE",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message: `routeMapPositions source fields are missing: ${sourceFields
+          .map(([name]) => name)
+          .join(", ")}.`,
+      });
+    }
+
+    if (!/^[a-f0-9]{64}$/.test(normalizedText(position.sourceSha256))) {
+      addFinding(findings, {
+        severity: "HIGH",
+        code: "MISSING_ROUTE_MAP_SOURCE_SHA",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message:
+          "routeMapPositions row must include a sourceSha256 for the coordinate source snapshot.",
+      });
+    }
+
+    if (normalizedText(position.reviewedAt) === "") {
+      addFinding(findings, {
+        severity: "HIGH",
+        code: "MISSING_ROUTE_MAP_REVIEW",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message: "routeMapPositions row has no reviewedAt timestamp.",
+      });
+    }
+
+    const sourceLabel = normalizedText(position.sourceLabel);
+    if (sourceLabel !== "") {
+      const station = stationsById.get(normalizedText(position.stationId));
+      const stationName = station?.nameKo;
+      if (
+        normalizedStationLabel(sourceLabel) !==
+        normalizedStationLabel(stationName)
+      ) {
+        const approvedRename = approvedRouteLabelRenameFor({
+          pack,
+          position,
+          station,
+          renames: options.routeMapCoverageScopeExemptions ?? [],
+        });
+        if (approvedRename) {
+          addFinding(findings, {
+            severity: "INFO",
+            code: "APPROVED_ROUTE_MAP_SOURCE_LABEL_RENAME",
+            packId: pack.id,
+            region: position.region,
+            lineId: position.lineId,
+            stationId: position.stationId,
+            message: `routeMapPositions sourceLabel is an approved OFFICIAL_RENAME (${approvedRename.snapshotStationName} → ${approvedRename.rosterStationName}).`,
+          });
+        } else {
+          addFinding(findings, {
+            severity: "HIGH",
+            code: "ROUTE_MAP_SOURCE_LABEL_MISMATCH",
+            packId: pack.id,
+            region: position.region,
+            lineId: position.lineId,
+            stationId: position.stationId,
+            message:
+              "routeMapPositions sourceLabel does not match the station name.",
+          });
+        }
+      }
+    }
+
+    const coordinateKey = [
+      normalizedText(position.region),
+      normalizedText(position.lineId),
+      Number(position.x),
+      Number(position.y),
+    ].join("\u0000");
+    const group = coordinateGroups.get(coordinateKey) ?? [];
+    group.push(position);
+    coordinateGroups.set(coordinateKey, group);
+  }
+
+  for (let leftIndex = 0; leftIndex < labelPolygons.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < labelPolygons.length; rightIndex += 1) {
+      const left = labelPolygons[leftIndex];
+      const right = labelPolygons[rightIndex];
+      if (normalizedText(left.position.region) !== normalizedText(right.position.region)) {
+        continue;
+      }
+      if (!boundsOverlap(left.bounds, right.bounds)) {
+        continue;
+      }
+      addFinding(findings, {
+        severity: "MEDIUM",
+        code: "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON",
+        packId: pack.id,
+        region: left.position.region,
+        lineId: left.position.lineId,
+        stationId: `${left.position.stationId},${right.position.stationId}`,
+        message: "routeMapPositions labelPolygon bounding boxes overlap.",
+      });
+    }
+  }
+
+  for (const labelPolygon of labelPolygons) {
+    const tapPoint = polygonCenter(labelPolygon.position.labelPolygon);
+    const ownScore = hitScore(tapPoint, labelPolygon.position);
+    const ambiguous = positions
+      .filter((position) =>
+        position !== labelPolygon.position &&
+        normalizedText(position.region) ===
+          normalizedText(labelPolygon.position.region) &&
+        hitScore(tapPoint, position) <= ownScore,
+      )
+      .map((position) => `${position.stationId}:${position.lineId}`)
+      .sort();
+    if (ambiguous.length === 0) {
+      continue;
+    }
+    addFinding(findings, {
+      severity: "MEDIUM",
+      code: "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      packId: pack.id,
+      region: labelPolygon.position.region,
+      lineId: labelPolygon.position.lineId,
+      stationId: labelPolygon.position.stationId,
+      message: `labelPolygon center tap is ambiguous with ${ambiguous.join(", ")}.`,
+    });
+  }
+
+  if (requiresRouteMapPositions) {
+    for (const membership of stationLines) {
+      if (
+        positionedStationLineCoverageKeys.has(
+          coverageKeyForStationLine(membership, stationsById),
+        )
+      ) {
+        continue;
+      }
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "MISSING_ROUTE_MAP_POSITION",
+        packId: pack.id,
+        region: "",
+        lineId: membership.lineId,
+        stationId: membership.stationId,
+        message:
+          "stationLines membership has no matching routeMapPositions coordinate.",
+      });
+    }
+  }
+
+  const missingLabelPolygonByRegion = new Map();
+  for (const membership of stationLines) {
+    const coverageKey = coverageKeyForStationLine(membership, stationsById);
+    if (!positionedStationLineCoverageKeys.has(coverageKey)) {
+      continue;
+    }
+    if (labelPolygonCoverageKeys.has(coverageKey)) {
+      continue;
+    }
+    const region = normalizedText(
+      stationsById.get(normalizedText(membership.stationId))?.region,
+    );
+    const summary = missingLabelPolygonByRegion.get(region) ?? {
+      count: 0,
+      lineIds: new Set(),
+    };
+    summary.count += 1;
+    summary.lineIds.add(normalizedText(membership.lineId));
+    missingLabelPolygonByRegion.set(region, summary);
+  }
+
+  for (const [region, summary] of missingLabelPolygonByRegion.entries()) {
+    if (summary.count === 0) {
+      continue;
+    }
+    addFinding(findings, {
+      severity: options.requireLabelPolygons ? "HIGH" : "INFO",
+      code: "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      packId: pack.id,
+      region,
+      lineId: "",
+      stationId: "",
+      message: `${summary.count} station-line routeMapPositions across ${summary.lineIds.size} lines do not include labelPolygon metadata.`,
+    });
+  }
+
+  for (const group of coordinateGroups.values()) {
+    const uniqueStationIds = new Set(group.map((row) => row.stationId));
+    if (uniqueStationIds.size < 2) {
+      continue;
+    }
+    const first = group[0];
+    const stationIds = [...uniqueStationIds].sort((a, b) => {
+      if (a < b) return -1;
+      if (a > b) return 1;
+      return 0;
+    });
+    const ambiguityKey = duplicateCoordinateKeyFor({
+      region: first.region,
+      lineId: first.lineId,
+      x: first.x,
+      y: first.y,
+      stationIds,
+    });
+    const reviewed = reviewedAmbiguities.get(ambiguityKey);
+    if (reviewed != null) {
+      addFinding(findings, {
+        severity: "INFO",
+        code: "REVIEWED_AMBIGUITY",
+        packId: pack.id,
+        region: first.region,
+        lineId: first.lineId,
+        stationId: stationIds.join(","),
+        message: `Reviewed duplicate source coordinate: ${reviewed.reason} (${reviewed.reviewedAt}, ${reviewed.reviewedBy}, ${reviewed.reviewSource}).`,
+      });
+      continue;
+    }
+    addFinding(findings, {
+      severity: "HIGH",
+      code: "DUPLICATE_SOURCE_COORDINATE",
+      packId: pack.id,
+      region: first.region,
+      lineId: first.lineId,
+      stationId: stationIds.join(","),
+      message:
+        "Multiple stations share the same region/line/source coordinate and need explicit review.",
+    });
+  }
+
+  const findingCounts = {};
+  for (const severity of severityRank.keys()) {
+    findingCounts[severity] = 0;
+  }
+  for (const finding of findings) {
+    findingCounts[finding.severity] += 1;
+  }
+
+  return {
+    id: pack.id ?? "",
+    version: pack.version ?? "",
+    summary: {
+      stationLineCount: stationLines.length,
+      routeMapPositionCount: positions.length,
+      coveredStationLineCount: [...stationLineCoverageKeys].filter((key) =>
+        positionedStationLineCoverageKeys.has(key),
+      ).length,
+      coverageRatio: coverageRatio(
+        [...stationLineCoverageKeys].filter((key) =>
+          positionedStationLineCoverageKeys.has(key),
+        ).length,
+        stationLines.length,
+      ),
+      labelPolygonCount: positions.filter((position) =>
+        hasValidLabelPolygon(position.labelPolygon),
+      ).length,
+      labelPolygonCoverageRatio: coverageRatio(
+        [...stationLineCoverageKeys].filter((key) =>
+          labelPolygonCoverageKeys.has(key),
+        ).length,
+        stationLines.length,
+      ),
+      regions: regionCoverageSummaries(stationsById, stationLines, positions),
+      findingsBySeverity: findingCounts,
+    },
+    findings: findings.sort((a, b) => {
+      const severityDelta =
+        severityRank.get(a.severity) - severityRank.get(b.severity);
+      if (severityDelta !== 0) {
+        return severityDelta;
+      }
+      return codepointCompare(`${a.code}:${a.lineId}:${a.stationId}`, `${b.code}:${b.lineId}:${b.stationId}`);
+    }),
+  };
+}
+
+function packRequiresRouteMapPositions(pack, positions) {
+  if (positions.length > 0) {
+    return true;
+  }
+  return (pack.sourceInventory ?? []).some((source) => {
+    if ((source.fields ?? []).includes("route_map_positions")) {
+      return true;
+    }
+    return (source.coverageScope?.sourceDomains ?? []).includes("route_map_positions");
+  });
+}
+
+// build/apply-route-map-line-tracks의 tracks.json(들)을 fixture 노선 집합과 대조해
+// 커버리지·무결성 findings를 만든다. #1638 track 직접 렌더 게이트.
+function auditLineTracks(packs, lineTracksDocs, reviewedLineTracks = new Map()) {
+  const lineIdsByRegion = new Map();
+  for (const pack of packs) {
+    for (const position of pack.routeMapPositions ?? []) {
+      const region = position.region;
+      if (!region) continue;
+      if (!lineIdsByRegion.has(region)) lineIdsByRegion.set(region, new Set());
+      lineIdsByRegion.get(region).add(position.lineId);
+    }
+  }
+  const findings = [];
+  const coveredRegions = new Set(lineTracksDocs.map((doc) => doc.region));
+  for (const region of lineIdsByRegion.keys()) {
+    if (!coveredRegions.has(region)) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "LINE_TRACKS_MISSING_REGION",
+        region,
+        message: `route-map region '${region}'에 line-track 문서가 없다.`,
+      });
+    }
+  }
+  for (const doc of lineTracksDocs) {
+    const region = doc.region ?? "";
+    const expected = lineIdsByRegion.get(region) ?? new Set();
+    // 색↔노선 1:1 전제는 SVG stroke 원천에만 적용(Route B는 색이 없다).
+    if (doc.source === "svg-strokes" && Number.isInteger(doc.colorCount) && Number.isInteger(doc.lineCount) && doc.colorCount !== doc.lineCount) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "LINE_TRACKS_COLOR_LINE_MISMATCH",
+        region,
+        message: `track 색 수(${doc.colorCount}) ≠ 노선 수(${doc.lineCount}) — 색이 노선 식별자라는 전제 위반.`,
+      });
+    }
+    const covered = new Set();
+    for (const line of doc.lines ?? []) {
+      covered.add(line.lineId);
+      if (!line.paths || line.paths.length === 0) {
+        addFinding(findings, {
+          severity: "BLOCKER",
+          code: "LINE_TRACKS_EMPTY_PATH",
+          region,
+          lineId: line.lineId,
+          message: "line-track path가 비어 있다.",
+        });
+      }
+      if (line.matchVotes === 0) {
+        const reviewed = reviewedLineTracks.get(
+          reviewedLineTrackKeyFor(region, line.lineId),
+        );
+        if (reviewed != null) {
+          addFinding(findings, {
+            severity: "INFO",
+            code: "REVIEWED_LINE_TRACK_ZERO_VOTE",
+            region,
+            lineId: line.lineId,
+            message: `검수 완료된 0표 소거법 배정(색 ${line.svgColor || "-"}): ${reviewed.reason} (${reviewed.reviewedAt}, ${reviewed.reviewedBy}, ${reviewed.reviewSource}).`,
+          });
+        } else {
+          addFinding(findings, {
+            severity: "HIGH",
+            code: "LINE_TRACKS_ZERO_VOTE",
+            region,
+            lineId: line.lineId,
+            message: `근접 역 0표 소거법 배정(색 ${line.svgColor || "-"}). SVG와 육안 대조 수동 검수 대상.`,
+          });
+        }
+      }
+    }
+    for (const lineId of expected) {
+      if (!covered.has(lineId)) {
+        addFinding(findings, {
+          severity: "BLOCKER",
+          code: "LINE_TRACKS_MISSING_LINE",
+          region,
+          lineId,
+          message: "노선에 대응 line-track이 없다.",
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+function auditFixture(fixturePath, fixture, reviewedAmbiguities, options = {}) {
+  const packs = Array.isArray(fixture.packs) ? fixture.packs : [];
+  const auditedPacks = packs.map((pack) =>
+    auditPack(pack, reviewedAmbiguities, options),
+  );
+  const findings = auditedPacks.flatMap((pack) => pack.findings);
+  const lineTracksDocs = options.lineTracks ?? [];
+  if (lineTracksDocs.length > 0) {
+    findings.push(
+      ...auditLineTracks(packs, lineTracksDocs, options.reviewedLineTracks),
+    );
+  }
+  const findingCounts = {};
+  for (const severity of severityRank.keys()) {
+    findingCounts[severity] = 0;
+  }
+  for (const finding of findings) {
+    findingCounts[finding.severity] += 1;
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "route-map-position-audit",
+    source: path.normalize(fixturePath),
+    summary: {
+      packCount: auditedPacks.length,
+      findingsBySeverity: findingCounts,
+    },
+    packs: auditedPacks,
+    findings,
+  };
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const fixtureText = await readFile(options.fixture, "utf8");
+  const fixture = JSON.parse(fixtureText);
+  const reviewedAmbiguities = options.reviewedAmbiguities
+    ? parseReviewedAmbiguities(
+        JSON.parse(await readFile(options.reviewedAmbiguities, "utf8")),
+      )
+    : new Map();
+  const reviewedLineTracks = options.reviewedLineTracks
+    ? parseReviewedLineTracks(
+        JSON.parse(await readFile(options.reviewedLineTracks, "utf8")),
+      )
+    : new Map();
+  const routeMapCoverageScopeExemptions = options.routeMapCoverageScopeExemptions
+    ? JSON.parse(await readFile(options.routeMapCoverageScopeExemptions, "utf8"))
+        .approvedStationNameAliases
+    : [];
+  if (!Array.isArray(routeMapCoverageScopeExemptions)) {
+    throw new Error(
+      "route map coverage scope exemptions must contain approvedStationNameAliases array",
+    );
+  }
+  const lineTracksDocs = await Promise.all(
+    options.lineTracks.map(async (file) => JSON.parse(await readFile(file, "utf8"))),
+  );
+  const report = auditFixture(options.fixture, fixture, reviewedAmbiguities, {
+    requireLabelPolygons: options.requireLabelPolygons,
+    lineTracks: lineTracksDocs,
+    reviewedLineTracks,
+    routeMapCoverageScopeExemptions,
+  });
+  console.log(JSON.stringify(report, null, options.pretty ? 2 : 0));
+
+  const failed = options.failOn.some(
+    (severity) => report.summary.findingsBySeverity[severity] > 0,
+  );
+  if (failed) {
+    process.exitCode = 1;
+  }
+}
+
+main().catch((error) => {
+  console.error(error.message);
+  console.error(usage());
+  process.exit(1);
+});

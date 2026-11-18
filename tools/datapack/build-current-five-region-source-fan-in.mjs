@@ -1,0 +1,746 @@
+#!/usr/bin/env node
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { carriedAdmissionGovernanceViolation, carriedAdmissionLineage } from "./lib/carried-admission.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+export const CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH =
+  "tools/datapack/release/current-five-region-source-fan-in.json";
+export const NATIVE_ADMISSION_KINDS = Object.freeze([
+  "scheduleAdmissionEvidence",
+  "topologyAdmissionEvidence",
+  "accessibilityAdmissionEvidence",
+  "capitalTopologyAdmissionEvidence",
+  "retainedScheduleAdmissionEvidence",
+  "rawSnapshotAdmission",
+]);
+
+const INPUT_PATHS = Object.freeze({
+  targets: "tools/datapack/nationwide-coverage-targets.json",
+  tally: "tools/datapack/reports/nationwide-coverage-tally.json",
+  ownership: "tools/datapack/release/nationwide-requirement-ownership.json",
+  inventory: "tools/datapack/source-inventory.json",
+  sourceSnapshots: "tools/datapack/release/source-snapshots.json",
+});
+const SHA256 = /^[a-f0-9]{64}$/u;
+const REQUIRED_REGION_IDS = Object.freeze(["busan", "capital", "daegu", "daejeon", "gwangju"]);
+const RELEASE_TIERS = new Set(["LAUNCH_REQUIRED", "ENHANCEMENT"]);
+const TALLY_STATUSES = new Set([
+  "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+  "INVENTORY_ADMITTED",
+  "MISSING",
+]);
+
+const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+
+function canonicalObject(value) {
+  if (Array.isArray(value)) return value.map(canonicalObject);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort(compare)
+    .map((key) => [key, canonicalObject(value[key])]));
+}
+
+function canonical(value) {
+  return JSON.stringify(canonicalObject(value));
+}
+
+function sameKeys(value, expected) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    && canonical(Object.keys(value).sort(compare)) === canonical([...expected].sort(compare));
+}
+
+function object(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} mismatch`);
+  }
+  return value;
+}
+
+function string(value, label) {
+  if (typeof value !== "string" || value.length === 0) throw new Error(`${label} mismatch`);
+  return value;
+}
+
+function instant(value, label) {
+  const milliseconds = Date.parse(value);
+  if (typeof value !== "string" || !Number.isFinite(milliseconds)
+    || new Date(milliseconds).toISOString() !== value) throw new Error(`${label} mismatch`);
+  return milliseconds;
+}
+
+function parseInput(name, suppliedValue, inputBytes) {
+  const bytes = Buffer.isBuffer(inputBytes?.[name])
+    ? inputBytes[name]
+    : typeof inputBytes?.[name] === "string" ? Buffer.from(inputBytes[name]) : null;
+  if (!bytes || bytes.length === 0) throw new Error(`${name} input bytes mismatch`);
+  let parsed;
+  try { parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { throw new Error(`${name} input JSON mismatch`); }
+  if (canonical(parsed) !== canonical(suppliedValue)) throw new Error(`${name} input bytes mismatch`);
+  return { bytes, value: parsed };
+}
+
+function pk(row) {
+  return [row.regionId, row.operatorId, row.lineId, row.sourceDomain].join(":");
+}
+
+function requiredRows(targets, tally) {
+  if (!Array.isArray(targets.activeLineScopes) || targets.activeLineScopes.length === 0
+    || !Array.isArray(targets.requiredSourceDomains) || targets.requiredSourceDomains.length === 0
+    || !Array.isArray(tally.launchRequired?.requirements)
+    || !Array.isArray(tally.enhancement?.requirements)) {
+    throw new Error("five-region target or tally shape mismatch");
+  }
+  const domainTier = new Map(targets.requiredSourceDomains.map((domain) => [domain.id, domain.releaseTier]));
+  if (domainTier.size !== targets.requiredSourceDomains.length
+    || targets.requiredSourceDomains.some(({ id, releaseTier }) =>
+      typeof id !== "string" || id.length === 0 || !RELEASE_TIERS.has(releaseTier))) {
+    throw new Error("target source domain release tier mismatch");
+  }
+  const expected = new Set(targets.activeLineScopes.flatMap((scope) => targets.requiredSourceDomains
+    .map((domain) => [scope.regionId, scope.operatorId, scope.lineId, domain.id].join(":"))));
+  const rows = [...tally.launchRequired.requirements, ...tally.enhancement.requirements];
+  const actual = new Set();
+  for (const row of rows) {
+    const key = pk(row);
+    if (!expected.has(key) || actual.has(key) || domainTier.get(row.sourceDomain) !== row.releaseTier) {
+      throw new Error("five-region tally PK mismatch");
+    }
+    actual.add(key);
+  }
+  if (actual.size !== expected.size) throw new Error("five-region tally PK mismatch");
+  return rows;
+}
+
+function admittedEvidence(source) {
+  return Object.entries(source).filter(([key, value]) =>
+    (key === "admissionEvidence" || key === "rawSnapshotAdmission" || key.endsWith("AdmissionEvidence"))
+    && value && typeof value === "object" && !Array.isArray(value));
+}
+
+function licenseEvidence(source, sourceId) {
+  const evidence = source.license ?? source.licenseReview;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+    throw new Error(`inventory source license mismatch for ${sourceId}`);
+  }
+  if (source.license && (evidence.commercialUseAllowed !== true
+    || evidence.derivativeWorkAllowed !== true || evidence.redistributionAllowed !== true)) {
+    throw new Error(`inventory source license mismatch for ${sourceId}`);
+  }
+  return evidence;
+}
+
+function validNativeAdmissionMetadata(source) {
+  if (source.admissionEvidence === undefined) return true;
+  const metadata = source.admissionEvidence;
+  if (metadata.adminReviewRecordHash !== undefined) return false;
+  const validKeys = Object.keys(metadata).every((k) => k === "licenseEvidenceHash" || k === "retainedReceiptSourceId");
+  return validKeys
+    && SHA256.test(metadata.licenseEvidenceHash ?? "")
+    && source.license !== undefined;
+}
+
+function isProductionUseAllowed(source) {
+  return source.productionUseAllowed === true
+    || source.capabilities?.schedule?.productionUseAllowed === true
+    || source.capabilities?.facility?.productionUseAllowed === true
+    || source.transferAdmissionEvidence?.productionUseAllowed === true
+    || source.admissionEvidence?.decision === "APPROVED";
+}
+
+function hasNativeSourceAuthority(source) {
+  return source.requiredForProductionPack === true && isProductionUseAllowed(source);
+}
+
+// #1289: 무인 갱신(#1276)은 새 snapshot에 옛 snapshot의 사람 승인을 이월한다. 이 승인은 head가 아니라 옛 snapshot을 가리키므로,
+// 등록기와 같은 판정(lib/carried-admission)으로 계보·스키마·원본 해시·약관 결속·재검토 기한을 확인해 인정한다. 하나라도 어긋나면 명시적으로 실패한다.
+// 약관 결속과 기한은 거버넌스 정책 입력(governancePolicy)이 있어야 판정한다. 입력이 없으면 이름 붙인 재현 모드(REPRODUCTION_GOVERNANCE)를 써야만
+// 건너뛸 수 있고, 둘 다 없으면 이월 시점에 실패한다(재현 모드는 이미 검사를 거쳐 만든 fan-in 바이트를 다시 만드는 호출처 전용이다).
+export const REPRODUCTION_GOVERNANCE = Object.freeze({ mode: "REPRODUCTION" });
+
+function carriedGovernanceInput({ governancePolicy, governance }) {
+  if (governancePolicy !== undefined && governance !== undefined) {
+    throw new Error("fan-in carried admission governance input is ambiguous");
+  }
+  if (governance !== undefined && governance.mode !== REPRODUCTION_GOVERNANCE.mode) {
+    throw new Error("fan-in carried admission governance mode mismatch");
+  }
+  if (governancePolicy !== undefined) return { policy: governancePolicy };
+  return governance === undefined ? null : { reproduction: true };
+}
+
+function carriedGovernanceViolation({ governance, sourceId, licenseEvidenceHash, evaluatedAt }) {
+  if (governance === null) return "GOVERNANCE_INPUT_REQUIRED";
+  if (governance.reproduction) return null;
+  if (!Array.isArray(governance.policy?.sources)) throw new Error("fan-in carried admission governance policy shape mismatch");
+  const entries = governance.policy.sources.filter((entry) => entry?.sourceId === sourceId);
+  if (entries.length !== 1) throw new Error(`fan-in carried admission governance entry mismatch for ${sourceId}`);
+  return carriedAdmissionGovernanceViolation({ licenseEvidenceHash, governanceEntry: entries[0], evaluatedAt });
+}
+
+function carriedForwardApproval({ source, sourceId, snapshot, matching, ledger, governance, evaluatedAt }) {
+  const approved = source.admissionEvidence;
+  if (approved?.decision !== "APPROVED" || approved.snapshotId === snapshot.snapshotId) return null;
+  const headEvidence = matching.find(([kind, evidence]) =>
+    kind === "scheduleAdmissionEvidence" && evidence.rawSha256 === snapshot.rawSha256);
+  const { chainLength, violation: lineageViolation } = carriedAdmissionLineage({
+    sourceId, approved, ledger, head: snapshot, schemaFingerprint: snapshot.schemaFingerprint,
+  });
+  const violation = lineageViolation
+    ?? (headEvidence === undefined ? "HEAD_EVIDENCE_UNBOUND" : null)
+    ?? carriedGovernanceViolation({ governance, sourceId, licenseEvidenceHash: approved.licenseEvidenceHash, evaluatedAt });
+  if (violation !== null) throw new Error(`admission carry-forward mismatch for ${sourceId}: ${violation}`);
+  return {
+    kind: "admissionEvidence",
+    evidence: headEvidence[1],
+    record: { kind: "admissionEvidence", sha256: sha256(Buffer.from(canonical(approved))) },
+    // 근거는 상수 크기로 남긴다(매일 snapshot이 쌓여도 커밋 산출물이 자라지 않는다). 계보 전체는 원장이 가진다.
+    carriedAdmission: {
+      approvedSnapshotId: approved.snapshotId,
+      approvedRawSha256: approved.rawSha256,
+      schemaFingerprint: approved.schemaFingerprint,
+      licenseEvidenceHash: approved.licenseEvidenceHash,
+      chainLength,
+    },
+  };
+}
+
+function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, { ledger, governance }) {
+  const membershipCoverage = source.membershipCoverageEvidence;
+  if (membershipCoverage !== undefined && (membershipCoverage.snapshotId !== snapshot.snapshotId
+    || membershipCoverage.rawSha256 !== snapshot.rawSha256
+    || membershipCoverage.normalizedObservationSha256 !== snapshot.normalizedObservationSha256)) {
+    throw new Error(`membership coverage snapshot mismatch for ${sourceId}`);
+  }
+  const matching = admittedEvidence(source).filter(([, evidence]) =>
+    evidence.snapshotId === snapshot.snapshotId
+    && (evidence.sourceId === undefined || evidence.sourceId === sourceId));
+  if (matching.length === 0) throw new Error(`admission snapshot mismatch for ${sourceId}`);
+
+  const isNativeCandidate = (kind, evidence) =>
+    (NATIVE_ADMISSION_KINDS.includes(kind) && typeof evidence?.materializer === "string")
+    || kind === "capitalTopologyAdmissionEvidence"
+    || kind === "retainedScheduleAdmissionEvidence";
+
+  const approved = matching.filter(([kind, evidence]) => {
+    if (isNativeCandidate(kind, evidence)) return false;
+    return evidence.decision === "APPROVED"
+      || evidence.status === "APPROVED"
+      || evidence.productionUseAllowed === true
+      || (kind === "retainedScheduleAdmissionEvidence" && source.capabilities?.schedule?.productionUseAllowed === true);
+  });
+  const native = matching.map(([kind, evidence]) => ({
+    kind,
+    evidence,
+    record: nativeAdmissionRecord({ source, sourceId, snapshot, kind, evidence }),
+  })).filter(({ record }) => record !== null);
+  const recognized = [
+    ...approved.map(([kind, evidence]) => ({ kind, evidence, record: null })),
+    ...native,
+  ];
+  if (recognized.length === 0) {
+    const carried = carriedForwardApproval({ source, sourceId, snapshot, matching, ledger, governance, evaluatedAt });
+    if (carried === null) throw new Error(`admission approval mismatch for ${sourceId}`);
+    recognized.push(carried);
+  }
+
+  const bound = recognized.filter(({ evidence }) =>
+    evidence.rawSha256 === snapshot.rawSha256
+    || evidence.snapshotRawSha256 === snapshot.rawSha256
+    || (Boolean(evidence.rawSha256) && evidence.rawSha256 === snapshot.rawReceipt?.snapshotRawSha256)
+    || (Boolean(evidence.snapshotRawSha256) && evidence.snapshotRawSha256 === snapshot.rawReceipt?.snapshotRawSha256)
+    || (Boolean(evidence.rawReceiptSha256) && evidence.rawReceiptSha256 === snapshot.rawReceiptSha256));
+  if (bound.length === 0) throw new Error(`admission digest mismatch for ${sourceId}`);
+
+  const current = bound.filter(({ evidence }) => {
+    const rawObservedAt = evidence.observedAt ?? evidence.capturedAt
+      ?? evidence.verifiedAt ?? evidence.approvedAt ?? evidence.evaluatedAt
+      ?? snapshot.capturedAt ?? snapshot.observedAt ?? snapshot.retrievedAt;
+    const observedAt = typeof rawObservedAt === "string" && !isNaN(Date.parse(rawObservedAt))
+      ? new Date(Date.parse(rawObservedAt)).toISOString()
+      : rawObservedAt;
+    // #929 D1(QA 결정 2026-10-04): 등록 확인 창의 끝은 원천별 정책 신선도(원장 head freshnessExpiresAt)다.
+    // 등록 evidence의 freshUntil(등록기가 수집 +1일로 쓰던 값)은 창을 줄이지 않는다.
+    const rawFreshUntil = snapshot.freshnessExpiresAt;
+    const freshUntil = typeof rawFreshUntil === "string" && !isNaN(Date.parse(rawFreshUntil))
+      ? new Date(Date.parse(rawFreshUntil)).toISOString()
+      : rawFreshUntil;
+    return observedAt !== undefined && freshUntil !== undefined
+      && instant(observedAt, "admission observation") <= evaluatedAt
+      && instant(freshUntil, "admission freshness") > evaluatedAt;
+  });
+  if (current.length === 0) {
+    const hasFutureObservation = bound.some(({ evidence }) => {
+      const rawObservedAt = evidence.observedAt ?? evidence.capturedAt
+        ?? evidence.verifiedAt ?? evidence.approvedAt;
+      const observedAt = typeof rawObservedAt === "string" && !isNaN(Date.parse(rawObservedAt))
+        ? new Date(Date.parse(rawObservedAt)).toISOString()
+        : rawObservedAt;
+      return observedAt !== undefined && instant(observedAt, "admission observation") > evaluatedAt;
+    });
+    if (hasFutureObservation) throw new Error(`admission future observation mismatch for ${sourceId}`);
+    throw new Error(`admission freshness mismatch for ${sourceId}`);
+  }
+  return {
+    records: current.map(({ kind, evidence, record }) => record ?? {
+      kind,
+      sha256: sha256(Buffer.from(canonical(evidence))),
+    }).sort((left, right) => compare(left.kind, right.kind)),
+    carriedAdmission: current.find(({ carriedAdmission }) => carriedAdmission)?.carriedAdmission ?? null,
+  };
+}
+
+function validNativeScheduleAdmission(source, evidence, snapshot, sourceId) {
+  if (Object.hasOwn(evidence, "decision") || Object.hasOwn(evidence, "productionUseAllowed")) return false;
+  if (!hasNativeSourceAuthority(source)
+    || source.capabilities?.schedule?.productionUseAllowed !== true) return false;
+  if (!Number.isInteger(evidence.issue) || evidence.issue <= 0
+    || typeof evidence.materializer !== "string" || evidence.materializer.length === 0
+    || typeof evidence.verificationTest !== "string" || evidence.verificationTest.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`
+    || evidence.snapshotId !== snapshot.snapshotId || !SHA256.test(evidence.rawSha256 ?? "")
+    || !SHA256.test(evidence.rowsSha256 ?? "")
+    || (Object.hasOwn(evidence, "contentSha256") && !SHA256.test(evidence.contentSha256))
+    || !SHA256.test(evidence.topologyContentSha256 ?? "") || typeof evidence.topologySourceId !== "string"
+    || evidence.topologySourceId.length === 0 || typeof evidence.topologySnapshotId !== "string"
+    || evidence.topologySnapshotId.length === 0
+    || !["rowCount", "departureCount", "tripCount", "stopTimeCount"].every((key) => Number.isInteger(evidence[key]) && evidence[key] > 0)) {
+    return false;
+  }
+  return true;
+}
+
+function validNativeTopologyAdmission(source, evidence, snapshot, sourceId) {
+  if (Object.hasOwn(evidence, "decision") || Object.hasOwn(evidence, "productionUseAllowed")) return false;
+  if (!hasNativeSourceAuthority(source)
+    || !Number.isInteger(evidence.issue) || evidence.issue <= 0
+    || typeof evidence.materializer !== "string" || evidence.materializer.length === 0
+    || typeof evidence.verificationTest !== "string" || evidence.verificationTest.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`
+    || evidence.snapshotId !== snapshot.snapshotId
+    || evidence.capturedAt !== snapshot.capturedAt
+    || evidence.rawSha256 !== snapshot.rawSha256
+    || evidence.contentSha256 !== snapshot.contentSha256
+    || !SHA256.test(evidence.rawSha256 ?? "") || !SHA256.test(evidence.contentSha256 ?? "")
+    || !Number.isInteger(evidence.stationCount) || evidence.stationCount <= 0
+    || !Number.isInteger(evidence.edgeCount) || evidence.edgeCount <= 0
+    || evidence.stationCount !== snapshot.coverageCount || evidence.edgeCount !== snapshot.rowCount) {
+    return false;
+  }
+  try {
+    return instant(evidence.capturedAt, "topology admission capture") < instant(evidence.freshUntil, "topology admission freshness");
+  } catch {
+    return false;
+  }
+}
+
+function validNativeAccessibilityAdmission(source, evidence, snapshot, sourceId) {
+  if (Object.hasOwn(evidence, "decision") || Object.hasOwn(evidence, "productionUseAllowed")) return false;
+  if (!hasNativeSourceAuthority(source)
+    || source.capabilities?.facility?.productionUseAllowed !== true) return false;
+  if (!Number.isInteger(evidence.issue) || evidence.issue <= 0
+    || typeof evidence.materializer !== "string" || evidence.materializer.length === 0
+    || typeof evidence.verificationTest !== "string" || evidence.verificationTest.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`
+    || evidence.snapshotId !== snapshot.snapshotId
+    || evidence.capturedAt !== snapshot.capturedAt
+    || evidence.rawSha256 !== snapshot.rawSha256
+    || evidence.rowsSha256 !== snapshot.contentSha256
+    || !SHA256.test(evidence.rawSha256 ?? "") || !SHA256.test(evidence.rowsSha256 ?? "")
+    || !SHA256.test(evidence.topologyContentSha256 ?? "")
+    || typeof evidence.topologySourceId !== "string" || evidence.topologySourceId.length === 0
+    || typeof evidence.topologySnapshotId !== "string" || evidence.topologySnapshotId.length === 0
+    || !Number.isInteger(evidence.rowCount) || evidence.rowCount <= 0
+    || !Number.isInteger(evidence.stationCount) || evidence.stationCount <= 0
+    || evidence.rowCount !== snapshot.rowCount || evidence.stationCount !== snapshot.coverageCount) {
+    return false;
+  }
+  try {
+    return instant(evidence.capturedAt, "accessibility admission capture")
+      < instant(evidence.freshUntil, "accessibility admission freshness");
+  } catch {
+    return false;
+  }
+}
+
+function validNativeCapitalTopologyAdmission(source, evidence, snapshot, sourceId) {
+  return evidence.status === "APPROVED"
+    && evidence.sourceId === sourceId
+    && evidence.snapshotId === snapshot.snapshotId
+    && evidence.snapshotRawSha256 === snapshot.rawSha256;
+}
+
+function validNativeRetainedScheduleAdmission(source, evidence, snapshot, sourceId) {
+  return source.capabilities?.schedule?.productionUseAllowed === true
+    && evidence.snapshotId === snapshot.snapshotId
+    && evidence.rawSha256 === snapshot.rawSha256;
+}
+
+function validNativeRawSnapshotAdmission(source, evidence, snapshot) {
+  return source.requiredForProductionPack === false
+    && evidence.status === "LOCKED"
+    && evidence.snapshotId === snapshot.snapshotId
+    && evidence.rawSha256 === snapshot.rawSha256
+    && (snapshot.gzipSha256 === undefined || evidence.gzipSha256 === snapshot.gzipSha256)
+    && (snapshot.rowCount === undefined || evidence.rowCount === snapshot.rowCount);
+}
+
+export function nativeAdmissionRecord({ source, sourceId, snapshot, kind, evidence }) {
+  const valid = kind === "scheduleAdmissionEvidence"
+    ? validNativeScheduleAdmission(source, evidence, snapshot, sourceId)
+    : kind === "topologyAdmissionEvidence"
+      ? validNativeTopologyAdmission(source, evidence, snapshot, sourceId)
+      : kind === "accessibilityAdmissionEvidence"
+        ? validNativeAccessibilityAdmission(source, evidence, snapshot, sourceId)
+        : kind === "capitalTopologyAdmissionEvidence"
+          ? validNativeCapitalTopologyAdmission(source, evidence, snapshot, sourceId)
+          : kind === "retainedScheduleAdmissionEvidence"
+            ? validNativeRetainedScheduleAdmission(source, evidence, snapshot, sourceId)
+            : kind === "rawSnapshotAdmission"
+              ? validNativeRawSnapshotAdmission(source, evidence, snapshot)
+              : false;
+  return valid ? { kind, sha256: sha256(Buffer.from(canonical(evidence))) } : null;
+}
+
+export function nativeAdmissionRecordForHead({ source, head }) {
+  if (!source || !head || typeof head.sourceId !== "string" || source.id !== head.sourceId
+    || !validNativeAdmissionMetadata(source)) return null;
+  const records = admittedEvidence(source).map(([kind, evidence]) => {
+    if (!NATIVE_ADMISSION_KINDS.includes(kind)) return null;
+    return nativeAdmissionRecord({ source, sourceId: head.sourceId, snapshot: head, kind, evidence });
+  }).filter(Boolean);
+  return records.length === 1 ? records[0] : null;
+}
+
+function isImmutableOciObjectUri(value) {
+  try {
+    const uri = new URL(value);
+    return uri.protocol === "oci:" && uri.hostname.length > 0
+      && uri.pathname.split("/").filter(Boolean).length >= 2;
+  } catch {
+    return false;
+  }
+}
+
+export function terminalHead(sourceId, sourceSnapshots) {
+  const snapshots = sourceSnapshots.filter((snapshot) => snapshot?.sourceId === sourceId);
+  if (snapshots.length === 0) throw new Error(`terminal snapshot head missing for ${sourceId}`);
+  const byId = new Map();
+  for (const snapshot of snapshots) {
+    const snapshotId = string(snapshot.snapshotId, "snapshot ID");
+    if (byId.has(snapshotId)) throw new Error(`terminal snapshot head mismatch for ${sourceId}`);
+    byId.set(snapshotId, snapshot);
+  }
+  for (const snapshot of snapshots) {
+    if (snapshot.previousSnapshotId !== null
+      && (typeof snapshot.previousSnapshotId !== "string" || !byId.has(snapshot.previousSnapshotId))) {
+      throw new Error(`snapshot lineage mismatch for ${sourceId}`);
+    }
+    const visited = new Set();
+    let cursor = snapshot;
+    while (cursor.previousSnapshotId !== null) {
+      if (visited.has(cursor.snapshotId)) throw new Error(`snapshot lineage mismatch for ${sourceId}`);
+      visited.add(cursor.snapshotId);
+      cursor = byId.get(cursor.previousSnapshotId);
+    }
+  }
+  const predecessors = new Set(snapshots.map(({ previousSnapshotId }) => previousSnapshotId).filter(Boolean));
+  const heads = snapshots.filter(({ snapshotId }) => !predecessors.has(snapshotId));
+  if (heads.length !== 1) throw new Error(`terminal snapshot head mismatch for ${sourceId}`);
+  return heads[0];
+}
+
+function selectedSourceIds(rows, inventory) {
+  if (!Array.isArray(inventory.sources)) throw new Error("source inventory or snapshot ledger mismatch");
+  const inventoryById = new Map();
+  for (const source of inventory.sources) {
+    if (typeof source?.id !== "string" || source.id.length === 0 || inventoryById.has(source.id)) {
+      throw new Error("source inventory identity mismatch");
+    }
+    inventoryById.set(source.id, source);
+  }
+  for (const row of rows) {
+    const ids = row.admittedSourceIds ?? [];
+    if (!TALLY_STATUSES.has(row.status)
+      || !Array.isArray(ids) || ids.some((id) => typeof id !== "string" || id.length === 0)
+      || (row.status === "INVENTORY_ADMITTED" && ids.length === 0)) {
+      throw new Error(`requirement disposition mismatch for ${pk(row)}`);
+    }
+    if (row.releaseTier === "LAUNCH_REQUIRED" && row.status === "INVENTORY_ADMITTED") {
+      for (const id of ids) {
+        if (!inventoryById.has(id)) {
+          throw new Error(`inventory source missing for ${id}`);
+        }
+      }
+    }
+  }
+  const admittedIds = new Set(
+    inventory.sources
+      .filter((s) => s.requiredForProductionPack === true && isProductionUseAllowed(s))
+      .map((s) => s.id)
+  );
+  for (const row of rows) {
+    if (row.releaseTier === "ENHANCEMENT" && Array.isArray(row.admittedSourceIds)) {
+      row.admittedSourceIds.forEach((id) => {
+        if (!rows.some((r) => r.releaseTier === "LAUNCH_REQUIRED" && (r.admittedSourceIds ?? []).includes(id))) {
+          admittedIds.delete(id);
+        }
+      });
+    }
+    if (row.status === "MISSING" && Array.isArray(row.admittedSourceIds)) {
+      row.admittedSourceIds.forEach((id) => {
+        if (id.startsWith("partial-")) admittedIds.delete(id);
+      });
+    }
+  }
+  if (admittedIds.size === 0) {
+    throw new Error("production source admission mismatch: no admitted sources");
+  }
+  return [...admittedIds].sort(compare);
+}
+
+// fan-in이 고르는 원천 ID 집합. 원천 갱신 사전 검사(예: FACILITY)가 후보 spec 대신 이 집합의 원장 head를 판정한다(#862 결정 C).
+export function selectCurrentFiveRegionSourceIds({ targets, tally, inventory }) {
+  return selectedSourceIds(requiredRows(targets, tally), inventory);
+}
+
+function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt, governance) {
+  if (!Array.isArray(inventory.sources) || !Array.isArray(sourceSnapshots)) {
+    throw new Error("source inventory or snapshot ledger mismatch");
+  }
+  const inventoryById = new Map(inventory.sources.map((source) => [source?.id, source]));
+  return selectedSourceIds(rows, inventory).map((sourceId) => {
+    const source = inventoryById.get(sourceId);
+    if (!source) throw new Error(`inventory source missing for ${sourceId}`);
+    if (source.requiredForProductionPack !== true || !isProductionUseAllowed(source)) {
+      throw new Error(`production source admission mismatch for ${sourceId}`);
+    }
+    if (typeof source.provider !== "string" || source.provider.length === 0) {
+      throw new Error(`inventory source admission mismatch for ${sourceId}`);
+    }
+    const license = licenseEvidence(source, sourceId);
+    const snapshot = terminalHead(sourceId, sourceSnapshots);
+    const providerMatches = snapshot.provider === source.provider
+      || snapshot.provider === "공공데이터포털"
+      || (typeof source.sourceSystem === "string" && source.sourceSystem.includes(snapshot.provider));
+    if (!providerMatches || !SHA256.test(snapshot.rawSha256 ?? "")
+      || !isImmutableOciObjectUri(snapshot.rawObjectUri)
+      || snapshot.snapshotStatus !== "LOCKED" || snapshot.schemaStatus !== "PASS"
+      || snapshot.licenseStatus !== "PASS" || snapshot.fetchStatus !== "SUCCESS"
+      || snapshot.redistributionAllowed !== true || snapshot.credentialRedacted === false) {
+      throw new Error(`immutable OCI snapshot mismatch for ${sourceId}`);
+    }
+    if (instant(snapshot.retrievedAt, "snapshot retrieval") > evaluatedAt) {
+      throw new Error(`snapshot future retrieval mismatch for ${sourceId}`);
+    }
+    const rawEffectiveFreshness = snapshot.freshnessExpiresAt;
+    const effectiveFreshnessExpiresAt = typeof rawEffectiveFreshness === "string" && !isNaN(Date.parse(rawEffectiveFreshness))
+      ? new Date(Date.parse(rawEffectiveFreshness)).toISOString()
+      : rawEffectiveFreshness;
+    if (instant(effectiveFreshnessExpiresAt, "snapshot freshness") <= evaluatedAt) {
+      throw new Error(`snapshot freshness mismatch for ${sourceId}`);
+    }
+    const { records: admissions, carriedAdmission } = headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, { ledger: sourceSnapshots, governance });
+    return {
+      sourceId,
+      provider: source.provider,
+      snapshotId: snapshot.snapshotId,
+      ...(snapshot.capturedAt === undefined ? {} : { capturedAt: snapshot.capturedAt }),
+      rawSha256: snapshot.rawSha256,
+      ...(snapshot.contentSha256 === undefined ? {} : { contentSha256: snapshot.contentSha256 }),
+      rawObjectUri: snapshot.rawObjectUri,
+      ...(snapshot.rowCount === undefined ? {} : { rowCount: snapshot.rowCount }),
+      ...(snapshot.coverageCount === undefined ? {} : { coverageCount: snapshot.coverageCount }),
+      freshnessExpiresAt: effectiveFreshnessExpiresAt,
+      inventoryRecordSha256: sha256(Buffer.from(canonical(source))),
+      snapshotRecordSha256: sha256(Buffer.from(canonical(snapshot))),
+      licenseRecordSha256: sha256(Buffer.from(canonical(license))),
+      admissionRecordSha256s: admissions,
+      ...(carriedAdmission === null ? {} : { carriedAdmission }),
+    };
+  });
+}
+
+// #929 D1: fan-in이 고른 원천은 신선도 정책 클래스가 정확히 하나여야 한다. 없거나 둘 이상이면 정책 기간을 정할 수 없다.
+// #930 F1: 등록 창의 끝(원장 head freshnessExpiresAt)은 "등록 기준 시각 + 정책 기간"을 넘을 수 없다.
+//   기준 시각은 클래스 basisField 값이고, 동일 원본 재확인 클래스는 재확인 시각이 더 늦으면 그 시각이다.
+//   상한은 발행 FINAL과 같은 deriveFreshnessExpiresAt으로 구한다(제공처 유효 종료일은 상한을 낮추기만 하므로 넣지 않는다).
+export function assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourceSnapshots }) {
+  if (!Array.isArray(freshnessPolicy?.sourceClasses)
+    || freshnessPolicy.sourceClasses.some((entry) => !Array.isArray(entry?.sourceIds))) {
+    throw new Error("fan-in freshness policy shape mismatch");
+  }
+  if (!Array.isArray(sourceSnapshots)) throw new Error("fan-in freshness policy needs the source snapshot ledger");
+  for (const { sourceId, snapshotId } of fanIn?.selectedSources ?? []) {
+    const classes = freshnessPolicy.sourceClasses.filter(({ sourceIds }) => sourceIds.includes(sourceId));
+    if (classes.length === 0) throw new Error(`fan-in freshness policy missing for ${sourceId}`);
+    if (classes.length > 1) throw new Error(`fan-in freshness policy ambiguous for ${sourceId}`);
+    const [sourceClass] = classes;
+    const heads = sourceSnapshots.filter((row) => row?.snapshotId === snapshotId && row.sourceId === sourceId);
+    if (heads.length !== 1) throw new Error(`fan-in freshness policy head mismatch for ${sourceId}`);
+    const [head] = heads;
+    const bases = [head[sourceClass.basisField], sourceClass.unchangedReverificationBasisField
+      ? head[sourceClass.unchangedReverificationBasisField] : undefined].filter((value) => typeof value === "string");
+    if (bases.length === 0) throw new Error(`fan-in freshness policy basis missing for ${sourceId}`);
+    const basisAt = bases.reduce((latest, value) => (Date.parse(value) > Date.parse(latest) ? value : latest), bases[0]);
+    const ceiling = deriveFreshnessExpiresAt({
+      policy: freshnessPolicy, sourceClassId: sourceClass.id, basisAt, evaluationAt: fanIn.evaluatedAt,
+    });
+    const storedMillis = Date.parse(head.freshnessExpiresAt);
+    if (!Number.isFinite(storedMillis) || storedMillis > Date.parse(ceiling)) {
+      throw new Error(`fan-in freshness exceeds policy for ${sourceId}: ${head.freshnessExpiresAt} > ${ceiling}`);
+    }
+  }
+}
+
+export function canonicalCurrentFiveRegionSourceFanInJson(value) {
+  return canonical(value);
+}
+
+export function validateCurrentFiveRegionSourceFanIn(value, inputBytes) {
+  const fanIn = object(value, "five-region source fan-in");
+  if (!sameKeys(fanIn, [
+    "schemaVersion", "artifactKind", "evaluatedAt", "scope", "inputs", "scopeSha256",
+    "regionalMatrixSha256", "sourceSetSha256", "selectedSources", "fanInSha256",
+  ]) || fanIn.schemaVersion !== 2 || fanIn.artifactKind !== "current-five-region-source-fan-in") {
+    throw new Error("five-region source fan-in shape mismatch");
+  }
+  const scope = object(fanIn.scope, "five-region source fan-in scope");
+  if (!sameKeys(scope, [
+    "targetVersion", "regionIds", "activeLineScopes", "requiredSourceDomains",
+  ]) || typeof scope.targetVersion !== "string" || scope.targetVersion.length === 0
+    || canonical(scope.regionIds) !== canonical(REQUIRED_REGION_IDS)
+    || !Array.isArray(scope.activeLineScopes) || scope.activeLineScopes.length === 0
+    || !Array.isArray(scope.requiredSourceDomains) || scope.requiredSourceDomains.length === 0) {
+    throw new Error("five-region source fan-in scope mismatch");
+  }
+  const lineKeys = scope.activeLineScopes.map((line) => {
+    if (!sameKeys(line, ["lineId", "operatorId", "regionId"])
+      || !REQUIRED_REGION_IDS.includes(line.regionId)
+      || [line.lineId, line.operatorId].some((entry) => typeof entry !== "string" || entry.length === 0)) {
+      throw new Error("five-region source fan-in line scope mismatch");
+    }
+    return pk({ ...line, sourceDomain: "" });
+  });
+  const domainIds = scope.requiredSourceDomains.map((domain) => string(domain?.id, "source domain ID"));
+  if (new Set(lineKeys).size !== lineKeys.length
+    || canonical(lineKeys) !== canonical([...lineKeys].sort(compare))
+    || new Set(domainIds).size !== domainIds.length
+    || canonical(domainIds) !== canonical([...domainIds].sort(compare))) {
+    throw new Error("five-region source fan-in scope ordering mismatch");
+  }
+  if (sha256(Buffer.from(canonical(scope))) !== fanIn.scopeSha256) {
+    throw new Error("five-region source fan-in scope digest mismatch");
+  }
+  const { fanInSha256, ...payload } = fanIn;
+  if (!SHA256.test(fanInSha256 ?? "")
+    || sha256(Buffer.from(canonical(payload))) !== fanInSha256) {
+    throw new Error("five-region source fan-in self digest mismatch");
+  }
+  if (inputBytes !== undefined) {
+    const bytes = Buffer.isBuffer(inputBytes) ? inputBytes : Buffer.from(inputBytes);
+    if (!bytes.equals(Buffer.from(`${canonical(fanIn)}\n`))) {
+      throw new Error("five-region source fan-in canonical bytes mismatch");
+    }
+  }
+  return fanIn;
+}
+
+export function buildCurrentFiveRegionSourceFanIn(input = {}) {
+  const records = Object.fromEntries(Object.keys(INPUT_PATHS).map((name) => [
+    name,
+    parseInput(name, input[name], input.inputBytes),
+  ]));
+  const values = Object.fromEntries(Object.entries(records).map(([name, record]) => [name, record.value]));
+  const { targets, tally, ownership, inventory, sourceSnapshots } = values;
+  const targetVersion = string(targets.targetVersion, "target version");
+  if (tally.targetVersion !== targetVersion || ownership.targetVersion !== targetVersion) {
+    throw new Error("target version mismatch");
+  }
+  const evaluatedAt = instant(input.evaluatedAt, "fan-in evaluation instant");
+  const rows = requiredRows(targets, tally);
+  const regionIds = [...new Set(targets.activeLineScopes.map(({ regionId }) => string(regionId, "region ID")))]
+    .sort(compare);
+  if (canonical(regionIds) !== canonical(REQUIRED_REGION_IDS)) {
+    throw new Error("five-region scope mismatch");
+  }
+  const sources = selectedSources(rows, inventory, sourceSnapshots, evaluatedAt, carriedGovernanceInput(input));
+  const scope = {
+    targetVersion,
+    regionIds,
+    activeLineScopes: [...targets.activeLineScopes].sort((left, right) => compare(pk({ ...left, sourceDomain: "" }), pk({ ...right, sourceDomain: "" }))),
+    requiredSourceDomains: [...targets.requiredSourceDomains].sort((left, right) => compare(left.id, right.id)),
+  };
+  const payload = {
+    schemaVersion: 2,
+    artifactKind: "current-five-region-source-fan-in",
+    evaluatedAt: input.evaluatedAt,
+    scope,
+    inputs: Object.fromEntries(Object.entries(INPUT_PATHS).map(([name, inputPath]) => [name, {
+      path: inputPath,
+      sha256: sha256(records[name].bytes),
+    }])),
+    scopeSha256: sha256(Buffer.from(canonical(scope))),
+    regionalMatrixSha256: sha256(records.tally.bytes),
+    sourceSetSha256: sha256(Buffer.from(canonical(sources))),
+    selectedSources: sources,
+  };
+  return validateCurrentFiveRegionSourceFanIn({
+    ...payload,
+    fanInSha256: sha256(Buffer.from(canonical(payload))),
+  });
+}
+
+function argumentsFrom(argv) {
+  const names = ["targets", "tally", "ownership", "inventory", "source-snapshots", "freshness-policy", "governance-policy", "evaluated-at", "output"];
+  if (argv.length !== names.length * 2) throw new Error("five-region fan-in arguments mismatch");
+  const result = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const name = argv[index]?.slice(2);
+    const value = argv[index + 1];
+    if (!names.includes(name) || Object.hasOwn(result, name) || typeof value !== "string" || value.length === 0) {
+      throw new Error("five-region fan-in arguments mismatch");
+    }
+    result[name] = value;
+  }
+  if (!names.every((name) => Object.hasOwn(result, name))) throw new Error("five-region fan-in arguments mismatch");
+  return result;
+}
+
+async function main() {
+  const args = argumentsFrom(process.argv.slice(2));
+  const cliPaths = {
+    targets: args.targets,
+    tally: args.tally,
+    ownership: args.ownership,
+    inventory: args.inventory,
+    sourceSnapshots: args["source-snapshots"],
+  };
+  const records = await Promise.all(Object.entries(cliPaths).map(async ([name, inputPath]) => {
+    const inputBytes = await readFile(path.resolve(inputPath));
+    return [name, JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(inputBytes)), inputBytes];
+  }));
+  const input = {
+    ...Object.fromEntries(records.map(([name, value]) => [name, value])),
+    inputBytes: Object.fromEntries(records.map(([name, , inputBytes]) => [name, inputBytes])),
+    evaluatedAt: args["evaluated-at"],
+  };
+  const governancePolicy = JSON.parse(await readFile(path.resolve(args["governance-policy"]), "utf8"));
+  const fanIn = buildCurrentFiveRegionSourceFanIn({ ...input, governancePolicy });
+  const freshnessPolicy = JSON.parse(await readFile(path.resolve(args["freshness-policy"]), "utf8"));
+  assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourceSnapshots: input.sourceSnapshots });
+  await writeFile(path.resolve(args.output), `${canonicalCurrentFiveRegionSourceFanInJson(fanIn)}\n`, {
+    flag: "wx",
+    mode: 0o600,
+  });
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : "five-region source fan-in failed");
+    process.exitCode = 1;
+  });
+}

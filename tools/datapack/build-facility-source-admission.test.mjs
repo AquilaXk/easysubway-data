@@ -1,0 +1,649 @@
+import assert from "node:assert/strict";
+import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  buildFacilitySourceAdmission,
+  canonicalFacilitySourceAdmissionJson,
+  loadCurrentFacilitySourceAdmissionInput,
+} from "./build-facility-source-admission.mjs";
+import { KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS } from "./lib/kric-standard-facilities.mjs";
+import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const root = path.resolve(import.meta.dirname, "../..");
+const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+]);
+const FRESH_AT = await selectedSourceEvaluationAt();
+
+test("current FACILITY official source admission은 exact six-cell handoff를 만든다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  const before = structuredClone(input);
+  const result = buildFacilitySourceAdmission(input);
+
+  assert.deepEqual(input, before);
+  assert.equal(result.decision, "GO");
+  assert.equal(result.candidate.candidateId, input.candidateBuildSpec.candidateId);
+  assert.equal(result.queryPartition.summary.totalCount, 7);
+  assert.equal(result.queryPartition.summary.partitionedQueryCount, 7);
+  assert.equal(result.queryPartition.summary.joinedCount, 2);
+  assert.equal(result.queryPartition.summary.outOfScopeCount, 5);
+  assert.equal(result.queryPartition.summary.unmatchedCount, 0);
+  assert.equal(result.queryPartition.summary.ambiguousCount, 0);
+  assert.equal(result.queryPartition.summary.missingTargetCount, 0);
+  assert.equal(result.inputEvidencePartition.summary.totalCount, 10);
+  assert.equal(result.inputEvidencePartition.summary.joinedCount, 8);
+  assert.equal(result.inputEvidencePartition.summary.outOfDomainCount, 2);
+  assert.equal(result.inputEvidencePartition.summary.unmatchedCount, 0);
+  assert.equal(result.inputEvidencePartition.summary.duplicateCount, 0);
+  assert.equal(result.denominatorRows.length, 6);
+  assert.deepEqual(result.denominatorStateSummary, {
+    BLOCKED_WITH_EVIDENCE: 0,
+    MISSING: 0,
+    STALE: 0,
+    UNKNOWN: 2,
+    VERIFIED_ABSENT: 2,
+    VERIFIED_PRESENT: 2,
+  });
+  // #3036: stationCnvFacl은 ES를 주지 않으므로 에스컬레이터 칸은 UNKNOWN이다. 엘리베이터가 확인된 역-노선은 그대로 시설 있음이다.
+  assert.deepEqual(result.denominatorRows.filter(({ state }) => state === "UNKNOWN").map(({ facilityType }) => facilityType), ["ESCALATOR", "ESCALATOR"]);
+  assert.deepEqual(result.cellStateSummary, {
+    ADMITTED_FACILITY_ABSENT: 0,
+    ADMITTED_FACILITY_PRESENT: 2,
+    BLOCKED_WITH_EVIDENCE: 0,
+    MISSING: 0,
+    STALE: 0,
+    UNKNOWN: 0,
+  });
+  assert.equal(result.cells.length, 2);
+  assert.equal(result.materializerEvidenceRows.length, 2);
+  assert.ok(result.materializerEvidenceRows.every(({ state, domain, evidenceKind }) =>
+    state === "VERIFIED_PRESENT" && domain === "FACILITY" && evidenceKind === "OBSERVED"));
+  assert.notEqual(result.sourceIdentity.snapshotPayloadRawSha256, result.sourceIdentity.snapshotFileSha256);
+  assert.notEqual(result.sourceIdentity.snapshotFileSha256, result.sourceIdentity.rawObjectSha256);
+  assert.notEqual(result.sourceIdentity.snapshotPayloadRawSha256, result.sourceIdentity.rawObjectSha256);
+  assert.match(canonicalFacilitySourceAdmissionJson(result), /"admissionDigest"/);
+});
+
+test("#3036 UNKNOWN 칸이 있어도 확인된 칸 수가 scope 하한 아래면 NO_GO다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  input.productionInput.supportedV1Scope.facilityCoverageDenominator.minimumVerifiedRows = 5;
+  const result = buildFacilitySourceAdmission(input);
+  assert.equal(result.decision, "NO_GO");
+  assert.deepEqual(result.materializerEvidenceRows, []);
+  delete input.productionInput.supportedV1Scope.facilityCoverageDenominator.minimumVerifiedRows;
+  assert.throws(() => buildFacilitySourceAdmission(input), /FACILITY denominator minimumVerifiedRows mismatch/);
+
+  const undeclared = await historicalFacilityFixtureInput();
+  undeclared.productionInput.supportedV1Scope.facilityAbsenceCoverage = [];
+  assert.throws(() => buildFacilitySourceAdmission(undeclared), /FACILITY_ABSENCE_WITHOUT_COVERING_SOURCE: 2 rows/);
+});
+
+test("#3036 KRIC 상태 의미 목록 밖의 UNKNOWN 증거는 입수하지 않는다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  const unknown = input.productionInput.accessibilityStatusEvidence.find(({ evidenceKind }) => evidenceKind === "UNKNOWN");
+  assert.equal(KRIC_STANDARD_UNKNOWN_STATUS_MEANINGS.includes(unknown.statusMeaning), true);
+  assert.equal(buildFacilitySourceAdmission(input).decision, "GO");
+
+  unknown.statusMeaning = "PROVIDER_SAID_NOTHING";
+  assert.throws(() => buildFacilitySourceAdmission(input), /FACILITY explicit unknown identity mismatch/);
+});
+
+test("current mixed accessibility evidence는 legacy FACILITY builder에서 fail-closed다", async () => {
+  const input = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: root, observedAt: FRESH_AT });
+  assert.throws(() => buildFacilitySourceAdmission(input), /FACILITY absence evidence mode mismatch/);
+});
+
+test("historical FACILITY fixture는 변경된 inventory bytes에 candidate 결속을 갱신한다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  const inventoryBytes = Buffer.from(JSON.stringify(input.sourceInventory));
+
+  assert.equal(input.candidateBuildSpec.sourceInventorySha256, sha256(inventoryBytes));
+  assert.equal(input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256, sha256(inventoryBytes));
+});
+
+test("historical FACILITY fixture는 selected snapshot을 append-only ledger 순서로 결속한다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  const selectedIds = new Set(input.candidateBuildSpec.sourceSnapshotIds);
+  const selectedInLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  input.candidateBuildSpec.sourceSnapshotIds.reverse();
+
+  assert.equal(selectedSourceSnapshotSetHash(input), sha256(JSON.stringify(selectedInLedgerOrder)));
+});
+
+test("missing/non-exhaustive evidence와 stale admission은 partial handoff 없이 fail closed한다", async () => {
+  const missing = await historicalFacilityFixtureInput();
+  missing.productionInput.accessibilityStatusEvidence =
+    missing.productionInput.accessibilityStatusEvidence.filter((row) => !(
+      row.stationId === "station-sangnoksu" && row.facilityType === "WHEELCHAIR_LIFT"
+    ));
+  const missingResult = buildFacilitySourceAdmission(missing);
+  assert.equal(missingResult.decision, "NO_GO");
+  assert.equal(missingResult.denominatorStateSummary.MISSING, 1);
+  assert.deepEqual(missingResult.materializerEvidenceRows, []);
+
+  const nonExhaustive = await historicalFacilityFixtureInput();
+  const source = sourceEntry(nonExhaustive);
+  source.accessibilityAdmissionEvidence.absenceEvidenceMode = "NONE";
+  assert.throws(
+    () => buildFacilitySourceAdmission(nonExhaustive),
+    /absence evidence mode mismatch/,
+  );
+
+  const fresh = await historicalFacilityFixtureInput();
+  const stale = await historicalFacilityFixtureInput(new Date(
+    Date.parse(sourceEntry(fresh).accessibilityAdmissionEvidence.freshUntil) + 1,
+  ).toISOString());
+  const staleResult = buildFacilitySourceAdmission(stale);
+  assert.equal(staleResult.decision, "NO_GO");
+  assert.equal(staleResult.denominatorStateSummary.STALE, 6);
+  assert.deepEqual(staleResult.materializerEvidenceRows, []);
+});
+
+test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부한다", async () => {
+  const rawMismatch = await historicalFacilityFixtureInput();
+  sourceSnapshotEntry(rawMismatch).rawReceipt.snapshotRawSha256 = "0".repeat(64);
+  assert.throws(
+    () => buildFacilitySourceAdmission(rawMismatch),
+    /raw receipt identity mismatch/,
+  );
+
+  const duplicate = await historicalFacilityFixtureInput();
+  duplicate.productionInput.facilityRows.push(structuredClone(duplicate.productionInput.facilityRows[0]));
+  assert.throws(
+    () => buildFacilitySourceAdmission(duplicate),
+    /duplicate FACILITY evidence/,
+  );
+
+  const unmatched = await historicalFacilityFixtureInput();
+  unmatched.productionInput.accessibilityStatusEvidence.push({
+    ...structuredClone(unmatched.productionInput.accessibilityStatusEvidence[0]),
+    stationId: "station-unmapped",
+  });
+  const unmatchedResult = buildFacilitySourceAdmission(unmatched);
+  assert.equal(unmatchedResult.decision, "NO_GO");
+  assert.equal(unmatchedResult.inputEvidencePartition.summary.unmatchedCount, 1);
+  assert.deepEqual(unmatchedResult.materializerEvidenceRows, []);
+
+  const schemaDrift = await historicalFacilityFixtureInput();
+  const ledger = sourceSnapshotEntry(schemaDrift);
+  const candidateMember = schemaDrift.candidateBuildSpec.sourceSnapshots.find(({ snapshotId }) =>
+    snapshotId === ledger.snapshotId);
+  ledger.schemaFingerprint = "drifted-schema";
+  candidateMember.schemaFingerprint = "drifted-schema";
+  schemaDrift.candidateBuildSpec.sourceSnapshotSetHash = selectedSourceSnapshotSetHash(schemaDrift);
+  assert.throws(
+    () => buildFacilitySourceAdmission(schemaDrift),
+    /schema fingerprint mismatch/,
+  );
+
+  const emptyScope = await historicalFacilityFixtureInput();
+  emptyScope.productionInput.supportedV1Scope.includedStationIds = [];
+  emptyScope.productionInput.supportedV1Scope.facilityCoverageDenominator.expectedRows = 0;
+  emptyScope.productionInput.facilityRows = [];
+  emptyScope.productionInput.accessibilityStatusEvidence = [];
+  assert.throws(
+    () => buildFacilitySourceAdmission(emptyScope),
+    /current scope cardinality mismatch/,
+  );
+
+  const duplicateMapping = await historicalFacilityFixtureInput();
+  const sangnoksu = duplicateMapping.productionInput.stationMappings.find((row) =>
+    row.stationId === "station-sangnoksu" && row.sourceId === "molit-urban-rail-full-route");
+  const sadang = duplicateMapping.productionInput.stationMappings.find((row) =>
+    row.stationId === "station-sadang" && row.sourceId === "molit-urban-rail-full-route");
+  sadang.sourceStationCode = sangnoksu.sourceStationCode;
+  assert.throws(
+    () => buildFacilitySourceAdmission(duplicateMapping),
+    /source mapping tuple is ambiguous/,
+  );
+});
+
+test("FACILITY admission은 pilot의 2개 station-line 가정 없이 injected multi-line scope shape를 보존한다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  const extraLineId = "seoul-2";
+  const extraLine = { ...structuredClone(input.productionInput.lines.find(({ id }) => id === "seoul-4")), id: extraLineId, nameKo: "수도권 2호선" };
+  const sourceMapping = structuredClone(input.productionInput.stationMappings.find(({ stationId }) => stationId === "station-sangnoksu"));
+  const sourceRow = structuredClone(input.productionInput.stationLineRows.find((row) =>
+    row.sourceId === sourceMapping.sourceId && row.sourceStationCode === sourceMapping.sourceStationCode && row.lineId === sourceMapping.lineId));
+  const extraMapping = { ...sourceMapping, lineId: extraLineId, stationLineId: `station-sangnoksu:${extraLineId}` };
+  const extraRow = { ...sourceRow, lineId: extraLineId };
+  input.productionInput.lines.push(extraLine);
+  input.productionInput.stationMappings.push(extraMapping);
+  input.productionInput.stationLineRows.push(extraRow);
+  input.productionInput.supportedV1Scope.includedLineIds.push(extraLineId);
+  input.productionInput.supportedV1Scope.facilityCoverageDenominator.expectedRows = 9;
+
+  assert.throws(
+    () => buildFacilitySourceAdmission(input),
+    /FACILITY explicit absence identity mismatch/,
+  );
+
+  const snapshot = JSON.parse(Buffer.from(input.snapshotBytes).toString("utf8"));
+  const sangnoksuQuery = snapshot.queries.find((query) => query.stationId === "station-sangnoksu" && query.lineId === "seoul-4");
+  const sangnoksuLift = input.productionInput.accessibilityStatusEvidence.find((row) =>
+    row.stationId === "station-sangnoksu" && row.lineId === "seoul-4" && row.facilityType === "WHEELCHAIR_LIFT");
+  Object.assign(sangnoksuLift, {
+    evidenceKind: "UNKNOWN",
+    installationStatus: "UNKNOWN",
+    operationalStatus: "UNKNOWN",
+    statusMeaning: "STATION_LINE_NOT_QUERIED",
+    strictRouteEligibleReason: "FACILITY_PRESENCE_UNKNOWN",
+    confidence: 0,
+    evidenceHash: sha256(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      query: providerTuple(sangnoksuQuery),
+      type: "WHEELCHAIR_LIFT",
+      evidenceKind: "UNKNOWN",
+    })),
+  });
+
+  const result = buildFacilitySourceAdmission(input);
+  assert.equal(result.decision, "NO_GO");
+  assert.equal(result.queryPartition.summary.missingTargetCount, 1);
+  assert.equal(result.denominatorRows.length, 9);
+});
+
+test("#3036 FACILITY admission은 역 단위 부재(NOT_EXISTS)와 UNKNOWN 규칙을 직접 강제한다", async () => {
+  const escalatorAsAbsent = await historicalFacilityFixtureInput();
+  const snapshot = JSON.parse(Buffer.from(escalatorAsAbsent.snapshotBytes).toString("utf8"));
+  const sadangQuery = snapshot.queries.find((query) => query.stationId === "station-sadang" && query.lineId === "seoul-4");
+  escalatorAsAbsent.productionInput.supportedV1Scope.facilityAbsenceCoverage
+    .find(({ sourceId }) => sourceId === "kric-station-convenience-standard")
+    .facilityTypes.push("ESCALATOR");
+  const sadangEscalator = escalatorAsAbsent.productionInput.accessibilityStatusEvidence.find((row) =>
+    row.stationId === "station-sadang" && row.lineId === "seoul-4" && row.facilityType === "ESCALATOR");
+  Object.assign(sadangEscalator, {
+    evidenceKind: "NOT_EXISTS",
+    installationStatus: "NOT_INSTALLED",
+    operationalStatus: "NOT_APPLICABLE",
+    statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+    strictRouteEligibleReason: "FACILITY_NOT_INSTALLED",
+    confidence: 100,
+    evidenceHash: sha256(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      query: providerTuple(sadangQuery),
+      type: "ESCALATOR",
+      evidenceKind: "NOT_EXISTS",
+    })),
+  });
+  assert.throws(
+    () => buildFacilitySourceAdmission(escalatorAsAbsent),
+    /FACILITY explicit absence identity mismatch/,
+  );
+
+  const falseUnknown = await historicalFacilityFixtureInput();
+  const sangnoksuQuery = snapshot.queries.find((query) => query.stationId === "station-sangnoksu" && query.lineId === "seoul-4");
+  const sangnoksuLift = falseUnknown.productionInput.accessibilityStatusEvidence.find((row) =>
+    row.stationId === "station-sangnoksu" && row.lineId === "seoul-4" && row.facilityType === "WHEELCHAIR_LIFT");
+  Object.assign(sangnoksuLift, {
+    evidenceKind: "UNKNOWN",
+    installationStatus: "UNKNOWN",
+    operationalStatus: "UNKNOWN",
+    statusMeaning: "STATION_LINE_NOT_QUERIED",
+    strictRouteEligibleReason: "FACILITY_PRESENCE_UNKNOWN",
+    confidence: 0,
+    evidenceHash: sha256(JSON.stringify({
+      snapshotId: snapshot.snapshotId,
+      query: providerTuple(sangnoksuQuery),
+      type: "WHEELCHAIR_LIFT",
+      evidenceKind: "UNKNOWN",
+    })),
+  });
+  assert.throws(
+    () => buildFacilitySourceAdmission(falseUnknown),
+    /FACILITY explicit unknown identity mismatch/,
+  );
+});
+
+test("FACILITY admission은 scope에 선언만 된 unused operator를 거부한다", async () => {
+  const input = await historicalFacilityFixtureInput();
+  input.productionInput.supportedV1Scope.includedOperatorIds.push("operator-unused");
+  input.productionInput.operators.push({ id: "operator-unused", nameKo: "미사용 운영사" });
+  assert.throws(() => buildFacilitySourceAdmission(input), /current scope cardinality mismatch/);
+});
+
+test("FACILITY source license/admission evidence revoke와 hash drift를 provider call 전에 거부한다", async () => {
+  const revoked = await historicalFacilityFixtureInput();
+  sourceEntry(revoked).license.commercialUseAllowed = false;
+  assert.throws(() => buildFacilitySourceAdmission(revoked), /FACILITY source production admission mismatch/);
+
+  const hashDrift = await historicalFacilityFixtureInput();
+  sourceEntry(hashDrift).admissionEvidence.licenseEvidenceHash = "0".repeat(64);
+  assert.throws(() => buildFacilitySourceAdmission(hashDrift), /FACILITY source approval or license mismatch/);
+});
+
+test("등록된 current snapshot path만 resolver가 읽고 stale/pilot path mismatch는 admission 전에 거부한다", async (t) => {
+  const temporary = await mkdtemp(path.join(tmpdir(), "easysubway-facility-current-path-"));
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const sourceRoot = path.join(root, "tools/datapack");
+  const tempDatapack = path.join(temporary, "tools/datapack");
+  const fixture = await historicalFacilityFixtureInput();
+  await Promise.all([
+    mkdir(path.join(tempDatapack, "release"), { recursive: true }),
+    mkdir(path.join(tempDatapack, "inputs"), { recursive: true }),
+    mkdir(path.join(tempDatapack, "sources"), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(path.join(tempDatapack, "release/candidate-build-spec.json"), JSON.stringify(fixture.candidateBuildSpec)),
+    writeFile(path.join(tempDatapack, "release/source-snapshots.json"), JSON.stringify(fixture.sourceSnapshots)),
+    writeFile(path.join(tempDatapack, "inputs/capital-pilot-production-source-input.json"), JSON.stringify(fixture.productionInput)),
+  ]);
+  const inventory = fixture.sourceInventory;
+  const source = inventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
+  source.accessibilityAdmissionEvidence.snapshotPath = "tools\\datapack\\sources\\current.json";
+  await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
+  const currentSnapshot = path.join(root, fixture.snapshotPath);
+  await copyFile(currentSnapshot, path.join(tempDatapack, "sources/current.json"));
+
+  const resolved = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: fixture.observedAt });
+  assert.equal(resolved.snapshotPath, "tools/datapack/sources/current.json");
+  assert.deepEqual(Buffer.from(resolved.snapshotBytes), await readFile(path.join(tempDatapack, "sources/current.json")));
+  assert.equal(buildFacilitySourceAdmission(resolved).decision, "GO");
+
+  source.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/pilot.json";
+  await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
+  await copyFile(path.join(sourceRoot, "sources/kric-station-convenience-standard-20260728.json"), path.join(tempDatapack, "sources/pilot.json"));
+  const stale = await loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: fixture.observedAt });
+  assert.throws(() => buildFacilitySourceAdmission(stale), /KRIC accessibility snapshot identity is invalid|snapshot admission identity mismatch/);
+
+  source.accessibilityAdmissionEvidence.snapshotPath = "tools/datapack/sources/current.json";
+  await writeFile(path.join(tempDatapack, "source-inventory.json"), JSON.stringify(inventory));
+  const outside = await mkdtemp(path.join(tmpdir(), "easysubway-facility-outside-"));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await copyFile(currentSnapshot, path.join(outside, "current.json"));
+  await rm(path.join(tempDatapack, "sources"), { recursive: true, force: true });
+  await symlink(outside, path.join(tempDatapack, "sources"));
+  await assert.rejects(
+    loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: temporary, observedAt: fixture.observedAt }),
+    /registered snapshot path escapes repository/,
+  );
+});
+
+test("consumer input order가 달라도 admission bytes와 caller input은 동일하다", async () => {
+  const firstInput = await historicalFacilityFixtureInput();
+  const secondInput = structuredClone(firstInput);
+  secondInput.productionInput.facilityRows.reverse();
+  secondInput.productionInput.accessibilityStatusEvidence.reverse();
+  secondInput.productionInput.stationMappings.reverse();
+  secondInput.productionInput.stationLineRows.reverse();
+  const secondBefore = structuredClone(secondInput);
+
+  const first = canonicalFacilitySourceAdmissionJson(buildFacilitySourceAdmission(firstInput));
+  const second = canonicalFacilitySourceAdmissionJson(buildFacilitySourceAdmission(secondInput));
+
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
+  assert.equal(second, first);
+  assert.deepEqual(secondInput, secondBefore);
+});
+
+test("historical FACILITY fixture는 seoul-metro-route-map-positions 원장 head가 candidate pin보다 앞선 후속 snapshot을 가져도 selectedHead까지 계보를 잘라낸다", async () => {
+  const baseline = await historicalFacilityFixtureInput();
+  const pinnedRouteMapId = (await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse))
+    .sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions").snapshotId;
+  let appendedSuccessorId = "";
+  const input = await historicalFacilityFixtureInput(undefined, {
+    mutateLoadedInput(loaded) {
+      const currentHeadId = validateLineage(loaded.sourceSnapshots).headsBySource["seoul-metro-route-map-positions"];
+      const currentHead = loaded.sourceSnapshots.find(({ snapshotId }) => snapshotId === currentHeadId);
+      const nextTime = new Date(Date.parse(currentHead.retrievedAt) + 86_400_000).toISOString();
+      appendedSuccessorId = `${currentHead.snapshotId}-successor`;
+      const successor = {
+        ...structuredClone(currentHead),
+        snapshotId: appendedSuccessorId,
+        previousSnapshotId: currentHead.snapshotId,
+        retrievedAt: nextTime,
+        sourceUpdatedAt: nextTime,
+      };
+      delete successor.projectionMigration;
+      successor.diffSummary = buildSnapshotDiff(currentHead, successor);
+      loaded.sourceSnapshots.push(successor);
+    },
+  });
+  const lineage = validateLineage(input.sourceSnapshots);
+  const routeMapChain = lineage.chainsBySource["seoul-metro-route-map-positions"];
+  assert.equal(lineage.headsBySource["seoul-metro-route-map-positions"], appendedSuccessorId);
+  assert.ok(routeMapChain.indexOf(pinnedRouteMapId) >= 0 && routeMapChain.indexOf(pinnedRouteMapId) < routeMapChain.length - 1);
+  assert.deepEqual(input.candidateBuildSpec, baseline.candidateBuildSpec);
+  assert.equal(buildFacilitySourceAdmission(input).decision, "GO");
+});
+
+async function historicalFacilityFixtureInput(observedAt, { mutateLoadedInput } = {}) {
+  const [input, historicalAdmission] = await Promise.all([
+    loadCurrentFacilitySourceAdmissionInput({ repositoryRoot: root, observedAt: FRESH_AT }),
+    readFile(path.join(root, "tools/datapack/release/facility-source-admission.json"), "utf8").then(JSON.parse),
+  ]);
+  mutateLoadedInput?.(input);
+  const historicalSnapshotPath = "tools/datapack/sources/kric-station-convenience-standard-20260813T200604805Z.json";
+  const historicalSnapshotBytes = await readFile(path.join(root, historicalSnapshotPath));
+  const historicalSnapshot = JSON.parse(historicalSnapshotBytes);
+  const historicalMembershipAt = historicalAdmission.observedAt;
+  const historicalObservedAt = observedAt ?? historicalMembershipAt;
+  if (observedAt == null) {
+    assert.ok(Date.parse(historicalSnapshot.capturedAt) < Date.parse(historicalObservedAt));
+    assert.ok(Date.parse(historicalObservedAt) < Date.parse(historicalSnapshot.freshUntil));
+  }
+  const lineage = validateLineage(input.sourceSnapshots);
+  const snapshotsById = new Map(input.sourceSnapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
+  const historicalSourceSlots = input.candidateBuildSpec.sourceSnapshots
+    .filter(({ sourceId }) => sourceId !== "seoul-metro-transfer-distance-duration"
+      && (sourceId === "seoul-metro-route-map-positions"
+        || input.sourceSnapshots.some((snapshot) => snapshot.sourceId === sourceId
+          && snapshotEvidenceAt(snapshot) <= Date.parse(historicalMembershipAt))))
+    .map((projection) => {
+      const selectedHead = input.sourceSnapshots.find(({ snapshotId, sourceId }) =>
+        snapshotId === projection.snapshotId && sourceId === projection.sourceId);
+      assert.ok(selectedHead, `selected ${projection.sourceId} ledger head`);
+      const sourceChain = lineage.chainsBySource[projection.sourceId];
+      // #1007: 이 fixture의 역사 입력은 아래에서 시각(historicalMembershipAt)으로 따로 고르므로, 원천 갱신이 원장 head를 앞으로 옮긴 직후의
+      // 후보 pin(병합 뒤 후보 갱신이 옮긴다)에 의존하지 않는다. pin 신선도(pin이 원장 head와 같을 것)는 release 게이트
+      // validate-candidate-source-set.mjs 114행이 판정하고 current-public-route-map-successor.test.mjs가 그 게이트의 거부를 직접 실행한다.
+      const selectedIndex = sourceChain.indexOf(selectedHead.snapshotId);
+      assert.ok(selectedIndex >= 0, `selected ${projection.sourceId} lineage member`);
+      const selectedChain = (projection.sourceId === "seoul-metro-route-map-positions" ? sourceChain.slice(0, selectedIndex + 1) : sourceChain)
+        .map((snapshotId) => snapshotsById.get(snapshotId));
+      const markers = selectedChain.filter(({ projectionMigration }) =>
+        projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
+      if (projection.sourceId !== "seoul-metro-route-map-positions") {
+        assert.equal(markers.length, 0, `unexpected ${projection.sourceId} canonical replacement marker`);
+        return { predecessor: null, projection, sourceId: projection.sourceId };
+      }
+      assert.equal(selectedHead.projectionMigration, undefined);
+      assert.equal(markers.length, 1, `selected ${projection.sourceId} canonical replacement marker`);
+      const selectedMarker = markers[0];
+      const migration = selectedMarker.projectionMigration;
+      assert.equal(migration.schemaVersion, 1);
+      assert.equal(migration.artifactKind, "source-projection-migration-evidence");
+      assert.equal(migration.sourceId, projection.sourceId);
+      assert.equal(migration.replacedSourceId, "seoulmetro-cyberstation-route-map");
+      assert.equal(migration.candidateSlotSourceId, migration.replacedSourceId);
+      assert.ok(snapshotEvidenceAt(selectedMarker) > Date.parse(historicalMembershipAt));
+      return {
+        predecessor: {
+          rawSha256: migration.replacedRawSha256,
+          schemaFingerprint: migration.replacedSchemaFingerprint,
+          snapshotId: migration.replacedSnapshotId,
+        },
+        projection,
+        sourceId: migration.replacedSourceId,
+      };
+    });
+  const historicalSourceIds = historicalSourceSlots.map(({ sourceId }) => sourceId);
+  assert.equal(historicalSourceIds.length, 6, "historical FACILITY source count");
+  assert.equal(new Set(historicalSourceIds).size, historicalSourceIds.length, "historical FACILITY source identities");
+  const historicalLedgerHeads = historicalSourceSlots.map(({ predecessor, sourceId }) => {
+    const entries = input.sourceSnapshots.filter((entry) =>
+      entry.sourceId === sourceId && snapshotEvidenceAt(entry) <= Date.parse(historicalMembershipAt));
+    assert.ok(entries.length > 0, `historical ${sourceId} ledger head`);
+    if (predecessor != null) {
+      const exact = entries.filter(({ rawSha256, schemaFingerprint, snapshotId }) =>
+        snapshotId === predecessor.snapshotId
+          && rawSha256 === predecessor.rawSha256
+          && schemaFingerprint === predecessor.schemaFingerprint);
+      assert.equal(exact.length, 1, `historical ${sourceId} migration predecessor`);
+      return exact[0];
+    }
+    return entries.at(-1);
+  });
+  const historicalKricLedger = historicalLedgerHeads.find(({ sourceId }) =>
+    sourceId === "kric-station-convenience-standard");
+  assert.equal(historicalKricLedger?.snapshotId, historicalSnapshot.snapshotId, "historical KRIC ledger head");
+  const historicalSnapshotIds = new Set(historicalLedgerHeads.map(({ snapshotId }) => snapshotId));
+  const historicalLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => historicalSnapshotIds.has(snapshotId));
+  assert.deepEqual(new Set(historicalLedgerOrder.map(({ sourceId }) => sourceId)), new Set(historicalSourceIds));
+  const historicalSourceSetSha256 = sha256(JSON.stringify(historicalLedgerOrder));
+  assert.equal(historicalSourceSetSha256, historicalAdmission.candidate.sourceSetSha256);
+  const source = sourceEntry(input);
+  Object.assign(source.accessibilityAdmissionEvidence, {
+    snapshotId: historicalSnapshot.snapshotId,
+    snapshotPath: historicalSnapshotPath,
+    capturedAt: historicalSnapshot.capturedAt,
+    observedAt: historicalSnapshot.observedAt,
+    freshUntil: historicalSnapshot.freshUntil,
+    rawSha256: historicalSnapshot.rawSha256,
+    contentSha256: historicalSnapshot.contentSha256,
+    schemaFingerprint: historicalSnapshot.schemaFingerprint,
+    snapshotFileSha256: sha256(historicalSnapshotBytes),
+    absenceEvidenceMode: "EXHAUSTIVE_LIST",
+  });
+  input.snapshotPath = historicalSnapshotPath;
+  input.snapshotBytes = new Uint8Array(historicalSnapshotBytes);
+  input.observedAt = historicalObservedAt;
+  rebindHistoricalFacilityEvidence(input.productionInput, historicalSnapshot);
+  const currentProjectionsBySourceId = new Map(historicalSourceSlots.map(({ projection, sourceId }) =>
+    [sourceId, projection]));
+  input.candidateBuildSpec.sourceSnapshots = historicalLedgerHeads.map((entry) => {
+    const projection = currentProjectionsBySourceId.get(entry.sourceId);
+    assert.ok(projection, `current ${entry.sourceId} projection`);
+    return Object.fromEntries(Object.keys(projection).flatMap((key) =>
+      entry[key] === undefined ? [] : [[key, entry[key]]]));
+  });
+  input.candidateBuildSpec.sourceSnapshotIds = historicalLedgerHeads.map(({ snapshotId }) => snapshotId);
+  input.candidateBuildSpec.sourceSnapshotSetHash = historicalSourceSetSha256;
+  input.candidateBuildSpec.productionScopeId = input.productionInput.supportedV1Scope.scopeId;
+  const inventoryBytes = Buffer.from(JSON.stringify(input.sourceInventory));
+  input.candidateBuildSpec.sourceInventorySha256 = sha256(inventoryBytes);
+  input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
+  return input;
+}
+
+function rebindHistoricalFacilityEvidence(productionInput, snapshot) {
+  const sourceId = "kric-station-convenience-standard";
+  const queriesByStationLine = new Map(snapshot.queries.map((query) => [
+    `${query.stationId}\0${query.lineId}`, query,
+  ]));
+  const stationIdFor = (station) => {
+    const matches = productionInput.stationMappings.filter((mapping) => (
+      mapping.sourceId === station.sourceId
+      && mapping.sourceStationCode === station.sourceStationCode
+      && mapping.lineId === station.lineId
+    ));
+    assert.equal(matches.length, 1, "historical FACILITY station mapping");
+    return matches[0].stationId;
+  };
+  const queryFor = (stationId, lineId) => {
+    const query = queriesByStationLine.get(`${stationId}\0${lineId}`);
+    assert.ok(query, `historical FACILITY query: ${stationId}/${lineId}`);
+    return query;
+  };
+  const historicalFacilityRows = productionInput.facilityRows.filter((row) => row.sourceId === sourceId);
+  assert.equal(historicalFacilityRows.length, 4, "historical FACILITY present evidence count");
+  productionInput.facilityRows = historicalFacilityRows.map((row) => {
+    const stationId = stationIdFor(row.station);
+    const query = queryFor(stationId, row.station.lineId);
+    const matches = query.rows.filter((sourceRow) => sourceRow.gubun === "EV"
+      && sourceRow.dtlLoc === row.description);
+    assert.equal(matches.length, 1, `historical FACILITY present row: ${stationId}`);
+    const [sourceRow] = matches;
+    const providerRecordHash = sha256(JSON.stringify(sourceRow));
+    const tuple = providerTuple(query);
+    return {
+      ...row,
+      id: `facility-${stationId}-elevator-kric-standard-${providerRecordHash.slice(0, 16)}`,
+      providerFacilityRef: `${query.railOprIsttCd}:${query.lnCd}:${query.stinCd}:EV:${providerRecordHash}`,
+      floorFrom: `${sourceRow.grndDvCd === "2" ? "B" : ""}${sourceRow.stinFlor}F`,
+      description: sourceRow.dtlLoc,
+      verifiedAt: snapshot.capturedAt,
+      retrievedAt: snapshot.capturedAt,
+      sourceSnapshotId: snapshot.snapshotId,
+      providerRecordHash,
+      evidenceHash: sha256(JSON.stringify({ snapshotId: snapshot.snapshotId, query: tuple, providerRecordHash })),
+    };
+  });
+  const historicalAbsenceRows = productionInput.accessibilityStatusEvidence.filter((row) => row.sourceId === sourceId);
+  assert.equal(historicalAbsenceRows.length, 4, "historical FACILITY absence evidence count");
+  productionInput.accessibilityStatusEvidence = productionInput.accessibilityStatusEvidence.map((row) => {
+    if (row.sourceId !== sourceId) return row;
+    const query = queryFor(row.stationId, row.lineId);
+    const tuple = providerTuple(query);
+    return {
+      ...row,
+      sourceSnapshotId: snapshot.snapshotId,
+      providerRecordHash: query.providerRecordHash,
+      evidenceHash: sha256(JSON.stringify({
+        snapshotId: snapshot.snapshotId,
+        query: tuple,
+        type: row.facilityType,
+        evidenceKind: row.evidenceKind,
+      })),
+      verifiedAt: snapshot.capturedAt,
+      retrievedAt: snapshot.capturedAt,
+    };
+  });
+}
+
+function providerTuple(query) {
+  return {
+    railOprIsttCd: query.railOprIsttCd,
+    lnCd: query.lnCd,
+    stinCd: query.stinCd,
+  };
+}
+
+function selectedSourceSnapshotSetHash(input) {
+  const selectedIds = new Set(input.candidateBuildSpec.sourceSnapshotIds);
+  return sha256(JSON.stringify(
+    input.sourceSnapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
+  ));
+}
+
+function snapshotEvidenceAt(entry) {
+  const value = Math.max(...[
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse));
+  assert.ok(Number.isFinite(value), `snapshot evidence time: ${entry.snapshotId}`);
+  return value;
+}
+
+function sourceEntry(input) {
+  return input.sourceInventory.sources.find(({ id }) => id === "kric-station-convenience-standard");
+}
+
+function sourceSnapshotEntry(input) {
+  const snapshotId = input.candidateBuildSpec.sourceSnapshots
+    .find(({ sourceId }) => sourceId === "kric-station-convenience-standard")?.snapshotId;
+  return input.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId);
+}
+
+async function selectedSourceEvaluationAt() {
+  const [buildSpec, sourceSnapshots] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+  ]);
+  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
+    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
+  const basisAt = Math.max(...selected.flatMap((entry) => [
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
+  return new Date(basisAt + 1_000).toISOString();
+}

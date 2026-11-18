@@ -1,0 +1,1584 @@
+#!/usr/bin/env node
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { TextDecoder } from "node:util";
+
+import {
+  normalizeMolitProviderLineName,
+  parseMolitSvgProviderIdentity,
+} from "./lib/molit-svg-provider-identity.mjs";
+import { assertCurrentMolitFullRouteCompleteness } from "./lib/static-network-successor-completeness.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { retiredLineIds } from "./project-retired-transit-lines.mjs";
+import { parseSeoulMetroLineData } from "./lib/seoulmetro-line-data-parser.mjs";
+import { sha256 } from "../lib/hash.mjs";
+
+const sourceId = "molit-urban-rail-full-route";
+const kricProviderCodeCatalogSourceId = "kric-provider-code-catalog-20260228";
+const kricProviderCodeCatalogSha256 = "ef1f8b094e32e81c7390e8566984293dcefcc85e7fadacfe4433e77ddcc61272";
+const kricProviderCodeCatalogContentSha256 = "012e7dca252e148d148af8146e87d0bb5484de4638379a39204eb492e0413c26";
+const seoulMetroSourceId = "seoulmetro-cyberstation";
+const humetroSourceId = "humetro-cyberstation";
+const grtcSourceId = "grtc-cyberstation";
+const dtroSourceId = "dtro-cyberstation";
+const djtcSourceId = "djtc-cyberstation";
+const verifiedAt = "2026-04-02T00:00:00.000Z";
+const sourceUrl = "https://www.data.go.kr/data/15122916/fileData.do";
+
+const knownOperatorIds = new Map([
+  ["서울교통공사", "seoul-metro"],
+  ["코레일", "korail"],
+  ["부산교통공사", "busan-transportation"],
+  ["대구교통공사", "daegu-transportation"],
+  ["광주교통공사", "gwangju-metropolitan-rapid-transit"],
+  ["대전교통공사", "daejeon-transportation"],
+  ["인천교통공사", "incheon-transit"],
+  ["한국철도공사", "korail"],
+  ["김포골드라인에스알에스(주)", "operator-2e23276dfa94"],
+]);
+
+const knownLineIds = new Map([
+  ["수도권:2호선", "seoul-2"],
+  ["수도권:4호선", "seoul-4"],
+  ["수도권:신분당", "shinbundang"],
+  ["수도권:2호선 지선", "seoul-2-branch"],
+]);
+
+const knownStationIds = new Map([
+  ["수도권:상록수", "station-sangnoksu"],
+  ["수도권:사당", "station-sadang"],
+  ["수도권:강남", "station-gangnam"],
+  ["수도권:정자", "station-jeongja"],
+  ["수도권:성수", "station-seongsu"],
+  ["수도권:신설동", "station-sinseoldong"],
+]);
+
+const lineColors = new Map([
+  ["1호선", "#052f93"],
+  ["2호선", "#10a643"],
+  ["2호선 지선", "#10a643"],
+  ["3호선", "#de6d00"],
+  ["4호선", "#0099d1"],
+  ["5호선", "#a95094"],
+  ["6호선", "#d08d1a"],
+  ["7호선", "#657931"],
+  ["8호선", "#e74e6d"],
+  ["9호선", "#b58600"],
+  ["신분당", "#cd2234"],
+  ["공항", "#038fa0"],
+  ["수인분당", "#a69500"],
+  ["경의중앙", "#5f9c82"],
+  ["경춘", "#0ba382"],
+  ["의정부", "#d9750d"],
+  ["우이신설", "#878787"],
+  ["서해선", "#40a607"],
+  ["김포골드라인", "#a18f57"],
+  ["신림선", "#0781fa"],
+  ["인천1호선", "#6496df"],
+  ["인천2호선", "#cf843c"],
+  ["경강", "#004ea7"],
+  ["에버라인", "#36a805"],
+  ["GTX-A", "#9f6181"],
+]);
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const csvPath = requireArg(args, "csv");
+  const svgCsvPath = requireArg(args, "svg-csv");
+  const kricCodeCatalogPath = requireArg(args, "kric-code-catalog");
+  const seoulMetroPath = args["seoulmetro-js"];
+  const humetroHtmlPath = args["humetro-html"];
+  const humetroCssPath = args["humetro-css"];
+  const grtcHtmlPath = args["grtc-html"];
+  const dtroHtmlPath = args["dtro-html"];
+  const djtcHtmlPath = args["djtc-html"];
+  const djtcCssPath = args["djtc-css"];
+  const outputPath = requireArg(args, "output");
+  const csvBytes = await readFile(csvPath);
+  const svgCsvBytes = await readFile(svgCsvPath);
+  const kricCodeCatalogBytes = await readFile(kricCodeCatalogPath);
+  const retiredPolicyBytes = await readFile(args["production-scope-policy"]
+    ?? path.join(import.meta.dirname, "nationwide-coverage-targets.json"));
+  const seoulMetroBytes = seoulMetroPath ? await readFile(seoulMetroPath) : Buffer.alloc(0);
+  const humetroHtmlBytes = humetroHtmlPath ? await readFile(humetroHtmlPath) : Buffer.alloc(0);
+  const humetroCssBytes = humetroCssPath ? await readFile(humetroCssPath) : Buffer.alloc(0);
+  const grtcHtmlBytes = grtcHtmlPath ? await readFile(grtcHtmlPath) : Buffer.alloc(0);
+  const dtroHtmlBytes = dtroHtmlPath ? await readFile(dtroHtmlPath) : Buffer.alloc(0);
+  const djtcHtmlBytes = djtcHtmlPath ? await readFile(djtcHtmlPath) : Buffer.alloc(0);
+  const djtcCssBytes = djtcCssPath ? await readFile(djtcCssPath) : Buffer.alloc(0);
+  const csv = new TextDecoder("euc-kr").decode(csvBytes);
+  const svgCsv = new TextDecoder("euc-kr").decode(svgCsvBytes);
+  const seoulMetroJs = seoulMetroBytes.toString("utf8");
+  const officialSources = {
+    seoulMetroJs,
+    humetroHtml: humetroHtmlBytes.toString("utf8"),
+    humetroCss: humetroCssBytes.toString("utf8"),
+    grtcHtml: grtcHtmlBytes.toString("utf8"),
+    dtroHtml: dtroHtmlBytes.toString("utf8"),
+    djtcHtml: djtcHtmlBytes.toString("utf8"),
+    djtcCss: djtcCssBytes.toString("utf8"),
+  };
+  const sourceShaById = new Map([
+    [sourceId, sha256(csvBytes)],
+    ["molit-rail-station-svg-route", sha256(svgCsvBytes)],
+    [seoulMetroSourceId, sha256(seoulMetroBytes)],
+    [humetroSourceId, sha256(Buffer.concat([humetroHtmlBytes, humetroCssBytes]))],
+    [grtcSourceId, sha256(grtcHtmlBytes)],
+    [dtroSourceId, sha256(dtroHtmlBytes)],
+    [djtcSourceId, sha256(Buffer.concat([djtcHtmlBytes, djtcCssBytes]))],
+  ]);
+  const retiredLines = retiredLineIds(JSON.parse(retiredPolicyBytes).inactiveLineExclusions);
+  const rows = parseCsv(csv).map(rowFromCsv).filter(Boolean)
+    .filter((row) => !retiredLines.has(lineIdFor(row.regionName, row.lineName)));
+  const svgRows = filterRetiredSvgProviderRows(
+    parseCsv(svgCsv).map(svgRowFromCsv).filter(Boolean),
+    retiredLines,
+  );
+  const kricCodeCatalog = JSON.parse(kricCodeCatalogBytes.toString("utf8"));
+  validateKricProviderCodeCatalogIdentity(kricCodeCatalog);
+  sourceShaById.set(kricCodeCatalog.sourceId, kricCodeCatalog.sourceSha256);
+  const fixture = buildFixture(rows, svgRows, kricCodeCatalog, officialSources, sourceShaById);
+  await writeFile(outputPath, `${JSON.stringify(fixture, null, 2)}\n`);
+}
+
+function buildFixture(rows, svgRows, kricCodeCatalog, officialSources, sourceShaById) {
+  const operators = new Map();
+  const lines = new Map();
+  const coverageLineOperatorScopes = new Map();
+  const stations = new Map();
+  const stationLines = new Map();
+  const byLine = new Map();
+  const svgByKey = svgRowsByKey(svgRows);
+  const officialByKey = officialRowsByKey(officialSources);
+
+  for (const row of rows) {
+    const operatorId = operatorIdFor(row.operatorName);
+    operators.set(operatorId, {
+      id: operatorId,
+      nameKo: row.operatorName,
+      nameEn: "",
+    });
+
+    const lineId = lineIdFor(row.regionName, row.lineName);
+    const coverageScope = {
+      lineId,
+      regionId: coverageRegionId(row.regionName),
+      operatorId,
+    };
+    coverageLineOperatorScopes.set(`${coverageScope.regionId}:${operatorId}:${lineId}`, coverageScope);
+    if (!lines.has(lineId)) {
+      lines.set(lineId, {
+        id: lineId,
+        operatorId: preferredOperatorId(lineId, operatorId),
+        nameKo: `${row.regionName} ${row.lineName}`,
+        nameEn: "",
+        color: lineColorFor(row.regionName, row.lineName),
+      });
+    }
+
+    const stationId = stationIdFor(row.regionName, row.stationName);
+    stations.set(stationId, {
+      id: stationId,
+      nameKo: row.stationName,
+      nameEn: "",
+      normalizedName: row.stationName,
+      region: regionLabel(row.regionName),
+      latitude: null,
+      longitude: null,
+      dataQualityLevel: "LEVEL_2",
+      dataSourceType: "OFFICIAL_FILE",
+      lastVerifiedAt: verifiedAt,
+    });
+
+    const stationLineKey = `${stationId}:${lineId}`;
+    stationLines.set(stationLineKey, {
+      stationId,
+      lineId,
+      stationCode: stationCodeFor(row.regionName, row.lineName, row.stationName, row.sequence),
+      lineSequence: row.sequence,
+      platformInfo: "",
+    });
+    byLine.set(lineId, [...(byLine.get(lineId) ?? []), { ...row, stationId, lineId }]);
+  }
+
+  const lineOrder = [...byLine.keys()].sort((left, right) => {
+    const leftLine = lines.get(left);
+    const rightLine = lines.get(right);
+    return `${leftLine.nameKo}`.localeCompare(`${rightLine.nameKo}`, "ko");
+  });
+  const regionalLineOrder = new Map();
+  for (const lineId of lineOrder) {
+    const lineRows = byLine.get(lineId);
+    const region = regionLabel(lineRows[0].regionName);
+    regionalLineOrder.set(region, [...(regionalLineOrder.get(region) ?? []), lineId]);
+  }
+
+  const routeMapPositions = [];
+  for (const [region, regionLineIds] of regionalLineOrder.entries()) {
+    for (const lineId of regionLineIds) {
+      routeMapPositions.push(...positionsForLine(byLine.get(lineId), region, svgByKey, officialByKey, sourceShaById));
+    }
+  }
+  fillMissingRouteMapPositions(routeMapPositions, byLine, sourceShaById);
+
+  const networkEdges = [];
+  for (const [lineId, rawLineRows] of byLine.entries()) {
+    const lineRows = [...rawLineRows].sort((a, b) => a.sequence - b.sequence);
+    for (let index = 0; index < lineRows.length - 1; index += 1) {
+      const from = lineRows[index];
+      const to = lineRows[index + 1];
+      networkEdges.push(edgeFor(lineId, from, to));
+      networkEdges.push(edgeFor(lineId, to, from));
+    }
+  }
+
+  const firstEdge = networkEdges[0];
+  const sortedCoverageLineOperatorScopes = [...coverageLineOperatorScopes.values()].sort((left, right) =>
+    codepointCompare(`${left.regionId}:${left.operatorId}:${left.lineId}`, `${right.regionId}:${right.operatorId}:${right.lineId}`),
+  );
+  const providerLineScopes = providerLineScopesFor(kricCodeCatalog, coverageLineOperatorScopes, lines);
+  validateMolitProviderIdentities(svgRows, providerLineScopes);
+  return {
+    coverageLineOperatorScopeSemantics: "UNION_OF_PACK_SCOPES",
+    coverageLineOperatorScopes: sortedCoverageLineOperatorScopes,
+    providerLineScopes,
+    manifest: {
+      ttlSeconds: 3600,
+      activePack: { id: "capital", version: "1" },
+    },
+    packs: [
+      {
+        id: "capital",
+        version: "1",
+        artifactKind: "fixture",
+        schemaVersion: "1",
+        url: "catalog/capital-v1.sqlite.gz",
+        coverageLineOperatorScopes: sortedCoverageLineOperatorScopes,
+        sourceInventory: sourceInventoryEntries(sourceShaById),
+        requiredTables: [
+          "catalog_metadata",
+          "operators",
+          "lines",
+          "stations",
+          "station_lines",
+          "network_edges",
+          "route_map_positions",
+          "station_exits",
+          "facilities",
+          "data_quality_records",
+        ],
+        minimumTableRows: {
+          catalog_metadata: 2,
+          operators: operators.size,
+          lines: lines.size,
+          stations: stations.size,
+          station_lines: stationLines.size,
+          network_edges: networkEdges.length,
+          route_map_positions: routeMapPositions.length,
+          station_exits: 0,
+          facilities: 0,
+          data_quality_records: 0,
+        },
+        metadata: { activePack: "capital" },
+        operators: [...operators.values()].sort(byId),
+        lines: [...lines.values()].sort(byId),
+        stations: [...stations.values()].sort(byId),
+        stationAliases: [],
+        stationLines: [...stationLines.values()].sort((a, b) => codepointCompare(a.lineId, b.lineId) || a.lineSequence - b.lineSequence),
+        networkEdges,
+        routeMapPositions,
+        stationExits: [],
+        facilities: [],
+        dataQualityRecords: [],
+        representativeRouteRegressions: representativeRoutes(firstEdge),
+      },
+    ],
+  };
+}
+
+function positionsForLine(lineRows, region, svgByKey, officialByKey, sourceShaById) {
+  const officialLineExists = lineRows.some((row) => officialByKey.has(svgKey(row.regionCode, row.lineName, row.stationName)));
+  return [...lineRows]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((row) => {
+      const official = officialByKey.get(svgKey(row.regionCode, row.lineName, row.stationName))
+        ?? officialByKey.get(svgKey(row.regionCode, "__any__", row.stationName));
+      if (official) {
+        return {
+          stationId: row.stationId,
+          lineId: row.lineId,
+          region,
+          x: Math.round(official.x),
+          y: Math.round(official.y),
+          labelDx: Math.round(official.labelDx),
+          labelDy: Math.round(official.labelDy),
+          sourceLabel: official.stationName,
+          upPath: "",
+          downPath: official.path,
+          sourceId: official.sourceId,
+          sourceName: official.sourceName,
+          sourceUrl: official.sourceUrl,
+          sourceSha256: sourceShaById.get(official.sourceId) ?? "",
+          license: "공식 웹 공개 노선도 기준",
+          licenseStatus: "review-required",
+          commercialUseAllowed: false,
+          attributionRequired: true,
+          reviewedAt: verifiedAt,
+          updatedAt: verifiedAt,
+        };
+      }
+      if (officialRegionCodes().has(row.regionCode) && officialLineExists) {
+        return null;
+      }
+      const svg = svgByKey.get(svgKey(row.regionCode, row.lineName, row.stationName));
+      if (!svg) {
+        return null;
+      }
+      const point = firstMovePoint(svg.downPath || svg.upPath);
+      if (!point) {
+        return null;
+      }
+      return {
+        stationId: row.stationId,
+        lineId: row.lineId,
+        region,
+        x: Math.round(point.x),
+        y: Math.round(point.y),
+        labelDx: 0,
+        labelDy: 0,
+        sourceLabel: svg.stationName,
+        upPath: svg.upPath,
+        downPath: svg.downPath,
+        sourceId: "molit-rail-station-svg-route",
+        sourceName: "국토교통부 철도 역사 SVG선지도",
+        sourceUrl: "https://www.data.go.kr/data/15130544/fileData.do",
+        sourceSha256: sourceShaById.get("molit-rail-station-svg-route") ?? "",
+        license: "공공데이터포털 이용허락범위 제한 없음",
+        licenseStatus: "redistributable",
+        commercialUseAllowed: true,
+        attributionRequired: false,
+        reviewedAt: verifiedAt,
+        updatedAt: verifiedAt,
+      };
+    })
+    .filter(Boolean);
+}
+
+function fillMissingRouteMapPositions(routeMapPositions, byLine, sourceShaById) {
+  const positionsByNode = new Map(routeMapPositions.map((row) => [`${row.stationId}:${row.lineId}`, row]));
+  for (const [lineId, rawRows] of byLine.entries()) {
+    const lineRows = [...rawRows].sort((a, b) => a.sequence - b.sequence);
+    for (let index = 0; index < lineRows.length; index += 1) {
+      const row = lineRows[index];
+      const key = `${row.stationId}:${row.lineId}`;
+      if (positionsByNode.has(key)) {
+        continue;
+      }
+      const previous = nearestPosition(lineRows, index, positionsByNode, -1);
+      const next = nearestPosition(lineRows, index, positionsByNode, 1);
+      if (!previous && !next) {
+        continue;
+      }
+      const point = interpolatedPoint(row.sequence, previous, next);
+      const path = previous ? `${moveTo(previous.position.x, previous.position.y)} ${lineTo(point.x, point.y).trim()}` : "";
+      const position = {
+        stationId: row.stationId,
+        lineId: row.lineId,
+        region: regionLabel(row.regionName),
+        x: Math.round(point.x),
+        y: Math.round(point.y),
+        labelDx: 12,
+        labelDy: 0,
+        sourceLabel: row.stationName,
+        upPath: "",
+        downPath: path,
+        sourceId,
+        sourceName: "국토교통부 도시철도 전체노선정보",
+        sourceUrl,
+        sourceSha256: sourceShaById.get(sourceId) ?? "",
+        license: "공공데이터포털 이용허락범위 제한 없음",
+        licenseStatus: "redistributable",
+        commercialUseAllowed: true,
+        attributionRequired: false,
+        reviewedAt: verifiedAt,
+        updatedAt: verifiedAt,
+      };
+      routeMapPositions.push(position);
+      positionsByNode.set(key, position);
+    }
+  }
+}
+
+function nearestPosition(lineRows, startIndex, positionsByNode, direction) {
+  for (let index = startIndex + direction; index >= 0 && index < lineRows.length; index += direction) {
+    const row = lineRows[index];
+    const position = positionsByNode.get(`${row.stationId}:${row.lineId}`);
+    if (position) {
+      return { row, position };
+    }
+  }
+  return null;
+}
+
+function interpolatedPoint(sequence, previous, next) {
+  if (previous && next && next.row.sequence !== previous.row.sequence) {
+    const ratio = (sequence - previous.row.sequence) / (next.row.sequence - previous.row.sequence);
+    return nonNegativePoint({
+      x: previous.position.x + (next.position.x - previous.position.x) * ratio,
+      y: previous.position.y + (next.position.y - previous.position.y) * ratio,
+    });
+  }
+  if (previous) {
+    return nonNegativePoint({ x: previous.position.x + 56, y: previous.position.y });
+  }
+  return nonNegativePoint({ x: next.position.x - 56, y: next.position.y });
+}
+
+function nonNegativePoint(point) {
+  return { x: Math.max(0, point.x), y: Math.max(0, point.y) };
+}
+
+function officialRegionCodes() {
+  return new Set(["01", "02", "03", "04", "05"]);
+}
+
+function officialRowsByKey(sources) {
+  return new Map([
+    ...seoulMetroRowsByKey(sources.seoulMetroJs),
+    ...humetroRowsByKey(sources.humetroHtml, sources.humetroCss),
+    ...grtcRowsByKey(sources.grtcHtml),
+    ...dtroRowsByKey(sources.dtroHtml),
+    ...djtcRowsByKey(sources.djtcHtml, sources.djtcCss),
+  ]);
+}
+
+function seoulMetroRowsByKey(source) {
+  if (!source.trim()) {
+    return new Map();
+  }
+  const parsed = parseSeoulMetroLineData(source);
+  const rows = new Map();
+  for (const line of Object.values(parsed)) {
+    const lineName = lineNameFromSeoulMetro(line.attr?.["data-label"]);
+    if (!lineName) {
+      continue;
+    }
+    const color = line.attr?.["data-color"] ?? "#000000";
+    const nodes = cyberNodes(line, color);
+    for (const row of cyberRouteRows(nodes)) {
+      if (!row.stationName || !row.path) {
+        continue;
+      }
+      const keyedRow = {
+        ...row,
+        x: row.scaledX,
+        y: row.scaledY,
+        sourceId: seoulMetroSourceId,
+        sourceName: "서울교통공사 사이버스테이션",
+        // 서울교통공사 사이버스테이션은 HTTP만 연다(2026-10-20 실측: https://www.seoulmetro.co.kr 는 TLS 연결 직후 reset). 등록된 원천 URL 그대로 쓴다.
+        sourceUrl: "http://www.seoulmetro.co.kr/kr/cyberStation.do",
+      };
+      rows.set(svgKey("01", lineName, row.stationName), keyedRow);
+      rows.set(svgKey("01", "__any__", row.stationName), keyedRow);
+    }
+  }
+  return rows;
+}
+
+function humetroRowsByKey(html, css) {
+  if (!html.trim() || !css.trim()) {
+    return new Map();
+  }
+  const stationCss = cssPositionRules(css, /^\.s(\d+)$/);
+  const labelCss = cssPositionRules(css, /^\.s(\d+) \.sta-title$/);
+  const byLine = new Map();
+  const stationPattern = /<div class="([^"]*\bs(\d+)\b[^"]*)">[\s\S]*?one_point\('(\d+)', '(\d+)', '([^']+)'[\s\S]*?<span class="sta-title[^"]*">([\s\S]*?)<\/span>/g;
+  let match;
+  while ((match = stationPattern.exec(html)) !== null) {
+    const [, className, stationCode, , lineCode, stationNameArg, titleHtml] = match;
+    const position = stationCss.get(stationCode);
+    if (!position) {
+      continue;
+    }
+    const lineName = humetroLineName(lineCode);
+    if (!lineName) {
+      continue;
+    }
+    const label = labelCss.get(stationCode) ?? { left: 13, top: 0 };
+    const titleName = normalizeHtmlText(titleHtml);
+    const stationName = titleName && !titleName.includes("환승역") && !titleHtml.includes("<span")
+      ? titleName
+      : stationNameArg;
+    const row = {
+      stationName,
+      x: position.left + (className.includes("trans") ? 12.5 : 5.5),
+      y: position.top + (className.includes("trans") ? 13 : 5),
+      labelDx: (label.left ?? 13) - 5,
+      labelDy: label.top ?? 0,
+      sourceId: humetroSourceId,
+      sourceName: "부산교통공사 사이버스테이션",
+      sourceUrl: "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
+    };
+    byLine.set(lineName, [...(byLine.get(lineName) ?? []), row]);
+  }
+  return lineRowsToKeyedRows("02", byLine);
+}
+
+function humetroLineName(code) {
+  return {
+    "1": "1호선",
+    "2": "2호선",
+    "3": "3호선",
+    "4": "4호선",
+    "8": "동해선",
+    "9": "부산김해경전철",
+  }[code] ?? null;
+}
+
+function grtcRowsByKey(html) {
+  if (!html.trim()) {
+    return new Map();
+  }
+  const names = [];
+  const section = /<div class="line-box pc">([\s\S]*?)<div class="line-box mobile">/.exec(html)?.[1] ?? "";
+  const stationPattern = /data-subwayid="(\d+)"[\s\S]*?<p>\s*([\s\S]*?)\s*<span class="icon">/g;
+  let match;
+  while ((match = stationPattern.exec(section)) !== null) {
+    names.push(normalizeHtmlText(match[2]));
+  }
+  const positions = [
+    [73, 212],
+    [215, 212],
+    [361, 212],
+    [527, 212],
+    [624, 212],
+    [724, 212],
+    [865, 212],
+    [994, 212],
+    [1075, 212],
+    [1166, 212],
+    [1249, 212],
+    [1335, 212],
+    [1428, 212],
+    [1532, 212],
+    [1640, 212],
+    [1746, 212],
+    [1836, 212],
+    [1921, 212],
+    [2004, 212],
+    [2087, 212],
+  ];
+  const rows = [];
+  for (let index = 0; index < names.length; index += 1) {
+    const [x, y] = positions[index] ?? [220 + index * 72, 190];
+    rows.push({
+      stationName: names[index],
+      x,
+      y,
+      labelDx: 0,
+      labelDy: 40,
+      sourceId: grtcSourceId,
+      sourceName: "광주교통공사 사이버스테이션",
+      sourceUrl: "https://www.grtc.co.kr/cyber/simple",
+    });
+  }
+  return lineRowsToKeyedRows("04", new Map([["1호선", rows]]));
+}
+
+function dtroRowsByKey(html) {
+  if (!html.trim()) {
+    return new Map();
+  }
+  const byLine = new Map();
+  const areaPattern = /<area[^>]+alt="([^"]+)"[^>]+parent_line="cyberStation(\d+)"[^>]+coords="(\d+),(\d+),\d+"/g;
+  let match;
+  while ((match = areaPattern.exec(html)) !== null) {
+    const [, alt, lineCode, x, y] = match;
+    const lineName = `${lineCode}호선`;
+    byLine.set(lineName, [
+      ...(byLine.get(lineName) ?? []),
+      {
+        stationName: alt.replace(/\(.*/, ""),
+        x: Number(x),
+        y: Number(y),
+        labelDx: 12,
+        labelDy: 0,
+        sourceId: dtroSourceId,
+        sourceName: "대구교통공사 사이버스테이션",
+        sourceUrl: "https://www.dtro.or.kr/front/dtro/cyberstation/station/cyberstation.do",
+      },
+    ]);
+    if (alt.startsWith("대공원")) {
+      byLine.set(lineName, [
+        ...(byLine.get(lineName) ?? []),
+        {
+          stationName: "수성알파시티",
+          x: Number(x),
+          y: Number(y),
+          labelDx: 12,
+          labelDy: 0,
+          sourceId: dtroSourceId,
+          sourceName: "대구교통공사 사이버스테이션",
+          sourceUrl: "https://www.dtro.or.kr/front/dtro/cyberstation/station/cyberstation.do",
+        },
+      ]);
+    }
+  }
+  return lineRowsToKeyedRows("03", byLine);
+}
+
+function djtcRowsByKey(html, css) {
+  if (!html.trim() || !css.trim()) {
+    return new Map();
+  }
+  const cssRows = cssPositionRules(css, /^\.routrack(\d+)$/);
+  const rows = [];
+  const stationPattern = /<a class="routrack(\d+)"[^>]+title="([^"]+)역"[^>]+index="(\d+)"/g;
+  let match;
+  while ((match = stationPattern.exec(html)) !== null) {
+    const [, trackCode, name, index] = match;
+    const position = cssRows.get(trackCode);
+    if (!position) {
+      continue;
+    }
+    rows.push({
+      stationName: name,
+      index: Number(index),
+      x: position.left + 10,
+      y: position.top + 10,
+      labelDx: 0,
+      labelDy: 22,
+      sourceId: djtcSourceId,
+      sourceName: "대전교통공사 사이버스테이션",
+      sourceUrl: "https://www.djtc.kr/kor/cyberStation.do?menuIdx=28",
+    });
+  }
+  rows.sort((a, b) => a.index - b.index);
+  return lineRowsToKeyedRows("05", new Map([["1호선", rows]]));
+}
+
+function lineRowsToKeyedRows(regionCode, byLine) {
+  const rows = new Map();
+  for (const [lineName, lineRows] of byLine.entries()) {
+    const sortedRows = [...lineRows];
+    for (let index = 0; index < sortedRows.length; index += 1) {
+      const row = sortedRows[index];
+      const previous = sortedRows[index - 1];
+      const path = previous
+        ? `${moveTo(previous.x, previous.y)} ${lineTo(row.x, row.y).trim()}`
+        : "";
+      const keyedRow = { ...row, path };
+      rows.set(svgKey(regionCode, lineName, row.stationName), keyedRow);
+      rows.set(svgKey(regionCode, "__any__", row.stationName), keyedRow);
+    }
+  }
+  return rows;
+}
+
+function cssPositionRules(css, selectorPattern) {
+  const rows = new Map();
+  const rulePattern = /([^{]+)\{([^}]+)\}/g;
+  let match;
+  while ((match = rulePattern.exec(css)) !== null) {
+    const selector = match[1].trim().split(/[\n,]/).at(-1).trim();
+    const body = match[2];
+    const selectorMatch = selectorPattern.exec(selector);
+    if (!selectorMatch) {
+      continue;
+    }
+    const top = cssNumber(body, "top");
+    const left = cssNumber(body, "left");
+    if (top == null && left == null) {
+      continue;
+    }
+    rows.set(selectorMatch[1], { top, left });
+  }
+  return rows;
+}
+
+function cssNumber(body, name) {
+  const match = new RegExp(`${name}\\s*:\\s*(-?\\d+(?:\\.\\d+)?)px`).exec(body);
+  return match ? Number(match[1]) : null;
+}
+
+function cyberNodes(line, color) {
+  const scale = 5;
+  return (line.stations ?? [])
+    .filter((station) => !String(station["data-marker"] ?? "").startsWith("@"))
+    .map((station, index) => {
+      const [x, y] = String(station["data-coords"] ?? "0,0").split(",").map(Number);
+      const labelPos = station["data-labelPos"] ?? "s";
+      return {
+        x,
+        y,
+        scaledX: x * scale,
+        scaledY: y * scale,
+        direction: station["data-dir"] ?? "",
+        moveTo: station["data-moveTo"] ?? "",
+        stationName: normalizeStationName(station["station-nm"] ?? ""),
+        stationCode: station["station-cd"] ?? "",
+        labelDx: labelDx(labelPos, station["data-marker"] ?? "", scale),
+        labelDy: labelDy(labelPos, station["data-marker"] ?? "", scale),
+        color,
+        index,
+      };
+    });
+}
+
+function cyberRouteRows(nodes) {
+  const rows = [];
+  let path = "";
+  for (let index = 0; index < nodes.length; index += 1) {
+    const current = nodes[index];
+    if (!path) {
+      path = moveTo(current.scaledX, current.scaledY);
+      if (current.stationName) {
+        rows.push({ ...current, path });
+      }
+      continue;
+    }
+    if (current.moveTo) {
+      const [moveX, moveY] = current.moveTo.split(",").map(Number);
+      path = moveTo(moveX * 5, moveY * 5);
+      if (current.stationName) {
+        rows.push({ ...current, path });
+      }
+      continue;
+    }
+    const previous = nodes[index - 1];
+    const next = nodes[index + 1];
+    const post = nodes[index - 2];
+    path += pathToNode(previous, current, next, post);
+    if (current.stationName) {
+      rows.push({ ...current, path });
+      path = moveTo(current.scaledX, current.scaledY);
+    }
+  }
+  return rows;
+}
+
+function pathToNode(previous, current, next, post) {
+  const xDiff = Math.round(Math.abs(current.x - previous.x));
+  const yDiff = Math.round(Math.abs(current.y - previous.y));
+  if (xDiff === 0) {
+    return verticalTo(current.scaledY);
+  }
+  if (yDiff === 0) {
+    return horizonTo(current.scaledX);
+  }
+  const direction = current.direction.toLowerCase();
+  if (!direction) {
+    return lineTo(current.scaledX, current.scaledY);
+  }
+  let xVal = previous.scaledX;
+  let yVal = previous.scaledY;
+  if (direction === "auto" && next && post) {
+    const x1 = post.x, x2 = previous.x, x3 = current.x, x4 = next.x;
+    const y1 = post.y, y2 = previous.y, y3 = current.y, y4 = next.y;
+    const divisor = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (divisor !== 0) {
+      xVal = (((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / divisor) * 5;
+      yVal = (((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / divisor) * 5;
+    }
+  } else {
+    const xDiffVal = 5 * (current.x - previous.x);
+    const yDiffVal = 5 * (current.y - previous.y);
+    const t = { e: 100, w: 100, sc: 5, nc: 5, ec: 95, wc: 95 }[direction] ?? 0;
+    xVal += xDiffVal * (t / 100);
+    yVal += yDiffVal * ((100 - t) / 100);
+  }
+  return curveTo(xVal, yVal, current.scaledX, current.scaledY);
+}
+
+function lineNameFromSeoulMetro(label) {
+  return {
+    "GTX-A": "GTX-A",
+    "1호선": "1호선",
+    "2호선": "2호선",
+    "3호선": "3호선",
+    "4호선": "4호선",
+    "5호선": "5호선",
+    "6호선": "6호선",
+    "7호선": "7호선",
+    "8호선": "8호선",
+    "9호선": "9호선",
+    "김포골드라인": "김포골드라인",
+    "의정부경전철": "의정부",
+    "인천1호선": "인천1호선",
+    "인천2호선": "인천2호선",
+    "경춘선": "경춘",
+    "경의·중앙선": "경의중앙",
+    "공항철도": "공항",
+    "수인분당선": "수인분당",
+    "신분당선": "신분당",
+    "경강선": "경강",
+    "용인경전철": "에버라인",
+    "우이신설경전철": "우이신설",
+    "서해": "서해선",
+    "신림": "신림선",
+  }[label] ?? null;
+}
+
+function lineColorFor(regionName, lineName) {
+  return regionLineColors.get(`${regionName}:${lineName}`)
+    ?? lineColors.get(lineName)
+    ?? "#006D77";
+}
+
+const regionLineColors = new Map([
+  ["부산:1호선", "#f06a00"],
+  ["부산:2호선", "#81bf48"],
+  ["부산:3호선", "#bb8c00"],
+  ["부산:4호선", "#217dc1"],
+  ["부산:동해", "#b7a36a"],
+  ["부산:부산김해경전철", "#875cac"],
+  ["대구:1호선", "#d93f3d"],
+  ["대구:2호선", "#00aa80"],
+  ["대구:3호선", "#f5c400"],
+  ["대구:대경선", "#5b78b9"],
+  ["광주:1호선", "#009088"],
+  ["대전:1호선", "#007448"],
+]);
+
+function normalizeStationName(name) {
+  return String(name).replace(/\s+/g, "").trim();
+}
+
+function normalizedStationNameForMap(name) {
+  return normalizeHtmlText(name)
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\[[^\]]*]/g, "")
+    .replace(/[·.\s]/g, "")
+    .replace(/역$/g, "")
+    .trim();
+}
+
+function normalizeHtmlText(value) {
+  let text = String(value);
+  for (;;) {
+    const next = text
+      .replace(/<br\s*\/?>/gi, "")
+      .replace(/<span class="blind">[\s\S]*?<\/span>/g, "")
+      .replace(/<[^>]+>/g, "");
+    if (next === text) break;
+    text = next;
+  }
+  return text
+    .replace(/[<>]/g, "")
+    .replace(/&middot;/g, "·")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function labelDx(labelPos, marker, scale) {
+  const lower = String(labelPos).toLowerCase();
+  const inter = String(marker).includes("interchange") ? 6 : 0;
+  if (lower.includes("e")) return 14 + inter;
+  if (lower.includes("w")) return -14 - inter;
+  return 0;
+}
+
+function labelDy(labelPos, marker, scale) {
+  const lower = String(labelPos).toLowerCase();
+  const inter = String(marker).includes("interchange") ? 6 : 0;
+  if (lower.includes("s")) return 16 + inter;
+  if (lower.includes("n")) return -14 - inter;
+  return 0;
+}
+
+function moveTo(x, y) {
+  return `M${roundPathNumber(x)},${roundPathNumber(y)}`;
+}
+
+function lineTo(x, y) {
+  return ` L${roundPathNumber(x)},${roundPathNumber(y)}`;
+}
+
+function horizonTo(x) {
+  return ` H${roundPathNumber(x)}`;
+}
+
+function verticalTo(y) {
+  return ` V${roundPathNumber(y)}`;
+}
+
+function curveTo(cx, cy, x, y) {
+  return ` Q${roundPathNumber(cx)},${roundPathNumber(cy)} ${roundPathNumber(x)},${roundPathNumber(y)}`;
+}
+
+function roundPathNumber(value) {
+  return Number.parseFloat(Number(value).toFixed(2));
+}
+
+function edgeFor(lineId, from, to) {
+  return {
+    id: `edge-${lineId}-${from.stationId}-${to.stationId}`,
+    fromNodeId: `${from.stationId}:${lineId}`,
+    toNodeId: `${to.stationId}:${lineId}`,
+    durationSeconds: 120,
+    distanceMeters: 0,
+    edgeType: "RIDE",
+    servicePattern: "LOCAL",
+    includesStairs: false,
+    stairAccessState: "UNKNOWN",
+    accessibilityStatus: "UNKNOWN",
+    reliabilityScore: 80,
+    lastVerifiedAt: verifiedAt,
+  };
+}
+
+export function representativeRoutes(edge) {
+  if (!edge || !edge.id || !edge.fromNodeId || !edge.toNodeId) {
+    throw new Error("No network edges available: fail-closed.");
+  }
+  return ["DIRECT", "TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"].map((pattern) => ({
+    id: `nationwide-${pattern.toLowerCase().replaceAll("_", "-")}`,
+    pattern,
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId,
+    requiredEdgeIds: [edge.id],
+  }));
+}
+
+function rowFromCsv(row) {
+  if (row.length < 6 || row[0] === "권역") {
+    return null;
+  }
+  return {
+    regionCode: row[0].trim(),
+    regionName: row[1].trim(),
+    operatorName: row[2].trim(),
+    lineName: row[3].trim(),
+    sequence: Number.parseInt(row[4].trim(), 10),
+    stationName: row[5].trim(),
+  };
+}
+
+export function parseMolitDaejeonStationMappings(csvBytes) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("MOLIT nationwide station CSV bytes are required");
+  }
+  const mappings = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
+    .map(rowFromCsv)
+    .filter((row) => row?.regionName === "대전"
+      && row.operatorName === "대전교통공사"
+      && row.lineName === "1호선")
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      stationNumber: String(100 + row.sequence),
+    }));
+  if (lineIdFor("대전", "1호선") !== "line-7051a9c2525c"
+    || mappings.length !== 22
+    || mappings.some((mapping, index) => mapping.stationNumber !== String(101 + index))
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
+    throw new Error("MOLIT Daejeon Line 1 mapping must contain 22 unique stations in sequence");
+  }
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sha256(csvBytes),
+    enumerable: true,
+  });
+}
+
+function projectionRow(row) {
+  if (!row || typeof row !== "object" || Array.isArray(row)
+    || typeof row.region_code !== "string" || typeof row.region_name !== "string"
+    || typeof row.operator_name !== "string" || typeof row.line_name !== "string"
+    || !Number.isSafeInteger(row.station_sequence) || row.station_sequence < 1
+    || typeof row.station_name !== "string") {
+    throw new Error("current MOLIT normalized projection row is invalid");
+  }
+  return {
+    regionCode: row.region_code,
+    regionName: row.region_name,
+    operatorName: row.operator_name,
+    lineName: row.line_name,
+    sequence: row.station_sequence,
+    stationName: row.station_name,
+  };
+}
+
+function bindCurrentProjectionMappings(projection, sourceRawSha256, {
+  regionName, operatorName, lineName, lineId, stationCount, label, map,
+}) {
+  if (typeof sourceRawSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceRawSha256)) {
+    throw new Error("current MOLIT source raw hash is invalid");
+  }
+  assertCurrentMolitFullRouteCompleteness(projection);
+  const mappings = projection.map(projectionRow)
+    .filter((row) => row.regionName === regionName
+      && row.operatorName === operatorName
+      && row.lineName === lineName)
+    .sort((left, right) => left.sequence - right.sequence)
+    .map(map);
+  if (lineIdFor(regionName, lineName) !== lineId
+    || mappings.length !== stationCount
+    || mappings.some((mapping, index) => mapping.sequence != null && mapping.sequence !== index + 1)
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
+    throw new Error(`current MOLIT ${label} mapping must contain ${stationCount} unique stations in sequence`);
+  }
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sourceRawSha256,
+    enumerable: true,
+  });
+}
+
+export function parseCurrentMolitDaejeonStationMappings(projection, sourceRawSha256) {
+  const mappings = bindCurrentProjectionMappings(projection, sourceRawSha256, {
+    regionName: "대전", operatorName: "대전교통공사", lineName: "1호선",
+    lineId: "line-7051a9c2525c", stationCount: 22, label: "Daejeon Line 1",
+    map: (row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      stationNumber: String(100 + row.sequence),
+    }),
+  });
+  if (mappings.some((mapping, index) => mapping.stationNumber !== String(101 + index))) {
+    throw new Error("current MOLIT Daejeon Line 1 station numbering is invalid");
+  }
+  return mappings;
+}
+
+// #2138 activeLineScopes의 evidenceRef(source:molit-urban-rail-full-route) 원본에서
+// (regionId, operatorId, lineId) scope별 역명 roster를 그대로 복원한다.
+// source-inventory coverageScope의 dual-operator 주장을 기계 검증하는 회귀(#2508)가 소비한다.
+export function parseMolitLineOperatorRosters(csvBytes) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("MOLIT nationwide station CSV bytes are required");
+  }
+  return molitLineOperatorRosters(parseCsv(new TextDecoder("euc-kr").decode(csvBytes)).map(rowFromCsv).filter(Boolean));
+}
+
+// 호출자가 승인 원문 결속을 확인한 current projection을 그대로 소비한다. KRIC 코드는 별도 계약이다.
+export function parseCurrentMolitLineOperatorRosters(projection) {
+  if (!Array.isArray(projection)) throw new Error("current MOLIT normalized projection is required");
+  return molitLineOperatorRosters(projection.map(projectionRow));
+}
+
+function molitLineOperatorRosters(rows) {
+  const rosters = new Map();
+  for (const row of rows) {
+    const scope = {
+      regionId: coverageRegionId(row.regionName),
+      operatorId: operatorIdFor(row.operatorName),
+      lineId: lineIdFor(row.regionName, row.lineName),
+    };
+    const key = `${scope.regionId}:${scope.operatorId}:${scope.lineId}`;
+    const roster = rosters.get(key) ?? { ...scope, operatorName: row.operatorName, stationNames: [] };
+    roster.stationNames.push(row.stationName);
+    rosters.set(key, roster);
+  }
+  if (rosters.size === 0) {
+    throw new Error("MOLIT nationwide station CSV has no line-operator rosters");
+  }
+  return rosters;
+}
+
+export function parseMolitGwangjuStationMappings(csvBytes, topologySnapshot) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("MOLIT nationwide station CSV bytes are required");
+  }
+  const rows = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
+    .map(rowFromCsv)
+    .filter((row) => row?.regionName === "광주"
+      && row.operatorName === "광주교통공사"
+      && row.lineName === "1호선")
+    .sort((left, right) => left.sequence - right.sequence);
+  return bindGwangjuTopologyMappings(rows, sha256(csvBytes), topologySnapshot);
+}
+
+export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha256, topologySnapshot, currentSnapshot) {
+  if (typeof sourceRawSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceRawSha256)) {
+    throw new Error("current MOLIT source raw hash is invalid");
+  }
+  // 전국 완전성은 source admission이 소유한다. 소비자는 승인된 전체 원문의 동일성을 결속한다.
+  if (!Array.isArray(projection) || currentSnapshot?.sourceId !== sourceId
+    || currentSnapshot.rawSha256 !== sourceRawSha256 || currentSnapshot.rowCount !== projection.length
+    || currentSnapshot.contentSha256 !== sha256(Buffer.from(`${JSON.stringify(projection)}\n`))) {
+    throw new Error("current MOLIT ledger projection binding is invalid");
+  }
+  const rows = projection.map(projectionRow)
+    .filter((row) => row.regionName === "광주"
+      && row.operatorName === "광주교통공사"
+      && row.lineName === "1호선");
+  return bindGwangjuTopologyMappings(rows, sourceRawSha256, topologySnapshot);
+}
+
+function bindGwangjuTopologyMappings(rows, sourceRawSha256, topologySnapshot) {
+  if (!Array.isArray(topologySnapshot?.scope) || topologySnapshot.scope.length === 0) {
+    throw new Error("MOLIT Gwangju station mapping requires a topology snapshot scope");
+  }
+  const scopeByName = new Map();
+  const scopeCodes = new Set();
+  for (const scope of topologySnapshot.scope) {
+    if (typeof scope?.stationName !== "string" || scope.stationName.trim() === ""
+      || typeof scope.stationCode !== "string" || scope.stationCode.trim() === "") {
+      throw new Error("MOLIT Gwangju topology scope station is invalid");
+    }
+    if (scopeByName.has(scope.stationName) || scopeCodes.has(scope.stationCode)) {
+      throw new Error("MOLIT Gwangju topology scope has duplicate station names or codes");
+    }
+    scopeByName.set(scope.stationName, scope.stationCode);
+    scopeCodes.add(scope.stationCode);
+  }
+  const mappings = rows.map((row) => {
+    // collect-gwangju-route-map-positions.mjs의 반대 방향 별칭과 동일한 유일한 명시적 결합이다.
+    const topologyName = row.stationName === "광주송정역" ? "광주송정" : row.stationName;
+    const stationNumber = scopeByName.get(topologyName);
+    if (stationNumber === undefined) {
+      throw new Error(`MOLIT Gwangju topology mapping is missing: ${row.stationName}`);
+    }
+    return {
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      stationNumber,
+    };
+  });
+  if (mappings.length !== topologySnapshot.scope.length
+    || new Set(rows.map(({ stationName }) => stationName)).size !== rows.length
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length
+    || new Set(mappings.map(({ stationNumber }) => stationNumber)).size !== mappings.length) {
+    throw new Error("MOLIT Gwangju topology mapping must be a unique station-name and station-code bijection");
+  }
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sourceRawSha256,
+    enumerable: true,
+  });
+}
+
+const DAEGU_MEMBERSHIP_EXPECTATIONS = {
+  "1호선": { lineId: "line-5b8d9b05e7e6", stationCount: 35 },
+  "2호선": { lineId: "line-e2938a4cc492", stationCount: 29 },
+  "3호선": { lineId: "line-0ffaa95b1b5d", stationCount: 30 },
+};
+
+export function parseMolitDaeguStationMappings(csvBytes, lineName) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("MOLIT nationwide station CSV bytes are required");
+  }
+  const expectation = DAEGU_MEMBERSHIP_EXPECTATIONS[lineName];
+  if (!expectation) throw new Error(`unknown Daegu line for membership mapping: ${lineName}`);
+  const mappings = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
+    .map(rowFromCsv)
+    .filter((row) => row?.regionName === "대구"
+      && row.operatorName === "대구교통공사"
+      && row.lineName === lineName)
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      sequence: row.sequence,
+    }));
+  if (lineIdFor("대구", lineName) !== expectation.lineId
+    || mappings.length !== expectation.stationCount
+    || mappings.some((mapping, index) => mapping.sequence !== index + 1)
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
+    throw new Error(`MOLIT Daegu ${lineName} mapping must contain ${expectation.stationCount} unique stations in sequence`);
+  }
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sha256(csvBytes),
+    enumerable: true,
+  });
+}
+
+export function parseCurrentMolitDaeguStationMappings(projection, sourceRawSha256, lineName) {
+  const expectation = DAEGU_MEMBERSHIP_EXPECTATIONS[lineName];
+  if (!expectation) throw new Error(`unknown Daegu line for current membership mapping: ${lineName}`);
+  return bindCurrentProjectionMappings(projection, sourceRawSha256, {
+    regionName: "대구", operatorName: "대구교통공사", lineName,
+    lineId: expectation.lineId, stationCount: expectation.stationCount, label: `Daegu ${lineName}`,
+    map: (row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      sequence: row.sequence,
+    }),
+  });
+}
+
+function svgRowFromCsv(row) {
+  if (row.length < 8 || row[0] === "SVG파일명") {
+    return null;
+  }
+  return {
+    svgFileName: row[0].trim(),
+    providerIdentity: parseMolitSvgProviderIdentity(row[0].trim(), row[1].trim()),
+    lineName: row[2].trim(),
+    stationName: row[3].trim(),
+    upPath: row[4].trim(),
+    downPath: row[5].trim(),
+    svgOrder: Number.parseInt(row[6].trim(), 10),
+  };
+}
+
+export function providerLineScopesFor(catalog, coverageScopes, lines) {
+  validateKricProviderCodeCatalogIdentity(catalog);
+  if (catalog?.artifactKind !== "kric-provider-line-catalog" || !Array.isArray(catalog.providerLines)
+    || !Number.isInteger(catalog.stationRecordCount) || catalog.stationRecordCount < 1) {
+    throw new Error("KRIC provider code catalog is invalid");
+  }
+  const providerByOperatorLine = new Map();
+  for (const [index, row] of catalog.providerLines.entries()) {
+    const { railOprIsttCd, operatorName, lnCd, lineName } = row ?? {};
+    if ([railOprIsttCd, operatorName, lnCd, lineName].some((value) => typeof value !== "string" || !value.trim())) {
+      throw new Error(`KRIC provider line catalog row ${index} is invalid`);
+    }
+    const key = `${operatorIdFor(operatorName)}:${normalizeMolitProviderLineName(lineName)}`;
+    const provider = { railOprIsttCd, lnCd };
+    const existing = providerByOperatorLine.get(key);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(provider)) {
+      throw new Error(`conflicting KRIC provider code: ${key}`);
+    }
+    providerByOperatorLine.set(key, provider);
+  }
+  const providerScopes = [];
+  for (const scope of coverageScopes.values()) {
+    const line = lines.get(scope.lineId);
+    if (!line) throw new Error(`coverage line is missing: ${scope.lineId}`);
+    const provider = providerByOperatorLine.get(`${scope.operatorId}:${normalizeMolitProviderLineName(line.nameKo)}`);
+    if (!provider) throw new Error(`KRIC provider code is missing: ${scope.regionId}:${scope.operatorId}:${scope.lineId}`);
+    providerScopes.push({
+      ...scope,
+      mreaWideCd: providerRegionCode(scope.regionId),
+      lnCd: provider.lnCd,
+      railOprIsttCd: provider.railOprIsttCd,
+    });
+  }
+  return providerScopes.sort((left, right) =>
+    codepointCompare(`${left.regionId}:${left.operatorId}:${left.lineId}`, `${right.regionId}:${right.operatorId}:${right.lineId}`),
+  );
+}
+
+export function validateKricProviderCodeCatalogIdentity(catalog) {
+  if (catalog?.sourceId !== kricProviderCodeCatalogSourceId) {
+    throw new Error("KRIC provider code catalog sourceId is invalid");
+  }
+  if (typeof catalog.sourceSha256 !== "string" || !/^[a-f0-9]{64}$/i.test(catalog.sourceSha256)) {
+    throw new Error("KRIC provider code catalog sourceSha256 is invalid");
+  }
+  if (catalog.sourceSha256.toLowerCase() !== kricProviderCodeCatalogSha256) {
+    throw new Error("KRIC provider code catalog sourceSha256 does not match trusted snapshot");
+  }
+  const contentSha256 = sha256(JSON.stringify({
+    stationRecordCount: catalog.stationRecordCount,
+    providerLines: catalog.providerLines,
+  }));
+  if (contentSha256 !== kricProviderCodeCatalogContentSha256) {
+    throw new Error("KRIC provider code catalog canonical content hash does not match trusted snapshot");
+  }
+}
+
+export function validateMolitProviderIdentities(svgRows, providerLineScopes) {
+  const expected = new Map(providerLineScopes.map((scope) => [
+    `${scope.regionId}:${scope.operatorId}:${scope.lineId}`,
+    scope,
+  ]));
+  for (const row of svgRows) {
+    if (row.svgFileName?.startsWith("subway_") && !row.providerIdentity) {
+      throw new Error(`MOLIT subway provider identity is invalid: ${row.svgFileName}`);
+    }
+    if (!row.providerIdentity) continue;
+    const regionName = regionNameForProviderCode(row.providerIdentity.mreaWideCd);
+    const key = `${coverageRegionId(regionName)}:${operatorIdFor(row.providerIdentity.operatorName)}:${lineIdFor(regionName, normalizeMolitProviderLineName(row.lineName))}`;
+    const scope = expected.get(key);
+    if (!scope) throw new Error(`MOLIT provider scope is unmatched: ${key}`);
+    if (scope.mreaWideCd !== row.providerIdentity.mreaWideCd || scope.lnCd !== row.providerIdentity.lnCd
+      || scope.railOprIsttCd !== row.providerIdentity.railOprIsttCd) {
+      throw new Error(`MOLIT/KRIC provider code mismatch: ${key}`);
+    }
+  }
+}
+
+export function filterRetiredSvgProviderRows(svgRows, retiredLines) {
+  return svgRows.filter((row) => {
+    if (!row.providerIdentity) return true;
+    const regionName = regionNameForProviderCode(row.providerIdentity.mreaWideCd);
+    return !retiredLines.has(lineIdFor(regionName, normalizeMolitProviderLineName(row.lineName)));
+  });
+}
+
+function providerRegionCode(regionId) {
+  const code = { capital: "01", busan: "02", daegu: "03", gwangju: "04", daejeon: "05" }[regionId];
+  if (!code) throw new Error(`unknown provider region: ${regionId}`);
+  return code;
+}
+
+function regionNameForProviderCode(mreaWideCd) {
+  const regionName = {
+    "01": "수도권",
+    "02": "부산",
+    "03": "대구",
+    "04": "광주",
+    "05": "대전",
+  }[mreaWideCd];
+  if (!regionName) throw new Error(`unknown MOLIT provider region: ${mreaWideCd}`);
+  return regionName;
+}
+
+function svgRowsByKey(rows) {
+  const byKey = new Map();
+  for (const row of rows) {
+    const regionCode = areaRegionCode(row.svgFileName);
+    if (!regionCode || (!row.upPath && !row.downPath)) {
+      continue;
+    }
+    const key = svgKey(regionCode, row.lineName, row.stationName);
+    const existing = byKey.get(key);
+    if (!existing || row.svgOrder < existing.svgOrder) {
+      byKey.set(key, row);
+    }
+  }
+  return byKey;
+}
+
+function areaRegionCode(svgFileName) {
+  const match = /^area(\d{2})$/.exec(svgFileName);
+  return match?.[1] ?? null;
+}
+
+function svgKey(regionCode, lineName, stationName) {
+  return `${regionCode}:${normalizedLineName(lineName)}:${normalizedStationNameForMap(stationName)}`;
+}
+
+function firstMovePoint(path) {
+  const match = /M\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/i.exec(path);
+  if (!match) {
+    return null;
+  }
+  return { x: Number.parseFloat(match[1]), y: Number.parseFloat(match[2]) };
+}
+
+function parseCsv(csv) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index];
+    if (char === '"') {
+      if (quoted && csv[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+      continue;
+    }
+    if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+    if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && csv[index + 1] === "\n") {
+        index += 1;
+      }
+      row.push(cell);
+      if (row.some((value) => value.trim() !== "")) {
+        rows.push(row);
+      }
+      row = [];
+      cell = "";
+      continue;
+    }
+    cell += char;
+  }
+  if (cell || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function operatorIdFor(name) {
+  return knownOperatorIds.get(name) ?? `operator-${hash(name)}`;
+}
+
+function preferredOperatorId(lineId, fallback) {
+  if (lineId === "seoul-2" || lineId === "seoul-4" || lineId === "shinbundang" || lineId === "seoul-2-branch") {
+    return "seoul-metro";
+  }
+  return fallback;
+}
+
+function lineIdFor(regionName, lineName) {
+  return knownLineIds.get(`${regionName}:${lineName}`) ?? `line-${hash(`${regionName}:${lineName}`)}`;
+}
+
+function normalizedLineName(lineName) {
+  return {
+    "2호선 지선": "2호선",
+    동해: "동해선",
+    공항: "공항철도",
+    신분당: "신분당선",
+    서해선: "서해",
+    에버라인: "용인에버라인",
+    의정부: "의정부경전철",
+  }[lineName] ?? lineName;
+}
+
+function stationIdFor(regionName, stationName) {
+  return knownStationIds.get(`${regionName}:${stationName}`) ?? `station-${hash(`${regionName}:${stationName}`)}`;
+}
+
+function stationCodeFor(regionName, lineName, stationName, sequence) {
+  if (regionName === "수도권" && lineName === "4호선" && stationName === "상록수") {
+    return "448";
+  }
+  if (regionName === "수도권" && lineName === "4호선" && stationName === "사당") {
+    return "433";
+  }
+  if (regionName === "수도권" && lineName === "2호선" && stationName === "사당") {
+    return "226";
+  }
+  return String(sequence);
+}
+
+function regionLabel(regionName) {
+  return regionName.endsWith("권") ? regionName : `${regionName}권`;
+}
+
+function coverageRegionId(regionName) {
+  const regionId = {
+    수도권: "capital",
+    부산: "busan",
+    대구: "daegu",
+    광주: "gwangju",
+    대전: "daejeon",
+  }[regionName];
+  if (!regionId) {
+    throw new Error(`unknown coverage region: ${regionName}`);
+  }
+  return regionId;
+}
+
+function sourceInventoryEntries(sourceShaById) {
+  const common = {
+    owner: "국토교통부",
+    license: "공공데이터포털 이용허락범위 제한 없음",
+    licenseStatus: "redistributable",
+    redistributionAllowed: true,
+    updateFrequency: "annual",
+    updatedAt: verifiedAt,
+  };
+  return [
+    {
+      id: "kric-provider-code-catalog-20260228",
+      owner: "국가철도공단",
+      url: "https://data.kric.go.kr/rips/M_04_01/detail.do?id=395",
+      sourceSha256: sourceShaById.get("kric-provider-code-catalog-20260228") ?? "",
+      license: "철도 데이터 포털 공식 공개 코드정보(재배포 범위 검토 필요)",
+      licenseStatus: "review-required",
+      redistributionAllowed: false,
+      updateFrequency: "on-change",
+      updatedAt: "2026-02-28T00:00:00.000Z",
+      fields: ["provider_operator_code", "provider_line_code", "provider_station_code"],
+    },
+    {
+      ...common,
+      id: sourceId,
+      url: sourceUrl,
+      sourceSha256: sourceShaById.get(sourceId) ?? "",
+      fields: ["region", "operator_name", "line_name", "station_sequence", "station_name"],
+    },
+    {
+      ...common,
+      id: "molit-rail-station-svg-route",
+      url: "https://www.data.go.kr/data/15130544/fileData.do",
+      sourceSha256: sourceShaById.get("molit-rail-station-svg-route") ?? "",
+      fields: ["svg_file_name", "line_name", "station_name", "up_path", "down_path", "svg_order"],
+    },
+    {
+      id: seoulMetroSourceId,
+      owner: "서울교통공사",
+      // HTTP-only 원천이다(위 sourceUrl 주석의 실측과 같다). source-inventory.json의 등록 URL과 같아야 한다.
+      url: "http://www.seoulmetro.co.kr/kr/cyberStation.do",
+      sourceSha256: sourceShaById.get(seoulMetroSourceId) ?? "",
+      license: "공식 웹 공개 노선도 기준",
+      licenseStatus: "review-required",
+      redistributionAllowed: false,
+      updateFrequency: "unknown",
+      updatedAt: verifiedAt,
+      fields: ["line_color", "station_name", "station_coordinate", "label_position", "route_path"],
+    },
+    {
+      id: humetroSourceId,
+      owner: "부산교통공사",
+      url: "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
+      sourceSha256: sourceShaById.get(humetroSourceId) ?? "",
+      license: "공식 웹 공개 노선도 기준",
+      licenseStatus: "review-required",
+      redistributionAllowed: false,
+      updateFrequency: "unknown",
+      updatedAt: verifiedAt,
+      fields: ["station_name", "station_coordinate", "label_position", "route_path"],
+    },
+    {
+      id: grtcSourceId,
+      owner: "광주교통공사",
+      url: "https://www.grtc.co.kr/cyber/simple",
+      sourceSha256: sourceShaById.get(grtcSourceId) ?? "",
+      license: "공식 웹 공개 노선도 기준",
+      licenseStatus: "review-required",
+      redistributionAllowed: false,
+      updateFrequency: "unknown",
+      updatedAt: verifiedAt,
+      fields: ["station_name", "station_grid_area", "route_path"],
+    },
+    {
+      id: dtroSourceId,
+      owner: "대구교통공사",
+      url: "https://www.dtro.or.kr/front/dtro/cyberstation/station/cyberstation.do",
+      sourceSha256: sourceShaById.get(dtroSourceId) ?? "",
+      license: "공식 웹 공개 노선도 기준",
+      licenseStatus: "review-required",
+      redistributionAllowed: false,
+      updateFrequency: "unknown",
+      updatedAt: verifiedAt,
+      fields: ["station_name", "image_map_coordinate", "route_path"],
+    },
+    {
+      id: djtcSourceId,
+      owner: "대전교통공사",
+      url: "https://www.djtc.kr/kor/cyberStation.do?menuIdx=28",
+      sourceSha256: sourceShaById.get(djtcSourceId) ?? "",
+      license: "공식 웹 공개 노선도 기준",
+      licenseStatus: "review-required",
+      redistributionAllowed: false,
+      updateFrequency: "unknown",
+      updatedAt: verifiedAt,
+      fields: ["station_name", "station_coordinate", "route_path"],
+    },
+  ];
+}
+
+function hash(value) {
+  return createHash("sha1").update(value).digest("hex").slice(0, 12);
+}
+
+function byId(left, right) {
+  return codepointCompare(left.id, right.id);
+}
+
+function parseArgs(argv) {
+  const args = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    args[argv[index]?.replace(/^--/, "")] = argv[index + 1];
+  }
+  return args;
+}
+
+function requireArg(args, name) {
+  const value = args[name];
+  if (!value) {
+    throw new Error(`--${name} is required`);
+  }
+  return value;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  await main();
+}

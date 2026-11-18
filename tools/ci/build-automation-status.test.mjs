@@ -1,0 +1,971 @@
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  EXPIRING_SOURCE_LIMIT,
+  REFRESH_RUN_MAX_AGE_MS,
+  SNAPSHOT_MAX_BYTES,
+  STATUS_STAGES,
+  buildAutomationStatus,
+  collectAutomationStatus,
+  loadSourceFreshnessInputs,
+  main,
+  postAutomationStatus,
+  refreshWorkflowsOf,
+  sourceRefreshStages,
+} from "./build-automation-status.mjs";
+import { DEFAULT_RESOLUTIONS_PATH } from "../datapack/build-nationwide-coverage-tally.mjs";
+import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
+import { PROVIDER_BUDGET_BLOCK_STEP } from "./provider-call-budget.mjs";
+import { REFRESH_STAGES } from "./refresh-stage-contracts.mjs";
+
+const now = new Date("2026-10-10T03:00:00.000Z");
+const manifest = { releaseSequence: 129, publishedAt: "2026-10-09T10:29:36.200Z", expiresAt: "2026-10-11T15:00:00.000Z" };
+const hoursAgo = (hours) => new Date(now.getTime() - hours * 3_600_000).toISOString();
+
+const run = (id, overrides = {}) => ({
+  id, html_url: `https://github.com/AquilaXk/example/actions/runs/${id}`, status: "completed", conclusion: "success",
+  created_at: hoursAgo(2), updated_at: hoursAgo(1.9), event: "workflow_dispatch", head_branch: "main", display_title: "t", ...overrides,
+});
+
+const REPOSITORY = "AquilaXk/easysubway-data";
+const APP_USER = { login: "easysubway-release-chain[bot]", id: 337648189, type: "Bot" };
+const ownPull = (number, ref, createdHoursAgo, overrides = {}) => ({
+  number, title: `PR ${number}`, html_url: `https://github.com/${REPOSITORY}/pull/${number}`,
+  created_at: hoursAgo(createdHoursAgo), head: { ref, repo: { full_name: REPOSITORY } }, user: APP_USER, ...overrides,
+});
+
+// 재확인 recipe 연체 판정 입력(#3036 7-27). 정책은 실제 SLA 파일이고, 원장은 recipe가 만료 기준으로 삼는 head마다 한 행(기본: 한 시간 전 수집, P7D 만료)이다.
+const FRESHNESS_POLICY = JSON.parse(readFileSync(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url), "utf8"));
+const CALL_BUDGET_POLICY = JSON.parse(readFileSync(new URL("../../release/product-gates/provider-daily-call-budget.json", import.meta.url), "utf8"));
+const LEDGER_HEAD_SOURCE_IDS = REVERIFICATION_RECIPES.flatMap(({ due }) => (due?.kind === "ledger-head" ? due.sourceIds : []));
+const ledgerHeadRow = (sourceId, basisAt, freshnessExpiresAt) => ({
+  sourceId, snapshotId: `${sourceId}-1`, previousSnapshotId: null, retrievedAt: basisAt, serviceEffectiveAt: basisAt, freshnessExpiresAt,
+});
+const reverificationLedger = (overrides = {}) => LEDGER_HEAD_SOURCE_IDS.map((id) => overrides[id] ?? ledgerHeadRow(id, hoursAgo(1), hoursAgo(-7 * 24)));
+
+const emptyInputs = () => ({
+  now, repository: REPOSITORY, manifest, stageRuns: {}, issues: [], openPulls: [], claimRefs: [], behind: { actions: [], anomalies: [] },
+  sourceLedger: reverificationLedger(), freshnessPolicy: FRESHNESS_POLICY, providerCallBudget: CALL_BUDGET_POLICY,
+});
+
+test("스냅샷은 활성 데이터팩과 모든 단계를 담고, 기록이 없는 단계는 latest null로 드러낸다", () => {
+  const snapshot = buildAutomationStatus(emptyInputs());
+  assert.equal(snapshot.schemaVersion, 1);
+  assert.equal(snapshot.artifactKind, "automation-status-snapshot");
+  assert.equal(snapshot.generatedAt, now.toISOString());
+  assert.deepEqual(snapshot.activeDatapack, manifest);
+  assert.deepEqual(snapshot.stages.map((stage) => stage.id),
+    ["refresh", "registration", "reverification", "candidate", "rc", "compat", "promotion", "publish", "deploy"]);
+  for (const stage of snapshot.stages) {
+    assert.equal(stage.latest, null, stage.id);
+    assert.equal(stage.lastSuccessAt, null, stage.id);
+    assert.equal(stage.inFlight, false, stage.id);
+    assert.equal(typeof stage.label, "string");
+  }
+  assert.deepEqual(snapshot.failureIssues, []);
+  assert.deepEqual(snapshot.stuck, { pulls: [], claims: [], behindCap: [] });
+  assert.equal(snapshot.candidateInFlight, false);
+  assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < SNAPSHOT_MAX_BYTES);
+});
+
+test("단계마다 가장 최근 run과 마지막 성공 시각을 고르고, mode가 다른 run은 섞지 않는다", () => {
+  const snapshot = buildAutomationStatus({
+    ...emptyInputs(),
+    stageRuns: {
+      candidate: [
+        run(1, { created_at: hoursAgo(10), updated_at: hoursAgo(9.9) }),
+        run(2, { created_at: hoursAgo(3), updated_at: hoursAgo(2.9), conclusion: "failure" }),
+      ],
+      // datapack-release.yml 한 workflow에서 RC와 발행을 display_title로 가른다.
+      rc: [
+        run(10, { display_title: "Data Pack Release (exploratory)", created_at: hoursAgo(1) }),
+        run(11, { display_title: "Data Pack Release (release-candidate)", created_at: hoursAgo(6) }),
+        run(12, { display_title: "Data Pack Release (production-publish)", created_at: hoursAgo(5) }),
+      ],
+      publish: [
+        run(12, { display_title: "Data Pack Release (production-publish)", created_at: hoursAgo(5), updated_at: hoursAgo(4.9) }),
+        run(11, { display_title: "Data Pack Release (release-candidate)", created_at: hoursAgo(6) }),
+      ],
+      // hub 호환성은 dispatch run만, 배포는 DEPLOY run-name만 센다.
+      compat: [run(20, { event: "push", created_at: hoursAgo(0.5) }), run(21, { created_at: hoursAgo(4) })],
+      deploy: [
+        run(30, { display_title: "PREVIEW backend=1/2 data=3/4", created_at: hoursAgo(0.5) }),
+        run(31, { display_title: "DEPLOY backend=1/2 data=3/4", created_at: hoursAgo(4), updated_at: hoursAgo(3.9) }),
+        run(32, { display_title: "Source-free Journey K3s Deploy", created_at: hoursAgo(0.2) }),
+      ],
+    },
+  });
+  const stage = (id) => snapshot.stages.find((item) => item.id === id);
+  assert.equal(stage("candidate").latest.runId, 2);
+  assert.equal(stage("candidate").latest.conclusion, "failure");
+  assert.equal(stage("candidate").lastSuccessAt, hoursAgo(9.9));
+  assert.equal(stage("rc").latest.runId, 11);
+  assert.equal(stage("publish").latest.runId, 12);
+  assert.equal(stage("compat").latest.runId, 21);
+  assert.equal(stage("deploy").latest.runId, 31);
+  assert.deepEqual(stage("deploy").latest, {
+    runId: 31, url: "https://github.com/AquilaXk/example/actions/runs/31", status: "completed", conclusion: "success",
+    createdAt: hoursAgo(4), updatedAt: hoursAgo(3.9),
+  });
+});
+
+test("진행 중인 run은 inFlight이고 후보~배포가 진행 중이면 candidateInFlight다", () => {
+  const running = (id) => run(id, { status: "in_progress", conclusion: null, created_at: hoursAgo(0.1) });
+  for (const stageId of ["candidate", "rc", "compat", "promotion", "publish", "deploy"]) {
+    const runs = stageId === "rc" ? [{ ...running(1), display_title: "Data Pack Release (release-candidate)" }]
+      : stageId === "publish" ? [{ ...running(1), display_title: "Data Pack Release (production-publish)" }]
+        : stageId === "deploy" ? [{ ...running(1), display_title: "DEPLOY backend=1/2 data=3/4" }] : [running(1)];
+    const snapshot = buildAutomationStatus({ ...emptyInputs(), stageRuns: { [stageId]: runs } });
+    assert.equal(snapshot.stages.find((stage) => stage.id === stageId).inFlight, true, stageId);
+    assert.equal(snapshot.candidateInFlight, true, stageId);
+  }
+  // 정기 원천 갱신 단계가 진행 중인 것은 후보가 오고 있다는 뜻이 아니다.
+  const refreshing = buildAutomationStatus({ ...emptyInputs(), stageRuns: { refresh: [running(1)] } });
+  assert.equal(refreshing.candidateInFlight, false);
+  // 열린 후보 갱신 PR도 후보가 오고 있다는 뜻이다.
+  const openCandidatePr = buildAutomationStatus({
+    ...emptyInputs(),
+    openPulls: [ownPull(5, "automation/927-nationwide-candidate-refresh-1", 1)],
+  });
+  assert.equal(openCandidatePr.candidateInFlight, true);
+});
+
+test("열린 실패 이슈는 자동화 실패 제목만, 최근 순으로 담는다", () => {
+  const issue = (number, title, login = "app/github-actions") => ({
+    number, title, url: `https://github.com/AquilaXk/easysubway-data/issues/${number}`, createdAt: hoursAgo(number), author: { login },
+  });
+  const snapshot = buildAutomationStatus({
+    ...emptyInputs(),
+    issues: [
+      issue(3, "[Fix] 원천 자동 갱신 실패: 후보 (nationwide-candidate-refresh.yml)"),
+      issue(7, "[Fix] 원천 자동 갱신 실패: 체인 (datapack-release-cross-repo-chain.yml)", "github-actions[bot]"),
+      issue(9, "[Feat] 무관한 이슈"),
+      issue(11, "[Fix] 원천 자동 갱신 실패: 사람이 쓴 이슈", "AquilaXk"),
+    ],
+  });
+  assert.deepEqual(snapshot.failureIssues.map((item) => item.number), [7, 3]);
+  assert.deepEqual(snapshot.failureIssues[0], {
+    number: 7, title: "[Fix] 원천 자동 갱신 실패: 체인 (datapack-release-cross-repo-chain.yml)",
+    url: "https://github.com/AquilaXk/easysubway-data/issues/7", createdAt: hoursAgo(7),
+  });
+});
+
+test("막힌 자동화: 뒤처진 PR, 오래 열린 PR, 주인 없는 claim, BEHIND 상한 도달을 구분해 담는다", () => {
+  const pull = (number, ref, createdHoursAgo) => ownPull(number, ref, createdHoursAgo);
+  const snapshot = buildAutomationStatus({
+    ...emptyInputs(),
+    openPulls: [
+      pull(1, "automation/636-current-topology-refresh-100", 1),
+      pull(2, "automation/636-current-topology-refresh-101", 8),
+      pull(3, "automation/636-current-topology-refresh-102", 9),
+      pull(4, "feature/human-branch", 30),
+    ],
+    behind: {
+      actions: [{ number: 3, branch: "automation/636-current-topology-refresh-102", stage: "capital-topology-refresh", workflow: "x.yml" }],
+      anomalies: [{ stage: "registration", number: 1, closures: 3 }],
+    },
+    claimRefs: [
+      { branch: "automation/636-current-topology-refresh-90", committedAt: hoursAgo(5) },
+      { branch: "automation/636-current-topology-refresh-91", committedAt: hoursAgo(0.5) },
+    ],
+  });
+  assert.deepEqual(snapshot.stuck.pulls.map(({ number, reason }) => [number, reason]), [[1, "BEHIND"], [2, "OLD"], [3, "BEHIND"]]);
+  assert.deepEqual(snapshot.stuck.claims, [{ branch: "automation/636-current-topology-refresh-90", committedAt: hoursAgo(5) }]);
+  assert.deepEqual(snapshot.stuck.behindCap, [{ stage: "registration", number: 1, closures: 3 }]);
+});
+
+test("활성 manifest를 읽을 수 없거나 값이 어긋나면 만들어 내지 않고 실패한다", () => {
+  for (const bad of [
+    null, {}, { releaseSequence: 0, publishedAt: manifest.publishedAt, expiresAt: manifest.expiresAt },
+    { releaseSequence: 1.5, publishedAt: manifest.publishedAt, expiresAt: manifest.expiresAt },
+    { releaseSequence: 129, publishedAt: "nope", expiresAt: manifest.expiresAt },
+    { releaseSequence: 129, publishedAt: manifest.publishedAt, expiresAt: undefined },
+  ]) {
+    assert.throws(() => buildAutomationStatus({ ...emptyInputs(), manifest: bad }), /STATUS_MANIFEST_INVALID/u, JSON.stringify(bad));
+  }
+  assert.throws(() => buildAutomationStatus({ ...emptyInputs(), now: new Date("x") }), /STATUS_CLOCK/u);
+});
+
+test("수집: 단계별 workflow run 목록과 열린 이슈·PR·claim을 읽어 스냅샷 입력을 만든다", async () => {
+  const calls = [];
+  const runsByWorkflow = {
+    "current-capital-topology-refresh.yml": [run(1)],
+    "release-artifacts.yml": [run(2)],
+  };
+  const apiFor = (repository) => async (endpoint) => {
+    calls.push(`${repository} ${endpoint}`);
+    let match;
+    if ((match = /actions\/workflows\/([^/]+)\/runs/u.exec(endpoint))) return { workflow_runs: runsByWorkflow[match[1]] ?? [] };
+    if (/git\/matching-refs\/heads\/automation\//u.test(endpoint)) {
+      return [{ ref: "refs/heads/automation/636-current-topology-refresh-90", object: { sha: "a".repeat(40) } }];
+    }
+    if (/commits\/a{40}$/u.test(endpoint)) return { commit: { committer: { date: hoursAgo(5) } } };
+    if (/pulls\?state=open/u.test(endpoint)) return [];
+    throw new Error(`unexpected ${endpoint}`);
+  };
+  const collected = await collectAutomationStatus({
+    now,
+    repositories: { data: "AquilaXk/easysubway-data", hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" },
+    apis: { data: apiFor("data"), hub: apiFor("hub"), platform: apiFor("platform") },
+    listFailureIssues: async () => [],
+    fetchManifest: async () => manifest,
+    planBehind: async () => ({ actions: [], anomalies: [] }),
+  });
+  assert.deepEqual(collected.manifest, manifest);
+  assert.equal(collected.stageRuns.refresh[0].id, 1);
+  assert.equal(collected.stageRuns.compat[0].id, 2);
+  assert.deepEqual(collected.claimRefs, [{ branch: "automation/636-current-topology-refresh-90", committedAt: hoursAgo(5) }]);
+  // hub·platform 단계는 각자의 저장소 api로만 읽는다.
+  assert.ok(calls.some((call) => call.startsWith("hub ") && call.includes("release-artifacts.yml")));
+  assert.ok(calls.some((call) => call.startsWith("platform ") && call.includes("source-free-journey-k3s-deploy.yml")));
+  assert.ok(calls.filter((call) => call.startsWith("data ")).every((call) => !call.includes("release-artifacts.yml") && !call.includes("k3s-deploy")));
+  // 수집 결과를 그대로 스냅샷으로 만들 수 있다.
+  const snapshot = buildAutomationStatus({ now, ...collected, issues: [] });
+  assert.equal(snapshot.stages.find((stage) => stage.id === "refresh").latest.runId, 1);
+  assert.equal(snapshot.stuck.claims.length, 1);
+});
+
+test("수집: 어느 단계의 조회라도 실패하면 빈 값으로 채우지 않고 실패한다", async () => {
+  const failing = async () => { throw new Error("rate limited"); };
+  await assert.rejects(collectAutomationStatus({
+    now,
+    repositories: { data: "AquilaXk/easysubway-data", hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" },
+    apis: { data: async () => ({ workflow_runs: [] }), hub: failing, platform: async () => ({ workflow_runs: [] }) },
+    listFailureIssues: async () => [], fetchManifest: async () => manifest, planBehind: async () => ({ actions: [], anomalies: [] }),
+  }), /rate limited/u);
+});
+
+test("게시: backend 주소와 서비스 토큰이 있어야 하고, 응답이 2xx가 아니면 실패한다", async () => {
+  const snapshot = buildAutomationStatus(emptyInputs());
+  const requests = [];
+  const fetchOk = async (url, init) => { requests.push({ url, init }); return { ok: true, status: 202 }; };
+  await postAutomationStatus({ snapshot, apiBaseUrl: "https://api.example.invalid/", token: "svc-token", fetchImpl: fetchOk });
+  assert.equal(requests[0].url, "https://api.example.invalid/admin/api/datapack/automation-status");
+  assert.equal(requests[0].init.method, "POST");
+  assert.equal(requests[0].init.headers.authorization, "Bearer svc-token");
+  assert.equal(requests[0].init.headers["content-type"], "application/json");
+  assert.deepEqual(JSON.parse(requests[0].init.body), snapshot);
+  await assert.rejects(postAutomationStatus({ snapshot, apiBaseUrl: "https://api.example.invalid", token: "t", fetchImpl: async () => ({ ok: false, status: 403 }) }), /STATUS_POST_FAILED[\s\S]*403/u);
+  await assert.rejects(postAutomationStatus({ snapshot, apiBaseUrl: "https://api.example.invalid", token: "", fetchImpl: fetchOk }), /STATUS_POST_ARGUMENTS/u);
+  await assert.rejects(postAutomationStatus({ snapshot, apiBaseUrl: "http://api.example.invalid", token: "t", fetchImpl: fetchOk }), /STATUS_POST_ARGUMENTS/u);
+  await assert.rejects(postAutomationStatus({ snapshot: { ...snapshot, padding: "x".repeat(SNAPSHOT_MAX_BYTES) }, apiBaseUrl: "https://api.example.invalid", token: "t", fetchImpl: fetchOk }), /STATUS_SNAPSHOT_TOO_LARGE/u);
+  assert.equal(STATUS_STAGES.length, 9);
+});
+
+test("main: EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN으로만 게시하고 EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN은 쓰지 않는다", async () => {
+  const posted = [];
+  const execGhImpl = async (args) => {
+    if (args[0] === "issue") return "[]";
+    const endpoint = args.at(-1);
+    if (endpoint.includes("/actions/workflows/")) return JSON.stringify({ workflow_runs: [] });
+    if (endpoint.includes("/pulls?")) return "[]";
+    if (endpoint.includes("/git/matching-refs/")) return "[]";
+    if (endpoint.includes("/commits/")) return JSON.stringify({ commit: { committer: { date: hoursAgo(1) } } });
+    throw new Error(`unexpected gh args: ${args.join(" ")}`);
+  };
+  const fetchImpl = async (url, init) => {
+    if (url === "https://datapack.example.invalid/catalog/current.json") {
+      return { ok: true, status: 200, json: async () => manifest };
+    }
+    posted.push({ url, init });
+    return { ok: true, status: 202 };
+  };
+  const baseEnv = {
+    GITHUB_REPOSITORY: REPOSITORY,
+    GH_TOKEN: "gh-read-token",
+    APP_READ_TOKEN: "app-read-token",
+    CHAIN_DATAPACK_BASE_URL: "https://datapack.example.invalid",
+    DEPLOY_PUBLIC_API_BASE_URL: "https://api.example.invalid",
+    EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN: "legacy-workflow-token",
+  };
+  await assert.rejects(
+    main(baseEnv, { execGhImpl, fetchImpl }),
+    /STATUS_POST_ARGUMENTS/u,
+  );
+  assert.equal(posted.length, 0);
+
+  await main(
+    { ...baseEnv, EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN: "dedicated-status-token" },
+    { execGhImpl, fetchImpl },
+  );
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].url, "https://api.example.invalid/admin/api/datapack/automation-status");
+  assert.equal(posted[0].init.headers.authorization, "Bearer dedicated-status-token");
+});
+
+test("fork PR·사람·위장 계정이 자동화 브랜치 이름을 써도 자동화 PR로 세지 않고 snapshot에 싣지 않는다", () => {
+  const branch = "automation/927-nationwide-candidate-refresh-1";
+  const html = '<img src=x onerror=alert(1)>';
+  const impostors = [
+    ownPull(21, branch, 9, { title: html, head: { ref: branch, repo: { full_name: "attacker/easysubway-data" } } }),
+    ownPull(22, branch, 9, { title: html, head: { ref: branch, repo: null } }),
+    ownPull(23, branch, 9, { title: html, user: { login: "AquilaXk", id: 1, type: "User" } }),
+    ownPull(24, branch, 9, { title: html, user: { login: "easysubway-release-chain[bot]", id: 1, type: "Bot" } }),
+    ownPull(25, branch, 9, { title: html, user: { login: "easysubway-release-chain[bot]", id: 337648189, type: "User" } }),
+    ownPull(26, branch, 9, { title: html, user: undefined }),
+  ];
+  const snapshot = buildAutomationStatus({ ...emptyInputs(), openPulls: impostors });
+  assert.deepEqual(snapshot.stuck.pulls, []);
+  assert.equal(snapshot.candidateInFlight, false, "위장 PR이 만료 임박 알림을 잠재우면 안 된다");
+  const claim = { branch, committedAt: hoursAgo(5) };
+  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), openPulls: impostors, claimRefs: [claim] }).stuck.claims, [claim], "위장 PR이 낡은 claim을 가리면 안 된다");
+  // github-actions[bot]이 만든 자기 저장소 PR은 자동화 PR이다.
+  const actionsPull = ownPull(30, branch, 9, { user: { login: "github-actions[bot]", id: 41898282, type: "Bot" } });
+  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), openPulls: [actionsPull] }).stuck.pulls.map((item) => item.number), [30]);
+});
+
+test("fork PR이 같은 이름의 claim 브랜치를 열린 PR로 가장해 낡은 claim을 가리지 못한다", async () => {
+  const branch = "automation/636-current-topology-refresh-90";
+  const forkPull = ownPull(40, branch, 5, { head: { ref: branch, repo: { full_name: "attacker/easysubway-data" } } });
+  const apis = {
+    data: async (endpoint) => {
+      if (endpoint.includes("/pulls?")) return [forkPull];
+      if (endpoint.includes("matching-refs")) return [{ ref: `refs/heads/${branch}`, object: { sha: "a".repeat(40) } }];
+      if (endpoint.includes("/commits/")) return { commit: { committer: { date: hoursAgo(5) } } };
+      if (endpoint.includes("/actions/workflows/")) return { workflow_runs: [] };
+      throw new Error(`unexpected ${endpoint}`);
+    },
+  };
+  apis.hub = apis.data;
+  apis.platform = apis.data;
+  const collected = await collectAutomationStatus({
+    now, repositories: { data: REPOSITORY, hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" }, apis,
+    listFailureIssues: async () => [], fetchManifest: async () => manifest, planBehind: async () => ({ actions: [], anomalies: [] }),
+  });
+  assert.deepEqual(collected.claimRefs, [{ branch, committedAt: hoursAgo(5) }]);
+  assert.equal(collected.repository, REPOSITORY);
+});
+
+test("snapshot에 실리는 PR 제목은 제어·양방향 문자를 지우고 길이를 제한하며, 잘못된 URL·제목은 만들어 내지 않고 실패한다", () => {
+  const branch = "automation/636-current-topology-refresh-100";
+  const dirty = `\u202Eevil\u0000 ${"가".repeat(300)}\n\u2066x`;
+  const [item] = buildAutomationStatus({ ...emptyInputs(), openPulls: [ownPull(50, branch, 9, { title: dirty })] }).stuck.pulls;
+  assert.ok(!/[\p{Cc}\p{Cf}]/u.test(item.title));
+  assert.equal([...item.title].length, 120);
+  assert.ok(item.title.startsWith("evil "));
+  for (const bad of [{ html_url: "https://evil.example/pull/50" }, { html_url: "javascript:alert(1)" }, { html_url: undefined }, { title: undefined }, { title: "\u202E\u200B" }]) {
+    assert.throws(() => buildAutomationStatus({ ...emptyInputs(), openPulls: [ownPull(50, branch, 9, bad)] }), /STATUS_PULL_INVALID/u, JSON.stringify(bad));
+  }
+  assert.throws(() => buildAutomationStatus({ ...emptyInputs(), repository: undefined }), /STATUS_ENV_INVALID/u);
+});
+
+// ---------- 곧 만료되는 원천 근거(#1116, backend#507) ----------
+
+const iso = (hoursFromNow) => new Date(now.getTime() + hoursFromNow * 3_600_000).toISOString();
+const evidenceSource = (id, freshUntilHours, { evidence = "scheduleAdmissionEvidence", displayName = `자료 ${id}`, productionUseAllowed = true } = {}) => ({
+  id, displayName, productionUseAllowed, [evidence]: { freshUntil: iso(freshUntilHours), snapshotId: `${id}-1` },
+});
+// 갱신 소유자가 없는 원천을 보이는 합성 id. 실제 원천 id를 쓰면 그 원천이 소유자를 얻는 순간 이 테스트가 깨진다(#1122).
+const UNOWNED_SOURCE_ID = "synthetic-source-without-refresh-owner";
+// 재확인 판정은 원장 행이 없는 KRIC 시간표 projection의 관측 시각도 읽는다. 실제 inventory처럼 모든 fixture가 싣고, 사용 원천이 아니라 목록에는 실리지 않는다.
+const KRIC_PROJECTION = {
+  id: "kric-nationwide-timetable-file", capitalScheduleAdmissionEvidence: { observedAt: hoursAgo(1) }, korailScheduleAdmissionEvidence: { observedAt: hoursAgo(1) },
+};
+const inventoryOf = (...sources) => ({ schemaVersion: 1, sources: [...sources, KRIC_PROJECTION] });
+// 갱신 단계마다 가장 최근에 끝난 run이 성공인 목록. 테스트가 단계별로 덮어쓴다.
+const REFRESH_STAGES_IN_USE = [...new Set(sourceRefreshStages().values())].sort();
+const refreshRunsOf = (overrides = {}) => Object.fromEntries(REFRESH_STAGES_IN_USE.map((stage) => [stage, overrides[stage] ?? [run(1, { created_at: hoursAgo(1), conclusion: "success" })]]));
+const expiring = (inputs) => buildAutomationStatus({ ...emptyInputs(), refreshRuns: refreshRunsOf(), ...inputs }).expiringSources;
+const failureIssue = (number, workflow) => ({
+  number, title: `[Fix] 원천 자동 갱신 실패: 이름 (${workflow})`, url: `https://github.com/${REPOSITORY}/issues/${number}`, createdAt: hoursAgo(1), author: { login: "app/github-actions" },
+});
+
+test("인벤토리를 주지 않으면 snapshot에 expiringSources가 없다: 기존 출력과 키가 같다(backend 배포 전 게이트)", () => {
+  const snapshot = buildAutomationStatus(emptyInputs());
+  assert.deepEqual(Object.keys(snapshot), ["schemaVersion", "artifactKind", "generatedAt", "activeDatapack", "stages", "failureIssues", "stuck", "candidateInFlight"]);
+  assert.equal(Object.hasOwn(snapshot, "expiringSources"), false);
+  const withInventory = buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf() });
+  assert.deepEqual(Object.keys(withInventory), [
+    "schemaVersion", "artifactKind", "generatedAt", "activeDatapack", "stages", "failureIssues", "stuck", "candidateInFlight", "expiringSources", "expiringSourcesTotalCount",
+  ]);
+  assert.deepEqual(withInventory.expiringSources, []);
+});
+
+test("같은 심각도 안에서는 만료가 이른 순서이고 같은 시각이면 sourceId 순이다. 항목은 backend 계약의 여섯 키뿐이다", () => {
+  const sources = [evidenceSource("zzz-tie", 17), evidenceSource("source-b", 18), evidenceSource("aaa-tie", 17), evidenceSource("source-a", 30)];
+  const list = expiring({ sourceInventory: inventoryOf(...sources) });
+  assert.deepEqual(list.map((item) => item.sourceId), ["aaa-tie", "zzz-tie", "source-b", "source-a"]);
+  assert.deepEqual(Object.keys(list[0]), ["sourceId", "name", "evidence", "freshUntil", "refreshStage", "refreshState"]);
+  assert.deepEqual(list[0], { sourceId: "aaa-tie", name: "자료 aaa-tie", evidence: "scheduleAdmissionEvidence", freshUntil: iso(17), refreshStage: null, refreshState: "NONE" });
+});
+
+// 소유 단계가 있고 단계 run이 성공이면 refreshState가 OK인 원천들(재확인 recipe 소유 일곱 개).
+const OK_OWNED_IDS = [
+  "seoul-metro-accessibility", "kric-station-convenience-standard", "daegu-line1-train-timetable", "daegu-line2-train-timetable", "daegu-line3-train-timetable",
+  "gwangju-transportation-accessibility", "daejeon-transportation-accessibility",
+];
+const capitalFailing = () => refreshRunsOf({ "capital-topology-refresh": [run(9, { created_at: hoursAgo(1), conclusion: "failure" })] });
+
+test("목록은 심각도 순으로 먼저 정렬해 상위 10개를 남긴다: 만료 > 6시간 안의 FAILED·BLOCKED·NONE > 12시간 안 > 먼 FAILED·BLOCKED·NONE > 먼 OK. 자르기 전 개수는 expiringSourcesTotalCount다", () => {
+  const sources = [
+    ...OK_OWNED_IDS.map((id, index) => evidenceSource(id, 2 + index)), // 12시간 안의 OK(주의 후보)
+    evidenceSource("none-far", 400), evidenceSource("none-near", 3), evidenceSource("expired-old", -240), evidenceSource("expired-new", -1),
+    evidenceSource("incheon-line1-train-timetable", 5), // 소유 단계가 있고 최근 run이 실패 -> FAILED
+    { ...evidenceSource("daejeon-station-distance-fare", 300) }, // 먼 OK
+  ];
+  const snapshot = buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf(...sources), refreshRuns: capitalFailing() });
+  assert.equal(snapshot.expiringSourcesTotalCount, 13);
+  assert.equal(snapshot.expiringSources.length, EXPIRING_SOURCE_LIMIT);
+  assert.deepEqual(snapshot.expiringSources.map((item) => [item.sourceId, item.refreshState]), [
+    ["expired-old", "NONE"], ["expired-new", "NONE"], ["none-near", "NONE"], ["incheon-line1-train-timetable", "FAILED"],
+    ["seoul-metro-accessibility", "OK"], ["kric-station-convenience-standard", "OK"], ["daegu-line1-train-timetable", "OK"], ["daegu-line2-train-timetable", "OK"],
+    ["daegu-line3-train-timetable", "OK"], ["gwangju-transportation-accessibility", "OK"],
+  ]);
+});
+
+test("12시간 밖에서는 FAILED·BLOCKED·NONE이 OK보다 먼저 남는다(열두 개 fixture)", () => {
+  const owned = [...OK_OWNED_IDS, "busan-transportation-route-topology", "gwangju-transportation-route-topology", "daejeon-station-distance-fare"];
+  const sources = [
+    ...owned.map((id, index) => evidenceSource(id, 100 + index)), // 먼 OK 열 개, 가장 일찍 만료돼도
+    evidenceSource("incheon-line1-train-timetable", 500), evidenceSource("none-far", 400),
+  ];
+  const snapshot = buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf(...sources), refreshRuns: capitalFailing() });
+  assert.equal(snapshot.expiringSourcesTotalCount, 12);
+  assert.deepEqual(snapshot.expiringSources.slice(0, 2).map((item) => [item.sourceId, item.refreshState]), [["none-far", "NONE"], ["incheon-line1-train-timetable", "FAILED"]]);
+  assert.equal(snapshot.expiringSources.length, 10);
+  assert.deepEqual(snapshot.expiringSources.slice(2).map((item) => [item.sourceId, item.refreshState]), owned.slice(0, 8).map((id) => [id, "OK"]));
+});
+
+test("12시간 안에 만료되는 OK 근거는 먼 NONE 근거에 밀려 잘리지 않는다(backend의 주의 판정이 보아야 한다)", () => {
+  const sources = [
+    ...Array.from({ length: 10 }, (_, index) => evidenceSource(`none-far-${String(index).padStart(2, "0")}`, 1000 + index)),
+    evidenceSource("seoul-metro-accessibility", 2),
+  ];
+  const [first, second] = expiring({ sourceInventory: inventoryOf(...sources) });
+  assert.deepEqual([first.sourceId, first.refreshState, second.sourceId], ["seoul-metro-accessibility", "OK", "none-far-00"]);
+});
+
+test("totalCount는 잘리지 않았으면 목록 개수와 같고, 대상 원천이 없으면 0이다", () => {
+  const few = buildAutomationStatus({ ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(evidenceSource("a", 2), evidenceSource("b", 3)) });
+  assert.equal(few.expiringSourcesTotalCount, 2);
+  const none = buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf() });
+  assert.deepEqual([none.expiringSources, none.expiringSourcesTotalCount], [[], 0]);
+});
+
+// 공식 미지원 근거의 만료(전국 coverage resolutions nextReviewAt). gate가 같은 시각에 MISSING으로 되돌리므로 admin도 그 시각에 이상으로 드러내야 한다.
+const resolutionEntry = (nextReviewAtHours, overrides = {}) => ({
+  regionId: "daegu", operatorId: "daegu-transportation", lineId: "line-0ffaa95b1b5d", sourceDomain: "realtime_arrivals",
+  state: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE", nextReviewAt: iso(nextReviewAtHours), ...overrides,
+});
+const resolutionsOf = (...entries) => ({ schemaVersion: 1, artifactKind: "nationwide-coverage-resolutions", entries });
+const withResolutions = (...entries) => buildAutomationStatus({
+  ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(), coverageResolutions: resolutionsOf(...entries),
+});
+
+test("기한이 지난 공식 미지원 근거는 자동 갱신 없는 이미 만료 항목으로 싣고, 기한 전 근거와 시각 경계를 구분한다", () => {
+  const snapshot = withResolutions(
+    resolutionEntry(-1), resolutionEntry(0, { lineId: "line-5b8d9b05e7e6" }), resolutionEntry(0.5, { lineId: "line-e2938a4cc492" }),
+  );
+  assert.deepEqual(snapshot.expiringSources.map((item) => [item.sourceId, item.freshUntil]), [
+    ["coverage-daegu-daegu-transportation-line-0ffaa95b1b5d-realtime-arrivals", iso(-1)],
+    ["coverage-daegu-daegu-transportation-line-5b8d9b05e7e6-realtime-arrivals", iso(0)],
+    ["coverage-daegu-daegu-transportation-line-e2938a4cc492-realtime-arrivals", iso(0.5)],
+  ]);
+  assert.equal(snapshot.expiringSourcesTotalCount, 3);
+  assert.deepEqual(snapshot.expiringSources[0], {
+    sourceId: "coverage-daegu-daegu-transportation-line-0ffaa95b1b5d-realtime-arrivals",
+    name: "공식 미지원 근거 재감사 (daegu realtime_arrivals 3호선)",
+    evidence: "coverageResolution", freshUntil: iso(-1), refreshStage: null, refreshState: "NONE",
+  });
+});
+
+test("전국 coverage resolutions의 활성 36개 노선은 모두 내부 해시(line-*)가 아닌 한글 노선명으로 표시한다 (#3036 7-47)", () => {
+  const targets = JSON.parse(readFileSync(new URL("../datapack/nationwide-coverage-targets.json", import.meta.url), "utf8"));
+  const uniqueScopes = [...new Map(targets.activeLineScopes.map((scope) => [scope.lineId, scope])).values()];
+  assert.equal(uniqueScopes.length, 36);
+  const entries = uniqueScopes.map((scope, index) => resolutionEntry(index - 10, {
+    regionId: scope.regionId,
+    operatorId: scope.operatorId,
+    lineId: scope.lineId,
+    sourceDomain: "realtime_arrivals",
+  }));
+  for (const entry of entries) {
+    const [item] = withResolutions(entry).expiringSources;
+    assert.doesNotMatch(item.name, /\bline-[0-9a-f]+\b/u, `${entry.lineId} should resolve to Korean line name`);
+    assert.doesNotMatch(item.name, /\b(?:seoul-2|seoul-4|shinbundang)\b/u, `${entry.lineId} should resolve to Korean line name`);
+  }
+  const customNamed = withResolutions(resolutionEntry(-1, { lineId: "line-custom000001", lineName: "임시선" })).expiringSources[0];
+  assert.equal(customNamed.name, "공식 미지원 근거 재감사 (daegu realtime_arrivals 임시선)");
+});
+
+test("열린 실패 이슈 본문에 가드 사유 표지(refresh-failure-reason)가 있으면 관리자 스냅샷 제목 끝에 사유를 붙인다 (#3036 7-20)", () => {
+  const snapshot = buildAutomationStatus({
+    ...emptyInputs(),
+    issues: [
+      {
+        number: 16,
+        title: "[Fix] 원천 자동 갱신 실패: KRIC 역 편의시설·에스컬레이터 정기 갱신 (kric-current-facility-refresh.yml)",
+        url: "https://github.com/AquilaXk/easysubway-data/issues/16",
+        createdAt: hoursAgo(1),
+        author: { login: "app/github-actions" },
+        body: "<!-- refresh-failure-status:start -->\n<!-- refresh-failure-reason:reason=SECRET_MISSING secret=KRIC_SERVICE_KEY -->\n<!-- refresh-failure-status:end -->",
+      },
+      {
+        number: 15,
+        title: `[Fix] 원천 자동 갱신 실패: ${"가".repeat(280)}`,
+        url: "https://github.com/AquilaXk/easysubway-data/issues/15",
+        createdAt: hoursAgo(2),
+        author: { login: "app/github-actions" },
+        body: "<!-- refresh-failure-reason:reason=AUTOMATION_PR_CI -->",
+      },
+    ],
+  });
+  assert.equal(
+    snapshot.failureIssues[0].title,
+    "[Fix] 원천 자동 갱신 실패: KRIC 역 편의시설·에스컬레이터 정기 갱신 (kric-current-facility-refresh.yml) [reason=SECRET_MISSING secret=KRIC_SERVICE_KEY]",
+  );
+  assert.deepEqual(Object.keys(snapshot.failureIssues[0]), ["number", "title", "url", "createdAt"]);
+  assert.ok([...snapshot.failureIssues[1].title].length <= 300);
+  assert.ok(snapshot.failureIssues[1].title.endsWith(" [reason=AUTOMATION_PR_CI]"));
+});
+
+test("만료된 공식 미지원 근거는 먼 미래에 만료되는 원천에 밀려 목록에서 잘리지 않는다", () => {
+  const farSources = Array.from({ length: EXPIRING_SOURCE_LIMIT + 2 }, (_, index) => evidenceSource(`far-${index}`, 400 + index));
+  const snapshot = buildAutomationStatus({
+    ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(...farSources), coverageResolutions: resolutionsOf(resolutionEntry(-5)),
+  });
+  assert.equal(snapshot.expiringSources.length, EXPIRING_SOURCE_LIMIT);
+  assert.equal(snapshot.expiringSources[0].evidence, "coverageResolution");
+  assert.equal(snapshot.expiringSourcesTotalCount, EXPIRING_SOURCE_LIMIT + 3);
+});
+
+test("지원이 시작된 공식 미지원 근거는 gate가 terminal에서 뺐으므로 만료 항목으로 싣지 않는다. 근거 문서를 주지 않으면 항목이 없다", () => {
+  assert.deepEqual(withResolutions(resolutionEntry(-1, { supportStartedAt: hoursAgo(10) })).expiringSources, []);
+  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf() }).expiringSources, []);
+});
+
+test("저장소의 실제 공식 미지원 근거는 전부 snapshot 항목 계약을 만족한다", () => {
+  const { entries } = JSON.parse(readFileSync(new URL(`../../${DEFAULT_RESOLUTIONS_PATH}`, import.meta.url), "utf8"));
+  const snapshot = withResolutions(...entries);
+  assert.equal(snapshot.expiringSourcesTotalCount, entries.length);
+  assert.deepEqual(
+    snapshot.expiringSources.map((item) => item.freshUntil).sort(),
+    entries.map(({ nextReviewAt }) => nextReviewAt).sort(),
+  );
+});
+
+test("공식 미지원 근거 문서가 어긋나면 채우지 않고 실패한다", () => {
+  const build = (coverageResolutions) => () => buildAutomationStatus({ ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(), coverageResolutions });
+  assert.throws(build({ entries: "nope" }), /STATUS_INVENTORY_INVALID: coverage resolutions has no entries array/u);
+  assert.throws(build(null), /STATUS_INVENTORY_INVALID/u);
+  assert.throws(build(resolutionsOf(null)), /not an object/u);
+  assert.throws(build(resolutionsOf(resolutionEntry(1, { nextReviewAt: "2026-10-23" }))), /nextReviewAt is not a UTC instant/u);
+  assert.throws(build(resolutionsOf(resolutionEntry(1, { nextReviewAt: undefined }))), /nextReviewAt is not a UTC instant/u);
+  assert.throws(build(resolutionsOf(resolutionEntry(1, { sourceDomain: "Realtime Arrivals" }))), /does not match the snapshot contract/u);
+  assert.throws(build(resolutionsOf(resolutionEntry(1), resolutionEntry(2))), /duplicate source id/u);
+});
+
+test("원천 하나에 근거가 여럿이면 가장 이른 freshUntil 하나만 싣고 근거 종류는 원천 항목 아래 최상위 키다", () => {
+  const source = {
+    id: "daegu-line1-train-timetable", displayName: "대구 1호선 열차 시간표", productionUseAllowed: true,
+    scheduleAdmissionEvidence: { freshUntil: iso(20) },
+    routeMapAdmissionEvidence: { freshUntil: iso(500), currentTopologyAdmission: { freshUntil: iso(5) } },
+  };
+  const [item] = expiring({ sourceInventory: inventoryOf(source) });
+  assert.equal(item.evidence, "routeMapAdmissionEvidence");
+  assert.equal(item.freshUntil, iso(5));
+});
+
+test("productionUseAllowed가 아닌 원천과 freshUntil이 없는 원천은 싣지 않는다", () => {
+  const list = expiring({ sourceInventory: inventoryOf(
+    evidenceSource("used", 3), evidenceSource("unused", 2, { productionUseAllowed: false }), { id: "no-evidence", displayName: "근거 없음", productionUseAllowed: true },
+  ) });
+  assert.deepEqual(list.map((item) => item.sourceId), ["used"]);
+});
+
+test("이미 만료된 근거는 언제 만료됐든 싣는다(숨기지 않는다). productionUseAllowed가 아니면 싣지 않는다", () => {
+  const list = expiring({ sourceInventory: inventoryOf(
+    evidenceSource("just-expired", -0.01), evidenceSource("expired-23h", -23), evidenceSource("expired-24h", -24), evidenceSource("expired-week", -168),
+    evidenceSource("expired-year", -9000), evidenceSource("expired-disallowed", -5, { productionUseAllowed: false }), evidenceSource("future", 1),
+  ) });
+  assert.deepEqual(list.map((item) => item.sourceId), ["expired-year", "expired-week", "expired-24h", "expired-23h", "just-expired", "future"]);
+});
+
+test("갱신 단계는 소유 표(REFRESH_STAGES, 재확인 recipe)에서 오고, 소유자가 없으면 NONE이다", () => {
+  const stages = sourceRefreshStages();
+  assert.equal(stages.get("incheon-line1-train-timetable"), "capital-topology-refresh");
+  assert.equal(stages.get("kric-gyeongui-jungang-route-map-positions"), "capital-topology-refresh");
+  assert.equal(stages.get("seoul-metro-accessibility"), "seoul-accessibility-refresh");
+  assert.equal(stages.get("kric-station-convenience-standard"), "kric-facility-refresh");
+  assert.equal(stages.get("daegu-line1-train-timetable"), "source-reverification");
+  // #1122: 부산·대전·대구의 24시간 근거 원천 4건은 재확인 recipe가 소유한다. 소유자가 없는 원천은 아래 합성 id로 보인다.
+  for (const sourceId of ["busan-transportation-accessibility", "busan-transportation-timetable", "daejeon-train-timetable", "daegu-transportation-accessibility"]) {
+    assert.equal(stages.get(sourceId), "source-reverification", sourceId);
+  }
+  assert.equal(stages.get(UNOWNED_SOURCE_ID), undefined);
+  // 한 원천이 두 소유 표에 있으면 REFRESH_STAGES가 먼저다.
+  assert.equal(stages.get("kric-nationwide-timetable-file"), "gwangju-timetable-refresh");
+  const list = expiring({ sourceInventory: inventoryOf(evidenceSource("incheon-line1-train-timetable", 2), evidenceSource(UNOWNED_SOURCE_ID, 3)) });
+  assert.deepEqual(list.map((item) => [item.sourceId, item.refreshStage, item.refreshState]), [
+    [UNOWNED_SOURCE_ID, null, "NONE"],
+    ["incheon-line1-train-timetable", "capital-topology-refresh", "OK"],
+  ]);
+});
+
+// #1122: 필수·사용 가능 원천이 freshUntil 근거를 싣는데 갱신 소유자가 없으면 근거가 만료된 채 관리자 화면의 이상으로만 남는다.
+// 새 원천이 소유자 없이 들어오면 여기서 CI가 막는다. 예외는 사유와 추적 이슈(#<번호>)를 함께 둔 표로만 허용하고, 예외가 더는 필요 없어지면(소유자가 생기거나 필수가 아니게 되면) 표에서 지우게 한다.
+const OWNERLESS_REQUIRED_SOURCES = Object.freeze({});
+// freshUntil 근거를 싣지 않는 필수 원천. 근거 객체가 사라진 원천이 조용히 검사 밖으로 빠지지 않도록 현재 목록을 고정하고, 늘면 CI가 막는다.
+const REQUIRED_WITHOUT_FRESH_UNTIL = Object.freeze({
+  "incheon-transit-accessibility": "freshUntil 근거가 없고 신선도는 정책 클래스 기간(P90D)으로 판정한다. 등록 근거 #622.",
+  "molit-urban-rail-full-route": "연 단위 정적 기준 파일이라 freshUntil 근거가 없고 정책 클래스 기간(P30D)으로 판정한다. 등록 근거 #1397.",
+  "capital-route-topology": "freshUntil은 원장 행에 있고 inventory 근거에는 없다(P7D, 자기 workflow가 갱신). 등록 근거 #456.",
+  "kric-nationwide-timetable-file": "관측 시각(observedAt) 기준 projection 근거라 freshUntil이 없다(P7D, 재확인 recipe와 보관본 workflow). 등록 근거 #899.",
+});
+const TRACKING_ISSUE = /#[1-9]\d*/u;
+
+function* freshUntilOf(value) {
+  if (Array.isArray(value)) for (const item of value) yield* freshUntilOf(item);
+  else if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (key === "freshUntil") yield child;
+      else yield* freshUntilOf(child);
+    }
+  }
+}
+
+test("필수·사용 가능 원천의 freshUntil 근거는 모두 갱신 소유자가 있고 소유자는 그 근거 필드를 갱신 대상으로 선언한다 (#1122)", () => {
+  const { sources } = JSON.parse(readFileSync(new URL("../datapack/source-inventory.json", import.meta.url), "utf8"));
+  const stages = sourceRefreshStages();
+  const required = sources.filter((source) => source.requiredForProductionPack === true && source.productionUseAllowed === true);
+  const evidenceKeysOf = (source) => Object.keys(source).filter((key) => [...freshUntilOf(source[key])].length > 0);
+  const withEvidence = required.filter((source) => evidenceKeysOf(source).length > 0);
+  // 근거 객체가 사라진 필수 원천은 여기서 드러난다: freshUntil이 없는 필수 원천은 표에 있는 것뿐이다.
+  assert.deepEqual(required.filter((source) => evidenceKeysOf(source).length === 0).map(({ id }) => id).sort(), Object.keys(REQUIRED_WITHOUT_FRESH_UNTIL).sort());
+  assert.deepEqual(withEvidence.filter(({ id }) => !stages.has(id)).map(({ id }) => id).sort(), Object.keys(OWNERLESS_REQUIRED_SOURCES).sort());
+  // 소유자가 있어도 freshUntil을 담은 근거 필드를 갱신 대상으로 선언하지 않으면 근거가 옛 값으로 남는다.
+  const declaredFields = (id) => {
+    const stage = stages.get(id);
+    if (stage === "source-reverification") return REVERIFICATION_RECIPES.find((recipe) => recipe.sourceIds.includes(id)).inventoryChanges[id];
+    return REFRESH_STAGES[stage].owned[id];
+  };
+  for (const source of withEvidence.filter(({ id }) => stages.has(id))) {
+    for (const key of evidenceKeysOf(source)) assert.ok(declaredFields(source.id).includes(key), `${source.id}: the owner does not declare ${key}`);
+  }
+  for (const table of [OWNERLESS_REQUIRED_SOURCES, REQUIRED_WITHOUT_FRESH_UNTIL]) {
+    for (const [id, reason] of Object.entries(table)) assert.match(reason, TRACKING_ISSUE, `${id}: an exception needs a tracking issue (#<number>)`);
+  }
+});
+
+test("갱신 작업 상태: 그 단계 workflow의 가장 최근에 끝난 run이 실패면 FAILED, 막힌 PR·주인 없는 claim·재생성 상한이 그 단계이면 BLOCKED, 아니면 OK (2026-10-10 인천 사례)", () => {
+  const inventory = inventoryOf(
+    evidenceSource("incheon-line1-train-timetable", 2), evidenceSource("seoul-metro-accessibility", 3),
+    evidenceSource("kric-station-convenience-standard", 4), evidenceSource("daegu-line1-train-timetable", 5), evidenceSource(UNOWNED_SOURCE_ID, 6),
+  );
+  const states = ({ runs = {}, ...inputs } = {}) => Object.fromEntries(expiring({ sourceInventory: inventory, refreshRuns: refreshRunsOf(runs), ...inputs }).map((item) => [item.sourceId, item.refreshState]));
+  assert.deepEqual(states(), {
+    "incheon-line1-train-timetable": "OK", "seoul-metro-accessibility": "OK", "kric-station-convenience-standard": "OK", "daegu-line1-train-timetable": "OK", [UNOWNED_SOURCE_ID]: "NONE",
+  });
+  // 인천 사례: 갱신 PR의 CI가 실패해 수도권 topology 갱신 workflow의 최근 run이 실패했다.
+  const failed = (id, conclusion = "failure") => [run(id, { created_at: hoursAgo(1), conclusion })];
+  for (const conclusion of ["failure", "timed_out", "startup_failure"]) {
+    assert.equal(states({ runs: { "capital-topology-refresh": failed(2, conclusion) } })["incheon-line1-train-timetable"], "FAILED", conclusion);
+  }
+  assert.equal(states({ runs: { "capital-topology-refresh": failed(2) } })["seoul-metro-accessibility"], "OK");
+  assert.equal(states({ runs: { "capital-topology-refresh": failed(2, "success") } })["incheon-line1-train-timetable"], "OK");
+  // 가장 최근에 끝난 run만 본다: 옛 실패 뒤에 성공이 있으면 OK이고, 진행 중인 run은 건너뛴다.
+  const newerSuccess = [run(5, { created_at: hoursAgo(2), conclusion: "failure" }), run(6, { created_at: hoursAgo(1), conclusion: "success" })];
+  assert.equal(states({ runs: { "capital-topology-refresh": newerSuccess } })["incheon-line1-train-timetable"], "OK");
+  const newerFailure = [run(5, { created_at: hoursAgo(2), conclusion: "success" }), run(6, { created_at: hoursAgo(1), conclusion: "failure" })];
+  assert.equal(states({ runs: { "capital-topology-refresh": newerFailure } })["incheon-line1-train-timetable"], "FAILED");
+  // 취소·건너뜀·neutral·진행 중은 건너뛰고 그 앞의 success 또는 failure로 정한다(동시성으로 취소된 재실행이 실패를 가리지 못한다).
+  for (const skippedConclusion of ["cancelled", "skipped", "neutral"]) {
+    const afterFailure = [run(5, { created_at: hoursAgo(3), conclusion: "failure" }), run(6, { created_at: hoursAgo(1), conclusion: skippedConclusion })];
+    assert.equal(states({ runs: { "capital-topology-refresh": afterFailure } })["incheon-line1-train-timetable"], "FAILED", skippedConclusion);
+    const afterSuccess = [run(5, { created_at: hoursAgo(3), conclusion: "success" }), run(6, { created_at: hoursAgo(1), conclusion: skippedConclusion })];
+    assert.equal(states({ runs: { "capital-topology-refresh": afterSuccess } })["incheon-line1-train-timetable"], "OK", skippedConclusion);
+  }
+  const runningOnTop = [run(5, { created_at: hoursAgo(3), conclusion: "failure" }), run(6, { created_at: hoursAgo(0.1), status: "in_progress", conclusion: null })];
+  assert.equal(states({ runs: { "capital-topology-refresh": runningOnTop } })["incheon-line1-train-timetable"], "FAILED");
+  // 열린 실패 이슈는 사람이 닫을 때까지 열려 있어 지금 실패 중이라는 뜻이 아니다: 최근 run이 성공이면 OK다.
+  assert.equal(states({ issues: [failureIssue(964, "current-capital-topology-refresh.yml")] })["incheon-line1-train-timetable"], "OK");
+  // 막힌 PR: stuck.pulls[].stage가 그 단계다(6시간 넘게 열려 있음).
+  const stuckPull = ownPull(1112, "automation/636-current-topology-refresh-1", 7);
+  assert.equal(states({ openPulls: [stuckPull] })["incheon-line1-train-timetable"], "BLOCKED");
+  assert.equal(states({ openPulls: [stuckPull] })["seoul-metro-accessibility"], "OK");
+  // 주인 없는 claim: 접두사가 그 단계의 claim 브랜치다.
+  assert.equal(states({ claimRefs: [{ branch: "automation/639-seoul-accessibility-refresh-9", committedAt: hoursAgo(3) }] })["seoul-metro-accessibility"], "BLOCKED");
+  // 재생성 상한 도달.
+  assert.equal(states({ behind: { actions: [], anomalies: [{ stage: "kric-facility-refresh", number: 8, closures: 3 }] } })["kric-station-convenience-standard"], "BLOCKED");
+  // 재확인 recipe 소유 원천은 source-reverification 단계다.
+  assert.equal(states({ runs: { "source-reverification": failed(3) } })["daegu-line1-train-timetable"], "FAILED");
+  // 실패가 막힘보다 앞선다.
+  assert.equal(states({ runs: { "capital-topology-refresh": failed(2) }, openPulls: [stuckPull] })["incheon-line1-train-timetable"], "FAILED");
+  // 자동 갱신 경로가 없는 원천은 다른 단계의 실패와 무관하게 NONE이다.
+  assert.equal(states({ runs: { "capital-topology-refresh": failed(2) } })[UNOWNED_SOURCE_ID], "NONE");
+});
+
+// #3036 7-27(2026-10-22 부산 사례): 재확인 workflow는 실패 run 사이에 수집 없이 성공으로 끝나는 대기 run(OPEN_PR·BLOCKED_BY_PENDING_PR·NOT_DUE·main 이동)을 낸다.
+// 마지막 run 하나로 정하면 연체된 recipe가 OK로 덮인다. 재확인 원천은 원장 recipe head의 연체(dueAt + scheduledPipeline.cadence, 또는 만료 경보 창)로도 판정한다.
+test("재확인 recipe가 연체면 실패 run 뒤에 대기 성공 run이 와도 그 recipe와 딸린 recipe의 원천은 FAILED다", () => {
+  assert.deepEqual([FRESHNESS_POLICY.scheduledPipeline.cadence, FRESHNESS_POLICY.monitoring.alertBeforePackExpiry], ["P1D", "PT6H"]);
+  const topology = "busan-transportation-route-topology";
+  const inventory = inventoryOf(
+    evidenceSource(topology, 60), evidenceSource("busan-transportation-accessibility", 60), evidenceSource("busan-transportation-timetable", 60),
+    evidenceSource("gwangju-transportation-accessibility", 60),
+  );
+  const waitingAfterFailure = refreshRunsOf({
+    "source-reverification": [run(2, { created_at: hoursAgo(1), conclusion: "success" }), run(1, { created_at: hoursAgo(1.3), conclusion: "failure" })],
+  });
+  const states = (busanHead) => Object.fromEntries(expiring({
+    sourceInventory: inventory, refreshRuns: waitingAfterFailure, sourceLedger: reverificationLedger({ [topology]: busanHead }),
+  }).map((item) => [item.sourceId, item.refreshState]));
+  // 수집 82시간 전: dueAt(+24시간)에서 하루가 더 지났다.
+  assert.deepEqual(states(ledgerHeadRow(topology, hoursAgo(82), iso(86))), {
+    [topology]: "FAILED", "busan-transportation-accessibility": "FAILED", "busan-transportation-timetable": "FAILED", "gwangju-transportation-accessibility": "OK",
+  });
+  // DUE지만 기한(dueAt + 하루) 안이면 지금처럼 마지막 run으로 정한다.
+  assert.equal(states(ledgerHeadRow(topology, hoursAgo(30), iso(138)))[topology], "OK");
+  // 만료 경보 창(만료 6시간 전) 안이면 수집이 최근이어도 연체다.
+  assert.equal(states(ledgerHeadRow(topology, hoursAgo(2), iso(5)))[topology], "FAILED");
+});
+
+// 재확인 recipe의 원천이 다른 단계(gwangju-timetable-refresh)의 소유여도 recipe가 연체면 FAILED다: 소유 단계의 마지막 run이 OK여도 연체는 가려지지 않는다.
+test("다른 단계가 소유한 원천도 재확인 recipe가 연체면 FAILED이고, 연체가 아니면 소유 단계의 마지막 run으로 정한다", () => {
+  const sourceId = "kric-nationwide-timetable-file";
+  assert.equal(sourceRefreshStages().get(sourceId), "gwangju-timetable-refresh");
+  assert.ok(REVERIFICATION_RECIPES.some((recipe) => recipe.sourceIds.includes(sourceId)), "the source is also a reverification recipe source");
+  const inventoryObservedAt = (observedAt) => ({
+    schemaVersion: 1,
+    sources: [{ ...evidenceSource(sourceId, 60), capitalScheduleAdmissionEvidence: { observedAt }, korailScheduleAdmissionEvidence: { observedAt } }],
+  });
+  const stateAt = (observedAt) => expiring({ sourceInventory: inventoryObservedAt(observedAt) })[0].refreshState;
+  // 관측 82시간 전: dueAt(+24시간)에서 하루가 더 지나 연체다. 소유 단계의 마지막 run은 성공이다.
+  assert.equal(stateAt(hoursAgo(82)), "FAILED");
+  // 관측 1시간 전이면 연체가 아니므로 소유 단계의 마지막 run(성공)으로 OK다.
+  assert.equal(stateAt(hoursAgo(1)), "OK");
+});
+
+// #3036: 부산 묶음이 공급자 하루 호출 예산·시도 상한에 막히면 그 KST 날이 끝날 때까지 다시 수집하지 않는다. 막은 run은 실패하지만 뒤이은 대기 run은 성공으로 끝나므로
+// 마지막 run만 보면 막힘이 OK로 덮인다. 오늘 예산 step이 실패한 run이 있고 묶음이 아직 DUE면 묶음의 원천은 FAILED다(연체와 같은 방식, #1437).
+test("부산 묶음이 오늘 호출 예산에 막혔으면 뒤이은 대기 성공 run이 있어도 묶음 원천은 FAILED다", () => {
+  const topology = "busan-transportation-route-topology";
+  const inventory = inventoryOf(
+    evidenceSource(topology, 60), evidenceSource("busan-transportation-accessibility", 60), evidenceSource("busan-transportation-timetable", 60),
+    evidenceSource("gwangju-transportation-accessibility", 60),
+  );
+  const waitingAfterBlock = refreshRunsOf({
+    "source-reverification": [run(2, { created_at: hoursAgo(1), conclusion: "success" }), run(1, { created_at: hoursAgo(1.3), conclusion: "failure" })],
+  });
+  const states = ({ busanHead, budgetBlockedRuns }) => Object.fromEntries(expiring({
+    sourceInventory: inventory, refreshRuns: waitingAfterBlock, sourceLedger: reverificationLedger({ [topology]: busanHead }), budgetBlockedRuns,
+  }).map((item) => [item.sourceId, item.refreshState]));
+  // 수집 30시간 전: DUE지만 연체 전이다. 예산 막힘이 없으면 마지막 run(대기 성공)으로 OK다.
+  const dueHead = ledgerHeadRow(topology, hoursAgo(30), iso(138));
+  assert.equal(states({ busanHead: dueHead, budgetBlockedRuns: [] })[topology], "OK");
+  assert.deepEqual(states({ busanHead: dueHead, budgetBlockedRuns: [1] }), {
+    [topology]: "FAILED", "busan-transportation-accessibility": "FAILED", "busan-transportation-timetable": "FAILED", "gwangju-transportation-accessibility": "OK",
+  });
+  // 막힌 뒤 같은 날 묶음이 등록돼 DUE가 아니면 막힘은 더 이상 이상이 아니다.
+  assert.equal(states({ busanHead: ledgerHeadRow(topology, hoursAgo(1), iso(167)), budgetBlockedRuns: [1] })[topology], "OK");
+});
+
+test("수집: 오늘(KST) 실패한 재확인 run의 job에서 예산 step 실패를 찾고, 어제 run·성공 run은 job을 읽지 않는다", async () => {
+  // now = 2026-10-10T03:00Z = KST 12:00. 오늘 KST는 2026-10-09T15:00Z부터다.
+  const reverificationRuns = [
+    run(30, { created_at: "2026-10-10T02:30:00Z", conclusion: "success" }),
+    run(31, { created_at: "2026-10-10T01:30:00Z", conclusion: "failure" }),
+    run(32, { created_at: "2026-10-09T23:30:00Z", conclusion: "failure" }),
+    run(33, { created_at: "2026-10-09T14:59:59Z", conclusion: "failure" }),
+  ];
+  const step = (name, conclusion) => ({ name, status: "completed", conclusion });
+  const jobsOf = {
+    31: [{ id: 1, name: "Source reverification", steps: [step("Reverify due P7D sources", "success"), step(PROVIDER_BUDGET_BLOCK_STEP, "skipped"), step("Report recipes that failed", "failure")] }],
+    32: [{ id: 2, name: "Source reverification", steps: [step("Reverify due P7D sources", "skipped"), step(PROVIDER_BUDGET_BLOCK_STEP, "failure")] }],
+  };
+  const requested = [];
+  const apis = {
+    data: async (endpoint) => {
+      requested.push(endpoint);
+      const jobs = endpoint.match(/actions\/runs\/(\d+)\/jobs/u);
+      if (jobs) return { total_count: (jobsOf[jobs[1]] ?? []).length, jobs: jobsOf[jobs[1]] ?? [] };
+      if (endpoint.includes("source-reverification.yml/runs?per_page=30&status=completed")) return { workflow_runs: reverificationRuns };
+      if (endpoint.includes("/actions/workflows/")) return { workflow_runs: [] };
+      return [];
+    },
+    hub: async () => ({ workflow_runs: [] }),
+    platform: async () => ({ workflow_runs: [] }),
+  };
+  const collected = await collectAutomationStatus({
+    now, repositories: { data: REPOSITORY, hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" }, apis,
+    listFailureIssues: async () => [], fetchManifest: async () => manifest, planBehind: async () => ({ actions: [], anomalies: [] }),
+    refreshWorkflows: { "source-reverification": "source-reverification.yml" },
+  });
+  assert.deepEqual(collected.budgetBlockedRuns, [32]);
+  assert.deepEqual(requested.filter((endpoint) => endpoint.includes("/jobs")), [
+    `repos/${REPOSITORY}/actions/runs/31/jobs?filter=latest&per_page=100`, `repos/${REPOSITORY}/actions/runs/32/jobs?filter=latest&per_page=100`,
+  ]);
+  await assert.rejects(collectAutomationStatus({
+    now, repositories: { data: REPOSITORY, hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" },
+    apis: { ...apis, data: async (endpoint) => (endpoint.includes("/jobs") ? { jobs: "nope" } : apis.data(endpoint)) },
+    listFailureIssues: async () => [], fetchManifest: async () => manifest, planBehind: async () => ({ actions: [], anomalies: [] }),
+    refreshWorkflows: { "source-reverification": "source-reverification.yml" },
+  }), /STATUS_RUNS_INVALID/u);
+});
+
+test("갱신 단계의 run 목록이 없으면 OK로 채우지 않고 실패한다", () => {
+  const inventory = inventoryOf(evidenceSource("incheon-line1-train-timetable", 2));
+  assert.throws(() => buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventory }), /STATUS_RUNS_INVALID.*capital-topology-refresh/u);
+  assert.throws(() => buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventory, refreshRuns: { "capital-topology-refresh": "nope" } }), /STATUS_RUNS_INVALID/u);
+  // 소유 단계가 없는 원천만 있으면 단계 run 목록이 필요 없다.
+  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf(evidenceSource(UNOWNED_SOURCE_ID, 2)) }).expiringSources.map((item) => item.refreshState), ["NONE"]);
+});
+
+test("refreshWorkflowsOf: 갱신 단계 id를 그 단계 workflow 파일로 옮긴다(소유 표에 쓰이는 단계만)", () => {
+  const workflows = refreshWorkflowsOf();
+  assert.deepEqual(Object.keys(workflows), [...REFRESH_STAGES_IN_USE]);
+  assert.equal(workflows["capital-topology-refresh"], "current-capital-topology-refresh.yml");
+  assert.equal(workflows["source-reverification"], "source-reverification.yml");
+  assert.equal(workflows["seoul-accessibility-refresh"], "seoul-current-accessibility-refresh.yml");
+  assert.equal(workflows["kric-facility-refresh"], "kric-current-facility-refresh.yml");
+  assert.equal(workflows["gwangju-timetable-refresh"], "retained-gwangju-timetable-refresh.yml");
+});
+
+test("판정할 success 또는 failure run이 48시간 안에 없으면 FAILED다(정기 실행이 멈춘 단계): 빈 목록, 오래된 성공, 건너뜀·취소뿐인 경우", () => {
+  assert.equal(REFRESH_RUN_MAX_AGE_MS, 48 * 3_600_000);
+  const inventory = inventoryOf(evidenceSource("incheon-line1-train-timetable", 30));
+  const stateWith = (runs) => expiring({ sourceInventory: inventory, refreshRuns: refreshRunsOf({ "capital-topology-refresh": runs }) })[0].refreshState;
+  assert.equal(stateWith([]), "FAILED");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(47), conclusion: "success" })]), "OK");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(49), conclusion: "success" })]), "FAILED");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(48), conclusion: "success" })]), "FAILED", "정확히 48시간은 밖이다");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(1), conclusion: "skipped" }), run(2, { created_at: hoursAgo(2), conclusion: "cancelled" })]), "FAILED");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(1), status: "in_progress", conclusion: null })]), "FAILED");
+  // 창 안의 성공이 창 밖의 실패보다 우선한다(오래된 실패는 보지 않는다).
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(60), conclusion: "failure" }), run(2, { created_at: hoursAgo(10), conclusion: "success" })]), "OK");
+  assert.throws(() => stateWith([run(1, { created_at: "not-a-time", conclusion: "success" })]), /STATUS_RUNS_INVALID/u);
+});
+
+test("수집: 갱신 workflow를 주면 단계마다 끝난 run 목록을 읽고, 안 주면 읽지 않는다. 응답이 목록이 아니면 실패한다", async () => {
+  const requested = [];
+  const apis = {
+    data: async (endpoint) => {
+      requested.push(endpoint);
+      if (endpoint.includes("/actions/workflows/")) return { workflow_runs: [] };
+      if (endpoint.includes("/git/matching-refs/")) return [];
+      return [];
+    },
+    hub: async () => ({ workflow_runs: [] }),
+    platform: async () => ({ workflow_runs: [] }),
+  };
+  const base = {
+    now, repositories: { data: REPOSITORY, hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" }, apis,
+    listFailureIssues: async () => [], fetchManifest: async () => manifest, planBehind: async () => ({ actions: [], anomalies: [] }),
+  };
+  const without = await collectAutomationStatus(base);
+  assert.equal(Object.hasOwn(without, "refreshRuns"), false);
+  const before = requested.length;
+  const withRuns = await collectAutomationStatus({ ...base, refreshWorkflows: { "capital-topology-refresh": "current-capital-topology-refresh.yml", "source-reverification": "source-reverification.yml" } });
+  assert.deepEqual(Object.keys(withRuns.refreshRuns), ["capital-topology-refresh", "source-reverification"]);
+  assert.deepEqual(requested.slice(before).filter((endpoint) => endpoint.includes("status=completed")), [
+    `repos/${REPOSITORY}/actions/workflows/current-capital-topology-refresh.yml/runs?per_page=30&status=completed&branch=main`,
+    `repos/${REPOSITORY}/actions/workflows/source-reverification.yml/runs?per_page=30&status=completed&branch=main`,
+  ]);
+  await assert.rejects(collectAutomationStatus({
+    ...base, apis: { ...apis, data: async (endpoint) => (endpoint.includes("/actions/workflows/") ? { not: "a list" } : apis.data(endpoint)) },
+    refreshWorkflows: { "source-reverification": "source-reverification.yml" },
+  }), /STATUS_RUNS_INVALID/u);
+});
+
+test("스냅샷의 expiringSources는 크기 상한 안이고 JSON 왕복이 같다", () => {
+  const sources = Array.from({ length: 40 }, (_, index) => evidenceSource(`source-${index}`, index + 1, { displayName: "가".repeat(200) }));
+  const snapshot = buildAutomationStatus({ ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(...sources) });
+  assert.equal(snapshot.expiringSources.length, 10);
+  assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < SNAPSHOT_MAX_BYTES);
+  assert.deepEqual(JSON.parse(JSON.stringify(snapshot)), snapshot);
+});
+
+test("인벤토리나 값이 어긋나면 채우지 않고 이름 있는 코드로 실패한다", () => {
+  const build = (sourceInventory) => () => buildAutomationStatus({ ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory });
+  assert.throws(build({ sources: "nope" }), /STATUS_INVENTORY_INVALID/u);
+  assert.throws(build(null), /STATUS_INVENTORY_INVALID/u);
+  assert.throws(build(inventoryOf(null)), /STATUS_INVENTORY_INVALID/u);
+  assert.throws(build(inventoryOf({ ...evidenceSource("a", 1), scheduleAdmissionEvidence: { freshUntil: "2026-10-10" } })), /STATUS_INVENTORY_INVALID.*freshUntil/u);
+  assert.throws(build(inventoryOf({ ...evidenceSource("a", 1), scheduleAdmissionEvidence: { freshUntil: 123 } })), /STATUS_INVENTORY_INVALID.*freshUntil/u);
+  assert.throws(build(inventoryOf(evidenceSource("Bad Id", 1))), /STATUS_INVENTORY_INVALID.*source id/u);
+  assert.throws(build(inventoryOf(evidenceSource("a", 1, { displayName: "" }))), /STATUS_INVENTORY_INVALID.*displayName/u);
+  assert.throws(build(inventoryOf({ ...evidenceSource("a", 1), displayName: undefined })), /STATUS_INVENTORY_INVALID.*displayName/u);
+  assert.throws(build(inventoryOf(evidenceSource("a", 1), evidenceSource("a", 2))), /STATUS_INVENTORY_INVALID.*duplicate/u);
+  assert.throws(build(inventoryOf({ ...evidenceSource("a", 1, { evidence: "bad-key" }) })), /STATUS_INVENTORY_INVALID.*evidence/u);
+});
+
+test("표시 이름은 제어·양방향 문자를 지우고 200자로 제한한다", () => {
+  const [item] = expiring({ sourceInventory: inventoryOf(evidenceSource("a", 1, { displayName: `인천\u202e 시간표\n${"가".repeat(300)}` })) });
+  assert.doesNotMatch(item.name, /[\u202e\n]/u);
+  assert.equal([...item.name].length, 200);
+  assert.ok(item.name.startsWith("인천 시간표 가"));
+});
+
+test("실제 source-inventory.json으로 만들어도 backend 계약(키·형식·정렬·상한)을 지킨다", () => {
+  const inventory = JSON.parse(readFileSync(new URL("../datapack/source-inventory.json", import.meta.url), "utf8"));
+  // 재확인 판정은 관측 시각보다 이른 시각을 거부한다(clock skew). 실데이터 기준 시각은 KRIC projection의 마지막 관측 시각부터 잡는다.
+  const kric = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  const observedUntil = Math.max(Date.parse(kric.capitalScheduleAdmissionEvidence.observedAt), Date.parse(kric.korailScheduleAdmissionEvidence.observedAt));
+  for (const hours of [0, 12, 300]) {
+    const at = new Date(observedUntil + hours * 3_600_000);
+    const snapshot = buildAutomationStatus({ ...emptyInputs(), now: at, sourceInventory: inventory, refreshRuns: refreshRunsOf() });
+    const list = snapshot.expiringSources;
+    assert.ok(list.length <= EXPIRING_SOURCE_LIMIT);
+    const rank = (item) => {
+      const remaining = Date.parse(item.freshUntil) - at.getTime();
+      if (remaining <= 0) return 0;
+      if (remaining <= 6 * 3_600_000 && item.refreshState !== "OK") return 1;
+      if (remaining <= 12 * 3_600_000) return 2;
+      return item.refreshState === "OK" ? 4 : 3;
+    };
+    assert.deepEqual([...list].sort((left, right) => rank(left) - rank(right) || Date.parse(left.freshUntil) - Date.parse(right.freshUntil) || (left.sourceId < right.sourceId ? -1 : 1)), list);
+    assert.ok(snapshot.expiringSourcesTotalCount >= list.length);
+    assert.equal(new Set(list.map((item) => item.sourceId)).size, list.length);
+    for (const item of list) {
+      assert.deepEqual(Object.keys(item), ["sourceId", "name", "evidence", "freshUntil", "refreshStage", "refreshState"]);
+      assert.match(item.sourceId, /^[a-z0-9][a-z0-9-]{0,99}$/u);
+      assert.match(item.evidence, /^[A-Za-z][A-Za-z0-9]{0,63}$/u);
+      assert.ok(item.name.length >= 1 && [...item.name].length <= 200);
+      assert.equal(item.refreshState === "NONE", item.refreshStage === null);
+      assert.ok(["OK", "FAILED", "BLOCKED", "NONE"].includes(item.refreshState));
+    }
+    assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < SNAPSHOT_MAX_BYTES);
+  }
+});
+
+test("loadSourceFreshnessInputs: 변수가 true일 때만 inventory·원장·신선도 정책을 읽고, 꺼짐·미설정이면 undefined, 알 수 없는 값·하나라도 못 읽으면 실패한다", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "status-inventory-"));
+  const files = {
+    "tools/datapack/source-inventory.json": inventoryOf(evidenceSource("a", 1)),
+    "tools/datapack/release/source-snapshots.json": reverificationLedger(),
+    "release/product-gates/datapack-freshness-sla.json": FRESHNESS_POLICY,
+    "release/product-gates/provider-daily-call-budget.json": CALL_BUDGET_POLICY,
+    [DEFAULT_RESOLUTIONS_PATH]: resolutionsOf(resolutionEntry(1)),
+  };
+  const load = (env, at = root) => loadSourceFreshnessInputs({ env, root: at });
+  const enabled = { AUTOMATION_STATUS_SOURCE_FRESHNESS: "true" };
+  try {
+    for (const [relative, value] of Object.entries(files)) {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+      await writeFile(path.join(root, relative), JSON.stringify(value));
+    }
+    assert.equal(await load({}), undefined);
+    assert.equal(await load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: "" }), undefined);
+    assert.equal(await load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: "false" }), undefined);
+    assert.deepEqual(await load(enabled), {
+      sourceInventory: files["tools/datapack/source-inventory.json"], sourceLedger: files["tools/datapack/release/source-snapshots.json"], freshnessPolicy: FRESHNESS_POLICY,
+      providerCallBudget: CALL_BUDGET_POLICY, coverageResolutions: files[DEFAULT_RESOLUTIONS_PATH],
+    });
+    for (const bad of ["TRUE", "1", "yes", " true"]) {
+      await assert.rejects(load({ AUTOMATION_STATUS_SOURCE_FRESHNESS: bad }), /STATUS_ENV_INVALID/u);
+    }
+    await assert.rejects(load(enabled, path.join(root, "missing")), /ENOENT/u);
+    for (const relative of Object.keys(files)) {
+      await writeFile(path.join(root, relative), "{not json");
+      await assert.rejects(load(enabled), new RegExp(`STATUS_INVENTORY_INVALID: ${relative}`, "u"));
+      await writeFile(path.join(root, relative), JSON.stringify(files[relative]));
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+// #1789 Phase 0 (P0.2): 부역명 필드 분리. 카탈로그의 name_ko가 "역명(부역명)"
+// 합성이라(예: "가야대(삼계)") 라벨이 길고 데이터가 뭉쳐 있다. name_sub 컬럼을
+// 더해 name_ko=역명 / name_sub=부역명으로 가른다. 라벨은 name_ko(이미
+// routeMapStationLabel이 괄호 축약), 검색은 name_sub도 히트(앱 matches()), 상세/탭은
+// name_sub 표기.
+//
+// 이 도구는 커밋 팩(capital)의 stations를 마이그레이션한다: name_sub 컬럼 추가(없으면)
+// 후 괄호 역들을 populate. 스키마 정의(catalog-schema.sql·build-datapack.mjs·drift
+// catalog_tables.dart)와 drift onUpgrade는 별도로 갱신한다. 데이터팩 전송 schemaVersion은
+// 범프하지 않는다(번들 팩을 같은 PR에서 갱신, 앱 drift가 열 때 컬럼 정합).
+//
+// 사용: node tools/datapack/split-station-subnames.mjs [--pack …] [--check]
+//
+// ⚠️ 재현성: 이 수술은 커밋 팩(capital)을 직접 변이하며 build-datapack 파이프라인에
+// 편입돼 있지 않다. 커밋된 capital.sqlite.gz가 부역명 분리의 정본이며, 소스 입력에서
+// 재빌드하면 되돌아간다. 도구는 idempotent(재실행 안전)하게 유지한다.
+import { isMainModule } from "../lib/is-main-module.mjs";
+import { mutatePack, parsePackArgs } from "../route-map/station-surgery.mjs";
+
+/**
+ * 순수: "역명(부역명)" → { nameKo: 역명, nameSub: 부역명 }.
+ * '('가 없거나 맨 앞이면 부역명은 빈 문자열(원문 유지). 첫 '(' 이전을 역명으로
+ * 취해 라벨 축약(routeMapStationLabel)과 base가 일치한다. 부역명은 첫 '('와 마지막
+ * ')' 사이(점·영문·숫자 보존).
+ */
+export function splitStationName(nameKo) {
+  const open = nameKo.indexOf("(");
+  if (open <= 0) {
+    return { nameKo: nameKo.trim(), nameSub: "" };
+  }
+  const close = nameKo.lastIndexOf(")");
+  const base = nameKo.slice(0, open).trim();
+  const sub = (close > open ? nameKo.slice(open + 1, close) : nameKo.slice(open + 1)).trim();
+  return { nameKo: base, nameSub: sub };
+}
+
+function main() {
+  const o = parsePackArgs(process.argv.slice(2));
+  mutatePack({
+    ...o,
+    tmpPrefix: "split-subnames-",
+    run: (db) => {
+      const cols = db.prepare("PRAGMA table_info(stations)").all().map((c) => c.name);
+      const rows = db
+        .prepare("SELECT id, name_ko, normalized_name, region FROM stations WHERE name_ko LIKE '%(%'")
+        .all();
+      if (o.check) {
+        console.log(
+          `(--check) name_sub 컬럼 ${cols.includes("name_sub") ? "있음" : "추가 예정"} · 괄호 역 ${rows.length}건 분리 예정`,
+        );
+        for (const r of rows.slice(0, 5)) {
+          const { nameKo, nameSub } = splitStationName(r.name_ko);
+          console.log(`    "${r.name_ko}" → "${nameKo}" + "${nameSub}"`);
+        }
+        return;
+      }
+      if (!cols.includes("name_sub")) {
+        db.exec("ALTER TABLE stations ADD COLUMN name_sub TEXT NOT NULL DEFAULT ''");
+      }
+      // 충돌 가드: 분리된 base가 다른 기존(괄호 없는) 역과 (name_ko,region)이
+      // 겹치면 별개 역을 같은 이름으로 붕괴시킬 수 있으므로 건너뛴다.
+      const existing = new Map();
+      for (const s of db
+        .prepare("SELECT id, name_ko, region FROM stations WHERE name_ko NOT LIKE '%(%'")
+        .all()) {
+        existing.set(`${s.name_ko}\u0000${s.region}`, s.id);
+      }
+      db.exec("BEGIN");
+      let n = 0;
+      const collisions = [];
+      // normalized_name도 base로 재계산한다(적재 시 합성 name_ko를 그대로 쓰므로
+      // 분리 후 name_ko↔normalized_name 불변식이 깨진다). 단, 이미 별도로 큐레이션된
+      // (name_ko와 다른) normalized_name은 보존한다.
+      const upd = db.prepare(
+        "UPDATE stations SET name_ko=?, name_sub=?, normalized_name=? WHERE id=?",
+      );
+      for (const r of rows) {
+        const { nameKo, nameSub } = splitStationName(r.name_ko);
+        if (!nameSub) continue;
+        const collideId = existing.get(`${nameKo}\u0000${r.region}`);
+        if (collideId && collideId !== r.id) {
+          collisions.push(`${r.name_ko}→${nameKo}(${collideId})`);
+          continue;
+        }
+        const newNorm = r.normalized_name === r.name_ko ? nameKo : r.normalized_name;
+        upd.run(nameKo, nameSub, newNorm, r.id);
+        n += 1;
+      }
+      db.exec("COMMIT");
+      console.log(`name_sub 컬럼 확보 · ${n}개 역 부역명 분리`);
+      if (collisions.length > 0) {
+        console.log(`⚠️ base 충돌로 건너뜀 ${collisions.length}건: ${collisions.join(", ")}`);
+      }
+    },
+  });
+}
+
+if (isMainModule(import.meta.url)) {
+  main();
+}

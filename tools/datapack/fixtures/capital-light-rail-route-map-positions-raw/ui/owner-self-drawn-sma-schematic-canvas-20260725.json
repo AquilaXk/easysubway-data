@@ -1,0 +1,332 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-30886152e4f8",
+  "stations": [
+    {
+      "stationCode": "1",
+      "stationName": "북한산우이",
+      "stationId": "station-3ad4357db746",
+      "x": 2455,
+      "y": 688,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2417,
+          "y": 693
+        },
+        {
+          "x": 2494,
+          "y": 693
+        },
+        {
+          "x": 2494,
+          "y": 715
+        },
+        {
+          "x": 2417,
+          "y": 715
+        }
+      ]
+    },
+    {
+      "stationCode": "2",
+      "stationName": "솔밭공원",
+      "stationId": "station-b328d222aa6b",
+      "x": 2392,
+      "y": 688,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2360,
+          "y": 693
+        },
+        {
+          "x": 2424,
+          "y": 693
+        },
+        {
+          "x": 2424,
+          "y": 715
+        },
+        {
+          "x": 2360,
+          "y": 715
+        }
+      ]
+    },
+    {
+      "stationCode": "3",
+      "stationName": "4.19민주묘지",
+      "stationId": "station-de6fe37e2345",
+      "x": 2328,
+      "y": 688,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2270,
+          "y": 693
+        },
+        {
+          "x": 2386,
+          "y": 693
+        },
+        {
+          "x": 2386,
+          "y": 715
+        },
+        {
+          "x": 2270,
+          "y": 715
+        }
+      ]
+    },
+    {
+      "stationCode": "4",
+      "stationName": "가오리",
+      "stationId": "station-76033dc7e872",
+      "x": 2262,
+      "y": 688,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2237,
+          "y": 693
+        },
+        {
+          "x": 2288,
+          "y": 693
+        },
+        {
+          "x": 2288,
+          "y": 715
+        },
+        {
+          "x": 2237,
+          "y": 715
+        }
+      ]
+    },
+    {
+      "stationCode": "5",
+      "stationName": "화계",
+      "stationId": "station-5e6c39bd0e3d",
+      "x": 2197,
+      "y": 688,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2178,
+          "y": 693
+        },
+        {
+          "x": 2216,
+          "y": 693
+        },
+        {
+          "x": 2216,
+          "y": 715
+        },
+        {
+          "x": 2178,
+          "y": 715
+        }
+      ]
+    },
+    {
+      "stationCode": "6",
+      "stationName": "삼양",
+      "stationId": "station-0cce8d2bc412",
+      "x": 2132,
+      "y": 688,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2113,
+          "y": 693
+        },
+        {
+          "x": 2151,
+          "y": 693
+        },
+        {
+          "x": 2151,
+          "y": 715
+        },
+        {
+          "x": 2113,
+          "y": 715
+        }
+      ]
+    },
+    {
+      "stationCode": "7",
+      "stationName": "삼양사거리",
+      "stationId": "station-832a0791f30e",
+      "x": 2067,
+      "y": 688,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2029,
+          "y": 693
+        },
+        {
+          "x": 2106,
+          "y": 693
+        },
+        {
+          "x": 2106,
+          "y": 715
+        },
+        {
+          "x": 2029,
+          "y": 715
+        }
+      ]
+    },
+    {
+      "stationCode": "8",
+      "stationName": "솔샘",
+      "stationId": "station-b77401b617de",
+      "x": 2005,
+      "y": 713,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2002,
+          "y": 702
+        },
+        {
+          "x": 2040,
+          "y": 702
+        },
+        {
+          "x": 2040,
+          "y": 724
+        },
+        {
+          "x": 2002,
+          "y": 724
+        }
+      ]
+    },
+    {
+      "stationCode": "9",
+      "stationName": "북한산보국문",
+      "stationId": "station-d862eac6fa4d",
+      "x": 2005,
+      "y": 775,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1976,
+          "y": 764
+        },
+        {
+          "x": 2066,
+          "y": 764
+        },
+        {
+          "x": 2066,
+          "y": 786
+        },
+        {
+          "x": 1976,
+          "y": 786
+        }
+      ]
+    },
+    {
+      "stationCode": "10",
+      "stationName": "정릉",
+      "stationId": "station-949a426a00ca",
+      "x": 2047,
+      "y": 820,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2028,
+          "y": 825
+        },
+        {
+          "x": 2066,
+          "y": 825
+        },
+        {
+          "x": 2066,
+          "y": 847
+        },
+        {
+          "x": 2028,
+          "y": 847
+        }
+      ]
+    },
+    {
+      "stationCode": "11",
+      "stationName": "성신여대입구",
+      "stationId": "station-d490bb686722",
+      "x": 2103,
+      "y": 874,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2058,
+          "y": 879
+        },
+        {
+          "x": 2148,
+          "y": 879
+        },
+        {
+          "x": 2148,
+          "y": 901
+        },
+        {
+          "x": 2058,
+          "y": 901
+        }
+      ]
+    },
+    {
+      "stationCode": "12",
+      "stationName": "보문",
+      "stationId": "station-25705b9342f3",
+      "x": 2170,
+      "y": 941,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2167,
+          "y": 930
+        },
+        {
+          "x": 2205,
+          "y": 930
+        },
+        {
+          "x": 2205,
+          "y": 952
+        },
+        {
+          "x": 2167,
+          "y": 952
+        }
+      ]
+    }
+  ]
+}

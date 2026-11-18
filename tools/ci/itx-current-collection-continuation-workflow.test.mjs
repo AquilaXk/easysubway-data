@@ -1,0 +1,114 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import test from "node:test";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const workflowPath = path.join(root, ".github/workflows/itx-current-collection-continuation.yml");
+const ciPath = path.join(root, ".github/workflows/ci.yml");
+const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
+
+function workflow() {
+  assert.ok(existsSync(workflowPath), "ITX continuation workflow를 찾지 못함");
+  return readFileSync(workflowPath, "utf8");
+}
+
+function step(source, name) {
+  const match = source.match(new RegExp(`- name: ${name}[\\s\\S]*?(?=\\n\\s+- name:|\\n\\s*$)`));
+  assert.ok(match, `${name} 스텝을 찾지 못함`);
+  return match[0];
+}
+
+test("continuation은 source_run_id 입력을 검증하고 해당 artifact를 다운로드한다", () => {
+  const yml = workflow();
+  assert.match(yml, /^on:\n\s+workflow_dispatch:\n\s+inputs:\n\s+source_run_id:\s*\n\s+description:[^\n]+\n\s+required:\s*true\n\s+type:\s*string/m);
+  assert.doesNotMatch(yml, /^\s+(?:push|pull_request|schedule):/m);
+  assert.match(yml, /^permissions:\n\s+actions: read\n\s+contents: read\s*$/m);
+  assert.match(yml, /runs-on: macos-15\n\s+environment: itx-current-collection/);
+  assert.match(yml, /timeout-minutes:\s*60/);
+  assert.match(yml, /cancel-in-progress:\s*false/);
+  assert.match(yml, /persist-credentials:\s*false/);
+  assert.match(yml, /node-version:\s*["']24\.19\.0["']/);
+
+  const validate = step(yml, "ITX continuation / Validate inputs");
+  assert.match(validate, /inputs\.source_run_id/);
+  assert.match(validate, /\^\[1-9\]\[0-9\]\*\$/);
+
+  const download = step(yml, "ITX continuation / Download retained provider capture");
+  assert.match(download, /actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/);
+  assert.match(download, /repository:\s*AquilaXk\/easysubway-data/);
+  assert.match(download, /run-id:\s*\$\{\{\s*inputs\.source_run_id\s*\}\}/);
+  assert.match(download, /name:\s*itx-current-collection-\$\{\{\s*inputs\.source_run_id\s*\}\}/);
+  assert.match(download, /github-token:\s*\$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(download, /31609927895/);
+});
+
+test("tracked station catalog과 exact base SHA로 continuation CLI를 한 번만 실행한다", () => {
+  const yml = workflow();
+  const catalog = step(yml, "ITX continuation / Emit station catalog pack");
+  assert.match(catalog, /emit-station-catalog-pack\.mjs/);
+  assert.match(catalog, /--catalog-pack-id "itx-current-station-catalog-v1"/);
+
+  const run = step(yml, "ITX continuation / Continue current collection");
+  assert.match(run, /DATA_GO_KR_SERVICE_KEY:\s*\$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}/);
+  assert.match(run, /must be a nonempty single line/);
+  assert.equal((run.match(/continue-current-itx-collection\.mjs/g) ?? []).length, 1);
+  assert.match(run, /--capture "\$\{\{ runner\.temp \}\}\/itx-continuation-base\/provider-response-capture\.json"/);
+  assert.match(run, /--expected-capture-content-sha256 "9fc8c38fc0f73f56c82359d86d1700b049032de8610b671120266db72390b4e4"/);
+  for (const flag of [
+    "--station-catalog-pack", "--output", "--completeness-output",
+    "--extended-capture-output",
+  ]) assert.match(run, new RegExp(flag));
+  assert.doesNotMatch(run, /run-current-itx-collection|replay-current-itx-collection|promote-candidate|previous-admitted/);
+});
+
+test("결과·completeness·extended capture만 14일 보존하고 base/raw/secret은 업로드하지 않는다", () => {
+  const yml = workflow();
+  const upload = step(yml, "ITX continuation / Upload sanitized continuation evidence");
+  assert.match(upload, /if:\s*\$\{\{ always\(\) \}\}/);
+  assert.match(upload, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
+  assert.match(upload, /retention-days:\s*14/);
+  for (const name of [
+    "itx-result.json", "itx-completeness.json",
+    "provider-response-extended-capture.json",
+  ]) assert.match(upload, new RegExp(name.replaceAll(".", "\\.")));
+  assert.doesNotMatch(upload, /itx-continuation-base|station-catalog-pack|DATA_GO_KR_SERVICE_KEY|provider-response-capture\.json/);
+  assert.doesNotMatch(yml, /(?:git (?:add|commit|push)|gh |promotion|publish|fallback|alternate provider)/i);
+});
+
+test("Data contracts가 continuation workflow contract를 실행한다", () => {
+  const ci = readFileSync(ciPath, "utf8");
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+  for (const ownedPath of [
+    "tools/ci/itx-current-collection-continuation-workflow.test.mjs",
+    "tools/datapack/provider-response-capture.test.mjs",
+    "tools/datapack/continue-current-itx-collection.test.mjs",
+  ]) {
+    const entries = ownership.tests.filter(({ path: testPath }) => testPath === ownedPath);
+    assert.equal(entries.length, 1, `${ownedPath} ownership entry는 정확히 하나여야 함`);
+    assert.ok(entries[0].classes.includes("required-pr"));
+  }
+});
+
+test("run 블록은 workflow_dispatch 입력을 셸에 직접 펼치지 않고 env로만 받는다(#853 리뷰 F1)", () => {
+  const lines = workflow().split("\n");
+  const runBodies = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = /^(\s*)(?:- )?run: [|>]/u.exec(lines[index]);
+    if (!header) continue;
+    const indent = header[1].length;
+    const body = [];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const line = lines[next];
+      if (line.trim() !== "" && line.length - line.trimStart().length <= indent) break;
+      body.push(line);
+    }
+    runBodies.push(body.join("\n"));
+  }
+  assert.ok(runBodies.length > 0, "검사할 run 블록이 있어야 한다");
+  for (const body of runBodies) {
+    assert.doesNotMatch(body, /\$\{\{\s*(?:inputs|github\.event\.inputs)\./u);
+  }
+});

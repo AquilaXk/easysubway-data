@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "route-map-android-evidence-summary",
+  "_sanitizationNote": "실기기 시리얼(serial)과 로컬 절대경로(artifactDir)는 개인정보·환경 유출 방지를 위해 redacted. 측정 수치는 docs/1950-release-evidence/android-evidence-summary.json 원본과 동일.",
+  "runs": [
+    {
+      "artifactDir": "<REDACTED-LOCAL-ARTIFACT-DIR>",
+      "serial": "<REDACTED-DEVICE-SERIAL>",
+      "package": "com.easysubway.app",
+      "buildMode": "profile",
+      "measurementScope": "gesture_after_route_map_settle",
+      "gfxinfoResetAfterRouteMapSettle": true,
+      "viewport": "1080x2340",
+      "capturedAtUtc": "2026-07-11T17:06:48Z",
+      "panCount": 5,
+      "gfxinfo": {
+        "totalFrames": 0,
+        "measurementStatus": "not_captured_flutter_canvas",
+        "jankyFrames": 0,
+        "jankyPercent": null,
+        "p50Ms": null,
+        "p90Ms": null,
+        "p95Ms": null,
+        "p99Ms": null
+      },
+      "meminfo": {
+        "totalPssKb": 199903,
+        "totalRssKb": 318821,
+        "javaHeapKb": 12368,
+        "nativeHeapKb": 48796,
+        "graphicsKb": 47569
+      },
+      "renderer": {
+        "crashSignatureCount": 0
+      },
+      "frameTiming": {
+        "frameSampleCount": 302,
+        "buildP50Ms": 2.25,
+        "buildP90Ms": 2.82,
+        "buildP99Ms": 23.86,
+        "rasterP50Ms": 7.79,
+        "rasterP90Ms": 9.75,
+        "rasterP99Ms": 17.2,
+        "totalP90Ms": 14.51,
+        "jankyFrames": 11,
+        "jankyPercent": 3.64
+      }
+    }
+  ],
+  "aggregate": {
+    "runCount": 1,
+    "measurementScopes": [
+      "gesture_after_route_map_settle"
+    ],
+    "maxJankyPercent": null,
+    "maxP95FrameMs": null,
+    "maxP99FrameMs": null,
+    "maxTotalPssKb": 199903,
+    "maxFrameJankyPercent": 3.64,
+    "maxBuildP90Ms": 2.82,
+    "maxRasterP90Ms": 9.75,
+    "totalCrashSignatures": 0,
+    "noCrashesInAllRuns": true
+  }
+}

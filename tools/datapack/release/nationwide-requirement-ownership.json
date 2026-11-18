@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "nationwide-requirement-ownership-rules",
+  "targetVersion": "2026-07-13",
+  "ownerRules": [
+    {"issue": 506, "regionId": "busan", "sourceDomain": "route_map_positions"},
+    {"issue": 506, "regionId": "busan", "operatorId": "korail", "sourceDomain": "route_map_positions"},
+    {"issue": 504, "regionId": "gwangju", "sourceDomain": "schedule_timetable"},
+    {"issue": 452, "operatorId": "seoul-metro", "sourceDomain": "realtime_arrivals"},
+    {"issue": 453, "operatorId": "seoul-metro", "sourceDomain": "demand_reference"},
+    {"issue": 459, "operatorId": "incheon-transit", "sourceDomain": "schedule_timetable"},
+    {"issue": 458, "operatorId": "korail", "sourceDomain": "route_map_positions"},
+    {"issue": 457, "operatorId": "korail", "sourceDomain": "route_graph_topology"},
+    {"issue": 456, "operatorId": "seoul-metro", "sourceDomain": "route_graph_topology"},
+    {"issue": 455, "sourceDomain": "station_line_membership"},
+    {"issue": 454, "sourceDomain": "schedule_timetable"},
+    {"issue": 622, "operatorId": "incheon-transit", "sourceDomain": "accessibility_facilities"},
+    {"issue": 478, "sourceDomain": "accessibility_facilities"},
+    {"issue": 452, "sourceDomain": "realtime_arrivals"},
+    {"issue": 453, "sourceDomain": "demand_reference"},
+    {"issue": 458, "sourceDomain": "route_map_positions"},
+    {"issue": 457, "sourceDomain": "route_graph_topology"}
+  ]
+}

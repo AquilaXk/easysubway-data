@@ -1,0 +1,92 @@
+name: ITX Current Collection Continuation
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Source collection run ID"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: itx-current-collection-continuation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  continue:
+    name: ITX current collection continuation
+    runs-on: macos-15
+    environment: itx-current-collection
+    timeout-minutes: 60
+    steps:
+      - name: ITX continuation / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: ITX continuation / Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+
+      - name: ITX continuation / Validate inputs
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${SOURCE_RUN_ID}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid source_run_id: ${SOURCE_RUN_ID}" >&2
+            exit 1
+          fi
+
+      - name: ITX continuation / Download retained provider capture
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          repository: AquilaXk/easysubway-data
+          run-id: ${{ inputs.source_run_id }}
+          name: itx-current-collection-${{ inputs.source_run_id }}
+          path: ${{ runner.temp }}/itx-continuation-base
+          github-token: ${{ github.token }}
+
+      - name: ITX continuation / Prepare temp output
+        run: mkdir -p "${{ runner.temp }}/itx-continuation-output"
+
+      - name: ITX continuation / Emit station catalog pack
+        run: |
+          set -euo pipefail
+          node tools/datapack/emit-station-catalog-pack.mjs \
+            --output "${{ runner.temp }}/itx-continuation-output/station-catalog-pack" \
+            --catalog-pack-id "itx-current-station-catalog-v1"
+
+      - name: ITX continuation / Continue current collection
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DATA_GO_KR_SERVICE_KEY:-}" || "${DATA_GO_KR_SERVICE_KEY}" == *$'\n'* || "${DATA_GO_KR_SERVICE_KEY}" == *$'\r'* ]]; then
+            echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2
+            exit 1
+          fi
+          node tools/datapack/continue-current-itx-collection.mjs \
+            --capture "${{ runner.temp }}/itx-continuation-base/provider-response-capture.json" \
+            --expected-capture-content-sha256 "9fc8c38fc0f73f56c82359d86d1700b049032de8610b671120266db72390b4e4" \
+            --station-catalog-pack "${{ runner.temp }}/itx-continuation-output/station-catalog-pack" \
+            --output "${{ runner.temp }}/itx-continuation-output/itx-result.json" \
+            --completeness-output "${{ runner.temp }}/itx-continuation-output/itx-completeness.json" \
+            --extended-capture-output "${{ runner.temp }}/itx-continuation-output/provider-response-extended-capture.json"
+
+      - name: ITX continuation / Upload sanitized continuation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: itx-current-collection-continuation-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/itx-continuation-output/itx-result.json
+            ${{ runner.temp }}/itx-continuation-output/itx-completeness.json
+            ${{ runner.temp }}/itx-continuation-output/provider-response-extended-capture.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "kric-facility-source-review-admission",
+  "sourceId": "kric-station-escalator-detailed",
+  "catalogProviderId": "provider:kric-station-escalator",
+  "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+  "decision": "APPROVED",
+  "approvedBy": "AquilaXk",
+  "approvedAt": "2026-10-23T00:00:00+09:00",
+  "approvalRecordUrl": "https://github.com/AquilaXk/easysubway/issues/3036",
+  "scope": "STATIC_FACILITY_DERIVED_DATAPACK",
+  "facilityTypes": [
+    "ESCALATOR"
+  ],
+  "absenceRule": "NOT_EXISTS only when every pack station-line of the station was queried with result 00 and returned no row; result 03 and unqueried station-lines stay UNKNOWN",
+  "licenseEvidenceHash": "2953cce5b977132db7e7a428c677e6d292401f77c40a1e8f8dd84af5a3e61df2"
+}

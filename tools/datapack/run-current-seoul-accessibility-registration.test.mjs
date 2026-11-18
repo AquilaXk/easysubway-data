@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import { parseRegistrationArguments, runCurrentSeoulAccessibilityRegistration } from "./run-current-seoul-accessibility-registration.mjs";
+
+const SOURCE_ID = "seoul-metro-accessibility";
+const HEAD = "seoul-metro-accessibility-20260813T213842955Z";
+const SNAPSHOT_ID = "seoul-metro-accessibility-20260822T000000000Z";
+const sha = (value) => createHash("sha256").update(value).digest("hex");
+const outputsFor = (snapshotId = SNAPSHOT_ID) => [
+  `tools/datapack/sources/${snapshotId}.json`,
+  "tools/datapack/source-inventory.json",
+  "tools/datapack/release/source-snapshots.json",
+  "tools/datapack/inputs/capital-pilot-production-source-input.json",
+];
+
+async function fixture(t, { receiptSha = null } = {}) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "seoul-accessibility-operation-"));
+  const externalRoot = await mkdtemp(path.join(os.tmpdir(), "seoul-accessibility-receipt-"));
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(externalRoot, { recursive: true, force: true })]));
+  const sourceRoot = path.join(root, "tools/datapack/sources"); const previous = { snapshotId: HEAD, sourceId: SOURCE_ID }; const previousBytes = Buffer.from(JSON.stringify(previous));
+  await mkdir(sourceRoot, { recursive: true }); await mkdir(path.join(root, "tools/datapack/release"), { recursive: true });
+  await writeFile(path.join(root, "tools/datapack/release/source-snapshots.json"), JSON.stringify([{ snapshotId: HEAD, sourceId: SOURCE_ID, rawReceipt: { snapshotFileSha256: receiptSha ?? sha(previousBytes) } }]));
+  await writeFile(path.join(sourceRoot, `${HEAD}.json`), previousBytes);
+  return { root, receiptPath: path.join(await realpath(externalRoot), "receipt.json") };
+}
+
+function dependencies(events, { collectError = null, publishError = null, registrationOutputs = outputsFor() } = {}) {
+  return {
+    validateLineage(snapshots) { events.push(["validate-lineage", snapshots]); return { headsBySource: { [SOURCE_ID]: HEAD } }; },
+    validateSnapshotIdentity(snapshot) { events.push(["validate-snapshot", snapshot]); return snapshot; },
+    async collect({ serviceKey, previousSnapshot, requestAttempts }) {
+      events.push(["collect", serviceKey, previousSnapshot, requestAttempts]); if (collectError) throw collectError;
+      return { snapshot: { snapshotId: SNAPSHOT_ID, sourceId: SOURCE_ID }, rawArtifact: {} };
+    },
+    async observationRoot(name) { events.push(["root", name]); return "/private/tmp/easysubway-seoul-accessibility-operation"; },
+    async writeObservation(value) { events.push(["write", value]); },
+    async readObservationManifest(outputRoot) { events.push(["read-manifest", outputRoot]); return { snapshotId: SNAPSHOT_ID }; },
+    async publish(value) { events.push(["publish", value]); if (publishError) throw publishError; return { artifactKind: "receipt" }; },
+    async register(value) { events.push(["register", value]); return { outputs: registrationOutputs }; },
+  };
+}
+
+function options(values, deps) {
+  return { observationName: "operation-20260822", receiptPath: values.receiptPath, repositoryRoot: values.root, env: { DATA_GO_KR_SERVICE_KEY: "test-key", EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://object.example" }, deps };
+}
+
+test("runner validates the current head bytes and orders collector, publisher, and registrar", async (t) => {
+  const values = await fixture(t); const events = []; const result = await runCurrentSeoulAccessibilityRegistration(options(values, dependencies(events)));
+  assert.deepEqual(events.map(([name]) => name), ["validate-lineage", "validate-snapshot", "collect", "root", "write", "publish", "register"]);
+  assert.deepEqual(events[2][2], { snapshotId: HEAD, sourceId: SOURCE_ID });
+  assert.equal(events[5][1].receiptPath, values.receiptPath);
+  assert.equal(events[6][1].snapshotPath, `/private/tmp/easysubway-seoul-accessibility-operation/${SNAPSHOT_ID}.json`);
+  assert.deepEqual(result, { status: "PASS", snapshotId: SNAPSHOT_ID, outputs: outputsFor() });
+});
+
+test("runner passes the scheduled single-attempt contract only when requested", async (t) => {
+  const values = await fixture(t); const events = [];
+  await runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies(events)), requestAttempts: 1 });
+  assert.equal(events[2][3], 1);
+  const direct = await fixture(t); const directEvents = [];
+  await runCurrentSeoulAccessibilityRegistration(options(direct, dependencies(directEvents)));
+  assert.equal(directEvents[2][3], 3);
+  for (const requestAttempts of [0, 4, 1.5]) {
+    const invalid = await fixture(t); const invalidEvents = [];
+    await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(invalid, dependencies(invalidEvents)), requestAttempts }), /request attempts are invalid/);
+    assert.equal(invalidEvents.some(([name]) => name === "collect"), false);
+  }
+});
+
+test("malformed DATA_GO_KR_SERVICE_KEY stops every delegate before the current head read", async (t) => {
+  const values = await fixture(t); let calls = 0;
+  const deps = dependencies([], {});
+  for (const key of ["validateLineage", "validateSnapshotIdentity", "collect", "observationRoot", "writeObservation", "publish", "register"]) {
+    const original = deps[key];
+    deps[key] = (...args) => { calls += 1; return original(...args); };
+  }
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(values, deps), env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+test("invalid current snapshot identity or receipt hash stops collector, publisher, and registrar", async (t) => {
+  const identity = await fixture(t); const identityEvents = []; const invalid = dependencies(identityEvents); invalid.validateSnapshotIdentity = () => { throw new Error("identity invalid"); };
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(identity, invalid)), /identity invalid/);
+  assert.equal(identityEvents.some(([name]) => ["collect", "publish", "register"].includes(name)), false);
+  const mismatch = await fixture(t, { receiptSha: "0".repeat(64) }); const mismatchEvents = [];
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(mismatch, dependencies(mismatchEvents))), /snapshot bytes mismatch/);
+  assert.equal(mismatchEvents.some(([name]) => ["collect", "publish", "register"].includes(name)), false);
+});
+
+test("symlinked external receipt parent or target stops publisher and registrar", async (t) => {
+  const parent = await fixture(t); const parentEvents = []; const alias = `${path.dirname(parent.receiptPath)}-alias`; await symlink(path.dirname(parent.receiptPath), alias); t.after(() => rm(alias, { force: true }));
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(parent, dependencies(parentEvents)), receiptPath: path.join(alias, "receipt.json") }), /receipt path/);
+  assert.equal(parentEvents.some(([name]) => ["publish", "register"].includes(name)), false);
+  const target = await fixture(t); const targetEvents = []; await symlink("/dev/null", target.receiptPath);
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(target, dependencies(targetEvents))), /receipt path/);
+  assert.equal(targetEvents.some(([name]) => ["publish", "register"].includes(name)), false);
+});
+
+test("collector and publisher failures stop later operations", async (t) => {
+  const collector = await fixture(t); const collectorEvents = []; const collectorFailure = new Error("collector failed");
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(collector, dependencies(collectorEvents, { collectError: collectorFailure }))), collectorFailure);
+  assert.equal(collectorEvents.some(([name]) => ["publish", "register"].includes(name)), false);
+  const publisher = await fixture(t); const publisherEvents = []; const publisherFailure = new Error("publisher failed");
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(publisher, dependencies(publisherEvents, { publishError: publisherFailure }))), publisherFailure);
+  assert.equal(publisherEvents.some(([name]) => name === "register"), false);
+});
+
+test("partial, foreign, or reordered registration outputs cannot return PASS", async (t) => {
+  const cases = [outputsFor().slice(0, -1), [...outputsFor().slice(0, 3), "tools/datapack/release/candidate-build-spec.json"], [...outputsFor().slice(1), outputsFor()[0]]];
+  for (const registrationOutputs of cases) {
+    const values = await fixture(t); const events = [];
+    await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(values, dependencies(events, { registrationOutputs }))), /output allowlist/);
+    assert.equal(events.at(-1)[0], "register");
+  }
+});
+
+// #995 F1: 수집과 게시를 workflow step으로 나누려면 runner가 두 단계로 실행돼야 한다. 게시 step이 시작됐는지가 claim 정리 판정의 근거다.
+test("collect phase writes the observation and stops before publication and registration", async (t) => {
+  const values = await fixture(t); const events = [];
+  const result = await runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies(events)), phase: "collect" });
+  assert.deepEqual(events.map(([name]) => name), ["validate-lineage", "validate-snapshot", "collect", "root", "write"]);
+  assert.deepEqual(result, { status: "COLLECTED", snapshotId: SNAPSHOT_ID });
+});
+
+test("publish phase reads the collected observation and never collects again", async (t) => {
+  const values = await fixture(t); const events = [];
+  const result = await runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies(events)), phase: "publish" });
+  assert.deepEqual(events.map(([name]) => name), ["root", "read-manifest", "publish", "register"]);
+  assert.equal(events[3][1].snapshotPath, `/private/tmp/easysubway-seoul-accessibility-operation/${SNAPSHOT_ID}.json`);
+  assert.deepEqual(result, { status: "PASS", snapshotId: SNAPSHOT_ID, outputs: outputsFor() });
+});
+
+test("publish phase stops when the collected observation is missing, and an unknown phase is rejected", async (t) => {
+  const values = await fixture(t); const events = [];
+  const deps = { ...dependencies(events), async readObservationManifest() { throw new Error("observation manifest is missing"); } };
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(values, deps), phase: "publish" }), /observation manifest is missing/);
+  assert.equal(events.some(([name]) => name === "publish" || name === "register"), false);
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies([])), phase: "both" }), /phase is invalid/);
+});
+
+test("CLI는 --request-attempts 1~3만 받고 --phase와 함께 쓸 수 있다", () => {
+  const base = ["--observation-name", "refresh-1", "--receipt", "/tmp/receipt.json"];
+  for (const attempts of [1, 2, 3]) assert.equal(parseRegistrationArguments([...base, "--request-attempts", String(attempts)]).requestAttempts, attempts);
+  assert.deepEqual(parseRegistrationArguments([...base, "--request-attempts", "2", "--phase", "collect"]), { observationName: "refresh-1", receiptPath: "/tmp/receipt.json", requestAttempts: 2, phase: "collect" });
+  assert.equal("requestAttempts" in parseRegistrationArguments(base), false);
+  for (const attempts of ["0", "4", "9", "10", "1.5", "x"]) assert.throws(() => parseRegistrationArguments([...base, "--request-attempts", attempts]), /usage: .*--request-attempts 1\.\.3/);
+});

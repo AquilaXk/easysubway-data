@@ -1,0 +1,223 @@
+{
+  "decision": "NO_GO",
+  "blockers": [
+    "CANDIDATE_BINDING_INVALID",
+    "CANDIDATE_EVIDENCE_NOT_FRESH:source",
+    "CANDIDATE_EVIDENCE_NOT_FRESH:server",
+    "CANDIDATE_EVIDENCE_NOT_FRESH:mobile",
+    "ROUTING_STATION_ID_GAP",
+    "ROUTING_TRANSFER_STATION_ID_GAP",
+    "ROUTING_SOURCE_DERIVED_CONNECTION_EDGE_ID_GAP",
+    "SOURCE_NOT_ADMITTED",
+    "SOURCE_STALE",
+    "ROUTING_SCOPE_HASH_MISMATCH",
+    "SERVER_NOT_ACTIVE",
+    "SERVER_ROUTING_NOT_READY",
+    "MOBILE_NOT_READY",
+    "MOBILE_TOPOLOGY_NOT_READY",
+    "IDENTITY_FIELD_INVALID:canonicalStationVersion",
+    "IDENTITY_FIELD_MISMATCH:canonicalStationVersion",
+    "IDENTITY_FIELD_INVALID:corridorId",
+    "IDENTITY_FIELD_MISMATCH:corridorId",
+    "IDENTITY_FIELD_INVALID:serviceId",
+    "IDENTITY_FIELD_MISMATCH:serviceId",
+    "IDENTITY_FIELD_INVALID:lineageId",
+    "IDENTITY_FIELD_MISMATCH:lineageId",
+    "IDENTITY_FIELD_INVALID:schemaVersion",
+    "IDENTITY_FIELD_MISMATCH:schemaVersion",
+    "IDENTITY_ARTIFACT_HASH_INVALID",
+    "SIGNATURE_INVALID",
+    "ROLLBACK_UNVERIFIED",
+    "EVIDENCE_STALE",
+    "LINEAGE_UNVERIFIED"
+  ],
+  "evaluatorInput": {
+    "pilot": {
+      "coveredRowIds": [
+        "station-sangnoksu|seoul-4|ELEVATOR",
+        "station-sangnoksu|seoul-4|ESCALATOR",
+        "station-sangnoksu|seoul-4|WHEELCHAIR_LIFT",
+        "station-sadang|seoul-4|ELEVATOR",
+        "station-sadang|seoul-4|ESCALATOR",
+        "station-sadang|seoul-4|WHEELCHAIR_LIFT"
+      ]
+    },
+    "routing": {
+      "regionIds": [
+        "capital"
+      ],
+      "operatorIds": [
+        "seoul-metro",
+        "korail"
+      ],
+      "lineIds": [
+        "seoul-4",
+        "line-6e39be0cb6e2",
+        "line-54a7b980b7c3"
+      ],
+      "baseStationIds": [
+        "station-sangnoksu",
+        "station-sadang"
+      ],
+      "admittedStationIds": [],
+      "materializedStationIds": [],
+      "transferStationIds": [],
+      "baseEdgeIds": [
+        "edge-entry-sangnoksu-seoul-4",
+        "edge-exit-sangnoksu-seoul-4",
+        "edge-entry-sadang-seoul-4",
+        "edge-exit-sadang-seoul-4"
+      ],
+      "transferEdgeIds": [
+        "path-edge-sadang-4-to-2-fast"
+      ],
+      "sourceDerivedConnectionEdgeIds": {
+        "status": "MISSING",
+        "ids": []
+      },
+      "serviceIds": [
+        "SUBWAY",
+        "ITX_CHEONGCHUN"
+      ]
+    },
+    "source": {
+      "status": "MISSING",
+      "freshness": "MISSING",
+      "routingScopeHash": null,
+      "admittedStationIds": [],
+      "sourceDerivedConnectionEdgeIds": [],
+      "artifactHash": null,
+      "identity": {
+        "canonicalStationVersion": null,
+        "corridorId": null,
+        "serviceId": null,
+        "lineageId": null,
+        "schemaVersion": null
+      }
+    },
+    "server": {
+      "status": "UNAVAILABLE",
+      "routingReady": false,
+      "artifactHash": null,
+      "identity": {
+        "canonicalStationVersion": null,
+        "corridorId": null,
+        "serviceId": null,
+        "lineageId": null,
+        "schemaVersion": null
+      }
+    },
+    "mobile": {
+      "status": "MISSING",
+      "topologyReady": false,
+      "artifactHash": null,
+      "identity": {
+        "canonicalStationVersion": null,
+        "corridorId": null,
+        "serviceId": null,
+        "lineageId": null,
+        "schemaVersion": null
+      }
+    },
+    "safety": {
+      "signatureValid": false,
+      "rollbackVerified": false,
+      "freshness": "MISSING",
+      "lineage": "MISSING"
+    },
+    "claims": {
+      "accessibilityScopeId": "capital_pilot_android_v1",
+      "routingScopeId": "capital_routing_android_v1",
+      "serviceIds": [
+        "SUBWAY",
+        "ITX_CHEONGCHUN"
+      ]
+    },
+    "forbiddenEvidence": [],
+    "forbiddenEvidenceStatus": "VERIFIED",
+    "nationwide": {
+      "missingCount": 270
+    },
+    "candidateBinding": {
+      "status": "INCOMPLETE",
+      "buildCandidateId": null,
+      "packCandidateId": null,
+      "candidateBuilderGitSha": null,
+      "buildSpecSha256": null,
+      "manifestSha256": null,
+      "sourceEvidence": {
+        "status": "MISSING",
+        "sha256": null,
+        "freshUntil": null
+      },
+      "serverEvidence": {
+        "status": "MISSING",
+        "sha256": null,
+        "freshUntil": null
+      },
+      "mobileEvidence": {
+        "status": "MISSING",
+        "sha256": null,
+        "freshUntil": null
+      }
+    }
+  },
+  "nationwideBlocksV1": false,
+  "scopes": {
+    "verifiedAccessibilityScope": {
+      "id": "capital_pilot_android_v1",
+      "sha256": "e192eef333e7f90312f841b4f5935d31d15118684b4e53e50f44cfbdfe2a1fd6"
+    },
+    "routingLaunchScope": {
+      "id": "capital_routing_android_v1",
+      "sha256": "5846b91f420b8c6b78cd5094ef7037c8342b4bc4ef9dacf7bc1bb6a5d65e1dbe"
+    },
+    "nationwideRoadmapScope": {
+      "id": "nationwide_roadmap_v1",
+      "sha256": "f93bab74198ed46a708a098201ef53e53c04748a6f18a8a95e01e046d0553442"
+    }
+  },
+  "identityLinkage": {
+    "compatible": false,
+    "matrixSha256": "3250f17b012d958e784e65ff81df60b38f304f43a3ca5dc3a7fd0cc088f3f6a0",
+    "shared": {
+      "canonicalStationVersion": null,
+      "corridorId": null,
+      "serviceId": null,
+      "lineageId": null,
+      "schemaVersion": null
+    },
+    "artifactHashes": {
+      "source": null,
+      "server": null,
+      "mobile": null
+    }
+  },
+  "coverage": {
+    "accessibility": {
+      "requiredCount": 6,
+      "coveredCount": 6,
+      "gapCount": 0
+    },
+    "nationwide": {
+      "requiredCount": 270,
+      "missingCount": 270,
+      "blocksV1": false
+    }
+  },
+  "consumerStates": {
+    "source": "MISSING",
+    "server": "UNAVAILABLE",
+    "mobile": "MISSING"
+  },
+  "routing": {
+    "admittedStationIds": {
+      "status": "MISSING",
+      "ids": []
+    },
+    "sourceDerivedConnectionEdgeIds": {
+      "status": "MISSING",
+      "ids": []
+    }
+  }
+}
