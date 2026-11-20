@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "6012f493f592660ddeea63aba64bd4c26d065675",
+  "builderGitSha": "46d153de54f075a253913925d35bacb4d30ff035",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -12,7 +12,7 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "e5fd3d73e7abb3aaf164e3402f1ca10c8e813134a76230a6b320584f483a00a5",
+      "value": "618a976d1d6917745ac6d85e855e7fe38d0c6822bad999dee59a77078c585a6e",
       "exporterKind": "facility-evidence",
       "rowCount": 1591,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "738b96de8fee6f10c977e14bf831fa1d0bb8af60e943a194d333a3adfd382334"
+    "value": "92d1f72e7561e8b82968dedf7d0c6912b578ecc6735a6fd3c3c762018503961e"
   },
   "sourceInventorySha256": {
-    "value": "e8963fa0fb5a40c7d03997d8a697349c54230c00c7a85ae7dc4d2dda559e24a5"
+    "value": "61a261af94bbed07a57f38aec33777eae0778e2e8423493ff2fcfeefa84611f0"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "b1b55a445f2e5870996d4bc1663a8412effec5ab5e228ab0f86daa58c460fb8b"
+    "sha256": "9ee85eb757137431c4b46801856ea4cfd31b744e4ded926ee532fdaabdcfb812"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261120-seq189"
+      "value": "nationwide-candidate-20261120-seq190"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261120-seq189"
+      "value": "release-request-nationwide-candidate-20261120-seq190"
     }
   },
   "perSourceEvidence": [
@@ -77,26 +77,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20261115T024033480Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "80865362c2cb3f8e771bce527f33e6e3be826fabad3cfff523df38af7a38aa5c"
-    },
-    {
-      "sourceId": "seoul-metro-accessibility",
-      "snapshotId": "seoul-metro-accessibility-20261119T103711240Z",
-      "rawSha256": "d9e27730be9c1e5bc8148e4c1d42466b76da1f579347cd2c1631dd0b4392cd41",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "perSourceSnapshotSetHash": "1801ae0bf4daacfca1135a06783cf6c8ebde5debef6c073ff808700ad09ee9d0"
-    },
-    {
-      "sourceId": "capital-route-topology",
-      "snapshotId": "capital-route-topology-20261119",
-      "rawSha256": "0e60238aea87e05f8bc77a9f4f6a79fb5510ba53e0f2e5ccdd51e1ee2853c885",
-      "admissionRecordSha256s": [
-        {
-          "kind": "capitalTopologyAdmissionEvidence",
-          "sha256": "77d7a5a6fcf9efa887f5ead5ea2dd6ea0129b31b76179bf30cb7fc6779bcf0f8"
-        }
-      ],
-      "perSourceSnapshotSetHash": "a778c71b9ce8f977d6997d8458737efa3ec7c8f10cb0768798b5b3160b83491e"
+      "perSourceSnapshotSetHash": "44ad9609531d58d0a7638d922cbe2b0efa53021e0df99d92e559a36b4a4481a9"
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
@@ -355,6 +336,25 @@
       "rawSha256": "38bc9cd0b48f37b944782114ce22b3d89bd49851c6f31c52c8b7fcd97c34aee2",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
       "perSourceSnapshotSetHash": "d22ef9e60ed4b97f7b451b2c7f56940ad5e69f994dbb22d582346fcf8e458175"
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-20261120T132556541Z",
+      "rawSha256": "bd281a1e58228b15baf4d43668e9e7c0f11a417d576a98f2da4fbb3344ae83eb",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "80f20dc0b6110692fbc91c6a1b9a89b570bcdb466afb3e9901ee6b8fd134db65"
+    },
+    {
+      "sourceId": "capital-route-topology",
+      "snapshotId": "capital-route-topology-20261120",
+      "rawSha256": "a68eeab773ea2c7bde8972994604ff6d6315e75611d7b86390073c2f4aa02e61",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "b3e4b9887de4207d05822409fea57b16aa223e0e78dc625be36642655ef12ede"
+        }
+      ],
+      "perSourceSnapshotSetHash": "da01b746eeb7ee6b4e9257b6b70af6ef6f7a23f0b33082bf7c1f8e5d45c14e8c"
     }
   ],
   "officialOdFareEvidence": {
