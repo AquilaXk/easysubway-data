@@ -518801,5 +518801,52 @@
         "sha256": "5b136d3ee1be88d08d5262dcc14b07a02844898f9e028d0fe235e2259649fb4a"
       }
     ]
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "snapshotId": "kric-station-escalator-detailed-20261120T215004815Z",
+    "sourceId": "kric-station-escalator-detailed",
+    "provider": "국가철도공단",
+    "retrievedAt": "2026-11-20T21:50:04.815Z",
+    "sourceUpdatedAt": "2026-11-20T21:50:04.815Z",
+    "rowCount": 1866,
+    "coverageCount": 255,
+    "rawSha256": "db7e0d2fcea227d0bb6d7009d7ace173fbe2036da4a214125ef24b492765f8b3",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-escalator-detailed/20261120/db7e0d2fcea227d0bb6d7009d7ace173fbe2036da4a214125ef24b492765f8b3.json",
+    "rawReceipt": {
+      "sourceId": "kric-station-escalator-detailed",
+      "snapshotId": "kric-station-escalator-detailed-20261120T215004815Z",
+      "snapshotRawSha256": "e087e7ebb4ca81e98325d7af4c4308025e5e3d00a8a263f5fa3c93a882a9fec2",
+      "capturedAt": "2026-11-20T21:50:04.815Z",
+      "snapshotFileSha256": "d5dec9a1ed9a81d777022e412f2bbd837f0b9305079622d6021ba32186a054ad",
+      "rawObjectSha256": "db7e0d2fcea227d0bb6d7009d7ace173fbe2036da4a214125ef24b492765f8b3",
+      "byteSize": 598685,
+      "storedAt": "2026-11-20T21:51:55.983Z"
+    },
+    "contentSha256": "f798bb152272b909c9a36ba4334dafe1dda484a79b782aa84585595a8eb215bb",
+    "redactedRequestFingerprint": "5b5f67113131354f2b46994b897e9c976741c71c95a7787202c6304df400b5d5",
+    "schemaFingerprint": "bf492f17cab7aa5ff8bb4ca4426162d6833bb6de639d1c3613d4ec2e47f892ab",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "previousSnapshotId": "kric-station-escalator-detailed-20261119T203938693Z",
+    "freshnessExpiresAt": "2027-02-18T21:50:04.815Z",
+    "rawRetentionExpiresAt": "2027-02-18T21:50:04.815Z",
+    "adminReviewRecordHash": "c665271c6ffa6ca4ff43e50f259b77580bbdfe8531d7a11925aba7a62da9a38b",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "governancePolicyVersion": "2026-08-29",
+    "diffSummary": {
+      "status": "CHANGED",
+      "rawHashChanged": true,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": true,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
