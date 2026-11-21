@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "6129dcef939277b5a878f4964e1c1f93bf519170",
+  "builderGitSha": "511b16ac22a41792f1026aa551e53ae5a2d33310",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -12,7 +12,7 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "2fb764f1897f8731bd85e325eb88fed7d9fcf7f7c771f5238e7213e5b505ea7e",
+      "value": "5ea26e7bc9b07aa6b5337b8ec0ef2f8a71cdd8750c6ee363055475b4535763bd",
       "exporterKind": "facility-evidence",
       "rowCount": 1591,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "0f44d5b4621291bcae76b100cbfc52d4de447547e459b95842e24a35d4072243"
+    "value": "c9034ede13c8ecdaba8465a27cfd4771e9dd27a27831a0414b096bb894d3bf8c"
   },
   "sourceInventorySha256": {
-    "value": "c9100074565039999c9a5adcc18d538085c0797e6b6973149b9dba3dd407ee2c"
+    "value": "df1e88bc0249f5e88256ba2b0fcf94d89307722d2ef951ca114b3d53d746c21d"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "6cb68ae9637c3bebc0afe88aacbb88b9ba705bdd8594667b99a00e9d5d50c6b7"
+    "sha256": "a65cdbae60548d03ffd0857be986a59fae2341ed23b0715def3860832b739be5"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261121-seq191"
+      "value": "nationwide-candidate-20261121-seq192"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261121-seq191"
+      "value": "release-request-nationwide-candidate-20261121-seq192"
     }
   },
   "perSourceEvidence": [
@@ -77,7 +77,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20261115T024033480Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "44ad9609531d58d0a7638d922cbe2b0efa53021e0df99d92e559a36b4a4481a9"
+      "perSourceSnapshotSetHash": "72ccba97ad4aba91892d5b3fe28b10b70334a4034c48e9314ba148c43e3409f0"
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
@@ -331,30 +331,30 @@
       "perSourceSnapshotSetHash": "b74add5ca499a926dbcd59d834fbf7627f398b6e1d87086e9a1d1cadc39964da"
     },
     {
-      "sourceId": "seoul-metro-accessibility",
-      "snapshotId": "seoul-metro-accessibility-20261120T132556541Z",
-      "rawSha256": "bd281a1e58228b15baf4d43668e9e7c0f11a417d576a98f2da4fbb3344ae83eb",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "perSourceSnapshotSetHash": "80f20dc0b6110692fbc91c6a1b9a89b570bcdb466afb3e9901ee6b8fd134db65"
-    },
-    {
-      "sourceId": "capital-route-topology",
-      "snapshotId": "capital-route-topology-20261120",
-      "rawSha256": "a68eeab773ea2c7bde8972994604ff6d6315e75611d7b86390073c2f4aa02e61",
-      "admissionRecordSha256s": [
-        {
-          "kind": "capitalTopologyAdmissionEvidence",
-          "sha256": "b3e4b9887de4207d05822409fea57b16aa223e0e78dc625be36642655ef12ede"
-        }
-      ],
-      "perSourceSnapshotSetHash": "da01b746eeb7ee6b4e9257b6b70af6ef6f7a23f0b33082bf7c1f8e5d45c14e8c"
-    },
-    {
       "sourceId": "kric-station-convenience-standard",
       "snapshotId": "kric-station-convenience-standard-20261121T124104263Z",
       "rawSha256": "43cf93b09175180139b259d7e90d715972fb6068b94451bec73b4f184b441fa2",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
       "perSourceSnapshotSetHash": "d1f8171037ae1f7b26ad815fbdcad190bf366909d710bcbe6e55dd11eb966df4"
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-20261121T125420729Z",
+      "rawSha256": "511f4c45a312771e9e62d537104fa2f5843ad1bb8e194a0d51765a8e168f548a",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "bc6790ba332fe31b8840380cd6b66e9fbce6f2aff3b3754e80f26386703a4d01"
+    },
+    {
+      "sourceId": "capital-route-topology",
+      "snapshotId": "capital-route-topology-20261121",
+      "rawSha256": "8b32a1cf642cb8e62d30d939ddc5044997889f573740a5c1caec567db9e4a889",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "1df4323a6f931dadd4073e5f71dbbe62c9f395fd9ad2271c961c41c4531faf97"
+        }
+      ],
+      "perSourceSnapshotSetHash": "f6bdfd3fbaf292ae7c3bbdacc953a19eb533ec3b2d13eb7b3e6cb77793cebced"
     }
   ],
   "officialOdFareEvidence": {

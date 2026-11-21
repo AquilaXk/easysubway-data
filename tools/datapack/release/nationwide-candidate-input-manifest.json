@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261121-seq191",
-  "candidateBuildSpecSha256": "1f32e83c4877d4170d1f1bdbf16572bbf04cc5a04e1283f27de0bccdc723e963",
-  "preparationSha256": "c048f36e9517adc8255b2ba4454efcf370b97485e47dc93216093958b2a5b8ef",
-  "fanInSha256": "ab15233cfe4a469605febe393b5375de433245c02ccfaee70af841bc3b7f5851",
+  "candidateId": "nationwide-candidate-20261121-seq192",
+  "candidateBuildSpecSha256": "5df4e0657a24ef9b4f124e8ee7346ae294c9d4b44b6d8e51ba13e5c650cacb25",
+  "preparationSha256": "f4d82ae91a7ffb7ae4aa492903cf6906c1715730d138e2251735fa53edd12317",
+  "fanInSha256": "9c1bd7f5edb9dffb0f8203409e78b4d7879cb5073223e5004ff6ffa63a00e43d",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -19,12 +19,12 @@
     },
     {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-      "sha256": "efb0f5e811e9d4a1bd1f52d046327023a390baf502525810c6e85304479bccc2",
+      "sha256": "3caa3af21b1dc2234d27165d73481d470e2785987392a072173238d49db83c41",
       "byteSize": 14856
     },
     {
-      "path": "tools/datapack/itx-cheongchun-topology-evidence-20261120195645670.json",
-      "sha256": "6e67f4d8988c998b81b7bbe3e78653e54e186f3dacd4fa734bea392ff8e32258",
+      "path": "tools/datapack/itx-cheongchun-topology-evidence-20261121190237616.json",
+      "sha256": "d6b24f1426802b5f277380dd9a2ac5f4fbc1e2412e6b92675f2b0e504294ad8e",
       "byteSize": 2200
     },
     {
@@ -39,32 +39,32 @@
     },
     {
       "path": "tools/datapack/release/capital-production-canonical-pack.json",
-      "sha256": "f6d68d2ca28e2ef82e2da3c366474396c899057408a38dcd202f2c1ddfb0b45b",
+      "sha256": "4bf5b4da2a584a5786d86008375b8a31ae517daff8f34f9c7922556f9c652e49",
       "byteSize": 27516845
     },
     {
-      "path": "tools/datapack/release/capital-topology-reverification-20261120.json",
-      "sha256": "c9cd46400c3e4e91dce35c3e4a0d7a09a728185132d11cca019514e54e1871f7",
+      "path": "tools/datapack/release/capital-topology-reverification-20261121.json",
+      "sha256": "fa3a82b1c814de739e9e770aca47127eda76a024811c5e79d97bbaf8429d6d36",
       "byteSize": 6809
     },
     {
       "path": "tools/datapack/release/current-busan-transfer-metrics.json",
-      "sha256": "134b07916444432098ba4043268c3781abc160200352db0238f6865d9963d4b4",
+      "sha256": "184fdcc8523ac17ecd8d1329bd6043566630dd0ac28242547254cc44049c56a9",
       "byteSize": 6452
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "ab15233cfe4a469605febe393b5375de433245c02ccfaee70af841bc3b7f5851",
+      "sha256": "9c1bd7f5edb9dffb0f8203409e78b4d7879cb5073223e5004ff6ffa63a00e43d",
       "byteSize": 36443
     },
     {
       "path": "tools/datapack/release/current-seoul-measured-transfer-metrics.json",
-      "sha256": "20863993448cd02443b27d6fc6eac89bdcf4f95598c1eb44ee2d40b3812917cc",
+      "sha256": "ce46a2ed88330cd25121c5b8b8424e4ebab52ebb91b8e7ea2245b48c7cdfd2f6",
       "byteSize": 1162953
     },
     {
       "path": "tools/datapack/release/current-transfer-topology-metrics.json",
-      "sha256": "9680c0e4a3e8c6e319097610f726235f8a9c0c063ae18cf6a57fe482cf71a8e0",
+      "sha256": "c91f2e1465f13c9fc8a79efad8e29365b17326be0da61fb15cc4d1e29622f10a",
       "byteSize": 86578
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "2a0af704dfd1c78ae023109a0bae4a4f657167fb4e4288f9902c77a446032398",
-      "byteSize": 17188312
+      "sha256": "ac63eb8e85330e61a759e346417308e64470b6886a7f884aa2c285f4b035961a",
+      "byteSize": 17226139
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "2951872383c0aab7cbe69cf54d925eb24212315f83fa3debe435dd2676e6a4f4",
+      "sha256": "30c43d7dbed608b62c8982c5243aee669a7c6b0999fa58074f19a013b1c5c4db",
       "byteSize": 420430
     },
     {
@@ -113,8 +113,8 @@
       "byteSize": 278264
     },
     {
-      "path": "tools/datapack/sources/capital-route-topology-20261120.json",
-      "sha256": "a68eeab773ea2c7bde8972994604ff6d6315e75611d7b86390073c2f4aa02e61",
+      "path": "tools/datapack/sources/capital-route-topology-20261121.json",
+      "sha256": "8b32a1cf642cb8e62d30d939ddc5044997889f573740a5c1caec567db9e4a889",
       "byteSize": 260470
     },
     {
@@ -153,18 +153,18 @@
       "byteSize": 94606
     },
     {
-      "path": "tools/datapack/sources/incheon-line1-train-timetable-20261120.json",
-      "sha256": "940dd12cec7219e66e2ad415b0f6e57f02cf421ec7dce1cbe35dc5a606de7e62",
+      "path": "tools/datapack/sources/incheon-line1-train-timetable-20261121.json",
+      "sha256": "58aab5d24900e22c0639c7951ba6d48ad66108808254fdf35feed1acc8644af9",
       "byteSize": 748699
     },
     {
-      "path": "tools/datapack/sources/incheon-line2-train-timetable-20261120.json",
-      "sha256": "11176c8cf816913d7ab67cd1842c0274fc6a740eecfd67e31a7c4cd0b139ebda",
+      "path": "tools/datapack/sources/incheon-line2-train-timetable-20261121.json",
+      "sha256": "d20f520024a61dbfd3735b1a574b098aa0fe91ff89bc033042a1ac3d6f2d9616",
       "byteSize": 926710
     },
     {
-      "path": "tools/datapack/sources/incheon-transit-station-info-20261120.json",
-      "sha256": "3ac1b63e404c6b5836eccbcbae0e72b1d6f150d1f0aa9799314d5f3c23d15874",
+      "path": "tools/datapack/sources/incheon-transit-station-info-20261121.json",
+      "sha256": "92ea16a2038a7e1f6fd8b135e98d84a01e9ac7249e8ca58ceb63e4a83c87dafe",
       "byteSize": 65917
     },
     {
@@ -198,8 +198,8 @@
       "byteSize": 938693
     },
     {
-      "path": "tools/datapack/sources/kric-station-escalator-detailed-20261120T215004815Z.json",
-      "sha256": "d5dec9a1ed9a81d777022e412f2bbd837f0b9305079622d6021ba32186a054ad",
+      "path": "tools/datapack/sources/kric-station-escalator-detailed-20261121T203239737Z.json",
+      "sha256": "61b3682fc15471512a0ca9e97e794fe2059dc4388814592f252b9690391ab1b2",
       "byteSize": 797384
     },
     {
