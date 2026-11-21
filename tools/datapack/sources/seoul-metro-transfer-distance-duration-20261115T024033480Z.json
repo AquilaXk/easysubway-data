@@ -23,9 +23,9 @@
     "kricProviderCatalogSha256": "18ef12fce6a42f63e39f6804e62654f27c2dc199485fc5e6e49c77a02acbb837"
   },
   "transferTopology": {
-    "canonicalPackSha256": "f6d68d2ca28e2ef82e2da3c366474396c899057408a38dcd202f2c1ddfb0b45b",
-    "metricsArtifactSha256": "49dbd1457db3d73da64181878932a73d9a5efd71e7c48f8bc29f3902a8da252a",
-    "applicabilityArtifactSha256": "abd9e130ca532fc949f4d2319da4b7867209c7f92bec759e049b5177903bfdf1",
+    "canonicalPackSha256": "4bf5b4da2a584a5786d86008375b8a31ae517daff8f34f9c7922556f9c652e49",
+    "metricsArtifactSha256": "303c7967397049607fd52837456cf9264313724aefd0e8704283548a63ba1aa4",
+    "applicabilityArtifactSha256": "a4525048ed29ba7409889eb3ac73dd8a2b084bcefcd9304f8209bde96fb64fc6",
     "stationLineCount": 698,
     "stationCount": 567,
     "physicalPairCount": 102,
@@ -36,5 +36,5 @@
     "notApplicableStationLineCount": 538,
     "durationRole": "REFERENCE_ONLY"
   },
-  "snapshotSha256": "4543edfb73800410114a65762a6aa769f42239b46ba240e02baaeb198125bacf"
+  "snapshotSha256": "7a945272dfee53e729cce503c860ef7331b40f2bae5738a5ddf5df883af65509"
 }
