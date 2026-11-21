@@ -12,10 +12,10 @@
     "manifestSha256": "5328c25ffaf78085707a3e296993228f3cc3453706420a163ef4b539cb0973b9"
   },
   "sourceArtifact": {
-    "id": "itx-cheongchun-source-timetable-20261120195645670",
-    "sha256": "ab15d701cf0387449a66fe739f65b30b7c1944af5b757d2a2fa85709abedca88",
-    "completenessEvidenceSha256": "ba07d1bfd5d4dd3a401c1783f96505774a0830767390bb20ba4c19b3c41409d2",
-    "freshUntil": "2026-11-24T00:00:00+09:00",
+    "id": "itx-cheongchun-source-timetable-20261121190237616",
+    "sha256": "f7c559947545286733ca7603cd6f9d39dc1f9347880bb4c08fa8d4c4fbba4b0a",
+    "completenessEvidenceSha256": "71c7ae0e432329ef4f8124fa9f5443b44d9f7f4a7812dd7ed8de9daab56efce4",
+    "freshUntil": "2026-11-29T00:00:00+09:00",
     "stationCatalogPackIdentity": {
       "artifactKind": "station-catalog-pack",
       "manifestVersion": 1,
@@ -44,9 +44,9 @@
     "inputSha256": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
     "inputSqliteSha256": "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
     "inputByteSize": 388623,
-    "outputSha256": "e855b6e5127ce8c53d097bf4b110c2da511ac3ac0fde2dca64e2562ccfcc2420",
-    "outputSqliteSha256": "813b81c6aaa23f9aa082a1c0ddeec614bff48b8bfc19febfe75cd802ec4e9ada",
-    "byteSize": 390497,
-    "byteSizeDelta": 1874
+    "outputSha256": "c225b0cf93eab220e62326229cd69ea63724dac2318c139ed10860389eab068e",
+    "outputSqliteSha256": "9cb2e1574355055320354f6c1d19bb0b1359f0ddfe4d71fcb0b12b9d3dd7b08d",
+    "byteSize": 390489,
+    "byteSizeDelta": 1866
   }
 }
