@@ -25,7 +25,7 @@
           "licenseStatus": "redistributable",
           "redistributionAllowed": true,
           "updateFrequency": "annual",
-          "updatedAt": "2026-11-20T00:00:00.000Z",
+          "updatedAt": "2026-11-22T00:00:00.000Z",
           "fields": [
             "region",
             "operator_name",
@@ -89,7 +89,7 @@
           "licenseStatus": "redistributable",
           "redistributionAllowed": true,
           "updateFrequency": "provider-documented-on-change",
-          "updatedAt": "2026-11-20T00:00:00.000Z",
+          "updatedAt": "2026-11-22T00:00:00.000Z",
           "fields": [
             "railOprIsttCd",
             "trnNo",
