@@ -568124,5 +568124,49 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "busan-transportation-accessibility",
+    "snapshotId": "busan-transportation-accessibility-c43f48001587ea47acbf87c00cf4ffa68a5aca0060ae1d550ef17a561ff0325b-20261125",
+    "previousSnapshotId": "busan-transportation-accessibility-7b7bf47c0846793a1d61f102f2773a2cb967776269d9cc06f75d58be20333d11-20261122",
+    "capturedAt": "2026-11-24T18:03:16.982Z",
+    "retrievedAt": "2026-11-24T18:03:16.982Z",
+    "sourceUpdatedAt": null,
+    "provider": "부산교통공사",
+    "rowCount": 114,
+    "coverageCount": 114,
+    "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
+    "contentSha256": "206d096b8fd033fff4e8a80c53d524635b332be47f55287b52c2b7cb2a792a9a",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/busan-transportation-accessibility/20261125/ed5724df89464cab029e287c63d18cfccfe8ae50afba5d8e3769521a428cf6e9.json",
+    "rawObjectSha256": "ed5724df89464cab029e287c63d18cfccfe8ae50afba5d8e3769521a428cf6e9",
+    "rawReceiptSha256": "6eecb54f0bcbd0fffd65d896a735ffb4b6bcd1b0d6eb75736ee2eb2d02a0fbee",
+    "byteSize": 126191,
+    "freshUntil": "2026-11-25T18:03:16.982Z",
+    "freshnessExpiresAt": "2027-02-22T18:03:16.982Z",
+    "rawRetentionExpiresAt": "2027-02-22T18:03:16.982Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "05e53229003663d98be4cc24813a376cd34bb9ddde004ffad08591086be5660f",
+    "redactedRequestFingerprint": "fd97e9a95ebe9e5338f3d4c089f0397997136812f62f45f7726c1f78193f1f6f",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "82dc0d5a7c726532e8aca86b31603c0edd3cd238a67b4067f4aab0ac59e27edf"
+    },
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
