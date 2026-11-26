@@ -85,7 +85,10 @@ test("수집기는 키 없는 고정 다운로드 URL만 호출하고 응답 파
       return new Response(SAMPLE, { headers: { "content-disposition": header } });
     },
   });
-  assert.deepEqual(calls, [[DOWNLOAD_URL, { redirect: "error" }]]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], DOWNLOAD_URL);
+  assert.equal(calls[0][1].redirect, "error");
+  assert.ok(calls[0][1].signal instanceof AbortSignal);
   assert.ok(!/serviceKey/iu.test(DOWNLOAD_URL));
   assert.equal(snapshot.sourceFileName, FILE_NAME);
   assert.equal(contentDispositionFileName(header), FILE_NAME);
@@ -101,4 +104,14 @@ test("수집기는 키 없는 고정 다운로드 URL만 호출하고 응답 파
     /HTTP 500/u,
   );
   assert.equal(attempts, 3);
+
+  await assert.rejects(
+    collectSeoulMetroTransferCarDoorDuration({
+      fetchImpl: async () => new Response(Buffer.alloc(4 * 1024 * 1024 + 1, 0x20), {
+        status: 200,
+        headers: { "content-disposition": header },
+      }),
+    }),
+    /exceeds maximum size/u,
+  );
 });

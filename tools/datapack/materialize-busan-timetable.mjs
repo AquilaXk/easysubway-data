@@ -73,6 +73,7 @@ export function materializeBusanTimetable({
       serviceId: SERVICES[day],
       tripHeadsign: observedStops.at(-1).station.stationName,
       directionId: updown === "0" ? "up" : "down",
+      ...(typeof trainno === "string" && trainno.trim() !== "" ? { trainNo: trainno.trim() } : {}),
       servicePattern: "LOCAL",
       serviceClass: "SUBWAY",
       serviceDayStartSeconds: 0,

@@ -148,6 +148,7 @@ test("대구 1·2·3호선 공식 topology·시각표를 94역·182 edge·2540 t
   assert.equal(edges.length, 182);
   assert.equal(calendars.length, 9);
   assert.equal(trips.length, 2_540);
+  assert.ok(trips.every(({ trainNo }) => typeof trainNo === "string" && trainNo.length > 0));
   assert.equal(stopTimes.length, 77_970);
   assert.equal(stopTimes.every(({ derivationKind }) => derivationKind === "OFFICIAL"), true);
   assert.deepEqual({

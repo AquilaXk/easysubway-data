@@ -1,21 +1,21 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
 import {
+  extractXlsxWorkbookEntries,
   parseSharedStrings,
   parseWorkbookSheetRefs,
   parseWorksheetRows,
+  readXlsxXmlEntry,
 } from "./parse-kric-code-catalog.mjs";
 
 export const KORAIL_FACILITY_WORKBOOK_URL =
   "https://info.korail.com/info/downloadInfoRelFile.do?infoRelAtchNo=2473";
 
-const execFileAsync = promisify(execFile);
 const MAXIMUM_WORKBOOK_BYTES = 50 * 1024 * 1024;
 const ALLOWED_CONTENT_TYPES = new Set([
   "application/octet-stream",
@@ -55,8 +55,21 @@ export async function summarizeKorailWorkbook(readEntry, maximumBytes = MAXIMUM_
 }
 
 export async function inspectKorailWorkbook(input) {
-  return summarizeKorailWorkbook((entry, optional, maximumBytes) =>
-    unzipEntry(input, entry, optional, maximumBytes));
+  const bytes = Buffer.isBuffer(input) || input instanceof Uint8Array
+    ? input
+    : await readFile(input);
+  const entries = extractXlsxWorkbookEntries(bytes, {
+    maxArchiveBytes: MAXIMUM_WORKBOOK_BYTES,
+    maxEntryBytes: MAXIMUM_WORKBOOK_BYTES,
+    maxTotalBytes: MAXIMUM_WORKBOOK_BYTES,
+  });
+  return summarizeKorailWorkbook((entry, optional, maximumBytes) => {
+    const text = readXlsxXmlEntry(entries, entry, optional);
+    if (Buffer.byteLength(text, "utf8") > maximumBytes) {
+      throw new Error("Korail XLSX aggregate XML exceeds byte limit");
+    }
+    return text;
+  });
 }
 
 export async function readBoundedResponseBody(response, maximumBytes) {
@@ -90,7 +103,9 @@ export async function probeKorailFacilityWorkbook({
   tempRoot,
 } = {}) {
   if (!path.isAbsolute(output ?? "")) throw new Error("--output must be an absolute path");
-  if (!path.isAbsolute(tempRoot ?? "")) throw new Error("RUNNER_TEMP must be an absolute path");
+  if (inspectWorkbookImpl !== inspectKorailWorkbook && !path.isAbsolute(tempRoot ?? "")) {
+    throw new Error("RUNNER_TEMP must be an absolute path");
+  }
   if (new Date(capturedAt).toISOString() !== capturedAt) throw new Error("capturedAt must be an ISO instant");
   await rm(output, { force: true });
 
@@ -124,40 +139,32 @@ export async function probeKorailFacilityWorkbook({
     throw new Error("Korail FACILITY workbook XLSX signature is invalid");
   }
 
-  const directory = await mkdtemp(path.join(tempRoot, "korail-facility-xlsx-"));
-  try {
-    const input = path.join(directory, "source.xlsx");
-    await writeFile(input, bytes, { mode: 0o600 });
-    const workbook = await inspectWorkbookImpl(input);
-    const evidence = {
-      schemaVersion: 1,
-      artifactKind: "korail-facility-workbook-probe-evidence",
-      sourceId: "korail-facility-workbook-2473",
-      sourceUrl: KORAIL_FACILITY_WORKBOOK_URL,
-      capturedAt,
-      contentType,
-      rawSha256: createHash("sha256").update(bytes).digest("hex"),
-      byteCount: bytes.length,
-      sheets: workbook.sheets,
-    };
-    await writeFile(output, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
-    return evidence;
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-}
-
-async function unzipEntry(input, entry, optional = false, maximumBytes = MAXIMUM_WORKBOOK_BYTES) {
-  try {
-    const { stdout } = await execFileAsync("unzip", ["-p", input, entry], { maxBuffer: maximumBytes });
-    return stdout;
-  } catch (error) {
-    if (error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-      throw new Error("Korail XLSX aggregate XML exceeds byte limit");
+  let workbook;
+  if (inspectWorkbookImpl === inspectKorailWorkbook) {
+    workbook = await inspectKorailWorkbook(bytes);
+  } else {
+    const directory = await mkdtemp(path.join(tempRoot, "korail-facility-xlsx-"));
+    try {
+      const input = path.join(directory, "source.xlsx");
+      await writeFile(input, bytes, { flag: "wx", mode: 0o400 });
+      workbook = await inspectWorkbookImpl(input);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
     }
-    if (optional && error?.code === 11) return "";
-    throw new Error(`Korail XLSX archive entry unavailable: ${entry}`);
   }
+  const evidence = {
+    schemaVersion: 1,
+    artifactKind: "korail-facility-workbook-probe-evidence",
+    sourceId: "korail-facility-workbook-2473",
+    sourceUrl: KORAIL_FACILITY_WORKBOOK_URL,
+    capturedAt,
+    contentType,
+    rawSha256: createHash("sha256").update(bytes).digest("hex"),
+    byteCount: bytes.length,
+    sheets: workbook.sheets,
+  };
+  await writeFileReplacing(output, `${JSON.stringify(evidence, null, 2)}\n`);
+  return evidence;
 }
 
 function parseArgs(argv) {

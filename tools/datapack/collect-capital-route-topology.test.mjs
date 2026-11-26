@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { crc32 } from "node:zlib";
 
 import {
   buildCapitalTopologyReverificationEvidence,
@@ -871,18 +872,46 @@ defineSourceCollectionRetryTests({
   run: async ({ fetchImpl, sleepImpl }) => (await collectMolitFullRouteCsv({ fetchImpl, sleepImpl, randomImpl: () => 0 })).toString("utf8"),
 });
 
-// 무압축(stored) zip: unzipXlsx는 local file header만 읽으므로 CRC·central directory 없이도 열린다.
+// 무압축(stored) zip: Central Directory·EOCD·CRC32 검증과 함께 열린다.
 function storedZip(entries) {
-  return Buffer.concat(Object.entries(entries).map(([name, text]) => {
+  const names = Object.entries(entries);
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const [name, text] of names) {
     const nameBytes = Buffer.from(name);
     const data = Buffer.from(text);
-    const header = Buffer.alloc(30);
-    header.writeUInt32LE(0x04034b50, 0);
-    header.writeUInt32LE(data.length, 18);
-    header.writeUInt32LE(data.length, 22);
-    header.writeUInt16LE(nameBytes.length, 26);
-    return Buffer.concat([header, nameBytes, data]);
-  }));
+    const checksum = crc32(data) >>> 0;
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(20, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt32LE(checksum, 16);
+    cd.writeUInt32LE(data.length, 20);
+    cd.writeUInt32LE(data.length, 24);
+    cd.writeUInt16LE(nameBytes.length, 28);
+    cd.writeUInt32LE(offset, 42);
+
+    const localEntry = Buffer.concat([local, nameBytes, data]);
+    locals.push(localEntry);
+    centrals.push(Buffer.concat([cd, nameBytes]));
+    offset += localEntry.length;
+  }
+  const cdBuffer = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(names.length, 8);
+  eocd.writeUInt16LE(names.length, 10);
+  eocd.writeUInt32LE(cdBuffer.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cdBuffer, eocd]);
 }
 
 test("GTX-A xlsx 파서는 Z 뒤의 열(AA)까지 한 행의 너비로 읽는다", () => {

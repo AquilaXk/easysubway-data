@@ -12,16 +12,35 @@ const productionMinimumTableRowNames = [
   "station_facility_evidence",
 ];
 
+const MIN_RSA_MODULUS_BITS = 2048;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+const KEY_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+export function isCanonicalBase64Url(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length % 4 === 1 || !BASE64URL_PATTERN.test(value)) {
+    return false;
+  }
+  return Buffer.from(value, "base64url").toString("base64url") === value;
+}
+
 export function verifyRsaSha256Signature(publicKey, value, signature) {
+  if (typeof signature !== "string" || !isCanonicalBase64Url(signature)) {
+    return false;
+  }
   return createVerify("RSA-SHA256").update(value).verify(publicKey, Buffer.from(signature, "base64url"));
+}
+
+function assertRsaKeyStrength(keyObject, errorMessage) {
+  const modulusLength = keyObject.asymmetricKeyDetails?.modulusLength;
+  if (keyObject.asymmetricKeyType !== "rsa" || !Number.isInteger(modulusLength) || modulusLength < MIN_RSA_MODULUS_BITS) {
+    throw new Error(errorMessage);
+  }
 }
 
 function normalizeRsaPublicKeyPem(pem, errorMessage) {
   try {
     const keyObject = createPublicKey(pem);
-    if (keyObject.asymmetricKeyType !== "rsa") {
-      throw new Error(errorMessage);
-    }
+    assertRsaKeyStrength(keyObject, errorMessage);
     return keyObject.export({ type: "spki", format: "pem" });
   } catch {
     throw new Error(errorMessage);
@@ -29,11 +48,12 @@ function normalizeRsaPublicKeyPem(pem, errorMessage) {
 }
 
 function normalizeRsaPublicKeyJwk(n, e, errorMessage) {
+  if (!isCanonicalBase64Url(n) || !isCanonicalBase64Url(e)) {
+    throw new Error(errorMessage);
+  }
   try {
     const keyObject = createPublicKey({ key: { kty: "RSA", n, e }, format: "jwk" });
-    if (keyObject.asymmetricKeyType !== "rsa") {
-      throw new Error(errorMessage);
-    }
+    assertRsaKeyStrength(keyObject, errorMessage);
     return keyObject.export({ type: "spki", format: "pem" });
   } catch {
     throw new Error(errorMessage);
@@ -56,7 +76,11 @@ export function signingPublicKey(env = process.env) {
 }
 
 export function signingKeyId(env = process.env) {
-  return env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1";
+  const keyId = env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1";
+  if (!KEY_ID_PATTERN.test(keyId)) {
+    throw new Error("EASYSUBWAY_DATAPACK_SIGNING_KEY_ID must match ^[A-Za-z0-9._-]+$");
+  }
+  return keyId;
 }
 
 export function trustedSigningPublicKeys(env = process.env) {
@@ -78,6 +102,7 @@ export function trustedSigningPublicKeys(env = process.env) {
   const hasPartialNextJwk = (nextN.length > 0) !== (nextE.length > 0);
   if (
     !nextKeyId ||
+    !KEY_ID_PATTERN.test(nextKeyId) ||
     nextKeyId === primaryKeyId ||
     hasPartialNextJwk ||
     hasNextPem === hasNextJwk
@@ -274,7 +299,7 @@ function validateArtifactComponentSignature(signature) {
     throw new Error("signature algorithm is unsupported");
   }
   const value = requiredArtifactComponentRawString(signature.value, "signature.value");
-  if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+  if (!isCanonicalBase64Url(value)) {
     throw new Error("signature.value must be a base64url string");
   }
 }
@@ -495,7 +520,7 @@ function validateSignature(signature, label, manifestVersion, artifactKind) {
   const value = requiredString(signature.value, "signature.value");
   if (algorithm.startsWith("sha256-")) {
     requiredSha256(value, "signature.value");
-  } else if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+  } else if (!isCanonicalBase64Url(value)) {
     throw new Error("signature.value must be a base64url string");
   }
 }
@@ -675,7 +700,7 @@ function validateRepresentativeRouteRegressionSignature(signature, label) {
   const value = requiredString(signature.value, "representativeRouteRegressionSignature.value");
   if (algorithm === "sha256-route-regression-v1") {
     requiredSha256(value, "representativeRouteRegressionSignature.value");
-  } else if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+  } else if (!isCanonicalBase64Url(value)) {
     throw new Error("representativeRouteRegressionSignature.value must be a base64url string");
   }
 }
@@ -758,7 +783,7 @@ export function validateManifestV2Envelope(manifest) {
   const value = requiredString(manifest.signature.value, "manifest.signature.value");
   if (algorithm === "sha256-manifest-v2") {
     requiredSha256(value, "manifest.signature.value");
-  } else if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+  } else if (!isCanonicalBase64Url(value)) {
     throw new Error("manifest.signature.value must be a base64url string");
   }
   if (manifest.rollbackProvenance !== undefined) {

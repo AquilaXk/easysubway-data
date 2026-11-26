@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
 import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -12,6 +14,12 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 const DEFAULT_OAS_URL = "https://infuser.odcloud.kr/oas/docs?namespace=15071311/v1";
 const ODCLOUD_BASE_URL = "https://api.odcloud.kr";
 const DATASET_SUMMARY_PATTERN = /^서울교통공사_지하철혼잡도정보_(\d{8})$/;
+const REQUEST_TIMEOUT_MS = 30_000;
+const PER_PAGE = 2000;
+const MAX_OAS_BYTES = 8 * 1024 * 1024;
+const MAX_PAGE_BYTES = 16 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+const MAX_PAGES = 20;
 
 function canonicalJson(obj) {
   return JSON.stringify(obj, Object.keys(obj).sort(codepointCompare));
@@ -80,9 +88,16 @@ export async function collectSeoulMetroCongestion({
 
   if (!selectedUddi || !label) {
     const { response: oasResponse, oasDoc } = await withSourceCollectionRetry(async () => {
-      const res = await fetchImpl(oasUrl);
+      const res = await fetchImpl(oasUrl, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        headers: { Accept: "application/json" },
+      });
       if (!res.ok) return { response: res, oasDoc: null };
-      return { response: res, oasDoc: await res.json() };
+      const oasBytes = await readResponseBytesWithLimit(res, {
+        maxBytes: MAX_OAS_BYTES,
+        label: "Seoul Metro congestion OAS",
+      });
+      return { response: res, oasDoc: JSON.parse(oasBytes.toString("utf8")) };
     }, { label: "Seoul Metro congestion OAS", url: oasUrl, ...retry })
       .catch((error) => { throw unwrapTransientRetryFailure(error); });
     if (!oasResponse.ok) {
@@ -93,50 +108,85 @@ export async function collectSeoulMetroCongestion({
     label = label ?? resolution.datasetLabel;
   }
 
-  const endpointUrl = new URL(`/api/15071311/v1/${selectedUddi}`, ODCLOUD_BASE_URL);
-  endpointUrl.searchParams.set("page", "1");
-  endpointUrl.searchParams.set("perPage", "2000");
-  endpointUrl.searchParams.set("returnType", "JSON");
+  const allRows = [];
+  const rawPages = [];
+  let totalCount = null;
+  let totalBytes = 0;
 
-  const { response, rawText } = await withSourceCollectionRetry(async () => {
-    const res = await fetchImpl(endpointUrl.href, {
-      headers: {
-        Authorization: `Infuser ${normalizedKey}`,
-        Accept: "application/json",
-      },
-    });
-    if (!res.ok) return { response: res, rawText: "" };
-    return { response: res, rawText: await res.text() };
-  }, { label: "Seoul Metro congestion ODCloud API", url: endpointUrl.href, ...retry })
-    .catch((error) => { throw unwrapTransientRetryFailure(error); });
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const endpointUrl = new URL(`/api/15071311/v1/${selectedUddi}`, ODCLOUD_BASE_URL);
+    endpointUrl.searchParams.set("page", String(page));
+    endpointUrl.searchParams.set("perPage", String(PER_PAGE));
+    endpointUrl.searchParams.set("returnType", "JSON");
 
-  if (!response.ok) {
-    throw new Error(`failed to fetch congestion data: HTTP ${response.status}`);
+    const { response, rawText } = await withSourceCollectionRetry(async () => {
+      const res = await fetchImpl(endpointUrl.href, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        headers: {
+          Authorization: `Infuser ${normalizedKey}`,
+          Accept: "application/json",
+        },
+      });
+      if (!res.ok) return { response: res, rawText: "" };
+      const bytes = await readResponseBytesWithLimit(res, {
+        maxBytes: MAX_PAGE_BYTES,
+        label: "Seoul Metro congestion ODCloud page",
+      });
+      return { response: res, rawText: bytes.toString("utf8") };
+    }, { label: "Seoul Metro congestion ODCloud API", url: endpointUrl.href, ...retry })
+      .catch((error) => { throw unwrapTransientRetryFailure(error); });
+
+    if (!response.ok) {
+      throw new Error(`failed to fetch congestion data: HTTP ${response.status}`);
+    }
+
+    if (rawText.includes(normalizedKey)) {
+      throw new Error("response body contains the service credential; refusing to archive it");
+    }
+
+    totalBytes += Buffer.byteLength(rawText, "utf8");
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      throw new Error(`Seoul Metro congestion total bytes (${totalBytes}) exceeds limit ${MAX_TOTAL_BYTES}`);
+    }
+
+    const parsed = JSON.parse(rawText);
+    const pageTotalCount = parsed.totalCount;
+    const pageRows = parsed.data;
+
+    if (!Array.isArray(pageRows)) {
+      throw new Error("response data is not an array");
+    }
+
+    if (!Number.isSafeInteger(pageTotalCount) || pageTotalCount <= 0) {
+      throw new Error("response totalCount is missing or not a positive integer");
+    }
+
+    if (totalCount === null) {
+      totalCount = pageTotalCount;
+    } else if (pageTotalCount !== totalCount) {
+      throw new Error(`response totalCount changed mid-pagination (${totalCount} -> ${pageTotalCount})`);
+    }
+
+    rawPages.push(rawText);
+    allRows.push(...pageRows);
+
+    if (allRows.length >= totalCount || pageRows.length === 0) {
+      break;
+    }
+    if (page === MAX_PAGES) {
+      throw new Error(`Seoul Metro congestion pagination exceeded MAX_PAGES (${MAX_PAGES})`);
+    }
   }
 
-  const parsed = JSON.parse(rawText);
-
-  const totalCount = parsed.totalCount;
-  const rows = parsed.data;
-
-  if (!Array.isArray(rows)) {
-    throw new Error("response data is not an array");
+  if (allRows.length !== totalCount) {
+    throw new Error(`received row count (${allRows.length}) does not match totalCount (${totalCount})`);
   }
 
-  if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
-    throw new Error("response totalCount is missing or not a non-negative integer");
-  }
-
-  if (rows.length !== totalCount) {
-    throw new Error(`received row count (${rows.length}) does not match totalCount (${totalCount})`);
-  }
-
-  if (rawText.includes(normalizedKey)) {
-    throw new Error("response body contains the service credential; refusing to archive it");
-  }
-
-  const rawSha = sha256(rawText);
-  const contentSha = sha256(JSON.stringify(rows));
+  const rawArchiveText = rawPages.length === 1
+    ? rawPages[0]
+    : JSON.stringify({ pages: rawPages.map((pageRaw) => JSON.parse(pageRaw)) });
+  const rawSha = sha256(rawArchiveText);
+  const contentSha = sha256(JSON.stringify(allRows));
   const capturedAt = (now instanceof Date ? now : new Date(now)).toISOString();
   const timestampTag = capturedAt.replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const snapshotId = `seoul-metro-congestion-${timestampTag}`;
@@ -148,15 +198,15 @@ export async function collectSeoulMetroCongestion({
     uddi: selectedUddi,
     rawSha256: rawSha,
     contentSha256: contentSha,
-    rowCount: rows.length,
-    rows,
+    rowCount: allRows.length,
+    rows: allRows,
   };
 
   if (outputDir) {
     await mkdir(outputDir, { recursive: true });
     const targetFile = path.join(outputDir, `${snapshotId}.json`);
-    await writeFile(path.join(outputDir, `${snapshotId}.raw.json`), rawText, "utf8");
-    await writeFile(targetFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+    await writeFileReplacing(path.join(outputDir, `${snapshotId}.raw.json`), rawArchiveText, "utf8");
+    await writeFileReplacing(targetFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
     snapshot.savedPath = targetFile;
   }
 

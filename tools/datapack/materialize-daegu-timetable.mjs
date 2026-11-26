@@ -562,6 +562,7 @@ function addRoutesAndTrips(pack, line) {
       serviceId: serviceIdFor(config.lineNumber, trip.dayCode),
       tripHeadsign: lastName,
       directionId: trip.direction === "up" ? "decreasing" : "increasing",
+      ...(typeof trip.trainNo === "string" && trip.trainNo.trim() !== "" ? { trainNo: trip.trainNo.trim() } : {}),
       servicePattern: "LOCAL",
       serviceClass: "SUBWAY",
       serviceDayStartSeconds: 0,

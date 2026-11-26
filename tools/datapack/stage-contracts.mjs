@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -115,15 +115,34 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
   await mkdir(build, { recursive: true });
   await requireDirectory(build, "build directory");
   const output = path.join(build, "contracts");
-  await requireAbsent(output);
   const temporary = await mkdtemp(path.join(build, ".contracts-"));
+  let backup = null;
   try {
     for (const name of resourceNames) {
       const target = path.join(temporary, name);
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, bundle.resources[name], { flag: "wx" });
     }
-    await rename(temporary, output);
+    const existing = await lstatIfExists(output);
+    if (existing) {
+      if (!existing.isDirectory() || existing.isSymbolicLink()) {
+        throw new Error("build/contracts must be a real directory");
+      }
+      backup = path.join(build, `.contracts-backup-${process.pid}-${randomUUID()}`);
+      await rename(output, backup);
+    }
+    try {
+      await rename(temporary, output);
+    } catch (renameError) {
+      if (backup) {
+        await rename(backup, output).catch(() => {});
+      }
+      throw renameError;
+    }
+    if (backup) {
+      await rm(backup, { recursive: true, force: true });
+      backup = null;
+    }
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
     throw error;
@@ -131,7 +150,7 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
 }
 
 async function download(url) {
-  const response = await fetch(url, { redirect: "error" });
+  const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`contract bundle download failed: HTTP ${response.status}`);
   return readResponseBytesWithLimit(response, { maxBytes: 16 * 1024 * 1024, label: "contract bundle" });
 }
@@ -148,14 +167,13 @@ async function requireDirectory(target, label) {
   if (!stats.isDirectory() || stats.isSymbolicLink()) throw new Error(`${label} must be a real directory`);
 }
 
-async function requireAbsent(target) {
+async function lstatIfExists(target) {
   try {
-    await lstat(target);
+    return await lstat(target);
   } catch (error) {
-    if (error?.code === "ENOENT") return;
+    if (error?.code === "ENOENT") return null;
     throw error;
   }
-  throw new Error("build/contracts already exists");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

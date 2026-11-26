@@ -1,8 +1,9 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { canonicalJson, withoutSignature } from "./lib/manifest-validation.mjs";
+import { canonicalJson, signingKeyId, withoutSignature } from "./lib/manifest-validation.mjs";
 import { sha256 } from "../lib/hash.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
 
 function fixtureSignaturePayload(pack) {
   return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
@@ -33,12 +34,13 @@ function representativeRouteRegressionSignaturePayload(pack) {
 
 async function promoteAndSign() {
   const signingKey = signingPrivateKey();
+  const keyId = signingKeyId();
   const currentPath = path.resolve("artifacts/datapack/current.json");
   const currentProvenancePath = path.resolve("artifacts/datapack/current.provenance.json");
 
   const manifest = JSON.parse(await readFile(currentPath, "utf8"));
   manifest.channel = "production";
-  manifest.keyId = "production-v1";
+  manifest.keyId = keyId;
 
   for (const pack of manifest.packs) {
     pack.artifactKind = "production";
@@ -60,7 +62,7 @@ async function promoteAndSign() {
   };
 
   const currentJsonContent = JSON.stringify(manifest, null, 2) + "\n";
-  await writeFile(currentPath, currentJsonContent, "utf8");
+  await writeFileReplacing(currentPath, currentJsonContent, "utf8");
   const newManifestSha256 = sha256(Buffer.from(currentJsonContent));
 
   const provenance = JSON.parse(await readFile(currentProvenancePath, "utf8"));
@@ -68,7 +70,7 @@ async function promoteAndSign() {
   for (const pack of provenance.packs ?? []) {
     pack.artifactKind = "production";
   }
-  await writeFile(currentProvenancePath, JSON.stringify(provenance, null, 2) + "\n", "utf8");
+  await writeFileReplacing(currentProvenancePath, JSON.stringify(provenance, null, 2) + "\n", "utf8");
 
   console.log("Promoted and signed production artifacts successfully.");
   console.log("New manifestSha256:", newManifestSha256);

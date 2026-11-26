@@ -8770,6 +8770,78 @@
       },
       "productionInventoryReferenceId": "kric-station-escalator-detailed",
       "productionInventoryRelationship": "staged_inventory_entry_registered_by_first_kric_facility_refresh_issue_3036"
+    },
+    {
+      "id": "korail-facility-workbook-2473",
+      "priority": "P1",
+      "domain": "accessibility_facilities",
+      "coverageScope": {
+        "operatorIds": [
+          "korail"
+        ]
+      },
+      "displayName": "한국철도공사 역사 승강설비 현황 워크북 (2473)",
+      "detailUrl": "https://info.korail.com/info/downloadInfoRelFile.do?infoRelAtchNo=2473",
+      "requestUrl": "https://info.korail.com/info/downloadInfoRelFile.do?infoRelAtchNo=2473",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://info.korail.com/info/downloadInfoRelFile.do?infoRelAtchNo=2473",
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [],
+        "responseEnvelope": "XLSX",
+        "runner": {
+          "command": "node tools/datapack/probe-korail-facility-workbook.mjs",
+          "arguments": [
+            "--output",
+            "<absolute-operation-owned-output-file.json>"
+          ],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "pending_license_verification",
+      "sampleEvidenceStatus": "preflight_probe_only",
+      "admissionStatus": "preflight_only",
+      "serviceKeyHandling": "none",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "endpoint": "https://info.korail.com/info/downloadInfoRelFile.do?infoRelAtchNo=2473",
+        "formats": [
+          "XLSX"
+        ],
+        "missingEvidence": [
+          "liveWorkbookSample",
+          "licenseCommercialRedistributionEvidence"
+        ]
+      },
+      "nextAction": "probe-korail-facility-workbook.mjs 실측 응답과 공공누리·재배포 라이선스 확인 후 정식 승강설비 원천 편입 여부를 판정한다",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "candidate does not provide realtime arrival data"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "preflight probe only; requires live workbook verification and license review before production use"
+        }
+      }
     }
   ]
 }

@@ -629,3 +629,49 @@ test("G4 실제 후보 기록은 운영 사용 승인(QA 2026-09-30)과 수집 �
   assert.equal(admission.rawSha256, snapshot.rawSha256);
   assert.equal(admission.contentSha256, snapshot.contentSha256);
 });
+
+test("H-07 혼잡도 수집기는 totalCount<=0·바이트 상한 초과를 거부하고 다중 페이지·AbortSignal을 처리한다", async () => {
+  await assert.rejects(
+    () => collectSeoulMetroCongestion({
+      serviceKey: "test-valid-key",
+      fetchImpl: odcloudResponse({ totalCount: 0, data: [] }),
+      targetUddi: "uddi:test",
+      datasetLabel: "test",
+    }),
+    /positive integer/,
+  );
+
+  const signals = [];
+  const pages = [];
+  const multiSnap = await collectSeoulMetroCongestion({
+    serviceKey: "test-valid-key",
+    targetUddi: "uddi:test",
+    datasetLabel: "test",
+    fetchImpl: async (url, init) => {
+      signals.push(init?.signal);
+      const parsed = new URL(url);
+      const page = Number(parsed.searchParams.get("page"));
+      pages.push(page);
+      if (page === 1) {
+        return new Response(JSON.stringify({ totalCount: 2, data: [createSampleRow()] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ totalCount: 2, data: [createSampleRow({ "상하구분": "하선" })] }), { status: 200 });
+    },
+  });
+  assert.deepEqual(pages, [1, 2]);
+  assert.equal(multiSnap.rowCount, 2);
+  assert.ok(signals.every((s) => s instanceof AbortSignal));
+
+  await assert.rejects(
+    () => collectSeoulMetroCongestion({
+      serviceKey: "test-valid-key",
+      targetUddi: "uddi:test",
+      datasetLabel: "test",
+      fetchImpl: async () => new Response("{}", {
+        status: 200,
+        headers: { "content-length": String(17 * 1024 * 1024) },
+      }),
+    }),
+    /exceeds maximum size/,
+  );
+});

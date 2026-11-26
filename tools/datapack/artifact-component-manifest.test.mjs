@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
   canonicalJson,
+  isCanonicalBase64Url,
+  signingPublicKey,
   validateArtifactComponentManifest,
+  verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
 
@@ -53,7 +57,7 @@ function serverRouteBundleManifest() {
     keyId: "production-v1",
     signature: {
       algorithm: "rsa-sha256-server-route-bundle-v1",
-      value: "AA-_09",
+      value: "AA-_9w",
     },
   };
 }
@@ -206,8 +210,8 @@ test("raw string contract와 inherited required field를 fail closed한다", () 
     [serverRouteBundleManifest, "bundleId", (manifest) => { manifest.bundleId = " route-2026-08-03"; }],
     [serverRouteBundleManifest, "keyId", (manifest) => { manifest.keyId = "production-v1 "; }],
     [serverRouteBundleManifest, "signature.algorithm", (manifest) => { manifest.signature.algorithm = " rsa-sha256-server-route-bundle-v1"; }],
-    [serverRouteBundleManifest, "signature.value", (manifest) => { manifest.signature.value = "AA-_09 "; }],
-    [serverRouteBundleManifest, "signature.value final newline", (manifest) => { manifest.signature.value = "AA-_09\n"; }],
+    [serverRouteBundleManifest, "signature.value", (manifest) => { manifest.signature.value = "AA-_9w "; }],
+    [serverRouteBundleManifest, "signature.value final newline", (manifest) => { manifest.signature.value = "AA-_9w\n"; }],
   ]) {
     const manifest = factory();
     mutate(manifest);
@@ -220,9 +224,41 @@ test("raw string contract와 inherited required field를 fail closed한다", () 
   assertRejectedByBoth(inheritedTopLevel, /required field missing/);
 
   const inheritedSignature = serverRouteBundleManifest();
-  inheritedSignature.signature = Object.create({ value: "AA-_09" });
+  inheritedSignature.signature = Object.create({ value: "AA-_9w" });
   inheritedSignature.signature.algorithm = "rsa-sha256-server-route-bundle-v1";
   assertRejectedByBoth(inheritedSignature, /required field missing/);
+});
+
+test("비정규 base64url 서명과 2048비트 미만 RSA 공개키를 거부한다", () => {
+  assert.equal(isCanonicalBase64Url("AA-_9w"), true);
+  assert.equal(isCanonicalBase64Url("AA-_09"), false);
+  assert.equal(isCanonicalBase64Url("ABCDE"), false);
+  assert.equal(isCanonicalBase64Url("AA-_9w=="), false);
+
+  for (const invalidSig of ["AA-_09", "ABCDE", "AA-_9w=="]) {
+    const manifest = serverRouteBundleManifest();
+    manifest.signature.value = invalidSig;
+    assert.throws(() => validateArtifactComponentManifest(manifest), /base64url string/);
+  }
+
+  const weak = generateKeyPairSync("rsa", { modulusLength: 1024 });
+  const weakPem = weak.publicKey.export({ type: "spki", format: "pem" });
+  assert.throws(
+    () => signingPublicKey({ EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: weakPem }),
+    /RSA public key PEM is invalid/,
+  );
+
+  const weakJwk = weak.publicKey.export({ format: "jwk" });
+  assert.throws(
+    () => signingPublicKey({ EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N: weakJwk.n, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E: weakJwk.e }),
+    /RSA public key parameters are invalid/,
+  );
+
+  const valid = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  assert.equal(
+    verifyRsaSha256Signature(valid.publicKey.export({ type: "spki", format: "pem" }), "payload", "AA-_09"),
+    false,
+  );
 });
 
 test("server envelope의 signature 제외 canonical signing input을 고정한다", () => {

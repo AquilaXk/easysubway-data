@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sha256 } from "../lib/hash.mjs";
@@ -13,6 +14,35 @@ const TAR_EXECUTABLE = "/usr/bin/tar";
 export const PINNED_MOBILE_REVISION = "d3694c0fe1d15e9ee7854cba14e9120fd8ade9da";
 export const INPUT_CAPITAL_GZIP_SHA256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
 
+function assertNoSymlinksRecursive(dirPath) {
+  const rootStat = lstatSync(dirPath);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error(`Staged mobile directory must be a real directory: ${dirPath}`);
+  }
+  const stack = [dirPath];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new Error(`Pinned mobile fixture contains forbidden symlink: ${fullPath}`);
+      }
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      }
+    }
+  }
+}
+
+function lstatIfExists(targetPath) {
+  try {
+    return lstatSync(targetPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 /** 파생된 팩의 기대 sha256은 커밋된 증거가 정한다. */
 export function expectedDerivedCapitalGzipSha256(root = ROOT) {
   const evidence = JSON.parse(readFileSync(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
@@ -22,13 +52,28 @@ export function expectedDerivedCapitalGzipSha256(root = ROOT) {
 
 export function stageLocalMobileFixture({ repositoryRoot = ROOT, candidatePaths = null } = {}) {
   const root = path.resolve(repositoryRoot);
-  const targetPack = path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz");
-  const targetIndex = path.join(root, "apps/mobile/assets/datapacks/index.json");
+  const appsDir = path.join(root, "apps");
+  const targetMobileDir = path.join(appsDir, "mobile");
+  const targetPack = path.join(targetMobileDir, "assets/datapacks/capital.sqlite.gz");
+  const targetIndex = path.join(targetMobileDir, "assets/datapacks/index.json");
 
-  if (existsSync(targetPack) && existsSync(targetIndex)) {
-    const actualSha = sha256(readFileSync(targetPack));
-    if (actualSha === expectedDerivedCapitalGzipSha256(root)) {
-      return { staged: false, alreadyPresent: true };
+  const existingAppsStat = lstatIfExists(appsDir);
+  if (existingAppsStat && (!existingAppsStat.isDirectory() || existingAppsStat.isSymbolicLink())) {
+    throw new Error(`Target apps directory must be a real directory: ${appsDir}`);
+  }
+  const existingMobileStat = lstatIfExists(targetMobileDir);
+  if (existingMobileStat && (!existingMobileStat.isDirectory() || existingMobileStat.isSymbolicLink())) {
+    throw new Error(`Target mobile directory must be a real directory: ${targetMobileDir}`);
+  }
+
+  if (existingMobileStat && existsSync(targetPack) && existsSync(targetIndex)) {
+    const packStat = lstatSync(targetPack);
+    const indexStat = lstatSync(targetIndex);
+    if (packStat.isFile() && !packStat.isSymbolicLink() && indexStat.isFile() && !indexStat.isSymbolicLink()) {
+      const actualSha = sha256(readFileSync(targetPack));
+      if (actualSha === expectedDerivedCapitalGzipSha256(root)) {
+        return { staged: false, alreadyPresent: true };
+      }
     }
   }
 
@@ -65,36 +110,71 @@ export function stageLocalMobileFixture({ repositoryRoot = ROOT, candidatePaths 
     );
   }
 
-  mkdirSync(root, { recursive: true });
-  const archiveTar = execFileSync(gitBin, ["-C", chosenCandidate, "archive", PINNED_MOBILE_REVISION, "apps/mobile"], {
-    maxBuffer: 100 * 1024 * 1024,
-  });
+  mkdirSync(appsDir, { recursive: true });
+  const stagingRoot = mkdtempSync(path.join(appsDir, ".mobile-stage-"));
+  let backupDir = null;
+  try {
+    const archiveTar = execFileSync(gitBin, ["-C", chosenCandidate, "archive", PINNED_MOBILE_REVISION, "apps/mobile"], {
+      maxBuffer: 100 * 1024 * 1024,
+    });
 
-  execFileSync(TAR_EXECUTABLE, ["-x", "-C", root], {
-    input: archiveTar,
-  });
+    execFileSync(TAR_EXECUTABLE, ["-x", "-C", stagingRoot], {
+      input: archiveTar,
+    });
 
-  if (!existsSync(targetPack)) {
-    throw new Error(`Extraction failed: ${targetPack} not found after git archive`);
-  }
+    const stagedMobileDir = path.join(stagingRoot, "apps/mobile");
+    const stagedPack = path.join(stagedMobileDir, "assets/datapacks/capital.sqlite.gz");
+    const stagedIndex = path.join(stagedMobileDir, "assets/datapacks/index.json");
+    assertNoSymlinksRecursive(stagedMobileDir);
+    if (!existsSync(stagedPack) || !existsSync(stagedIndex)) {
+      throw new Error(`Extraction failed: ${stagedPack} or ${stagedIndex} not found after git archive`);
+    }
 
-  const inputSha = sha256(readFileSync(targetPack));
-  if (inputSha !== INPUT_CAPITAL_GZIP_SHA256) {
-    throw new Error(
-      `Extracted capital.sqlite.gz sha256 mismatch: expected input ${INPUT_CAPITAL_GZIP_SHA256}, got ${inputSha}`
-    );
-  }
-  // 입력 팩에 승인 원천 topology를 적용해 커밋된 증거와 같은 팩을 파생한다. Node 24.19.0·SQLite 3.53.3(CI와 같은 런타임)이 필요하다.
-  execFileSync(process.execPath, [
-    path.join(root, "tools/datapack/apply-itx-topology-to-bundled-pack.mjs"),
-    "--derive-fixture",
-    path.join(root, "apps/mobile"),
-  ], { stdio: ["ignore", "inherit", "inherit"] });
-  const actualSha = sha256(readFileSync(targetPack));
-  if (actualSha !== expectedDerivedCapitalGzipSha256(root)) {
-    throw new Error(
-      `Derived capital.sqlite.gz sha256 mismatch: expected ${expectedDerivedCapitalGzipSha256(root)}, got ${actualSha}`
-    );
+    const inputSha = sha256(readFileSync(stagedPack));
+    if (inputSha !== INPUT_CAPITAL_GZIP_SHA256) {
+      throw new Error(
+        `Extracted capital.sqlite.gz sha256 mismatch: expected input ${INPUT_CAPITAL_GZIP_SHA256}, got ${inputSha}`
+      );
+    }
+    // 입력 팩에 승인 원천 topology를 적용해 커밋된 증거와 같은 팩을 파생한다. Node 24.19.0·SQLite 3.53.3(CI와 같은 런타임)이 필요하다.
+    execFileSync(process.execPath, [
+      path.join(root, "tools/datapack/apply-itx-topology-to-bundled-pack.mjs"),
+      "--derive-fixture",
+      stagedMobileDir,
+    ], { stdio: ["ignore", "inherit", "inherit"] });
+    const actualSha = sha256(readFileSync(stagedPack));
+    if (actualSha !== expectedDerivedCapitalGzipSha256(root)) {
+      throw new Error(
+        `Derived capital.sqlite.gz sha256 mismatch: expected ${expectedDerivedCapitalGzipSha256(root)}, got ${actualSha}`
+      );
+    }
+
+    const currentTargetStat = lstatIfExists(targetMobileDir);
+    if (currentTargetStat) {
+      if (!currentTargetStat.isDirectory() || currentTargetStat.isSymbolicLink()) {
+        throw new Error(`Target mobile directory must be a real directory: ${targetMobileDir}`);
+      }
+      backupDir = path.join(appsDir, `.mobile-backup-${process.pid}-${randomUUID()}`);
+      renameSync(targetMobileDir, backupDir);
+    }
+    try {
+      renameSync(stagedMobileDir, targetMobileDir);
+    } catch (renameErr) {
+      if (backupDir) {
+        try {
+          renameSync(backupDir, targetMobileDir);
+        } catch {
+          // best effort rollback
+        }
+      }
+      throw renameErr;
+    }
+    if (backupDir) {
+      rmSync(backupDir, { recursive: true, force: true });
+      backupDir = null;
+    }
+  } finally {
+    rmSync(stagingRoot, { recursive: true, force: true });
   }
 
   return { staged: true, sourcePath: chosenCandidate, revision: PINNED_MOBILE_REVISION };

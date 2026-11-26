@@ -51,6 +51,10 @@ test("원천 정차 순서·시각을 그대로 trip·stop_times로 싣고, 별�
   // 원천 도착이 없는 기점은 출발 값을 두 칸에 쓴다(추정 시각을 만들지 않는다).
   assert.equal(first[0].arrivalSeconds, first[0].departureSeconds);
   assert.ok(result.transitTrips.every(({ sourceId, provenanceKind }) => sourceId === "official-source" && provenanceKind === "OFFICIAL_SOURCE"));
+  assert.deepEqual(
+    result.transitTrips.slice(0, 3).map(({ trainNo }) => trainNo),
+    ["1", "2", "3"],
+  );
   assert.deepEqual(result.lineSummaries[0].tripsByServiceDayKind, { WEEKDAY: 30, WEEKEND_HOLIDAY: 1 });
 });
 

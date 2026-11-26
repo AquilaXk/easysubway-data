@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { crc32 } from "node:zlib";
 
 import { projectKricStationLineMembership } from "./project-kric-station-line-membership.mjs";
 import { createCurrentMolitObservationFixture } from "./test-fixtures/current-molit-observation.mjs";
@@ -86,8 +87,8 @@ function workbook(rows, { header, extraCell }) {
 
 function zip(entries) {
   let offset = 0; const locals = [];
-  for (const [name, text] of Object.entries(entries)) { const filename = Buffer.from(name); const content = Buffer.from(text); const header = Buffer.alloc(30); header.writeUInt32LE(0x04034b50, 0); header.writeUInt16LE(filename.length, 26); header.writeUInt32LE(content.length, 18); locals.push({ filename, content, offset, entry: Buffer.concat([header, filename, content]) }); offset += 30 + filename.length + content.length; }
-  const central = locals.map(({ filename, content, offset: localOffset }) => { const header = Buffer.alloc(46); header.writeUInt32LE(0x02014b50, 0); header.writeUInt16LE(20, 4); header.writeUInt16LE(20, 6); header.writeUInt16LE(filename.length, 28); header.writeUInt32LE(content.length, 20); header.writeUInt32LE(content.length, 24); header.writeUInt32LE(localOffset, 42); return Buffer.concat([header, filename]); });
+  for (const [name, text] of Object.entries(entries)) { const filename = Buffer.from(name); const content = Buffer.from(text); const checksum = crc32(content) >>> 0; const header = Buffer.alloc(30); header.writeUInt32LE(0x04034b50, 0); header.writeUInt16LE(20, 4); header.writeUInt32LE(checksum, 14); header.writeUInt16LE(filename.length, 26); header.writeUInt32LE(content.length, 18); header.writeUInt32LE(content.length, 22); locals.push({ filename, content, checksum, offset, entry: Buffer.concat([header, filename, content]) }); offset += 30 + filename.length + content.length; }
+  const central = locals.map(({ filename, content, checksum, offset: localOffset }) => { const header = Buffer.alloc(46); header.writeUInt32LE(0x02014b50, 0); header.writeUInt16LE(20, 4); header.writeUInt16LE(20, 6); header.writeUInt32LE(checksum, 16); header.writeUInt16LE(filename.length, 28); header.writeUInt32LE(content.length, 20); header.writeUInt32LE(content.length, 24); header.writeUInt32LE(localOffset, 42); return Buffer.concat([header, filename]); });
   const centralBytes = Buffer.concat(central); const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(locals.length, 8); eocd.writeUInt16LE(locals.length, 10); eocd.writeUInt32LE(centralBytes.length, 12); eocd.writeUInt32LE(offset, 16); return Buffer.concat([...locals.map(({ entry }) => entry), centralBytes, eocd]);
 }
 

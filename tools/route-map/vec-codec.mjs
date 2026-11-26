@@ -14,6 +14,9 @@ const VERSION = 1;
 export const VEC_MAX_ID = 65535;
 export const VEC_MAX_TOTAL_VERTICES = 1_000_000;
 export const VEC_MAX_STATION_COUNT = 10_000;
+export const VEC_MAX_COMMANDS = 200_000;
+export const VEC_MAX_SAVE_LAYER_DEPTH = 64;
+export const VEC_MAX_PATH_VERBS = 500_000;
 const MATRIX4_LENGTH = 16;
 
 export {
@@ -193,11 +196,19 @@ function readPaint(reader, paints, style) {
   paints.push(paint);
 }
 
-function readPath(reader, paths) {
+function readPath(reader, paths, maxPathVerbs, remainingVertexQuota) {
   const fillType = reader.uint8();
   expectSequentialId(paths, reader.uint16(), "path");
-  const verbs = reader.uint8List(reader.uint32());
-  const points = reader.float32List(reader.uint32());
+  const verbLength = reader.uint32();
+  if (verbLength > maxPathVerbs) {
+    throw new Error(`path ${paths.length}: 명령 수 ${verbLength}개가 상한 ${maxPathVerbs}개를 넘습니다.`);
+  }
+  const verbs = reader.uint8List(verbLength);
+  const pointFloatLength = reader.uint32();
+  if (pointFloatLength / 2 > remainingVertexQuota) {
+    throw new Error(`path ${paths.length}: 정점 수 ${pointFloatLength / 2}개가 남은 허용량 ${remainingVertexQuota}개를 넘습니다.`);
+  }
+  const points = reader.float32List(pointFloatLength);
   let expectedPoints = 0;
   for (const verb of verbs) {
     if (verb >= VERB_POINT_COUNT.length) throw new Error(`path ${paths.length}: 알 수 없는 명령 ${verb}`);
@@ -207,6 +218,7 @@ function readPath(reader, paths) {
     throw new Error(`path ${paths.length}: 좌표 ${points.length}개가 명령이 요구하는 ${expectedPoints}개와 다릅니다.`);
   }
   paths.push({ fillType, verbs, points });
+  return points.length / 2;
 }
 
 function referenced(list, id, kind) {
@@ -257,9 +269,31 @@ function readDrawText(reader, doc, patterns) {
   return { op: "drawText", textId, fillId, strokeId, patternId };
 }
 
+function measureSaveLayerDepth(commands, maxSaveLayerDepth) {
+  let depth = 0;
+  let maxDepth = 0;
+  for (const command of commands) {
+    if (command.op === "saveLayer" || command.op === "clipPath" || command.op === "pattern") {
+      depth += 1;
+      if (depth > maxDepth) maxDepth = depth;
+      if (depth > maxSaveLayerDepth) {
+        throw new Error(`saveLayer 중첩 깊이 ${depth}단계가 상한 ${maxSaveLayerDepth}단계를 넘습니다.`);
+      }
+    } else if (command.op === "restore") {
+      if (depth <= 0) {
+        throw new Error("짝 없는 restore 명령이 있습니다.");
+      }
+      depth -= 1;
+    }
+  }
+  return maxDepth;
+}
+
 export function assertVecBounds(doc, {
   maxTotalVertices = VEC_MAX_TOTAL_VERTICES,
   maxStationCount = VEC_MAX_STATION_COUNT,
+  maxCommands = VEC_MAX_COMMANDS,
+  maxSaveLayerDepth = VEC_MAX_SAVE_LAYER_DEPTH,
 } = {}) {
   let totalVertices = 0;
   for (const p of doc.paths ?? []) {
@@ -271,10 +305,21 @@ export function assertVecBounds(doc, {
   if ((doc.texts?.length ?? 0) > maxStationCount) {
     throw new Error(`라벨 텍스트 수 ${doc.texts.length}개가 상한 ${maxStationCount}개를 넘습니다.`);
   }
+  const commands = doc.commands ?? [];
+  if (commands.length > maxCommands) {
+    throw new Error(`명령 수 ${commands.length}개가 상한 ${maxCommands}개를 넘습니다.`);
+  }
+  measureSaveLayerDepth(commands, maxSaveLayerDepth);
 }
 
 /** `.vec` 바이트를 `{ width, height, paints, paths, textPositions, texts, commands }`로 읽는다. */
-export function decodeVec(bytes) {
+export function decodeVec(bytes, {
+  maxTotalVertices = VEC_MAX_TOTAL_VERTICES,
+  maxStationCount = VEC_MAX_STATION_COUNT,
+  maxCommands = VEC_MAX_COMMANDS,
+  maxSaveLayerDepth = VEC_MAX_SAVE_LAYER_DEPTH,
+  maxPathVerbs = VEC_MAX_PATH_VERBS,
+} = {}) {
   const reader = new Reader(bytes);
   if (bytes.byteLength < 5 || reader.uint32() !== MAGIC_NUMBER) {
     throw new Error("vector_graphics 바이너리가 아닙니다.");
@@ -282,6 +327,20 @@ export function decodeVec(bytes) {
   if (reader.uint8() !== VERSION) throw new Error("지원하지 않는 vector_graphics 버전입니다.");
   const doc = { width: null, height: null, paints: [], paths: [], textPositions: [], texts: [], commands: [] };
   const patterns = [];
+  let totalVertices = 0;
+  let layerDepth = 0;
+  const pushCommand = (command) => {
+    if (doc.commands.length >= maxCommands) {
+      throw new Error(`명령 수 ${doc.commands.length + 1}개가 상한 ${maxCommands}개를 넘습니다.`);
+    }
+    doc.commands.push(command);
+  };
+  const pushLayer = () => {
+    layerDepth += 1;
+    if (layerDepth > maxSaveLayerDepth) {
+      throw new Error(`saveLayer 중첩 깊이 ${layerDepth}단계가 상한 ${maxSaveLayerDepth}단계를 넘습니다.`);
+    }
+  };
   while (reader.hasRemaining) {
     const tag = reader.uint8();
     switch (tag) {
@@ -296,7 +355,7 @@ export function decodeVec(bytes) {
         readPaint(reader, doc.paints, "stroke");
         break;
       case TAG.path:
-        readPath(reader, doc.paths);
+        totalVertices += readPath(reader, doc.paths, maxPathVerbs, maxTotalVertices - totalVertices);
         break;
       case TAG.beginCommands:
         break;
@@ -305,7 +364,7 @@ export function decodeVec(bytes) {
         const paintId = referenced(doc.paints, reader.uint16(), "paint");
         const patternId = optionalId(reader.uint16());
         if (patternId !== null) referenced(patterns, patternId, "pattern");
-        doc.commands.push({ op: "drawPath", pathId, paintId, patternId });
+        pushCommand({ op: "drawPath", pathId, paintId, patternId });
         break;
       }
       case TAG.pattern: {
@@ -320,35 +379,45 @@ export function decodeVec(bytes) {
         };
         if (pattern.transform === null) throw new Error("변환 행렬 없는 pattern은 런타임이 받지 않습니다.");
         patterns.push(pattern);
-        doc.commands.push(pattern);
+        pushLayer();
+        pushCommand(pattern);
         break;
       }
       case TAG.saveLayer:
-        doc.commands.push({ op: "saveLayer", paintId: referenced(doc.paints, reader.uint16(), "paint") });
+        pushLayer();
+        pushCommand({ op: "saveLayer", paintId: referenced(doc.paints, reader.uint16(), "paint") });
         break;
       case TAG.restore:
-        doc.commands.push({ op: "restore" });
+        if (layerDepth <= 0) {
+          throw new Error("짝 없는 restore 명령이 있습니다.");
+        }
+        layerDepth -= 1;
+        pushCommand({ op: "restore" });
         break;
       case TAG.clipPath:
-        doc.commands.push({ op: "clipPath", pathId: referenced(doc.paths, reader.uint16(), "path") });
+        pushLayer();
+        pushCommand({ op: "clipPath", pathId: referenced(doc.paths, reader.uint16(), "path") });
         break;
       case TAG.mask:
-        doc.commands.push({ op: "mask" });
+        pushCommand({ op: "mask" });
         break;
       case TAG.textPosition:
         readTextPosition(reader, doc.textPositions);
         break;
       case TAG.textConfig:
         readTextConfig(reader, doc.texts);
+        if (doc.texts.length > maxStationCount) {
+          throw new Error(`라벨 텍스트 수 ${doc.texts.length}개가 상한 ${maxStationCount}개를 넘습니다.`);
+        }
         break;
       case TAG.updateTextPosition:
-        doc.commands.push({
+        pushCommand({
           op: "updateTextPosition",
           textPositionId: referenced(doc.textPositions, reader.uint16(), "textPosition"),
         });
         break;
       case TAG.drawText:
-        doc.commands.push(readDrawText(reader, doc, patterns));
+        pushCommand(readDrawText(reader, doc, patterns));
         break;
       case TAG.pathHalfPrecision:
         throw new Error("반정밀도 path는 다루지 않습니다.");
@@ -361,13 +430,7 @@ export function decodeVec(bytes) {
     }
   }
   if (doc.width === null) throw new Error("크기 기록이 없습니다.");
-  let totalVertices = 0;
-  for (const p of doc.paths) {
-    totalVertices += p.points.length / 2;
-  }
-  if (totalVertices > VEC_MAX_TOTAL_VERTICES) {
-    throw new Error(`총 정점 수 ${totalVertices}개가 상한 ${VEC_MAX_TOTAL_VERTICES}개를 넘습니다.`);
-  }
+  assertVecBounds(doc, { maxTotalVertices, maxStationCount, maxCommands, maxSaveLayerDepth });
   return doc;
 }
 

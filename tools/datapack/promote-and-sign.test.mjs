@@ -156,6 +156,38 @@ test("주입한 서명 키로만 production manifest를 서명한다", () => {
   }
 });
 
+test("2048비트 미만 RSA 비공개키와 잘못된 keyId는 거부하고 정상 keyId를 반영한다", () => {
+  const work = writeWorkdir();
+  try {
+    const weak = generateKeyPairSync("rsa", { modulusLength: 1024 });
+    const weakPem = weak.privateKey.export({ type: "pkcs8", format: "pem" });
+    const weakResult = runPromote(work.dir, { [PRIVATE_KEY_ENV]: weakPem });
+    assert.notEqual(weakResult.status, 0);
+    assert.match(weakResult.stderr, /at least 2048-bit RSA/);
+
+    const { privateKeyPem, publicKeyPem } = generatedKeyPair();
+    const badKeyIdResult = runPromote(work.dir, {
+      [PRIVATE_KEY_ENV]: privateKeyPem,
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "bad/../id",
+    });
+    assert.notEqual(badKeyIdResult.status, 0);
+    assert.match(badKeyIdResult.stderr, /EASYSUBWAY_DATAPACK_SIGNING_KEY_ID/);
+
+    const okResult = runPromote(work.dir, {
+      [PRIVATE_KEY_ENV]: privateKeyPem,
+      EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v2",
+    });
+    assert.equal(okResult.status, 0, okResult.stderr);
+    const manifest = JSON.parse(readFileSync(work.manifestPath, "utf8"));
+    assert.equal(manifest.keyId, "production-v2");
+    const signedPayload = canonicalJson(withoutSignature(manifest));
+    const signature = Buffer.from(manifest.signature.value, "base64url");
+    assert.equal(createVerify("RSA-SHA256").update(signedPayload).verify(publicKeyPem, signature), true);
+  } finally {
+    rmSync(work.dir, { recursive: true, force: true });
+  }
+});
+
 const PRIVATE_KEY_LITERAL = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 
 // 비공개키 리터럴 가드에서 제외하는 파일. 경로마다 사유를 적고, 가드 테스트가 목록이 낡지 않았는지(여전히 추적되고

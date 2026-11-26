@@ -461,7 +461,7 @@ async function createFixture(t, options = {}) {
   };
   const signingInputBytes = Buffer.from(canonicalJson(signingInput));
   const signatureValue = options.invalidSignature
-    ? "AA-_09"
+    ? "AA-_0w"
     : createSign("RSA-SHA256").update(signingInputBytes).sign(privateKey).toString("base64url");
   const manifest = {
     ...signingInput,

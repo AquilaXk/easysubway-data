@@ -274,12 +274,16 @@ function buildTables({ provider, lineBindings, admitted, serviceIdPrefix, tripId
     const tripId = `${tripIdPrefix}-${binding.routeKey.toLowerCase()}-${OFFICIAL_SERVICE_DAY_KINDS[trip.serviceDayKind].code}-${sha256(trip.providerTripKey).slice(0, 12)}`;
     if (tripIds.has(tripId)) fail("TRIP_ID_COLLISION", tripId);
     tripIds.add(tripId);
+    const trainNo = typeof trip.trainNumber === "string" && trip.trainNumber.trim() !== ""
+      ? trip.trainNumber.trim()
+      : null;
     transitTrips.push({
       id: tripId,
       routeId: routeId(binding),
       serviceId: serviceId(trip.serviceDayKind),
       tripHeadsign: trip.headsign,
       directionId: "",
+      ...(trainNo === null ? {} : { trainNo }),
       servicePattern: trip.servicePattern,
       serviceClass: "SUBWAY",
       serviceDayStartSeconds: 0,

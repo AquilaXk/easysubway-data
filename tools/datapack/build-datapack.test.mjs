@@ -548,6 +548,20 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
         database.prepare("SELECT MAX(departure_seconds) AS max_departure FROM transit_stop_times").get().max_departure,
         91020,
       );
+      assert.deepEqual(
+        database.prepare("PRAGMA table_info(transit_trips)").all().map((column) => column.name),
+        [
+          "id",
+          "route_id",
+          "service_id",
+          "trip_headsign",
+          "direction_id",
+          "service_pattern",
+          "service_class",
+          "train_no",
+          "service_day_start_seconds",
+        ],
+      );
       assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_frequencies").get().count, 1);
       assert.deepEqual(
         {
@@ -2978,4 +2992,33 @@ test("데이터팩 생성기는 station_lines에 없는 station_car_door_hints F
   await withCarDoorHintFixture({ stationId: "station-does-not-exist" }, async ({ build }) => {
     await assert.rejects(build(), /FOREIGN KEY constraint failed/);
   });
+});
+
+test("데이터팩 생성기는 transit_trips.train_no를 공백 제거해 적재하고 비문자열은 거부한다", async () => {
+  await withMutatedCatalogFixture(
+    (fixture) => {
+      fixture.packs[0].transitTrips[0].trainNo = " 4101 ";
+      fixture.packs[0].transitTrips[1].trainNo = "   ";
+    },
+    async ({ outputDir, buildAndValidate }) => {
+      await buildAndValidate();
+      const packBytes = await readFile(path.join(outputDir, "catalog", "capital-v1.sqlite.gz"));
+      const sqlitePath = path.join(outputDir, "capital-v1.sqlite");
+      await writeFile(sqlitePath, gunzipSync(packBytes));
+      await withSqlite(sqlitePath, (readback) => {
+        const rows = readback.prepare("SELECT id, train_no FROM transit_trips ORDER BY id").all();
+        const byId = new Map(rows.map((row) => [row.id, row.train_no]));
+        assert.equal(byId.get("trip-seoul-4-local-0805"), "4101");
+        assert.equal(byId.get("trip-seoul-4-express-0810"), null);
+      });
+    },
+  );
+  await withMutatedCatalogFixture(
+    (fixture) => {
+      fixture.packs[0].transitTrips[0].trainNo = 4101;
+    },
+    async ({ build }) => {
+      await assert.rejects(build(), /transitTrips\.trainNo must be a string/);
+    },
+  );
 });

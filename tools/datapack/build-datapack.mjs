@@ -4487,19 +4487,29 @@ function insertTransitScheduleTables(database, pack) {
       "direction_id",
       "service_pattern",
       "service_class",
+      "train_no",
       "service_day_start_seconds",
     ],
     pack.transitTrips ?? [],
-    (row) => [
-      requiredString(row.id, "transitTrips.id"),
-      requiredString(row.routeId, "transitTrips.routeId"),
-      requiredString(row.serviceId, "transitTrips.serviceId"),
-      row.tripHeadsign ?? "",
-      row.directionId ?? "",
-      row.servicePattern ?? "LOCAL",
-      row.serviceClass ?? "SUBWAY",
-      row.serviceDayStartSeconds ?? 0,
-    ],
+    (row) => {
+      if (row.trainNo != null && typeof row.trainNo !== "string") {
+        throw new TypeError("transitTrips.trainNo must be a string when present");
+      }
+      const trainNo = typeof row.trainNo === "string" && row.trainNo.trim() !== ""
+        ? row.trainNo.trim()
+        : null;
+      return [
+        requiredString(row.id, "transitTrips.id"),
+        requiredString(row.routeId, "transitTrips.routeId"),
+        requiredString(row.serviceId, "transitTrips.serviceId"),
+        row.tripHeadsign ?? "",
+        row.directionId ?? "",
+        row.servicePattern ?? "LOCAL",
+        row.serviceClass ?? "SUBWAY",
+        trainNo,
+        row.serviceDayStartSeconds ?? 0,
+      ];
+    },
   );
   insertRows(
     database,

@@ -225,7 +225,7 @@ test("pack hash, RSA signature, SQLite quick/FK/schema/minimum row 오류를 cur
       storage.objects.set("catalog/capital-v1.sqlite.gz", { body: Buffer.alloc(packBytes.length, 0x61) });
     }, /sha256 mismatch/],
     ["pack signature", ({ knownGood, storage }) => {
-      knownGood.packs[0].signature.value = "bad";
+      knownGood.packs[0].signature.value = "AAAA";
       resignManifest(knownGood);
       storage.objects.set("catalog/releases/114.json", { body: bytes(knownGood) });
     }, /pack signature mismatch/],

@@ -3,6 +3,7 @@ import { lstat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
 import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
@@ -43,9 +44,18 @@ export async function collectSeoulMetroTransferCarDoorDuration({
 } = {}) {
   const capturedAt = instant(now);
   const { response, rawBytes } = await withSourceCollectionRetry(async () => {
-    const res = await fetchImpl(DOWNLOAD_URL, { redirect: "error" });
+    const res = await fetchImpl(DOWNLOAD_URL, {
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!res?.ok) return { response: res, rawBytes: Buffer.alloc(0) };
-    return { response: res, rawBytes: Buffer.from(await res.arrayBuffer()) };
+    return {
+      response: res,
+      rawBytes: await readResponseBytesWithLimit(res, {
+        maxBytes: MAX_RAW_BYTES,
+        label: "Seoul transfer car-door CSV",
+      }),
+    };
   }, {
     label: "Seoul transfer car-door file download",
     url: DOWNLOAD_URL,

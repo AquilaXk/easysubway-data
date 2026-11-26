@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -35,4 +35,21 @@ test("stageLocalMobileFixture rejects invalid repository root without candidates
     () => stageLocalMobileFixture({ repositoryRoot: nonExistent, candidatePaths: [] }),
     /Could not locate local mobile repository with pinned revision/
   );
+});
+
+test("stageLocalMobileFixture rejects symlink target directory before staging", () => {
+  const scratch = mkdtempSync(path.join(tmpdir(), "stage-fixture-symlink-"));
+  try {
+    const appsDir = path.join(scratch, "apps");
+    const realTarget = path.join(scratch, "real-target");
+    mkdirSync(appsDir, { recursive: true });
+    mkdirSync(realTarget, { recursive: true });
+    symlinkSync(realTarget, path.join(appsDir, "mobile"));
+    assert.throws(
+      () => stageLocalMobileFixture({ repositoryRoot: scratch, candidatePaths: [] }),
+      /Target mobile directory must be a real directory/
+    );
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });

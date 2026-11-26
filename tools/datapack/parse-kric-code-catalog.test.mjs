@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { crc32 } from "node:zlib";
 
 import {
   buildProviderLineCatalog,
+  extractXlsxWorkbookEntries,
   parseSharedStrings,
   parseWorkbookSheetRefs,
   parseWorksheetRows,
@@ -121,4 +123,58 @@ test("KRIC XLSX shared string index는 비어 있거나 10진수가 아니면 �
       ["zero", "one"],
     ), /shared string index is invalid/);
   }
+});
+
+test("extractXlsxWorkbookEntries는 외부 unzip 프로세스 없이 인메모리 bounded XLSX를 추출하고 경로 탈출을 거부한다", () => {
+  const buildZip = (items) => {
+    const locals = [];
+    const centrals = [];
+    let offset = 0;
+    for (const [name, content] of Object.entries(items)) {
+      const nameBytes = Buffer.from(name, "utf8");
+      const data = Buffer.from(content, "utf8");
+      const checksum = crc32(data) >>> 0;
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt32LE(checksum, 14);
+      local.writeUInt32LE(data.length, 18);
+      local.writeUInt32LE(data.length, 22);
+      local.writeUInt16LE(nameBytes.length, 26);
+      const cd = Buffer.alloc(46);
+      cd.writeUInt32LE(0x02014b50, 0);
+      cd.writeUInt16LE(20, 4);
+      cd.writeUInt16LE(20, 6);
+      cd.writeUInt32LE(checksum, 16);
+      cd.writeUInt32LE(data.length, 20);
+      cd.writeUInt32LE(data.length, 24);
+      cd.writeUInt16LE(nameBytes.length, 28);
+      cd.writeUInt32LE(offset, 42);
+      const entry = Buffer.concat([local, nameBytes, data]);
+      locals.push(entry);
+      centrals.push(Buffer.concat([cd, nameBytes]));
+      offset += entry.length;
+    }
+    const cdBuf = Buffer.concat(centrals);
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(locals.length, 8);
+    eocd.writeUInt16LE(locals.length, 10);
+    eocd.writeUInt32LE(cdBuf.length, 12);
+    eocd.writeUInt32LE(offset, 16);
+    return Buffer.concat([...locals, cdBuf, eocd]);
+  };
+
+  const valid = buildZip({
+    "xl/workbook.xml": `<workbook xmlns:r="rels"><sheets><sheet name="S" r:id="r1"/></sheets></workbook>`,
+    "xl/_rels/workbook.xml.rels": `<Relationships><Relationship Id="r1" Target="worksheets/sheet1.xml"/></Relationships>`,
+  });
+  const entries = extractXlsxWorkbookEntries(valid);
+  assert.match(entries.get("xl/workbook.xml").toString("utf8"), /<workbook/);
+
+  const zipSlip = buildZip({
+    "../escape.xml": "<bad/>",
+    "xl/workbook.xml": "<workbook/>",
+    "xl/_rels/workbook.xml.rels": "<Relationships/>",
+  });
+  assert.throws(() => extractXlsxWorkbookEntries(zipSlip), /unsafe zip entry path/);
 });

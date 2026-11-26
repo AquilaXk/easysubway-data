@@ -224,6 +224,10 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
     writeFileSync(localFreshnessPath, committedFreshnessSla);
     await stageContracts({ root, fetchBundle: async () => bytes });
     assert.equal(readFileSync(path.join(root, "build/contracts/datapack/datapack-freshness-sla.json"), "utf8"), committedFreshnessSla);
+
+    // 기존 build/contracts가 있어도 원자 교체로 재실행이 멱등 동작하며 중간 백업 디렉터리를 남기지 않는다.
+    await stageContracts({ root, fetchBundle: async () => bytes });
+    assert.equal(readFileSync(path.join(root, "build/contracts/datapack/datapack-freshness-sla.json"), "utf8"), committedFreshnessSla);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

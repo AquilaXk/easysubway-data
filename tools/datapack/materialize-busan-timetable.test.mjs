@@ -80,6 +80,7 @@ test("부산 공식 109140행을 3833 trip·109140 stop_time으로 materialize�
   assert.equal(trips.length, 3_833);
   assert.equal(stopTimes.length, 109_140);
   assert.equal(new Set(trips.map(({ id }) => id)).size, trips.length);
+  assert.ok(trips.every(({ trainNo }) => typeof trainNo === "string" && trainNo.length > 0));
   assert.ok(stopTimes.every(({ arrivalSeconds, departureSeconds }) => arrivalSeconds === departureSeconds));
   assert.ok(stopTimes.every(({ sourceSnapshotId }) =>
     sourceSnapshotId === "busan-transportation-timetable-20260720"));

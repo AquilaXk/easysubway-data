@@ -24,7 +24,7 @@ import sys
 
 from PIL import Image, ImageChops, ImageFilter
 
-Image.MAX_IMAGE_PIXELS = None
+Image.MAX_IMAGE_PIXELS = 256_000_000
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _OUT_DIR = os.path.join(_HERE, ".out")
@@ -73,11 +73,15 @@ def main():
             print("먼저 render-svg.mjs를 --ink로 돌리세요.", file=sys.stderr)
             return 2
 
-    before = Image.open(before_path).convert("RGBA")
-    after = Image.open(after_path).convert("RGBA")
+    try:
+        before = Image.open(before_path).convert("RGBA")
+        after = Image.open(after_path).convert("RGBA")
+    except Image.DecompressionBombError as exc:
+        print(f"이미지 픽셀 상한({Image.MAX_IMAGE_PIXELS:,})을 초과했습니다: {exc}", file=sys.stderr)
+        return 2
     left, top = args.offset
 
-    if left + after.width > before.width or top + after.height > before.height:
+    if left < 0 or top < 0 or left + after.width > before.width or top + after.height > before.height:
         print("크롭 창이 원본 밖으로 나갑니다 — offset이나 배율을 확인하세요.", file=sys.stderr)
         return 2
 

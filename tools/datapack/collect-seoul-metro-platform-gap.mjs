@@ -1,20 +1,25 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import {
   classifySeoulOpenDataResultCode,
   seoulOpenDataResultCodeOf,
   withSourceCollectionRetry,
 } from "./lib/source-collection-retry.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
 import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 // 서울 열린데이터광장 OpenAPI(8088)는 HTTP만 연다(2026-10-20 실측: https로 연결하면 ERR_SSL_WRONG_VERSION_NUMBER). probe-seoul-open-data-api.mjs와 같은 공식 HTTP-only provider다.
 const DEFAULT_ENDPOINT = "http://openapi.seoul.go.kr:8088/{serviceKey}/json/TbSubwayLineInfo";
 const PAGE_SIZE = 1000;
+const MAX_PAGE_BYTES = 16 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+const MAX_PAGES = 50;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 function canonicalUtc(value, label) {
@@ -45,7 +50,11 @@ export async function fetchSeoulPlatformGapPage({
         headers: { accept: "application/json" },
       });
       if (!response.ok) return { response, text: "", resultCode: null };
-      const text = await response.text();
+      const bytes = await readResponseBytesWithLimit(response, {
+        maxBytes: MAX_PAGE_BYTES,
+        label: "Seoul open data platform gap page",
+      });
+      const text = bytes.toString("utf8");
       return { response, text, resultCode: seoulOpenDataResultCodeOf(text) };
     }, {
       label: "Seoul open data platform gap API",
@@ -74,8 +83,14 @@ export async function fetchSeoulPlatformGapPage({
     const message = root?.RESULT?.MESSAGE ?? json?.RESULT?.MESSAGE ?? "";
     throw new Error(`Seoul open data API error: ${resultCode} (${classification}) - ${message}`);
   }
-  const totalCount = root?.list_total_count ?? 0;
-  const rows = root?.row ?? [];
+  const totalCount = root?.list_total_count;
+  const rows = root?.row;
+  if (!Number.isSafeInteger(totalCount) || totalCount <= 0) {
+    throw new Error("Seoul open data API list_total_count is missing or not positive");
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error("Seoul open data API row is empty");
+  }
   return {
     totalCount,
     rows,
@@ -95,6 +110,9 @@ export async function collectSeoulPlatformGap({
   retryOptions = {},
 } = {}) {
   const instant = canonicalUtc(capturedAt, "capturedAt");
+  if (limit !== null && (!Number.isSafeInteger(limit) || limit <= 0 || limit > PAGE_SIZE * MAX_PAGES)) {
+    throw new Error(`limit must be a positive integer <= ${PAGE_SIZE * MAX_PAGES}`);
+  }
   const firstPage = await fetchSeoulPlatformGapPage({
     serviceKey,
     start: 1,
@@ -108,8 +126,13 @@ export async function collectSeoulPlatformGap({
   });
 
   const totalCount = limit !== null ? Math.min(limit, firstPage.totalCount) : firstPage.totalCount;
+  const requiredPages = Math.ceil(totalCount / PAGE_SIZE);
+  if (requiredPages > MAX_PAGES) {
+    throw new Error(`Seoul open data API totalCount (${totalCount}) requires ${requiredPages} pages (> ${MAX_PAGES})`);
+  }
   const allRows = [...firstPage.rows];
   const rawPages = [{ start: 1, end: firstPage.rows.length, rawText: firstPage.rawText }];
+  let totalRawBytes = Buffer.byteLength(firstPage.rawText, "utf8");
 
   let currentStart = PAGE_SIZE + 1;
   while (currentStart <= totalCount) {
@@ -125,9 +148,17 @@ export async function collectSeoulPlatformGap({
       randomImpl,
       retryOptions,
     });
+    totalRawBytes += Buffer.byteLength(page.rawText, "utf8");
+    if (totalRawBytes > MAX_TOTAL_BYTES) {
+      throw new Error(`Seoul open data API total response bytes (${totalRawBytes}) exceeds limit ${MAX_TOTAL_BYTES}`);
+    }
     allRows.push(...page.rows);
     rawPages.push({ start: currentStart, end: currentEnd, rawText: page.rawText });
     currentStart += PAGE_SIZE;
+  }
+
+  if (allRows.length !== totalCount) {
+    throw new Error(`Seoul open data API row count (${allRows.length}) does not match expected total (${totalCount})`);
   }
 
   // Key-redacted raw archive
@@ -200,8 +231,8 @@ async function main(argv) {
     ? path.resolve(args["raw-output"])
     : path.join(outputDir, `${snapshotId}.raw.json`);
 
-  await writeFile(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
-  await writeFile(rawPath, rawBytes);
+  await writeFileReplacing(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  await writeFileReplacing(rawPath, rawBytes);
 
   console.log(`Saved snapshot: ${snapshotPath} (${snapshot.rowCount} rows)`);
   console.log(`Saved raw archive: ${rawPath}`);

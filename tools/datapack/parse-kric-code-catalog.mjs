@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { decodeXmlEntities } from "./lib/xml-decode.mjs";
+import { unzipXlsx } from "./lib/zip-xlsx.mjs";
 
-const execFileAsync = promisify(execFile);
+const MAXIMUM_WORKBOOK_BYTES = 50 * 1024 * 1024;
+const MAXIMUM_WORKBOOK_ENTRIES = 256;
 const MAXIMUM_SHEETS = 10;
 const MAXIMUM_ROWS = 20_000;
 const MAXIMUM_COLUMNS = 100;
@@ -135,13 +135,49 @@ function boundedText(value, label) {
   return normalized;
 }
 
-export async function unzipEntry(input, entry, optional = false) {
-  try {
-    const { stdout } = await execFileAsync("unzip", ["-p", input, entry], { maxBuffer: 50 * 1024 * 1024 });
-    return stdout;
-  } catch (error) {
-    if (optional && error?.code === 11) return "";
+export function extractXlsxWorkbookEntries(
+  bytes,
+  {
+    maxArchiveBytes = MAXIMUM_WORKBOOK_BYTES,
+    maxEntries = MAXIMUM_WORKBOOK_ENTRIES,
+    maxEntryBytes = MAXIMUM_WORKBOOK_BYTES,
+    maxTotalBytes = MAXIMUM_WORKBOOK_BYTES,
+    requiredEntries = ["xl/workbook.xml", "xl/_rels/workbook.xml.rels"],
+  } = {},
+) {
+  return unzipXlsx(bytes, {
+    maxArchiveBytes,
+    maxEntries,
+    maxEntryBytes,
+    maxTotalBytes,
+    requiredEntries,
+  });
+}
+
+export function readXlsxXmlEntry(entries, entry, optional = false) {
+  const buffer = entries.get(entry);
+  if (buffer == null) {
+    if (optional) return "";
     throw new Error(`KRIC XLSX archive entry unavailable: ${entry}`);
+  }
+  return buffer.toString("utf8");
+}
+
+export async function unzipEntry(input, entry, optional = false) {
+  if (input instanceof Map) {
+    return readXlsxXmlEntry(input, entry, optional);
+  }
+  try {
+    const bytes = Buffer.isBuffer(input) || input instanceof Uint8Array
+      ? input
+      : await readFile(input);
+    const entries = extractXlsxWorkbookEntries(bytes, { requiredEntries: [] });
+    return readXlsxXmlEntry(entries, entry, optional);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("KRIC XLSX archive entry unavailable:")) {
+      throw error;
+    }
+    throw new Error(`KRIC XLSX archive entry unavailable: ${entry}`, { cause: error });
   }
 }
 
@@ -163,15 +199,16 @@ async function main(argv) {
     || metadata.byteCount !== bytes.length) {
     throw new Error("KRIC code catalog metadata does not match input");
   }
-  const workbookXml = await unzipEntry(args.input, "xl/workbook.xml");
-  const relationshipsXml = await unzipEntry(args.input, "xl/_rels/workbook.xml.rels");
-  const sharedStrings = parseSharedStrings(await unzipEntry(args.input, "xl/sharedStrings.xml", true));
+  const entries = extractXlsxWorkbookEntries(bytes);
+  const workbookXml = readXlsxXmlEntry(entries, "xl/workbook.xml");
+  const relationshipsXml = readXlsxXmlEntry(entries, "xl/_rels/workbook.xml.rels");
+  const sharedStrings = parseSharedStrings(readXlsxXmlEntry(entries, "xl/sharedStrings.xml", true));
   const sheetRefs = parseWorkbookSheetRefs(workbookXml, relationshipsXml);
   const sheets = [];
   for (const sheet of sheetRefs) {
     sheets.push({
       name: sheet.name,
-      rows: parseWorksheetRows(await unzipEntry(args.input, sheet.entry), sharedStrings),
+      rows: parseWorksheetRows(readXlsxXmlEntry(entries, sheet.entry), sharedStrings),
     });
   }
   if (sheets.every((sheet) => sheet.rows.length === 0)) {

@@ -134,6 +134,7 @@ CREATE TABLE transit_trips (
   direction_id TEXT NOT NULL DEFAULT '',
   service_pattern TEXT NOT NULL DEFAULT 'LOCAL',
   service_class TEXT NOT NULL DEFAULT 'SUBWAY',
+  train_no TEXT,
   service_day_start_seconds INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (route_id) REFERENCES transit_routes(id),
   FOREIGN KEY (service_id) REFERENCES service_calendars(service_id),

@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { unzipEntry, parseWorkbookSheetRefs, parseSharedStrings, parseWorksheetRows } from "./parse-kric-code-catalog.mjs";
+import { extractXlsxWorkbookEntries, readXlsxXmlEntry, parseWorkbookSheetRefs, parseSharedStrings, parseWorksheetRows } from "./parse-kric-code-catalog.mjs";
 import { selectRetainedKricStationLine } from "./build-kric-retained-file-pending-handoff.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 import { parseRetainedKasiHolidayMonth, readKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
@@ -333,37 +332,37 @@ export async function buildRetainedKorailTopologyObservation({
   };
 }
 
-/** 해시를 확인한 같은 바이트만 읽는다. 원본 경로의 변경과 파싱 사이의 경쟁을 차단한다. */
+/** 해시를 확인한 같은 바이트만 메모리에서 직접 추출한다. 디스크 임시 파일 경유 TOCTOU를 차단한다. */
 export async function parseRetainedKorailWorkbook({ inputPath, sha256 }) {
   if (!path.isAbsolute(inputPath) || !/^[a-f0-9]{64}$/.test(sha256 ?? "")) {
     throw new Error("retained workbook identity is required");
   }
   const bytes = await readFile(inputPath);
   if (createHash("sha256").update(bytes).digest("hex") !== sha256) throw new Error("retained workbook digest mismatch");
-  const root = await mkdtemp(path.join(tmpdir(), "korail-retained-"));
-  try {
-    const snapshot = path.join(root, "source.xlsx");
-    await writeFile(snapshot, bytes, { flag: "wx", mode: 0o400 });
-    const refs = parseWorkbookSheetRefs(await unzipEntry(snapshot, "xl/workbook.xml"),
-      await unzipEntry(snapshot, "xl/_rels/workbook.xml.rels"));
-    if (new Set(refs.map(({ name }) => name)).size !== refs.length) throw new Error("duplicate timetable sheet");
-    const strings = parseSharedStrings(await unzipEntry(snapshot, "xl/sharedStrings.xml", true));
-    const sheets = [];
-    for (const { name, entry } of refs) {
-      const xml = await unzipEntry(snapshot, entry);
-      const cells = parseWorksheetRows(xml, strings);
-      // 배열 위치가 아니라 원문 row r을 사용해야 빈 행이 생략되어도 셀 근거가 유지된다.
-      const nativeRows = [...xml.matchAll(/<row\b([^>]*)>[\s\S]*?<\/row>/gi)];
-      const rows = nativeRows.map((match, index) => ({
-        rowNumber: Number(/\br\s*=\s*["']([1-9]\d*)["']/.exec(match[1])?.[1]),
-        cells: cells[index],
-      }));
-      sheets.push(parseKorailMetropolitanSheet({ name, rows }));
-    }
-    return { rawSha256: sha256, rawByteLength: bytes.length, sheets };
-  } finally {
-    await rm(root, { recursive: true, force: true });
+  const entries = extractXlsxWorkbookEntries(bytes, {
+    maxArchiveBytes: 128 * 1024 * 1024,
+    maxEntryBytes: 64 * 1024 * 1024,
+    maxTotalBytes: 128 * 1024 * 1024,
+  });
+  const refs = parseWorkbookSheetRefs(
+    readXlsxXmlEntry(entries, "xl/workbook.xml"),
+    readXlsxXmlEntry(entries, "xl/_rels/workbook.xml.rels"),
+  );
+  if (new Set(refs.map(({ name }) => name)).size !== refs.length) throw new Error("duplicate timetable sheet");
+  const strings = parseSharedStrings(readXlsxXmlEntry(entries, "xl/sharedStrings.xml", true));
+  const sheets = [];
+  for (const { name, entry } of refs) {
+    const xml = readXlsxXmlEntry(entries, entry);
+    const cells = parseWorksheetRows(xml, strings);
+    // 배열 위치가 아니라 원문 row r을 사용해야 빈 행이 생략되어도 셀 근거가 유지된다.
+    const nativeRows = [...xml.matchAll(/<row\b([^>]*)>[\s\S]*?<\/row>/gi)];
+    const rows = nativeRows.map((match, index) => ({
+      rowNumber: Number(/\br\s*=\s*["']([1-9]\d*)["']/.exec(match[1])?.[1]),
+      cells: cells[index],
+    }));
+    sheets.push(parseKorailMetropolitanSheet({ name, rows }));
   }
+  return { rawSha256: sha256, rawByteLength: bytes.length, sheets };
 }
 
 const SECONDS_PER_DAY = 24 * 60 * 60;

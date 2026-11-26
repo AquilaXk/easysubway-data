@@ -4,6 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { crc32 } from "node:zlib";
 
 import {
   KORAIL_FACILITY_WORKBOOK_URL,
@@ -202,4 +203,62 @@ test("Korail workbook summary는 non-empty row가 없는 workbook을 거부한�
     ["xl/worksheets/sheet1.xml", `<worksheet><sheetData><row r="1"></row></sheetData></worksheet>`],
   ]);
   await assert.rejects(() => summarizeKorailWorkbook(async (entry) => entries.get(entry)), /contains no non-empty rows/);
+});
+
+test("Korail FACILITY probe는 디스크 임시 파일이나 unzip 프로세스 없이 인메모리 bounded XLSX를 검증한다", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "korail-facility-inmemory-"));
+  const output = path.join(root, "evidence.json");
+  const files = {
+    "xl/workbook.xml": `<workbook xmlns:r="rels"><sheets><sheet name="승강설비현황" r:id="rId1"/></sheets></workbook>`,
+    "xl/_rels/workbook.xml.rels": `<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`,
+    "xl/sharedStrings.xml": `<sst><si><t>운영기관</t></si><si><t>역명</t></si></sst>`,
+    "xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row></sheetData></worksheet>`,
+  };
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = Buffer.from(name, "utf8");
+    const data = Buffer.from(content, "utf8");
+    const checksum = crc32(data) >>> 0;
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(20, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt32LE(checksum, 16);
+    cd.writeUInt32LE(data.length, 20);
+    cd.writeUInt32LE(data.length, 24);
+    cd.writeUInt16LE(nameBytes.length, 28);
+    cd.writeUInt32LE(offset, 42);
+    const entry = Buffer.concat([local, nameBytes, data]);
+    locals.push(entry);
+    centrals.push(Buffer.concat([cd, nameBytes]));
+    offset += entry.length;
+  }
+  const cdBuffer = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(locals.length, 8);
+  eocd.writeUInt16LE(locals.length, 10);
+  eocd.writeUInt32LE(cdBuffer.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  const zipBytes = Buffer.concat([...locals, cdBuffer, eocd]);
+
+  try {
+    const evidence = await probeKorailFacilityWorkbook({
+      capturedAt: "2026-08-05T00:00:00.000Z",
+      fetchImpl: async () => response(zipBytes),
+      output,
+    });
+    assert.equal(evidence.sheets[0].name, "승강설비현황");
+    assert.deepEqual(evidence.sheets[0].leadingRows, [["운영기관", "역명"]]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

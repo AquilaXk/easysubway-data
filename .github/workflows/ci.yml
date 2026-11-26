@@ -186,6 +186,9 @@ jobs:
             --governance-policy tools/datapack/source-governance-policy.json \
             --freshness-policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}"
 
+      - name: Run Anti-Cheat Guard
+        run: node tools/ci/guard-anti-cheat.mjs
+
       - name: Verify tests left the working tree clean
         shell: bash
         run: changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"; if [[ -n "${changed}" ]]; then echo "tests changed the working tree" >&2; echo "${changed}" >&2; exit 1; fi

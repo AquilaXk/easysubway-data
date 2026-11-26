@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { readResponseBytesWithLimit } from "./lib/bounded-zlib.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { withSourceCollectionRetry } from "./lib/source-collection-retry.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
 import { unwrapTransientRetryFailure } from "./lib/transient-retry.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
@@ -12,6 +14,8 @@ const DEFAULT_ENDPOINT = "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_downl
 const DEFAULT_INF_ID = "OA-12035";
 const DEFAULT_SEQ = "11";
 const DEFAULT_INF_SEQ = "1";
+const MAX_RAW_BYTES = 8 * 1024 * 1024;
+const EXPECTED_HEADER = Object.freeze(["연번", "역번호", "호선", "역명", "역전화번호", "도로명주소", "지번주소"]);
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 function canonicalUtc(value, label) {
@@ -42,22 +46,34 @@ export function parseCsvLine(line) {
     }
   }
   fields.push(current);
+  if (inQuotes) {
+    throw new Error("CSV line has unterminated quoted field");
+  }
   return fields;
 }
 
 export function parseSeoulMetroStationContactCsv(csvText) {
-  const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const normalized = String(csvText ?? "").replace(/^\uFEFF/u, "");
+  const lines = normalized.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 2) {
     throw new Error("CSV has insufficient lines");
   }
 
-  const header = parseCsvLine(lines[0]);
-  // Expected header: 연번,역번호,호선,역명,역전화번호,도로명주소,지번주소
+  const header = parseCsvLine(lines[0]).map((col) => col.trim());
+  if (header.length !== EXPECTED_HEADER.length || !EXPECTED_HEADER.every((col, idx) => header[idx] === col)) {
+    throw new Error(`CSV header mismatch: got [${header.join(", ")}]`);
+  }
+
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const fields = parseCsvLine(lines[i]);
-    if (fields.length < 5) continue;
+    if (fields.length !== EXPECTED_HEADER.length) {
+      throw new Error(`CSV row ${i} column count mismatch: expected ${EXPECTED_HEADER.length}, got ${fields.length}`);
+    }
     const [seq, stnNo, line, name, phone, roadAddr, jibunAddr] = fields;
+    if (name.trim() === "" || line.trim() === "") {
+      throw new Error(`CSV row ${i} is missing required station name or line`);
+    }
     rows.push({
       seq: seq?.trim() ?? "",
       stnNo: stnNo?.trim() ?? "",
@@ -67,6 +83,9 @@ export function parseSeoulMetroStationContactCsv(csvText) {
       roadAddr: roadAddr?.trim() ?? "",
       jibunAddr: jibunAddr?.trim() ?? "",
     });
+  }
+  if (rows.length === 0) {
+    throw new Error("CSV has no data rows");
   }
   return rows;
 }
@@ -83,7 +102,7 @@ export async function fetchSeoulMetroStationContactFile({
   retryOptions = {},
 } = {}) {
   const form = new URLSearchParams({ infId, seq, infSeq });
-  const { response, buffer } = await withSourceCollectionRetry(async () => {
+  const { response, rawBuffer } = await withSourceCollectionRetry(async () => {
     const res = await fetchImpl(endpoint, {
       method: "POST",
       headers: {
@@ -92,8 +111,12 @@ export async function fetchSeoulMetroStationContactFile({
       body: form.toString(),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) return { response: res, buffer: null };
-    return { response: res, buffer: await res.arrayBuffer() };
+    if (!res.ok) return { response: res, rawBuffer: null };
+    const bytes = await readResponseBytesWithLimit(res, {
+      maxBytes: MAX_RAW_BYTES,
+      label: "Seoul Metro station contact CSV",
+    });
+    return { response: res, rawBuffer: bytes };
   }, {
     label: "Seoul Metro station contact file download",
     url: endpoint,
@@ -107,13 +130,16 @@ export async function fetchSeoulMetroStationContactFile({
   if (!response.ok) {
     throw new Error(`Seoul data file download failed: HTTP ${response.status}`);
   }
+  if (!rawBuffer || rawBuffer.length === 0) {
+    throw new Error("Seoul Metro station contact CSV response is empty");
+  }
 
   // Server returns EUC-KR (CP949) encoded CSV
-  const decoder = new TextDecoder("euc-kr");
-  const text = decoder.decode(buffer);
+  const decoder = new TextDecoder("euc-kr", { fatal: true });
+  const text = decoder.decode(rawBuffer);
 
   return {
-    rawBuffer: Buffer.from(buffer),
+    rawBuffer,
     decodedText: text,
   };
 }
@@ -201,8 +227,8 @@ async function main(argv) {
     ? path.resolve(args["raw-output"])
     : path.join(outputDir, `${snapshotId}.raw.json`);
 
-  await writeFile(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
-  await writeFile(rawPath, rawBytes);
+  await writeFileReplacing(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  await writeFileReplacing(rawPath, rawBytes);
 
   console.log(`Saved snapshot: ${snapshotPath} (${snapshot.rowCount} rows)`);
   console.log(`Saved raw archive: ${rawPath}`);

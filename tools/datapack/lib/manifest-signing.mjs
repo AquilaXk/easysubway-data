@@ -6,14 +6,21 @@ export function signingPrivateKey() {
   if (!pem) {
     throw new Error("EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM is required for production data pack signatures");
   }
-  let keyType;
+  let privateKey;
   try {
-    keyType = createPrivateKey(pem).asymmetricKeyType;
+    privateKey = createPrivateKey(pem);
   } catch {
     throw new Error("EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM is not a valid private key PEM");
   }
+  const keyType = privateKey.asymmetricKeyType;
   if (keyType !== "rsa") {
     throw new Error(`EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM must be an RSA private key (got ${keyType})`);
+  }
+  const modulusLength = privateKey.asymmetricKeyDetails?.modulusLength;
+  if (!Number.isInteger(modulusLength) || modulusLength < 2048) {
+    throw new Error(
+      `EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM must be at least 2048-bit RSA (got ${modulusLength ?? "unknown"})`
+    );
   }
   return pem;
 }

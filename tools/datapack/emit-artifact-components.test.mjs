@@ -759,6 +759,12 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       ]);
     } else {
       assert.equal(componentDb.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('station_line_accessibility_evidence','route_accessibility_edge_evidence','station_elevator_path','station_elevator_path_facility','station_platform_gaps','transition_facility_requirement')").get().count, 0);
+      if (component === "timetable") {
+        assert.deepEqual(
+          componentDb.prepare("PRAGMA table_info(transit_trips)").all().map((column) => column.name),
+          ["id", "route_id", "service_id", "trip_headsign", "direction_id", "service_pattern", "service_class", "train_no", "service_day_start_seconds"],
+        );
+      }
     }
     componentDb.close();
     assert.equal((await readFile(sqlite)).readUInt32BE(96), 3053000);

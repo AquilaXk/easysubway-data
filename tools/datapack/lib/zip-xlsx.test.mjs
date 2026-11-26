@@ -1,32 +1,66 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deflateRawSync } from "node:zlib";
+import { crc32, deflateRawSync } from "node:zlib";
 
 import { unzipXlsx } from "./zip-xlsx.mjs";
 
 function makeZip(entries) {
-  return Buffer.concat(entries.map(({
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const {
     name,
     data = Buffer.alloc(0),
     method = 0,
     flags = 0,
     compSizeOverride,
     uncompSizeOverride,
+    crcOverride,
     signature = 0x04034b50,
-  }) => {
+  } of entries) {
     const nameBytes = Buffer.from(name, "utf8");
-    const payload = method === 8 && Buffer.isBuffer(data) && compSizeOverride === undefined
-      ? deflateRawSync(data)
-      : Buffer.from(data);
-    const header = Buffer.alloc(30);
-    header.writeUInt32LE(signature, 0);
-    header.writeUInt16LE(flags, 6);
-    header.writeUInt16LE(method, 8);
-    header.writeUInt32LE(compSizeOverride ?? payload.length, 18);
-    header.writeUInt32LE(uncompSizeOverride ?? data.length, 22);
-    header.writeUInt16LE(nameBytes.length, 26);
-    return Buffer.concat([header, nameBytes, payload]);
-  }));
+    const rawData = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const payload = method === 8 && compSizeOverride === undefined
+      ? deflateRawSync(rawData)
+      : rawData;
+    const compSize = compSizeOverride ?? payload.length;
+    const uncompSize = uncompSizeOverride ?? rawData.length;
+    const checksum = crcOverride ?? (crc32(rawData) >>> 0);
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(signature, 0);
+    local.writeUInt16LE(flags, 6);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(compSize, 18);
+    local.writeUInt32LE(uncompSize, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(20, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(flags, 8);
+    cd.writeUInt16LE(method, 10);
+    cd.writeUInt32LE(checksum, 16);
+    cd.writeUInt32LE(compSize, 20);
+    cd.writeUInt32LE(uncompSize, 24);
+    cd.writeUInt16LE(nameBytes.length, 28);
+    cd.writeUInt32LE(offset, 42);
+
+    const localEntry = Buffer.concat([local, nameBytes, payload]);
+    locals.push(localEntry);
+    centrals.push(Buffer.concat([cd, nameBytes]));
+    offset += localEntry.length;
+  }
+  const cdBuffer = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cdBuffer.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cdBuffer, eocd]);
 }
 
 function validWorkbookEntries(extra = []) {
@@ -110,4 +144,20 @@ test("unzipXlsx rejects cumulative decompressed overflow, maxEntry count, duplic
 
   const storedOversized = makeZip(validWorkbookEntries([{ name: "a.xml", method: 0, data: Buffer.alloc(200, 1) }]));
   assert.throws(() => unzipXlsx(storedOversized, { maxEntryBytes: 100 }), /limit/i);
+});
+
+test("unzipXlsx rejects missing EOCD, CRC32 checksum mismatch, and Central Directory parity mismatch", () => {
+  const valid = makeZip(validWorkbookEntries());
+  assert.throws(() => unzipXlsx(valid.subarray(0, valid.length - 10)), /end-of-central-directory/i);
+
+  const badCrc = makeZip([
+    { name: "xl/sharedStrings.xml", method: 0, data: Buffer.from("<sst/>"), crcOverride: 0xdeadbeef },
+    { name: "xl/worksheets/sheet1.xml", method: 0, data: Buffer.from("<worksheet/>") },
+  ]);
+  assert.throws(() => unzipXlsx(badCrc), /CRC32 checksum mismatch/i);
+
+  const tamperedHeader = Buffer.from(valid);
+  const nameOffset = 30;
+  tamperedHeader.write("Y", nameOffset);
+  assert.throws(() => unzipXlsx(tamperedHeader), /central directory mismatch/i);
 });

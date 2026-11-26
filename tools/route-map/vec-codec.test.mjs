@@ -11,6 +11,9 @@ import {
   VEC_MAX_ID,
   VEC_MAX_TOTAL_VERTICES,
   VEC_MAX_STATION_COUNT,
+  VEC_MAX_COMMANDS,
+  VEC_MAX_SAVE_LAYER_DEPTH,
+  VEC_MAX_PATH_VERBS,
   VERB,
   encodeZigZag,
   decodeZigZag,
@@ -384,4 +387,31 @@ test("assertVecBounds는 정점 수 1,000,000 또는 텍스트 수 10,000 초과
     texts: Array.from({ length: 10_001 }, () => ({ text: "역" })),
   };
   assert.throws(() => assertVecBounds(hugeTextsDoc), /라벨 텍스트 수 .*개가 상한 10000개를 넘습니다/);
+});
+
+test("decodeVec은 명령 수·중첩 깊이·짝 없는 restore·사전 정점/명령 상한을 Fail-Closed로 거부한다", () => {
+  const deepDoc = {
+    ...sample(),
+    commands: [
+      ...Array.from({ length: 5 }, () => ({ op: "saveLayer", paintId: 0 })),
+      ...Array.from({ length: 5 }, () => ({ op: "restore" })),
+    ],
+  };
+  const deepBytes = encodeVec(deepDoc);
+  assert.doesNotThrow(() => decodeVec(deepBytes, { maxSaveLayerDepth: 5 }));
+  assert.throws(() => decodeVec(deepBytes, { maxSaveLayerDepth: 4 }), /saveLayer 중첩 깊이 5단계가 상한 4단계/);
+
+  const unbalancedBytes = encodeVec({ ...sample(), commands: [{ op: "restore" }] });
+  assert.throws(() => decodeVec(unbalancedBytes), /짝 없는 restore/);
+
+  const manyCmdBytes = encodeVec({
+    ...sample(),
+    commands: Array.from({ length: 6 }, () => ({ op: "drawPath", pathId: 0, paintId: 0, patternId: null })),
+  });
+  assert.throws(() => decodeVec(manyCmdBytes, { maxCommands: 5 }), /명령 수 6개가 상한 5개/);
+
+  const multiVerbBytes = encodeVec(sample());
+  assert.throws(() => decodeVec(multiVerbBytes, { maxPathVerbs: 2 }), /명령 수 3개가 상한 2개/);
+  assert.throws(() => decodeVec(multiVerbBytes, { maxTotalVertices: 2 }), /정점 수 4개가 남은 허용량 2개/);
+  assert.ok(VEC_MAX_COMMANDS >= 200_000 && VEC_MAX_SAVE_LAYER_DEPTH >= 64 && VEC_MAX_PATH_VERBS >= 500_000);
 });
