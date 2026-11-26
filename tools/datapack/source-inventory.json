@@ -4367,8 +4367,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily",
-      "observedDataUpdatedAt": "2026-11-25",
-      "retrievedAt": "2026-11-25",
+      "observedDataUpdatedAt": "2026-11-26",
+      "retrievedAt": "2026-11-26",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -4439,7 +4439,7 @@
           "productionUseAllowed": true,
           "unlockStatus": "not_required"
         },
-        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20261125T023110596Z registration verified.",
+        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20261126T002253649Z registration verified.",
         "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
       },
       "accessibilityAdmissionEvidence": {
@@ -4447,15 +4447,15 @@
         "decision": "APPROVED",
         "productionUseAllowed": true,
         "licenseEvidenceHash": "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
-        "snapshotId": "kric-station-convenience-standard-20261125T023110596Z",
-        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20261125T023110596Z.json",
-        "capturedAt": "2026-11-25T02:31:10.596Z",
-        "observedAt": "2026-11-25T02:31:10.596Z",
-        "freshUntil": "2026-11-26T02:31:10.596Z",
+        "snapshotId": "kric-station-convenience-standard-20261126T002253649Z",
+        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20261126T002253649Z.json",
+        "capturedAt": "2026-11-26T00:22:53.649Z",
+        "observedAt": "2026-11-26T00:22:53.649Z",
+        "freshUntil": "2026-11-27T00:22:53.649Z",
         "rawSha256": "80ed50473f5d60660f61d91a2d209b5d725d3c4238018fdf0df27dcd444a3716",
         "contentSha256": "a1bc79b920dd88a87cbe722fbcaba60736e06dace31569eb3aa3e230d4adc489",
         "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-        "snapshotFileSha256": "b01a7ec7979e8bc2fa7e8c9f9d64a2d254841cb2885e73d3b6c22aa1d1dca561",
+        "snapshotFileSha256": "b015661009b45799af6d04255e6ac8f27b5781e34cf9d5932466012a6950c6a8",
         "absenceEvidenceMode": "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED"
       }
     },
