@@ -660010,5 +660010,231 @@
         "contentType": "text/csv; charset=euc-kr"
       }
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "capital-route-topology",
+    "snapshotId": "capital-route-topology-20261126",
+    "previousSnapshotId": "capital-route-topology-20261125",
+    "capturedAt": "2026-11-26T04:23:59.259Z",
+    "retrievedAt": "2026-11-26T04:23:59.259Z",
+    "sourceUpdatedAt": "2026-11-26T04:23:59.259Z",
+    "provider": "data.go.kr official FILE",
+    "rowCount": 8,
+    "coverageCount": 8,
+    "rawSha256": "c238c7837644cc30d0e5fb3c18caa26aba81fa6e2ce873a3c8a313aff160e00e",
+    "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261126/c238c7837644cc30d0e5fb3c18caa26aba81fa6e2ce873a3c8a313aff160e00e.json",
+    "rawObjectSha256": "c238c7837644cc30d0e5fb3c18caa26aba81fa6e2ce873a3c8a313aff160e00e",
+    "rawReceiptSha256": "052965961afd9efb1b096ac3389d81d936e20d587ef129ca404c5523e20bf59a",
+    "byteSize": 260470,
+    "freshUntil": "2026-12-03T04:23:59.259Z",
+    "freshnessExpiresAt": "2026-12-03T04:23:59.259Z",
+    "rawRetentionExpiresAt": "2027-02-24T04:23:59.259Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+    "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "schemaVersion": 1,
+      "artifactKind": "capital-topology-admission-evidence",
+      "status": "APPROVED",
+      "issue": 456,
+      "sourceId": "capital-route-topology",
+      "snapshotId": "capital-route-topology-20261126",
+      "snapshotPath": "tools/datapack/sources/capital-route-topology-20261126.json",
+      "snapshotFileSha256": "c238c7837644cc30d0e5fb3c18caa26aba81fa6e2ce873a3c8a313aff160e00e",
+      "snapshotRawSha256": "c238c7837644cc30d0e5fb3c18caa26aba81fa6e2ce873a3c8a313aff160e00e",
+      "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+      "lineIds": [
+        "line-472a81add377",
+        "seoul-2",
+        "line-41a8c75ec9d8",
+        "seoul-4",
+        "line-80fc4d5350d4",
+        "line-3f41718e0833",
+        "line-15b3b8a93259",
+        "line-2b2d9eaa53d0"
+      ],
+      "orderedScopeSha256": "93925de2014fe87c5a0003fcb6294f6675147c7c856992551e97b2386ff7dc75",
+      "operationSetSha256": "15c9bc1573f1b6e35b478472c29b9b404b2cf2d60a68cf7fff4187a2f6e08534",
+      "rawReceiptSha256": "052965961afd9efb1b096ac3389d81d936e20d587ef129ca404c5523e20bf59a",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261126/c238c7837644cc30d0e5fb3c18caa26aba81fa6e2ce873a3c8a313aff160e00e.json",
+      "rawObjectSha256": "c238c7837644cc30d0e5fb3c18caa26aba81fa6e2ce873a3c8a313aff160e00e",
+      "byteSize": 260470,
+      "licenseSha256": "8af4d3c1d50cfa78ba2be42b46ffcfeba5366f91e07592dae863b9a76e98bd54",
+      "governanceRecordSha256": "3503994e3944841f4c2feab3bf5a60f0c2acff715286afff119de809092dc9a2",
+      "freshnessClassSha256": "ae80ea00dd156483c41423f42b039e21e88985d4750d8406e9231c1c33b90b6b",
+      "evaluatedAt": "2026-11-26T16:45:31.716Z",
+      "predecessorSnapshotIds": [
+        "capital-route-topology-20261125"
+      ]
+    },
+    "diffSummary": {
+      "status": "CHANGED",
+      "rawHashChanged": true,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": true,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "incheon-transit-station-info",
+    "snapshotId": "incheon-transit-station-info-20261126",
+    "previousSnapshotId": "incheon-transit-station-info-20261125",
+    "capturedAt": "2026-11-26T04:24:10.160Z",
+    "retrievedAt": "2026-11-26T04:24:10.160Z",
+    "observedAt": "2026-06-30T00:00:00.000Z",
+    "sourceUpdatedAt": "2026-06-30T00:00:00.000Z",
+    "provider": "인천교통공사",
+    "rowCount": 116,
+    "coverageCount": 60,
+    "rawSha256": "4fd138ac74d3e937b18762f0eb9b0013b5fc910380474dd0ef023affc2868d54",
+    "contentSha256": "9b0ac6b9f7130620c8efb0b2e8ef35bbaed070b69c02d24a192ea09f57c37e6a",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-transit-station-info/20261126/0f07107ae8f6f870c65b43f323a2046baa60057d63318f3ce55dad3d0851a187.json",
+    "rawObjectSha256": "0f07107ae8f6f870c65b43f323a2046baa60057d63318f3ce55dad3d0851a187",
+    "byteSize": 65917,
+    "freshUntil": "2026-12-03T04:24:10.160Z",
+    "freshnessExpiresAt": "2026-12-03T04:24:10.160Z",
+    "rawRetentionExpiresAt": "2027-02-24T04:24:10.160Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "ddddd925ddb03d04024257de9208445e4fda3ef5cabca98a855de44ed1a34176",
+    "redactedRequestFingerprint": "92ffb4ac3a509e033b2e1a488647a2dc5e172694322e2c6ff07e67bc43f8ed54",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    },
+    "admissionEvidence": {
+      "licenseEvidenceHash": "50b9250bd849cdb70a78d6101442107e3ba59a769645e74081c661d0a59c398e"
+    },
+    "admissionRecordSha256s": [
+      {
+        "kind": "topologyAdmissionEvidence",
+        "sha256": "2957a32c5c8f58e18819ec4a2ad48027d64469f77d16eddf22f4c85d549d8d08"
+      }
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "incheon-line1-train-timetable",
+    "snapshotId": "incheon-line1-train-timetable-20261126",
+    "previousSnapshotId": "incheon-line1-train-timetable-20261125",
+    "capturedAt": "2026-11-26T04:24:21.551Z",
+    "retrievedAt": "2026-11-26T04:24:21.551Z",
+    "observedAt": "2025-04-12T00:00:00.000Z",
+    "sourceUpdatedAt": "2025-04-12T00:00:00.000Z",
+    "provider": "인천교통공사",
+    "rowCount": 574,
+    "coverageCount": 18392,
+    "rawSha256": "93cea8efe1937c525cbe95c655f69171baed9fc2643e72daef6de4a5a25b9234",
+    "contentSha256": "27a2afeef9f8f8c2224bf6f1f54e28b0c6dd4e10e2bab802a5e7f6a2dc41f50f",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-line1-train-timetable/20261126/b287ea90afbc714641fa4a695e4bd3a2318c31b4b983e310654b5ad23d0b0209.json",
+    "rawObjectSha256": "b287ea90afbc714641fa4a695e4bd3a2318c31b4b983e310654b5ad23d0b0209",
+    "byteSize": 748699,
+    "freshUntil": "2026-11-27T04:24:21.551Z",
+    "freshnessExpiresAt": "2026-12-26T04:24:21.551Z",
+    "rawRetentionExpiresAt": "2027-02-24T04:24:21.551Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "cd25f73524258c4517d55b155792f2da53b83be1fb6af341d4fe4f5b6b79537e",
+    "redactedRequestFingerprint": "fc197bdc8b8b641341aedbacaa459a7be0db5fbfb5616646f2db3fa28bf5b076",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    },
+    "admissionEvidence": {
+      "licenseEvidenceHash": "19484370942531dada75fdfe9a4b41b777004176375f62f9f8a7d01a84def56e"
+    },
+    "admissionRecordSha256s": [
+      {
+        "kind": "scheduleAdmissionEvidence",
+        "sha256": "c40e8ba984d7ced22aa2c64317d9e476150d421e7bbd1ddf75d557f303ec5845"
+      }
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "incheon-line2-train-timetable",
+    "snapshotId": "incheon-line2-train-timetable-20261126",
+    "previousSnapshotId": "incheon-line2-train-timetable-20261125",
+    "capturedAt": "2026-11-26T04:24:21.551Z",
+    "retrievedAt": "2026-11-26T04:24:21.551Z",
+    "observedAt": "2025-06-30T00:00:00.000Z",
+    "sourceUpdatedAt": "2025-06-30T00:00:00.000Z",
+    "provider": "인천교통공사",
+    "rowCount": 840,
+    "coverageCount": 22506,
+    "rawSha256": "d30e28247de4620b81ef855e5f09bbfb516b0dafc1de165983c0164e75431b79",
+    "contentSha256": "077fbc0d5186e19063e6082c2345417c1051d1d5fbc8d426f37f50a9b2e47ba0",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/incheon-line2-train-timetable/20261126/dbcc1232417f5e03f3d79816a9204f56c5f477ced52a37ac30170b2ba863edbe.json",
+    "rawObjectSha256": "dbcc1232417f5e03f3d79816a9204f56c5f477ced52a37ac30170b2ba863edbe",
+    "byteSize": 926710,
+    "freshUntil": "2026-11-27T04:24:21.551Z",
+    "freshnessExpiresAt": "2026-12-26T04:24:21.551Z",
+    "rawRetentionExpiresAt": "2027-02-24T04:24:21.551Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "cd25f73524258c4517d55b155792f2da53b83be1fb6af341d4fe4f5b6b79537e",
+    "redactedRequestFingerprint": "b40f760b1445af079c1b9f782cde2d3574ef21b2db6225035a10477fd3e6849e",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    },
+    "admissionEvidence": {
+      "licenseEvidenceHash": "b9ef1c0ac489049fcffd15dbde14ec73be44059c978bd7cc5b78e72c9769f1c7"
+    },
+    "admissionRecordSha256s": [
+      {
+        "kind": "scheduleAdmissionEvidence",
+        "sha256": "fbe538e76ea0301be4fe4252e6e4dd56997e45b80b75c3697728a13d786894af"
+      }
+    ]
   }
 ]
