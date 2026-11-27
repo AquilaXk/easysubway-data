@@ -661126,5 +661126,49 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "busan-transportation-route-topology",
+    "snapshotId": "busan-transportation-route-topology-68824c23df9973b7b08d439b5d189e2cf07127fedb275b7c21252898eb1b6d44",
+    "previousSnapshotId": "busan-transportation-route-topology-8b9d6c437fb15314df74d0e83502717ca308e6936da3e24f093c1ccf97b742b2",
+    "capturedAt": "2026-11-27T14:11:45.893Z",
+    "retrievedAt": "2026-11-27T14:11:45.893Z",
+    "sourceUpdatedAt": null,
+    "provider": "부산교통공사",
+    "rowCount": 220,
+    "coverageCount": 114,
+    "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
+    "contentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/busan-transportation-route-topology/20261127/68824c23df9973b7b08d439b5d189e2cf07127fedb275b7c21252898eb1b6d44.json",
+    "rawObjectSha256": "68824c23df9973b7b08d439b5d189e2cf07127fedb275b7c21252898eb1b6d44",
+    "rawReceiptSha256": "cca9466b44ead8ef2a6970deb50db22a5435b6aa00430839b60ac075bb2cfe0b",
+    "byteSize": 224231,
+    "freshUntil": "2026-12-04T14:11:45.893Z",
+    "freshnessExpiresAt": "2026-12-04T14:11:45.893Z",
+    "rawRetentionExpiresAt": "2027-02-25T14:11:45.893Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4",
+    "schemaFingerprint": "10659615d440037a9121f371b426ae664c75d67f320198c57e587b5c1c2ec49d",
+    "redactedRequestFingerprint": "6ed655a9cd081229ad5f43cc51e3fefe1911ec24fac4d991eeca4592780bcd2e",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "c95b17313528bec500646e6e22900d998d936d5f3f9824704335cddc60875583"
+    },
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
