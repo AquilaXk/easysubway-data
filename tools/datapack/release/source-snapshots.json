@@ -706297,5 +706297,58 @@
       "redactedRequestUrl": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2"
     },
     "snapshotStatus": "LOCKED"
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "snapshotId": "kric-subway-timetable-line4-pilot-20261127",
+    "sourceId": "kric-subway-timetable",
+    "provider": "국가철도공단",
+    "retrievedAt": "2026-11-27T22:48:44.034Z",
+    "sourceUpdatedAt": "2026-11-27T22:48:44.034Z",
+    "serviceEffectiveAt": "2026-11-27T22:48:44.034Z",
+    "rowCount": 458,
+    "coverageCount": 1,
+    "rawSha256": "76cbd1c731c76f16ba04093df0f1fb88ebbe6cacb8cd0d542b73a12c8c854ddd",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable/20261127/76cbd1c731c76f16ba04093df0f1fb88ebbe6cacb8cd0d542b73a12c8c854ddd.json",
+    "redactedRequestFingerprint": "1962bd8aeb614f9bd9aefb737ef16496c2527f9569547100a4aeae4c69d44f85",
+    "schemaFingerprint": "60cb682c2ea9773d183ccbb7a1a333cdeb8681cc11e3d2c6cd4869f5b3ecdf9a",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "previousSnapshotId": "kric-subway-timetable-line4-pilot-20261126",
+    "diffSummary": {
+      "status": "CHANGED",
+      "rawHashChanged": true,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": true,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    },
+    "freshnessExpiresAt": "2026-12-27T22:48:44.034Z",
+    "rawRetentionExpiresAt": "2027-02-25T22:48:44.034Z",
+    "rawReceipt": {
+      "schemaVersion": 1,
+      "artifactKind": "kric-timetable-raw-object-receipt",
+      "sourceId": "kric-subway-timetable",
+      "snapshotId": "kric-subway-timetable-line4-pilot-20261127",
+      "capturedAt": "2026-11-27",
+      "collectedAt": "2026-11-27T22:48:44.034Z",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable/20261127/76cbd1c731c76f16ba04093df0f1fb88ebbe6cacb8cd0d542b73a12c8c854ddd.json",
+      "rawObjectSha256": "76cbd1c731c76f16ba04093df0f1fb88ebbe6cacb8cd0d542b73a12c8c854ddd",
+      "ociNamespace": "axvym6vk8g7i",
+      "bucket": "easysubway-datapacks",
+      "objectKey": "source-raw/kric-subway-timetable/20261127/76cbd1c731c76f16ba04093df0f1fb88ebbe6cacb8cd0d542b73a12c8c854ddd.json",
+      "capturedDate": "20261127",
+      "byteSize": 12486600,
+      "storedAt": "2026-11-27T22:48:44.152Z",
+      "rawRetentionExpiresAt": "2027-02-25T22:48:44.034Z"
+    },
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "94cfb01168d45b16d0661d30203f0206cfe9688d70da2b5d790567d49951ced4"
   }
 ]
