@@ -772,7 +772,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   sourceDb.close();
   assert.equal(await exists(path.join(temp, "one", "server-route-bundle/manifest.json")), false);
   const allBytes = Buffer.concat(await Promise.all(paths.map((file) => readFile(path.join(temp, "one", file))))).toString("utf8");
-  assert.doesNotMatch(allBytes, /"signature"|"probe"/);
+  assert.doesNotMatch(allBytes, /"signature"|"probe"|"cHJvYmU"/);
 
   const walSource = path.join(temp, "wal-source.sqlite");
   await cp(source, walSource);

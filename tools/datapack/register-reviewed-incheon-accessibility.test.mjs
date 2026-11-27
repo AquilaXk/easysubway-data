@@ -8,8 +8,9 @@ import test from "node:test";
 import { buildReceiptBoundRebindOutputs, buildReviewedIncheonAccessibilityRegistrationOutputs, commitReviewedIncheonAccessibilityRegistrationOutputs, recoverPendingReviewedIncheonAccessibilityRegistration, incheonPredecessorSourceIds, validateExactIncheonScopeSourceIds } from "./register-reviewed-incheon-accessibility.mjs";
 import { runIncheonAccessibilityCollector } from "./collect-incheon-accessibility.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
-const ROOT = path.resolve(import.meta.dirname, "../..");
+const candidateWorkspace = candidateWorkspaceAccess();
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const noLease = async () => async () => {};
 const fixed = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-candidates.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/production-datapack-scope.json"];
@@ -39,9 +40,10 @@ function claimTopologyHash(rows) {
       .localeCompare(`${right.lineId}:${right.stationCode}:${right.stationId}`))));
 }
 async function fixture(t) {
+  const sourceRoot = await candidateWorkspace.root();
   const root = await mkdtemp(path.join(os.tmpdir(), "incheon-register-")); t.after(() => rm(root, { recursive: true, force: true }));
-  await copySyntheticCurrentPublicRouteMapRepository(ROOT, root, {
-    now: await nextSyntheticCurrentStaticNetworkNow(ROOT),
+  await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, root, {
+    now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
     activatePublicRouteMap: true,
   });
   const sourceInventory = JSON.parse(await readFile(path.join(root, fixed[0]), "utf8"));
@@ -53,7 +55,7 @@ async function fixture(t) {
   assert.equal(typeof topologyAdmission.contentSha256, "string");
   const topologySnapshotPath = topologyAdmission.snapshotPath;
   await mkdir(path.dirname(path.join(root, topologySnapshotPath)), { recursive: true });
-  await cp(path.join(ROOT, topologySnapshotPath), path.join(root, topologySnapshotPath));
+  await cp(path.join(sourceRoot, topologySnapshotPath), path.join(root, topologySnapshotPath));
   const topologySnapshot = JSON.parse(await readFile(path.join(root, topologySnapshotPath), "utf8"));
   assert.equal(path.posix.basename(topologySnapshotPath, ".json"), topologyAdmission.snapshotId);
   assert.equal(topologySnapshot.contentSha256, topologyAdmission.contentSha256);
@@ -61,7 +63,7 @@ async function fixture(t) {
   const fixtureCandidate = JSON.parse(await readFile(path.join(root, fixed[2]), "utf8")); fixtureCandidate.sourceSnapshots = fixtureCandidate.sourceSnapshots.filter(({ sourceId }) => sourceId !== "incheon-transit-accessibility"); fixtureCandidate.sourceSnapshotIds = fixtureCandidate.sourceSnapshotIds.filter((snapshotId) => !snapshotId.startsWith("incheon-transit-accessibility-")); const fixtureLedger = JSON.parse(await readFile(path.join(root, fixed[1]), "utf8")).filter(({ sourceId }) => sourceId !== "incheon-transit-accessibility"); const selectedFixtureLedger = fixtureLedger.filter(({ snapshotId }) => fixtureCandidate.sourceSnapshotIds.includes(snapshotId)); fixtureCandidate.sourceSnapshotSetHash = sha(JSON.stringify(selectedFixtureLedger)); fixtureCandidate.sourceInventorySha256 = sha(JSON.stringify(inventory)); fixtureCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha(inventoryBytes); const fixtureCandidateBytes = Buffer.from(`${JSON.stringify(fixtureCandidate, null, 2)}\n`); const fixtureRequest = JSON.parse(await readFile(path.join(root, fixed[3]), "utf8")); fixtureRequest.buildSpecSha256 = sha(fixtureCandidateBytes); fixtureRequest.sourceSnapshotSetHash = fixtureCandidate.sourceSnapshotSetHash; const fixtureEvidence = JSON.parse(await readFile(path.join(root, fixed[4]), "utf8")); fixtureEvidence.sourceInventorySha256.value = fixtureCandidate.sourceInventorySha256; fixtureEvidence.sourceSnapshotSetHash.value = fixtureCandidate.sourceSnapshotSetHash; fixtureEvidence.perSourceEvidence = fixtureEvidence.perSourceEvidence.filter(({ sourceId }) => sourceId !== "incheon-transit-accessibility"); await Promise.all([writeFile(path.join(root, fixed[1]), `${JSON.stringify(fixtureLedger, null, 2)}\n`), writeFile(path.join(root, fixed[2]), fixtureCandidateBytes), writeFile(path.join(root, fixed[3]), `${JSON.stringify(fixtureRequest, null, 2)}\n`), writeFile(path.join(root, fixed[4]), `${JSON.stringify(fixtureEvidence, null, 2)}\n`)]);
   const capturedAt = source.admissionEvidence.snapshotId.match(/(\d{8}T\d{9}Z)$/u)?.[1].replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})Z$/u, "$1-$2-$3T$4:$5:$6.$7Z");
   assert.equal(capturedAt, "2026-08-28T04:33:56.000Z"); const observationRoot = path.join(root, "observation");
-  await runIncheonAccessibilityCollector(["--elevator-input", path.join(ROOT, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv"), "--escalator-input", path.join(ROOT, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15010199.csv"), "--wheelchair-input", path.join(ROOT, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv"), "--topology-snapshot", path.join(root, topologySnapshotPath), "--observation-output", observationRoot, "--captured-at", capturedAt]);
+  await runIncheonAccessibilityCollector(["--elevator-input", path.join(sourceRoot, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv"), "--escalator-input", path.join(sourceRoot, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15010199.csv"), "--wheelchair-input", path.join(sourceRoot, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv"), "--topology-snapshot", path.join(root, topologySnapshotPath), "--observation-output", observationRoot, "--captured-at", capturedAt]);
   const manifest = JSON.parse(await readFile(path.join(observationRoot, "observation.json"), "utf8")); const snapshot = JSON.parse(await readFile(path.join(observationRoot, manifest.snapshotFile), "utf8")); const rawBytes = await readFile(path.join(observationRoot, manifest.rawArtifactFile));
   assert.equal(snapshot.snapshotId, source.admissionEvidence.snapshotId); assert.equal(snapshot.rawSha256, source.admissionEvidence.rawSha256);
   // 최초 등록 fixture에서는 ledger뿐 아니라 create-once 대상도 아직 없어야 한다.
