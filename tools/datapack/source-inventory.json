@@ -8868,21 +8868,21 @@
         ]
       },
       "retainedGwangjuProjectionEvidence": {
-        "snapshotId": "kric-nationwide-timetable-file-gwangju-adf4ca01ec826101252e8c6c1df6d224f3e9157e719c234d7ab3f69f44aa308a",
-        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-adf4ca01ec826101252e8c6c1df6d224f3e9157e719c234d7ab3f69f44aa308a.json",
-        "contentSha256": "adf4ca01ec826101252e8c6c1df6d224f3e9157e719c234d7ab3f69f44aa308a",
-        "retainedSnapshotId": "kric-nationwide-timetable-file-641ebd0e067132c2c8d9ce0c4d0655e81d509a114e9857c6b3add5a2d14a257e",
-        "observationRawObjectSha256": "5f70f81c215c162fdab86711a16bf9627940d7c6ad0a9db67126f6c799b65dcf",
+        "snapshotId": "kric-nationwide-timetable-file-gwangju-bf109c308282cad767eff1ca4795a68e95dabdad640cc97cd3301e69af95a7f9",
+        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-bf109c308282cad767eff1ca4795a68e95dabdad640cc97cd3301e69af95a7f9.json",
+        "contentSha256": "bf109c308282cad767eff1ca4795a68e95dabdad640cc97cd3301e69af95a7f9",
+        "retainedSnapshotId": "kric-nationwide-timetable-file-8bef77bbd586614447dff7b7a278418bffcb158697517a8270033232d8c509e5",
+        "observationRawObjectSha256": "19ac9c05cd281b78ca751e7f0345ca750cf82072168117d4f0bc5d237fd4ca02",
         "routeNumber": "S2901",
         "recordCount": 15881,
         "recordsSha256": "cb0c1f50c7da47bb580cc0a8136e2adaf03f00a1390d5e1cf077b79532968956"
       },
       "retainedDaejeonProjectionEvidence": {
-        "snapshotId": "kric-nationwide-timetable-file-daejeon-77d771778b5673604c4c0f92ae85f81edea6565caf5eb1eeed4272e8c22ce1cb",
-        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-daejeon-77d771778b5673604c4c0f92ae85f81edea6565caf5eb1eeed4272e8c22ce1cb.json",
-        "contentSha256": "77d771778b5673604c4c0f92ae85f81edea6565caf5eb1eeed4272e8c22ce1cb",
-        "retainedSnapshotId": "kric-nationwide-timetable-file-641ebd0e067132c2c8d9ce0c4d0655e81d509a114e9857c6b3add5a2d14a257e",
-        "observationRawObjectSha256": "5f70f81c215c162fdab86711a16bf9627940d7c6ad0a9db67126f6c799b65dcf",
+        "snapshotId": "kric-nationwide-timetable-file-daejeon-3c5884358179326ce203f3275c32b2b1fa261c36beec6e1268366d1eb56e1328",
+        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-daejeon-3c5884358179326ce203f3275c32b2b1fa261c36beec6e1268366d1eb56e1328.json",
+        "contentSha256": "3c5884358179326ce203f3275c32b2b1fa261c36beec6e1268366d1eb56e1328",
+        "retainedSnapshotId": "kric-nationwide-timetable-file-8bef77bbd586614447dff7b7a278418bffcb158697517a8270033232d8c509e5",
+        "observationRawObjectSha256": "19ac9c05cd281b78ca751e7f0345ca750cf82072168117d4f0bc5d237fd4ca02",
         "routeNumber": "S3001",
         "recordCount": 460,
         "recordsSha256": "98ec6e60d89bfc7a607e4cd349b267d470bcf8933c627905e6188ea2ccbc009e"
