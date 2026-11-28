@@ -8249,7 +8249,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "P7D",
       "observedDataUpdatedAt": "2026-07-06",
-      "retrievedAt": "2026-11-26",
+      "retrievedAt": "2026-11-28",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "unrestricted",
@@ -8292,13 +8292,13 @@
         }
       },
       "retainedScheduleAdmissionEvidence": {
-        "snapshotId": "kric-nationwide-timetable-file-641ebd0e067132c2c8d9ce0c4d0655e81d509a114e9857c6b3add5a2d14a257e",
+        "snapshotId": "kric-nationwide-timetable-file-8bef77bbd586614447dff7b7a278418bffcb158697517a8270033232d8c509e5",
         "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
         "recordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
-        "observationIdentitySha256": "641ebd0e067132c2c8d9ce0c4d0655e81d509a114e9857c6b3add5a2d14a257e",
-        "receiptSha256": "04c5b91830cecdde0af4b47f351f69d8d68c5fd875b1e80ea97a9bdc12052e98",
-        "observedAt": "2026-11-26T23:17:53.035Z",
-        "retainedContractSha256": "b764180b2fd13caabc8211af1d14f453ca22bee5c8c1b4dc81ed061f88a6b914",
+        "observationIdentitySha256": "8bef77bbd586614447dff7b7a278418bffcb158697517a8270033232d8c509e5",
+        "receiptSha256": "ebcfa2d01049bef7c498bd9f7303a17f3a87eacda01a734ae22be37be05130df",
+        "observedAt": "2026-11-28T02:57:36.078Z",
+        "retainedContractSha256": "45b2adc5a9f779b194042d6245603da8dfe7d1485e3d9e15631cfba37e7abc91",
         "topologySourceId": "gwangju-transportation-route-topology",
         "topologySnapshotId": "gwangju-transportation-route-topology-3d3f9268b4c31ffb08f9e39def71df353d1c20a86b51ad682d8652930c27c9b1",
         "topologyContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a"
